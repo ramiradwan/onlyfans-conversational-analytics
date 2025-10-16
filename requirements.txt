@@ -1,0 +1,8 @@
+fastapi  
+uvicorn  
+httpx  
+pydantic  
+spacy  
+sentence-transformers  
+gremlinpython  
+python-dotenv  
