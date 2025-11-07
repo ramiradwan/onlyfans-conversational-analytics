@@ -1,7 +1,9 @@
 fastapi  
 uvicorn  
 httpx  
+websockets
 pydantic  
+pydantic-settings 
 spacy  
 sentence-transformers  
 gremlinpython  

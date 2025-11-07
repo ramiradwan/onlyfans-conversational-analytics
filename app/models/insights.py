@@ -8,7 +8,7 @@ class TopicMetricsResponse(BaseModel):
     topic: str  
     volume: int  
     percentage_of_total: float  
-    trend: Optional[float]  # growth/drop percentage  
+    trend: Optional[float] = None  # growth/drop percentage  
   
 class SentimentTrendPoint(BaseModel):  
     date: datetime  

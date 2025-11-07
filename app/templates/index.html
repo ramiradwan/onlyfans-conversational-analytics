@@ -1,0 +1,209 @@
+<!DOCTYPE html>  
+<html lang="en">  
+<head>  
+  <meta charset="utf-8" />  
+  <meta name="viewport" content="width=device-width, initial-scale=1" />  
+  <title>OnlyFans Conversational Analytics</title>  
+  <link rel="stylesheet"  
+        href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" />  
+  
+  {% for css in css_files %}  
+  <link rel="stylesheet" href="{{ css }}">  
+  {% endfor %}  
+  
+  <style>  
+    * { box-sizing: border-box; }  
+    body {  
+      font-family: 'Roboto', sans-serif;  
+      background-color: #f5f5f5;  
+      margin: 0;  
+      padding: 0;  
+      color: #333;  
+      display: flex;  
+      height: 100vh;  
+      overflow: hidden;  
+    }  
+    /* Left Panel */  
+    #chat-panel {  
+      width: 30%;  
+      display: flex;  
+      flex-direction: column;  
+      background: #fafafa;  
+      border-right: 1px solid #ddd;  
+      padding: 1rem;  
+      overflow: hidden;  
+    }  
+    #chat-panel h1 {  
+      margin: 0 0 1rem 0;  
+      font-size: 1.1rem;  
+      font-weight: 600;  
+      color: #222;  
+    }  
+    #chat-list {  
+      flex: 1;  
+      overflow-y: auto;  
+      padding-right: 0.5rem;  
+    }  
+    .chat-card {  
+      background: #fff;  
+      border-radius: 8px;  
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);  
+      margin-bottom: 0.75rem;  
+      padding: 0.75rem;  
+      cursor: pointer;  
+      transition: box-shadow 0.2s ease, background-color 0.2s ease;  
+    }  
+    .chat-card:hover {  
+      box-shadow: 0 4px 8px rgba(0,0,0,0.12);  
+    }  
+    .chat-card.active {  
+      background-color: #e3f2fd;  
+      box-shadow: 0 0 0 2px #90caf9 inset;  
+    }  
+    .chat-title {  
+      font-weight: 500;  
+      font-size: 1rem;  
+      color: #222;  
+    }  
+    .chat-username {  
+      font-size: 0.85rem;  
+      color: #666;  
+      margin-left: 0.25rem;  
+    }  
+    .chat-preview {  
+      font-size: 0.9rem;  
+      color: #555;  
+      margin-top: 0.25rem;  
+      line-height: 1.3;  
+    }  
+    .empty-state {  
+      text-align: center;  
+      padding: 1rem;  
+      color: #888;  
+      font-style: italic;  
+    }  
+    .refresh-chats-btn {  
+      margin-top: 0.75rem;  
+      padding: 0.6rem 1rem;  
+      background-color: #2196f3;  
+      color: white;  
+      border: none;  
+      border-radius: 4px;  
+      cursor: pointer;  
+      font-size: 0.9rem;  
+      font-weight: 500;  
+      align-self: flex-end;  
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;  
+    }  
+    .refresh-chats-btn:hover {  
+      background-color: #1976d2;  
+      box-shadow: 0 2px 6px rgba(25,118,210,0.3);  
+    }  
+    /* Right Panel */  
+    #message-panel {  
+      flex: 1;  
+      display: flex;  
+      flex-direction: column;  
+      padding: 1rem;  
+      background-color: #fff;  
+      overflow: hidden;  
+    }  
+    #message-panel h1 {  
+      margin: 0 0 1rem 0;  
+      font-size: 1.1rem;  
+      font-weight: 600;  
+      color: #222;  
+    }  
+    #message-list {  
+      flex: 1;  
+      display: flex;  
+      flex-direction: column;  
+      gap: 0.5rem;  
+      overflow-y: auto;  
+      padding-right: 0.5rem;  
+    }  
+    .message-bubble {  
+      max-width: 75%;  
+      padding: 0.75rem 1rem;  
+      border-radius: 10px;  
+      font-size: 0.95rem;  
+      line-height: 1.4;  
+      word-wrap: break-word;  
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);  
+      display: flex;  
+      flex-direction: column;  
+      transition: transform 0.15s ease;  
+    }  
+    .message-bubble:hover { transform: translateY(-1px); }  
+    .message-bubble.inbound {  
+      background-color: #e3f2fd;  
+      align-self: flex-start;  
+      border-top-left-radius: 0;  
+    }  
+    .message-bubble.outbound {  
+      background-color: #c8e6c9;  
+      align-self: flex-end;  
+      border-top-right-radius: 0;  
+    }  
+    .message-meta {  
+      font-size: 0.75rem;  
+      color: #777;  
+      margin-bottom: 0.25rem;  
+      display: flex;  
+      justify-content: space-between;  
+    }  
+    .reply-block {  
+      background: rgba(0,0,0,0.05);  
+      border-left: 3px solid #999;  
+      padding: 6px 10px;  
+      margin-bottom: 6px;  
+      border-radius: 6px;  
+      font-size: 0.9em;  
+    }  
+    .message-text { white-space: pre-wrap; color: #222; }  
+    .msg-flags {  
+      margin-top: 6px;  
+      font-size: 0.8em;  
+      color: #444;  
+      opacity: 0.8;  
+    }  
+    ::-webkit-scrollbar { width: 8px; }  
+    ::-webkit-scrollbar-thumb {  
+      background: rgba(0,0,0,0.2);  
+      border-radius: 4px;  
+    }  
+    ::-webkit-scrollbar-thumb:hover {  
+      background: rgba(0,0,0,0.3);  
+    }  
+    @media (max-width: 900px) { #chat-panel { width: 40%; } }  
+    @media (max-width: 700px) {  
+      body { flex-direction: column; }  
+      #chat-panel {  
+        width: 100%;  
+        border-right: none;  
+        border-bottom: 1px solid #ddd;  
+        height: 40%;  
+      }  
+      #message-panel { height: 60%; }  
+    }  
+  </style>  
+</head>  
+<body>  
+  <div id="root"></div>  
+  
+  <script id="fastapi-config" type="application/json">  
+    {{ config | tojson | safe }}  
+  </script>  
+  <script>  
+    window.__FASTAPI_CONFIG__ = JSON.parse(  
+      document.getElementById('fastapi-config').textContent  
+    );  
+  </script>  
+  
+  {% if app_script %}  
+  <script type="module" src="{{ app_script }}"></script>  
+  {% else %}  
+  <script type="module" src="http://localhost:5173/src/main.tsx"></script>  
+  {% endif %}  
+</body>  
+</html>  

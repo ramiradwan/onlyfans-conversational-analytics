@@ -1,0 +1,38 @@
+{  
+  "manifest_version": 3,  
+  "name": "OnlyFans Conversational Analytics",  
+  "description": "Captures and streams OnlyFans chat events locally for analysis via a real-time dashboard.",  
+  "version": "1.1.0",  
+  "permissions": [  
+    "storage",  
+    "activeTab"  
+  ],  
+  "host_permissions": [  
+    "*://onlyfans.com/*"  
+  ],  
+  "background": {  
+    "service_worker": "background.js"  
+  },  
+  "content_scripts": [  
+    {  
+      "matches": ["*://onlyfans.com/*"],  
+      "js": ["content.js"],  
+      "run_at": "document_start"  
+    }  
+  ],  
+  "web_accessible_resources": [  
+    {  
+      "resources": ["page-hook.js"],  
+      "matches": ["*://onlyfans.com/*"]  
+    }  
+  ],  
+  "externally_connectable": {  
+    "matches": [  
+      "http://localhost:8000/*"
+    ]  
+  },  
+  "icons": {  
+    "48": "icons/icon48.png",  
+    "128": "icons/icon128.png"  
+  }  
+}  

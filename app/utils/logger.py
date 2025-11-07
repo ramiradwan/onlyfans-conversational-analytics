@@ -1,10 +1,30 @@
 import json  
 import os  
+import logging  
 from typing import Any  
   
 from app.utils.time import timestamp_str  
   
+# -----------------------------------------------------------------------------  
+# Configure application-wide logger  
+# -----------------------------------------------------------------------------  
+logger = logging.getLogger("onlyfans_analytics")  
+logger.setLevel(logging.DEBUG)  # Change to INFO in production  
   
+# Avoid duplicate handlers if this file is imported multiple times  
+if not logger.handlers:  
+    console_handler = logging.StreamHandler()  
+    console_handler.setFormatter(  
+        logging.Formatter(  
+            "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s",  
+            datefmt="%Y-%m-%d %H:%M:%S",  
+        )  
+    )  
+    logger.addHandler(console_handler)  
+  
+# -----------------------------------------------------------------------------  
+# JSON logging helper for saving payloads to file  
+# -----------------------------------------------------------------------------  
 def log_json(payload: Any, endpoint_name: str, log_dir: str = "logs") -> str:  
     """  
     Save a JSON-serializable payload to a timestamped file in log_dir.  
@@ -24,8 +44,8 @@ def log_json(payload: Any, endpoint_name: str, log_dir: str = "logs") -> str:
     try:  
         with open(filepath, "w", encoding="utf-8") as f:  
             json.dump(payload, f, ensure_ascii=False, indent=2)  
-        print(f"[LOG] Saved raw response to {filepath}")  
+        logger.info(f"[LOG] Saved raw response to {filepath}")  
     except Exception as e:  
-        print(f"[LOG ERROR] Could not save log file {filepath}: {e}")  
+        logger.error(f"[LOG ERROR] Could not save log file {filepath}: {e}")  
   
     return filepath  
