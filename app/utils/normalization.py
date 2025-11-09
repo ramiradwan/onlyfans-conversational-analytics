@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Union, List
 from datetime import datetime  
 from app.utils.time import utcnow  
 from app.utils.logger import logger  
-from app.config import settings 
+from app.core.config import settings 
 
 def strip_html(text: str) -> str:  
     """Remove HTML tags from a string."""  

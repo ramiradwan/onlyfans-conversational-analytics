@@ -12,13 +12,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware  
 from fastapi.staticfiles import StaticFiles  
   
-from app.routes import conversations, insights, frontend, websocket  
-from app.config import settings
+from app.api.endpoints import insights, frontend, websocket, schema  
+from app.core.config import settings  
+from app.core.broadcast import broadcast  
   
 app = FastAPI(  
     title="OnlyFans Conversational Analytics",  
     description="Ingest, enrich, and analyze OnlyFans creator–fan conversations",  
-    version="0.6.1",  
+    version="0.7.0",  
 )  
   
 # ------------------------  
@@ -45,10 +46,21 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # ------------------------  
 # Router Registration  
 # ------------------------  
-app.include_router(conversations.router, prefix="/api/conversations", tags=["Conversations"])  
 app.include_router(insights.router, prefix="/api/insights", tags=["Insights"])  
 app.include_router(websocket.router, prefix="/api", tags=["WebSocket"])  # unified WS hub  
+app.include_router(schema.router)  # schemas endpoint  
 app.include_router(frontend.router, tags=["Frontend"])  # serves / via Jinja template  
+  
+# ------------------------  
+# Startup & Shutdown events — manage Broadcast lifecycle  
+# ------------------------  
+@app.on_event("startup")  
+async def startup_event():  
+    await broadcast.connect()  
+  
+@app.on_event("shutdown")  
+async def shutdown_event():  
+    await broadcast.disconnect()  
   
 # ------------------------  
 # Health Check  

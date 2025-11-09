@@ -7,69 +7,91 @@ Contains the **business logic** and **data processing pipelines** for OnlyFans C
 ## Components  
   
 ### **data_ingest.py**  
-Manages ingestion of chat/message data from the browser extension or OnlyFans API.    
+Race‑condition‑safe ingestion service for chat/message data from the **Agent** (Chrome extension).  
+  
 **Responsibilities:**  
-- Store latest chats/messages in an in-memory cache.  
-- Convert raw dict payloads into validated Pydantic models.  
-- Provide raw dicts (for API clients) and typed models (for routes & WebSocket hub).  
-- Used by:  
-  - `/from-extension` route  
-  - `/sync` route  
-  - WebSocket hub (`/ws/extension`)  
+- Buffer incoming `new_raw_message` deltas in a per‑user `asyncio.Queue` until the initial `cache_update` snapshot is processed.  
+- Maintain a per‑user in‑memory cache of the latest chats and messages (for direct queries via `OnlyFansClient`).  
+- Convert raw dict payloads into validated Pydantic models (`CacheUpdatePayload`, `NewRawMessagePayload`).  
+- Enrich conversations, rebuild or append to the Labeled Property Graph (LPG), and broadcast updates via **Redis Pub/Sub**.  
+- Broadcast analytics updates after each ingestion step.  
+- Publish WS messages to the `frontend_user_{user_id}` channel:  
+  - `system_status`  
+  - `full_sync_response`  
+  - `append_message`  
+  - `analytics_update`  
   
 **Key Methods:**  
-- `update_cache(chats, messages)` — Saves raw payloads.  
-- `parse_chats(raw_chats)` — Returns validated `ChatThread` models.  
-- `parse_messages(raw_messages)` — Returns validated `Message` models.  
-- `get_all_chats_from_db(limit, offset)` — Raw chat dicts (IndexedDB).  
-- `get_all_messages_from_db(chat_id, limit, offset)` — Raw message dicts (IndexedDB).  
-- `get_cached_chats()` / `get_cached_messages()` — Typed models from cache.  
+- `handle_snapshot(user_id, payload)` — Process full snapshot (`cache_update`), enrich all conversations, rebuild graph, broadcast `full_sync_response`, drain delta queue.  
+- `handle_delta(user_id, payload)` — Handle single delta (`new_raw_message`); queue if snapshot not ready, else apply immediately.  
+- `_process_delta_queue(user_id)` — Apply all queued deltas after snapshot completion.  
+- `_apply_delta(user_id, delta)` — Enrich just the affected conversation, append to graph, broadcast `append_message` and `analytics_update`.  
+- `_broadcast_status(user_id, status)` — Send `system_status` message.  
+- `get_cached_chats(user_id)` / `get_cached_messages(user_id)` — Return validated models from cache.  
   
 ---  
   
 ### **onlyfans_client.py**  
-Facade for retrieving OnlyFans chat data.    
-**Preferred source:** Browser extension cache via `DataIngestService`.    
-**Legacy:** Placeholder for future direct API calls.  
+Facade for retrieving OnlyFans chat data from the **DataIngestService** cache.  
+  
+**Preferred source:** Browser extension ingestion flow via `DataIngestService`.  
   
 **Key Methods:**  
-- `get_chats(limit, offset)` — Returns validated `ChatThread` models from cache.  
-- `get_messages(chat_id, limit, offset)` — Returns validated `Message` models from cache.  
-- `get_chat_with_messages(chat_id, message_limit)` — Returns a single chat thread with its messages attached.  
-  
-**Fix Applied:**    
-Now calls `DataIngestService.parse_chats()` and `.parse_messages()` — removing old non-existent method names.  
+- `get_chats(user_id, limit, offset)` — Chats from cache; sliced.  
+- `get_messages(user_id, chat_id, limit, offset)` — Messages for a specific chat.  
+- `get_chat_with_messages(user_id, chat_id, message_limit)` — Single chat thread with messages attached.  
   
 ---  
   
 ### **enrichment.py**  
-NLP enrichment pipeline.    
-Processes validated conversation models to extract:  
+NLP enrichment pipeline for conversations.  
+  
+**Processes:**    
+Validated conversation models → Extracts semantic + behavioral features → Produces structured enrichment objects for graph building and analytics.  
+  
+**Features Extracted:**  
 - Topics (NER, keyword clustering, embeddings)  
 - Engagement actions (message type classification)  
 - Sentiment analysis  
-- Interaction outcomes (tips, renewals, drop-offs)  
+- Interaction outcomes (tips, renewals, drop‑offs)  
   
-**Key Method:**  
-- `enrich_conversation(chat_thread)` — Returns a dict of topics, actions, sentiment, and outcomes.  
+**Key Methods:**  
+- `enrich_conversation(conversation, all_messages=None)` — Returns dict with topics, actions, sentiment, and outcomes.  
+- `broadcast_enrichment(user_id, conversations, all_messages=None)` — Enriches and publishes `enrichment_result` WS messages to `frontend_user_{user_id}`.  
   
 ---  
   
 ### **graph_builder.py**  
-Converts enriched conversation data into LPG vertices and edges for Cosmos DB (Gremlin API).    
-Matches the **therapy-research-style schema** defined in `AI-instructions.md`.  
+Converts enriched conversation data into LPG vertices and edges for **Azure Cosmos DB (Gremlin API)**.  
   
-**Produces:**  
-- Vertices: `Fan`, `Creator`, `ConversationNode`, `Topic`, `EngagementAction`, `InteractionOutcome`  
-- Edges: `HAS_CONVERSATION`, `DISCUSS_TOPIC`, `USES_ENGAGEMENT`, `TARGETS_TOPIC`, `RESULTS_IN_OUTCOME`  
+**Supports:**  
+- **Full graph rebuild** from snapshot (`rebuild_graph_from_snapshot`)  
+- **Incremental append** from delta (`append_graph_from_delta`)  
   
-**Key Method:**  
-- `build_graph(enriched_conv, fan_id)` — Returns `{ "vertices": [...], "edges": [...] }`  
+**Produces Vertices:**  
+- `Fan`  
+- `Creator`  
+- `ConversationNode`  
+- `Topic`  
+- `EngagementAction`  
+- `InteractionOutcome`  
+  
+**Produces Edges:**  
+- `HAS_CONVERSATION`  
+- `DISCUSS_TOPIC`  
+- `USES_ENGAGEMENT`  
+- `TARGETS_TOPIC`  
+- `RESULTS_IN_OUTCOME`  
+  
+**Key Methods:**  
+- `GraphBuilder.build_graph(enriched_conv, fan_id)` — Construct vertices/edges from enriched data.  
+- `rebuild_graph_from_snapshot(user_id, enriched_conversations)` — Reset and rebuild user graph.  
+- `append_graph_from_delta(user_id, enriched_conversation)` — Append enriched delta data to existing user graph.  
   
 ---  
   
 ### **insights_service.py**  
-Analytics layer — executes Gremlin traversals against Azure Cosmos DB to compute metrics for dashboard endpoints.  
+Analytics layer — executes Gremlin traversals against Cosmos DB to compute metrics for dashboard endpoints.  
   
 **Computes:**  
 - Topic metrics (volume, % of total, trend)  
@@ -80,38 +102,51 @@ Analytics layer — executes Gremlin traversals against Azure Cosmos DB to compu
 - `fetch_topic_metrics(start_date, end_date)`  
 - `fetch_sentiment_trend(start_date, end_date)`  
 - `fetch_response_time_metrics(start_date, end_date)`  
+- `broadcast_analytics_update(user_id, start_date, end_date)` — Fetch metrics and publish `analytics_update` WS message to `frontend_user_{user_id}`.  
   
 ---  
   
 ## Purpose  
   
-Services separate **data processing logic** from API endpoint definitions, keeping the architecture clean and testable.    
+Services separate **data processing logic** from API endpoint definitions, keeping the architecture clean and testable.  
+  
 They:  
 - Accept raw inputs (from extension, API, cache)  
 - Perform validation, normalization, enrichment, and transformation  
-- Return typed models or structured results to routes and WebSocket hub  
+- Update LPG graph state  
+- Broadcast typed WS messages via Redis Pub/Sub  
+- Return typed models or structured results to endpoints  
   
 ---  
   
 ## Schema Consistency  
   
-- All conversation data flows through:  
-  **`DataIngestService` → `EnrichmentService` → `GraphBuilder`**  
-- WebSocket hub and REST routes (`/sync`, `/from-extension`) share identical typed outputs (`SyncResponse`).  
-- Analytics services (`insights_service.py`) are isolated from ingestion pipeline changes.  
+- All ingestion flows follow:    
+  **`DataIngestService` → `EnrichmentService` → `GraphBuilder` → `InsightsService`**  
+- WS hub and REST routes share identical typed outputs (`FullSyncResponseMsg`, `AppendMessageMsg`, `AnalyticsUpdateMsg`).  
+- Analytics services are isolated from ingestion pipeline changes.  
   
 ---  
   
 ## Example Data Flow  
   
 ```mermaid  
-flowchart LR  
-    EXT[Browser Extension IndexedDB] -->|Raw chats/messages| INGEST[DataIngestService]  
-    INGEST -->|Typed models| ENRICH[EnrichmentService]  
-    ENRICH --> GRAPH[GraphBuilder]  
-    GRAPH --> COSMOS[Azure Cosmos DB (Gremlin)]  
-    COSMOS --> INSIGHTS[Insights Service]  
-    INSIGHTS --> ROUTES[API Routes: /topics, /sentiment-trend, /response-time]  
-    INGEST --> WS[WebSocket Hub: cache_update]  
-    INGEST --> ROUTES_SYNC[API Routes: /sync]  
-```
+flowchart LR
+    EXT[Agent: Chrome Extension IndexedDB]
+    INGEST[DataIngestService]
+    ENRICH[EnrichmentService]
+    GRAPH[GraphBuilder]
+    COSMOS[Azure Cosmos DB - Gremlin]
+    INSIGHTS[Insights Service]
+    ROUTES[API Routes: /topics, /sentiment-trend, /response-time]
+    WS[WebSocket Hub: /ws/frontend/:user_id]
+
+    EXT -->|cache_update / new_raw_message| INGEST
+    INGEST -->|enriched conversations| ENRICH
+    ENRICH --> GRAPH
+    GRAPH --> COSMOS
+    COSMOS --> INSIGHTS
+    INSIGHTS --> ROUTES
+    INGEST --> WS
+
+  ```

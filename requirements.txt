@@ -8,3 +8,5 @@ spacy
 sentence-transformers  
 gremlinpython  
 python-dotenv  
+broadcaster[redis]  
+redis  

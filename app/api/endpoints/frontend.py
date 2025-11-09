@@ -14,9 +14,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates  
   
 from app.utils.logger import logger  
-from app.config import settings  # <-- import settings so we can use extension_id  
+from app.core.config import settings  
   
-router = APIRouter()  
+router = APIRouter(tags=["Frontend"])  
   
 # Directories  
 TEMPLATES_DIR = Path("app/templates")  
@@ -25,16 +25,12 @@ DIST_DIR = Path("app/static/dist")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))  
   
   
-def read_manifest() -> Dict[str, Any]:  
-    """  
-    Reads Vite's manifest.json from either the root dist location or .vite subfolder.  
-    Returns an empty dict if not found.  
-    """  
+def _load_manifest() -> Dict[str, Any]:  
+    """Reads Vite's manifest.json from dist."""  
     manifest_paths = [  
         DIST_DIR / "manifest.json",  
         DIST_DIR / ".vite" / "manifest.json"  
     ]  
-  
     for path in manifest_paths:  
         if path.exists():  
             logger.info(f"[FRONTEND] Reading manifest from {path}")  
@@ -48,12 +44,16 @@ def read_manifest() -> Dict[str, Any]:
     return {}  
   
   
+_manifest = _load_manifest()  
+  
+  
 @router.get("/", response_class=HTMLResponse)  
 async def serve_frontend(request: Request):  
     """  
     Serve the frontend entry HTML, injecting runtime config for extension and WS.  
+    This ensures the WS URL always matches the mounted backend route, even if host/port changes.  
     """  
-    manifest = read_manifest()  
+    manifest = _manifest  
   
     # Find entry file by isEntry flag  
     entry_key = next((k for k, v in manifest.items() if v.get("isEntry")), None)  
@@ -63,15 +63,27 @@ async def serve_frontend(request: Request):
     app_script = manifest.get(entry_key, {}).get("file") if entry_key else None  
     css_files = manifest.get(entry_key, {}).get("css", []) if entry_key else []  
   
+    # Derive base WS URL from request base_url  
+    # Example: http://localhost:8000 -> ws://localhost:8000  
     base_ws_url = str(request.base_url).rstrip("/").replace("http", "ws")  
-    ws_url = f"{base_ws_url}/api/ws/frontend"  
+  
+    # TODO: Replace with actual authenticated user_id from session/auth  
+    user_id = "demo_user"  
+  
+    # Always use the /api/ws/<client_type>/<user_id> path from backend router  
+    ws_url = f"{base_ws_url}/api/ws/frontend/{user_id}"  
   
     config = {  
-        "EXTENSION_ID": settings.extension_id,  # <-- now comes from .env  
+        "EXTENSION_ID": settings.extension_id,  
         "FASTAPI_WS_URL": ws_url,  
+        "API_BASE_URL": str(request.base_url).rstrip("/"),  
+        "VERSION": settings.version,  
     }  
   
-    logger.info(f"[FRONTEND] Serving frontend with script={app_script}, CSS={css_files}")  
+    logger.info(  
+        f"[FRONTEND] Serving frontend with script={app_script}, CSS={css_files}, WS_URL={ws_url}"  
+    )  
+  
     return templates.TemplateResponse(  
         "index.html",  
         {  

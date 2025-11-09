@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field  
-from typing import Optional, List, Union, Dict, Any  
+from typing import Optional, List, Union, Dict, Any, Literal  
 from datetime import datetime  
   
 # ---- Nested support models ----  
@@ -163,3 +163,23 @@ class SyncResponse(BaseModel):
   
 # ---- Resolve recursion ----  
 Message.model_rebuild()  
+
+class KeepalivePayload(BaseModel):  
+    """Payload for keepalive messages from Agent to Brain."""  
+    timestamp: Optional[datetime] = None  
+
+class ConnectionInfo(BaseModel):  
+    """Sent immediately on WSS connect — confirms connection and provides system version."""  
+    version: str  
+    message: Optional[str] = None  
+
+class SystemStatus(BaseModel):  
+    """Represents the current operational status of the Brain."""  
+    status: Literal["PROCESSING_SNAPSHOT", "REALTIME", "ERROR"]  
+    detail: str | None = None  
+
+class WssError(BaseModel):  
+    """Represents an error sent over WS to the Bridge."""  
+    code: str  
+    message: str  
+    detail: str | None = None  

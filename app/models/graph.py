@@ -1,5 +1,4 @@
-# LPG vertex & edge Pydantic models
-
+# LPG vertex & edge Pydantic models  
 from pydantic import BaseModel, Field  
 from typing import Optional, List  
 from datetime import datetime  
@@ -47,3 +46,17 @@ class GraphEdge(BaseModel):
     to_id: str  
     label: str  
     properties: Optional[dict] = Field(default_factory=dict)  
+  
+# ------------------------  
+# New payload model for WS enrichment_result  
+# ------------------------  
+  
+class EnrichmentResultPayload(BaseModel):  
+    """  
+    Payload for enrichment_result WS messages.  
+    """  
+    conversation_id: str  
+    topics: List[Topic]  
+    actions: List[EngagementAction]  
+    sentiment: float  
+    outcomes: List[InteractionOutcome]  
