@@ -1,315 +1,77 @@
 import React from "react";  
-import {  
-  ThemeProvider,  
-  createTheme,  
-  CssBaseline,  
-  AppBar,  
-  Toolbar,  
-  IconButton,  
-  Typography,  
-  Box,  
-  Drawer,  
-} from "@mui/material";  
+import { ThemeProvider, CssBaseline } from "@mui/material";  
+import { theme } from "./theme";  
+import { useSocket } from "./hooks/useSocket";  
+import { GlobalLoadingSpinner } from "./components/GlobalLoadingSpinner";  
+import { ErrorSnackbar } from "./components/ErrorSnackbar";  
+import { usePermissions } from "./hooks/usePermissions";  
+import AppLayout from "./AppLayout";  
+import { getConfig } from "./utils";  
+import { useChatStore } from "./store/useChatStore";  
   
-import ChatList from "./components/ChatList";  
-import MessageView from "./components/MessageView";  
-import DebugPanel from "./components/DebugPanel";  
-import Placeholder from "./components/Placeholder";  
-import { AppConfig } from "./types";  
+export default function App() {  
+  const config = getConfig();  
+  const { FASTAPI_WS_URL, API_BASE_URL, EXTENSION_ID, CREATOR_ID, USER_ID } = config;  
   
-// ✅ Import backend‑generated types  
-import { components } from "./types/backend";  
-type Chat = components["schemas"]["ChatThread"];  
-type ChatMessage = components["schemas"]["Message"];  
+  // Connect to Brain WS  
+  useSocket(FASTAPI_WS_URL);  
   
-const lightTheme = createTheme({ palette: { mode: "light" } });  
-  
-interface AppProps {  
-  config: AppConfig;  
-}  
-    
-export default function App({ config }: AppProps) {  
-  const [logs, setLogs] = React.useState<string[]>([]);  
-  const [chats, setChats] = React.useState<Chat[]>([]);  
-  const [messages, setMessages] = React.useState<ChatMessage[]>([]);  
-  const [activeChatId, setActiveChatId] = React.useState<string | null>(null);  
+  const permissions = usePermissions();  
   const [showDebug, setShowDebug] = React.useState(true);  
   const [mobileChatsOpen, setMobileChatsOpen] = React.useState(false);  
   
-  const wsRef = React.useRef<WebSocket | null>(null);  
-  
-  const addLog = React.useCallback((message: string) => {  
-    setLogs((prev) => {  
-      const updated = [  
-        ...prev,  
-        `[${new Date().toLocaleTimeString()}] ${message}`,  
-      ];  
-      return updated.slice(-50);  
-    });  
-  }, []);  
-  
-  // --- Send commands from backend → extension ---  
-  const sendMessageToExtension = React.useCallback(  
-    (type: string, payload: any = {}): Promise<any> => {  
-      return new Promise((resolve) => {  
-        try {  
-          if (!chrome?.runtime) {  
-            addLog("Chrome runtime not available.");  
-            return resolve(null);  
-          }  
-          chrome.runtime.sendMessage(  
-            config.EXTENSION_ID,  
-            { type, ...payload },  
-            (response) => {  
-              if (chrome.runtime.lastError) {  
-                addLog(  
-                  `Extension error: ${chrome.runtime.lastError.message}`  
-                );  
-                resolve(null);  
-              } else {  
-                resolve(response);  
-              }  
-            }  
-          );  
-        } catch (err: any) {  
-          addLog(`Failed to send message to extension: ${err.message}`);  
-          resolve(null);  
-        }  
-      });  
-    },  
-    [config.EXTENSION_ID, addLog]  
-  );  
-  
-  // --- Connect to FastAPI WS and listen for pushes ---  
-  const connectFastAPI = React.useCallback(() => {  
-    wsRef.current = new WebSocket(config.FASTAPI_WS_URL);  
-  
-    wsRef.current.onopen = () => {  
-      addLog("Connected to FastAPI WS (frontend).");  
-    };  
-  
-    wsRef.current.onmessage = (event) => {  
-      const msg = JSON.parse(event.data);  
-      addLog(`WS: ${event.data.slice(0, 150)}...`);  
-  
-      switch (msg.type) {  
-        case "cache_update":  
-          // Backend now sends chats with .messages attached  
-          setChats(msg.chats || []);  
-          setMessages((prev) => {  
-            // If we have an active chat, update its messages immediately  
-            if (activeChatId) {  
-              const activeChat = (msg.chats || []).find(  
-                (c: Chat) => String(c.id) === String(activeChatId)  
-              );  
-              if (activeChat?.messages?.length) {  
-                return activeChat.messages;  
-              }  
-            }  
-            return prev;  
-          });  
-          addLog(  
-            `Received cache_update: ${msg.chats?.length || 0} chats, ${  
-              msg.messages?.length || 0  
-            } messages.`  
-          );  
-          break;  
-  
-        case "messages_for_chat":  
-          if (msg.payload.chat_id === activeChatId) {  
-            setMessages(msg.payload.messages);  
-            addLog(  
-              `Received ${msg.payload.messages.length} messages for chat ${activeChatId}.`  
-            );  
-          }  
-          break;  
-  
-        case "send_message_command":  
-          sendMessageToExtension("send_message_command", msg.payload);  
-          break;  
-  
-        case "mark_as_read_command":  
-          sendMessageToExtension("mark_as_read_command", msg.payload);  
-          break;  
-      }  
-    };  
-  
-    wsRef.current.onclose = () => {  
-      addLog("WS closed. Reconnecting...");  
-      setTimeout(connectFastAPI, 3000);  
-    };  
-  
-    wsRef.current.onerror = (err) => {  
-      addLog(`WS error: ${err}`);  
-      wsRef.current?.close();  
-    };  
-  }, [config.FASTAPI_WS_URL, addLog, sendMessageToExtension, activeChatId]);  
+  const replaceStateFromSnapshot = useChatStore((s) => s.replaceStateFromSnapshot);  
   
   React.useEffect(() => {  
-    addLog("App mounted.");  
-    connectFastAPI();  
-  }, [connectFastAPI]);  
+    const userId = USER_ID || FASTAPI_WS_URL.split("/").pop();  
   
-  // --- Updated handleSelectChat ---  
-  const handleSelectChat = (chatId: string) => {  
-    setActiveChatId(chatId);  
+    // 1️⃣ REST bootstrap (fallback snapshot from backend)  
+    const bootstrapUrl = CREATOR_ID  
+      ? `${API_BASE_URL}/api/v1/frontend/bootstrap/${userId}?creator_id=${CREATOR_ID}`  
+      : `${API_BASE_URL}/api/v1/frontend/bootstrap/${userId}`;  
   
-    // Try to find messages from local chats state first  
-    const selectedChat = chats.find((c) => String(c.id) === String(chatId));  
-    if (selectedChat?.messages?.length) {  
-      setMessages(selectedChat.messages);  
-      addLog(  
-        `Loaded ${selectedChat.messages.length} messages for chat ${chatId} from local cache.`  
-      );  
-    } else {  
-      setMessages([]);  
-      if (wsRef.current?.readyState === WebSocket.OPEN) {  
-        addLog(`Requesting messages for chat ${chatId} from backend...`);  
-        wsRef.current.send(  
-          JSON.stringify({  
-            type: "get_messages_for_chat",  
-            payload: { chat_id: chatId },  
-          })  
+    fetch(bootstrapUrl)  
+      .then((res) => res.json())  
+      .then((data) => {  
+        replaceStateFromSnapshot(data);  
+      })  
+      .catch((err) => {  
+        console.error("[Frontend] Failed to bootstrap snapshot:", err);  
+      });  
+  
+    // 2️⃣ Request fresh snapshot from extension Agent via external messaging  
+    if (EXTENSION_ID && chrome?.runtime?.sendMessage) {  
+      try {  
+        chrome.runtime.sendMessage(  
+          EXTENSION_ID,  
+          { type: "send_cache_update" },  
+          (res) => {  
+            if (chrome.runtime.lastError) {  
+              console.warn("[Frontend] send_cache_update error:", chrome.runtime.lastError);  
+              return;  
+            }  
+            console.log("[Frontend] Requested cache_update from Agent:", res);  
+          }  
         );  
+      } catch (err) {  
+        console.warn("[Frontend] Could not contact extension Agent:", err);  
       }  
     }  
+  }, [FASTAPI_WS_URL, API_BASE_URL, EXTENSION_ID, CREATOR_ID, USER_ID, replaceStateFromSnapshot]);  
   
-    setMobileChatsOpen(false);  
-  };  
-  
-  // --- JSX below remains the same ---  
   return (  
-    <ThemeProvider theme={lightTheme}>  
+    <ThemeProvider theme={theme}>  
       <CssBaseline />  
-      <AppBar position="static" color="primary">  
-        <Toolbar>  
-          <IconButton  
-            color="inherit"  
-            sx={{ display: { xs: "inline-flex", md: "none" }, mr: 1 }}  
-            onClick={() => setMobileChatsOpen(true)}  
-          >  
-            <span className="material-icons">menu</span>  
-          </IconButton>  
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>  
-            Conversational Analytics  
-          </Typography>  
-          <IconButton  
-            color="inherit"  
-            onClick={() => setShowDebug(!showDebug)}  
-          >  
-            <span className="material-icons">bug_report</span>  
-          </IconButton>  
-        </Toolbar>  
-      </AppBar>  
-  
-      {/* Mobile Drawer */}  
-      <Drawer  
-        anchor="left"  
-        open={mobileChatsOpen}  
-        onClose={() => setMobileChatsOpen(false)}  
-        sx={{ display: { xs: "block", md: "none" } }}  
-      >  
-        <Box sx={{ width: 300, p: 1, overflowY: "auto" }}>  
-          {chats.length > 0 ? (  
-            <ChatList  
-              chats={chats}  
-              activeChatId={activeChatId}  
-              onSelect={handleSelectChat}  
-            />  
-          ) : (  
-            <Placeholder title="No chats yet" subtitle="Waiting for data..." />  
-          )}  
-        </Box>  
-      </Drawer>  
-  
-      {/* Mobile Content */}  
-      <Box  
-        sx={{  
-          display: { xs: "block", md: "none" },  
-          height: "calc(100vh - 64px)",  
-          overflowY: "auto",  
-        }}  
-      >  
-        {activeChatId ? (  
-          messages.length > 0 ? (  
-            <MessageView messages={messages} showDebug={showDebug} />  
-          ) : (  
-            <Placeholder title="Loading messages..." />  
-          )  
-        ) : (  
-          <Box sx={{ p: 1 }}>  
-            <ChatList  
-              chats={chats}  
-              activeChatId={activeChatId}  
-              onSelect={handleSelectChat}  
-            />  
-          </Box>  
-        )}  
-      </Box>  
-  
-      {/* Desktop Layout */}  
-      <Box  
-        sx={{  
-          display: { xs: "none", md: "flex" },  
-          height: "calc(100vh - 64px)",  
-          gap: 2,  
-        }}  
-      >  
-        <Box  
-          sx={{  
-            width: 300,  
-            borderRight: 1,  
-            borderColor: "divider",  
-            overflowY: "auto",  
-          }}  
-        >  
-          {chats.length > 0 ? (  
-            <ChatList  
-              chats={chats}  
-              activeChatId={activeChatId}  
-              onSelect={handleSelectChat}  
-            />  
-          ) : (  
-            <Placeholder title="No chats yet" subtitle="Waiting for data..." />  
-          )}  
-        </Box>  
-        <Box  
-          sx={{  
-            flex: 1,  
-            overflowY: "auto",  
-            display: "flex",  
-            justifyContent: "center",  
-          }}  
-        >  
-          <Box sx={{ width: "100%", maxWidth: 800, px: 2 }}>  
-            {activeChatId ? (  
-              messages.length > 0 ? (  
-                <MessageView messages={messages} showDebug={showDebug} />  
-              ) : (  
-                <Placeholder title="Loading messages..." />  
-              )  
-            ) : (  
-              <Placeholder  
-                title="Select a chat"  
-                subtitle="Choose from the list on the left"  
-              />  
-            )}  
-          </Box>  
-        </Box>  
-        <Box  
-          sx={{  
-            width: 300,  
-            borderLeft: 1,  
-            borderColor: "divider",  
-            overflowY: "auto",  
-          }}  
-        >  
-          <DebugPanel logs={logs} visible={showDebug} />  
-        </Box>  
-      </Box>  
-  
-      {/* Mobile Debug Panel */}  
-      <DebugPanel logs={logs} visible={showDebug} isMobile={true} />  
+      <GlobalLoadingSpinner />  
+      <ErrorSnackbar />  
+      <AppLayout  
+        permissions={permissions}  
+        showDebug={showDebug}  
+        toggleDebug={() => setShowDebug((p) => !p)}  
+        mobileChatsOpen={mobileChatsOpen}  
+        openMobileChats={() => setMobileChatsOpen(true)}  
+        closeMobileChats={() => setMobileChatsOpen(false)}  
+      />  
     </ThemeProvider>  
   );  
 }  

@@ -1,121 +1,164 @@
-# Browser Extension — OnlyFans Conversational Analytics  
-  
-Captures OnlyFans chat and engagement events directly from the browser, stores them locally in IndexedDB, and streams them to the backend for real-time analytics.  
-  
----  
-  
-## Components  
-  
-### **manifest.json**  
-Defines extension metadata, permissions, and external connection rules.  
-- `host_permissions`: `*://onlyfans.com/*` — required for chat API interception.  
-- `externally_connectable`: Restricts backend connection to `http://localhost:8000/*`.  
-- `background`: Runs `background.js` as service worker.  
-- `content_scripts`: Injects `content.js` at `document_start`.  
-- `web_accessible_resources`: Makes `page-hook.js` injectable into OnlyFans pages.  
-  
----  
-  
-### **background.js**  
-Passive data capture + backend bridge.  
-- **IndexedDB Layer**: `OnlyFansAnalyticsDB` with `chats` and `messages` object stores.  
-- **Normalization**: Ensures `id` fields for chats/messages.  
-- **Parsers**: Extract structured events from WS and fetch responses.  
-- **Backend WS Connection**: Connects to `ws://localhost:8000/api/ws/extension`.  
-- **Cache Broadcast**: Sends `{type: "cache_update", chats, messages}` to backend.  
-- **Command Handling**: Receives backend commands (`send_message`, `send_ws_message`, `send_fetch_command`) and executes them via fetch or page context.  
-  
----  
-  
-### **content.js**  
-Bridge between page context and background.  
-- **Page → Background**: Listens for `__OF_FORWARDER__` messages and relays them to `background.js`.  
-- **Background → Page**: Forwards backend commands (`__OF_BACKEND__`) to page context.  
-- **Injection**: Prepends `page-hook.js` before site scripts for early interception.  
-  
----  
-  
-### **page-hook.js**  
-Passive interceptor injected into OnlyFans pages.  
-- **WebSocket Hook**: Wraps `window.WebSocket` to capture inbound messages from OF chat servers.  
-- **Fetch Hook**: Wraps `window.fetch` to capture requests/responses to targeted API endpoints.  
-- **XHR Hook**: Wraps `XMLHttpRequest` for same targeted endpoints.  
-- **Backend Commands**: Executes WS sends or fetch commands from backend when allowed.  
-  
----  
-  
-## Data Flow  
-  
-```mermaid  
-flowchart LR  
-  subgraph PAGE["OnlyFans Web Page"]  
-    PH["page-hook.js"]  
-  end  
-  
-  subgraph EXT["Extension Layer"]  
-    CT["content.js"]  
-    BG["background.js\nIndexedDB + WS"]  
-  end  
-  
-  subgraph API["FastAPI Backend"]  
-    WS["WebSocket Hub (/ws/extension)"]  
-    DI["DataIngestService"]  
-    ENR["EnrichmentService"]  
-    GB["GraphBuilder"]  
-    COS["Azure Cosmos DB (Gremlin)"]  
-  end  
-  
-  PH -->|Forward events| CT --> BG  
-  BG -->|cache_update| WS --> DI --> ENR --> GB --> COS  
-  WS -->|send_command| BG -->|Forward to page| PH  
-```  
-  
----  
-  
-## IndexedDB Schema  
-  
-- **DB Name**: `OnlyFansAnalyticsDB`  
-- **Stores**:  
-  - `messages` (key: `id`)  
-  - `chats` (key: `id`)  
-  
----  
-  
-## Runtime WS Protocol  
-  
-**Extension → Backend** (`/ws/extension`):  
-```json  
-{  
-  "type": "cache_update",  
-  "chats": [ {...}, {...} ],  
-  "messages": [ {...}, {...} ]  
-}  
-```  
-  
-**Backend → Extension**:  
-```json  
-{  
-  "type": "send_command",  
-  "action": "send_message",  
-  "chat_id": "12345",  
-  "text": "Hello from backend"  
-}  
-```  
-  
----  
-  
-## Security  
-  
-- Passive capture only — no DOM modifications except injecting hooks.  
-- External connection restricted to local backend origin.  
-- No cloud sync — data remains local unless pushed to backend over WS.  
-  
----  
-  
-## Development Notes  
-  
-- Backend must be running at `http://localhost:8000` for WS connection.  
-- The WS URL in `background.js` can be changed for deployed environments.  
-- `broadcastCacheUpdate()` can be triggered manually for testing. 
+# Browser Extension — OnlyFans Conversational Analytics Agent
 
- 
+This MV3 Chrome extension ("Agent") captures chat and engagement events **directly in the browser**.
+
+It stores the data locally in **IndexedDB** and streams it to the FastAPI backend ("Brain") for **real-time analytics**.
+
+The Agent follows the **Full‑Stack Communication Spec v1.1.0** and adheres to **MV3 best practices** recommended in the Chrome Extension Policy Review.
+
+## Architectural Overview
+
+The Agent is the **data source** and **command executor** in a **3-actor system**:
+
+```mermaid
+flowchart LR
+  subgraph PAGE[OnlyFans Web Page]
+    PH[page-hook.js]
+  end
+
+  subgraph EXT[Agent Extension Layer]
+    CT[content.js]
+    BG[background.js - Service Worker]
+    IDB[(IndexedDB)]
+  end
+
+  subgraph API[Brain Backend]
+    WS[WebSocket Hub - /api/ws/extension/:user_id]
+    DI[DataIngestService]
+    ENR[EnrichmentService]
+    GB[GraphBuilder]
+    COS[(Azure Cosmos DB - Gremlin)]
+  end
+
+  PH -->|_OF_FORWARDER_| CT --> BG
+  BG -->|cache_update| WS --> DI --> ENR --> GB --> COS
+  WS -->|command_to_execute| BG -->|_OF_BACKEND_| PH
+```
+
+**Flow Summary:**
+
+1. `page-hook.js` intercepts chat events on the OnlyFans page.
+2. `content.js` forwards events to `background.js`.
+3. `background.js` caches events in IndexedDB and streams updates to the backend.
+4. Backend may send commands back to `background.js`, which relays them to the page.
+
+## Key Components
+
+### `manifest.json` — Metadata & Permissions
+
+| Field                    | Description                                     |
+| ------------------------ | ----------------------------------------------- |
+| Minimum Chrome           | `116` (required for MV3 keepalive)              |
+| Permissions              | `"storage"`, `"tabs"`, `"scripting"`            |
+| Host Permissions         | `https://onlyfans.com/*`                        |
+| `externally_connectable` | Dev/Prod Bridge origins only                    |
+| Security                 | No `page-hook.js` in `web_accessible_resources` |
+
+### `background.js` — Orchestrator
+
+* Maintains WebSocket connection; sends `{ type: "keepalive" }` every 20 s.
+* IndexedDB: `OnlyFansAnalyticsDB` with stores `chats`, `messages`, `users`.
+* Data flows:
+
+  * Snapshot: `cache_update`
+  * Delta: `new_raw_message`
+  * Presence: `online_users_update`
+* Forwards backend commands to the page via `_OF_BACKEND_`.
+
+
+### `content.js` — Message Bridge
+
+* **Page → Background:** `_OF_FORWARDER_` → `chrome.runtime.sendMessage`
+* **Background → Page:** `_OF_BACKEND_` → `window.postMessage`
+
+
+### `page-hook.js` — Event Interceptor
+
+* Wraps WebSocket, fetch, XHR to capture events.
+* Extracts creator `user_id` when available.
+* Executes validated backend commands.
+* Guards against double-injection.
+
+
+## Security
+
+> [!NOTE]  
+> Passive capture only — **no DOM changes**.
+- Strict origin checks and command allow-lists are enforced.
+- Data remains local unless explicitly sent over WebSocket.  
+
+## Development Notes
+
+* Backend default: `http://localhost:8000` (update `WS_BASE` for production).
+* `sendCacheUpdate()` can be triggered manually in the Service Worker console.
+* Whitelist `http://localhost:8000/*` in `externally_connectable` for local Bridge development.
+  
+
+## QA Verification
+> [!TIP]
+> QA scripts under `qa/` are for local development only, **exclude** from production builds.  
+  
+* [`qa/qa-helper-sw.js`](qa/qa-helper-sw.js) — Run in SW console for injection, bridge, and keepalive tests.
+* [`qa/qa-helper-page.js`](qa/qa-helper-page.js) — Run in main world console to simulate events.
+> See [QA Usage Guide](qa/README.md) for complete helper scripts.  
+
+## Appendix
+
+### IndexedDB Schema
+
+| Store Name | Key Field |
+| ---------- | --------- |
+| `messages` | `id`      |
+| `chats`    | `id`      |
+| `users`    | `id`      |
+  
+
+### WebSocket Payload Examples
+
+**Snapshot:**
+
+```jsonc
+{
+  "type": "cache_update",
+  "payload": {
+    "chats": [...],
+    "messages": [...]
+  }
+}
+```
+
+**Delta:**
+
+```jsonc
+{
+  "type": "new_raw_message",
+  "payload": {
+    "id": "m3",       // message ID
+    "text": "Hello"   // message content
+  }
+}
+```
+
+**Presence Update:**
+
+```jsonc
+{
+  "type": "online_users_update",
+  "payload": {
+    "user_ids": [123, 456],
+    "timestamp": "2025-11-13T12:00:00Z"
+  }
+}
+```
+
+**Backend Command:**
+
+```jsonc
+{
+  "type": "command_to_execute",
+  "payload": {
+    "action": "send_ws_message",
+    "data": {...}
+  }
+}
+```

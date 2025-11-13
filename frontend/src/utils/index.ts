@@ -1,25 +1,36 @@
-// utils/index.ts  
 import type { FastAPIConfig } from "../types/config";  
   
 /**  
- * Reads global config injected by FastAPI into index.html  
+ * Reads config injected by FastAPI into index.html via:  
+ * <script id="fastapi-config" type="application/json">{...}</script>  
  */  
-declare global {  
-  interface Window {  
-    __FASTAPI_CONFIG__?: Partial<FastAPIConfig>;  
+export function getConfig(): FastAPIConfig {  
+  const el = document.getElementById("fastapi-config");  
+  if (!el) {  
+    throw new Error("[CONFIG] fastapi-config element not found in index.html");  
+  }  
+  
+  try {  
+    const injected = JSON.parse(el.textContent || "{}") as Partial<FastAPIConfig>;  
+  
+    return {  
+      EXTENSION_ID: injected.EXTENSION_ID ?? "dev-extension-id",  
+      FASTAPI_WS_URL:  
+        injected.FASTAPI_WS_URL ??  
+        "ws://localhost:8000/ws/frontend/demo_user",  
+      API_BASE_URL: injected.API_BASE_URL ?? "http://localhost:8000",  
+      VERSION: injected.VERSION ?? "dev",  
+      USER_ID: injected.USER_ID ?? undefined,           // <-- added  
+      CREATOR_ID: injected.CREATOR_ID ?? undefined      // <-- added  
+    };  
+  } catch (err) {  
+    console.error("[CONFIG] Failed to parse injected FastAPI config", err);  
+    throw err;  
   }  
 }  
   
-export function getConfig(): FastAPIConfig {  
-  const injected: Partial<FastAPIConfig> = window.__FASTAPI_CONFIG__ || {};  
-  return {  
-    EXTENSION_ID: injected.EXTENSION_ID ?? "dev-extension-id",  
-    FASTAPI_WS_URL: injected.FASTAPI_WS_URL ?? "ws://localhost:8000/api/ws/frontend",  
-  };  
-}  
-  
 /**  
- * Removes HTML tags from a string and trims whitespace  
+ * Removes HTML tags from a string and trims whitespace.  
  */  
 export function cleanText(input?: string | null): string {  
   if (!input) return "";  

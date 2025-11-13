@@ -1,185 +1,193 @@
+from __future__ import annotations  
 from pydantic import BaseModel, Field  
-from typing import Optional, List, Union, Dict, Any, Literal  
+from typing import Optional, List, Dict, Any  
 from datetime import datetime  
+from typing import Literal  
   
 # ---- Nested support models ----  
-  
 class AvatarThumbs(BaseModel):  
-    c50: Optional[str] = None  
-    c144: Optional[str] = None  
+    c50: str | None = None  
+    c144: str | None = None  
   
 class HeaderThumbs(BaseModel):  
-    w480: Optional[str] = None  
-    w760: Optional[str] = None  
+    w480: str | None = None  
+    w760: str | None = None  
   
 class HeaderSize(BaseModel):  
-    width: Optional[int] = None  
-    height: Optional[int] = None  
+    width: int | None = None  
+    height: int | None = None  
   
 class MediaFile(BaseModel):  
-    height: Optional[int] = None  
-    size: Optional[int] = None  
-    sources: Optional[List[str]] = None  
-    url: Optional[str] = None  
-    width: Optional[int] = None  
+    height: int | None = None  
+    size: int | None = None  
+    sources: List[str] | None = None  
+    url: str | None = None  
+    width: int | None = None  
   
 class MediaPreview(BaseModel):  
-    height: Optional[int] = None  
-    size: Optional[int] = None  
-    url: Optional[str] = None  
-    width: Optional[int] = None  
+    height: int | None = None  
+    size: int | None = None  
+    url: str | None = None  
+    width: int | None = None  
   
 class MediaItem(BaseModel):  
-    canView: Optional[bool] = None  
-    convertedToVideo: Optional[bool] = None  
-    createdAt: Optional[datetime] = None  
-    duration: Optional[float] = None  
-    files: Optional[Dict[str, MediaFile]] = None  
-    preview: Optional[MediaPreview] = None  
-    squarePreview: Optional[Dict[str, Any]] = None  
-    thumb: Optional[Dict[str, Any]] = None  
-    hasCustomPreview: Optional[bool] = None  
-    hasError: Optional[bool] = None  
-    id: Optional[Union[int, str]] = None  
-    isReady: Optional[bool] = None  
-    type: Optional[str] = None  
-    videoSources: Optional[Dict[str, Optional[str]]] = None  
+    canView: bool | None = None  
+    convertedToVideo: bool | None = None  
+    createdAt: datetime | None = None  
+    duration: float | None = None  
+    files: Dict[str, MediaFile] | None = None  
+    preview: MediaPreview | None = None  
+    squarePreview: Dict[str, Any] | None = None  
+    thumb: Dict[str, Any] | None = None  
+    hasCustomPreview: bool | None = None  
+    hasError: bool | None = None  
+    id: int | str | None = None  
+    isReady: bool | None = None  
+    type: str | None = None  
+    videoSources: Dict[str, str | None] | None = None  
   
 class UserRef(BaseModel):  
-    id: Optional[Union[int, str]] = None  
-    view: Optional[str] = None  
-    _view: Optional[str] = None  
-    name: Optional[str] = None  
-    username: Optional[str] = None  
-    displayName: Optional[str] = None  
-    avatar: Optional[str] = None  
-    avatarThumbs: Optional[AvatarThumbs] = None  
-    header: Optional[str] = None  
-    headerSize: Optional[HeaderSize] = None  
-    headerThumbs: Optional[HeaderThumbs] = None  
-    lastSeen: Optional[datetime] = None  
-    notice: Optional[str] = None  
+    """Minimal OnlyFans user reference with optional extended profile fields."""  
+    id: int | str | None = None  
+    view: str | None = None  
+    _view: str | None = None  
+    name: str | None = None  
+    username: str | None = None  
+    displayName: str | None = None  
+    avatar: str | None = None  
+    avatarThumbs: AvatarThumbs | None = None  
+    header: str | None = None  
+    headerSize: HeaderSize | None = None  
+    headerThumbs: HeaderThumbs | None = None  
+    lastSeen: datetime | None = None  
+    notice: str | None = None  
   
     # Subscription-related fields  
-    canAddSubscriber: Optional[bool] = None  
-    canCommentStory: Optional[bool] = None  
-    canEarn: Optional[bool] = None  
-    canLookStory: Optional[bool] = None  
-    canPayInternal: Optional[bool] = None  
-    canRestrict: Optional[bool] = None  
-    currentSubscribePrice: Optional[float] = None  
-    hasNotViewedStory: Optional[bool] = None  
-    hasScheduledStream: Optional[bool] = None  
-    hasStories: Optional[bool] = None  
-    hasStream: Optional[bool] = None  
-    isPaywallRequired: Optional[bool] = None  
-    isRestricted: Optional[bool] = None  
-    isVerified: Optional[bool] = None  
-    listsStates: Optional[List[Dict[str, Any]]] = None  
-    showMediaCount: Optional[bool] = None  
-    subscribePrice: Optional[float] = None  
-    subscribedBy: Optional[bool] = None  
-    subscribedByAutoprolong: Optional[bool] = None  
-    subscribedByExpire: Optional[bool] = None  
-    subscribedByExpireDate: Optional[datetime] = None  
-    subscribedIsExpiredNow: Optional[bool] = None  
-    subscribedOn: Optional[bool] = None  
-    subscribedOnDuration: Optional[str] = None  
-    subscribedOnExpiredNow: Optional[bool] = None  
-    subscriptionBundles: Optional[List[Dict[str, Any]]] = None  
-    tipsEnabled: Optional[bool] = None  
-    tipsMax: Optional[int] = None  
-    tipsMin: Optional[int] = None  
-    tipsMinInternal: Optional[int] = None  
-    tipsTextEnabled: Optional[bool] = None  
+    canAddSubscriber: bool | None = None  
+    canCommentStory: bool | None = None  
+    canEarn: bool | None = None  
+    canLookStory: bool | None = None  
+    canPayInternal: bool | None = None  
+    canRestrict: bool | None = None  
+    currentSubscribePrice: float | None = None  
+    hasNotViewedStory: bool | None = None  
+    hasScheduledStream: bool | None = None  
+    hasStories: bool | None = None  
+    hasStream: bool | None = None  
+    isPaywallRequired: bool | None = None  
+    isRestricted: bool | None = None  
+    isVerified: bool | None = None  
+    listsStates: List[Dict[str, Any]] | None = None  
+    showMediaCount: bool | None = None  
+    subscribePrice: float | None = None  
+    subscribedBy: bool | None = None  
+    subscribedByAutoprolong: bool | None = None  
+    subscribedByExpire: bool | None = None  
+    subscribedByExpireDate: datetime | None = None  
+    subscribedIsExpiredNow: bool | None = None  
+    subscribedOn: bool | None = None  
+    subscribedOnDuration: str | None = None  
+    subscribedOnExpiredNow: bool | None = None  
+    subscriptionBundles: List[Dict[str, Any]] | None = None  
+    tipsEnabled: bool | None = None  
+    tipsMax: int | None = None  
+    tipsMin: int | None = None  
+    tipsMinInternal: int | None = None  
+    tipsTextEnabled: bool | None = None  
   
     extra: Dict[str, Any] = Field(default_factory=dict)  
   
 # ---- Core message and conversation models ----  
-  
 class Message(BaseModel):  
-    id: Union[int, str]  
-    chat_id: Optional[Union[int, str]] = None  
-    text: Optional[str] = None  
+    """Represents a single OnlyFans chat message, optionally enriched."""  
+    id: int | str  
+    chat_id: int | str | None = None  
+    text: str | None = None  
   
-    createdAt: Optional[datetime] = None  
-    created_at: Optional[datetime] = None  
-    changedAt: Optional[datetime] = None  
+    createdAt: datetime | None = None  
+    created_at: datetime | None = None  
+    changedAt: datetime | None = None  
   
-    fromUser: Optional[UserRef] = None  
-    is_creator: Optional[bool] = None
+    fromUser: UserRef | None = None  
+    is_creator: bool | None = None  
   
-    is_inbound: Optional[bool] = None  
-    isPinned: Optional[bool] = None  
-    isTip: Optional[bool] = None  
-    isLiked: Optional[bool] = None  
-    isFree: Optional[bool] = None  
-    isCouplePeopleMedia: Optional[bool] = None  
-    isMarkdownDisabled: Optional[bool] = None  
-    isMediaReady: Optional[bool] = None  
-    isNew: Optional[bool] = None  
-    isOpened: Optional[bool] = None  
-    isReportedByMe: Optional[bool] = None  
-    isFromQueue: Optional[bool] = None  
+    # --- Enrichment fields ---  
+    sentimentScore: float | None = Field(None, description="Sentiment score between 0 and 1")  
+    topics: List[str] | None = Field(None, description="List of NLP-extracted topics")  
   
-    canBePinned: Optional[bool] = None  
-    canPurchase: Optional[bool] = None  
-    canPurchaseReason: Optional[str] = None  
-    canReport: Optional[bool] = None  
-    canUnsendQueue: Optional[bool] = None  
+    is_inbound: bool | None = None  
+    isPinned: bool | None = None  
+    isTip: bool | None = None  
+    isLiked: bool | None = None  
+    isFree: bool | None = None  
+    isCouplePeopleMedia: bool | None = None  
+    isMarkdownDisabled: bool | None = None  
+    isMediaReady: bool | None = None  
+    isNew: bool | None = None  
+    isOpened: bool | None = None  
+    isReportedByMe: bool | None = None  
+    isFromQueue: bool | None = None  
   
-    mediaCount: Optional[int] = None  
-    price: Optional[float] = None  
-    cancelSeconds: Optional[int] = None  
-    queueId: Optional[Union[int, str]] = None  
-    unsendSecondsQueue: Optional[int] = None  
+    canBePinned: bool | None = None  
+    canPurchase: bool | None = None  
+    canPurchaseReason: str | None = None  
+    canReport: bool | None = None  
+    canUnsendQueue: bool | None = None  
   
-    giphyId: Optional[str] = None  
-    lockedText: Optional[bool] = None  
-    responseType: Optional[str] = None  
+    mediaCount: int | None = None  
+    price: float | None = None  
+    cancelSeconds: int | None = None  
+    queueId: int | str | None = None  
+    unsendSecondsQueue: int | None = None  
   
-    media: Optional[List[MediaItem]] = None  
-    previews: Optional[List[Dict[str, Any]]] = None  
-    releaseForms: Optional[List[Dict[str, Any]]] = None  
+    giphyId: str | None = None  
+    lockedText: bool | None = None  
+    responseType: str | None = None  
   
-    replyToMessage: Optional["Message"] = None  
+    media: List[MediaItem] | None = None  
+    previews: List[Dict[str, Any]] | None = None  
+    releaseForms: List[Dict[str, Any]] | None = None  
+  
+    replyToMessage: Message | None = None  
   
     extra: Dict[str, Any] = Field(default_factory=dict)  
   
 class ChatThread(BaseModel):  
-    id: Union[int, str]  
-    withUser: Optional[UserRef] = None  
-    last_message: Optional[Message] = None  
-    unread_count: Optional[int] = None  
-    unreadMessagesCount: Optional[int] = None  
-    messages: Optional[List[Message]] = None  
+    """Represents a chat thread with a fan, including optional recent messages."""  
+    id: int | str  
+    withUser: UserRef | None = None  
+    last_message: Message | None = None  
+    unread_count: int | None = None  
+    unreadMessagesCount: int | None = None  
+    messages: List[Message] | None = None  
     extra: Dict[str, Any] = Field(default_factory=dict)  
   
-# ---- Unified sync response ----  
-  
 class SyncResponse(BaseModel):  
+    """Full sync response for REST or internal use."""  
     chats: List[ChatThread]  
     messages: List[Message]  
   
-# ---- Resolve recursion ----  
 Message.model_rebuild()  
-
+  
+# ---- Misc core models ----  
 class KeepalivePayload(BaseModel):  
     """Payload for keepalive messages from Agent to Brain."""  
-    timestamp: Optional[datetime] = None  
-
+    timestamp: datetime | None = None  
+  
 class ConnectionInfo(BaseModel):  
     """Sent immediately on WSS connect — confirms connection and provides system version."""  
     version: str  
-    message: Optional[str] = None  
-
+    clientType: str | None = None  
+    userId: str | None = None  
+    statusMessage: str | None = None  
+  
 class SystemStatus(BaseModel):  
     """Represents the current operational status of the Brain."""  
     status: Literal["PROCESSING_SNAPSHOT", "REALTIME", "ERROR"]  
     detail: str | None = None  
-
+  
 class WssError(BaseModel):  
     """Represents an error sent over WS to the Bridge."""  
-    code: str  
-    message: str  
+    errorMessage: str  # main error message  
+    code: str | None = None  
     detail: str | None = None  

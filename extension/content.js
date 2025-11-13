@@ -1,29 +1,42 @@
-// content.js — Bridge between page context and extension background (real-time)  
+/* content.js — Isolated World Message Bridge  
+   Matches: Full-Stack Comm Spec v1.1.0 + Expert Review Injection Strategy  
+*/  
+console.log("[Content.js] Isolated bridge loaded");  
   
-// === Relay messages from the page context to background.js ===  
-window.addEventListener("message", event => {  
-  if (event.source !== window) return;  
-  if (event.data?.__OF_FORWARDER__) {  
-    // Debug log for development; remove or disable in prod  
-    console.debug("[Content.js] Forwarding page → background:", event.data.payload?.type || event.data);  
-    chrome.runtime.sendMessage(event.data);  
+/**  
+ * UPSTREAM FLOW (Page ➔ Agent ➔ Brain)  
+ */  
+window.addEventListener(  
+  "message",  
+  event => {  
+    if (event.source !== window || !event.data?.type) return;  
+  
+    if (event.data.type === "_OF_FORWARDER_") {  
+      const payload = event.data.payload;  
+      if (!payload || typeof payload !== "object") {  
+        console.warn("[Content.js] Ignored malformed forwarder payload:", event.data);  
+        return;  
+      }  
+      chrome.runtime.sendMessage({ type: "_OF_FORWARDER_", payload });  
+    }  
+  },  
+  false  
+);  
+  
+/**  
+ * DOWNSTREAM FLOW (Agent ➔ Page)  
+ */  
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {  
+  if (sender.id !== chrome.runtime.id) return;  
+  
+  if (message.type === "_OF_BACKEND_") {  
+    window.postMessage({ type: "_OF_BACKEND_", payload: message.payload }, "*");  
+    sendResponse({ ok: true });  
+    return;  
+  }  
+  if (["connection_status", "connection_ack", "system_status", "online_users_update"].includes(message.type)) {  
+    window.postMessage({ type: "_OF_BACKEND_", payload: message }, "*");  
+    sendResponse({ ok: true });  
+    return;  
   }  
 });  
-  
-// === Relay messages from background.js to the page context ===  
-chrome.runtime.onMessage.addListener(msg => {  
-  if (msg?.fromServer || msg?.__OF_BACKEND__ || msg?.type === "connection_status") {  
-    console.debug("[Content.js] Forwarding background → page:", msg);  
-    window.postMessage({ __OF_BACKEND__: true, payload: msg.payload || msg }, "*");  
-  }  
-});  
-  
-// === Inject page-hook.js BEFORE site scripts execute ===  
-(function injectPageHook() {  
-  const script = document.createElement("script");  
-  script.src = chrome.runtime.getURL("page-hook.js");  
-  script.type = "text/javascript";  
-  // Prepend ensures our hook runs before OF scripts attach fetch/WebSocket  
-  document.documentElement.prepend(script);  
-  console.log("[Content.js] Injected page-hook.js before site scripts");  
-})();  

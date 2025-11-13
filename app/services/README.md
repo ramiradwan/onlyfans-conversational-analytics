@@ -15,6 +15,7 @@ Race‑condition‑safe ingestion service for chat/message data from the **Agent
 - Convert raw dict payloads into validated Pydantic models (`CacheUpdatePayload`, `NewRawMessagePayload`).  
 - Enrich conversations, rebuild or append to the Labeled Property Graph (LPG), and broadcast updates via **Redis Pub/Sub**.  
 - Broadcast analytics updates after each ingestion step.  
+- Pass **`creator_id`** through enrichment, graph, and analytics calls for multi‑creator traceability and filtering.  
 - Publish WS messages to the `frontend_user_{user_id}` channel:  
   - `system_status`  
   - `full_sync_response`  
@@ -22,10 +23,10 @@ Race‑condition‑safe ingestion service for chat/message data from the **Agent
   - `analytics_update`  
   
 **Key Methods:**  
-- `handle_snapshot(user_id, payload)` — Process full snapshot (`cache_update`), enrich all conversations, rebuild graph, broadcast `full_sync_response`, drain delta queue.  
-- `handle_delta(user_id, payload)` — Handle single delta (`new_raw_message`); queue if snapshot not ready, else apply immediately.  
-- `_process_delta_queue(user_id)` — Apply all queued deltas after snapshot completion.  
-- `_apply_delta(user_id, delta)` — Enrich just the affected conversation, append to graph, broadcast `append_message` and `analytics_update`.  
+- `handle_snapshot(user_id, payload, creator_id)` — Process full snapshot (`cache_update`), enrich all conversations, rebuild graph, broadcast `full_sync_response`, drain delta queue.  
+- `handle_delta(user_id, payload, creator_id)` — Handle single delta (`new_raw_message`); queue if snapshot not ready, else apply immediately.  
+- `_process_delta_queue(user_id, creator_id)` — Apply all queued deltas after snapshot completion.  
+- `_apply_delta(user_id, delta, creator_id)` — Enrich just the affected conversation, append to graph, broadcast `append_message` and `analytics_update`.  
 - `_broadcast_status(user_id, status)` — Send `system_status` message.  
 - `get_cached_chats(user_id)` / `get_cached_messages(user_id)` — Return validated models from cache.  
   
@@ -46,7 +47,7 @@ Facade for retrieving OnlyFans chat data from the **DataIngestService** cache.
 ### **enrichment.py**  
 NLP enrichment pipeline for conversations.  
   
-**Processes:**    
+**Processes:**  
 Validated conversation models → Extracts semantic + behavioral features → Produces structured enrichment objects for graph building and analytics.  
   
 **Features Extracted:**  
@@ -56,8 +57,8 @@ Validated conversation models → Extracts semantic + behavioral features → Pr
 - Interaction outcomes (tips, renewals, drop‑offs)  
   
 **Key Methods:**  
-- `enrich_conversation(conversation, all_messages=None)` — Returns dict with topics, actions, sentiment, and outcomes.  
-- `broadcast_enrichment(user_id, conversations, all_messages=None)` — Enriches and publishes `enrichment_result` WS messages to `frontend_user_{user_id}`.  
+- `enrich_conversation(conversation, all_messages=None)` — Returns an `ExtendedConversationNode` with topics, actions, sentiment, and outcomes.  
+- `broadcast_enrichment(user_id, conversations, all_messages=None, creator_id=None)` — Enriches and publishes `enrichment_result` WS messages to `frontend_user_{user_id}`. Includes `creator_id` in logs for multi‑creator traceability.  
   
 ---  
   
@@ -85,8 +86,8 @@ Converts enriched conversation data into LPG vertices and edges for **Azure Cosm
   
 **Key Methods:**  
 - `GraphBuilder.build_graph(enriched_conv, fan_id)` — Construct vertices/edges from enriched data.  
-- `rebuild_graph_from_snapshot(user_id, enriched_conversations)` — Reset and rebuild user graph.  
-- `append_graph_from_delta(user_id, enriched_conversation)` — Append enriched delta data to existing user graph.  
+- `rebuild_graph_from_snapshot(user_id, enriched_conversations, creator_id)` — Reset and rebuild user graph for the given creator.  
+- `append_graph_from_delta(user_id, enriched_conversation, creator_id)` — Append enriched delta data to existing user graph.  
   
 ---  
   
@@ -99,10 +100,11 @@ Analytics layer — executes Gremlin traversals against Cosmos DB to compute met
 - Response time metrics (AHT, silence %, turns)  
   
 **Key Methods:**  
-- `fetch_topic_metrics(start_date, end_date)`  
-- `fetch_sentiment_trend(start_date, end_date)`  
-- `fetch_response_time_metrics(start_date, end_date)`  
-- `broadcast_analytics_update(user_id, start_date, end_date)` — Fetch metrics and publish `analytics_update` WS message to `frontend_user_{user_id}`.  
+- `fetch_topic_metrics(start_date, end_date, creator_id=None)`  
+- `fetch_sentiment_trend(start_date, end_date, creator_id=None)`  
+- `fetch_response_time_metrics(start_date, end_date, creator_id=None)`  
+- `build_analytics_update(user_id, start_date, end_date, creator_id=None)` — Builds full analytics payload with per‑conversation priority scores and unread counts.  
+- `broadcast_analytics_update(user_id, start_date, end_date, creator_id=None)` — Fetch metrics and publish `analytics_update` WS message to `frontend_user_{user_id}`.  
   
 ---  
   
@@ -116,37 +118,35 @@ They:
 - Update LPG graph state  
 - Broadcast typed WS messages via Redis Pub/Sub  
 - Return typed models or structured results to endpoints  
+- Maintain **creator‑aware** processing for multi‑tenant environments  
   
 ---  
   
 ## Schema Consistency  
-  
 - All ingestion flows follow:    
   **`DataIngestService` → `EnrichmentService` → `GraphBuilder` → `InsightsService`**  
-- WS hub and REST routes share identical typed outputs (`FullSyncResponseMsg`, `AppendMessageMsg`, `AnalyticsUpdateMsg`).  
-- Analytics services are isolated from ingestion pipeline changes.  
+- WS hub and REST routes share identical typed outputs (`FullSyncResponseMsg`, `AppendMessageMsg`, `AnalyticsUpdateMsg`, `EnrichmentResultMsg`).  
+- Analytics services are isolated from ingestion pipeline changes but now receive `creator_id` for filtering and traceability.  
   
 ---  
   
 ## Example Data Flow  
-  
 ```mermaid  
-flowchart LR
-    EXT[Agent: Chrome Extension IndexedDB]
-    INGEST[DataIngestService]
-    ENRICH[EnrichmentService]
-    GRAPH[GraphBuilder]
-    COSMOS[Azure Cosmos DB - Gremlin]
-    INSIGHTS[Insights Service]
-    ROUTES[API Routes: /topics, /sentiment-trend, /response-time]
-    WS[WebSocket Hub: /ws/frontend/:user_id]
-
-    EXT -->|cache_update / new_raw_message| INGEST
-    INGEST -->|enriched conversations| ENRICH
-    ENRICH --> GRAPH
-    GRAPH --> COSMOS
-    COSMOS --> INSIGHTS
-    INSIGHTS --> ROUTES
-    INGEST --> WS
-
-  ```
+flowchart LR  
+    EXT[Agent: Chrome Extension IndexedDB]  
+    INGEST[DataIngestService]  
+    ENRICH[EnrichmentService]  
+    GRAPH[GraphBuilder]  
+    COSMOS[Azure Cosmos DB - Gremlin]  
+    INSIGHTS[Insights Service]  
+    ROUTES[API Routes: /topics, /sentiment-trend, /response-time]  
+    WS[WebSocket Hub: /ws/frontend/:user_id]  
+  
+    EXT -->|cache_update / new_raw_message| INGEST  
+    INGEST -->|enriched conversations + creator_id| ENRICH  
+    ENRICH -->|creator_id| GRAPH  
+    GRAPH --> COSMOS  
+    COSMOS -->|creator_id| INSIGHTS  
+    INSIGHTS --> ROUTES  
+    INGEST --> WS  
+```  

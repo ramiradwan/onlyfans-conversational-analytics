@@ -1,20 +1,24 @@
-// background.js — Passive DB backend for OnlyFans Analytics (real-time sync)  
+/* background.js — MV3 Service Worker  
+   Implements: Full-Stack Comm Spec v1.1.0 + Expert Review Injection Strategy  
+*/  
+console.log("[Agent SW] Loaded");  
   
-console.log("[Extension] background.js ready — passive capture active.");  
+// ==================== Config ====================  
+const WS_BASE = "ws://localhost:8000/api/ws";  
+const CLIENT_TYPE = "extension";  
+let USER_ID = "demo_user";  
+let WS_URL = `${WS_BASE}/${CLIENT_TYPE}/${USER_ID}`;  
   
+let ws = null;  
+let keepAliveIntervalId = null;  
+  
+// Track tabs injected with page-hook.js to avoid duplicate injection  
+const injectedTabs = new Set();  
+  
+// ==================== IndexedDB Layer ====================  
 const DB_NAME = "OnlyFansAnalyticsDB";  
 const DB_VERSION = 1;  
   
-// TODO: Replace with dynamic user ID retrieval in production  
-const USER_ID = "demo_user"; // or from chrome.storage.local.get("user_id")  
-const WS_BASE = "ws://localhost:8000/api/ws/extension";  
-let WS_URL = `${WS_BASE}/${USER_ID}`;  
-let ws;  
-let reconnectDelay = 2000; // start with 2s  
-  
-// ============================================================================  
-// IndexedDB Layer  
-// ============================================================================  
 function openDB() {  
   return new Promise((resolve, reject) => {  
     const req = indexedDB.open(DB_NAME, DB_VERSION);  
@@ -25,44 +29,10 @@ function openDB() {
         db.createObjectStore("messages", { keyPath: "id" });  
       if (!db.objectStoreNames.contains("chats"))  
         db.createObjectStore("chats", { keyPath: "id" });  
+      if (!db.objectStoreNames.contains("users"))  
+        db.createObjectStore("users", { keyPath: "id" });  
     };  
     req.onsuccess = () => resolve(req.result);  
-  });  
-}  
-  
-async function dbPut(store, record) {  
-  if (!isValidRecord(record)) {  
-    console.warn("[DB] Skipping invalid record:", record);  
-    return;  
-  }  
-  const db = await openDB();  
-  const tx = db.transaction(store, "readwrite");  
-  tx.objectStore(store).put(record);  
-  return new Promise((res, rej) => {  
-    tx.oncomplete = () => res(true);  
-    tx.onerror = () => rej(tx.error);  
-  });  
-}  
-  
-async function dbBulkPut(store, records) {  
-  const db = await openDB();  
-  const tx = db.transaction(store, "readwrite");  
-  const os = tx.objectStore(store);  
-  let count = 0;  
-  for (const r of records) {  
-    if (isValidRecord(r)) {  
-      os.put(r);  
-      count++;  
-    } else {  
-      console.warn("[DB] Skipped invalid record:", r);  
-    }  
-  }  
-  return new Promise((res, rej) => {  
-    tx.oncomplete = () => {  
-      console.log(`[DB] Wrote ${count} valid records to ${store}`);  
-      res(true);  
-    };  
-    tx.onerror = () => rej(tx.error);  
   });  
 }  
   
@@ -71,9 +41,27 @@ function isValidRecord(obj) {
   return id !== undefined && id !== null && id !== "" && typeof id !== "object";  
 }  
   
-// ============================================================================  
-// Normalization Helpers  
-// ============================================================================  
+async function dbPut(store, record) {  
+  if (!isValidRecord(record)) return;  
+  try {  
+    const db = await openDB();  
+    db.transaction(store, "readwrite").objectStore(store).put(record);  
+  } catch (err) {  
+    console.error(`[Agent SW] dbPut error in store ${store}:`, err);  
+  }  
+}  
+  
+async function dbBulkPut(store, records) {  
+  try {  
+    const db = await openDB();  
+    const os = db.transaction(store, "readwrite").objectStore(store);  
+    records.forEach(r => { if (isValidRecord(r)) os.put(r); });  
+  } catch (err) {  
+    console.error(`[Agent SW] dbBulkPut error in store ${store}:`, err);  
+  }  
+}  
+  
+// ==================== Normalizers ====================  
 function normalizeChat(c, i = 0) {  
   const id =  
     c.id ||  
@@ -87,270 +75,279 @@ function normalizeChat(c, i = 0) {
   
 function normalizeMessage(m, i = 0) {  
   const id = m.id || m.message_id || `msg_${Date.now()}_${i}`;  
-  return { ...m, id };  
+  let previews = Array.isArray(m.previews)  
+    ? m.previews.filter(p => typeof p === "object" && p !== null)  
+    : [];  
+  return { ...m, id, previews };  
 }  
   
-// ============================================================================  
-// Parsers  
-// ============================================================================  
-function stripHTML(t) {  
-  return t ? t.replace(/<\/?[^>]+(>|$)/g, "") : null;  
-}  
-  
-function parseWS(payload) {  
+// ==================== Metadata Recovery ====================  
+async function recoverMissingMetadata(msg) {  
   try {  
-    const d = JSON.parse(payload);  
-    const msg = d?.api2_chat_message;  
-    if (!msg || msg.responseType !== "message") return null;  
-    return {  
-      ...msg,  
-      type: "inbound_message",  
-      text: stripHTML(msg.text),  
-      is_inbound: true  
-    };  
-  } catch (e) {  
-    console.error("[ParseWS] fail", e);  
-    return null;  
+    if ((msg.chat_id && msg.chat_id !== "unknown") && msg.fromUser) {  
+      return msg;  
+    }  
+    const db = await openDB();  
+    const store = db.transaction("messages", "readonly").objectStore("messages");  
+    return await new Promise(resolve => {  
+      const getReq = store.get(msg.id);  
+      getReq.onsuccess = ev => {  
+        const cached = ev.target.result;  
+        if (cached) {  
+          msg.chat_id = msg.chat_id && msg.chat_id !== "unknown"  
+            ? msg.chat_id  
+            : cached.chat_id || "unknown";  
+          msg.fromUser = msg.fromUser || cached.fromUser || null;  
+        }  
+        resolve(msg);  
+      };  
+      getReq.onerror = () => resolve(msg);  
+    });  
+  } catch {  
+    return msg;  
   }  
 }  
   
-function parseFetch(url, body, isResponse) {  
-  try {  
-    if (/\/api2\/v2\/chats(\/)?(\?|$)/.test(url) && isResponse) {  
-      const data = JSON.parse(body);  
-      const list =  
-        data.list ||  
-        data.chats ||  
-        data.response?.list ||  
-        data.response?.chats ||  
-        (Array.isArray(data) ? data : null);  
-      if (Array.isArray(list)) return { type: "chat_list", chats: list };  
-      console.warn("[ParseFetch] Unknown chat list format", data);  
-      return null;  
-    }  
-    if (/\/api2\/v2\/chats\/\d+\/messages/.test(url) && isResponse) {  
-      const data = JSON.parse(body);  
-      const list =  
-        data.list ||  
-        data.messages ||  
-        data.response?.list ||  
-        data.response?.messages ||  
-        (Array.isArray(data) ? data : null);  
-      if (!Array.isArray(list)) return null;  
-      const chat_id = url.match(/\/chats\/(\d+)\//)?.[1];  
-      return {  
-        type: "history",  
-        messages: list.map(m => ({  
-          ...m,  
-          chat_id,  
-          text: stripHTML(m.text)  
-        }))  
-      };  
-    }  
-    if (/\/api2\/v2\/chats\/\d+\/messages$/.test(url) && !isResponse) {  
-      const data = JSON.parse(body);  
-      return { type: "outbound_message", text: stripHTML(data.text || "") };  
-    }  
-    if (/\/messages\/\d+\/like$/.test(url) && !isResponse) {  
-      const data = JSON.parse(body);  
-      return { type: "engagement_like", ...data };  
-    }  
-    if (/\/mark-as-read$/.test(url) && !isResponse) {  
-      return {  
-        type: "engagement_read",  
-        chat_id: url.match(/chats\/(\d+)\//)?.[1] || null  
-      };  
-    }  
-    return null;  
-  } catch (e) {  
-    console.error("[ParseFetch] fail", e, url);  
-    return null;  
-  }  
-}  
-  
-// ============================================================================  
-// WebSocket connection to backend (bi-directional) with keepalive  
-// ============================================================================  
+// ==================== WS Connection & Keepalive ====================  
 function connectWS() {  
+  console.log("[Agent SW] Connecting:", WS_URL);  
+  stopKeepAlive();  
+  
+  if (ws) {  
+    try { ws.close(); } catch {}  
+    ws = null;  
+  }  
+  
   ws = new WebSocket(WS_URL);  
   
   ws.onopen = () => {  
-    console.log("[Extension WS] Connected to backend");  
-    reconnectDelay = 2000; // reset backoff  
-    // Start keepalive ping every 20s  
-    setInterval(() => {  
-      if (ws && ws.readyState === WebSocket.OPEN) {  
-        ws.send(JSON.stringify({ type: "keepalive", payload: {} }));  
-      }  
-    }, 20000);  
+    console.log("[Agent SW] WS open for USER_ID:", USER_ID);  
+    sendCacheUpdate().catch(err => console.error("[Agent SW] sendCacheUpdate error:", err));  
+    startKeepAlive();  
   };  
-  
-  ws.onclose = () => {  
-    console.warn("[Extension WS] Disconnected, retrying...");  
-    setTimeout(connectWS, reconnectDelay);  
-    reconnectDelay = Math.min(reconnectDelay * 2, 60000); // max 60s  
-  };  
-  
-  ws.onerror = e => console.error("[Extension WS] Error:", e);  
   
   ws.onmessage = event => {  
     try {  
-      const payload = JSON.parse(event.data);  
-      console.log("[Extension WS] Received:", payload);  
-      if (payload.type === "command_to_execute") {  
-        handleBackendCommand(payload.payload);  
+      const msg = JSON.parse(event.data);  
+      if (msg.type === "command_to_execute") {  
+        forwardCommandToPage(msg.payload);  
+      } else if (msg.type === "connection_ack") {  
+        console.log("[Agent SW] Connection acknowledged:", msg.payload);  
+        if (msg.payload?.userId && msg.payload.userId !== USER_ID) {  
+          USER_ID = msg.payload.userId;  
+          chrome.storage.local.set({ user_id: USER_ID });  
+        }  
       }  
     } catch (err) {  
-      console.error("[Extension WS] Failed to parse message:", event.data, err);  
+      console.error("[Agent SW] WS parse error:", err);  
     }  
+  };  
+  
+  ws.onclose = () => {  
+    console.log("[Agent SW] WS closed — reconnecting in 5s");  
+    stopKeepAlive();  
+    setTimeout(connectWS, 5000);  
+  };  
+  
+  ws.onerror = err => {  
+    console.error("[Agent SW] WS error:", err);  
   };  
 }  
   
-connectWS();  
+function startKeepAlive() {  
+  stopKeepAlive();  
+  keepAliveIntervalId = setInterval(() => {  
+    if (ws && ws.readyState === WebSocket.OPEN) {  
+      ws.send(JSON.stringify({  
+        type: "keepalive",  
+        payload: { timestamp: new Date().toISOString() }  
+      }));  
+    }  
+  }, 20000);  
+}  
   
-// ============================================================================  
-// Broadcast cache update to backend  
-// ============================================================================  
-async function broadcastCacheUpdate() {  
+function stopKeepAlive() {  
+  if (keepAliveIntervalId) clearInterval(keepAliveIntervalId);  
+  keepAliveIntervalId = null;  
+}  
+  
+// ==================== Snapshot Flow ====================  
+async function sendCacheUpdate() {  
   try {  
     const db = await openDB();  
-  
     const chats = await new Promise((resolve, reject) => {  
-      const tx = db.transaction("chats", "readonly");  
-      const os = tx.objectStore("chats");  
-      const req = os.getAll();  
-      req.onsuccess = () => resolve(req.result);  
+      const req = db.transaction("chats", "readonly").objectStore("chats").getAll();  
+      req.onsuccess = () => resolve(req.result.map(normalizeChat));  
       req.onerror = () => reject(req.error);  
     });  
-  
     const messages = await new Promise((resolve, reject) => {  
-      const tx = db.transaction("messages", "readonly");  
-      const os = tx.objectStore("messages");  
-      const req = os.getAll();  
-      req.onsuccess = () => resolve(req.result);  
+      const req = db.transaction("messages", "readonly").objectStore("messages").getAll();  
+      req.onsuccess = () => resolve(req.result.map(normalizeMessage));  
       req.onerror = () => reject(req.error);  
     });  
-  
-    const payload = { type: "cache_update", chats, messages };  
     if (ws && ws.readyState === WebSocket.OPEN) {  
-      ws.send(JSON.stringify(payload));  
-      console.log(  
-        "[Extension WS] Sent cache_update with",  
-        chats.length,  
-        "chats,",  
-        messages.length,  
-        "messages"  
-      );  
+      ws.send(JSON.stringify({  
+        type: "cache_update",  
+        payload: { chats, messages }  
+      }));  
+      console.log(`[Agent SW] Sent cache_update: ${chats.length} chats, ${messages.length} messages`);  
     }  
   } catch (err) {  
-    console.error("[Extension] Failed to broadcast cache update:", err);  
+    console.error("[Agent SW] sendCacheUpdate error:", err);  
   }  
 }  
   
-// ============================================================================  
-// Handle backend → extension commands  
-// ============================================================================  
-function handleBackendCommand(cmd) {  
-  if (cmd.action === "send_message") {  
-    sendMessageToOF(cmd.chat_id, cmd.text);  
-  }  
-  if (cmd.action === "send_ws_message") {  
-    forwardToPage({ action: "send_ws_message", data: cmd.data });  
-  }  
-  if (cmd.action === "send_fetch_command") {  
-    forwardToPage({ action: "send_fetch_command", url: cmd.url, init: cmd.init });  
+// ==================== Delta Flow ====================  
+async function sendNewRawMessage(messageObj) {  
+  const message = await recoverMissingMetadata(normalizeMessage(messageObj));  
+  if (ws && ws.readyState === WebSocket.OPEN) {  
+    ws.send(JSON.stringify({  
+      type: "new_raw_message",  
+      payload: { message }  
+    }));  
+    console.log("[Agent SW] Sent new_raw_message", message.id);  
   }  
 }  
   
-function forwardToPage(payload) {  
-  chrome.tabs.query({ url: "*://onlyfans.com/*" }, tabs => {  
-    tabs.forEach(tab => {  
-      chrome.tabs.sendMessage(tab.id, {  
-        __OF_BACKEND__: true,  
-        payload  
-      });  
+// ==================== Online Users Update Flow ====================  
+function sendOnlineUsersUpdate(userIds) {  
+  if (!Array.isArray(userIds) || !userIds.every(id => Number.isInteger(id))) return;  
+  if (ws && ws.readyState === WebSocket.OPEN) {  
+    ws.send(JSON.stringify({  
+      type: "online_users_update",  
+      payload: { user_ids: userIds, timestamp: new Date().toISOString() }  
+    }));  
+  }  
+}  
+  
+// ==================== Command Flow ====================  
+async function forwardCommandToPage(commandPayload) {  
+  const tabs = await chrome.tabs.query({ url: "https://onlyfans.com/*" });  
+  tabs.forEach(tab => {  
+    chrome.tabs.sendMessage(tab.id, { type: "_OF_BACKEND_", payload: commandPayload }, () => {  
+      if (chrome.runtime.lastError) {  
+        console.error("[Agent SW] forwardCommandToPage error:", chrome.runtime.lastError);  
+      }  
     });  
   });  
 }  
   
-function sendMessageToOF(chatId, text) {  
-  fetch(`https://onlyfans.com/api2/v2/chats/${chatId}/messages`, {  
-    method: "POST",  
-    headers: { "Content-Type": "application/json" },  
-    body: JSON.stringify({ text })  
-  })  
-    .then(res => res.json())  
-    .then(data => {  
-      console.log("[Extension] Sent message:", data);  
-      broadcastCacheUpdate();  
-    })  
-    .catch(err => console.error("[Extension] Failed to send message:", err));  
-}  
-  
-// ============================================================================  
-// Passive capture: page → background  
-// ============================================================================  
-chrome.runtime.onMessage.addListener(async (msg, sender) => {  
-  if (!msg?.__OF_FORWARDER__) return;  
-  const payload = msg.payload;  
-  let parsed = null;  
-  
-  if (payload.type === "ws_message") {  
-    parsed = parseWS(payload.data);  
-  } else if (payload.type === "fetch_response") {  
-    parsed = parseFetch(payload.url, payload.body, true);  
-  } else if (payload.type === "fetch_request") {  
-    parsed = parseFetch(payload.url, payload.body, false);  
-  }  
-  
-  if (!parsed) return;  
-  console.log("[Extension] Parsed:", parsed.type, parsed);  
-  
-  try {  
-    if (parsed.type === "inbound_message") {  
-      await dbPut("messages", normalizeMessage(parsed));  
-    } else if (parsed.type === "history") {  
-      await dbBulkPut("messages", parsed.messages.map(normalizeMessage));  
-    } else if (parsed.type === "chat_list") {  
-      await dbBulkPut("chats", parsed.chats.map(normalizeChat));  
-    } else if (parsed.type === "outbound_message") {  
-      await dbPut("messages", normalizeMessage(parsed));  
-    }  
-    broadcastCacheUpdate();  
-  } catch (err) {  
-    console.error("[DB] Write failed:", err);  
+// ==================== Injection Service (Expert Review Strategy) ====================  
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {  
+  if (changeInfo.status === "loading" && tab.url?.startsWith("https://onlyfans.com")) {  
+    if (injectedTabs.has(tabId)) return;  
+    injectedTabs.add(tabId);  
+    console.log(`[Agent SW] Injecting page-hook.js into tab ${tabId}`);  
+    chrome.scripting.executeScript({  
+      target: { tabId, allFrames: false },  
+      files: ["page-hook.js"],  
+      world: "MAIN"  
+    }).catch(err => console.error("[Agent SW] Failed to inject page-hook.js:", err));  
   }  
 });  
+chrome.tabs.onRemoved.addListener(tabId => injectedTabs.delete(tabId));  
   
-// ============================================================================  
-// External Messaging  
-// ============================================================================  
+// ==================== External Messaging (Bridge ➔ Agent) ====================  
 chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {  
-  console.log("[Extension] External message received:", request);  
-  if (request.type === "ping") {  
-    sendResponse({ success: true });  
-    return true;  
-  }  
   if (request.type === "get_all_chats_from_db") {  
     openDB().then(db => {  
-      const tx = db.transaction("chats", "readonly");  
-      const os = tx.objectStore("chats");  
-      const req = os.getAll();  
-      req.onsuccess = () => sendResponse({ success: true, data: req.result });  
-      req.onerror = () => sendResponse({ success: false, error: req.error });  
-    });  
+      const req = db.transaction("chats", "readonly").objectStore("chats").getAll();  
+      req.onsuccess = () => sendResponse({ success: true, data: req.result.map(normalizeChat) });  
+    }).catch(err => sendResponse({ success: false, error: String(err) }));  
     return true;  
   }  
   if (request.type === "get_all_messages_from_db") {  
     openDB().then(db => {  
-      const tx = db.transaction("messages", "readonly");  
-      const os = tx.objectStore("messages");  
-      const req = os.getAll();  
-      req.onsuccess = () => sendResponse({ success: true, data: req.result });  
-      req.onerror = () => sendResponse({ success: false, error: req.error });  
+      const req = db.transaction("messages", "readonly").objectStore("messages").getAll();  
+      req.onsuccess = () => sendResponse({ success: true, data: req.result.map(normalizeMessage) });  
+    }).catch(err => sendResponse({ success: false, error: String(err) }));  
+    return true;  
+  }  
+  if (request.type === "send_cache_update") {  
+    sendCacheUpdate()  
+      .then(() => sendResponse({ success: true }))  
+      .catch(err => sendResponse({ success: false, error: String(err) }));  
+    return true;  
+  }  
+});  
+  
+// ==================== Internal Messaging (Content ➔ Background) ====================  
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {  
+  if (message.type === "get_user_id") {  
+    chrome.storage.local.get("user_id", (res) => {  
+      sendResponse({ userId: res.user_id || USER_ID || "demo_user" });  
     });  
     return true;  
   }  
-  sendResponse({ success: false, error: "Unknown external message type" });  
-  return false;  
+  if (message.type === "_OF_USER_ID_SET_") {  
+    const newId = (message.payload?.user_id || "").trim();  
+    if (newId && /^\d+$/.test(newId)) {  
+      if (newId === USER_ID) {  
+        console.log("[Agent SW] USER_ID unchanged:", USER_ID);  
+        sendResponse({ ok: true });  
+        return true;  
+      }  
+      USER_ID = newId;  
+      chrome.storage.local.set({ user_id: USER_ID }, () => {  
+        WS_URL = `${WS_BASE}/${CLIENT_TYPE}/${USER_ID}`;  
+        console.log("[Agent SW] Reconnecting WS with creator USER_ID:", USER_ID);  
+        connectWS();  
+      });  
+      sendResponse({ ok: true });  
+      return true;  
+    } else {  
+      console.warn("[Agent SW] Invalid USER_ID payload:", message.payload?.user_id);  
+      sendResponse({ ok: false, reason: "invalid_user_id" });  
+      return true;  
+    }  
+  }  
+  if (sender.tab && message.type === "_OF_FORWARDER_") {  
+    const payload = message.payload;  
+    if (payload.event === "fetch_response" && payload.body) {  
+      try {  
+        const data = JSON.parse(payload.body);  
+        if (Array.isArray(data.messages)) {  
+          dbBulkPut("messages", data.messages.map(normalizeMessage));  
+        }  
+        if (Array.isArray(data.chats)) {  
+          dbBulkPut("chats", data.chats.map(normalizeChat));  
+        }  
+      } catch (err) {  
+        console.warn("[Agent SW] Failed to parse fetch_response body:", err);  
+      }  
+      sendResponse({ ok: true });  
+      return true;  
+    }  
+    if (payload.event === "fetch_request" && payload.body) {  
+      try {  
+        const reqData = JSON.parse(payload.body);  
+        if (reqData.text) {  
+          const msg = normalizeMessage({ text: reqData.text });  
+          dbPut("messages", msg);  
+          sendNewRawMessage(msg);  
+        }  
+      } catch {}  
+      sendResponse({ ok: true });  
+      return true;  
+    }  
+    if (payload.event === "ws_message" && payload.data) {  
+      if (Array.isArray(payload.data.online) && payload.data.online.every(id => Number.isInteger(id))) {  
+        sendOnlineUsersUpdate(payload.data.online);  
+        sendResponse({ ok: true });  
+        return true;  
+      }  
+      sendNewRawMessage(payload.data);  
+      sendResponse({ ok: true });  
+      return true;  
+    }  
+  }  
+  sendResponse({ ok: true });  
+  return true;  
+});  
+  
+// ==================== Init ====================  
+chrome.storage.local.get("user_id", res => {  
+  USER_ID = res.user_id || "demo_user";  
+  WS_URL = `${WS_BASE}/${CLIENT_TYPE}/${USER_ID}`;  
+  connectWS();  
 });  

@@ -1,0 +1,24 @@
+{  
+  "compilerOptions": {  
+    "target": "ESNext",  
+    "module": "ESNext",  
+    "jsx": "react-jsx",  
+    "moduleResolution": "Node",  
+    "strict": true,  
+    "esModuleInterop": true,  
+    "skipLibCheck": true,  
+    "forceConsistentCasingInFileNames": true,  
+    "baseUrl": "./src",  
+    "paths": {  
+      "@types/*": ["types/*"],  
+      "@components/*": ["components/*"],  
+      "@/*": ["*"]  
+    },  
+    "lib": ["ESNext", "DOM"],  
+    "resolveJsonModule": true,  
+    "allowSyntheticDefaultImports": true,  
+    "types": ["react", "react-dom", "chrome", "node"]  
+  },  
+  "include": ["src"],  
+  "exclude": ["node_modules", "dist"]  
+}  

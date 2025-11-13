@@ -5,122 +5,61 @@
 
 
 export interface paths {
-  "/api/conversations/chats": {
-    /**
-     * Fetch Chats
-     * @description Fetch chat threads from OnlyFans API or cache.
-     *
-     * Args:
-     *     auth (AuthData): Authentication payload containing session cookies.
-     *     limit (int): Max number of chats to return.
-     *     offset (int): Pagination offset.
-     *
-     * Returns:
-     *     List[ChatThread]: Validated chat thread models.
-     */
-    post: operations["fetch_chats_api_conversations_chats_post"];
-  };
-  "/api/conversations/chats/{chat_id}/messages": {
-    /**
-     * Fetch Messages
-     * @description Fetch messages for a specific chat thread.
-     *
-     * Args:
-     *     chat_id (str|int): The chat ID to fetch messages from.
-     *     auth (AuthData): Authentication payload containing session cookies.
-     *     limit (int): Max number of messages to return.
-     *     offset (int): Pagination offset.
-     *
-     * Returns:
-     *     List[Message]: Validated message models.
-     */
-    post: operations["fetch_messages_api_conversations_chats__chat_id__messages_post"];
-  };
-  "/api/conversations/chats/{chat_id}/full": {
-    /**
-     * Fetch Chat With Messages
-     * @description Fetch a chat thread along with its messages.
-     *
-     * Args:
-     *     chat_id (str|int): The chat ID to fetch.
-     *     auth (AuthData): Authentication payload containing session cookies.
-     *     message_limit (int): Max number of messages to include.
-     *
-     * Returns:
-     *     ChatThread: Validated chat thread model with messages.
-     */
-    post: operations["fetch_chat_with_messages_api_conversations_chats__chat_id__full_post"];
-  };
-  "/api/conversations/from-extension": {
-    /**
-     * Ingest From Extension
-     * @description Accept a raw IndexedDB dump from the browser extension and convert to typed models.
-     *
-     * Expected payload format:
-     * {
-     *     "chats": [...],
-     *     "messages": [...]
-     * }
-     *
-     * Also runs enrichment + graph build for each conversation.
-     *
-     * Returns:
-     *     SyncResponse: Validated chats and messages from payload.
-     */
-    post: operations["ingest_from_extension_api_conversations_from_extension_post"];
-  };
-  "/api/conversations/extension-cache": {
-    /**
-     * Update Cache
-     * @description Update backend's cache with raw dict data from the frontend or WS.
-     *
-     * Args:
-     *     payload (dict): Contains 'chats' and 'messages' lists.
-     *
-     * Returns:
-     *     dict: Status and counts of updated records.
-     */
-    post: operations["update_cache_api_conversations_extension_cache_post"];
-  };
-  "/api/conversations/sync": {
-    /**
-     * Sync From Cache
-     * @description Return the current chats/messages from the cache as validated Pydantic models.
-     *
-     * Allows frontend to fetch initial data before WS updates.
-     *
-     * Returns:
-     *     SyncResponse: Cached chats and messages.
-     */
-    get: operations["sync_from_cache_api_conversations_sync_get"];
-  };
-  "/api/insights/topics": {
+  "/api/insights/api/v1/insights/topics": {
     /**
      * Get Topic Metrics
      * @description Get volume, percentage of total, and trend for each topic over the given date range.
      */
-    get: operations["get_topic_metrics_api_insights_topics_get"];
+    get: operations["get_topic_metrics_api_insights_api_v1_insights_topics_get"];
   };
-  "/api/insights/sentiment-trend": {
+  "/api/insights/api/v1/insights/sentiment-trend": {
     /**
      * Get Sentiment Trend
      * @description Get average sentiment score trend over time for conversations in the given date range.
      */
-    get: operations["get_sentiment_trend_api_insights_sentiment_trend_get"];
+    get: operations["get_sentiment_trend_api_insights_api_v1_insights_sentiment_trend_get"];
   };
-  "/api/insights/response-time": {
+  "/api/insights/api/v1/insights/response-time": {
     /**
      * Get Response Time Metrics
      * @description Get average handling time (AHT), silence percentage, and turns metrics over the given date range.
      */
-    get: operations["get_response_time_metrics_api_insights_response_time_get"];
+    get: operations["get_response_time_metrics_api_insights_api_v1_insights_response_time_get"];
+  };
+  "/api/insights/api/v1/insights/full": {
+    /**
+     * Get Full Analytics
+     * @description Get the complete analytics update payload, including topics, sentiment trend,
+     * response time metrics, and per-conversation priorityScores/unreadCounts.
+     */
+    get: operations["get_full_analytics_api_insights_api_v1_insights_full_get"];
+  };
+  "/api/v1/schemas/wss": {
+    /**
+     * Get Wss Schema
+     * @description Returns the JSON schema for OutgoingWssMessage.
+     *
+     * Frontend tooling uses this to auto-generate TypeScript WS types.
+     * This ensures strict type safety between backend WS payloads
+     * and frontend consumers.
+     *
+     * Example usage in frontend:
+     *     $ curl http://localhost:8000/api/v1/schemas/wss > wss-schema.json
+     *     $ json-schema-to-typescript wss-schema.json > ws-types.ts
+     */
+    get: operations["get_wss_schema_api_v1_schemas_wss_get"];
   };
   "/": {
-    /**
-     * Serve Frontend
-     * @description Serve the frontend entry HTML, injecting runtime config for extension and WS.
-     */
+    /** Serve Frontend */
     get: operations["serve_frontend__get"];
+  };
+  "/api/v1/frontend/bootstrap/{user_id}": {
+    /**
+     * Bootstrap State
+     * @description Returns the latest snapshot for a given user_id from DB.
+     * Used by the frontend to hydrate state immediately after page load.
+     */
+    get: operations["bootstrap_state_api_v1_frontend_bootstrap__user_id__get"];
   };
   "/health": {
     /**
@@ -136,13 +75,23 @@ export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
     /**
-     * AuthData
-     * @description Authentication data for OnlyFans API.
-     * For extension-based ingestion, auth_cookie may be omitted.
+     * AnalyticsUpdate
+     * @description Granular update to analytics metrics.
+     * Used for both snapshot and delta WS payloads.
      */
-    AuthData: {
-      /** Auth Cookie */
-      auth_cookie?: string | null;
+    AnalyticsUpdate: {
+      /** Topics */
+      topics: components["schemas"]["TopicMetricsResponse"][];
+      sentiment_trend: components["schemas"]["SentimentTrendResponse"];
+      response_time_metrics: components["schemas"]["ResponseTimeMetricsResponse"];
+      /** Priorityscores */
+      priorityScores?: {
+        [key: string]: number;
+      } | null;
+      /** Unreadcounts */
+      unreadCounts?: {
+        [key: string]: number;
+      } | null;
     };
     /** AvatarThumbs */
     AvatarThumbs: {
@@ -151,20 +100,68 @@ export interface components {
       /** C144 */
       c144?: string | null;
     };
-    /** ChatThread */
-    ChatThread: {
-      /** Id */
-      id: number | string;
-      withUser?: components["schemas"]["UserRef"] | null;
-      last_message?: components["schemas"]["Message"] | null;
-      /** Unread Count */
-      unread_count?: number | null;
-      /** Unreadmessagescount */
-      unreadMessagesCount?: number | null;
+    /**
+     * EngagementAction
+     * @description Represents an engagement action vertex in the LPG.
+     */
+    EngagementAction: {
+      /** Actionid */
+      actionId: string;
+      /** Name */
+      name: string;
+      /** Embedding */
+      embedding: number[];
+      /** Type */
+      type?: string | null;
+    };
+    /**
+     * ExtendedConversationNode
+     * @description Extended ConversationNode including additional frontend/UI and prioritization fields.
+     *
+     * Used in WS payloads when the frontend requires richer context,
+     * such as displaying the other participant's profile or ranking conversations.
+     */
+    ExtendedConversationNode: {
+      /** Conversationid */
+      conversationId: string;
+      /**
+       * Startdate
+       * Format: date-time
+       */
+      startDate: string;
+      /** Enddate */
+      endDate?: string | null;
+      /** Messagecount */
+      messageCount: number;
+      /** Averageresponsetime */
+      averageResponseTime?: number | null;
+      /** Turns */
+      turns?: number | null;
+      /** Silencepercentage */
+      silencePercentage?: number | null;
       /** Messages */
       messages?: components["schemas"]["Message"][] | null;
-      /** Extra */
-      extra?: Record<string, never>;
+      /** Topics */
+      topics?: components["schemas"]["Topic"][] | null;
+      /** Actions */
+      actions?: components["schemas"]["EngagementAction"][] | null;
+      /** Sentiment */
+      sentiment?: number | null;
+      /** Outcomes */
+      outcomes?: components["schemas"]["InteractionOutcome"][] | null;
+      /** Priorityscore */
+      priorityScore?: number | null;
+      withUser?: components["schemas"]["UserRef"] | null;
+    };
+    /**
+     * FullSyncResponse
+     * @description Complete snapshot of all conversations, analytics, and graph data.
+     * Sent once after processing a cache_update (snapshot ingestion).
+     */
+    FullSyncResponse: {
+      /** Conversations */
+      conversations: components["schemas"]["ExtendedConversationNode"][];
+      analytics: components["schemas"]["AnalyticsUpdate"];
     };
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -184,6 +181,20 @@ export interface components {
       w480?: string | null;
       /** W760 */
       w760?: string | null;
+    };
+    /**
+     * InteractionOutcome
+     * @description Represents an interaction outcome vertex in the LPG.
+     */
+    InteractionOutcome: {
+      /** Outcomeid */
+      outcomeId: string;
+      /** Name */
+      name: string;
+      /** Score */
+      score?: number | null;
+      /** Date */
+      date?: string | null;
     };
     /** MediaFile */
     MediaFile: {
@@ -214,9 +225,13 @@ export interface components {
       } | null;
       preview?: components["schemas"]["MediaPreview"] | null;
       /** Squarepreview */
-      squarePreview?: Record<string, never> | null;
+      squarePreview?: {
+        [key: string]: unknown;
+      } | null;
       /** Thumb */
-      thumb?: Record<string, never> | null;
+      thumb?: {
+        [key: string]: unknown;
+      } | null;
       /** Hascustompreview */
       hasCustomPreview?: boolean | null;
       /** Haserror */
@@ -243,7 +258,10 @@ export interface components {
       /** Width */
       width?: number | null;
     };
-    /** Message */
+    /**
+     * Message
+     * @description Represents a single OnlyFans chat message, optionally enriched.
+     */
     Message: {
       /** Id */
       id: number | string;
@@ -260,6 +278,16 @@ export interface components {
       fromUser?: components["schemas"]["UserRef"] | null;
       /** Is Creator */
       is_creator?: boolean | null;
+      /**
+       * Sentimentscore
+       * @description Sentiment score between 0 and 1
+       */
+      sentimentScore?: number | null;
+      /**
+       * Topics
+       * @description List of NLP-extracted topics
+       */
+      topics?: string[] | null;
       /** Is Inbound */
       is_inbound?: boolean | null;
       /** Ispinned */
@@ -313,14 +341,23 @@ export interface components {
       /** Media */
       media?: components["schemas"]["MediaItem"][] | null;
       /** Previews */
-      previews?: Record<string, never>[] | null;
+      previews?: {
+          [key: string]: unknown;
+        }[] | null;
       /** Releaseforms */
-      releaseForms?: Record<string, never>[] | null;
+      releaseForms?: {
+          [key: string]: unknown;
+        }[] | null;
       replyToMessage?: components["schemas"]["Message"] | null;
       /** Extra */
-      extra?: Record<string, never>;
+      extra?: {
+        [key: string]: unknown;
+      };
     };
-    /** ResponseTimeMetricsResponse */
+    /**
+     * ResponseTimeMetricsResponse
+     * @description Metrics related to response times and conversation turns.
+     */
     ResponseTimeMetricsResponse: {
       /** Average Handling Time Minutes */
       average_handling_time_minutes: number;
@@ -329,7 +366,10 @@ export interface components {
       /** Turns */
       turns: number;
     };
-    /** SentimentTrendPoint */
+    /**
+     * SentimentTrendPoint
+     * @description Represents a single point in a sentiment trend timeline.
+     */
     SentimentTrendPoint: {
       /**
        * Date
@@ -339,19 +379,32 @@ export interface components {
       /** Sentiment Score */
       sentiment_score: number;
     };
-    /** SentimentTrendResponse */
+    /**
+     * SentimentTrendResponse
+     * @description Time series of sentiment scores.
+     */
     SentimentTrendResponse: {
       /** Trend */
       trend: components["schemas"]["SentimentTrendPoint"][];
     };
-    /** SyncResponse */
-    SyncResponse: {
-      /** Chats */
-      chats: components["schemas"]["ChatThread"][];
-      /** Messages */
-      messages: components["schemas"]["Message"][];
+    /**
+     * Topic
+     * @description Represents a topic vertex in the LPG.
+     */
+    Topic: {
+      /** Topicid */
+      topicId: string;
+      /** Description */
+      description: string;
+      /** Embedding */
+      embedding: number[];
+      /** Category */
+      category?: string | null;
     };
-    /** TopicMetricsResponse */
+    /**
+     * TopicMetricsResponse
+     * @description Aggregated metrics for a specific topic.
+     */
     TopicMetricsResponse: {
       /** Topic */
       topic: string;
@@ -362,7 +415,10 @@ export interface components {
       /** Trend */
       trend?: number | null;
     };
-    /** UserRef */
+    /**
+     * UserRef
+     * @description Minimal OnlyFans user reference with optional extended profile fields.
+     */
     UserRef: {
       /** Id */
       id?: number | string | null;
@@ -414,7 +470,9 @@ export interface components {
       /** Isverified */
       isVerified?: boolean | null;
       /** Listsstates */
-      listsStates?: Record<string, never>[] | null;
+      listsStates?: {
+          [key: string]: unknown;
+        }[] | null;
       /** Showmediacount */
       showMediaCount?: boolean | null;
       /** Subscribeprice */
@@ -436,7 +494,9 @@ export interface components {
       /** Subscribedonexpirednow */
       subscribedOnExpiredNow?: boolean | null;
       /** Subscriptionbundles */
-      subscriptionBundles?: Record<string, never>[] | null;
+      subscriptionBundles?: {
+          [key: string]: unknown;
+        }[] | null;
       /** Tipsenabled */
       tipsEnabled?: boolean | null;
       /** Tipsmax */
@@ -448,7 +508,9 @@ export interface components {
       /** Tipstextenabled */
       tipsTextEnabled?: boolean | null;
       /** Extra */
-      extra?: Record<string, never>;
+      extra?: {
+        [key: string]: unknown;
+      };
     };
     /** ValidationError */
     ValidationError: {
@@ -474,223 +536,18 @@ export type external = Record<string, never>;
 export interface operations {
 
   /**
-   * Fetch Chats
-   * @description Fetch chat threads from OnlyFans API or cache.
-   *
-   * Args:
-   *     auth (AuthData): Authentication payload containing session cookies.
-   *     limit (int): Max number of chats to return.
-   *     offset (int): Pagination offset.
-   *
-   * Returns:
-   *     List[ChatThread]: Validated chat thread models.
-   */
-  fetch_chats_api_conversations_chats_post: {
-    parameters: {
-      query?: {
-        limit?: number;
-        offset?: number;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AuthData"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        content: {
-          "application/json": components["schemas"]["ChatThread"][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  /**
-   * Fetch Messages
-   * @description Fetch messages for a specific chat thread.
-   *
-   * Args:
-   *     chat_id (str|int): The chat ID to fetch messages from.
-   *     auth (AuthData): Authentication payload containing session cookies.
-   *     limit (int): Max number of messages to return.
-   *     offset (int): Pagination offset.
-   *
-   * Returns:
-   *     List[Message]: Validated message models.
-   */
-  fetch_messages_api_conversations_chats__chat_id__messages_post: {
-    parameters: {
-      query?: {
-        limit?: number;
-        offset?: number;
-      };
-      path: {
-        chat_id: number | string;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AuthData"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        content: {
-          "application/json": components["schemas"]["Message"][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  /**
-   * Fetch Chat With Messages
-   * @description Fetch a chat thread along with its messages.
-   *
-   * Args:
-   *     chat_id (str|int): The chat ID to fetch.
-   *     auth (AuthData): Authentication payload containing session cookies.
-   *     message_limit (int): Max number of messages to include.
-   *
-   * Returns:
-   *     ChatThread: Validated chat thread model with messages.
-   */
-  fetch_chat_with_messages_api_conversations_chats__chat_id__full_post: {
-    parameters: {
-      query?: {
-        message_limit?: number;
-      };
-      path: {
-        chat_id: number | string;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AuthData"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        content: {
-          "application/json": components["schemas"]["ChatThread"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  /**
-   * Ingest From Extension
-   * @description Accept a raw IndexedDB dump from the browser extension and convert to typed models.
-   *
-   * Expected payload format:
-   * {
-   *     "chats": [...],
-   *     "messages": [...]
-   * }
-   *
-   * Also runs enrichment + graph build for each conversation.
-   *
-   * Returns:
-   *     SyncResponse: Validated chats and messages from payload.
-   */
-  ingest_from_extension_api_conversations_from_extension_post: {
-    requestBody: {
-      content: {
-        "application/json": Record<string, never>;
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        content: {
-          "application/json": components["schemas"]["SyncResponse"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  /**
-   * Update Cache
-   * @description Update backend's cache with raw dict data from the frontend or WS.
-   *
-   * Args:
-   *     payload (dict): Contains 'chats' and 'messages' lists.
-   *
-   * Returns:
-   *     dict: Status and counts of updated records.
-   */
-  update_cache_api_conversations_extension_cache_post: {
-    requestBody: {
-      content: {
-        "application/json": Record<string, never>;
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        content: {
-          "application/json": unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  /**
-   * Sync From Cache
-   * @description Return the current chats/messages from the cache as validated Pydantic models.
-   *
-   * Allows frontend to fetch initial data before WS updates.
-   *
-   * Returns:
-   *     SyncResponse: Cached chats and messages.
-   */
-  sync_from_cache_api_conversations_sync_get: {
-    responses: {
-      /** @description Successful Response */
-      200: {
-        content: {
-          "application/json": components["schemas"]["SyncResponse"];
-        };
-      };
-    };
-  };
-  /**
    * Get Topic Metrics
    * @description Get volume, percentage of total, and trend for each topic over the given date range.
    */
-  get_topic_metrics_api_insights_topics_get: {
+  get_topic_metrics_api_insights_api_v1_insights_topics_get: {
     parameters: {
       query?: {
         start_date?: string | null;
         end_date?: string | null;
+        /** @description Filter metrics for a specific creator */
+        creator_id?: string | null;
+        /** @description If true, broadcast analytics update via WS */
+        broadcast?: boolean;
       };
     };
     responses: {
@@ -712,11 +569,12 @@ export interface operations {
    * Get Sentiment Trend
    * @description Get average sentiment score trend over time for conversations in the given date range.
    */
-  get_sentiment_trend_api_insights_sentiment_trend_get: {
+  get_sentiment_trend_api_insights_api_v1_insights_sentiment_trend_get: {
     parameters: {
       query?: {
         start_date?: string | null;
         end_date?: string | null;
+        creator_id?: string | null;
       };
     };
     responses: {
@@ -738,11 +596,12 @@ export interface operations {
    * Get Response Time Metrics
    * @description Get average handling time (AHT), silence percentage, and turns metrics over the given date range.
    */
-  get_response_time_metrics_api_insights_response_time_get: {
+  get_response_time_metrics_api_insights_api_v1_insights_response_time_get: {
     parameters: {
       query?: {
         start_date?: string | null;
         end_date?: string | null;
+        creator_id?: string | null;
       };
     };
     responses: {
@@ -761,15 +620,109 @@ export interface operations {
     };
   };
   /**
-   * Serve Frontend
-   * @description Serve the frontend entry HTML, injecting runtime config for extension and WS.
+   * Get Full Analytics
+   * @description Get the complete analytics update payload, including topics, sentiment trend,
+   * response time metrics, and per-conversation priorityScores/unreadCounts.
    */
+  get_full_analytics_api_insights_api_v1_insights_full_get: {
+    parameters: {
+      query?: {
+        start_date?: string | null;
+        end_date?: string | null;
+        creator_id?: string | null;
+        /** @description If true, also broadcast via WS */
+        broadcast?: boolean;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AnalyticsUpdate"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  /**
+   * Get Wss Schema
+   * @description Returns the JSON schema for OutgoingWssMessage.
+   *
+   * Frontend tooling uses this to auto-generate TypeScript WS types.
+   * This ensures strict type safety between backend WS payloads
+   * and frontend consumers.
+   *
+   * Example usage in frontend:
+   *     $ curl http://localhost:8000/api/v1/schemas/wss > wss-schema.json
+   *     $ json-schema-to-typescript wss-schema.json > ws-types.ts
+   */
+  get_wss_schema_api_v1_schemas_wss_get: {
+    responses: {
+      /** @description Successful Response */
+      200: {
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  /** Serve Frontend */
   serve_frontend__get: {
+    parameters: {
+      query?: {
+        /** @description User ID (must match extension connection) */
+        user_id?: string | null;
+        /** @description Creator ID for multi-creator setups */
+        creator_id?: string | null;
+      };
+    };
     responses: {
       /** @description Successful Response */
       200: {
         content: {
           "text/html": string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  /**
+   * Bootstrap State
+   * @description Returns the latest snapshot for a given user_id from DB.
+   * Used by the frontend to hydrate state immediately after page load.
+   */
+  bootstrap_state_api_v1_frontend_bootstrap__user_id__get: {
+    parameters: {
+      query?: {
+        creator_id?: string | null;
+      };
+      path: {
+        user_id: string;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        content: {
+          "application/json": components["schemas"]["FullSyncResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -792,12 +745,15 @@ export interface operations {
 
 
 // Named exports for schemas
-export type AuthData = components["schemas"]["AuthData"];
+export type AnalyticsUpdate = components["schemas"]["AnalyticsUpdate"];
 export type AvatarThumbs = components["schemas"]["AvatarThumbs"];
-export type ChatThread = components["schemas"]["ChatThread"];
+export type EngagementAction = components["schemas"]["EngagementAction"];
+export type ExtendedConversationNode = components["schemas"]["ExtendedConversationNode"];
+export type FullSyncResponse = components["schemas"]["FullSyncResponse"];
 export type HTTPValidationError = components["schemas"]["HTTPValidationError"];
 export type HeaderSize = components["schemas"]["HeaderSize"];
 export type HeaderThumbs = components["schemas"]["HeaderThumbs"];
+export type InteractionOutcome = components["schemas"]["InteractionOutcome"];
 export type MediaFile = components["schemas"]["MediaFile"];
 export type MediaItem = components["schemas"]["MediaItem"];
 export type MediaPreview = components["schemas"]["MediaPreview"];
@@ -805,7 +761,7 @@ export type Message = components["schemas"]["Message"];
 export type ResponseTimeMetricsResponse = components["schemas"]["ResponseTimeMetricsResponse"];
 export type SentimentTrendPoint = components["schemas"]["SentimentTrendPoint"];
 export type SentimentTrendResponse = components["schemas"]["SentimentTrendResponse"];
-export type SyncResponse = components["schemas"]["SyncResponse"];
+export type Topic = components["schemas"]["Topic"];
 export type TopicMetricsResponse = components["schemas"]["TopicMetricsResponse"];
 export type UserRef = components["schemas"]["UserRef"];
 export type ValidationError = components["schemas"]["ValidationError"];
