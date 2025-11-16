@@ -27,7 +27,11 @@ router = APIRouter(prefix="/api/v1/insights", tags=["Insights"])
 def get_current_user_id() -> str:  
     return "demo_user"  
   
-@router.get("/topics", response_model=List[TopicMetricsResponse])  
+@router.get(  
+    "/topics",  
+    response_model=List[TopicMetricsResponse],  
+    operation_id="getTopics"  
+)
 async def get_topic_metrics(  
     start_date: Optional[datetime] = Query(None),  
     end_date: Optional[datetime] = Query(None),  
@@ -50,7 +54,11 @@ async def get_topic_metrics(
         raise HTTPException(status_code=500, detail={"code": "insights_error", "message": str(e)})  
   
   
-@router.get("/sentiment-trend", response_model=SentimentTrendResponse)  
+@router.get(  
+    "/sentiment-trend",  
+    response_model=SentimentTrendResponse,  
+    operation_id="getSentimentTrend"  
+)
 async def get_sentiment_trend(  
     start_date: Optional[datetime] = Query(None),  
     end_date: Optional[datetime] = Query(None),  
@@ -68,7 +76,11 @@ async def get_sentiment_trend(
         raise HTTPException(status_code=500, detail={"code": "insights_error", "message": str(e)})  
   
   
-@router.get("/response-time", response_model=ResponseTimeMetricsResponse)  
+@router.get(  
+    "/response-time",  
+    response_model=ResponseTimeMetricsResponse,  
+    operation_id="getResponseTimeMetrics"  
+)
 async def get_response_time_metrics(  
     start_date: Optional[datetime] = Query(None),  
     end_date: Optional[datetime] = Query(None),  
@@ -86,7 +98,11 @@ async def get_response_time_metrics(
         raise HTTPException(status_code=500, detail={"code": "insights_error", "message": str(e)})  
   
   
-@router.get("/full", response_model=AnalyticsUpdate)  
+@router.get(  
+    "/full",  
+    response_model=AnalyticsUpdate,  
+    operation_id="getFullAnalytics"  
+)
 async def get_full_analytics(  
     start_date: Optional[datetime] = Query(None),  
     end_date: Optional[datetime] = Query(None),  

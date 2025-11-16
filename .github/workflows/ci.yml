@@ -1,0 +1,47 @@
+name: Bridge Frontend CI  
+  
+on:  
+  push:  
+    branches: [ main, develop ]  
+  pull_request:  
+    branches: [ main, develop ]  
+  
+jobs:  
+  build-and-test:  
+    runs-on: ubuntu-latest  
+  
+    steps:  
+      # 1. Checkout repo  
+      - name: Checkout  
+        uses: actions/checkout@v4  
+  
+      # 2. Use Node 18+ (matches package.json engines)  
+      - name: Setup Node.js  
+        uses: actions/setup-node@v4  
+        with:  
+          node-version: 18  
+          cache: 'npm'  
+  
+      # 3. Install frontend dependencies  
+      - name: Install dependencies  
+        run: |  
+          cd frontend  
+          npm ci  
+  
+      # 4. Lint (uses package.json script)  
+      - name: Lint  
+        run: |  
+          cd frontend  
+          npm run lint  
+  
+      # 5. Typecheck  
+      - name: Typecheck  
+        run: |  
+          cd frontend  
+          npm run typecheck  
+  
+      # 6. Build production bundle  
+      - name: Build  
+        run: |  
+          cd frontend  
+          npm run build  

@@ -32,9 +32,12 @@ app/static/dist/*
 # Keep the dist folder but ignore its contents  
 !app/static/dist/.gitkeep  
   
+# ------------------------  
 # Frontend build outputs  
+# ------------------------  
 frontend/dist/  
 frontend/.vite/  
+frontend/.swc/  
   
 # ------------------------  
 # Extension build outputs (if any)  
@@ -45,10 +48,12 @@ extension/node_modules/
 # ------------------------  
 # Logs  
 # ------------------------  
-logs/*
+logs/*  
 npm-debug.log*  
 yarn-debug.log*  
 yarn-error.log*  
-
-# rm later
-app/.env.example
+  
+# ------------------------  
+# Style Dictionary generated tokens  
+# ------------------------  
+frontend/src/theme/generated/  

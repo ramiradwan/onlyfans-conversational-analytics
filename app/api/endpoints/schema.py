@@ -17,7 +17,12 @@ router = APIRouter()
 # Pre-generate schema once at import time for performance  
 _wss_schema = TypeAdapter(OutgoingWssMessage).json_schema(mode="serialization")  
   
-@router.get("/api/v1/schemas/wss", tags=["Schemas"], response_class=JSONResponse)  
+@router.get(  
+    "/api/v1/schemas/wss",  
+    tags=["Schemas"],  
+    response_class=JSONResponse,  
+    operation_id="getWssSchema"  
+)
 async def get_wss_schema() -> dict:  
     """  
     Returns the JSON schema for OutgoingWssMessage.  

@@ -158,7 +158,10 @@ async def receiver(websocket: WebSocket, client_type: str, user_id: str, scope: 
             continue  
   
   
-@router.websocket("/ws/{client_type}/{user_id}")  
+@router.websocket(  
+    "/ws/{client_type}/{user_id}",  
+    name="websocketEndpoint"  
+)  
 async def websocket_endpoint(websocket: WebSocket, client_type: str, user_id: str) -> None:  
     """  
     WS endpoint for:  

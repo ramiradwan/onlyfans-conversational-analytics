@@ -53,7 +53,11 @@ def _load_manifest() -> Dict[str, Any]:
 _manifest = _load_manifest()  
   
   
-@router.get("/", response_class=HTMLResponse)  
+@router.get(  
+    "/",  
+    response_class=HTMLResponse,  
+    operation_id="serveFrontend"  
+)
 async def serve_frontend(  
     request: Request,  
     user_id: str = Query(None, description="User ID (must match extension connection)")  
@@ -69,7 +73,7 @@ async def serve_frontend(
     css_files = manifest.get(entry_key, {}).get("css", []) if entry_key else []  
   
     base_ws_url = str(request.base_url).rstrip("/").replace("http", "ws") 
-     
+
     # Auto‑fetch from Redis if no query param
     if not user_id:  
         latest_id = r.get("latest_user_id")  
@@ -106,7 +110,11 @@ async def serve_frontend(
   
   
 # NEW: Bootstrap endpoint for frontend hydration  
-@router.get("/api/v1/frontend/bootstrap/{user_id}", response_model=FullSyncResponse)  
+@router.get(  
+    "/api/v1/frontend/bootstrap/{user_id}",  
+    response_model=FullSyncResponse,  
+    operation_id="bootstrapFrontendState"  
+)  
 async def bootstrap_state(user_id: str):  
     """  
     Returns the latest snapshot for a given user_id from DB.  

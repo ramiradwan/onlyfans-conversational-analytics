@@ -135,15 +135,27 @@ npm run build
   
 ---  
   
-## 🎨 Theme  
   
-Primary blue `#2563EB`, success green `#16A34A`, warning amber `#FACC15`, error red `#DC2626`.    
-Rounded corners, soft dividers, accessible focus outlines, `"Inter", "Roboto", sans-serif`.  
+## 🎨 Design Tokens & Spec Integration  
+The frontend implements the finalized [`frontend-design-spec.md`](frontend-design-spec.md) using a **design token pipeline**:  
+  
+1. **Source of truth** — All colors, fonts, and sizing values from the design spec are stored in `src/theme/tokens.json`  
+2. **Build step** — Run `npm run build:tokens` to generate:  
+   - `src/theme/generated/tokens.ts` (TypeScript constants for the MUI theme)  
+   - `src/theme/generated/variables.css` (CSS variables for stylesheets)  
+3. **Theme mapping** — `src/theme/theme.ts` imports these generated tokens and maps them to MUI’s `palette` and `typography` keys.  
+4. **Live usage** — All MUI components automatically use the spec values via the theme.  
+  
+**Designer workflow:**  
+- Edit `tokens.json` to update palette, typography, spacing per the design spec  
+- Run `npm run build:tokens` to regenerate theme constants  
+- Preview changes in `npm run dev`  
+  
+This ensures the UI stays consistent, spec‑aligned, and easy to update without touching component code.  
   
 ---  
   
 ## 📋 Dev Notes  
-  
 - Ignore `keepalive` WS messages in UI  
 - Respect snapshot–delta ordering to prevent race conditions  
 - Never edit generated type files manually  

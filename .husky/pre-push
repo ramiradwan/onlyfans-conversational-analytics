@@ -1,0 +1,7 @@
+#!/bin/sh  
+. "$(dirname "$0")/_/husky.sh"  
+  
+cd frontend || exit 1  
+  
+# Lint, typecheck, and build — all matching CI exactly  
+npm run lint && npm run typecheck && npm run build  

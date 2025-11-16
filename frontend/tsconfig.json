@@ -1,24 +1,55 @@
-{  
-  "compilerOptions": {  
-    "target": "ESNext",  
-    "module": "ESNext",  
-    "jsx": "react-jsx",  
-    "moduleResolution": "Node",  
-    "strict": true,  
-    "esModuleInterop": true,  
-    "skipLibCheck": true,  
-    "forceConsistentCasingInFileNames": true,  
-    "baseUrl": "./src",  
-    "paths": {  
-      "@types/*": ["types/*"],  
-      "@components/*": ["components/*"],  
-      "@/*": ["*"]  
-    },  
-    "lib": ["ESNext", "DOM"],  
-    "resolveJsonModule": true,  
-    "allowSyntheticDefaultImports": true,  
-    "types": ["react", "react-dom", "chrome", "node"]  
-  },  
-  "include": ["src"],  
-  "exclude": ["node_modules", "dist"]  
-}  
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "jsx": "react-jsx",
+    "moduleResolution": "Bundler",
+    "baseUrl": "./src",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": [
+      "chrome",
+      "vite/client"
+    ],
+    "paths": {
+    "@/*": ["/*"],
+    "@types/*": ["types/*"],
+    "@components/*": ["components/*"],
+    "@hooks/*": ["hooks/*"],
+    "@store/*": ["store/*"],
+    "@theme/*": ["theme/*"],
+    "@assets/*": ["assets/*"],
+    "@utils/*": ["utils/*"],
+    "@views/*": ["views/*"],
+    "@layouts/*": ["layouts/*"],
+    "@routing/*": ["routing/*"],
+    "@services/*": ["services/*"],
+    "@common/*": ["common/*"],
+    "@config/*": ["config/*"]
+  }
+  },
+  "include": [
+    "src/types/mui.d.ts",
+    "src",
+    "src/theme/generated",
+    "vite.config.ts",
+    "scripts/*.js",
+    "scripts/*.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build"
+  ]
+}
