@@ -7,10 +7,10 @@ declare module '@mui/material/styles' {
   interface Theme {  
     brandPalette: typeof brandPaletteTokens;  
     effects: {  
-      cardBorder: (theme: Theme) => Record<string, any>;  
-      chartFrame: (theme: Theme) => Record<string, any>;  
-      headerBorder: (theme: Theme) => Record<string, any>;  
-      sideBorder: (theme: Theme) => Record<string, any>;  
+      cardBorder: (theme: Theme) => Record<string, unknown>;  
+      chartFrame: (theme: Theme) => Record<string, unknown>;  
+      headerBorder: (theme: Theme) => Record<string, unknown>;  
+      sideBorder: (theme: Theme) => Record<string, unknown>;  
     };  
     layout: {  
       pagePadding: number;  
@@ -21,10 +21,10 @@ declare module '@mui/material/styles' {
   interface ThemeOptions {  
     brandPalette?: typeof brandPaletteTokens;  
     effects?: {  
-      cardBorder?: (theme: Theme) => Record<string, any>;  
-      chartFrame?: (theme: Theme) => Record<string, any>;  
-      headerBorder?: (theme: Theme) => Record<string, any>;  
-      sideBorder?: (theme: Theme) => Record<string, any>;  
+      cardBorder?: (theme: Theme) => Record<string, unknown>;  
+      chartFrame?: (theme: Theme) => Record<string, unknown>;  
+      headerBorder?: (theme: Theme) => Record<string, unknown>;  
+      sideBorder?: (theme: Theme) => Record<string, unknown>;  
     };  
     layout?: {  
       pagePadding?: number;  

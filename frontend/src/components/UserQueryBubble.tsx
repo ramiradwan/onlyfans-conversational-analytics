@@ -1,6 +1,6 @@
-import React from 'react';  
 import { Paper, Typography, Box } from '@mui/material';  
 import { styled } from '@mui/material/styles';  
+import React from 'react';  
   
 const Bubble = styled(Paper)(({ theme }) => ({  
   padding: theme.spacing(1, 1.5),  

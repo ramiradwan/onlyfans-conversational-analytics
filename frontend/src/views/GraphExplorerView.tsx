@@ -1,21 +1,19 @@
-// src/views/GraphExplorerView.tsx  
-import React, { useState } from 'react';  
 import { Box, Stack, Typography } from '@mui/material';  
+import React, { useState } from 'react';  
 import { QueryInput } from '../components/QueryInput';  
-import { UserQueryBubble } from '../components/UserQueryBubble';  
 import {  
   QueryResponseBubble,  
   QueryResponseBubbleSkeleton,  
 } from '../components/QueryResponseBubble';  
+import { UserQueryBubble } from '../components/UserQueryBubble';  
   
 // Temporary local type until backend types are generated  
-
 interface QueryResponse {  
   id: string;  
   question: string;  
   answer?: string;  
   gremlinQuery?: string;  
-  result?: Record<string, any> | any[];  
+  result?: Record<string, unknown> | unknown[];  
 }  
   
 export default function GraphExplorerView() {  

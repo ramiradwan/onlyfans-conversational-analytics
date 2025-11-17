@@ -1,3 +1,4 @@
+import { getConfig } from '@/config/fastapiConfig';  
 import {  
   OutgoingWssMessage,  
   ConnectionInfo,  
@@ -9,12 +10,11 @@ import {
   EnrichmentResultPayload,  
   SendMessageCommand,  
 } from '@/types/backend-wss';  
-import { useChatStore, chatStoreActions } from '@store/chatStore';  
+import { extensionService } from '@services/extensionService';  
 import { analyticsStoreActions } from '@store/analyticsStore';  
+import { useChatStore, chatStoreActions } from '@store/chatStore';  
 import { enrichmentStoreActions } from '@store/enrichmentStore';  
 import { systemStoreActions } from '@store/systemStore';  
-import { extensionService } from '@services/extensionService';  
-import { getConfig } from '@/config/fastapiConfig';  
   
 class WebSocketService {  
   private ws: WebSocket | null = null;  
@@ -159,11 +159,13 @@ class WebSocketService {
           message.payload as { user_ids: number[]; timestamp: string }  
         );  
         break;  
-      default:  
+      default: {  
+        const unknownMessage = message as Record<string, unknown>;  
         console.warn(  
           '[WebSocketService] Unhandled WS message type:',  
-          (message as any).type  
+          unknownMessage.type  
         );  
+      }  
     }  
   }  
   

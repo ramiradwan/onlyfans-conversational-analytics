@@ -1,5 +1,4 @@
 // src/views/AnalyticsView.tsx  
-import React, { useMemo } from 'react';  
 import {  
   Box,  
   Typography,  
@@ -7,25 +6,33 @@ import {
   useTheme,  
   CircularProgress,  
 } from '@mui/material';  
-import { DataGrid, GridToolbar } from '@mui/x-data-grid';  
-import { LineChart } from '@mui/x-charts/LineChart';  
 import { BarChart } from '@mui/x-charts/BarChart';  
-import { useAnalyticsStore } from '@store/analyticsStore';  
+import { LineChart } from '@mui/x-charts/LineChart';  
+import { DataGrid, GridToolbar } from '@mui/x-data-grid';  
   
+import React, { useMemo } from 'react';  
+  
+import type {  
+  SentimentTrendPoint,  
+  TopicMetricsResponse,  
+} from '@/types/backend-wss';  
 import {  
   ChartPlaceholder,  
   TablePlaceholder,  
   HorizontalBarsPlaceholder,  
 } from '@components/placeholders';  
 import { Panel, AsyncContent } from '@components/ui';  
+import { useAnalyticsStore } from '@store/analyticsStore';  
   
 export default function AnalyticsView() {  
   const theme = useTheme();  
+  
   const isLoaded = useAnalyticsStore((state) => state.isLoaded);  
   const topics = useAnalyticsStore((state) => state.topics);  
   const sentimentTrend = useAnalyticsStore((state) => state.sentimentTrend);  
   
   const isLoading = !isLoaded;  
+  
   const topicRows = useMemo(  
     () => topics.map((topic, index) => ({ id: index, ...topic })),  
     [topics]  
@@ -59,16 +66,26 @@ export default function AnalyticsView() {
           sx={{ display: 'flex', flexDirection: 'column', overflow: 'auto' }}  
         >  
           <Panel sx={{ flex: 1, gap: 3 }}>  
-            <Typography variant="h6">Sentiment Over Time (Detailed)</Typography>  
-            <AsyncContent  
+            <Typography variant="h6">  
+              Sentiment Over Time (Detailed)  
+            </Typography>  
+            <AsyncContent<SentimentTrendPoint>  
               isLoading={isLoading}  
               data={sentimentTrend}  
               placeholder={<ChartPlaceholder height={chartHeight} />}  
               emptyMessage="No sentiment data available."  
-              render={(data) => (  
+              render={(data: SentimentTrendPoint[]) => (  
                 <LineChart  
                   aria-label="Sentiment over time chart"  
-                  dataset={data}  
+                  // ✅ Cast dataset to chart-safe type to satisfy TS  
+                  dataset={  
+                    data as unknown as Readonly<  
+                      Record<  
+                        string,  
+                        string | number | Date | null | undefined  
+                      >[]  
+                    >  
+                  }  
                   xAxis={[  
                     {  
                       dataKey: 'date',  
@@ -165,14 +182,22 @@ export default function AnalyticsView() {
                     }}  
                   />  
                 </Box>  
-                <AsyncContent  
+                <AsyncContent<TopicMetricsResponse>  
                   isLoading={false}  
                   data={topics}  
                   placeholder={<ChartPlaceholder height={chartHeight} />}  
                   emptyMessage="No topic chart data available."  
-                  render={(data) => (  
+                  render={(data: TopicMetricsResponse[]) => (  
                     <BarChart  
-                      dataset={data.slice(0, 5)}  
+                      // ✅ Cast dataset to chart-safe type to satisfy TS  
+                      dataset={  
+                        data.slice(0, 5) as unknown as Readonly<  
+                          Record<  
+                            string,  
+                            string | number | Date | null | undefined  
+                          >[]  
+                        >  
+                      }  
                       yAxis={[{ dataKey: 'topic', scaleType: 'band' }]}  
                       series={[  
                         {  

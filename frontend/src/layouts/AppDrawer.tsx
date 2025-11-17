@@ -1,4 +1,7 @@
-import React from 'react';  
+import AnalyticsIcon from '@mui/icons-material/Analytics';  
+import DashboardIcon from '@mui/icons-material/Dashboard';  
+import InboxIcon from '@mui/icons-material/Inbox';  
+import TravelExploreIcon from '@mui/icons-material/TravelExplore';  
 import {  
   Box,  
   Drawer,  
@@ -10,10 +13,7 @@ import {
   Toolbar,  
   useTheme,  
 } from '@mui/material';  
-import DashboardIcon from '@mui/icons-material/Dashboard';  
-import InboxIcon from '@mui/icons-material/Inbox';  
-import AnalyticsIcon from '@mui/icons-material/Analytics';  
-import TravelExploreIcon from '@mui/icons-material/TravelExplore';  
+import React from 'react';  
 import { NavLink, useLocation } from 'react-router-dom';  
 import { usePermissions } from '@hooks/usePermissions';  
   

@@ -1,13 +1,18 @@
 // src/views/CreatorDashboardView.tsx  
-import React from 'react';  
-import { Grid, Typography, Box, useTheme } from '@mui/material';  
-import { KpiCard } from '@components/KpiCard';  
-import { useAnalyticsStore } from '@store/analyticsStore';  
-import { LineChart } from '@mui/x-charts/LineChart';  
-import { BarChart } from '@mui/x-charts/BarChart';  
   
+import { Grid, Typography, Box, useTheme } from '@mui/material';  
+import { BarChart } from '@mui/x-charts/BarChart';  
+import { LineChart } from '@mui/x-charts/LineChart';  
+import React from 'react';  
+  
+import type {  
+  SentimentTrendPoint,  
+  TopicMetricsResponse,  
+} from '@/types/backend-wss';  
+import { KpiCard } from '@components/KpiCard';  
 import { ChartPlaceholder, KpiPlaceholder } from '@components/placeholders';  
 import { Panel, AsyncContent } from '@components/ui';  
+import { useAnalyticsStore } from '@store/analyticsStore';  
   
 export default function CreatorDashboardView() {  
   // --- Data Hooks ---  
@@ -90,22 +95,30 @@ export default function CreatorDashboardView() {
         >  
           <Panel sx={{ flexGrow: 1, minHeight: 400 }}>  
             <Typography variant="h6">Sentiment Over Time</Typography>  
-            <AsyncContent  
+            <AsyncContent<SentimentTrendPoint>  
               isLoading={isLoading}  
               data={sentimentTrend}  
               placeholder={<ChartPlaceholder height={chartHeight} />}  
               emptyMessage="No sentiment data available."  
-              render={(data) => (  
+              render={(data: SentimentTrendPoint[]) => (  
                 <LineChart  
                   aria-label="Sentiment over time chart"  
-                  dataset={data}  
+                  dataset={  
+                    data as unknown as Readonly<  
+                      Record<  
+                        string,  
+                        string | number | Date | null | undefined  
+                      >[]  
+                    >  
+                  }  
                   xAxis={[  
                     {  
                       dataKey: 'date',  
                       scaleType: 'band',  
                       valueFormatter: (dateStr: string) =>  
                         new Date(dateStr).toLocaleDateString(),  
-                      hide: true,  
+                      label: '',  
+                      tickLabelStyle: { display: 'none' },  
                     },  
                   ]}  
                   yAxis={[{ min: 0, max: 1 }]}  
@@ -115,13 +128,10 @@ export default function CreatorDashboardView() {
                       label: 'Sentiment Score',  
                       color: theme.vars.palette.chart.sentiment,  
                       showMark: false,  
+                      valueFormatter: (value: number | null) =>  
+                        value == null ? '–' : `${(value * 100).toFixed(0)}%`,  
                     },  
                   ]}  
-                  tooltip={{  
-                    trigger: 'item',  
-                    valueFormatter: (value: number) =>  
-                      `${(value * 100).toFixed(0)}%`,  
-                  }}  
                   height={chartHeight}  
                   grid={{ vertical: true, horizontal: true }}  
                 />  
@@ -137,15 +147,22 @@ export default function CreatorDashboardView() {
         >  
           <Panel sx={{ flexGrow: 1, minHeight: 400 }}>  
             <Typography variant="h6">Top Topics by Volume</Typography>  
-            <AsyncContent  
+            <AsyncContent<TopicMetricsResponse>  
               isLoading={isLoading}  
               data={topics}  
               placeholder={<ChartPlaceholder height={chartHeight} />}  
               emptyMessage="No topic data available."  
-              render={(data) => (  
+              render={(data: TopicMetricsResponse[]) => (  
                 <BarChart  
                   aria-label="Top topics by volume chart"  
-                  dataset={data.slice(0, 5)}  
+                  dataset={  
+                    data.slice(0, 5) as unknown as Readonly<  
+                      Record<  
+                        string,  
+                        string | number | Date | null | undefined  
+                      >[]  
+                    >  
+                  }  
                   yAxis={[{ dataKey: 'topic', scaleType: 'band' }]}  
                   series={[  
                     {  

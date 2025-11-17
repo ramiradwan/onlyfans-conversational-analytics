@@ -1,5 +1,5 @@
-// src/components/QueryResponseBubble.tsx  
-import React from 'react';  
+import CodeIcon from '@mui/icons-material/Code';  
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';  
 import {  
   Paper,  
   Typography,  
@@ -11,8 +11,7 @@ import {
   Skeleton,  
 } from '@mui/material';  
 import { styled } from '@mui/material/styles';  
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';  
-import CodeIcon from '@mui/icons-material/Code';  
+import React from 'react';  
   
 // Temporary local type until backend types are generated  
 interface QueryResponse {  
@@ -20,7 +19,7 @@ interface QueryResponse {
   question: string;  
   answer?: string;  
   gremlinQuery?: string;  
-  result?: Record<string, any> | any[]; 
+  result?: Record<string, unknown> | unknown[];  
 }  
   
 const Bubble = styled(Paper)(({ theme }) => ({  

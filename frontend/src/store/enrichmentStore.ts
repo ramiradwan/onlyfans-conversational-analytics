@@ -8,7 +8,8 @@ export interface EnrichmentStoreState {
   };  
 }  
   
-export const useEnrichmentStore = create<EnrichmentStoreState>((set, get) => ({  
+// Use create with inferred bound store signature  
+export const useEnrichmentStore = create<EnrichmentStoreState>()((set, get) => ({  
   enrichmentsByConversation: {},  
   actions: {  
     handleEnrichmentResult: (payload) => {  

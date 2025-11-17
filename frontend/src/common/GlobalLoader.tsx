@@ -1,5 +1,5 @@
-import React from 'react';
 import { Box, CircularProgress, Typography, Backdrop } from '@mui/material';
+import React from 'react';
 // The 'lottie-react' package is in your package.json,
 // you would import it here once you have a Lottie JSON file.
 // import Lottie from "lottie-react";

@@ -1,3 +1,4 @@
+// src/services/extensionService.ts  
 import { SendMessageCommand } from '@/types/backend-wss';  
 import { systemStoreActions } from '@store/systemStore';  
   
@@ -29,7 +30,7 @@ class ExtensionService {
   }  
   
   /** Internal helper for sending a message to the Agent. */  
-  private sendMessage<T = any>(type: string, payload: any): Promise<T> {  
+  private sendMessage<T>(type: string, payload: unknown): Promise<T> {  
     return new Promise((resolve, reject) => {  
       if (!this.isAgentAvailable()) {  
         return reject(new Error('[ExtensionService] Agent not available'));  
@@ -52,15 +53,15 @@ class ExtensionService {
     });  
   }  
   
-  public getAllChatsFromDB(): Promise<any> {  
+  public getAllChatsFromDB(): Promise<unknown> {  
     return this.sendMessage('get_all_chats_from_db', null);  
   }  
   
-  public getAllMessagesFromDB(chatId: string): Promise<any> {  
+  public getAllMessagesFromDB(chatId: string): Promise<unknown> {  
     return this.sendMessage('get_all_messages_from_db', { chatId });  
   }  
   
-  public executeAgentCommand(command: SendMessageCommand): Promise<any> {  
+  public executeAgentCommand(command: SendMessageCommand): Promise<unknown> {  
     return this.sendMessage('execute_agent_command', command);  
   }  
 }  

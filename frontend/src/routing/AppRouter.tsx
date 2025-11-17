@@ -1,8 +1,8 @@
 import React, { Suspense } from 'react';
 import { useRoutes, RouteObject } from 'react-router-dom';
-import { AppShell } from '../layouts/AppShell';
 import { useAppRoutes } from './useAppRoutes';
 import { GlobalLoader } from '../common/GlobalLoader';
+import { AppShell } from '../layouts/AppShell';
 
 /**
  * This component defines the top-level routing structure.

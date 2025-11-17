@@ -1,18 +1,19 @@
 // src/App.tsx  
-import React, { useEffect } from 'react';  
+  
+import { CssBaseline, GlobalStyles } from '@mui/material';  
 import InitColorSchemeScript from '@mui/material/InitColorSchemeScript';  
 import { ThemeProvider } from '@mui/material/styles';  
-import { CssBaseline, GlobalStyles } from '@mui/material';  
+import React, { useEffect } from 'react';  
 import { BrowserRouter } from 'react-router-dom';  
+  
+import { getConfig } from '@/config/fastapiConfig';  
+import { extensionService } from '@services/extensionService';  
+import { websocketService } from '@services/websocketService';  
+import { useChatStore } from '@store/chatStore';  
+import { systemStoreActions } from '@store/systemStore';  
   
 import { AppRouter } from './routing/AppRouter';  
 import { theme } from './theme';  
-import { websocketService } from '@services/websocketService';  
-import { getConfig } from '@/config/fastapiConfig';  
-import { useUserRole } from '@store/userStore';  
-import { useChatStore } from '@store/chatStore';  
-import { extensionService } from '@services/extensionService';  
-import { systemStoreActions } from '@store/systemStore';  
   
 // Global styles using theme.vars for flicker-free dark/light mode  
 const globalStyles = (  
@@ -34,7 +35,7 @@ const globalStyles = (
   
 export function App() {  
   const replaceStateFromSnapshot = useChatStore((s) => s.actions.replaceStateFromSnapshot);  
-  const role = useUserRole();  
+  // Removed unused variable `role` from here  
   
   useEffect(() => {  
     const { FASTAPI_WS_URL, API_BASE_URL, CREATOR_ID, USER_ID } = getConfig();  

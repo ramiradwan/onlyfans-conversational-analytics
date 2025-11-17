@@ -1,4 +1,6 @@
-import React from 'react';  
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';  
+import ExtensionIcon from '@mui/icons-material/Extension';  
+import MenuIcon from '@mui/icons-material/Menu';  
 import {  
   AppBar,  
   Toolbar,  
@@ -9,15 +11,13 @@ import {
   Stack,  
   useTheme,  
 } from '@mui/material';  
-import MenuIcon from '@mui/icons-material/Menu';  
-import AccountCircleIcon from '@mui/icons-material/AccountCircle';  
-import ExtensionIcon from '@mui/icons-material/Extension';  
+import React from 'react';  
+import { ThemeToggle } from '@/components/ThemeToggle';  
 import {  
   useBackendConnectionState,  
   useExtensionConnectionState,  
   useSystemStatus,  
 } from '@store/systemStore';  
-import { ThemeToggle } from '@/components/ThemeToggle';  
   
 const statusColorMap = {  
   connected: 'success',  

@@ -1,38 +1,41 @@
-// src/views/OperatorInboxView.tsx  
-import React, { useState, useMemo, useEffect, useRef } from 'react';  
+// External imports (alphabetical)  
+import SendIcon from '@mui/icons-material/Send';  
 import {  
-  Box,  
-  Grid,  
-  List,  
-  ListItemButton,  
-  ListItemAvatar,  
   Avatar,  
-  ListItemText,  
-  Typography,  
-  Stack,  
-  Chip,  
   Badge,  
+  Box,  
+  Chip,  
   Divider,  
-  TextField,  
+  Grid,  
   IconButton,  
+  List,  
+  ListItemAvatar,  
+  ListItemButton,  
+  ListItemText,  
+  Stack,  
+  TextField,  
+  Typography,  
   useTheme,  
 } from '@mui/material';  
-import SendIcon from '@mui/icons-material/Send';  
-  
-import { MessageBubble } from '@components/MessageBubble';  
-import { ExtendedConversationNode, Message } from '@/types/backend';  
-import { useChatStore } from '@store/chatStore';  
-import { useAnalyticsStore } from '@store/analyticsStore';  
-import { useEnrichmentStore } from '@store/enrichmentStore';  
+import React, { useEffect, useMemo, useRef, useState } from 'react';  
 import { shallow } from 'zustand/shallow';  
   
+// Internal imports (alphabetical)  
+import { ExtendedConversationNode, Message } from '@/types/backend';  
+import { MessageBubble } from '@components/MessageBubble';  
 import {  
   ChatListPlaceholder,  
-  MessageStreamPlaceholder,  
   Fan360Placeholder,  
+  MessageStreamPlaceholder,  
 } from '@components/placeholders';  
 import { Panel, AsyncContent } from '@components/ui';  
+import { useAnalyticsStore } from '@store/analyticsStore';  
+import { useChatStore } from '@store/chatStore';  
+import { useEnrichmentStore, EnrichmentStoreState } from '@store/enrichmentStore';  
   
+// Local type  
+type EqualityFn<T> = (a: T, b: T) => boolean;  
+
 // Helper to get the last message from a message array  
 const getLastMessage = (messages: Message[] | undefined): Message | null =>  
   !messages || messages.length === 0 ? null : messages[messages.length - 1];  
@@ -62,7 +65,7 @@ function ChatListPane({
         borderRight: `1px solid ${theme.vars.palette.divider}`,  
       }}  
     >  
-      <AsyncContent  
+      <AsyncContent<ExtendedConversationNode>  
         isLoading={isLoading}  
         data={conversations}  
         placeholder={<ChatListPlaceholder />}  
@@ -137,11 +140,13 @@ function MessageStreamPane({
   const [draftMessage, setDraftMessage] = useState('');  
   
   useEffect(() => {  
-    scrollRef.current?.scrollIntoView(  
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches  
-        ? undefined  
-        : { behavior: 'smooth' }  
-    );  
+    if (scrollRef.current) {  
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {  
+        scrollRef.current.scrollIntoView();  
+      } else {  
+        scrollRef.current.scrollIntoView({ behavior: 'smooth' });  
+      }  
+    }  
   }, [messages]);  
   
   const handleSend = () => {  
@@ -154,7 +159,7 @@ function MessageStreamPane({
   return (  
     <Panel sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>  
       <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>  
-        <AsyncContent  
+        <AsyncContent<Message>  
           isLoading={isLoading}  
           data={messages}  
           placeholder={<MessageStreamPlaceholder />}  
@@ -210,19 +215,29 @@ function Fan360InsightsPane({
   isLoading: boolean;  
 }) {  
   const theme = useTheme();  
-  const enrichment = useEnrichmentStore(  
+  
+  // Explicitly typed hook to allow equalityFn  
+  const useEnrichmentStoreTyped = useEnrichmentStore as <T>(  
+    selector: (state: EnrichmentStoreState) => T,  
+    equalityFn?: EqualityFn<T>  
+  ) => T;  
+  
+  const enrichment = useEnrichmentStoreTyped(  
     (state) => (convoId ? state.enrichmentsByConversation[convoId] : null),  
     shallow  
-  );  
+  ) as ExtendedConversationNode | null;  
+  
+  const enrichmentData: ExtendedConversationNode[] =  
+    convoId && enrichment ? [enrichment] : [];  
   
   return (  
     <Panel sx={{ height: '100%', overflowY: 'auto', p: 3 }}>  
       <Typography variant="h6" gutterBottom>  
         Fan360 Insights  
       </Typography>  
-      <AsyncContent  
+      <AsyncContent<ExtendedConversationNode>  
         isLoading={isLoading}  
-        data={!convoId ? [] : enrichment ? [enrichment] : []}  
+        data={enrichmentData}  
         placeholder={<Fan360Placeholder />}  
         emptyMessage={<Fan360Placeholder />}  
         render={(data) => {  
@@ -230,25 +245,27 @@ function Fan360InsightsPane({
           return (  
             <Stack spacing={2}>  
               <Typography variant="subtitle2">Sentiment</Typography>  
-              <Chip  
-                label={`${Math.round(e.sentiment * 100)}% Positive`}  
-                sx={{  
-                  backgroundColor:  
-                    e.sentiment > 0.5  
-                      ? theme.vars.palette.success.main  
-                      : theme.vars.palette.error.main,  
-                  color: theme.vars.palette.success.contrastText,  
-                }}  
-              />  
+              {typeof e.sentiment === 'number' && (  
+                <Chip  
+                  label={`${Math.round(e.sentiment * 100)}% Positive`}  
+                  sx={{  
+                    backgroundColor:  
+                      e.sentiment > 0.5  
+                        ? theme.vars.palette.success.main  
+                        : theme.vars.palette.error.main,  
+                    color: theme.vars.palette.success.contrastText,  
+                  }}  
+                />  
+              )}  
               <Typography variant="subtitle2">Topics</Typography>  
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">  
-                {e.topics.map((topic) => (  
+                {(e.topics ?? []).map((topic) => (  
                   <Chip key={topic.topicId} label={topic.description} />  
                 ))}  
               </Stack>  
               <Typography variant="subtitle2">Suggested Actions</Typography>  
               <Stack spacing={1}>  
-                {e.actions.map((action) => (  
+                {(e.actions ?? []).map((action) => (  
                   <Chip  
                     key={action.actionId}  
                     label={action.name}  

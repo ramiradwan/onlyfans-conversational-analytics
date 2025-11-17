@@ -1,7 +1,7 @@
-import React, { useState } from 'react';  
-import { Paper, TextField, IconButton } from '@mui/material';  
-import SendIcon from '@mui/icons-material/Send';  
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';  
+import SendIcon from '@mui/icons-material/Send';  
+import { Paper, TextField, IconButton } from '@mui/material';  
+import React, { useState } from 'react';  
   
 interface QueryInputProps {  
   onSend: (text: string) => void;  

@@ -1,11 +1,11 @@
-import React from 'react';  
 import { Typography, useTheme } from '@mui/material';  
+import React from 'react';  
   
 export type AsyncContentProps<T> = {  
   isLoading: boolean;  
   data: T[] | null | undefined;  
   placeholder: React.ReactNode;  
-  emptyMessage: string;  
+  emptyMessage: React.ReactNode; // changed from string  
   render: (data: T[]) => React.ReactNode;  
 };  
   
@@ -19,16 +19,24 @@ export function AsyncContent<T>({
   const theme = useTheme();  
   
   if (isLoading) return <>{placeholder}</>;  
+  
   if (!data || data.length === 0) {  
     return (  
-      <Typography  
-        color={theme.vars.palette.text.secondary}  
-        align="center"  
-        sx={{ mt: 4 }}  
-      >  
-        {emptyMessage}  
-      </Typography>  
+      <>  
+        {typeof emptyMessage === 'string' ? (  
+          <Typography  
+            color={theme.vars.palette.text.secondary}  
+            align="center"  
+            sx={{ mt: 4 }}  
+          >  
+            {emptyMessage}  
+          </Typography>  
+        ) : (  
+          emptyMessage  
+        )}  
+      </>  
     );  
   }  
+  
   return <>{render(data)}</>;  
 }  

@@ -1,5 +1,5 @@
-import React from 'react';  
 import { Paper, useTheme, SxProps } from '@mui/material';  
+import React from 'react';  
   
 export const Panel: React.FC<{ children: React.ReactNode; sx?: SxProps }> = ({  
   children,  

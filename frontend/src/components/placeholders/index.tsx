@@ -1,5 +1,4 @@
 // src/components/placeholders/index.tsx  
-import React from 'react';  
 import {  
   Box,  
   Skeleton,  
@@ -11,6 +10,7 @@ import {
   ListItemText,  
   Stack,  
 } from '@mui/material';  
+import React from 'react';  
   
 /**  
  * ChartPlaceholder  

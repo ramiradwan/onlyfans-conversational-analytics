@@ -1,5 +1,5 @@
-import React from 'react';
 import { Box, Paper, Typography } from '@mui/material';
+import React from 'react';
 import { Message } from '@/types/backend'; // Import from auto-generated types
 
 interface MessageBubbleProps {
