@@ -1,59 +1,59 @@
-# ------------------------  
-# Python  
-# ------------------------  
-__pycache__/  
-*.pyc  
-*.pyo  
-*.pyd  
-.venv/  
-env/  
-venv/  
-  
-# ------------------------  
-# Environment  
-# ------------------------  
-.env  
-  
-# ------------------------  
-# IDE settings  
-# ------------------------  
-.vscode/  
-.idea/  
-  
-# ------------------------  
-# Node dependencies  
-# ------------------------  
-frontend/node_modules/  
-  
-# ------------------------  
-# Vite build output  
-# ------------------------  
-app/static/dist/*  
-# Keep the dist folder but ignore its contents  
-!app/static/dist/.gitkeep  
-  
-# ------------------------  
-# Frontend build outputs  
-# ------------------------  
-frontend/dist/  
-frontend/.vite/  
-frontend/.swc/  
-  
-# ------------------------  
-# Extension build outputs (if any)  
-# ------------------------  
-extension/dist/  
-extension/node_modules/  
-  
-# ------------------------  
-# Logs  
-# ------------------------  
-logs/*  
-npm-debug.log*  
-yarn-debug.log*  
-yarn-error.log*  
-  
-# ------------------------  
-# Style Dictionary generated tokens  
-# ------------------------  
-frontend/src/theme/generated/  
+# ------------------------
+# Python
+# ------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+
+# ------------------------
+# Environment
+# ------------------------
+.env
+
+# ------------------------
+# IDE settings
+# ------------------------
+.vscode/
+.idea/
+
+# ------------------------
+# Node dependencies
+# ------------------------
+frontend/node_modules/
+
+# ------------------------
+# Vite build output (goes to backend)
+# ------------------------
+app/static/dist/*
+# Keep the dist folder but ignore its contents
+!app/static/dist/.gitkeep
+
+# ------------------------
+# Frontend caches and build artifacts
+# ------------------------
+frontend/.vite/
+frontend/.swc/
+frontend/.eslintcache
+
+# ------------------------
+# Extension build outputs (if any)
+# ------------------------
+extension/dist/
+extension/node_modules/
+
+# ------------------------
+# Logs
+# ------------------------
+logs/*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ------------------------
+# Style Dictionary generated tokens
+# ------------------------
+frontend/src/theme/generated/
