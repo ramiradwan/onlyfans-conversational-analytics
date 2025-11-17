@@ -23,7 +23,7 @@
       "vite/client"
     ],
     "paths": {
-    "@/*": ["/*"],
+    "@/*": ["*"],
     "@types/*": ["types/*"],
     "@components/*": ["components/*"],
     "@hooks/*": ["hooks/*"],

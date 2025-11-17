@@ -6,12 +6,12 @@
   "engines": {  
     "node": ">=18.0.0"  
   },  
-    "scripts": {  
-    "dev": "vite",  
+  "scripts": {  
+    "generate:theme": "ts-node --esm src/theme/generate-theme.ts",  
+    "watch:tokens": "chokidar 'src/theme/tokens.json' -c 'npm run generate:theme'",  
+    "dev": "npm run generate:theme && vite",  
     "preview": "vite preview",  
-    "build": "npm run typecheck && npm run lint && npm run build:tokens && vite build",  
-    "build:tokens": "ts-node --esm src/theme/build-tokens.ts",  
-    "watch:tokens": "chokidar 'src/theme/tokens.json' -c 'npm run build:tokens'",  
+    "build": "npm run typecheck && npm run lint && npm run generate:theme && vite build",  
     "sync:rest": "openapi-typescript http://localhost:8000/openapi.json --output src/types/backend.ts",  
     "sync:wss": "curl -s http://localhost:8000/api/v1/schemas/wss | npx json2ts --stdin --output src/types/backend-wss.ts",  
     "postprocess:types": "node ./scripts/postprocess-types.js",  
@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit --project tsconfig.json",  
     "lint": "eslint src --max-warnings=0 --cache",  
     "prepare": "husky"  
-    },  
+  },  
   "dependencies": {  
     "@emotion/react": "^11.14.0",  
     "@emotion/styled": "^11.14.0",  
@@ -29,9 +29,11 @@
     "@mui/material": "^7.3.5",  
     "@mui/system": "^7.3.5",  
     "@mui/x-charts": "^8.18.0",  
+    "@mui/x-data-grid": "^8.18.0",  
     "lottie-react": "^2.4.1",  
     "react": "^19.2.0",  
     "react-dom": "^19.2.0",  
+    "react-router-dom": "^7.9.6",  
     "react-use-websocket": "^4.13.0",  
     "zod": "^4.1.12",  
     "zustand": "^5.0.8"  
@@ -44,7 +46,7 @@
     "@types/react-dom": "19.2.3",  
     "@typescript-eslint/eslint-plugin": "^8.46.4",  
     "@typescript-eslint/parser": "^8.46.4",  
-    "@vitejs/plugin-react-swc": "^3.7.0",  
+    "@vitejs/plugin-react-swc": "^4.2.2",  
     "chokidar-cli": "^3.0.0",  
     "eslint": "^9.39.1",  
     "eslint-plugin-import": "^2.32.0",  

@@ -1,12 +1,8 @@
-// vite.config.ts  
 import { defineConfig } from 'vite';  
 import react from '@vitejs/plugin-react-swc';  
-import { aliasEntries } from './scripts/aliases.config.js';
+import { aliasEntries } from './scripts/aliases.config.js';  
 import { fileURLToPath } from 'url';  
 import path, { resolve } from 'path';  
-  
-// ✅ Import generated endpoint constants using the new alias  
-import { GET_WSS_SCHEMA } from '@config/endpoints';  
   
 const __filename = fileURLToPath(import.meta.url);  
 const __dirname = path.dirname(__filename);  
@@ -16,21 +12,14 @@ export default defineConfig({
     react({  
       jsxImportSource: '@emotion/react',  
       plugins: [  
-        [  
-          '@swc/plugin-emotion',  
-          { sourceMap: true, autoLabel: 'dev-only' }  
-        ]  
+        ['@swc/plugin-emotion', { sourceMap: true, autoLabel: 'dev-only' }]  
       ]  
     })  
   ],  
-  
-  // ✅ Use centralized alias mapping from aliases.config.js  
   resolve: {  
     alias: aliasEntries  
   },  
-  
   base: process.env.VITE_BASE_PATH || './',  
-  
   build: {  
     outDir: resolve(__dirname, '../app/static/dist'),  
     emptyOutDir: true,  
@@ -51,18 +40,16 @@ export default defineConfig({
     },  
     chunkSizeWarningLimit: 1000  
   },  
-  
   server: {  
-    port: 3000,  
+    port: 5173,  
     open: true,  
     proxy: {  
       '/api': { target: 'http://localhost:8000', changeOrigin: true },  
       '/openapi.json': { target: 'http://localhost:8000', changeOrigin: true },  
-      [GET_WSS_SCHEMA]: { target: 'http://localhost:8000', changeOrigin: true },  
+      '/api/v1/schemas/wss': { target: 'http://localhost:8000', changeOrigin: true },  
       '/ws': { target: 'ws://localhost:8000', ws: true, changeOrigin: true }  
     }  
   },  
-  
   ssr: {  
     noExternal: process.env.NODE_ENV === 'production' ? [] : ['@mui/material']  
   }  
