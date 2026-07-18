@@ -4,7 +4,7 @@ Client for retrieving chats and messages from a creator-owned OnlyFans account.
   
 Sources:  
 - DataIngestService in-memory cache (populated via extension ingestion flow)  
-- Direct API (legacy/testing, not implemented here)  
+- Optional direct API seam (not implemented here)
 """  
   
 from typing import List, Union  
@@ -58,4 +58,4 @@ class OnlyFansClient:
             raise ValueError(f"Chat {chat_id} not found.")  
         chat.messages = await self.get_messages(user_id, chat_id, limit=message_limit)  
         log_json(chat.model_dump(), f"get_chat_with_messages_user_{user_id}_chat_{chat_id}")  
-        return chat  
+        return chat

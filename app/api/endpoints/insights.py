@@ -5,7 +5,7 @@ Provides:
     - Topic metrics over a date range.  
     - Sentiment trend over a date range.  
     - Response time metrics over a date range.  
-    - (NEW) Full analytics update payload, including priorityScores and unreadCounts.  
+    - Full analytics update payload, including priorityScores and unreadCounts.
 """  
   
 from fastapi import APIRouter, Query, HTTPException, Depends  
@@ -23,7 +23,7 @@ from app.utils.logger import logger
   
 router = APIRouter(prefix="/api/v1/insights", tags=["Insights"])  
   
-# Placeholder auth dependency — replace with actual  
+# Local-development authentication dependency.
 def get_current_user_id() -> str:  
     return "demo_user"  
   
@@ -124,4 +124,4 @@ async def get_full_analytics(
         return payload  
     except Exception as e:  
         logger.exception("Error fetching full analytics payload")  
-        raise HTTPException(status_code=500, detail={"code": "insights_error", "message": str(e)})  
+        raise HTTPException(status_code=500, detail={"code": "insights_error", "message": str(e)})

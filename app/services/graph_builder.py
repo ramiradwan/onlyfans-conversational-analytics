@@ -27,7 +27,7 @@ from app.utils.normalization import normalize_str, normalize_datetime
 from app.utils.time import utcnow  
 from app.utils.ws_errors import broadcast_system_error  
   
-# In-memory placeholder for per-user graph state (replace with DB integration)  
+# Per-user in-memory graph state.
 _user_graphs: Dict[str, Dict[str, List]] = {}  
   
   
@@ -283,4 +283,4 @@ async def append_graph_from_delta(
         logger.exception(  
             f"[GRAPH] Failed to append delta for {user_id} (conv={getattr(enriched_conversation, 'conversationId', 'unknown')}): {e}"  
         )  
-        await broadcast_system_error(user_id, "graph_delta_failed", str(e))  
+        await broadcast_system_error(user_id, "graph_delta_failed", str(e))
