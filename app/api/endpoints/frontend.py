@@ -83,8 +83,9 @@ async def serve_frontend(request: Request):
     )
 
     return templates.TemplateResponse(
-        "index.html",
-        {
+        request=request,
+        name="index.html",
+        context={
             "request": request,
             "app_script": f"/static/dist/{app_script}" if app_script else None,
             "css_files": [f"/static/dist/{c}" for c in css_files],

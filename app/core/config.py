@@ -1,19 +1,13 @@
 # app/core/config.py
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
-from pydantic import BaseModel, Field
 
-# Load .env explicitly so values are in os.environ before BaseSettings reads them
+# Load the application-local environment file before constructing settings.
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
-
-
-class RedisSettings(BaseModel):
-    url: str = Field(..., description="Redis connection URL")
 
 
 class Settings(BaseSettings):
@@ -24,6 +18,7 @@ class Settings(BaseSettings):
     websocket_bind_host: str = "127.0.0.1"
     canonical_persistence_backend: Literal["memory", "sqlite"] = "memory"
     canonical_database_path: Path = Path("canonical.sqlite3")
+    broadcast_url: str = "memory://"
 
     onlyfans_base_url: str = "https://onlyfans.com/api2/v2"
     onlyfans_auth_cookie: str = ""
@@ -37,10 +32,6 @@ class Settings(BaseSettings):
 
     nlp_model_path: str = ""
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
-
-    redis: RedisSettings = RedisSettings(
-        url=os.getenv("REDIS_URL", "redis://localhost:6379")
-    )
 
     class Config:
         env_file = ".env"
