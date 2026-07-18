@@ -1,0 +1,16 @@
+{
+  "name": "spike-bridge-localhost",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated ADR 0009 browser-host implementation spike; not a product dependency.",
+  "type": "module",
+  "scripts": {
+    "spike": "node run-spike.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}

@@ -1,0 +1,2704 @@
+{
+  "generatedAt": "2026-07-18T17:57:00.877Z",
+  "environment": {
+    "os": {
+      "type": "Windows_NT",
+      "release": "10.0.26300",
+      "version": "Windows 11 Pro",
+      "arch": "x64"
+    },
+    "node": "v22.18.0",
+    "playwright": "1.61.1"
+  },
+  "contract": {
+    "origin": "http://bridge.localhost:17871",
+    "rpId": "bridge.localhost",
+    "setCookie": "__Host-bridge_session=adr-0009-spike-session; Secure; HttpOnly; SameSite=Strict; Path=/",
+    "primaryPort": 17871,
+    "secondaryPortForPortScopeEvidence": 17872
+  },
+  "portBehavior": {
+    "status": "PASS",
+    "detail": "Conflict was detected with actionable remediation; the unrelated owner remained alive. After release, the harness acquired 17871 and reacquired it on restart.",
+    "observations": {
+      "dummyPid": 22704,
+      "conflictExit": {
+        "code": 2,
+        "signal": null
+      },
+      "diagnostic": "PORT_CONFLICT: Port 17871 is already in use. Stop the unrelated process that owns 17871, then retry. The harness refused dynamic fallback and did not terminate the owner.",
+      "unrelatedOwnerAfterConflict": {
+        "status": 200,
+        "body": {
+          "owner": "unrelated-dummy-process",
+          "pid": 22704
+        }
+      },
+      "firstStart": {
+        "health": {
+          "status": 200,
+          "body": {
+            "product": "bridge-localhost-adr-0009-spike",
+            "host": "bridge.localhost:17871",
+            "origin": null,
+            "cookie": null,
+            "remoteAddress": "127.0.0.1",
+            "localAddress": "127.0.0.1",
+            "localPort": 17871
+          }
+        },
+        "readyLine": "HARNESS_READY {\"pid\":20860,\"bindings\":[{\"host\":\"127.0.0.1\",\"port\":17871},{\"host\":\"::1\",\"port\":17871}]}"
+      },
+      "restart": {
+        "health": {
+          "status": 200,
+          "body": {
+            "product": "bridge-localhost-adr-0009-spike",
+            "host": "bridge.localhost:17871",
+            "origin": null,
+            "cookie": null,
+            "remoteAddress": "127.0.0.1",
+            "localAddress": "127.0.0.1",
+            "localPort": 17871
+          }
+        },
+        "readyLine": "HARNESS_READY {\"pid\":18356,\"bindings\":[{\"host\":\"127.0.0.1\",\"port\":17871},{\"host\":\"::1\",\"port\":17871}]}"
+      },
+      "databaseFilesCreated": false
+    }
+  },
+  "listenerBindings": [
+    {
+      "host": "127.0.0.1",
+      "port": 17871
+    },
+    {
+      "host": "::1",
+      "port": 17871
+    },
+    {
+      "host": "127.0.0.1",
+      "port": 17872
+    },
+    {
+      "host": "::1",
+      "port": 17872
+    }
+  ],
+  "browsers": [
+    {
+      "id": "chrome",
+      "label": "Chrome",
+      "channel": "chrome",
+      "version": "150.0.7871.125",
+      "product": "Chrome/150.0.7871.125",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+      "phases": [
+        {
+          "phase": "fresh",
+          "profileKind": "new throwaway persistent profile",
+          "headless": true,
+          "version": "150.0.7871.125",
+          "browserProduct": {
+            "protocolVersion": "1.3",
+            "product": "Chrome/150.0.7871.125",
+            "revision": "@0e1f2fbe541be34886118f3d54cf53f7e12bf905",
+            "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+            "jsVersion": "15.0.245.19"
+          },
+          "checks": {
+            "1": {
+              "status": "PASS",
+              "detail": "bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+              "observations": {
+                "bridgeRequest": {
+                  "sequence": 1,
+                  "timestamp": "2026-07-18T17:56:45.491Z",
+                  "method": "GET",
+                  "url": "/?criterion=loopback&tag=chrome-fresh",
+                  "host": "bridge.localhost:17871",
+                  "origin": null,
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 52548,
+                  "localAddress": "::1",
+                  "localPort": 17871
+                },
+                "otherRequest": {
+                  "sequence": 2,
+                  "timestamp": "2026-07-18T17:56:45.504Z",
+                  "method": "GET",
+                  "url": "/echo?criterion=loopback-subdomain&tag=chrome-fresh",
+                  "host": "other.bridge.localhost:17871",
+                  "origin": null,
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 49170,
+                  "localAddress": "::1",
+                  "localPort": 17871
+                },
+                "dnsOrHostsConfigurationPerformed": false
+              }
+            },
+            "2": {
+              "status": "PASS",
+              "detail": "window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+              "observations": {
+                "isSecureContext": true,
+                "serviceWorker": {
+                  "ok": true,
+                  "scope": "http://bridge.localhost:17871/"
+                }
+              }
+            },
+            "3": {
+              "status": "PASS",
+              "detail": "CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+              "observations": {
+                "setCookieHeader": "__Host-bridge_session=adr-0009-spike-session; Secure; HttpOnly; SameSite=Strict; Path=/",
+                "cdpCookie": {
+                  "name": "__Host-bridge_session",
+                  "value": "adr-0009-spike-session",
+                  "domain": "bridge.localhost",
+                  "path": "/",
+                  "expires": -1,
+                  "size": 43,
+                  "httpOnly": true,
+                  "secure": true,
+                  "session": true,
+                  "sameSite": "Strict",
+                  "priority": "Medium",
+                  "sourceScheme": "Secure",
+                  "sourcePort": 17871
+                },
+                "scriptCookie": "",
+                "protectedRequest": {
+                  "sequence": 9,
+                  "timestamp": "2026-07-18T17:56:45.573Z",
+                  "method": "POST",
+                  "url": "/protected?case=same-origin",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17871",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 52548,
+                  "localAddress": "::1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": true,
+                    "hostValid": true,
+                    "originValid": true,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 200
+                }
+              }
+            },
+            "4": {
+              "status": "PASS",
+              "detail": "No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+              "observations": {
+                "cases": [
+                  {
+                    "name": "localhost",
+                    "request": {
+                      "sequence": 10,
+                      "timestamp": "2026-07-18T17:56:45.582Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=localhost&tag=chrome-fresh",
+                      "host": "localhost:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                      "remoteAddress": "::1",
+                      "remotePort": 58812,
+                      "localAddress": "::1",
+                      "localPort": 17871
+                    }
+                  },
+                  {
+                    "name": "127.0.0.1",
+                    "request": {
+                      "sequence": 11,
+                      "timestamp": "2026-07-18T17:56:45.619Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=127.0.0.1&tag=chrome-fresh",
+                      "host": "127.0.0.1:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                      "remoteAddress": "127.0.0.1",
+                      "remotePort": 59318,
+                      "localAddress": "127.0.0.1",
+                      "localPort": 17871
+                    }
+                  },
+                  {
+                    "name": "other.localhost",
+                    "request": {
+                      "sequence": 14,
+                      "timestamp": "2026-07-18T17:56:45.654Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=other.localhost&tag=chrome-fresh",
+                      "host": "other.localhost:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                      "remoteAddress": "::1",
+                      "remotePort": 55018,
+                      "localAddress": "::1",
+                      "localPort": 17871
+                    }
+                  }
+                ]
+              }
+            },
+            "5": {
+              "status": "PASS",
+              "detail": "The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+              "observations": {
+                "portScopeRequest": {
+                  "sequence": 15,
+                  "timestamp": "2026-07-18T17:56:45.701Z",
+                  "method": "GET",
+                  "url": "/echo?criterion=cookie-port-scope&tag=chrome-fresh",
+                  "host": "bridge.localhost:17872",
+                  "origin": null,
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 54496,
+                  "localAddress": "::1",
+                  "localPort": 17872
+                },
+                "crossPortFetch": {
+                  "fetchResolved": false,
+                  "name": "TypeError",
+                  "message": "Failed to fetch"
+                },
+                "crossPortRequest": {
+                  "sequence": 19,
+                  "timestamp": "2026-07-18T17:56:45.725Z",
+                  "method": "POST",
+                  "url": "/protected?case=cross-port-browser",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 52548,
+                  "localAddress": "::1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": true,
+                    "originValid": false,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                },
+                "forgedFetch": {
+                  "fetchResolved": false,
+                  "name": "TypeError",
+                  "message": "Failed to fetch"
+                },
+                "forgedRequest": {
+                  "sequence": 20,
+                  "timestamp": "2026-07-18T17:56:45.728Z",
+                  "method": "POST",
+                  "url": "/protected?case=browser-forged-host",
+                  "host": "127.0.0.1:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "127.0.0.1",
+                  "remotePort": 60563,
+                  "localAddress": "127.0.0.1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": false,
+                    "originValid": false,
+                    "cookiePresent": false,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                },
+                "manual": {
+                  "status": 403,
+                  "body": "{\"accepted\":false,\"reason\":\"rejected-by-exact-host-origin-validation\"}\n"
+                },
+                "manualRequest": {
+                  "sequence": 21,
+                  "timestamp": "2026-07-18T17:56:45.731Z",
+                  "method": "POST",
+                  "url": "/protected?case=manual-cookie-wrong-origin",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": null,
+                  "remoteAddress": "127.0.0.1",
+                  "remotePort": 60564,
+                  "localAddress": "127.0.0.1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": true,
+                    "originValid": false,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                }
+              }
+            },
+            "6": {
+              "status": "PASS",
+              "detail": "CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+              "observations": {
+                "authenticatorOptions": {
+                  "protocol": "ctap2",
+                  "transport": "internal",
+                  "hasUserVerification": true,
+                  "isUserVerified": true
+                },
+                "create": {
+                  "id": "KDn4Ea7tBsxC3tNkquuTArN1HGZ5yJ-_l1zyFG0TiVI",
+                  "authenticatorAttachment": "platform",
+                  "transports": [
+                    "internal"
+                  ],
+                  "clientData": {
+                    "type": "webauthn.create",
+                    "challenge": "MqECN0oPX1AUdyCLy12ZeLOOuYe8sOR8gNdLoW9rkiY",
+                    "origin": "http://bridge.localhost:17871",
+                    "crossOrigin": false
+                  },
+                  "flags": 69,
+                  "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                },
+                "get": {
+                  "clientData": {
+                    "type": "webauthn.get",
+                    "challenge": "N74n0m3n1utYW99UDxlwu-DSrcjesHeA8XBx0B4mPMU",
+                    "origin": "http://bridge.localhost:17871",
+                    "crossOrigin": false
+                  },
+                  "flags": 5,
+                  "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                },
+                "localhostAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                },
+                "wrongRpAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                },
+                "noUvAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                }
+              }
+            }
+          },
+          "requestRange": {
+            "start": 1,
+            "end": 23
+          }
+        },
+        {
+          "phase": "reused",
+          "profileKind": "same throwaway profile reopened",
+          "headless": true,
+          "version": "150.0.7871.125",
+          "browserProduct": {
+            "protocolVersion": "1.3",
+            "product": "Chrome/150.0.7871.125",
+            "revision": "@0e1f2fbe541be34886118f3d54cf53f7e12bf905",
+            "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+            "jsVersion": "15.0.245.19"
+          },
+          "checks": {
+            "1": {
+              "status": "PASS",
+              "detail": "bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+              "observations": {
+                "bridgeRequest": {
+                  "sequence": 24,
+                  "timestamp": "2026-07-18T17:56:49.159Z",
+                  "method": "GET",
+                  "url": "/?criterion=loopback&tag=chrome-reused",
+                  "host": "bridge.localhost:17871",
+                  "origin": null,
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 63591,
+                  "localAddress": "::1",
+                  "localPort": 17871
+                },
+                "otherRequest": {
+                  "sequence": 25,
+                  "timestamp": "2026-07-18T17:56:49.170Z",
+                  "method": "GET",
+                  "url": "/echo?criterion=loopback-subdomain&tag=chrome-reused",
+                  "host": "other.bridge.localhost:17871",
+                  "origin": null,
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 63215,
+                  "localAddress": "::1",
+                  "localPort": 17871
+                },
+                "dnsOrHostsConfigurationPerformed": false
+              }
+            },
+            "2": {
+              "status": "PASS",
+              "detail": "window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+              "observations": {
+                "isSecureContext": true,
+                "serviceWorker": {
+                  "ok": true,
+                  "scope": "http://bridge.localhost:17871/"
+                }
+              }
+            },
+            "3": {
+              "status": "PASS",
+              "detail": "CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+              "observations": {
+                "setCookieHeader": "__Host-bridge_session=adr-0009-spike-session; Secure; HttpOnly; SameSite=Strict; Path=/",
+                "cdpCookie": {
+                  "name": "__Host-bridge_session",
+                  "value": "adr-0009-spike-session",
+                  "domain": "bridge.localhost",
+                  "path": "/",
+                  "expires": -1,
+                  "size": 43,
+                  "httpOnly": true,
+                  "secure": true,
+                  "session": true,
+                  "sameSite": "Strict",
+                  "priority": "Medium",
+                  "sourceScheme": "Secure",
+                  "sourcePort": 17871
+                },
+                "scriptCookie": "",
+                "protectedRequest": {
+                  "sequence": 32,
+                  "timestamp": "2026-07-18T17:56:49.209Z",
+                  "method": "POST",
+                  "url": "/protected?case=same-origin",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17871",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 53008,
+                  "localAddress": "::1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": true,
+                    "hostValid": true,
+                    "originValid": true,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 200
+                }
+              }
+            },
+            "4": {
+              "status": "PASS",
+              "detail": "No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+              "observations": {
+                "cases": [
+                  {
+                    "name": "localhost",
+                    "request": {
+                      "sequence": 33,
+                      "timestamp": "2026-07-18T17:56:49.217Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=localhost&tag=chrome-reused",
+                      "host": "localhost:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                      "remoteAddress": "::1",
+                      "remotePort": 60223,
+                      "localAddress": "::1",
+                      "localPort": 17871
+                    }
+                  },
+                  {
+                    "name": "127.0.0.1",
+                    "request": {
+                      "sequence": 35,
+                      "timestamp": "2026-07-18T17:56:49.238Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=127.0.0.1&tag=chrome-reused",
+                      "host": "127.0.0.1:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                      "remoteAddress": "127.0.0.1",
+                      "remotePort": 65191,
+                      "localAddress": "127.0.0.1",
+                      "localPort": 17871
+                    }
+                  },
+                  {
+                    "name": "other.localhost",
+                    "request": {
+                      "sequence": 37,
+                      "timestamp": "2026-07-18T17:56:49.281Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=other.localhost&tag=chrome-reused",
+                      "host": "other.localhost:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                      "remoteAddress": "::1",
+                      "remotePort": 49252,
+                      "localAddress": "::1",
+                      "localPort": 17871
+                    }
+                  }
+                ]
+              }
+            },
+            "5": {
+              "status": "PASS",
+              "detail": "The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+              "observations": {
+                "portScopeRequest": {
+                  "sequence": 39,
+                  "timestamp": "2026-07-18T17:56:49.316Z",
+                  "method": "GET",
+                  "url": "/echo?criterion=cookie-port-scope&tag=chrome-reused",
+                  "host": "bridge.localhost:17872",
+                  "origin": null,
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 54044,
+                  "localAddress": "::1",
+                  "localPort": 17872
+                },
+                "crossPortFetch": {
+                  "fetchResolved": false,
+                  "name": "TypeError",
+                  "message": "Failed to fetch"
+                },
+                "crossPortRequest": {
+                  "sequence": 42,
+                  "timestamp": "2026-07-18T17:56:49.361Z",
+                  "method": "POST",
+                  "url": "/protected?case=cross-port-browser",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "::1",
+                  "remotePort": 53008,
+                  "localAddress": "::1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": true,
+                    "originValid": false,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                },
+                "forgedFetch": {
+                  "fetchResolved": false,
+                  "name": "TypeError",
+                  "message": "Failed to fetch"
+                },
+                "forgedRequest": {
+                  "sequence": 43,
+                  "timestamp": "2026-07-18T17:56:49.366Z",
+                  "method": "POST",
+                  "url": "/protected?case=browser-forged-host",
+                  "host": "127.0.0.1:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                  "remoteAddress": "127.0.0.1",
+                  "remotePort": 64693,
+                  "localAddress": "127.0.0.1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": false,
+                    "originValid": false,
+                    "cookiePresent": false,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                },
+                "manual": {
+                  "status": 403,
+                  "body": "{\"accepted\":false,\"reason\":\"rejected-by-exact-host-origin-validation\"}\n"
+                },
+                "manualRequest": {
+                  "sequence": 44,
+                  "timestamp": "2026-07-18T17:56:49.367Z",
+                  "method": "POST",
+                  "url": "/protected?case=manual-cookie-wrong-origin",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": null,
+                  "remoteAddress": "127.0.0.1",
+                  "remotePort": 60564,
+                  "localAddress": "127.0.0.1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": true,
+                    "originValid": false,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                }
+              }
+            },
+            "6": {
+              "status": "PASS",
+              "detail": "CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+              "observations": {
+                "authenticatorOptions": {
+                  "protocol": "ctap2",
+                  "transport": "internal",
+                  "hasUserVerification": true,
+                  "isUserVerified": true
+                },
+                "create": {
+                  "id": "tQDgQNsQDrMT_mVSfawxSM-aUIAdfm39lnGMZRrkaic",
+                  "authenticatorAttachment": "platform",
+                  "transports": [
+                    "internal"
+                  ],
+                  "clientData": {
+                    "type": "webauthn.create",
+                    "challenge": "8YhxLnIxw-genJpRn-BPRKKQPfMvCqupG8Y-Pb0Qjkk",
+                    "origin": "http://bridge.localhost:17871",
+                    "crossOrigin": false
+                  },
+                  "flags": 69,
+                  "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                },
+                "get": {
+                  "clientData": {
+                    "type": "webauthn.get",
+                    "challenge": "W4tWLQA-0ZbdAxZasxIEKGSH1mEVdbd8xXli4cECpZI",
+                    "origin": "http://bridge.localhost:17871",
+                    "crossOrigin": false
+                  },
+                  "flags": 5,
+                  "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                },
+                "localhostAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                },
+                "wrongRpAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                },
+                "noUvAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                }
+              }
+            }
+          },
+          "requestRange": {
+            "start": 24,
+            "end": 46
+          }
+        }
+      ],
+      "checks": {
+        "1": {
+          "status": "PASS",
+          "detail": "fresh: bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback. Reused-profile check: reused: bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+                "observations": {
+                  "bridgeRequest": {
+                    "sequence": 1,
+                    "timestamp": "2026-07-18T17:56:45.491Z",
+                    "method": "GET",
+                    "url": "/?criterion=loopback&tag=chrome-fresh",
+                    "host": "bridge.localhost:17871",
+                    "origin": null,
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 52548,
+                    "localAddress": "::1",
+                    "localPort": 17871
+                  },
+                  "otherRequest": {
+                    "sequence": 2,
+                    "timestamp": "2026-07-18T17:56:45.504Z",
+                    "method": "GET",
+                    "url": "/echo?criterion=loopback-subdomain&tag=chrome-fresh",
+                    "host": "other.bridge.localhost:17871",
+                    "origin": null,
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 49170,
+                    "localAddress": "::1",
+                    "localPort": 17871
+                  },
+                  "dnsOrHostsConfigurationPerformed": false
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+                "observations": {
+                  "bridgeRequest": {
+                    "sequence": 24,
+                    "timestamp": "2026-07-18T17:56:49.159Z",
+                    "method": "GET",
+                    "url": "/?criterion=loopback&tag=chrome-reused",
+                    "host": "bridge.localhost:17871",
+                    "origin": null,
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 63591,
+                    "localAddress": "::1",
+                    "localPort": 17871
+                  },
+                  "otherRequest": {
+                    "sequence": 25,
+                    "timestamp": "2026-07-18T17:56:49.170Z",
+                    "method": "GET",
+                    "url": "/echo?criterion=loopback-subdomain&tag=chrome-reused",
+                    "host": "other.bridge.localhost:17871",
+                    "origin": null,
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 63215,
+                    "localAddress": "::1",
+                    "localPort": 17871
+                  },
+                  "dnsOrHostsConfigurationPerformed": false
+                }
+              }
+            ]
+          }
+        },
+        "2": {
+          "status": "PASS",
+          "detail": "fresh: window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/. Reused-profile check: reused: window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+                "observations": {
+                  "isSecureContext": true,
+                  "serviceWorker": {
+                    "ok": true,
+                    "scope": "http://bridge.localhost:17871/"
+                  }
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+                "observations": {
+                  "isSecureContext": true,
+                  "serviceWorker": {
+                    "ok": true,
+                    "scope": "http://bridge.localhost:17871/"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "3": {
+          "status": "PASS",
+          "detail": "fresh: CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it. Reused-profile check: reused: CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+                "observations": {
+                  "setCookieHeader": "__Host-bridge_session=adr-0009-spike-session; Secure; HttpOnly; SameSite=Strict; Path=/",
+                  "cdpCookie": {
+                    "name": "__Host-bridge_session",
+                    "value": "adr-0009-spike-session",
+                    "domain": "bridge.localhost",
+                    "path": "/",
+                    "expires": -1,
+                    "size": 43,
+                    "httpOnly": true,
+                    "secure": true,
+                    "session": true,
+                    "sameSite": "Strict",
+                    "priority": "Medium",
+                    "sourceScheme": "Secure",
+                    "sourcePort": 17871
+                  },
+                  "scriptCookie": "",
+                  "protectedRequest": {
+                    "sequence": 9,
+                    "timestamp": "2026-07-18T17:56:45.573Z",
+                    "method": "POST",
+                    "url": "/protected?case=same-origin",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17871",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 52548,
+                    "localAddress": "::1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": true,
+                      "hostValid": true,
+                      "originValid": true,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 200
+                  }
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+                "observations": {
+                  "setCookieHeader": "__Host-bridge_session=adr-0009-spike-session; Secure; HttpOnly; SameSite=Strict; Path=/",
+                  "cdpCookie": {
+                    "name": "__Host-bridge_session",
+                    "value": "adr-0009-spike-session",
+                    "domain": "bridge.localhost",
+                    "path": "/",
+                    "expires": -1,
+                    "size": 43,
+                    "httpOnly": true,
+                    "secure": true,
+                    "session": true,
+                    "sameSite": "Strict",
+                    "priority": "Medium",
+                    "sourceScheme": "Secure",
+                    "sourcePort": 17871
+                  },
+                  "scriptCookie": "",
+                  "protectedRequest": {
+                    "sequence": 32,
+                    "timestamp": "2026-07-18T17:56:49.209Z",
+                    "method": "POST",
+                    "url": "/protected?case=same-origin",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17871",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 53008,
+                    "localAddress": "::1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": true,
+                      "hostValid": true,
+                      "originValid": true,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 200
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "4": {
+          "status": "PASS",
+          "detail": "fresh: No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost. Reused-profile check: reused: No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+                "observations": {
+                  "cases": [
+                    {
+                      "name": "localhost",
+                      "request": {
+                        "sequence": 10,
+                        "timestamp": "2026-07-18T17:56:45.582Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=localhost&tag=chrome-fresh",
+                        "host": "localhost:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                        "remoteAddress": "::1",
+                        "remotePort": 58812,
+                        "localAddress": "::1",
+                        "localPort": 17871
+                      }
+                    },
+                    {
+                      "name": "127.0.0.1",
+                      "request": {
+                        "sequence": 11,
+                        "timestamp": "2026-07-18T17:56:45.619Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=127.0.0.1&tag=chrome-fresh",
+                        "host": "127.0.0.1:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                        "remoteAddress": "127.0.0.1",
+                        "remotePort": 59318,
+                        "localAddress": "127.0.0.1",
+                        "localPort": 17871
+                      }
+                    },
+                    {
+                      "name": "other.localhost",
+                      "request": {
+                        "sequence": 14,
+                        "timestamp": "2026-07-18T17:56:45.654Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=other.localhost&tag=chrome-fresh",
+                        "host": "other.localhost:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                        "remoteAddress": "::1",
+                        "remotePort": 55018,
+                        "localAddress": "::1",
+                        "localPort": 17871
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+                "observations": {
+                  "cases": [
+                    {
+                      "name": "localhost",
+                      "request": {
+                        "sequence": 33,
+                        "timestamp": "2026-07-18T17:56:49.217Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=localhost&tag=chrome-reused",
+                        "host": "localhost:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                        "remoteAddress": "::1",
+                        "remotePort": 60223,
+                        "localAddress": "::1",
+                        "localPort": 17871
+                      }
+                    },
+                    {
+                      "name": "127.0.0.1",
+                      "request": {
+                        "sequence": 35,
+                        "timestamp": "2026-07-18T17:56:49.238Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=127.0.0.1&tag=chrome-reused",
+                        "host": "127.0.0.1:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                        "remoteAddress": "127.0.0.1",
+                        "remotePort": 65191,
+                        "localAddress": "127.0.0.1",
+                        "localPort": 17871
+                      }
+                    },
+                    {
+                      "name": "other.localhost",
+                      "request": {
+                        "sequence": 37,
+                        "timestamp": "2026-07-18T17:56:49.281Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=other.localhost&tag=chrome-reused",
+                        "host": "other.localhost:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                        "remoteAddress": "::1",
+                        "remotePort": 49252,
+                        "localAddress": "::1",
+                        "localPort": 17871
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "5": {
+          "status": "PASS",
+          "detail": "fresh: The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin. Reused-profile check: reused: The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+                "observations": {
+                  "portScopeRequest": {
+                    "sequence": 15,
+                    "timestamp": "2026-07-18T17:56:45.701Z",
+                    "method": "GET",
+                    "url": "/echo?criterion=cookie-port-scope&tag=chrome-fresh",
+                    "host": "bridge.localhost:17872",
+                    "origin": null,
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 54496,
+                    "localAddress": "::1",
+                    "localPort": 17872
+                  },
+                  "crossPortFetch": {
+                    "fetchResolved": false,
+                    "name": "TypeError",
+                    "message": "Failed to fetch"
+                  },
+                  "crossPortRequest": {
+                    "sequence": 19,
+                    "timestamp": "2026-07-18T17:56:45.725Z",
+                    "method": "POST",
+                    "url": "/protected?case=cross-port-browser",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 52548,
+                    "localAddress": "::1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": true,
+                      "originValid": false,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  },
+                  "forgedFetch": {
+                    "fetchResolved": false,
+                    "name": "TypeError",
+                    "message": "Failed to fetch"
+                  },
+                  "forgedRequest": {
+                    "sequence": 20,
+                    "timestamp": "2026-07-18T17:56:45.728Z",
+                    "method": "POST",
+                    "url": "/protected?case=browser-forged-host",
+                    "host": "127.0.0.1:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "127.0.0.1",
+                    "remotePort": 60563,
+                    "localAddress": "127.0.0.1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": false,
+                      "originValid": false,
+                      "cookiePresent": false,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  },
+                  "manual": {
+                    "status": 403,
+                    "body": "{\"accepted\":false,\"reason\":\"rejected-by-exact-host-origin-validation\"}\n"
+                  },
+                  "manualRequest": {
+                    "sequence": 21,
+                    "timestamp": "2026-07-18T17:56:45.731Z",
+                    "method": "POST",
+                    "url": "/protected?case=manual-cookie-wrong-origin",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": null,
+                    "remoteAddress": "127.0.0.1",
+                    "remotePort": 60564,
+                    "localAddress": "127.0.0.1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": true,
+                      "originValid": false,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  }
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+                "observations": {
+                  "portScopeRequest": {
+                    "sequence": 39,
+                    "timestamp": "2026-07-18T17:56:49.316Z",
+                    "method": "GET",
+                    "url": "/echo?criterion=cookie-port-scope&tag=chrome-reused",
+                    "host": "bridge.localhost:17872",
+                    "origin": null,
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 54044,
+                    "localAddress": "::1",
+                    "localPort": 17872
+                  },
+                  "crossPortFetch": {
+                    "fetchResolved": false,
+                    "name": "TypeError",
+                    "message": "Failed to fetch"
+                  },
+                  "crossPortRequest": {
+                    "sequence": 42,
+                    "timestamp": "2026-07-18T17:56:49.361Z",
+                    "method": "POST",
+                    "url": "/protected?case=cross-port-browser",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "::1",
+                    "remotePort": 53008,
+                    "localAddress": "::1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": true,
+                      "originValid": false,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  },
+                  "forgedFetch": {
+                    "fetchResolved": false,
+                    "name": "TypeError",
+                    "message": "Failed to fetch"
+                  },
+                  "forgedRequest": {
+                    "sequence": 43,
+                    "timestamp": "2026-07-18T17:56:49.366Z",
+                    "method": "POST",
+                    "url": "/protected?case=browser-forged-host",
+                    "host": "127.0.0.1:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+                    "remoteAddress": "127.0.0.1",
+                    "remotePort": 64693,
+                    "localAddress": "127.0.0.1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": false,
+                      "originValid": false,
+                      "cookiePresent": false,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  },
+                  "manual": {
+                    "status": 403,
+                    "body": "{\"accepted\":false,\"reason\":\"rejected-by-exact-host-origin-validation\"}\n"
+                  },
+                  "manualRequest": {
+                    "sequence": 44,
+                    "timestamp": "2026-07-18T17:56:49.367Z",
+                    "method": "POST",
+                    "url": "/protected?case=manual-cookie-wrong-origin",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": null,
+                    "remoteAddress": "127.0.0.1",
+                    "remotePort": 60564,
+                    "localAddress": "127.0.0.1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": true,
+                      "originValid": false,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "6": {
+          "status": "PASS",
+          "detail": "fresh: CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError). Reused-profile check: reused: CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+                "observations": {
+                  "authenticatorOptions": {
+                    "protocol": "ctap2",
+                    "transport": "internal",
+                    "hasUserVerification": true,
+                    "isUserVerified": true
+                  },
+                  "create": {
+                    "id": "KDn4Ea7tBsxC3tNkquuTArN1HGZ5yJ-_l1zyFG0TiVI",
+                    "authenticatorAttachment": "platform",
+                    "transports": [
+                      "internal"
+                    ],
+                    "clientData": {
+                      "type": "webauthn.create",
+                      "challenge": "MqECN0oPX1AUdyCLy12ZeLOOuYe8sOR8gNdLoW9rkiY",
+                      "origin": "http://bridge.localhost:17871",
+                      "crossOrigin": false
+                    },
+                    "flags": 69,
+                    "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                  },
+                  "get": {
+                    "clientData": {
+                      "type": "webauthn.get",
+                      "challenge": "N74n0m3n1utYW99UDxlwu-DSrcjesHeA8XBx0B4mPMU",
+                      "origin": "http://bridge.localhost:17871",
+                      "crossOrigin": false
+                    },
+                    "flags": 5,
+                    "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                  },
+                  "localhostAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  },
+                  "wrongRpAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  },
+                  "noUvAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  }
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+                "observations": {
+                  "authenticatorOptions": {
+                    "protocol": "ctap2",
+                    "transport": "internal",
+                    "hasUserVerification": true,
+                    "isUserVerified": true
+                  },
+                  "create": {
+                    "id": "tQDgQNsQDrMT_mVSfawxSM-aUIAdfm39lnGMZRrkaic",
+                    "authenticatorAttachment": "platform",
+                    "transports": [
+                      "internal"
+                    ],
+                    "clientData": {
+                      "type": "webauthn.create",
+                      "challenge": "8YhxLnIxw-genJpRn-BPRKKQPfMvCqupG8Y-Pb0Qjkk",
+                      "origin": "http://bridge.localhost:17871",
+                      "crossOrigin": false
+                    },
+                    "flags": 69,
+                    "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                  },
+                  "get": {
+                    "clientData": {
+                      "type": "webauthn.get",
+                      "challenge": "W4tWLQA-0ZbdAxZasxIEKGSH1mEVdbd8xXli4cECpZI",
+                      "origin": "http://bridge.localhost:17871",
+                      "crossOrigin": false
+                    },
+                    "flags": 5,
+                    "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                  },
+                  "localhostAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  },
+                  "wrongRpAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  },
+                  "noUvAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "msedge",
+      "label": "Edge",
+      "channel": "msedge",
+      "version": "151.0.4129.21",
+      "product": "Edg/151.0.4129.21",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+      "phases": [
+        {
+          "phase": "fresh",
+          "profileKind": "new throwaway persistent profile",
+          "headless": true,
+          "version": "151.0.4129.21",
+          "browserProduct": {
+            "protocolVersion": "1.3",
+            "product": "Edg/151.0.4129.21",
+            "revision": "@b77ac08732b47e824492c3daaeb1ab4a76732927",
+            "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+            "jsVersion": "15.1.23.2"
+          },
+          "checks": {
+            "1": {
+              "status": "PASS",
+              "detail": "bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+              "observations": {
+                "bridgeRequest": {
+                  "sequence": 47,
+                  "timestamp": "2026-07-18T17:56:52.986Z",
+                  "method": "GET",
+                  "url": "/?criterion=loopback&tag=msedge-fresh",
+                  "host": "bridge.localhost:17871",
+                  "origin": null,
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 60578,
+                  "localAddress": "::1",
+                  "localPort": 17871
+                },
+                "otherRequest": {
+                  "sequence": 48,
+                  "timestamp": "2026-07-18T17:56:53.034Z",
+                  "method": "GET",
+                  "url": "/echo?criterion=loopback-subdomain&tag=msedge-fresh",
+                  "host": "other.bridge.localhost:17871",
+                  "origin": null,
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 53907,
+                  "localAddress": "::1",
+                  "localPort": 17871
+                },
+                "dnsOrHostsConfigurationPerformed": false
+              }
+            },
+            "2": {
+              "status": "PASS",
+              "detail": "window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+              "observations": {
+                "isSecureContext": true,
+                "serviceWorker": {
+                  "ok": true,
+                  "scope": "http://bridge.localhost:17871/"
+                }
+              }
+            },
+            "3": {
+              "status": "PASS",
+              "detail": "CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+              "observations": {
+                "setCookieHeader": "__Host-bridge_session=adr-0009-spike-session; Secure; HttpOnly; SameSite=Strict; Path=/",
+                "cdpCookie": {
+                  "name": "__Host-bridge_session",
+                  "value": "adr-0009-spike-session",
+                  "domain": "bridge.localhost",
+                  "path": "/",
+                  "expires": -1,
+                  "size": 43,
+                  "httpOnly": true,
+                  "secure": true,
+                  "session": true,
+                  "sameSite": "Strict",
+                  "priority": "Medium",
+                  "sourceScheme": "Secure",
+                  "sourcePort": 17871
+                },
+                "scriptCookie": "",
+                "protectedRequest": {
+                  "sequence": 56,
+                  "timestamp": "2026-07-18T17:56:53.167Z",
+                  "method": "POST",
+                  "url": "/protected?case=same-origin",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17871",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 60578,
+                  "localAddress": "::1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": true,
+                    "hostValid": true,
+                    "originValid": true,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 200
+                }
+              }
+            },
+            "4": {
+              "status": "PASS",
+              "detail": "No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+              "observations": {
+                "cases": [
+                  {
+                    "name": "localhost",
+                    "request": {
+                      "sequence": 57,
+                      "timestamp": "2026-07-18T17:56:53.183Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=localhost&tag=msedge-fresh",
+                      "host": "localhost:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                      "remoteAddress": "::1",
+                      "remotePort": 61690,
+                      "localAddress": "::1",
+                      "localPort": 17871
+                    }
+                  },
+                  {
+                    "name": "127.0.0.1",
+                    "request": {
+                      "sequence": 58,
+                      "timestamp": "2026-07-18T17:56:53.243Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=127.0.0.1&tag=msedge-fresh",
+                      "host": "127.0.0.1:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                      "remoteAddress": "127.0.0.1",
+                      "remotePort": 59687,
+                      "localAddress": "127.0.0.1",
+                      "localPort": 17871
+                    }
+                  },
+                  {
+                    "name": "other.localhost",
+                    "request": {
+                      "sequence": 60,
+                      "timestamp": "2026-07-18T17:56:53.310Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=other.localhost&tag=msedge-fresh",
+                      "host": "other.localhost:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                      "remoteAddress": "::1",
+                      "remotePort": 53613,
+                      "localAddress": "::1",
+                      "localPort": 17871
+                    }
+                  }
+                ]
+              }
+            },
+            "5": {
+              "status": "PASS",
+              "detail": "The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+              "observations": {
+                "portScopeRequest": {
+                  "sequence": 62,
+                  "timestamp": "2026-07-18T17:56:53.369Z",
+                  "method": "GET",
+                  "url": "/echo?criterion=cookie-port-scope&tag=msedge-fresh",
+                  "host": "bridge.localhost:17872",
+                  "origin": null,
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 59246,
+                  "localAddress": "::1",
+                  "localPort": 17872
+                },
+                "crossPortFetch": {
+                  "fetchResolved": false,
+                  "name": "TypeError",
+                  "message": "Failed to fetch"
+                },
+                "crossPortRequest": {
+                  "sequence": 66,
+                  "timestamp": "2026-07-18T17:56:53.418Z",
+                  "method": "POST",
+                  "url": "/protected?case=cross-port-browser",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 60578,
+                  "localAddress": "::1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": true,
+                    "originValid": false,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                },
+                "forgedFetch": {
+                  "fetchResolved": false,
+                  "name": "TypeError",
+                  "message": "Failed to fetch"
+                },
+                "forgedRequest": {
+                  "sequence": 67,
+                  "timestamp": "2026-07-18T17:56:53.423Z",
+                  "method": "POST",
+                  "url": "/protected?case=browser-forged-host",
+                  "host": "127.0.0.1:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "127.0.0.1",
+                  "remotePort": 60405,
+                  "localAddress": "127.0.0.1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": false,
+                    "originValid": false,
+                    "cookiePresent": false,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                },
+                "manual": {
+                  "status": 403,
+                  "body": "{\"accepted\":false,\"reason\":\"rejected-by-exact-host-origin-validation\"}\n"
+                },
+                "manualRequest": {
+                  "sequence": 68,
+                  "timestamp": "2026-07-18T17:56:53.426Z",
+                  "method": "POST",
+                  "url": "/protected?case=manual-cookie-wrong-origin",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": null,
+                  "remoteAddress": "127.0.0.1",
+                  "remotePort": 60406,
+                  "localAddress": "127.0.0.1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": true,
+                    "originValid": false,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                }
+              }
+            },
+            "6": {
+              "status": "PASS",
+              "detail": "CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+              "observations": {
+                "authenticatorOptions": {
+                  "protocol": "ctap2",
+                  "transport": "internal",
+                  "hasUserVerification": true,
+                  "isUserVerified": true
+                },
+                "create": {
+                  "id": "mC_q6EuPyW1Li7V0k8J12eSuwQ79q2nFo4c3wAqzORc",
+                  "authenticatorAttachment": "platform",
+                  "transports": [
+                    "internal"
+                  ],
+                  "clientData": {
+                    "type": "webauthn.create",
+                    "challenge": "H8hgIbAfgWhLIpOI5GSrnmKoHsQJDk8PL2t5l3W-2io",
+                    "origin": "http://bridge.localhost:17871",
+                    "crossOrigin": false,
+                    "other_keys_can_be_added_here": "do not compare clientDataJSON against a template. See https://permanently-removed.invalid/yabPex"
+                  },
+                  "flags": 69,
+                  "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                },
+                "get": {
+                  "clientData": {
+                    "type": "webauthn.get",
+                    "challenge": "s0J8uor5iDoJCNcyfJ9VM3G3S64ZXR4ebTGGmSs2jhU",
+                    "origin": "http://bridge.localhost:17871",
+                    "crossOrigin": false
+                  },
+                  "flags": 5,
+                  "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                },
+                "localhostAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                },
+                "wrongRpAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                },
+                "noUvAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                }
+              }
+            }
+          },
+          "requestRange": {
+            "start": 47,
+            "end": 70
+          }
+        },
+        {
+          "phase": "reused",
+          "profileKind": "same throwaway profile reopened",
+          "headless": true,
+          "version": "151.0.4129.21",
+          "browserProduct": {
+            "protocolVersion": "1.3",
+            "product": "Edg/151.0.4129.21",
+            "revision": "@b77ac08732b47e824492c3daaeb1ab4a76732927",
+            "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+            "jsVersion": "15.1.23.2"
+          },
+          "checks": {
+            "1": {
+              "status": "PASS",
+              "detail": "bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+              "observations": {
+                "bridgeRequest": {
+                  "sequence": 71,
+                  "timestamp": "2026-07-18T17:56:57.148Z",
+                  "method": "GET",
+                  "url": "/?criterion=loopback&tag=msedge-reused",
+                  "host": "bridge.localhost:17871",
+                  "origin": null,
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 51330,
+                  "localAddress": "::1",
+                  "localPort": 17871
+                },
+                "otherRequest": {
+                  "sequence": 72,
+                  "timestamp": "2026-07-18T17:56:57.173Z",
+                  "method": "GET",
+                  "url": "/echo?criterion=loopback-subdomain&tag=msedge-reused",
+                  "host": "other.bridge.localhost:17871",
+                  "origin": null,
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 56846,
+                  "localAddress": "::1",
+                  "localPort": 17871
+                },
+                "dnsOrHostsConfigurationPerformed": false
+              }
+            },
+            "2": {
+              "status": "PASS",
+              "detail": "window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+              "observations": {
+                "isSecureContext": true,
+                "serviceWorker": {
+                  "ok": true,
+                  "scope": "http://bridge.localhost:17871/"
+                }
+              }
+            },
+            "3": {
+              "status": "PASS",
+              "detail": "CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+              "observations": {
+                "setCookieHeader": "__Host-bridge_session=adr-0009-spike-session; Secure; HttpOnly; SameSite=Strict; Path=/",
+                "cdpCookie": {
+                  "name": "__Host-bridge_session",
+                  "value": "adr-0009-spike-session",
+                  "domain": "bridge.localhost",
+                  "path": "/",
+                  "expires": -1,
+                  "size": 43,
+                  "httpOnly": true,
+                  "secure": true,
+                  "session": true,
+                  "sameSite": "Strict",
+                  "priority": "Medium",
+                  "sourceScheme": "Secure",
+                  "sourcePort": 17871
+                },
+                "scriptCookie": "",
+                "protectedRequest": {
+                  "sequence": 78,
+                  "timestamp": "2026-07-18T17:56:57.286Z",
+                  "method": "POST",
+                  "url": "/protected?case=same-origin",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17871",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 51330,
+                  "localAddress": "::1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": true,
+                    "hostValid": true,
+                    "originValid": true,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 200
+                }
+              }
+            },
+            "4": {
+              "status": "PASS",
+              "detail": "No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+              "observations": {
+                "cases": [
+                  {
+                    "name": "localhost",
+                    "request": {
+                      "sequence": 79,
+                      "timestamp": "2026-07-18T17:56:57.299Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=localhost&tag=msedge-reused",
+                      "host": "localhost:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                      "remoteAddress": "::1",
+                      "remotePort": 51901,
+                      "localAddress": "::1",
+                      "localPort": 17871
+                    }
+                  },
+                  {
+                    "name": "127.0.0.1",
+                    "request": {
+                      "sequence": 80,
+                      "timestamp": "2026-07-18T17:56:57.367Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=127.0.0.1&tag=msedge-reused",
+                      "host": "127.0.0.1:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                      "remoteAddress": "127.0.0.1",
+                      "remotePort": 63555,
+                      "localAddress": "127.0.0.1",
+                      "localPort": 17871
+                    }
+                  },
+                  {
+                    "name": "other.localhost",
+                    "request": {
+                      "sequence": 82,
+                      "timestamp": "2026-07-18T17:56:57.448Z",
+                      "method": "GET",
+                      "url": "/echo?criterion=cookie-isolation&case=other.localhost&tag=msedge-reused",
+                      "host": "other.localhost:17871",
+                      "origin": null,
+                      "cookie": null,
+                      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                      "remoteAddress": "::1",
+                      "remotePort": 64937,
+                      "localAddress": "::1",
+                      "localPort": 17871
+                    }
+                  }
+                ]
+              }
+            },
+            "5": {
+              "status": "PASS",
+              "detail": "The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+              "observations": {
+                "portScopeRequest": {
+                  "sequence": 84,
+                  "timestamp": "2026-07-18T17:56:57.491Z",
+                  "method": "GET",
+                  "url": "/echo?criterion=cookie-port-scope&tag=msedge-reused",
+                  "host": "bridge.localhost:17872",
+                  "origin": null,
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 54484,
+                  "localAddress": "::1",
+                  "localPort": 17872
+                },
+                "crossPortFetch": {
+                  "fetchResolved": false,
+                  "name": "TypeError",
+                  "message": "Failed to fetch"
+                },
+                "crossPortRequest": {
+                  "sequence": 88,
+                  "timestamp": "2026-07-18T17:56:57.567Z",
+                  "method": "POST",
+                  "url": "/protected?case=cross-port-browser",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "::1",
+                  "remotePort": 51330,
+                  "localAddress": "::1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": true,
+                    "originValid": false,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                },
+                "forgedFetch": {
+                  "fetchResolved": false,
+                  "name": "TypeError",
+                  "message": "Failed to fetch"
+                },
+                "forgedRequest": {
+                  "sequence": 89,
+                  "timestamp": "2026-07-18T17:56:57.572Z",
+                  "method": "POST",
+                  "url": "/protected?case=browser-forged-host",
+                  "host": "127.0.0.1:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": null,
+                  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                  "remoteAddress": "127.0.0.1",
+                  "remotePort": 60184,
+                  "localAddress": "127.0.0.1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": false,
+                    "originValid": false,
+                    "cookiePresent": false,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                },
+                "manual": {
+                  "status": 403,
+                  "body": "{\"accepted\":false,\"reason\":\"rejected-by-exact-host-origin-validation\"}\n"
+                },
+                "manualRequest": {
+                  "sequence": 90,
+                  "timestamp": "2026-07-18T17:56:57.574Z",
+                  "method": "POST",
+                  "url": "/protected?case=manual-cookie-wrong-origin",
+                  "host": "bridge.localhost:17871",
+                  "origin": "http://bridge.localhost:17872",
+                  "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                  "userAgent": null,
+                  "remoteAddress": "127.0.0.1",
+                  "remotePort": 60185,
+                  "localAddress": "127.0.0.1",
+                  "localPort": 17871,
+                  "validation": {
+                    "accepted": false,
+                    "hostValid": true,
+                    "originValid": false,
+                    "cookiePresent": true,
+                    "methodValid": true
+                  },
+                  "responseStatus": 403
+                }
+              }
+            },
+            "6": {
+              "status": "PASS",
+              "detail": "CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+              "observations": {
+                "authenticatorOptions": {
+                  "protocol": "ctap2",
+                  "transport": "internal",
+                  "hasUserVerification": true,
+                  "isUserVerified": true
+                },
+                "create": {
+                  "id": "d_08X9JT4vhaRSszOmJXNkXT0uOlQieDP6-0-mtICMs",
+                  "authenticatorAttachment": "platform",
+                  "transports": [
+                    "internal"
+                  ],
+                  "clientData": {
+                    "type": "webauthn.create",
+                    "challenge": "s15sT3S2L13ZO2mdvsPkOWo6f-ZU6i2HqGSsBZA8XnQ",
+                    "origin": "http://bridge.localhost:17871",
+                    "crossOrigin": false
+                  },
+                  "flags": 69,
+                  "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                },
+                "get": {
+                  "clientData": {
+                    "type": "webauthn.get",
+                    "challenge": "l1GVyVD3AiFZO1dkdChRM4i351trbAmN2djpvR4s12A",
+                    "origin": "http://bridge.localhost:17871",
+                    "crossOrigin": false
+                  },
+                  "flags": 5,
+                  "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                },
+                "localhostAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                },
+                "wrongRpAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                },
+                "noUvAttempt": {
+                  "ok": false,
+                  "name": "NotAllowedError",
+                  "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                }
+              }
+            }
+          },
+          "requestRange": {
+            "start": 71,
+            "end": 92
+          }
+        }
+      ],
+      "checks": {
+        "1": {
+          "status": "PASS",
+          "detail": "fresh: bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback. Reused-profile check: reused: bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+                "observations": {
+                  "bridgeRequest": {
+                    "sequence": 47,
+                    "timestamp": "2026-07-18T17:56:52.986Z",
+                    "method": "GET",
+                    "url": "/?criterion=loopback&tag=msedge-fresh",
+                    "host": "bridge.localhost:17871",
+                    "origin": null,
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 60578,
+                    "localAddress": "::1",
+                    "localPort": 17871
+                  },
+                  "otherRequest": {
+                    "sequence": 48,
+                    "timestamp": "2026-07-18T17:56:53.034Z",
+                    "method": "GET",
+                    "url": "/echo?criterion=loopback-subdomain&tag=msedge-fresh",
+                    "host": "other.bridge.localhost:17871",
+                    "origin": null,
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 53907,
+                    "localAddress": "::1",
+                    "localPort": 17871
+                  },
+                  "dnsOrHostsConfigurationPerformed": false
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "bridge.localhost and other.bridge.localhost loaded without DNS/hosts configuration; observed peers ::1 and ::1, both loopback.",
+                "observations": {
+                  "bridgeRequest": {
+                    "sequence": 71,
+                    "timestamp": "2026-07-18T17:56:57.148Z",
+                    "method": "GET",
+                    "url": "/?criterion=loopback&tag=msedge-reused",
+                    "host": "bridge.localhost:17871",
+                    "origin": null,
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 51330,
+                    "localAddress": "::1",
+                    "localPort": 17871
+                  },
+                  "otherRequest": {
+                    "sequence": 72,
+                    "timestamp": "2026-07-18T17:56:57.173Z",
+                    "method": "GET",
+                    "url": "/echo?criterion=loopback-subdomain&tag=msedge-reused",
+                    "host": "other.bridge.localhost:17871",
+                    "origin": null,
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 56846,
+                    "localAddress": "::1",
+                    "localPort": 17871
+                  },
+                  "dnsOrHostsConfigurationPerformed": false
+                }
+              }
+            ]
+          }
+        },
+        "2": {
+          "status": "PASS",
+          "detail": "fresh: window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/. Reused-profile check: reused: window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+                "observations": {
+                  "isSecureContext": true,
+                  "serviceWorker": {
+                    "ok": true,
+                    "scope": "http://bridge.localhost:17871/"
+                  }
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "window.isSecureContext=true; service-worker registration succeeded with scope http://bridge.localhost:17871/.",
+                "observations": {
+                  "isSecureContext": true,
+                  "serviceWorker": {
+                    "ok": true,
+                    "scope": "http://bridge.localhost:17871/"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "3": {
+          "status": "PASS",
+          "detail": "fresh: CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it. Reused-profile check: reused: CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+                "observations": {
+                  "setCookieHeader": "__Host-bridge_session=adr-0009-spike-session; Secure; HttpOnly; SameSite=Strict; Path=/",
+                  "cdpCookie": {
+                    "name": "__Host-bridge_session",
+                    "value": "adr-0009-spike-session",
+                    "domain": "bridge.localhost",
+                    "path": "/",
+                    "expires": -1,
+                    "size": 43,
+                    "httpOnly": true,
+                    "secure": true,
+                    "session": true,
+                    "sameSite": "Strict",
+                    "priority": "Medium",
+                    "sourceScheme": "Secure",
+                    "sourcePort": 17871
+                  },
+                  "scriptCookie": "",
+                  "protectedRequest": {
+                    "sequence": 56,
+                    "timestamp": "2026-07-18T17:56:53.167Z",
+                    "method": "POST",
+                    "url": "/protected?case=same-origin",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17871",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 60578,
+                    "localAddress": "::1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": true,
+                      "hostValid": true,
+                      "originValid": true,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 200
+                  }
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "CDP reported the accepted host-only cookie as Secure, HttpOnly, SameSite=Strict, Path=/; document.cookie could not read it and the same-origin protected request received it.",
+                "observations": {
+                  "setCookieHeader": "__Host-bridge_session=adr-0009-spike-session; Secure; HttpOnly; SameSite=Strict; Path=/",
+                  "cdpCookie": {
+                    "name": "__Host-bridge_session",
+                    "value": "adr-0009-spike-session",
+                    "domain": "bridge.localhost",
+                    "path": "/",
+                    "expires": -1,
+                    "size": 43,
+                    "httpOnly": true,
+                    "secure": true,
+                    "session": true,
+                    "sameSite": "Strict",
+                    "priority": "Medium",
+                    "sourceScheme": "Secure",
+                    "sourcePort": 17871
+                  },
+                  "scriptCookie": "",
+                  "protectedRequest": {
+                    "sequence": 78,
+                    "timestamp": "2026-07-18T17:56:57.286Z",
+                    "method": "POST",
+                    "url": "/protected?case=same-origin",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17871",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 51330,
+                    "localAddress": "::1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": true,
+                      "hostValid": true,
+                      "originValid": true,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 200
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "4": {
+          "status": "PASS",
+          "detail": "fresh: No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost. Reused-profile check: reused: No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+                "observations": {
+                  "cases": [
+                    {
+                      "name": "localhost",
+                      "request": {
+                        "sequence": 57,
+                        "timestamp": "2026-07-18T17:56:53.183Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=localhost&tag=msedge-fresh",
+                        "host": "localhost:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                        "remoteAddress": "::1",
+                        "remotePort": 61690,
+                        "localAddress": "::1",
+                        "localPort": 17871
+                      }
+                    },
+                    {
+                      "name": "127.0.0.1",
+                      "request": {
+                        "sequence": 58,
+                        "timestamp": "2026-07-18T17:56:53.243Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=127.0.0.1&tag=msedge-fresh",
+                        "host": "127.0.0.1:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                        "remoteAddress": "127.0.0.1",
+                        "remotePort": 59687,
+                        "localAddress": "127.0.0.1",
+                        "localPort": 17871
+                      }
+                    },
+                    {
+                      "name": "other.localhost",
+                      "request": {
+                        "sequence": 60,
+                        "timestamp": "2026-07-18T17:56:53.310Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=other.localhost&tag=msedge-fresh",
+                        "host": "other.localhost:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                        "remoteAddress": "::1",
+                        "remotePort": 53613,
+                        "localAddress": "::1",
+                        "localPort": 17871
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "No __Host-bridge_session cookie was sent to localhost, 127.0.0.1, or other.localhost.",
+                "observations": {
+                  "cases": [
+                    {
+                      "name": "localhost",
+                      "request": {
+                        "sequence": 79,
+                        "timestamp": "2026-07-18T17:56:57.299Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=localhost&tag=msedge-reused",
+                        "host": "localhost:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                        "remoteAddress": "::1",
+                        "remotePort": 51901,
+                        "localAddress": "::1",
+                        "localPort": 17871
+                      }
+                    },
+                    {
+                      "name": "127.0.0.1",
+                      "request": {
+                        "sequence": 80,
+                        "timestamp": "2026-07-18T17:56:57.367Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=127.0.0.1&tag=msedge-reused",
+                        "host": "127.0.0.1:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                        "remoteAddress": "127.0.0.1",
+                        "remotePort": 63555,
+                        "localAddress": "127.0.0.1",
+                        "localPort": 17871
+                      }
+                    },
+                    {
+                      "name": "other.localhost",
+                      "request": {
+                        "sequence": 82,
+                        "timestamp": "2026-07-18T17:56:57.448Z",
+                        "method": "GET",
+                        "url": "/echo?criterion=cookie-isolation&case=other.localhost&tag=msedge-reused",
+                        "host": "other.localhost:17871",
+                        "origin": null,
+                        "cookie": null,
+                        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                        "remoteAddress": "::1",
+                        "remotePort": 64937,
+                        "localAddress": "::1",
+                        "localPort": 17871
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "5": {
+          "status": "PASS",
+          "detail": "fresh: The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin. Reused-profile check: reused: The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+                "observations": {
+                  "portScopeRequest": {
+                    "sequence": 62,
+                    "timestamp": "2026-07-18T17:56:53.369Z",
+                    "method": "GET",
+                    "url": "/echo?criterion=cookie-port-scope&tag=msedge-fresh",
+                    "host": "bridge.localhost:17872",
+                    "origin": null,
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 59246,
+                    "localAddress": "::1",
+                    "localPort": 17872
+                  },
+                  "crossPortFetch": {
+                    "fetchResolved": false,
+                    "name": "TypeError",
+                    "message": "Failed to fetch"
+                  },
+                  "crossPortRequest": {
+                    "sequence": 66,
+                    "timestamp": "2026-07-18T17:56:53.418Z",
+                    "method": "POST",
+                    "url": "/protected?case=cross-port-browser",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 60578,
+                    "localAddress": "::1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": true,
+                      "originValid": false,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  },
+                  "forgedFetch": {
+                    "fetchResolved": false,
+                    "name": "TypeError",
+                    "message": "Failed to fetch"
+                  },
+                  "forgedRequest": {
+                    "sequence": 67,
+                    "timestamp": "2026-07-18T17:56:53.423Z",
+                    "method": "POST",
+                    "url": "/protected?case=browser-forged-host",
+                    "host": "127.0.0.1:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "127.0.0.1",
+                    "remotePort": 60405,
+                    "localAddress": "127.0.0.1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": false,
+                      "originValid": false,
+                      "cookiePresent": false,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  },
+                  "manual": {
+                    "status": 403,
+                    "body": "{\"accepted\":false,\"reason\":\"rejected-by-exact-host-origin-validation\"}\n"
+                  },
+                  "manualRequest": {
+                    "sequence": 68,
+                    "timestamp": "2026-07-18T17:56:53.426Z",
+                    "method": "POST",
+                    "url": "/protected?case=manual-cookie-wrong-origin",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": null,
+                    "remoteAddress": "127.0.0.1",
+                    "remotePort": 60406,
+                    "localAddress": "127.0.0.1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": true,
+                      "originValid": false,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  }
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "The cookie was observed on bridge.localhost:17872 (cookies are not port-scoped), but 17872-to-17871 use was rejected with 403. Browser-forged Host/Cookie headers were forbidden, and a raw request with exact Host plus a manually attached cookie was still rejected for wrong Origin.",
+                "observations": {
+                  "portScopeRequest": {
+                    "sequence": 84,
+                    "timestamp": "2026-07-18T17:56:57.491Z",
+                    "method": "GET",
+                    "url": "/echo?criterion=cookie-port-scope&tag=msedge-reused",
+                    "host": "bridge.localhost:17872",
+                    "origin": null,
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 54484,
+                    "localAddress": "::1",
+                    "localPort": 17872
+                  },
+                  "crossPortFetch": {
+                    "fetchResolved": false,
+                    "name": "TypeError",
+                    "message": "Failed to fetch"
+                  },
+                  "crossPortRequest": {
+                    "sequence": 88,
+                    "timestamp": "2026-07-18T17:56:57.567Z",
+                    "method": "POST",
+                    "url": "/protected?case=cross-port-browser",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "::1",
+                    "remotePort": 51330,
+                    "localAddress": "::1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": true,
+                      "originValid": false,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  },
+                  "forgedFetch": {
+                    "fetchResolved": false,
+                    "name": "TypeError",
+                    "message": "Failed to fetch"
+                  },
+                  "forgedRequest": {
+                    "sequence": 89,
+                    "timestamp": "2026-07-18T17:56:57.572Z",
+                    "method": "POST",
+                    "url": "/protected?case=browser-forged-host",
+                    "host": "127.0.0.1:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": null,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0",
+                    "remoteAddress": "127.0.0.1",
+                    "remotePort": 60184,
+                    "localAddress": "127.0.0.1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": false,
+                      "originValid": false,
+                      "cookiePresent": false,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  },
+                  "manual": {
+                    "status": 403,
+                    "body": "{\"accepted\":false,\"reason\":\"rejected-by-exact-host-origin-validation\"}\n"
+                  },
+                  "manualRequest": {
+                    "sequence": 90,
+                    "timestamp": "2026-07-18T17:56:57.574Z",
+                    "method": "POST",
+                    "url": "/protected?case=manual-cookie-wrong-origin",
+                    "host": "bridge.localhost:17871",
+                    "origin": "http://bridge.localhost:17872",
+                    "cookie": "__Host-bridge_session=adr-0009-spike-session",
+                    "userAgent": null,
+                    "remoteAddress": "127.0.0.1",
+                    "remotePort": 60185,
+                    "localAddress": "127.0.0.1",
+                    "localPort": 17871,
+                    "validation": {
+                      "accepted": false,
+                      "hostValid": true,
+                      "originValid": false,
+                      "cookiePresent": true,
+                      "methodValid": true
+                    },
+                    "responseStatus": 403
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "6": {
+          "status": "PASS",
+          "detail": "fresh: CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError). Reused-profile check: reused: CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+          "observations": {
+            "phases": [
+              {
+                "status": "PASS",
+                "detail": "CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+                "observations": {
+                  "authenticatorOptions": {
+                    "protocol": "ctap2",
+                    "transport": "internal",
+                    "hasUserVerification": true,
+                    "isUserVerified": true
+                  },
+                  "create": {
+                    "id": "mC_q6EuPyW1Li7V0k8J12eSuwQ79q2nFo4c3wAqzORc",
+                    "authenticatorAttachment": "platform",
+                    "transports": [
+                      "internal"
+                    ],
+                    "clientData": {
+                      "type": "webauthn.create",
+                      "challenge": "H8hgIbAfgWhLIpOI5GSrnmKoHsQJDk8PL2t5l3W-2io",
+                      "origin": "http://bridge.localhost:17871",
+                      "crossOrigin": false,
+                      "other_keys_can_be_added_here": "do not compare clientDataJSON against a template. See https://permanently-removed.invalid/yabPex"
+                    },
+                    "flags": 69,
+                    "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                  },
+                  "get": {
+                    "clientData": {
+                      "type": "webauthn.get",
+                      "challenge": "s0J8uor5iDoJCNcyfJ9VM3G3S64ZXR4ebTGGmSs2jhU",
+                      "origin": "http://bridge.localhost:17871",
+                      "crossOrigin": false
+                    },
+                    "flags": 5,
+                    "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                  },
+                  "localhostAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  },
+                  "wrongRpAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  },
+                  "noUvAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  }
+                }
+              },
+              {
+                "status": "PASS",
+                "detail": "CTAP2 internal virtual-authenticator create/get succeeded for bridge.localhost with UV flags set; localhost failed (NotAllowedError), wrong.localhost failed (NotAllowedError), and required UV failed when isUserVerified=false (NotAllowedError).",
+                "observations": {
+                  "authenticatorOptions": {
+                    "protocol": "ctap2",
+                    "transport": "internal",
+                    "hasUserVerification": true,
+                    "isUserVerified": true
+                  },
+                  "create": {
+                    "id": "d_08X9JT4vhaRSszOmJXNkXT0uOlQieDP6-0-mtICMs",
+                    "authenticatorAttachment": "platform",
+                    "transports": [
+                      "internal"
+                    ],
+                    "clientData": {
+                      "type": "webauthn.create",
+                      "challenge": "s15sT3S2L13ZO2mdvsPkOWo6f-ZU6i2HqGSsBZA8XnQ",
+                      "origin": "http://bridge.localhost:17871",
+                      "crossOrigin": false
+                    },
+                    "flags": 69,
+                    "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                  },
+                  "get": {
+                    "clientData": {
+                      "type": "webauthn.get",
+                      "challenge": "l1GVyVD3AiFZO1dkdChRM4i351trbAmN2djpvR4s12A",
+                      "origin": "http://bridge.localhost:17871",
+                      "crossOrigin": false
+                    },
+                    "flags": 5,
+                    "rpIdHash": "9f9c9b839f13b0b738e636e1b4f8ff687c46985dc1d4ab67d0407057db1e18e4"
+                  },
+                  "localhostAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  },
+                  "wrongRpAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  },
+                  "noUvAttempt": {
+                    "ok": false,
+                    "name": "NotAllowedError",
+                    "message": "The operation either timed out or was not allowed. See: https://www.w3.org/TR/webauthn-2/#sctn-privacy-considerations-client."
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
