@@ -142,6 +142,22 @@ test('golden Agent hello/session starts validated heartbeats', async () => {
   assert.equal(heartbeat.payload.fencing_token, 'fence-42');
 });
 
+test('heartbeat activity is scoped to a bound live session and stops on disconnect', async () => {
+  const h = harness();
+  h.client.start();
+  const socket = h.sockets[0];
+  assert.equal(h.scheduler.intervals.length, 0);
+  socket.open();
+  assert.equal(h.scheduler.intervals.length, 0);
+
+  socket.receive(await fixture('agent.session'));
+  assert.equal(h.scheduler.intervals.length, 1);
+  assert.equal(h.scheduler.intervals[0].cleared, false);
+
+  socket.drop();
+  assert.equal(h.scheduler.intervals[0].cleared, true);
+});
+
 test('connection drop uses exponential backoff and re-handshakes', async () => {
   const h = harness();
   const first = await connectAndBind(h);

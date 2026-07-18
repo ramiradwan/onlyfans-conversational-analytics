@@ -1,52 +1,13 @@
-import {
-  AgentWebSocketClient,
-  DEV_ACCOUNT_ID,
-  DEV_AUTH_TICKET,
-} from './transport/agent-websocket.mjs';
-import {
-  AgentConfigClient,
-  AtomicConfigActivator,
-} from './transport/agent-config-client.mjs';
-import { createChromeAdapter } from './transport/chrome-adapter.mjs';
-import { createConfigHttpAdapter } from './transport/config-http-adapter.mjs';
-import { DurableIngestOutbox } from './transport/durable-outbox.mjs';
-import { createIndexedDbIngestionStorage } from './transport/indexeddb-ingestion-storage.mjs';
+import { createAgentRuntime } from './transport/agent-runtime.mjs';
 
-const chromeAdapter = createChromeAdapter();
-const identity = await chromeAdapter.loadAgentIdentity();
-const durableOutbox = new DurableIngestOutbox({
-  storage: createIndexedDbIngestionStorage(),
-  legacyStorage: chromeAdapter,
-});
-const ingestionState = await durableOutbox.initialize();
-identity.lastAcknowledgedSourceSeq = Math.max(
-  identity.lastAcknowledgedSourceSeq,
-  ingestionState.acknowledged_source_seq,
-);
-
-const configActivator = new AtomicConfigActivator();
-let agentTransport;
-export const agentConfiguration = new AgentConfigClient({
-  identity,
-  creatorAccountId: DEV_ACCOUNT_ID,
-  authTicket: DEV_AUTH_TICKET,
-  http: createConfigHttpAdapter(),
-  persistence: chromeAdapter,
-  activator: configActivator,
-  reportApplied: (report) => agentTransport?.sendConfigApplied(report) ?? false,
-  onUnauthorized: () => agentTransport?.stop(),
-});
-await agentConfiguration.initialize();
-
-agentTransport = new AgentWebSocketClient({
-  identity,
-  persistence: chromeAdapter,
-  outbox: durableOutbox,
-  configClient: agentConfiguration,
-  health: () => agentConfiguration.healthSummary(),
+export const agentRuntime = createAgentRuntime({
+  onStartupError: () => {
+    // Keep diagnostics free of account data, credentials, and captured content.
+    console.error('[Agent] startup failed; a later extension wake will retry');
+  },
 });
 
-chromeAdapter.onWake(() => agentTransport.ensureConnected());
-agentTransport.start();
-
-export { agentTransport };
+// Listener registration is synchronous. Durable initialization continues without
+// top-level await so a failed storage/config step cannot leave the worker unwakeable.
+agentRuntime.registerListeners();
+void agentRuntime.wake().catch(() => undefined);

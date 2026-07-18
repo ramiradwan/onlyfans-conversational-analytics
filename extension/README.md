@@ -52,6 +52,12 @@ The ingestion outbox uses IndexedDB and survives MV3 worker suspension. Small bo
 
 Capture is persisted before send. Brain becomes authoritative after acknowledging ingestion; the local outbox remains a retry source for unacknowledged data.
 
+## MV3 lifecycle
+
+`background.js` registers wake listeners synchronously, then initializes identity, IndexedDB, configuration, and transport through one idempotent runtime. Concurrent wakes share one initialization attempt. If initialization fails, the next startup, installation, runtime-message, or tab-update event retries it.
+
+The socket and timers are disposable. A bound Agent session sends its protocol heartbeat at the Brain-provided interval; with the minimum supported Chromium version, that WebSocket activity also keeps only the live session active. The heartbeat stops when the socket closes. Suspension recovery depends on durable state and a fresh worker initialization, not on a permanent worker or timer.
+
 ## Security boundary
 
 - The extension accesses only data and actions available to the logged-in creator session.
