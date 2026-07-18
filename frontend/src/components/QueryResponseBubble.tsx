@@ -13,7 +13,7 @@ import {
 import { styled } from '@mui/material/styles';  
 import React from 'react';  
   
-// Temporary local type until backend types are generated  
+// Local graph-query result type.
 interface QueryResponse {  
   id: string;  
   question: string;  
@@ -115,4 +115,4 @@ export function QueryResponseBubbleSkeleton() {
       </Bubble>  
     </Box>  
   );  
-}  
+}

@@ -39,7 +39,7 @@ export function AppShell() {
           flexGrow: 1,  
           display: 'flex', // flex container for child views  
           flexDirection: 'column', // vertical stacking  
-          p: theme.layout.pagePadding, // tokenised page padding  
+          p: theme.spacing(3), // semantic spacing
           width: { sm: `calc(100% - ${DRAWER_WIDTH}px)` },  
           bgcolor: 'background.default',  
           height: '100vh',  
@@ -55,4 +55,4 @@ export function AppShell() {
       </Box>  
     </Box>  
   );  
-}  
+}

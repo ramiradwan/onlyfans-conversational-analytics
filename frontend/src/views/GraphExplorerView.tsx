@@ -7,7 +7,7 @@ import {
 } from '../components/QueryResponseBubble';  
 import { UserQueryBubble } from '../components/UserQueryBubble';  
   
-// Temporary local type until backend types are generated  
+// Local graph-query result type.
 interface QueryResponse {  
   id: string;  
   question: string;  
@@ -94,4 +94,4 @@ export default function GraphExplorerView() {
       <QueryInput onSend={handleSendQuery} disabled={isLoading} />  
     </Box>  
   );  
-}  
+}

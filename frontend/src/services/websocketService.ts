@@ -1,270 +1,347 @@
-import { getConfig } from '@/config/fastapiConfig';  
-import {  
-  OutgoingWssMessage,  
-  ConnectionInfo,  
-  SystemStatus,  
-  WssError,  
-  FullSyncResponse,  
-  ExtendedConversationNode,  
-  AnalyticsUpdate,  
-  EnrichmentResultPayload,  
-  SendMessageCommand,  
-} from '@/types/backend-wss';  
-import { extensionService } from '@services/extensionService';  
-import { analyticsStoreActions } from '@store/analyticsStore';  
-import { useChatStore, chatStoreActions } from '@store/chatStore';  
-import { enrichmentStoreActions } from '@store/enrichmentStore';  
-import { systemStoreActions } from '@store/systemStore';  
-  
-class WebSocketService {  
-  private ws: WebSocket | null = null;  
-  private reconnectTimer: NodeJS.Timeout | null = null;  
-  private userId: string | null = null;  
-  private wsUrl: string | null = null;  
-  
-  public connect(wsUrl?: string, userId?: string) {  
-    if (  
-      this.ws &&  
-      (this.ws.readyState === WebSocket.OPEN ||  
-        this.ws.readyState === WebSocket.CONNECTING)  
-    ) {  
-      console.log('[WebSocketService] Already connected or connecting.');  
-      return;  
-    }  
-  
-    if (!wsUrl || !userId) {  
-      const config = getConfig();  
-      wsUrl = wsUrl ?? config.FASTAPI_WS_URL;  
-      userId = userId ?? config.USER_ID ?? wsUrl?.split('/').pop();  
-    }  
-  
-    if (!wsUrl || !userId) {  
-      console.error('[WebSocketService] Missing WS URL or userId — cannot connect.');  
-      return;  
-    }  
-  
-    this.userId = userId;  
-    this.wsUrl = wsUrl;  
-  
-    systemStoreActions.setBackendConnectionState('connecting');  
-    console.log(`[WebSocketService] Connecting to WebSocket: ${wsUrl}`);  
-  
-    this.ws = new WebSocket(wsUrl);  
-  
-    this.ws.onopen = () => {  
-      console.log('✅ [WebSocketService] Connected');  
-      systemStoreActions.setBackendConnectionState('connected');  
-      chatStoreActions.setLoadingState('loading');  
-  
-      // Spec: If Agent is present, send cache_update snapshot  
-      if (extensionService.isAgentAvailable()) {  
-        systemStoreActions.setExtensionConnectionState('connected');  
-        extensionService  
-          .getAllChatsFromDB()  
-          .then((snapshot) => {  
-            this.sendMessage('cache_update', snapshot);  
-          })  
-          .catch((err) => {  
-            console.error('[WebSocketService] Failed to send cache_update:', err);  
-            systemStoreActions.setExtensionConnectionState('error');  
-          });  
-      } else {  
-        systemStoreActions.setExtensionConnectionState('disconnected');  
-      }  
-    };  
-  
-    this.ws.onmessage = (event) => {  
-      try {  
-        const message = JSON.parse(event.data) as OutgoingWssMessage;  
-        this.handleMessage(message);  
-      } catch (error) {  
-        console.error('[WebSocketService] Failed to parse WS message:', error);  
-      }  
-    };  
-  
-    this.ws.onerror = (error) => {  
-      console.error('[WebSocketService] WebSocket error:', error);  
-      systemStoreActions.setBackendConnectionState('error');  
-      chatStoreActions.setLoadingState('error');  
-    };  
-  
-    this.ws.onclose = () => {  
-      console.log('⚠️ [WebSocketService] Disconnected.');  
-      systemStoreActions.setBackendConnectionState('disconnected');  
-      chatStoreActions.setLoadingState('error');  
-  
-      if (!this.reconnectTimer) {  
-        console.log('[WebSocketService] Attempting to reconnect in 5s...');  
-        this.reconnectTimer = setTimeout(() => {  
-          this.reconnectTimer = null;  
-          if (this.wsUrl && this.userId) {  
-            this.connect(this.wsUrl, this.userId);  
-          }  
-        }, 5000);  
-      }  
-    };  
-  }  
-  
-  public disconnect() {  
-    if (this.ws) {  
-      console.log('[WebSocketService] Closing connection...');  
-      this.ws.close();  
-      this.ws = null;  
-    }  
-    if (this.reconnectTimer) {  
-      clearTimeout(this.reconnectTimer);  
-      this.reconnectTimer = null;  
-    }  
-    systemStoreActions.setBackendConnectionState('disconnected');  
-  }  
-  
-  /** Spec: Unified sendMessage helper */  
-  public sendMessage<T>(type: string, payload: T) {  
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {  
-      this.ws.send(JSON.stringify({ type, payload }));  
-    } else {  
-      console.warn('[WebSocketService] Cannot send message — WS not open.');  
-    }  
-  }  
-  
-  /** WS message router */  
-  private handleMessage(message: OutgoingWssMessage) {  
-    switch (message.type) {  
-      case 'connection_ack':  
-        this.onConnectionAck(message.payload);  
-        break;  
-      case 'system_status':  
-        this.onSystemStatus(message.payload);  
-        break;  
-      case 'full_sync_response':  
-        this.onFullSync(message.payload);  
-        break;  
-      case 'append_message':  
-        this.onAppendMessage(message.payload);  
-        break;  
-      case 'analytics_update':  
-        this.onAnalyticsUpdate(message.payload);  
-        break;  
-      case 'enrichment_result':  
-        this.onEnrichmentResult(message.payload);  
-        break;  
-      case 'command_to_execute':  
-        this.onCommandToExecute(message.payload as SendMessageCommand);  
-        break;  
-      case 'system_error':  
-        this.onSystemError(message.payload);  
-        break;  
-      case 'online_users_update': // ✅ presence handling  
-        this.onOnlineUsersUpdate(  
-          message.payload as { user_ids: number[]; timestamp: string }  
-        );  
-        break;  
-      default: {  
-        const unknownMessage = message as Record<string, unknown>;  
-        console.warn(  
-          '[WebSocketService] Unhandled WS message type:',  
-          unknownMessage.type  
-        );  
-      }  
-    }  
-  }  
-  
-  private onConnectionAck(payload: ConnectionInfo) {  
-    console.log(`[WebSocketService] Connection ACK: v${payload.version}`);  
-  
-    // In no-Agent mode, backend won't send system_status  
-    if (!extensionService.isAgentAvailable()) {  
-      systemStoreActions.handleSystemStatus({  
-        status: 'REALTIME',  
-        detail: payload.statusMessage ?? 'Connected to backend',  
-      });  
-    }  
-  }  
-  
-  private onSystemStatus(payload: SystemStatus) {  
-    console.log(`[WebSocketService] System Status: ${payload.status}`);  
-    systemStoreActions.handleSystemStatus(payload);  
-  
-    if (payload.status === 'PROCESSING_SNAPSHOT') {  
-      chatStoreActions.setLoadingState('loading');  
-    }  
-  }  
-  
-  private onFullSync(payload: FullSyncResponse) {  
-    console.log('[WebSocketService] Received full_sync_response, hydrating stores...');  
-    if (payload.analytics) {  
-      analyticsStoreActions.handleAnalyticsUpdate(payload.analytics);  
-    }  
-    chatStoreActions.replaceStateFromSnapshot(payload);  
-  }  
-  
-  private onAppendMessage(payload: ExtendedConversationNode) {  
-    chatStoreActions.handleAppendConversation(payload);  
-  }  
-  
-  private onAnalyticsUpdate(payload: AnalyticsUpdate) {  
-    analyticsStoreActions.handleAnalyticsUpdate(payload);  
-  }  
-  
-  /**   
-   * Spec-compliant enrichment handling:  
-   * - Update enrichment store  
-   * - Merge enrichment fields into chat conversation if changed  
-   */  
-  private onEnrichmentResult(payload: EnrichmentResultPayload) {  
-    // Always update enrichment store  
-    enrichmentStoreActions.handleEnrichmentResult(payload);  
-  
-    // Merge into chat conversation  
-    const convo = useChatStore.getState().conversations[payload.conversationId];  
-    if (convo) {  
-      const enrichedConvo = {  
-        ...convo,  
-        topics: payload.topics,  
-        actions: payload.actions,  
-        sentiment: payload.sentiment,  
-        outcomes: payload.outcomes,  
-      };  
-  
-      // Deep compare enrichment fields to avoid redundant updates  
-      const fieldsChanged =  
-        JSON.stringify({  
-          topics: convo.topics,  
-          actions: convo.actions,  
-          sentiment: convo.sentiment,  
-          outcomes: convo.outcomes,  
-        }) !==  
-        JSON.stringify({  
-          topics: enrichedConvo.topics,  
-          actions: enrichedConvo.actions,  
-          sentiment: enrichedConvo.sentiment,  
-          outcomes: enrichedConvo.outcomes,  
-        });  
-  
-      if (fieldsChanged) {  
-        console.log(  
-          `[WebSocketService] Merging enrichment into chatStore for convo ${payload.conversationId}`  
-        );  
-        chatStoreActions.handleAppendConversation(enrichedConvo);  
-      }  
-    }  
-  }  
-  
-  private onCommandToExecute(payload: SendMessageCommand) {  
-    extensionService.executeAgentCommand(payload);  
-  }  
-  
-  private onOnlineUsersUpdate(payload: { user_ids: number[]; timestamp: string }) {  
-    systemStoreActions.handleOnlineUsersUpdate(payload);  
-  }  
-  
-  private onSystemError(payload: WssError) {  
-    console.error(  
-      `[WebSocketService] System Error: ${payload.errorMessage}`,  
-      payload.detail  
-    );  
-    systemStoreActions.setBackendConnectionState('error');  
-  }  
-}  
-  
-export const websocketService = new WebSocketService();  
+import {
+  parseBrainToBridgeMessage,
+  parseBridgeToBrainMessage,
+  type BrainToBridgeMessage,
+  type BridgeSessionMessage,
+  type BridgeToBrainMessage,
+  type PresenceStateMessage,
+  type ProtocolErrorMessage,
+  type StateDeltaMessage,
+} from '../protocol';
+import {
+  bridgeTransportStore,
+  type BridgeTransportStore,
+} from '../store/transportStore';
+
+const OPEN = 1;
+const DEV_AUTH_TICKET = 'bridge-clean-dev-ticket-v1';
+const DEV_ACCOUNT_ID = 'dev-creator-account';
+const DEFAULT_URL = 'ws://localhost:8000/ws/bridge';
+
+interface MessageEventLike {
+  data: unknown;
+}
+
+export interface WebSocketLike {
+  readyState: number;
+  onopen: (() => void) | null;
+  onmessage: ((event: MessageEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onclose: (() => void) | null;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+}
+
+interface Scheduler {
+  setTimeout(handler: () => void, delay: number): ReturnType<typeof setTimeout>;
+  clearTimeout(handle: ReturnType<typeof setTimeout>): void;
+}
+
+export interface BridgeWebSocketOptions {
+  url?: string;
+  creatorAccountId?: string;
+  authTicket?: string;
+  bridgeSessionId?: string;
+  clientVersion?: string;
+  webSocketFactory?: (url: string) => WebSocketLike;
+  store?: BridgeTransportStore;
+  scheduler?: Scheduler;
+  random?: () => number;
+  idFactory?: () => string;
+  now?: () => number;
+  reconnectBaseMs?: number;
+  reconnectMaxMs?: number;
+}
+
+const defaultScheduler: Scheduler = {
+  setTimeout: (handler, delay) => setTimeout(handler, delay),
+  clearTimeout: (handle) => clearTimeout(handle),
+};
+
+function defaultIdFactory(): string {
+  return crypto.randomUUID();
+}
+
+function normalizeUrl(url: string): string {
+  return url
+    .replace(/\/api\/ws\/frontend\/[^/]+$/, '/ws/bridge')
+    .replace(/\/api\/ws\/bridge$/, '/ws/bridge');
+}
+
+export class BridgeWebSocketService {
+  private socket: WebSocketLike | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private presenceTimer: ReturnType<typeof setTimeout> | null = null;
+  private url: string;
+  private creatorAccountId: string;
+  private readonly authTicket: string;
+  private readonly bridgeSessionId: string;
+  private readonly clientVersion: string;
+  private readonly webSocketFactory: (url: string) => WebSocketLike;
+  private readonly store: BridgeTransportStore;
+  private readonly scheduler: Scheduler;
+  private readonly random: () => number;
+  private readonly idFactory: () => string;
+  private readonly now: () => number;
+  private readonly reconnectBaseMs: number;
+  private readonly reconnectMaxMs: number;
+  private reconnectAttempt = 0;
+  private manuallyStopped = true;
+  private reconnectAllowed = true;
+
+  constructor(options: BridgeWebSocketOptions = {}) {
+    this.url = normalizeUrl(options.url ?? DEFAULT_URL);
+    this.creatorAccountId = options.creatorAccountId ?? DEV_ACCOUNT_ID;
+    this.authTicket = options.authTicket ?? DEV_AUTH_TICKET;
+    this.bridgeSessionId = options.bridgeSessionId ?? (options.idFactory ?? defaultIdFactory)();
+    this.clientVersion = options.clientVersion ?? '0.7.1';
+    this.webSocketFactory =
+      options.webSocketFactory ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
+    this.store = options.store ?? bridgeTransportStore;
+    this.scheduler = options.scheduler ?? defaultScheduler;
+    this.random = options.random ?? Math.random;
+    this.idFactory = options.idFactory ?? defaultIdFactory;
+    this.now = options.now ?? Date.now;
+    this.reconnectBaseMs = options.reconnectBaseMs ?? 500;
+    this.reconnectMaxMs = options.reconnectMaxMs ?? 30_000;
+  }
+
+  connect(url = this.url, creatorAccountId = this.creatorAccountId): void {
+    const normalizedUrl = normalizeUrl(url);
+    const accountChanged = creatorAccountId !== this.creatorAccountId;
+    if (accountChanged) this.disconnect();
+    this.url = normalizedUrl;
+    this.creatorAccountId = creatorAccountId;
+    this.manuallyStopped = false;
+    this.reconnectAllowed = true;
+    if (this.socket?.readyState === OPEN || this.store.getState().connection === 'connecting') return;
+    this.store.bindAccount(creatorAccountId);
+    this.openSocket(false);
+  }
+
+  disconnect(): void {
+    this.manuallyStopped = true;
+    this.reconnectAllowed = false;
+    this.clearReconnectTimer();
+    this.clearPresenceTimer();
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) socket.close(1000, 'Bridge stopped');
+    this.store.markDisconnected();
+  }
+
+  requestResync(reason: 'revision_gap' | 'invalid_delta' | 'reconnect' | 'manual'): boolean {
+    const session = this.store.getState().session;
+    if (!session || !this.socket || this.socket.readyState !== OPEN) return false;
+    const message: BridgeToBrainMessage = {
+      type: 'state.resync',
+      protocol_version: '1',
+      message_id: this.idFactory(),
+      payload: {
+        connection_id: session.connection_id,
+        bridge_session_id: session.bridge_session_id,
+        creator_account_id: session.creator_account_id,
+        last_applied_view_revision: this.store.getState().viewRevision ?? 0,
+        reason,
+      },
+    };
+    const validated = parseBridgeToBrainMessage(message);
+    this.store.beginResync();
+    this.socket.send(JSON.stringify(validated));
+    return true;
+  }
+
+  private openSocket(reconnecting: boolean): void {
+    this.store.setConnection(reconnecting ? 'reconnecting' : 'connecting');
+    const socket = this.webSocketFactory(this.url);
+    this.socket = socket;
+    socket.onopen = () => {
+      if (this.socket !== socket) return;
+      this.store.setConnection('handshaking');
+      const hello: BridgeToBrainMessage = {
+        type: 'bridge.hello',
+        protocol_version: '1',
+        message_id: this.idFactory(),
+        payload: {
+          auth_ticket: this.authTicket,
+          bridge_session_id: this.bridgeSessionId,
+          requested_creator_account_id: this.creatorAccountId,
+          capabilities: ['state.snapshot', 'state.delta', 'presence.state'],
+          client_version: this.clientVersion,
+          last_view_revision: this.store.getState().viewRevision,
+        },
+      };
+      socket.send(JSON.stringify(parseBridgeToBrainMessage(hello)));
+    };
+    socket.onmessage = (event) => this.handleRawMessage(socket, event.data);
+    socket.onerror = () => {
+      if (this.socket === socket) this.store.setConnection('error');
+    };
+    socket.onclose = () => this.handleClose(socket);
+  }
+
+  private handleRawMessage(socket: WebSocketLike, data: unknown): void {
+    if (socket !== this.socket) return;
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(String(data));
+    } catch {
+      this.store.setConnection('error');
+      socket.close(1002, 'Malformed JSON from Brain');
+      return;
+    }
+
+    let message: BrainToBridgeMessage;
+    try {
+      message = parseBrainToBridgeMessage(decoded);
+    } catch {
+      const invalidType =
+        typeof decoded === 'object' &&
+        decoded !== null &&
+        (decoded as Record<string, unknown>).type;
+      if (invalidType === 'state.delta' || invalidType === 'state.snapshot') {
+        this.requestResync('invalid_delta');
+      } else {
+        this.store.setConnection('error');
+        socket.close(1002, 'Invalid protocol frame from Brain');
+      }
+      return;
+    }
+
+    if (message.type === 'protocol.error') {
+      this.handleProtocolError(message);
+      return;
+    }
+
+    const session = this.store.getState().session;
+    if (session === null) {
+      if (message.type !== 'bridge.session') {
+        this.reconnectAllowed = true;
+        socket.close(1002, 'Expected bridge.session');
+        return;
+      }
+      this.acceptSession(message);
+      return;
+    }
+
+    if (message.type === 'bridge.session') {
+      socket.close(1002, 'Duplicate bridge.session');
+      return;
+    }
+    if (message.payload.creator_account_id !== session.creator_account_id) {
+      this.reconnectAllowed = false;
+      socket.close(1008, 'Account identity conflict');
+      return;
+    }
+    this.dispatchBoundMessage(message);
+  }
+
+  private acceptSession(message: BridgeSessionMessage): void {
+    const payload = message.payload;
+    if (
+      payload.bridge_session_id !== this.bridgeSessionId ||
+      payload.creator_account_id !== this.creatorAccountId
+    ) {
+      this.reconnectAllowed = false;
+      this.socket?.close(1008, 'Session identity conflict');
+      return;
+    }
+    this.reconnectAttempt = 0;
+    this.store.acceptSession(payload);
+  }
+
+  private dispatchBoundMessage(
+    message: Exclude<BrainToBridgeMessage, BridgeSessionMessage | ProtocolErrorMessage>,
+  ): void {
+    switch (message.type) {
+      case 'state.snapshot':
+        if (!this.store.applySnapshot(message.payload)) {
+          this.requestResync('invalid_delta');
+        }
+        return;
+      case 'state.delta':
+        this.handleDelta(message);
+        return;
+      case 'presence.state':
+        this.handlePresence(message);
+        return;
+      case 'agent.state':
+        this.store.setAgent(message.payload);
+        return;
+      case 'system.state':
+        this.store.setSystem(message.payload);
+        return;
+      default: {
+        const exhaustive: never = message;
+        return exhaustive;
+      }
+    }
+  }
+
+  private handleDelta(message: StateDeltaMessage): void {
+    const result = this.store.applyDelta(message.payload);
+    if (result === 'gap') this.requestResync('revision_gap');
+    else if (result === 'invalid') this.requestResync('invalid_delta');
+  }
+
+  private handlePresence(message: PresenceStateMessage): void {
+    this.clearPresenceTimer();
+    this.store.setPresence(message.payload);
+    if (message.payload.freshness !== 'current' || message.payload.expires_at === null) return;
+    const delay = Math.max(0, Date.parse(message.payload.expires_at) - this.now());
+    const expectedExpiry = message.payload.expires_at;
+    this.presenceTimer = this.scheduler.setTimeout(() => {
+      this.presenceTimer = null;
+      this.store.expirePresence(expectedExpiry);
+    }, delay);
+  }
+
+  private handleProtocolError(message: ProtocolErrorMessage): void {
+    this.store.setProtocolError(message.payload);
+    if (message.payload.fatal) {
+      this.reconnectAllowed = message.payload.retryable;
+      this.socket?.close(1002, message.payload.code);
+    } else if (message.payload.retryable && message.payload.code === 'validation_failed') {
+      this.requestResync('invalid_delta');
+    }
+  }
+
+  private handleClose(socket: WebSocketLike): void {
+    if (this.socket !== socket) return;
+    this.socket = null;
+    this.clearPresenceTimer();
+    this.store.markDisconnected();
+    if (!this.manuallyStopped && this.reconnectAllowed) this.scheduleReconnect();
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer !== null) return;
+    const exponential = Math.min(
+      this.reconnectMaxMs,
+      this.reconnectBaseMs * 2 ** this.reconnectAttempt,
+    );
+    const jittered = Math.max(0, Math.round(exponential * (0.5 + this.random())));
+    this.reconnectAttempt += 1;
+    this.store.setConnection('reconnecting');
+    this.reconnectTimer = this.scheduler.setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.manuallyStopped) this.openSocket(true);
+    }, jittered);
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer !== null) {
+      this.scheduler.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  private clearPresenceTimer(): void {
+    if (this.presenceTimer !== null) {
+      this.scheduler.clearTimeout(this.presenceTimer);
+      this.presenceTimer = null;
+    }
+  }
+}
+
+export const websocketService = new BridgeWebSocketService();

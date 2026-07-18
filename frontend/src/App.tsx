@@ -1,98 +1,63 @@
-// src/App.tsx  
-  
-import { CssBaseline, GlobalStyles } from '@mui/material';  
-import InitColorSchemeScript from '@mui/material/InitColorSchemeScript';  
-import { ThemeProvider } from '@mui/material/styles';  
-import React, { useEffect } from 'react';  
-import { BrowserRouter } from 'react-router-dom';  
-  
-import { getConfig } from '@/config/fastapiConfig';  
-import { extensionService } from '@services/extensionService';  
-import { websocketService } from '@services/websocketService';  
-import { useChatStore } from '@store/chatStore';  
-import { systemStoreActions } from '@store/systemStore';  
-  
-import { AppRouter } from './routing/AppRouter';  
-import { theme } from './theme';  
-  
-// Global styles using theme.vars for flicker-free dark/light mode  
-const globalStyles = (  
-  <GlobalStyles  
-    styles={(theme) => ({  
-      'html, body, #root': {  
-        height: '100%',  
-        margin: 0,  
-        padding: 0,  
-        backgroundColor: theme.vars.palette.background.default,  
-        color: theme.vars.palette.text.primary,  
-      },  
-      body: {  
-        fontFamily: theme.typography.fontFamily,  
-      },  
-    })}  
-  />  
-);  
-  
-export function App() {  
-  const replaceStateFromSnapshot = useChatStore((s) => s.actions.replaceStateFromSnapshot);  
-  // Removed unused variable `role` from here  
-  
-  useEffect(() => {  
-    const { FASTAPI_WS_URL, API_BASE_URL, CREATOR_ID, USER_ID } = getConfig();  
-    const userId = USER_ID || FASTAPI_WS_URL?.split('/').pop();  
-  
-    if (!FASTAPI_WS_URL || !userId) {  
-      console.error('[App] Missing FASTAPI_WS_URL or userId in injected config');  
-      return;  
-    }  
-  
-    // Set extension connection state immediately  
-    if (extensionService.isAgentAvailable()) {  
-      systemStoreActions.setExtensionConnectionState('connected');  
-    } else {  
-      systemStoreActions.setExtensionConnectionState('disconnected');  
-    }  
-  
-    console.log(`[App] Initializing WebSocket for user: ${userId}`);  
-    websocketService.connect(FASTAPI_WS_URL, userId);  
-  
-    const isDevMode = import.meta.env.DEV;  
-    const hasAgent = extensionService.isAgentAvailable();  
-  
-    // DEV MODE FALLBACK: bootstrap state via REST when Agent is missing  
-    if (isDevMode && !hasAgent) {  
-      const bootstrapUrl = CREATOR_ID  
-        ? `${API_BASE_URL}/api/v1/frontend/bootstrap/${userId}?creator_id=${CREATOR_ID}`  
-        : `${API_BASE_URL}/api/v1/frontend/bootstrap/${userId}`;  
-  
-      fetch(bootstrapUrl)  
-        .then((res) => res.json())  
-        .then((data) => {  
-          console.log('[App] Bootstrap snapshot loaded (dev fallback):', data);  
-          replaceStateFromSnapshot(data);  
-        })  
-        .catch((err) => {  
-          console.error('[App] Failed to bootstrap snapshot:', err);  
-        });  
-    }  
-  
-    return () => {  
-      websocketService.disconnect();  
-    };  
-  }, []);  
-  
-  return (  
-    <>  
-      {/* Prevent SSR flicker — must match theme.cssVariables.colorSchemeSelector */}  
-      <InitColorSchemeScript attribute="class" defaultMode="dark" />  
-  
-      <ThemeProvider theme={theme} defaultMode="dark" disableTransitionOnChange>  
-        <CssBaseline />  
-        {globalStyles}  
-        <BrowserRouter>  
-          <AppRouter />  
-        </BrowserRouter>  
-      </ThemeProvider>  
-    </>  
-  );  
-}  
+// src/App.tsx
+
+import { CssBaseline, GlobalStyles } from '@mui/material';
+import InitColorSchemeScript from '@mui/material/InitColorSchemeScript';
+import { ThemeProvider } from '@mui/material/styles';
+import React, { useEffect } from 'react';
+import { BrowserRouter } from 'react-router-dom';
+
+import { getConfig } from '@/config/fastapiConfig';
+import { websocketService } from '@services/websocketService';
+
+import { AppRouter } from './routing/AppRouter';
+import { theme } from './theme';
+
+// Global styles using theme.vars for flicker-free dark/light mode
+const globalStyles = (
+  <GlobalStyles
+    styles={(theme) => ({
+      'html, body, #root': {
+        height: '100%',
+        margin: 0,
+        padding: 0,
+        backgroundColor: theme.vars.palette.background.default,
+        color: theme.vars.palette.text.primary,
+      },
+      body: {
+        fontFamily: theme.typography.fontFamily,
+      },
+    })}
+  />
+);
+
+export function App() {
+  useEffect(() => {
+    const { FASTAPI_WS_URL, CREATOR_ID } = getConfig();
+    const creatorAccountId = CREATOR_ID ?? 'dev-creator-account';
+
+    if (!FASTAPI_WS_URL) {
+      console.error('[App] Missing FASTAPI_WS_URL in injected config');
+      return;
+    }
+    websocketService.connect(FASTAPI_WS_URL, creatorAccountId);
+
+    return () => {
+      websocketService.disconnect();
+    };
+  }, []);
+
+  return (
+    <>
+      {/* Prevent SSR flicker — must match theme.cssVariables.colorSchemeSelector */}
+      <InitColorSchemeScript attribute="data-mui-color-scheme" defaultMode="dark" />
+
+      <ThemeProvider theme={theme} defaultMode="dark" disableTransitionOnChange>
+        <CssBaseline />
+        {globalStyles}
+        <BrowserRouter>
+          <AppRouter />
+        </BrowserRouter>
+      </ThemeProvider>
+    </>
+  );
+}

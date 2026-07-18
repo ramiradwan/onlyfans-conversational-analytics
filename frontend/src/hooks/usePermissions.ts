@@ -27,7 +27,7 @@ export const usePermissions = () => {
     // This is the primary view for Operators and also accessible to Creators.  
     canViewInbox: isCreator || isOperator,  
   
-    // NEW: Per Spec — Graph Explorer is Creator-only  
+    // Graph Explorer is available only to the Creator role.
     canViewGraphExplorer: isCreator,  
   };  
-};  
+};
