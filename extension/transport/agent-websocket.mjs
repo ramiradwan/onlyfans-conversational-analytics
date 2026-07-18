@@ -1,0 +1,472 @@
+import {
+  parseAgentToBrainMessage,
+  parseBrainToAgentMessage,
+} from '../protocol/index.mjs';
+import { AgentCommandService } from './agent-command-service.mjs';
+
+const CONNECTING = 0;
+const OPEN = 1;
+export const DEV_AUTH_TICKET = 'bridge-clean-dev-ticket-v1';
+export const DEV_ACCOUNT_ID = 'dev-creator-account';
+
+const defaultScheduler = {
+  setTimeout: (handler, delay) => setTimeout(handler, delay),
+  clearTimeout: (handle) => clearTimeout(handle),
+  setInterval: (handler, delay) => setInterval(handler, delay),
+  clearInterval: (handle) => clearInterval(handle),
+};
+
+const noOp = () => {};
+const asyncNoOp = async () => {};
+
+export class AgentWebSocketClient {
+  constructor(options) {
+    this.url = options.url ?? 'ws://localhost:8000/ws/agent';
+    this.identity = options.identity;
+    this.creatorAccountId = options.creatorAccountId ?? DEV_ACCOUNT_ID;
+    this.authTicket = options.authTicket ?? DEV_AUTH_TICKET;
+    this.extensionVersion = options.extensionVersion ?? '2.0.0';
+    this.capabilities = options.capabilities ?? [
+      'capture.chats',
+      'capture.messages',
+      'capture.presence',
+      'command.message.send',
+    ];
+    this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
+    this.scheduler = options.scheduler ?? defaultScheduler;
+    this.idFactory = options.idFactory ?? (() => crypto.randomUUID());
+    this.random = options.random ?? Math.random;
+    this.now = options.now ?? (() => Date.now());
+    this.reconnectBaseMs = options.reconnectBaseMs ?? 500;
+    this.reconnectMaxMs = options.reconnectMaxMs ?? 30_000;
+    this.persistence = options.persistence ?? {};
+    this.outbox = options.outbox ?? null;
+    this.onSession = options.onSession ?? noOp;
+    this.onSyncRequired = options.onSyncRequired ?? noOp;
+    this.onIngestAcknowledged = options.onIngestAcknowledged ?? noOp;
+    this.onIngestRejected = options.onIngestRejected ?? noOp;
+    this.onConfigAvailable = options.onConfigAvailable ?? noOp;
+    this.configClient = options.configClient ?? null;
+    const executor = options.executor ?? (
+      options.onCommand
+        ? { execute: (action) => options.onCommand(action) }
+        : undefined
+    );
+    const appliedConfig = options.appliedConfig ?? (() => {
+      if (this.configClient?.activeDocument) return this.configClient.activeDocument;
+      if (options.onCommand) {
+        return {
+          command_policy: {
+            allowed_actions: ['message.send'],
+            max_text_length: Number.MAX_SAFE_INTEGER,
+            require_idempotency: true,
+          },
+        };
+      }
+      return null;
+    });
+    this.commandService = options.commandService ?? new AgentCommandService({
+      persistence: this.persistence,
+      executor,
+      appliedConfig,
+      now: this.now,
+      idFactory: this.idFactory,
+    });
+    this.onCommandResultAcknowledged = options.onCommandResultAcknowledged ?? noOp;
+    this.onProtocolError = options.onProtocolError ?? noOp;
+    this.onValidationError = options.onValidationError ?? noOp;
+    this.health = options.health ?? (() => ({ status: 'healthy', detail: null }));
+    this.socket = null;
+    this.session = null;
+    this.reconnectTimer = null;
+    this.heartbeatTimer = null;
+    this.reconnectAttempt = 0;
+    this.stopped = true;
+    this.reconnectAllowed = true;
+    this.syncRequired = false;
+    this.sentSourceSeqs = new Set();
+    this.flushPromise = null;
+
+  }
+
+  start() {
+    this.stopped = false;
+    this.reconnectAllowed = true;
+    this.ensureConnected();
+  }
+
+  ensureConnected() {
+    if (this.stopped) this.stopped = false;
+    if (this.socket && [CONNECTING, OPEN].includes(this.socket.readyState)) return;
+    this.clearReconnect();
+    this.openSocket();
+  }
+
+  stop() {
+    this.stopped = true;
+    this.reconnectAllowed = false;
+    this.clearReconnect();
+    this.clearHeartbeat();
+    const socket = this.socket;
+    this.socket = null;
+    this.session = null;
+    socket?.close(1000, 'Agent stopped');
+  }
+
+  sendSnapshot(snapshot) {
+    return this.sendBound('ingest.snapshot', {
+      ...snapshot,
+      agent_installation_id: this.identity.agentInstallationId,
+      agent_stream_id: this.identity.agentStreamId,
+    });
+  }
+
+  sendDelta(delta) {
+    if (this.outbox === null) {
+      return this.sendBound('ingest.delta', {
+        ...delta,
+        agent_installation_id: this.identity.agentInstallationId,
+        agent_stream_id: this.identity.agentStreamId,
+      });
+    }
+    return this.captureDelta(delta.change ?? delta, delta.event_id ?? null);
+  }
+
+  async captureDelta(change, eventId = null) {
+    const item = await this.outbox.enqueue(change, eventId ?? this.idFactory());
+    await this.flushOutbox();
+    return item;
+  }
+
+  async flushOutbox() {
+    if (
+      this.outbox === null ||
+      this.syncRequired ||
+      !this.session ||
+      !this.socket ||
+      this.socket.readyState !== OPEN
+    ) return false;
+    if (this.flushPromise !== null) {
+      await this.flushPromise;
+      return this.flushOutbox();
+    }
+    this.flushPromise = (async () => {
+      const entries = await this.outbox.entries();
+      for (const item of entries) {
+        if (this.syncRequired || this.sentSourceSeqs.has(item.source_seq)) continue;
+        const sent = this.sendBound('ingest.delta', {
+          event_id: item.event_id,
+          source_seq: item.source_seq,
+          change: item.change,
+          agent_installation_id: this.identity.agentInstallationId,
+          agent_stream_id: this.identity.agentStreamId,
+        });
+        if (!sent) break;
+        this.sentSourceSeqs.add(item.source_seq);
+      }
+    })();
+    try {
+      await this.flushPromise;
+      return true;
+    } finally {
+      this.flushPromise = null;
+    }
+  }
+
+  sendPresenceObservation(observation) {
+    return this.sendBound('presence.observed', observation);
+  }
+
+  sendConfigApplied(report) {
+    return this.sendBound('config.applied', report);
+  }
+
+  sendCommandResult(result, correlationId = null) {
+    return this.sendBound('command.result', result, correlationId);
+  }
+
+  sendHeartbeat() {
+    return this.sendBound('agent.heartbeat', {
+      applied_config_revision: this.identity.appliedConfigRevision,
+      health: this.health(),
+    });
+  }
+
+  sendBound(type, payload, correlationId = null) {
+    if (!this.session || !this.socket || this.socket.readyState !== OPEN) return false;
+    const document = {
+      type,
+      protocol_version: '1',
+      message_id: this.idFactory(),
+      ...(correlationId ? { correlation_id: correlationId } : {}),
+      payload: {
+        ...payload,
+        connection_id: this.session.connection_id,
+        fencing_token: this.session.fencing_token,
+        creator_account_id: this.session.creator_account_id,
+      },
+    };
+    const validated = parseAgentToBrainMessage(document);
+    this.socket.send(JSON.stringify(validated));
+    return true;
+  }
+
+  openSocket() {
+    const socket = this.webSocketFactory(this.url);
+    this.socket = socket;
+    this.session = null;
+    socket.onopen = () => {
+      if (this.socket !== socket) return;
+      const hello = {
+        type: 'agent.hello',
+        protocol_version: '1',
+        message_id: this.idFactory(),
+        payload: {
+          auth_ticket: this.authTicket,
+          agent_installation_id: this.identity.agentInstallationId,
+          requested_creator_account_id: this.creatorAccountId,
+          capabilities: this.capabilities,
+          extension_version: this.extensionVersion,
+          agent_stream_id: this.identity.agentStreamId,
+          last_acknowledged_source_seq: this.identity.lastAcknowledgedSourceSeq,
+          applied_config_revision: this.identity.appliedConfigRevision,
+        },
+      };
+      socket.send(JSON.stringify(parseAgentToBrainMessage(hello)));
+    };
+    socket.onmessage = (event) => this.handleRawMessage(socket, event.data);
+    socket.onerror = noOp;
+    socket.onclose = () => this.handleClose(socket);
+  }
+
+  handleRawMessage(socket, raw) {
+    if (socket !== this.socket) return;
+    let decoded;
+    try {
+      decoded = JSON.parse(String(raw));
+    } catch (error) {
+      this.onValidationError(error);
+      socket.close(1002, 'Malformed JSON from Brain');
+      return;
+    }
+    let message;
+    try {
+      message = parseBrainToAgentMessage(decoded);
+    } catch (error) {
+      this.onValidationError(error);
+      socket.close(1002, 'Invalid protocol frame from Brain');
+      return;
+    }
+
+    if (message.type === 'protocol.error') {
+      this.onProtocolError(message.payload);
+      if (message.payload.fatal) {
+        this.reconnectAllowed = message.payload.retryable;
+        socket.close(1002, message.payload.code);
+      }
+      return;
+    }
+    if (!this.session) {
+      if (message.type !== 'agent.session') {
+        socket.close(1002, 'Expected agent.session');
+        return;
+      }
+      this.acceptSession(message.payload);
+      return;
+    }
+    if (message.type === 'agent.session') {
+      socket.close(1002, 'Duplicate agent.session');
+      return;
+    }
+    if (message.type === 'command.execute') {
+      this.dispatch(message).catch((error) => this.onValidationError(error));
+      return;
+    }
+    if (!this.matchesSession(message)) {
+      this.reconnectAllowed = false;
+      socket.close(1008, 'Session identity conflict');
+      return;
+    }
+    this.dispatch(message).catch((error) => this.onValidationError(error));
+  }
+
+  acceptSession(session) {
+    if (
+      session.creator_account_id !== this.creatorAccountId ||
+      session.agent_installation_id !== this.identity.agentInstallationId ||
+      session.agent_stream_id !== this.identity.agentStreamId
+    ) {
+      this.reconnectAllowed = false;
+      this.socket?.close(1008, 'Session identity conflict');
+      return;
+    }
+    this.session = session;
+    this.sentSourceSeqs.clear();
+    this.syncRequired = session.resume_action === 'snapshot_required';
+    this.reconnectAttempt = 0;
+    this.startHeartbeat(session.lease.heartbeat_interval_seconds * 1000);
+    this.onSession(session);
+    void this.resendCommandResults()
+      .catch((error) => this.onValidationError(error));
+    if (
+      this.configClient !== null
+      && session.required_config_revision !== this.identity.appliedConfigRevision
+    ) {
+      void this.configClient.requireConfig({
+        required_config_revision: session.required_config_revision,
+        digest: null,
+      });
+    }
+    if (session.resume_action === 'snapshot_required') {
+      void this.handleSyncRequired({
+        connection_id: session.connection_id,
+        creator_account_id: session.creator_account_id,
+        reason: 'missing_checkpoint',
+        expected_agent_stream_id: session.agent_stream_id,
+        expected_next_source_seq: session.committed_source_seq + 1,
+        snapshot: { include_chats: true, include_messages: true },
+      }).catch((error) => this.onValidationError(error));
+    } else {
+      void this.flushOutbox().catch((error) => this.onValidationError(error));
+    }
+  }
+
+  async handleSyncRequired(payload) {
+    this.syncRequired = true;
+    this.onSyncRequired(payload);
+    if (this.outbox === null) return;
+    const snapshot = await this.outbox.createSnapshot();
+    this.sendSnapshot(snapshot);
+  }
+
+  matchesSession(message) {
+    const payload = message.payload;
+    if (payload.connection_id !== this.session.connection_id) return false;
+    if (payload.creator_account_id !== this.session.creator_account_id) return false;
+    if (message.type === 'command.execute' && payload.fencing_token !== this.session.fencing_token) {
+      return false;
+    }
+    if (message.type === 'ingest.ack' && payload.agent_stream_id !== this.identity.agentStreamId) {
+      return false;
+    }
+    return true;
+  }
+
+  async dispatch(message) {
+    switch (message.type) {
+      case 'sync.required':
+        await this.handleSyncRequired(message.payload);
+        return;
+      case 'ingest.ack': {
+        let snapshotAcknowledged = false;
+        if (this.outbox !== null) {
+          const result = await this.outbox.acknowledge(
+            message.payload.committed_source_seq,
+            message.payload.snapshot_id,
+          );
+          snapshotAcknowledged = result.snapshotAcknowledged;
+        }
+        const committed = Math.max(
+          this.identity.lastAcknowledgedSourceSeq,
+          message.payload.committed_source_seq,
+        );
+        this.identity.lastAcknowledgedSourceSeq = committed;
+        await (this.persistence.saveAcknowledgedSourceSeq?.(committed) ?? asyncNoOp());
+        this.sentSourceSeqs = new Set(
+          [...this.sentSourceSeqs].filter((sourceSeq) => sourceSeq > committed),
+        );
+        this.onIngestAcknowledged(message.payload);
+        if (snapshotAcknowledged) {
+          this.syncRequired = false;
+          await this.flushOutbox();
+        }
+        return;
+      }
+      case 'ingest.rejected':
+        this.onIngestRejected(message.payload);
+        if (!message.payload.retryable) this.syncRequired = true;
+        if (message.payload.code === 'sequence_gap') {
+          await this.handleSyncRequired({
+            connection_id: this.session.connection_id,
+            creator_account_id: this.session.creator_account_id,
+            reason: 'sequence_gap',
+            expected_agent_stream_id: this.identity.agentStreamId,
+            expected_next_source_seq: this.identity.lastAcknowledgedSourceSeq + 1,
+            snapshot: { include_chats: true, include_messages: true },
+          });
+        }
+        return;
+      case 'config.available':
+        this.onConfigAvailable(message.payload);
+        if (this.configClient !== null) {
+          await this.configClient.requireConfig(message.payload, { force: true });
+        }
+        return;
+      case 'command.execute':
+        await this.handleCommand(message);
+        return;
+      case 'command.result.ack':
+        const compaction = this.commandService.acknowledge(message.payload);
+        this.onCommandResultAcknowledged(message.payload);
+        await compaction;
+        return;
+      default:
+        return;
+    }
+  }
+
+  async handleCommand(message) {
+    const result = await this.commandService.execute(
+      message.payload,
+      this.session,
+      message.message_id,
+    );
+    this.sendCommandResult(result, message.message_id);
+  }
+
+  async resendCommandResults() {
+    const pending = await this.commandService.pendingResults(
+      this.session?.creator_account_id ?? null,
+    );
+    for (const record of pending) {
+      this.sendCommandResult(record.result, record.correlation_id);
+    }
+  }
+
+  startHeartbeat(delay) {
+    this.clearHeartbeat();
+    this.heartbeatTimer = this.scheduler.setInterval(() => this.sendHeartbeat(), delay);
+  }
+
+  handleClose(socket) {
+    if (this.socket !== socket) return;
+    this.socket = null;
+    this.session = null;
+    this.clearHeartbeat();
+    if (!this.stopped && this.reconnectAllowed) this.scheduleReconnect();
+  }
+
+  scheduleReconnect() {
+    if (this.reconnectTimer !== null) return;
+    const exponential = Math.min(
+      this.reconnectMaxMs,
+      this.reconnectBaseMs * 2 ** this.reconnectAttempt,
+    );
+    const delay = Math.max(0, Math.round(exponential * (0.5 + this.random())));
+    this.reconnectAttempt += 1;
+    this.reconnectTimer = this.scheduler.setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.stopped) this.openSocket();
+    }, delay);
+  }
+
+  clearReconnect() {
+    if (this.reconnectTimer !== null) this.scheduler.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  clearHeartbeat() {
+    if (this.heartbeatTimer !== null) this.scheduler.clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+  }
+}

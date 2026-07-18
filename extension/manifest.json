@@ -6,6 +6,7 @@
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "tabs",
     "scripting"
   ],
@@ -14,7 +15,8 @@
     "http://localhost:8000/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
