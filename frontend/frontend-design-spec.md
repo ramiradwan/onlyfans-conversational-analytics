@@ -11,7 +11,7 @@
 
 ### **1.1 Purpose**
 
-Defines the **single source of truth** for Bridge’s frontend UX, UI, interaction model, component architecture, and real-time data behavior — now aligned to a **formal 3-tier token architecture**, **MUI v7 CSS variables system**, and **integrated WCAG 2.2 Level AA compliance**.
+Defines the **single source of truth** for Bridge’s frontend UX, UI, interaction model, component architecture, and visual design — aligned to a **formal 3-tier token architecture**, **MUI v7 CSS variables system**, and **integrated WCAG 2.2 Level AA compliance**. Agent–Brain–Bridge communication behavior is governed by the accepted ADRs, as stated in Section 12.
 
 Serves as:
 
@@ -30,7 +30,7 @@ Serves as:
 **Out of Scope**
 
   * Backend data processing/model training
-  * Billing and CRM integrations
+  * Hosted integrations
 
 **Constraints**
 
@@ -326,17 +326,59 @@ export const theme = createTheme({
 
 ## **12. WebSocket / REST → UI Mapping**
 
-| WS Type | State Store | UI Behavior |
-| :--- | :--- | :--- |
-| `connection_ack` | `userStore` | Sets connected state in `AppBar`. |
-| `system_status` | `analyticsStore` | Toggles `GlobalLoader` visibility (`PROCESSING_SNAPSHOT`).|
-| `system_error` | `notificationStore`| Fires global `Snackbar` error. |
-| `full_sync_response`| `analyticsStore`, `chatStore`| Populates all dashboards and chat lists on initial load. |
-| `append_message` | `chatStore` | Appends message to `MessageStreamPane` & updates `ChatListPane`.|
-| `analytics_update` | `analyticsStore` | Updates KPI widgets & `DataGrid` in `CreatorDashboardView`.|
-| `enrichment_result` | `enrichmentStore` | Populates the `Fan360InsightsPane` for the active conversation.|
+### **12.1 Normative Communication Authority**
 
------
+The accepted ADRs in [`docs/adr/`](../docs/adr/README.md) are normative over this frontend specification and every other secondary specification. [ADR 0006](../docs/adr/0006-canonical-communication-matrix.md) is the canonical operation matrix. This section is a synchronized UI-facing restatement; if it drifts from an accepted ADR, the ADR governs.
+
+### **12.2 Canonical Communication Matrix**
+
+The following 25 rows reproduce ADR 0006, including operations that do not directly update Bridge UI state.
+
+| Message type or operation | Transport | Sender | Receiver | Payload essence | Failure behavior |
+| --- | --- | --- | --- | --- | --- |
+| `agent.hello` | WebSocket | Agent | Brain | Protocol/capabilities, `agent_installation_id`, requested `creator_account_id`, source stream/checkpoint, applied config revision | Must be first. Brain rejects unauthenticated, unauthorized, incompatible, or incomplete hello and closes; no ingest is accepted. |
+| `agent.session` | WebSocket | Brain | Agent | Accepted `connection_id`, fencing token, bound account, durable checkpoint/resume action, required config revision, lease parameters | Without it Agent sends no domain messages. Loss causes reconnect and a new connection/fencing identity. |
+| `bridge.hello` | WebSocket | Bridge | Brain | Protocol/capabilities, `bridge_session_id`, requested account, optional last view revision | Must be first. Brain rejects invalid identity/version and closes; Bridge clears account-scoped state. |
+| `bridge.session` | WebSocket | Brain | Bridge | Accepted `connection_id`, bound account, protocol/server versions | Without it Bridge does not render account state. Loss causes reconnect and a new initial snapshot. |
+| `agent.heartbeat` | WebSocket | Agent | Brain | Connection/fencing identity, current applied config revision, health summary | Best effort and not replayed. Missed lease transitions `agent.state` to stale/disconnected; it does not itself change platform-user presence or ingestion progress. |
+| `sync.required` | WebSocket | Brain | Agent | Reason, expected source state, snapshot requirements | Agent pauses later deltas, builds/sends a consistent snapshot, and retries after reconnect if the notice is lost. |
+| `ingest.snapshot` | WebSocket | Agent | Brain | `snapshot_id`, source stream, `through_seq`, complete account-scoped chats/messages | Brain validates and atomically replaces only the fenced stream/account. No ack means safe resend. Invalid non-retryable content gets `ingest.rejected`; transient failure leaves checkpoint unchanged. |
+| `ingest.delta` | WebSocket | Agent | Brain | Stable `event_id`, source stream/sequence, one typed raw change | Persisted in Agent outbox until acknowledged. Brain deduplicates and accepts only the next contiguous sequence; gap leads to rejection or `sync.required`. |
+| `ingest.ack` | WebSocket | Brain | Agent | Accepted snapshot identity and/or highest contiguous committed source sequence | Agent retains and resends until it observes the ack. Duplicate acks are harmless. |
+| `ingest.rejected` | WebSocket | Brain | Agent | Correlation/event identity, validation code, retryable flag, safe detail | Retryable items remain queued with backoff. Non-retryable items block contiguous progress until explicit repair/quarantine policy or resync; no silent skip. |
+| `state.snapshot` | WebSocket | Brain | Bridge | Complete canonical conversation/analytics read model and `view_revision` | Sent after every v1 Bridge bind/resync. Bridge stays loading/degraded until valid; reconnect/resync on loss or invalid payload. |
+| `state.delta` | WebSocket | Brain | Bridge | Next `view_revision` and an atomic typed change set for conversation/analytics state | Bridge ignores duplicates, applies only the next revision, and sends `state.resync` on a gap or invalid change. |
+| `state.resync` | WebSocket | Bridge | Brain | Last applied view revision and reason for recovery | Idempotent. Brain returns `state.snapshot`; Bridge does not claim realtime state while waiting. |
+| `presence.observed` | WebSocket | Agent | Brain | Complete normalized online `platform_user_id` list, observation id/time | Ephemeral and never outbox-replayed. Invalid/out-of-order data is ignored/rejected; silence expires to unknown rather than offline. |
+| `presence.state` | WebSocket | Brain | Bridge | Authoritative list, `current/unknown` freshness, server receipt/expiry and last-observation metadata | Bridge replaces the presence slice and marks it unknown at `expires_at`. A reconnect receives current state; stale data is never rendered as current. |
+| `agent.state` | WebSocket | Brain | Bridge | `connected/stale/disconnected`, active installation metadata, required/applied config revisions, degraded reason | Brain derives it from shared leases/state and sends an initial value. Bridge never substitutes local extension detection; expiry yields stale/disconnected. |
+| `system.state` | WebSocket | Brain | Bridge | Account processing mode, readiness/degraded state, safe operational detail | Last value is replaceable state. Bridge marks degraded on expiry/disconnect and receives a fresh value after binding. |
+| `protocol.error` | WebSocket | Brain | Agent or Bridge | Error code, correlation/message id, retryability/fatal flag, safe detail | Fatal errors close after delivery attempt. Nonfatal errors leave the relevant checkpoint/revision unchanged; clients follow the indicated retry/resync action. |
+| `agent.config.get` | HTTPS request (`GET /api/v1/agent/config`) | Agent | Brain | Authenticated context, current ETag/revision and supported config schema | Timeout/5xx keeps last known good config and retries. Unauthorized fails the Agent session; `304` reuses validated cached content. |
+| `agent.config.document` | HTTPS response | Brain | Agent | Immutable config revision, schema version, digest/ETag, capture and command policy | Agent rejects invalid/unsupported/digest-mismatched content, keeps last known good config, and reports degraded; it never partially applies. |
+| `config.available` | WebSocket | Brain | Agent | Newly required config revision/digest | Signal is idempotent. Loss self-heals because every new `agent.session` repeats the required revision. |
+| `config.applied` | WebSocket | Agent | Brain | Applied revision/digest, activation outcome, relevant capability status | Agent repeats applied revision in hello/heartbeat. Brain retains required/applied mismatch and exposes degraded `agent.state` until confirmed. |
+| `command.execute` | WebSocket | Brain | Agent | `command_id`, bound account, allowed typed action, deadline, idempotency policy | Agent validates account, allow-list, deadline, and fencing before execution. Duplicate `command_id` returns stored result; Brain does not blindly retry a non-idempotent action without deduplication. |
+| `command.result` | WebSocket | Agent | Brain | `command_id`, accepted/succeeded/failed status, safe result/error metadata | Agent persists terminal results until acknowledged. Brain deduplicates; timeout becomes an auditable unknown/failed command state, not a Bridge proxy fallback. |
+| `command.result.ack` | WebSocket | Brain | Agent | `command_id` and recorded terminal result identity | Agent may compact the persisted result only after ack; duplicate acks are harmless. |
+
+### **12.3 Bridge UI Consequences**
+
+| Canonical operation | Required Bridge behavior |
+| --- | --- |
+| `bridge.hello` | Send first for the selected account. Clear account-scoped state if identity/version validation fails. |
+| `bridge.session` | Record the accepted session, but do not render account state until a valid `state.snapshot` arrives. |
+| `state.snapshot` | Replace the conversation/analytics read model and its `view_revision`; remain loading/degraded on loss or invalid data. |
+| `state.delta` | Apply one atomic next-revision change set, ignore duplicates, and request `state.resync` on a gap or invalid change. |
+| `state.resync` | Send the last applied revision and recovery reason; do not claim realtime state while awaiting `state.snapshot`. |
+| `presence.state` | Replace the presence view, gate online rendering on `freshness: current`, and mark it unknown at `expires_at`. |
+| `agent.state` | Render Brain-derived Agent connectivity and required/applied configuration drift; never substitute local extension detection. |
+| `system.state` | Replace readiness/degraded state and mark it degraded on expiry or Brain disconnection. |
+| `protocol.error` | Follow its fatal/retry/resync instruction and expose only its safe detail. Domain failures remain in their owning state/result. |
+
+Agent-ingestion, presence-observation, Agent-configuration, and Agent-command operations do not directly enter a Bridge handler. Command state may reach the UI only through Brain-owned `state.snapshot`/`state.delta`; Bridge never originates or proxies a command.
+
+Exact state-store names and component assignments are implementation choices, not communication-contract requirements.
 
 ## **13. Loading, Error & Motion Patterns**
 

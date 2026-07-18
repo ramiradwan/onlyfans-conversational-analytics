@@ -1,39 +1,54 @@
-# Full-Stack Communication Specification
+# ADR 0006: Adopt the canonical Agent-Brain-Bridge communication matrix
 
-**Audience:** Project team and code-generation tools  
-**Status:** Secondary specification aligned to accepted ADRs 0001–0009
+- Status: accepted
 
-## Normative authority
+## Context and problem statement
 
-The accepted architecture decision records in [`docs/adr/`](docs/adr/README.md) are normative for Agent–Brain–Bridge communication. In particular, [ADR 0006](docs/adr/0006-canonical-communication-matrix.md) is the canonical operation matrix. If this document, the frontend design specification, a README, generated documentation, or an implementation note differs from an accepted ADR, the ADR governs and the secondary document must be corrected.
+The protocol needs one normative answer to “who may send this message, to whom, and what happens if it is lost or invalid?” Mixed unions and generic forwarding make routing semantics implicit and permit role-confused messages to reach handlers. Role-specific contracts make direction, ownership, and recovery behavior explicit.
 
-This document is a non-authoritative restatement for implementation readers. It does not supersede an ADR.
+## Decision drivers
 
-## Architecture
+- Exactly one originating subsystem for every message type.
+- Role-confused traffic must fail at validation, not reach a generic forwarding branch.
+- Delivery and recovery behavior must be explicit per message.
+- Raw ingest, derived state, presence, configuration, and commands need distinct reliability semantics.
+- The contract must support generated role-specific schemas and exhaustive handlers.
 
-- Agent is the sole raw-ingestion producer. It durably sends account-partitioned snapshots and deltas to Brain; Bridge never reads Agent storage or proxies ingestion or commands ([ADR 0001](docs/adr/0001-agent-owned-raw-ingestion.md)).
-- Agent observes platform-user presence, but Brain derives and publishes expiring `presence.state` and Agent connectivity. Bridge derives only its own Brain-socket connectivity locally ([ADR 0002](docs/adr/0002-brain-derived-presence.md)).
-- `/ws/agent` and `/ws/bridge` fix the socket role. A role-specific hello binds one authorized `creator_account_id`; identity is immutable for the connection and Agent writes are fenced ([ADR 0003](docs/adr/0003-immutable-socket-identity.md)).
-- Agent delivery is at least once through a durable outbox and Brain checkpoint. Bridge consumes a revisioned read model and explicitly resynchronizes gaps ([ADR 0004](docs/adr/0004-durable-reconnect-resync.md)).
-- Brain serves immutable Agent configuration through an authenticated HTTP endpoint and uses WebSocket messages only to signal and report configuration revision state ([ADR 0005](docs/adr/0005-agent-configuration-versioning.md)).
-- Protocol v1 has role-and-direction-specific message unions and permanently excludes Bridge-originated command requests ([ADR 0006](docs/adr/0006-canonical-communication-matrix.md)).
-- The static ticket in ADR 0007 is a non-secret fixture restricted to explicit local-development mode ([ADR 0007](docs/adr/0007-stub-auth-for-dev.md)).
-- Hosted provisioning issues signed grants, while Brain performs local WebAuthn and Agent authentication and issues purpose-bound runtime tickets ([ADR 0008](docs/adr/0008-production-authentication.md)).
-- One loopback-only Brain process serves Bridge and uses authoritative SQLite stores with rebuildable projections ([ADR 0009](docs/adr/0009-local-first-topology-and-persistence.md)).
+## Considered options
 
-## Contract rules
+### Keep one inbound and one outbound union
+
+This minimizes schema files and can share a generic envelope.
+
+Trade-offs: allowed directions remain implicit, mixed recipients accept irrelevant types, and every handler needs runtime role checks.
+
+### Define role-and-direction-specific unions plus one canonical matrix
+
+Each socket has a fixed union and every type has one owner. A small common envelope remains shared.
+
+Trade-off: there are more schemas and explicit conversion messages.
+
+### Use a general event bus with sender and recipient fields
+
+This is flexible and supports future actors without schema changes.
+
+Trade-offs: routing authority moves into client-controlled payloads, exhaustive validation weakens, and ownership becomes convention rather than protocol.
+
+## Decision outcome
+
+Choose **role-and-direction-specific discriminated unions governed by the matrix below**.
+
+### Contract rules
 
 - WebSocket unions are separate for Agent-to-Brain, Brain-to-Agent, Bridge-to-Brain, and Brain-to-Bridge. HTTP configuration operations have separate request/response schemas.
 - Every WebSocket message uses a common envelope with `type`, `protocol_version`, `message_id`, optional `correlation_id`, and a type-specific `payload`. Bound socket identity, not an envelope account claim, supplies routing authority.
-- Only the sender named in the matrix may originate a type. Brain never echoes an Agent type to Bridge; it validates the input and emits a Brain-owned consumer type.
+- Only the sender named in the matrix may originate a type. Brain never “echoes” an Agent type to Bridge; it validates and emits a Brain-owned consumer type.
 - Unknown, wrong-role, pre-handshake, conflicting-identity, or unsupported-version messages produce `protocol.error` when safe and close the socket when marked fatal. They are never generically republished.
 - Durable Agent operations use acknowledgments and deduplication. Bridge state uses snapshot plus revision-gap recovery. Presence and heartbeats use expiry rather than replay.
-- Brain sends `bridge.session`, then the initial `state.snapshot`, `presence.state`, `agent.state`, and `system.state` for the bound account.
-- Bridge displays command state but never originates `command.request`, `command.execute`, or an equivalent command message, and it has no direct Agent data or command channel.
+- Brain sends `bridge.session`, then the initial `state.snapshot`, `presence.state`, `agent.state`, and `system.state` for the bound account. Subsequent streams retain their own stated revisions/freshness.
+- Protocol v1 permanently excludes Bridge-originated command requests. Bridge displays command state but never originates `command.request`, `command.execute`, or any equivalent command message, and it has no direct Agent data or command channel.
 
 ## Canonical communication matrix
-
-The following 25 rows restate ADR 0006. ADR 0006 remains authoritative if this table differs.
 
 | Message type or operation | Transport | Sender | Receiver | Payload essence | Failure behavior |
 | --- | --- | --- | --- | --- | --- |
@@ -63,6 +78,25 @@ The following 25 rows restate ADR 0006. ADR 0006 remains authoritative if this t
 | `command.result` | WebSocket | Agent | Brain | `command_id`, accepted/succeeded/failed status, safe result/error metadata | Agent persists terminal results until acknowledged. Brain deduplicates; timeout becomes an auditable unknown/failed command state, not a Bridge proxy fallback. |
 | `command.result.ack` | WebSocket | Brain | Agent | `command_id` and recorded terminal result identity | Agent may compact the persisted result only after ack; duplicate acks are harmless. |
 
-## Non-matrix implementation choices
+## Consequences
 
-Capture hooks, browser-internal events, state-store organization, schema-generation tooling, event-distribution technology, and UI component assignment are implementation choices. They must preserve the four role-and-direction-specific WebSocket unions, immutable Brain-authorized routing, the Agent-only ingestion and command boundary, durable acknowledgment rules, and Bridge revision recovery.
+### Positive
+
+- Sender, receiver, payload purpose, and recovery behavior are reviewable in one place.
+- Role-specific schema generation makes invalid directions unrepresentable in normal handlers.
+- Each reliability class has one recovery mechanism instead of generic forwarding.
+- The matrix directly implements ADRs 0001 through 0005.
+
+### Negative
+
+- Supporting aliases outside the canonical unions would preserve ambiguity and is not allowed.
+- Brain needs explicit adapters from ingest commits to the revisioned Bridge read model.
+- More message schemas and contract tests are required.
+- Product features that assumed direct Bridge-Agent reads need a Brain-owned read API. Bridge command origination is not a protocol v1 extension point.
+
+## Confirmation
+
+- Generate and test four WebSocket discriminated unions and two HTTP config schemas.
+- For every matrix row, contract tests must cover the happy path, wrong role, wrong account/fence, duplicate, and stated failure behavior where applicable.
+- Exhaustive client routers must fail builds when a union gains an unhandled type.
+- An end-to-end test must cover Agent worker termination, Brain restart, Bridge reconnect, presence expiry, config drift, command deduplication, and eventual convergence.

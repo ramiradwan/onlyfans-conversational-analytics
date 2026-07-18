@@ -1,4 +1,4 @@
-name: Bridge Frontend CI
+name: CI
 
 on:
   push:
@@ -10,17 +10,19 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
-    # Set default working directory to frontend to avoid repeating cd
-    defaults:
-      run:
-        working-directory: frontend
-
     steps:
-      # 1. Checkout repo
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js (v20) with npm caching
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -28,7 +30,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      # 3. Cache Vite, SWC, ESLint, and TypeScript incremental build
       - name: Cache build caches
         uses: actions/cache@v4
         with:
@@ -41,25 +42,26 @@ jobs:
           restore-keys: |
             build-${{ runner.os }}-
 
-      # 4. Install dependencies
-      - name: Install dependencies
-        run: npm ci
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements-dev.txt
 
-      # 5. Lint
-      - name: Lint
-        run: npm run lint
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
 
-      # 6. Typecheck
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Test backend
+        run: python -m pytest
 
-      # 7. Build production bundle
+      - name: Test frontend
+        run: npm test --prefix frontend
+
+      - name: Test extension
+        run: npm test --prefix extension
+
       - name: Build
-        run: npm run build
+        run: npm run build --prefix frontend
 
-      # 8. Upload frontend build artifact (optional, best practice)
       - name: Upload frontend build
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
-          path: ../app/static/dist/
+          path: app/static/dist/

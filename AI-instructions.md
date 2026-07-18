@@ -192,7 +192,7 @@ When asking AI to generate or refactor code:
 * Stores: `messages`, `chats`  
   
 **Security:**  
-* Passive capture only.  
+* Captures creator-visible conversation data and executes only configured, validated, allow-listed actions.
 * Restrict external connections.  
   
 ---  

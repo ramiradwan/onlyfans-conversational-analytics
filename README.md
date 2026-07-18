@@ -1,58 +1,32 @@
-# 💬 onlyfans-conversational-analytics  
-**Turn your chats into insights. Track conversations, trends, and performance — all in one dashboard.**
+# OnlyFans Conversational Analytics
 
----
+OnlyFans Conversational Analytics is a local-first system that captures creator-visible conversation activity, processes it into structured analytics, and presents conversation, engagement, response-time, topic, and sentiment views.
 
-## 📖 Overview  
-`onlyfans-conversational-analytics` helps creators make sense of their conversations by turning raw chat data into easy-to-understand insights.  
-Once your conversations are analyzed, you’ll see all your key metrics visualized in an interactive dashboard where you can track engagement, response times, and audience sentiment over time.
+> [!IMPORTANT]
+> This project is an independent tool for creators. It is not affiliated with, endorsed by, or sponsored by OnlyFans or its operator. The OnlyFans trademark is used only to describe the project's compatibility and purpose.
 
----
+## Components
 
-## 📊 Metrics  
-Each topic or theme includes detailed metrics you can filter by date or time range:
+- **Agent** — an MV3 browser extension that captures conversation data available to the logged-in creator, maintains a durable local outbox, and executes only explicitly allow-listed actions authorized through Brain.
+- **Brain** — a FastAPI backend that authenticates Agent and Bridge connections, validates and persists ingestion, derives analytics and presence state, coordinates commands, and serves the local API.
+- **Bridge** — a React dashboard that consumes Brain-owned snapshots and revisioned updates. It does not read Agent storage or act as an Agent transport.
 
-| Metric | Description |
-|--------|--------------|
-| **Volume** | Total number of conversations about a topic. |
-| **% of Total** | How much of your overall chat activity that topic represents. |
-| **Trend** | Shows whether conversation volume is growing or dropping compared to the previous period. |
-| **AHT (min)** | Average handling time — how long your typical chat lasts from start to finish. |
-| **% Silence** | Average percentage of silence time (no messages exchanged) across conversations. |
-| **Turns** | Average number of times the conversation switches between you and your fan. |
-| **Sentiment** | Average mood or tone of your fans, from 0 (negative) to 1 (positive). |
+Conversation processing stays in the creator-controlled local runtime. Hosted services are limited to customer authentication, installation provisioning, and signed offline-verifiable grants; they do not receive conversation data.
 
----
+## Architecture
 
-## 💡 Why It’s Useful  
-- 📊 See what topics drive the most engagement  
-- 🕒 Measure your response efficiency  
-- 💖 Understand your fans’ overall sentiment  
-- 🧠 Identify trends and performance patterns  
-- 🔧 Developer-friendly API for custom dashboards and integrations  
+- [Architecture decision records](docs/adr/README.md)
+- [Communication specification](communication-spec.md)
+- [Frontend design specification](frontend/frontend-design-spec.md)
+- [Extension documentation](extension/README.md)
 
----
+## Verification
 
-## 🛠️ Getting Started  
-> _Developer setup instructions coming soon._
-
-For now, you can connect your data pipeline and visualize your chat analytics via the provided dashboard once conversations are ingested and processed by Insights.
-
----
-#### **Technical Foundation**
-The system design aligns with **Azure Cosmos DB’s Gremlin API** (for graph storage and traversal) and **vector embeddings** (for semantic similarity and NLP-driven inference).  
-Data pipelines process text via transformer-based NLP models, extracting entities and relationships to populate a **Labeled Property Graph (LPG)**.
-
-This architecture supports both:
-- **Creator analytics dashboards** (via time-series and metric aggregation), and  
-- **Psychotherapy research graphs** (via semantic and relational modeling).  
----
-
-
-## 🧠 About  
-Built for **creators who care about connection**
-
-This project also serves as a foundation for graph-based psychotherapy research, modeling interactions and interventions as interconnected nodes and edges to study relational and dynamic patterns of change.
-
-
-See [Research Releases](https://github.com/ramiradwan/ramiradwan/releases/research) for more information!
+```powershell
+./.venv/Scripts/python -m pytest
+cd frontend
+npm test
+npm run build
+cd ../extension
+npm test
+```

@@ -65,14 +65,14 @@ The application is built to support:
   
 ---  
   
-## Refactor Highlights  
+## Implementation Highlights
   
 - **Stateless Pub/Sub backend** — Global `Broadcast` object using Redis  
 - **Type‑safe WS protocol** — Pydantic discriminated unions in `wss.py`  
 - **Auto‑generated WS TypeScript types** — `/api/v1/schemas/wss` endpoint  
 - **Race‑condition‑safe ingestion** — Per‑user `asyncio.Queue` for deltas until snapshot processed  
 - **Unified WS hub** — All extension/frontend WS traffic handled in `websocket.py`  
-- **Removed legacy ingestion REST routes** — All ingestion now via WS  
+- **WebSocket ingestion** — Raw ingestion uses the Agent WebSocket transport
   
 ---  
   

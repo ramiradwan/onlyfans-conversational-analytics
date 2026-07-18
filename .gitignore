@@ -8,6 +8,7 @@ __pycache__/
 .venv/
 env/
 venv/
+.pytest_cache/
 
 # ------------------------
 # Environment
@@ -56,4 +57,5 @@ yarn-error.log*
 # ------------------------
 # Style Dictionary generated tokens
 # ------------------------
-frontend/src/theme/generated/
+frontend/src/theme/generated/*
+!frontend/src/theme/generated/tokens.ts
