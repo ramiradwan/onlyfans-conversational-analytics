@@ -1,0 +1,1 @@
+{"type":"agent.heartbeat","protocol_version":"1","message_id":"00000000-0000-4000-8000-000000000005","payload":{"connection_id":"10000000-0000-4000-8000-000000000001","fencing_token":"fence-42","creator_account_id":"dev-creator-account","applied_config_revision":"config-7","health":{"status":"healthy","detail":null}}}

@@ -1,0 +1,1 @@
+{"type":"bridge.hello","protocol_version":"1","message_id":"00000000-0000-4000-8000-000000000003","payload":{"auth_ticket":"bridge-clean-dev-ticket-v1","bridge_session_id":"60000000-0000-4000-8000-000000000001","requested_creator_account_id":"dev-creator-account","capabilities":["state.snapshot","state.delta","presence.state"],"client_version":"0.7.1","last_view_revision":41}}

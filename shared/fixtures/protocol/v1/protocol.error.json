@@ -1,0 +1,1 @@
+{"type":"protocol.error","protocol_version":"1","message_id":"00000000-0000-4000-8000-000000000018","correlation_id":"00000000-0000-4000-8000-000000000008","payload":{"code":"validation_failed","related_message_id":"00000000-0000-4000-8000-000000000008","retryable":false,"fatal":false,"detail":"Payload was rejected"}}

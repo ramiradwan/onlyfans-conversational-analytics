@@ -2,7 +2,7 @@ fastapi
 uvicorn  
 httpx  
 websockets
-pydantic  
+pydantic>=2,<3
 pydantic-settings 
 spacy  
 sentence-transformers  
