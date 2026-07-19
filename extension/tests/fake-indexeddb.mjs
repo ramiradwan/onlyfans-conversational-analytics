@@ -30,6 +30,48 @@ class UpgradeObjectStore {
     this.schema.indexes.set(name, keyPath);
     return { name, keyPath };
   }
+
+  get indexNames() {
+    return new FakeDomStringList(this.schema.indexes);
+  }
+}
+
+function cursorRequest(transaction, rows, mapCursor) {
+  let index = 0;
+  const request = {
+    result: undefined,
+    error: null,
+    onsuccess: null,
+    onerror: null,
+  };
+  const deliver = () => {
+    if (!transaction.active) return;
+    if (index >= rows.length) {
+      request.result = null;
+      request.onsuccess?.({ target: request });
+      transaction.pending -= 1;
+      transaction.scheduleCompletionCheck();
+      return;
+    }
+    let continued = false;
+    request.result = {
+      ...mapCursor(rows[index]),
+      continue: () => {
+        continued = true;
+        index += 1;
+        queueMicrotask(deliver);
+      },
+    };
+    request.onsuccess?.({ target: request });
+    if (!continued) {
+      transaction.pending -= 1;
+      transaction.scheduleCompletionCheck();
+    }
+  };
+  transaction.pending += 1;
+  transaction.generation += 1;
+  queueMicrotask(deliver);
+  return request;
 }
 
 class FakeObjectStore {
@@ -59,6 +101,20 @@ class FakeObjectStore {
     return this.transaction.request(() => [...this.schema.records.keys()]
       .sort(compareKeys)
       .map(clone));
+  }
+
+  openCursor(range = undefined) {
+    const rows = [...this.schema.records]
+      .filter(([key]) => (
+        range?.__fake_lower_bound === undefined
+        || compareKeys(key, range.__fake_lower_bound) > (range.__fake_open ? 0 : -1)
+      ))
+      .sort(([left], [right]) => compareKeys(left, right));
+    return cursorRequest(this.transaction, rows, ([key, value]) => ({
+      key: clone(key),
+      primaryKey: clone(key),
+      value: clone(value),
+    }));
   }
 
   put(value, suppliedKey = undefined) {
@@ -95,6 +151,22 @@ class FakeObjectStore {
         .filter(([, value]) => value?.[keyPath] === key)
         .map(([primaryKey]) => clone(primaryKey))
         .sort(compareKeys)),
+      openCursor: (range = undefined) => {
+        const rows = [...this.schema.records]
+          .map(([primaryKey, value]) => [value?.[keyPath], primaryKey, value])
+          .filter(([indexKey]) => (
+            range?.__fake_lower_bound === undefined
+            || compareKeys(indexKey, range.__fake_lower_bound) > (range.__fake_open ? 0 : -1)
+          ))
+          .sort(([leftIndex, leftPrimary], [rightIndex, rightPrimary]) => (
+            compareKeys(leftIndex, rightIndex) || compareKeys(leftPrimary, rightPrimary)
+          ));
+        return cursorRequest(this.transaction, rows, ([indexKey, primaryKey, value]) => ({
+          key: clone(indexKey),
+          primaryKey: clone(primaryKey),
+          value: clone(value),
+        }));
+      },
     });
   }
 }
@@ -246,6 +318,13 @@ export class FakeIndexedDb {
       request.result = database;
       if (version > oldVersion) {
         state.version = version;
+        request.transaction = {
+          objectStore(name) {
+            const schema = state.stores.get(name);
+            if (!schema) throw new Error(`Unknown upgrade object store ${name}`);
+            return new UpgradeObjectStore(schema);
+          },
+        };
         request.onupgradeneeded?.({
           oldVersion,
           newVersion: version,

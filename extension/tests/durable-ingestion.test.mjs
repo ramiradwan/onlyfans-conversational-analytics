@@ -1,78 +1,49 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
 import { AgentWebSocketClient } from '../transport/agent-websocket.mjs';
 import { DurableIngestOutbox } from '../transport/durable-outbox.mjs';
-import { parseAgentToBrainMessage } from '../protocol/index.mjs';
 import { InMemoryIngestionStorage } from './in-memory-ingestion-storage.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURES = path.resolve(HERE, '../../shared/fixtures/protocol/v1');
+const ACCOUNT = 'creator-account-1';
 const INSTALLATION_ID = '20000000-0000-4000-8000-000000000001';
 const STREAM_ID = '30000000-0000-4000-8000-000000000001';
-
-const chatChange = (chatId = 'chat-1') => ({
+const CONNECTION_ID = '10000000-0000-4000-8000-000000000001';
+let sequence = 0;
+const id = () => `90000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`;
+const chat = (chatId = 'chat-1') => ({
   type: 'chat.upsert',
   chat: {
     chat_id: chatId,
+    record_kind: 'full',
     platform_user_id: `fan-${chatId}`,
     display_name: 'Alex',
-    updated_at: '2026-07-18T10:00:00Z',
+    updated_at: '2026-07-19T08:00:00Z',
   },
 });
-
-const messageChange = {
+const message = {
   type: 'message.upsert',
   message: {
     message_id: 'message-1',
     chat_id: 'chat-1',
     sender_platform_user_id: 'fan-chat-1',
     text: 'Hello',
-    sent_at: '2026-07-18T10:01:00Z',
+    sent_at: '2026-07-19T08:01:00Z',
     direction: 'inbound',
   },
 };
 
-async function fixture(name) {
-  return JSON.parse(await readFile(path.join(FIXTURES, `${name}.json`), 'utf8'));
-}
-
 class MockSocket {
-  constructor(log) {
+  constructor(log = []) {
     this.log = log;
     this.readyState = 0;
     this.sent = [];
-    this.onopen = null;
-    this.onmessage = null;
-    this.onclose = null;
-    this.onerror = null;
   }
-
-  send(data) {
-    this.log.push('send');
-    this.sent.push(data);
-  }
-
-  open() {
-    this.readyState = 1;
-    this.onopen?.();
-  }
-
-  receive(document) {
-    this.onmessage?.({ data: JSON.stringify(document) });
-  }
-
-  drop() {
-    this.readyState = 3;
-    this.onclose?.();
-  }
-
-  close() {
-    this.drop();
-  }
+  send(value) { this.log.push('send'); this.sent.push(value); }
+  open() { this.readyState = 1; this.onopen?.(); }
+  receive(value) { this.onmessage?.({ data: JSON.stringify(value) }); }
+  drop() { this.readyState = 3; this.onclose?.(); }
+  close() { this.drop(); }
 }
 
 function scheduler() {
@@ -89,178 +60,217 @@ function scheduler() {
     clearInterval() {},
     runNext() {
       const task = timeouts.find((candidate) => !candidate.cleared);
-      assert.ok(task);
       task.cleared = true;
       task.handler();
     },
   };
 }
 
-function clientHarness(outbox, log = []) {
+function session(overrides = {}) {
+  return {
+    type: 'agent.session',
+    protocol_version: '2',
+    message_id: id(),
+    payload: {
+      connection_id: CONNECTION_ID,
+      fencing_token: 'fence-1',
+      creator_account_id: ACCOUNT,
+      agent_installation_id: INSTALLATION_ID,
+      agent_stream_id: STREAM_ID,
+      committed_source_seq: 0,
+      resume_action: 'resume',
+      required_config_revision: 'config-1',
+      reconnect_auth_ticket: 'reconnect-ticket-1',
+      config_auth_ticket: 'config-ticket-1',
+      pending_snapshot_id: null,
+      next_expected_chunk_index: 0,
+      lease: { heartbeat_interval_seconds: 20, lease_timeout_seconds: 60 },
+      ...overrides,
+    },
+  };
+}
+
+function syncRequired(overrides = {}) {
+  return {
+    type: 'sync.required',
+    protocol_version: '2',
+    message_id: id(),
+    payload: {
+      connection_id: CONNECTION_ID,
+      creator_account_id: ACCOUNT,
+      reason: 'sequence_gap',
+      expected_agent_stream_id: STREAM_ID,
+      expected_next_source_seq: 1,
+      pending_snapshot_id: null,
+      next_expected_chunk_index: 0,
+      snapshot: {
+        include_chats: true,
+        include_messages: true,
+        include_coverage_evidence: true,
+        max_frame_bytes: 524288,
+        max_records_per_chunk: 100,
+      },
+      ...overrides,
+    },
+  };
+}
+
+function ack({ committed = 0, snapshotId = null, progress = null } = {}) {
+  return {
+    type: 'ingest.ack',
+    protocol_version: '2',
+    message_id: id(),
+    payload: {
+      connection_id: CONNECTION_ID,
+      creator_account_id: ACCOUNT,
+      agent_stream_id: STREAM_ID,
+      snapshot_id: snapshotId,
+      committed_source_seq: committed,
+      snapshot_progress: progress,
+    },
+  };
+}
+
+async function harness(storage = new InMemoryIngestionStorage(), log = []) {
+  let localIds = 0;
+  const outbox = new DurableIngestOutbox({
+    storage,
+    creatorAccountId: ACCOUNT,
+    idFactory: () => (localIds++ === 0 ? STREAM_ID : id()),
+  });
+  const persisted = await outbox.initialize();
   const sockets = [];
   const clock = scheduler();
-  let id = 1;
   const client = new AgentWebSocketClient({
+    creatorAccountId: ACCOUNT,
+    authTicket: 'ticket-1',
     identity: {
       agentInstallationId: INSTALLATION_ID,
-      agentStreamId: STREAM_ID,
-      lastAcknowledgedSourceSeq: 0,
-      appliedConfigRevision: 'config-7',
+      agentStreamId: persisted.agent_stream_id,
+      lastAcknowledgedSourceSeq: persisted.acknowledged_source_seq,
+      appliedConfigRevision: 'config-1',
     },
     outbox,
     scheduler: clock,
-    random: () => 0.5,
-    idFactory: () => `90000000-0000-4000-8000-${String(id++).padStart(12, '0')}`,
+    idFactory: id,
     webSocketFactory: () => {
       const socket = new MockSocket(log);
       sockets.push(socket);
       return socket;
     },
   });
-  return { client, clock, sockets };
+  return { client, outbox, sockets, clock };
 }
 
-async function bind(socket, { connectionId, fence } = {}) {
-  const session = await fixture('agent.session');
-  session.payload.committed_source_seq = 0;
-  session.payload.connection_id = connectionId ?? session.payload.connection_id;
-  session.payload.fencing_token = fence ?? session.payload.fencing_token;
-  socket.receive(session);
-  await new Promise((resolve) => setImmediate(resolve));
-  return session;
-}
-
-test('capture persists before send and a new worker reconstructs the durable outbox', async () => {
-  const log = [];
-  const storage = new InMemoryIngestionStorage(log);
-  const outbox = new DurableIngestOutbox({ storage, idFactory: () => crypto.randomUUID() });
-  await outbox.initialize();
-  const h = clientHarness(outbox, log);
+async function connect(h, document = session()) {
   h.client.start();
   h.sockets[0].open();
-  await bind(h.sockets[0]);
-  log.length = 0;
+  h.sockets[0].receive(document);
+  await new Promise((resolve) => setImmediate(resolve));
+}
 
-  const captured = await h.client.captureDelta(chatChange());
+test('capture persists before send and restart reconstructs the durable account outbox', async () => {
+  const log = [];
+  const storage = new InMemoryIngestionStorage(log);
+  const h = await harness(storage, log);
+  await connect(h);
+  log.length = 0;
+  const captured = await h.client.captureDelta(chat());
   assert.equal(captured.source_seq, 1);
   assert.deepEqual(log.slice(0, 2), ['persist', 'send']);
 
-  const restarted = new DurableIngestOutbox({ storage });
+  const restarted = new DurableIngestOutbox({
+    storage,
+    creatorAccountId: ACCOUNT,
+    idFactory: id,
+  });
   await restarted.initialize();
   assert.deepEqual(await restarted.entries(), [captured]);
 });
 
 test('message upserts cannot bypass dependency-closed capture', async () => {
-  const storage = new InMemoryIngestionStorage();
-  const outbox = new DurableIngestOutbox({ storage });
-  await outbox.initialize();
-  const h = clientHarness(outbox);
-
-  await assert.rejects(
-    h.client.captureDelta(messageChange),
-    /captureMessageWithParent/,
-  );
-  assert.deepEqual(await outbox.entries(), []);
+  const h = await harness();
+  await assert.rejects(h.client.captureDelta(message), /captureMessageWithParent/);
+  assert.deepEqual(await h.outbox.entries(), []);
 });
 
-test('reconnect flushes the retained outbox in order with the new fence', async () => {
-  const storage = new InMemoryIngestionStorage();
-  let event = 1;
-  const outbox = new DurableIngestOutbox({
-    storage,
-    idFactory: () => `50000000-0000-4000-8000-${String(event++).padStart(12, '0')}`,
-  });
-  await outbox.initialize();
-  await outbox.enqueue(chatChange());
-  await outbox.enqueue(messageChange);
-  const h = clientHarness(outbox);
-  h.client.start();
-  h.sockets[0].open();
-  await bind(h.sockets[0]);
-  assert.deepEqual((await outbox.entries()).map((item) => item.source_seq), [1, 2]);
-
+test('reconnect replays retained deltas in sequence with the renewed fence', async () => {
+  const h = await harness();
+  await h.outbox.enqueue(chat(), id(), 'passive');
+  await h.outbox.enqueue(message, id(), 'signer');
+  await connect(h);
   h.sockets[0].drop();
   h.clock.runNext();
   h.sockets[1].open();
-  await bind(h.sockets[1], {
-    connectionId: '10000000-0000-4000-8000-000000000099',
-    fence: 'fence-99',
-  });
-  const resent = h.sockets[1].sent
-    .map((value) => JSON.parse(value))
-    .filter((document) => document.type === 'ingest.delta')
-    .map(parseAgentToBrainMessage);
-  assert.deepEqual(resent.map((message) => message.payload.source_seq), [1, 2]);
-  assert.ok(resent.every((message) => message.payload.fencing_token === 'fence-99'));
+  h.sockets[1].receive(session({
+    connection_id: '10000000-0000-4000-8000-000000000099',
+    fencing_token: 'fence-99',
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  const deltas = h.sockets[1].sent.map(JSON.parse).filter((frame) => frame.type === 'ingest.delta');
+  assert.deepEqual(deltas.map((frame) => frame.payload.source_seq), [1, 2]);
+  assert.ok(deltas.every((frame) => frame.payload.fencing_token === 'fence-99'));
+  assert.deepEqual(deltas.map((frame) => frame.payload.acquisition_origin), ['passive', 'signer']);
 });
 
-test('only a covering ingest.ack deletes retained events', async () => {
-  const storage = new InMemoryIngestionStorage();
-  const outbox = new DurableIngestOutbox({ storage });
-  await outbox.initialize();
-  await outbox.enqueue(chatChange(), '50000000-0000-4000-8000-000000000001');
-  await outbox.enqueue(messageChange, '50000000-0000-4000-8000-000000000002');
-  const h = clientHarness(outbox);
-  h.client.start();
-  h.sockets[0].open();
-  const session = await bind(h.sockets[0]);
-  assert.equal((await outbox.entries()).length, 2);
-
-  const ack = await fixture('ingest.ack');
-  ack.payload.connection_id = session.payload.connection_id;
-  ack.payload.committed_source_seq = 1;
-  h.sockets[0].receive(ack);
+test('snapshot begin/chunks/commit resume by acknowledged chunk and gate later deltas', async () => {
+  const h = await harness();
+  await h.outbox.enqueue(chat(), id(), 'passive');
+  await h.outbox.enqueue(message, id(), 'signer');
+  await connect(h);
+  h.sockets[0].receive(syncRequired());
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual((await outbox.entries()).map((item) => item.source_seq), [2]);
+  const sent = () => h.sockets[0].sent.map(JSON.parse);
+  const begin = sent().find((frame) => frame.type === 'ingest.snapshot');
+  assert.equal(begin.payload.frame_kind, 'begin');
+  assert.equal(begin.payload.chunk_count, 2);
 
-  ack.message_id = '00000000-0000-4000-8000-000000000099';
-  ack.payload.committed_source_seq = 2;
-  h.sockets[0].receive(ack);
+  await h.client.captureDelta(chat('chat-2'));
+  assert.equal(sent().some((frame) => frame.payload?.source_seq === 3), false);
+
+  h.sockets[0].receive(ack({
+    snapshotId: begin.payload.snapshot_id,
+    progress: {
+      snapshot_id: begin.payload.snapshot_id,
+      next_expected_chunk_index: 0,
+      committed: false,
+    },
+  }));
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(await outbox.entries(), []);
-});
+  assert.equal(sent().at(-1).payload.chunk_index, 0);
 
-test('sync.required pauses deltas, sends a stable through_seq snapshot, then resumes', async () => {
-  const storage = new InMemoryIngestionStorage();
-  let event = 1;
-  const outbox = new DurableIngestOutbox({
-    storage,
-    idFactory: () => `50000000-0000-4000-8000-${String(event++).padStart(12, '0')}`,
-  });
-  await outbox.initialize();
-  await outbox.enqueue(chatChange());
-  await outbox.enqueue(messageChange);
-  const h = clientHarness(outbox);
-  h.client.start();
-  h.sockets[0].open();
-  const session = await bind(h.sockets[0]);
-
-  const sync = await fixture('sync.required');
-  sync.payload.connection_id = session.payload.connection_id;
-  sync.payload.expected_next_source_seq = 1;
-  h.sockets[0].receive(sync);
+  h.sockets[0].receive(ack({
+    snapshotId: begin.payload.snapshot_id,
+    progress: {
+      snapshot_id: begin.payload.snapshot_id,
+      next_expected_chunk_index: 1,
+      committed: false,
+    },
+  }));
   await new Promise((resolve) => setImmediate(resolve));
-  const snapshots = h.sockets[0].sent.map((value) => JSON.parse(value)).filter(
-    (document) => document.type === 'ingest.snapshot',
-  );
-  assert.equal(snapshots.length, 1);
-  assert.equal(snapshots[0].payload.through_seq, 2);
-  assert.deepEqual(snapshots[0].payload.chats.map((chat) => chat.chat_id), ['chat-1']);
-  assert.deepEqual(snapshots[0].payload.messages.map((message) => message.message_id), ['message-1']);
+  assert.equal(sent().at(-1).payload.chunk_index, 1);
 
-  await h.client.captureDelta(chatChange('chat-2'));
-  const beforeAck = h.sockets[0].sent.map((value) => JSON.parse(value));
-  assert.equal(beforeAck.filter((document) => document.type === 'ingest.delta').length, 2);
-
-  const ack = await fixture('ingest.ack');
-  ack.payload.connection_id = session.payload.connection_id;
-  ack.payload.snapshot_id = snapshots[0].payload.snapshot_id;
-  ack.payload.committed_source_seq = 2;
-  h.sockets[0].receive(ack);
+  h.sockets[0].receive(ack({
+    snapshotId: begin.payload.snapshot_id,
+    progress: {
+      snapshot_id: begin.payload.snapshot_id,
+      next_expected_chunk_index: 2,
+      committed: false,
+    },
+  }));
   await new Promise((resolve) => setImmediate(resolve));
-  const afterAck = h.sockets[0].sent.map((value) => JSON.parse(value));
-  const resumed = afterAck.filter(
-    (document) => document.type === 'ingest.delta' && document.payload.source_seq === 3,
-  );
-  assert.equal(resumed.length, 1);
+  assert.equal(sent().at(-1).payload.frame_kind, 'commit');
+
+  h.sockets[0].receive(ack({
+    committed: 2,
+    snapshotId: begin.payload.snapshot_id,
+    progress: {
+      snapshot_id: begin.payload.snapshot_id,
+      next_expected_chunk_index: 2,
+      committed: true,
+    },
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent().filter((frame) => frame.payload?.source_seq === 3).length, 1);
+  assert.deepEqual((await h.outbox.entries()).map((entry) => entry.source_seq), [3]);
 });

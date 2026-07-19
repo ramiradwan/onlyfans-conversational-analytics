@@ -3,7 +3,7 @@
   globalThis.__OFCA_PAGE_HOOK_ACTIVE__ = true;
 
   const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
-  const PROTOCOL_VERSION = '1';
+  const PROTOCOL_VERSION = '2';
   const MAX_PAYLOAD_WRAPPER_DEPTH = 3;
   const PAYLOAD_WRAPPER_KEYS = Object.freeze(['data', 'response', 'result']);
   const targetOrigin = window.location.origin;

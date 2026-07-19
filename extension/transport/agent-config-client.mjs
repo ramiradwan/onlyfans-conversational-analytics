@@ -56,7 +56,7 @@ export class AtomicConfigActivator {
 }
 
 async function validateDocument(document, context) {
-  if (document?.config_schema_version !== '1') {
+  if (document?.config_schema_version !== '2') {
     throw new ConfigActivationError(
       'unsupported_schema',
       `Unsupported configuration schema ${String(document?.config_schema_version)}`,
@@ -127,6 +127,18 @@ async function validateDocument(document, context) {
       .map((rule) => rule.resource),
   );
   if (
+    parsed.history_acquisition.enabled
+    && (
+      parsed.history_acquisition.consent_revision === null
+      || parsed.history_acquisition.authorized_platform_creator_id === null
+    )
+  ) {
+    throw new ConfigActivationError(
+      'history_authorization_missing',
+      'Enabled history acquisition requires consent and an authorized platform creator identity',
+    );
+  }
+  if (
     enabledCaptureResources.has('messages')
     && !enabledCaptureResources.has('chats')
   ) {
@@ -160,18 +172,24 @@ async function validateDocument(document, context) {
       'Configuration requires unsupported capability command.message.send',
     );
   }
+  if (parsed.history_acquisition.enabled && !context.capabilities.includes('history.sync')) {
+    throw new ConfigActivationError(
+      'unsupported_capability',
+      'Configuration requires unsupported capability history.sync',
+    );
+  }
   return parsed;
 }
 
 async function bundledSafeDocument(creatorAccountId, cryptoApi) {
   const document = {
     operation: 'agent.config.document',
-    protocol_version: '1',
+    protocol_version: '2',
     creator_account_id: creatorAccountId,
-    config_revision: 'bundled-safe-1',
-    config_schema_version: '1',
+    config_revision: 'bundled-safe-2',
+    config_schema_version: '2',
     digest: `sha256:${'0'.repeat(64)}`,
-    etag: 'bundled-safe-1',
+    etag: 'bundled-safe-2',
     issued_at: '2026-07-18T00:00:00Z',
     capture_policy: {
       observation_interval_seconds: 30,
@@ -188,6 +206,16 @@ async function bundledSafeDocument(creatorAccountId, cryptoApi) {
       max_text_length: 1,
       require_idempotency: true,
     },
+    history_acquisition: {
+      enabled: false,
+      consent_revision: null,
+      authorized_platform_creator_id: null,
+      recent_window_days: 30,
+      page_size: 50,
+      pages_per_wake: 2,
+      request_interval_ms: 1_000,
+      retry_limit: 3,
+    },
   };
   document.digest = await calculateConfigDigest(document, cryptoApi);
   return document;
@@ -197,7 +225,8 @@ export class AgentConfigClient {
   constructor(options) {
     this.identity = options.identity;
     this.creatorAccountId = options.creatorAccountId;
-    this.authTicket = options.authTicket;
+    this.configAuthTicket = options.configAuthTicket ?? null;
+    this.authorizationEpoch = 0;
     this.http = options.http;
     this.persistence = options.persistence;
     this.activator = options.activator ?? new AtomicConfigActivator();
@@ -205,11 +234,12 @@ export class AgentConfigClient {
     this.onUnauthorized = options.onUnauthorized ?? (() => {});
     this.scheduler = options.scheduler ?? defaultScheduler;
     this.cryptoApi = options.cryptoApi ?? globalThis.crypto;
-    this.supportedSchemaVersions = ['1'];
+    this.supportedSchemaVersions = ['2'];
     this.capabilities = options.capabilities ?? [
       'capture.chats',
       'capture.messages',
       'capture.presence',
+      'history.sync',
       'command.message.send',
     ];
     this.retryBaseMs = options.retryBaseMs ?? 1_000;
@@ -268,6 +298,21 @@ export class AgentConfigClient {
       : { status: 'degraded', detail: this.lastFailure.message };
   }
 
+  bindSessionAuthorization(configAuthTicket) {
+    if (typeof configAuthTicket !== 'string' || configAuthTicket.length === 0) {
+      throw new Error('A session-issued configuration authorization ticket is required');
+    }
+    this.configAuthTicket = configAuthTicket;
+    this.authorizationEpoch += 1;
+    this.#clearRetry();
+  }
+
+  clearSessionAuthorization() {
+    this.configAuthTicket = null;
+    this.authorizationEpoch += 1;
+    this.#clearRetry();
+  }
+
   async requireConfig(requirement, options = {}) {
     this.required = {
       revision: requirement.required_config_revision,
@@ -322,15 +367,34 @@ export class AgentConfigClient {
 
   async #refresh() {
     const required = { ...this.required };
+    const authTicket = this.configAuthTicket;
+    const authorizationEpoch = this.authorizationEpoch;
     try {
+      if (authTicket === null) {
+        throw new ConfigActivationError(
+          'missing_session_authorization',
+          'Agent configuration requires a bound Brain session',
+          'degraded',
+        );
+      }
       const result = await this.http.fetchConfig({
-        authTicket: this.authTicket,
+        authTicket,
         agentInstallationId: this.identity.agentInstallationId,
         creatorAccountId: this.creatorAccountId,
         currentEtag: this.activeDocument?.etag ?? null,
         currentConfigRevision: this.identity.appliedConfigRevision,
         supportedSchemaVersions: this.supportedSchemaVersions,
       });
+      if (
+        authorizationEpoch !== this.authorizationEpoch
+        || authTicket !== this.configAuthTicket
+      ) {
+        throw new ConfigActivationError(
+          'session_authorization_changed',
+          'Brain session changed while configuration was being fetched',
+          'degraded',
+        );
+      }
       if (result.status === 401 || result.status === 403) {
         const error = new ConfigActivationError(
           'unauthorized',
@@ -443,7 +507,11 @@ export class AgentConfigClient {
   }
 
   #scheduleRetry() {
-    if (this.retryTimer !== null || this.required === null) return;
+    if (
+      this.retryTimer !== null
+      || this.required === null
+      || this.configAuthTicket === null
+    ) return;
     const delay = Math.min(
       this.retryMaxMs,
       this.retryBaseMs * 2 ** this.retryAttempt,

@@ -2,334 +2,216 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  COVERAGE_SOURCE_SEQUENCE_INDEX,
   DurableIngestOutbox,
-  INGESTION_META_KEY,
   INGESTION_STORES,
 } from '../transport/durable-outbox.mjs';
-import { createChromeAdapter } from '../transport/chrome-adapter.mjs';
 import {
-  InMemoryIngestionStorage,
-  InMemoryLegacyIngestionStorage,
-} from './in-memory-ingestion-storage.mjs';
+  INGESTION_DATABASE_VERSION,
+  accountDatabaseName,
+  createIndexedDbIngestionStorage,
+} from '../transport/indexeddb-ingestion-storage.mjs';
+import { isAgentToBrainMessage } from '../protocol/index.mjs';
+import { FakeIndexedDb } from './fake-indexeddb.mjs';
 
-const chatChange = (chatId, displayName = chatId) => ({
+const ACCOUNT_A = 'creator-account-a';
+const ACCOUNT_B = 'creator-account-b';
+let sequence = 0;
+const id = () => `50000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`;
+const chat = {
   type: 'chat.upsert',
   chat: {
-    chat_id: chatId,
-    platform_user_id: `fan-${chatId}`,
-    display_name: displayName,
-    updated_at: '2026-07-18T10:00:00Z',
+    chat_id: 'chat-1',
+    record_kind: 'full',
+    platform_user_id: 'fan-1',
+    display_name: 'Alex',
+    updated_at: '2026-07-19T08:00:00Z',
   },
+};
+
+function storage(indexedDb, creatorAccountId) {
+  return createIndexedDbIngestionStorage(indexedDb, { creatorAccountId });
+}
+
+test('IndexedDB schema version is independent and account database names are stable hashes', async () => {
+  assert.equal(INGESTION_DATABASE_VERSION, 4);
+  const first = await accountDatabaseName(ACCOUNT_A);
+  const repeated = await accountDatabaseName(ACCOUNT_A);
+  const other = await accountDatabaseName(ACCOUNT_B);
+  assert.equal(first, repeated);
+  assert.notEqual(first, other);
+  assert.equal(first.includes(ACCOUNT_A), false);
 });
 
-const messageChange = (messageId, chatId) => ({
-  type: 'message.upsert',
-  message: {
-    message_id: messageId,
-    chat_id: chatId,
-    sender_platform_user_id: `fan-${chatId}`,
-    text: messageId,
-    sent_at: '2026-07-18T10:01:00Z',
-    direction: 'inbound',
-  },
-});
-
-const eventId = (sequence) => `50000000-0000-4000-8000-${String(sequence).padStart(12, '0')}`;
-
-test('invariant 1: each enqueue assigns a monotonic contiguous source_seq', async () => {
-  const storage = new InMemoryIngestionStorage();
-  const outbox = new DurableIngestOutbox({ storage });
-  await outbox.initialize();
-
-  const first = await outbox.enqueue(chatChange('chat-1'), eventId(1));
-  const second = await outbox.enqueue(messageChange('message-1', 'chat-1'), eventId(2));
-  const third = await outbox.enqueue(chatChange('chat-2'), eventId(3));
-
-  assert.deepEqual([first.source_seq, second.source_seq, third.source_seq], [1, 2, 3]);
-  assert.deepEqual((await outbox.entries()).map((item) => item.source_seq), [1, 2, 3]);
-});
-
-test('message capture atomically creates a missing parent and preserves an existing rich chat', async () => {
-  const storage = new InMemoryIngestionStorage();
-  let generatedId = 0;
-  const outbox = new DurableIngestOutbox({
-    storage,
-    idFactory: () => eventId(++generatedId),
-  });
-  await outbox.initialize();
-  const placeholder = chatChange('chat-1', null);
-
-  const first = await outbox.enqueueMessageWithParent(
-    messageChange('message-1', 'chat-1'),
-    placeholder,
-  );
-  assert.equal(first.parentCreated, true);
-  assert.deepEqual(first.items.map((item) => item.source_seq), [1, 2]);
-  assert.deepEqual(first.items.map((item) => item.change.type), [
-    'chat.upsert',
-    'message.upsert',
-  ]);
-
-  await outbox.enqueue(chatChange('chat-1', 'Rich Fan'), eventId(++generatedId));
-  const second = await outbox.enqueueMessageWithParent(
-    messageChange('message-2', 'chat-1'),
-    placeholder,
-  );
-  assert.equal(second.parentCreated, false);
-  assert.deepEqual(second.items.map((item) => item.change.type), ['message.upsert']);
-  assert.equal(outbox.snapshotState().chats[0].display_name, 'Rich Fan');
-
-  const failingStorage = new InMemoryIngestionStorage();
-  const failing = new DurableIngestOutbox({ storage: failingStorage });
-  await failing.initialize();
-  failingStorage.failNextWriteTransactionAfter(2);
-  await assert.rejects(
-    failing.enqueueMessageWithParent(messageChange('message-x', 'chat-x'), chatChange('chat-x')),
-    /Injected transaction failure/,
-  );
-  assert.deepEqual(failing.snapshotState().outbox, []);
-  assert.deepEqual(failing.snapshotState().chats, []);
-  assert.deepEqual(failing.snapshotState().messages, []);
-});
-
-test('invariant 2: mutation store groups are atomic and a mid-transaction failure rolls back', async () => {
-  const storage = new InMemoryIngestionStorage();
-  const outbox = new DurableIngestOutbox({ storage });
-  await outbox.initialize();
-  const before = outbox.snapshotState();
-
-  storage.failNextWriteTransactionAfter(1);
-  await assert.rejects(
-    outbox.enqueue(chatChange('chat-1'), eventId(1)),
-    /Injected transaction failure/,
-  );
-  assert.deepEqual(outbox.snapshotState(), before);
-
-  const failed = storage.transactions.at(-1);
-  assert.equal(failed.committed, false);
-  assert.deepEqual(failed.storeNames, [
-    INGESTION_STORES.meta,
-    INGESTION_STORES.outbox,
-    INGESTION_STORES.chats,
-    INGESTION_STORES.messages,
-  ]);
-
-  const restarted = new DurableIngestOutbox({ storage });
-  await restarted.initialize();
-  assert.deepEqual(restarted.snapshotState(), before);
-  assert.equal((await restarted.enqueue(chatChange('chat-1'), eventId(1))).source_seq, 1);
-
-  let transactionCount = storage.transactions.length;
-  const snapshot = await restarted.createSnapshot('snapshot-1');
-  assert.equal(storage.transactions.length, transactionCount + 1);
-  assert.deepEqual(storage.transactions.at(-1).storeNames, [
-    INGESTION_STORES.meta,
-    INGESTION_STORES.chats,
-    INGESTION_STORES.messages,
-    INGESTION_STORES.snapshot,
-  ]);
-
-  transactionCount = storage.transactions.length;
-  await restarted.acknowledge(1, snapshot.snapshot_id);
-  assert.equal(storage.transactions.length, transactionCount + 1);
-  assert.deepEqual(storage.transactions.at(-1).storeNames, [
-    INGESTION_STORES.meta,
-    INGESTION_STORES.outbox,
-    INGESTION_STORES.snapshot,
-  ]);
-  assert.throws(
-    () => storage.lastTransactionHandle.get(INGESTION_STORES.meta, INGESTION_META_KEY),
-    /outside the transaction/,
-  );
-});
-
-test('invariant 3: initialization rejects version, contiguity, and sequence-bound corruption', async (t) => {
-  const cases = [
-    {
-      name: 'unsupported version',
-      meta: { version: 2, last_source_seq: 0, acknowledged_source_seq: 0, pending_snapshot: null },
-      outbox: [],
-      error: /Stored durable ingestion state is invalid/,
-    },
-    {
-      name: 'outbox gap',
-      meta: { version: 1, last_source_seq: 2, acknowledged_source_seq: 0, pending_snapshot: null },
-      outbox: [{ event_id: eventId(2), source_seq: 2, change: chatChange('chat-2') }],
-      error: /not contiguous and ordered/,
-    },
-    {
-      name: 'source sequence behind outbox',
-      meta: { version: 1, last_source_seq: 0, acknowledged_source_seq: 0, pending_snapshot: null },
-      outbox: [{ event_id: eventId(1), source_seq: 1, change: chatChange('chat-1') }],
-      error: /behind the durable outbox/,
-    },
-  ];
-
-  for (const corruption of cases) {
-    await t.test(corruption.name, async () => {
-      const storage = new InMemoryIngestionStorage();
-      await storage.runTransaction(
-        'readwrite',
-        [INGESTION_STORES.meta, INGESTION_STORES.outbox],
-        async (tx) => {
-          await tx.put(INGESTION_STORES.meta, corruption.meta, INGESTION_META_KEY);
-          for (const item of corruption.outbox) await tx.put(INGESTION_STORES.outbox, item);
-        },
+test('IndexedDB v4 upgrades coverage indexes and adds account credential storage', async () => {
+  const indexedDb = new FakeIndexedDb();
+  const databaseName = 'coverage-index-upgrade';
+  await new Promise((resolve, reject) => {
+    const request = indexedDb.open(databaseName, 2);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(
+        INGESTION_STORES.coverageEvidence,
+        { keyPath: 'evidence_key' },
       );
-      const outbox = new DurableIngestOutbox({ storage });
-      await assert.rejects(outbox.initialize(), corruption.error);
-    });
-  }
-});
-
-test('invariant 4: mirrors are keyed and snapshot chronology uses deterministic identifier sorts', async () => {
-  const storage = new InMemoryIngestionStorage();
-  const outbox = new DurableIngestOutbox({ storage });
-  await outbox.initialize();
-  await outbox.enqueue(chatChange('chat-b'), eventId(1));
-  await outbox.enqueue(chatChange('chat-a'), eventId(2));
-  await outbox.enqueue(chatChange('chat-b', 'updated'), eventId(3));
-  await outbox.enqueue(messageChange('message-b', 'chat-b'), eventId(4));
-  await outbox.enqueue(messageChange('message-a', 'chat-a'), eventId(5));
-
-  const snapshot = await outbox.createSnapshot('snapshot-sorted');
-  assert.deepEqual(snapshot.chats.map((chat) => chat.chat_id), ['chat-a', 'chat-b']);
-  assert.deepEqual(snapshot.messages.map((message) => message.message_id), [
-    'message-a',
-    'message-b',
-  ]);
-  assert.equal(snapshot.chats.find((chat) => chat.chat_id === 'chat-b').display_name, 'updated');
-
-  await storage.runTransaction(
-    'readonly',
-    [INGESTION_STORES.chats, INGESTION_STORES.messages],
-    async (tx) => {
-      assert.deepEqual(await tx.getAllKeys(INGESTION_STORES.chats), ['chat-a', 'chat-b']);
-      assert.deepEqual(await tx.getAllKeys(INGESTION_STORES.messages), [
-        'message-a',
-        'message-b',
-      ]);
-    },
-  );
-});
-
-test('invariant 5: a pending snapshot remains byte-for-byte stable across retry and restart', async () => {
-  const storage = new InMemoryIngestionStorage();
-  const outbox = new DurableIngestOutbox({ storage });
-  await outbox.initialize();
-  await outbox.enqueue(chatChange('chat-1'), eventId(1));
-  await outbox.enqueue(messageChange('message-1', 'chat-1'), eventId(2));
-  const original = await outbox.createSnapshot('snapshot-stable');
-
-  await outbox.enqueue(chatChange('chat-2'), eventId(3));
-  assert.deepEqual(await outbox.createSnapshot('snapshot-ignored'), original);
-
-  const restarted = new DurableIngestOutbox({ storage });
-  await restarted.initialize();
-  assert.deepEqual(await restarted.createSnapshot('snapshot-also-ignored'), original);
-  await restarted.acknowledge(2, 'wrong-snapshot');
-  assert.deepEqual(await restarted.createSnapshot('snapshot-still-ignored'), original);
-
-  await restarted.acknowledge(2, original.snapshot_id);
-  const replacement = await restarted.createSnapshot('snapshot-replacement');
-  assert.equal(replacement.snapshot_id, 'snapshot-replacement');
-  assert.equal(replacement.through_seq, 3);
-  assert.deepEqual(replacement.chats.map((chat) => chat.chat_id), ['chat-1', 'chat-2']);
-});
-
-test('invariant 6: enqueue writes only meta, one outbox item, and the affected mirror key', async () => {
-  const storage = new InMemoryIngestionStorage();
-  const outbox = new DurableIngestOutbox({ storage });
-  await outbox.initialize();
-  for (let index = 1; index <= 25; index += 1) {
-    await outbox.enqueue(chatChange(`chat-${index}`), eventId(index));
-  }
-  storage.transactions.length = 0;
-
-  await outbox.enqueue(chatChange('chat-13', 'one-record-update'), eventId(26));
-
-  assert.equal(storage.transactions.length, 1);
-  const writes = storage.transactions[0].writes;
-  assert.deepEqual(
-    writes.map(({ operation, store, key }) => [operation, store, key]),
-    [
-      ['put', INGESTION_STORES.meta, INGESTION_META_KEY],
-      ['put', INGESTION_STORES.outbox, 26],
-      ['put', INGESTION_STORES.chats, 'chat-13'],
-    ],
-  );
-  assert.equal('chats' in writes[0].value, false);
-  assert.equal('messages' in writes[0].value, false);
-  assert.equal('outbox' in writes[0].value, false);
-});
-
-test('legacy version-1 state imports once, deletes the old record, and validates on restart', async () => {
-  const legacyState = {
-    version: 1,
-    last_source_seq: 2,
-    acknowledged_source_seq: 0,
-    outbox: [
-      { event_id: eventId(1), source_seq: 1, change: chatChange('chat-1') },
-      { event_id: eventId(2), source_seq: 2, change: messageChange('message-1', 'chat-1') },
-    ],
-    chats: [chatChange('chat-1').chat],
-    messages: [messageChange('message-1', 'chat-1').message],
-    pending_snapshot: {
-      snapshot_id: 'snapshot-imported',
-      through_seq: 2,
-      chats: [chatChange('chat-1').chat],
-      messages: [messageChange('message-1', 'chat-1').message],
-    },
-  };
-  const storage = new InMemoryIngestionStorage();
-  const legacyStorage = new InMemoryLegacyIngestionStorage(legacyState);
-  const outbox = new DurableIngestOutbox({ storage, legacyStorage });
-
-  assert.deepEqual(await outbox.initialize(), legacyState);
-  assert.equal(legacyStorage.loadCount, 1);
-  assert.equal(legacyStorage.deleteCount, 1);
-  assert.equal(legacyStorage.value, null);
-
-  const restarted = new DurableIngestOutbox({ storage, legacyStorage });
-  assert.deepEqual(await restarted.initialize(), legacyState);
-  assert.equal(legacyStorage.loadCount, 2);
-  assert.equal(legacyStorage.deleteCount, 1);
-});
-
-test('the Chrome seam reads and removes only the legacy ingestion record', async () => {
-  const legacyState = {
-    version: 1,
-    last_source_seq: 0,
-    acknowledged_source_seq: 0,
-    outbox: [],
-    chats: [],
-    messages: [],
-    pending_snapshot: null,
-  };
-  const values = { durable_ingestion_v1: legacyState, durable_command_results_v1: 'untouched' };
-  const chromeAdapter = createChromeAdapter({
-    runtime: {},
-    storage: {
-      local: {
-        get(keys, callback) {
-          callback(Object.fromEntries(keys.filter((key) => key in values).map(
-            (key) => [key, structuredClone(values[key])],
-          )));
-        },
-        set(update, callback) {
-          Object.assign(values, structuredClone(update));
-          callback?.();
-        },
-        remove(keys, callback) {
-          for (const key of keys) delete values[key];
-          callback?.();
-        },
-      },
-    },
+    };
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve();
   });
+  const durable = new DurableIngestOutbox({
+    storage: createIndexedDbIngestionStorage(indexedDb, {
+      creatorAccountId: ACCOUNT_A,
+      databaseName,
+    }),
+    creatorAccountId: ACCOUNT_A,
+    idFactory: id,
+  });
+  await durable.initialize();
 
-  assert.deepEqual(await chromeAdapter.loadLegacyIngestionState(), legacyState);
-  await chromeAdapter.deleteLegacyIngestionState();
-  assert.equal('durable_ingestion_v1' in values, false);
-  assert.equal(values.durable_command_results_v1, 'untouched');
+  assert.equal(
+    indexedDb.databases
+      .get(databaseName)
+      .stores
+      .get(INGESTION_STORES.coverageEvidence)
+      .indexes
+      .get(COVERAGE_SOURCE_SEQUENCE_INDEX),
+    'last_source_seq',
+  );
+  assert.equal(
+    indexedDb.databases.get(databaseName).stores.has(INGESTION_STORES.credentials),
+    true,
+  );
+});
+
+test('a worker restart reconstructs the account stream, checkpoint, entities, and outbox', async () => {
+  const indexedDb = new FakeIndexedDb();
+  const first = new DurableIngestOutbox({
+    storage: storage(indexedDb, ACCOUNT_A),
+    creatorAccountId: ACCOUNT_A,
+    idFactory: id,
+  });
+  const identity = await first.initialize();
+  const item = await first.enqueue(chat, id(), 'passive');
+  assert.equal(item.source_seq, 1);
+
+  const restarted = new DurableIngestOutbox({
+    storage: storage(indexedDb, ACCOUNT_A),
+    creatorAccountId: ACCOUNT_A,
+    idFactory: id,
+  });
+  const restartedIdentity = await restarted.initialize();
+  assert.equal(restartedIdentity.agent_stream_id, identity.agent_stream_id);
+  assert.equal(restartedIdentity.last_source_seq, 1);
+  assert.deepEqual(await restarted.entries(), [item]);
+});
+
+test('unknown message deletes retain their parent through restart and snapshot repair', async () => {
+  const indexedDb = new FakeIndexedDb();
+  const first = new DurableIngestOutbox({
+    storage: storage(indexedDb, ACCOUNT_A),
+    creatorAccountId: ACCOUNT_A,
+    idFactory: id,
+  });
+  await first.initialize();
+  const deletion = {
+    type: 'message.delete',
+    message_id: 'message-unknown',
+    chat_id: 'chat-parent',
+  };
+  const item = await first.enqueue(deletion, id(), 'passive');
+
+  const restarted = new DurableIngestOutbox({
+    storage: storage(indexedDb, ACCOUNT_A),
+    creatorAccountId: ACCOUNT_A,
+    idFactory: id,
+  });
+  await restarted.initialize();
+  await assert.rejects(
+    restarted.enqueue({ ...deletion, chat_id: 'chat-conflict' }, id(), 'signer'),
+    (error) => error?.code === 'identity_conflict',
+  );
+  assert.equal(restarted.identityState().last_source_seq, 1);
+  assert.deepEqual(await restarted.entries(), [item]);
+
+  const manifest = await restarted.prepareSnapshot(id());
+  assert.equal(manifest.record_counts.messages, 1);
+  const frame = await restarted.snapshotChunkFrame(0);
+  assert.equal(frame.entity_kind, 'message');
+  assert.deepEqual(frame.records, [{
+    tombstone: true,
+    message_id: deletion.message_id,
+    chat_id: deletion.chat_id,
+  }]);
+  assert.equal(isAgentToBrainMessage({
+    type: 'ingest.snapshot',
+    protocol_version: '2',
+    message_id: id(),
+    payload: {
+      connection_id: id(),
+      fencing_token: 'fence-1',
+      creator_account_id: ACCOUNT_A,
+      agent_installation_id: id(),
+      agent_stream_id: restarted.identityState().agent_stream_id,
+      ...frame,
+    },
+  }), true);
+});
+
+test('overlapping platform IDs remain isolated in separate account databases', async () => {
+  const indexedDb = new FakeIndexedDb();
+  const a = new DurableIngestOutbox({
+    storage: storage(indexedDb, ACCOUNT_A),
+    creatorAccountId: ACCOUNT_A,
+    idFactory: id,
+  });
+  const b = new DurableIngestOutbox({
+    storage: storage(indexedDb, ACCOUNT_B),
+    creatorAccountId: ACCOUNT_B,
+    idFactory: id,
+  });
+  await Promise.all([a.initialize(), b.initialize()]);
+  await a.enqueue(chat, id(), 'passive');
+  await b.enqueue({
+    ...chat,
+    chat: { ...chat.chat, display_name: 'Different account' },
+  }, id(), 'signer');
+  assert.equal((await a.entries())[0].change.chat.display_name, 'Alex');
+  assert.equal((await b.entries())[0].change.chat.display_name, 'Different account');
+  assert.equal(indexedDb.databases.size, 2);
+});
+
+test('applied configuration and command results are account-partitioned in IndexedDB', async () => {
+  const indexedDb = new FakeIndexedDb();
+  const durable = new DurableIngestOutbox({
+    storage: storage(indexedDb, ACCOUNT_A),
+    creatorAccountId: ACCOUNT_A,
+    idFactory: id,
+  });
+  await durable.initialize();
+  const config = { config_revision: 'config-2', creator_account_id: ACCOUNT_A };
+  const commands = { version: 1, records: [] };
+  await durable.saveAppliedConfig(config);
+  await durable.saveCommandState(commands);
+
+  const restarted = new DurableIngestOutbox({
+    storage: storage(indexedDb, ACCOUNT_A),
+    creatorAccountId: ACCOUNT_A,
+    idFactory: id,
+  });
+  const state = await restarted.initialize();
+  assert.equal(state.applied_config_revision, 'config-2');
+  assert.deepEqual(await restarted.loadAppliedConfig(), config);
+  assert.deepEqual(await restarted.loadCommandState(), commands);
+});
+
+test('account invalidation advances the epoch and rejects all later stale mutations', async () => {
+  const indexedDb = new FakeIndexedDb();
+  const durable = new DurableIngestOutbox({
+    storage: storage(indexedDb, ACCOUNT_A),
+    creatorAccountId: ACCOUNT_A,
+    idFactory: id,
+  });
+  const before = await durable.initialize();
+  await durable.invalidateAccountEpoch();
+  assert.equal(durable.identityState().account_epoch, before.account_epoch + 1);
+  await assert.rejects(durable.enqueue(chat), /invalidated/);
 });

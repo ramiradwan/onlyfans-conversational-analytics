@@ -14,7 +14,7 @@ import { createChromeAdapter } from '../transport/chrome-adapter.mjs';
 import { createConfigHttpAdapter } from '../transport/config-http-adapter.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURE_ROOT = path.resolve(HERE, '../../shared/fixtures/protocol/v1');
+const FIXTURE_ROOT = path.resolve(HERE, '../../shared/fixtures/protocol/v2');
 const INSTALLATION_ID = '20000000-0000-4000-8000-000000000001';
 const STREAM_ID = '30000000-0000-4000-8000-000000000001';
 const ACCOUNT_ID = 'dev-creator-account';
@@ -28,10 +28,10 @@ async function fixture(name) {
 async function configDocument(revision, overrides = {}) {
   const document = {
     operation: 'agent.config.document',
-    protocol_version: '1',
+    protocol_version: '2',
     creator_account_id: ACCOUNT_ID,
     config_revision: revision,
-    config_schema_version: '1',
+    config_schema_version: '2',
     digest: `sha256:${'0'.repeat(64)}`,
     etag: revision,
     issued_at: '2026-07-18T10:00:00Z',
@@ -54,6 +54,16 @@ async function configDocument(revision, overrides = {}) {
       allowed_actions: ['message.send'],
       max_text_length: 1000,
       require_idempotency: true,
+    },
+    history_acquisition: {
+      enabled: false,
+      consent_revision: null,
+      authorized_platform_creator_id: null,
+      recent_window_days: 30,
+      page_size: 50,
+      pages_per_wake: 2,
+      request_interval_ms: 1000,
+      retry_limit: 3,
     },
     ...overrides,
   };
@@ -136,7 +146,7 @@ async function clientHarness({
   const client = new AgentConfigClient({
     identity,
     creatorAccountId: ACCOUNT_ID,
-    authTicket: 'bridge-clean-dev-ticket-v1',
+    configAuthTicket: 'agent-config-ticket-42',
     http,
     persistence,
     activator,
@@ -185,6 +195,10 @@ test('valid configuration activates as one document, persists, and reports appli
   assert.equal(h.persistence.writes.length, 1);
   assert.equal(h.reports.at(-1).outcome, 'applied');
   assert.equal(h.reports.at(-1).config_revision, 'config-8');
+  assert.equal(
+    h.reports.at(-1).capabilities.some(({ capability }) => capability === 'history.sync'),
+    true,
+  );
 });
 
 test('digest mismatch and unsupported schema retain the last known good document', async () => {
@@ -205,7 +219,7 @@ test('digest mismatch and unsupported schema retain the last known good document
   assert.equal(mismatched.scheduler.timeouts[0].delay, 1_000);
 
   const unsupported = await configDocument('config-8', {
-    config_schema_version: '2',
+    config_schema_version: '3',
   });
   unsupported.digest = await calculateConfigDigest(unsupported);
   const schema = await clientHarness({ initial: good, response: unsupported });
@@ -348,12 +362,12 @@ test('applied revision is echoed by subsequent heartbeat and reconnect hello', a
   const configClient = new AgentConfigClient({
     identity,
     creatorAccountId: ACCOUNT_ID,
-    authTicket: 'bridge-clean-dev-ticket-v1',
     persistence,
     scheduler: configScheduler,
     activator: new AtomicConfigActivator(),
     http: {
-      async fetchConfig() {
+      async fetchConfig(request) {
+        assert.equal(request.authTicket, 'agent-config-ticket-42');
         return {
           status: 200,
           etag: nextDocument.etag,
@@ -373,6 +387,8 @@ test('applied revision is echoed by subsequent heartbeat and reconnect hello', a
   let id = 1;
   websocketClient = new AgentWebSocketClient({
     identity,
+    creatorAccountId: ACCOUNT_ID,
+    authTicket: 'test-agent-auth-ticket',
     configClient,
     scheduler: wsScheduler,
     random: () => 0.5,
@@ -428,7 +444,7 @@ test('persistence failure rolls atomic activation back to last known good', asyn
   const client = new AgentConfigClient({
     identity,
     creatorAccountId: ACCOUNT_ID,
-    authTicket: 'bridge-clean-dev-ticket-v1',
+    configAuthTicket: 'agent-config-ticket-42',
     persistence,
     activator,
     scheduler: scheduler(),
@@ -448,7 +464,7 @@ test('persistence failure rolls atomic activation back to last known good', asyn
   assert.deepEqual(activator.current(), good);
 });
 
-test('HTTP adapter sends conditional ETag through its fetch seam', async () => {
+test('HTTP adapter keeps the config ticket out of the URL and sends it as authorization', async () => {
   const seen = [];
   const adapter = createConfigHttpAdapter({
     endpoint: 'https://brain.example/api/v1/agent/config',
@@ -461,21 +477,24 @@ test('HTTP adapter sends conditional ETag through its fetch seam', async () => {
     },
   });
   const result = await adapter.fetchConfig({
-    authTicket: 'bridge-clean-dev-ticket-v1',
+    authTicket: 'agent-config-ticket-42',
     agentInstallationId: INSTALLATION_ID,
     creatorAccountId: ACCOUNT_ID,
     currentEtag: 'config-8',
     currentConfigRevision: 'config-8',
-    supportedSchemaVersions: ['1'],
+    supportedSchemaVersions: ['2'],
   });
   assert.equal(result.status, 304);
   assert.equal(seen[0].options.headers['If-None-Match'], 'config-8');
+  assert.equal(seen[0].options.headers.Authorization, 'Bearer agent-config-ticket-42');
   const url = new URL(seen[0].url);
+  assert.equal(url.searchParams.has('auth_ticket'), false);
+  assert.equal(seen[0].url.includes('agent-config-ticket-42'), false);
   assert.equal(url.searchParams.get('agent_installation_id'), INSTALLATION_ID);
   assert.equal(url.searchParams.get('creator_account_id'), ACCOUNT_ID);
 });
 
-test('Chrome adapter persists document and applied revision in one storage write', async () => {
+test('Chrome adapter persists only the installation-global identifier', async () => {
   const values = {};
   const writes = [];
   const chromeMock = {
@@ -497,12 +516,10 @@ test('Chrome adapter persists document and applied revision in one storage write
     },
   };
   const adapter = createChromeAdapter(chromeMock, () => INSTALLATION_ID);
-  const document = await configDocument('config-8');
-  await adapter.saveAppliedConfig(document);
-  const saved = await adapter.loadAppliedConfig();
-  assert.deepEqual(saved, document);
-  assert.equal(writes[0].applied_config_revision, 'config-8');
-  assert.deepEqual(writes[0].applied_agent_config_v1, document);
+  assert.deepEqual(await adapter.loadAgentIdentity(), { agentInstallationId: INSTALLATION_ID });
+  assert.deepEqual(writes, [{ agent_installation_id: INSTALLATION_ID }]);
+  assert.equal(adapter.saveAppliedConfig, undefined);
+  assert.deepEqual(Object.keys(values), ['agent_installation_id']);
 });
 test('config.available is routed to a forced conditional refresh', async () => {
   const calls = [];
@@ -510,11 +527,13 @@ test('config.available is routed to a forced conditional refresh', async () => {
     agentInstallationId: INSTALLATION_ID,
     agentStreamId: STREAM_ID,
     lastAcknowledgedSourceSeq: 10,
-    appliedConfigRevision: 'config-7',
+    appliedConfigRevision: 'config-8',
   };
   const sockets = [];
   const client = new AgentWebSocketClient({
     identity,
+    creatorAccountId: ACCOUNT_ID,
+    authTicket: 'test-agent-auth-ticket',
     configClient: {
       async requireConfig(requirement, options) {
         calls.push({ requirement: clone(requirement), options: clone(options ?? {}) });
@@ -583,6 +602,40 @@ test('configuration requiring an unsupported capability is rejected', async () =
   assert.equal(result.status, 'failed');
   assert.equal(h.identity.appliedConfigRevision, 'config-7');
   assert.match(result.error.message, /unsupported capability/);
+});
+
+test('enabled history acquisition requires the explicit history.sync capability', async () => {
+  const good = await configDocument('config-7');
+  const required = await configDocument('config-8', {
+    history_acquisition: {
+      enabled: true,
+      consent_revision: 'consent-v1',
+      authorized_platform_creator_id: 'platform-creator-1',
+      recent_window_days: 30,
+      page_size: 50,
+      pages_per_wake: 2,
+      request_interval_ms: 1000,
+      retry_limit: 3,
+    },
+  });
+  const h = await clientHarness({
+    initial: good,
+    response: required,
+    capabilities: [
+      'capture.chats',
+      'capture.messages',
+      'capture.presence',
+      'command.message.send',
+    ],
+  });
+  const result = await h.client.requireConfig({
+    required_config_revision: 'config-8',
+    digest: required.digest,
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error.code, 'unsupported_capability');
+  assert.match(result.error.message, /history\.sync/);
+  assert.equal(h.identity.appliedConfigRevision, 'config-7');
 });
 
 test('message-only capture configuration is rejected without replacing the last known good', async () => {

@@ -347,7 +347,7 @@ test('content bridge requires same-window same-origin envelopes and logs no payl
   );
 });
 
-test('raw chat and message observations map to exact protocol v1 upserts', () => {
+test('raw chat and message observations map to exact protocol v2 upserts', () => {
   const chat = mapPlatformObservation(CHAT_OBSERVATION);
   assert.deepEqual(chat, {
     ok: true,
@@ -358,6 +358,7 @@ test('raw chat and message observations map to exact protocol v1 upserts', () =>
       type: 'chat.upsert',
       chat: {
         chat_id: '41',
+        record_kind: 'full',
         platform_user_id: '73',
         display_name: 'Synthetic Fan',
         updated_at: '2026-07-19T07:59:00.000Z',
@@ -459,14 +460,16 @@ test('message ingestion requests one atomic placeholder-parent capture', async (
     ok: true,
     event_type: 'message.observed',
     source_seq: 2,
+    material_transition: true,
   });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].parent.type, 'chat.upsert');
   assert.deepEqual(calls[0].parent.chat, {
     chat_id: '41',
-    platform_user_id: '41',
+    record_kind: 'placeholder',
+    platform_user_id: null,
     display_name: null,
-    updated_at: '2026-07-19T08:00:30.000Z',
+    updated_at: null,
   });
   assert.equal(calls[0].message.message.chat_id, calls[0].parent.chat.chat_id);
 });
@@ -530,6 +533,7 @@ test('background bridge validates sender and capture policy before durable enque
     ok: true,
     event_type: 'chat.observed',
     source_seq: 1,
+    material_transition: true,
   });
   assert.equal(captured.length, 1);
   assert.equal(captured[0].type, 'chat.upsert');

@@ -82,6 +82,14 @@ function scheduler() {
   };
 }
 
+async function waitFor(predicate, detail, timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${detail}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 function captureDocument() {
   return {
     capture_policy: {
@@ -109,9 +117,8 @@ function chromeMessageApi() {
 
 function worker(fakeIndexedDb) {
   const sockets = [];
+  const validationErrors = [];
   const chromeApi = chromeMessageApi();
-  const acknowledgmentWaiters = [];
-  const acknowledgedSourceSeqs = new Set();
   let generatedId = 0;
   const chromeAdapter = {
     onWake() { return () => {}; },
@@ -125,26 +132,25 @@ function worker(fakeIndexedDb) {
     },
     async loadLegacyIngestionState() { return null; },
     async deleteLegacyIngestionState() {},
-    async saveAcknowledgedSourceSeq(sourceSeq) {
-      acknowledgedSourceSeqs.add(sourceSeq);
-      for (const waiter of acknowledgmentWaiters.splice(0)) waiter(sourceSeq);
-    },
   };
   const runtime = createAgentRuntime({
     creatorAccountId: ACCOUNT_ID,
+    authTicket: 'synthetic-ticket',
     chromeAdapter,
     ingestionStorageFactory: () => createIndexedDbIngestionStorage(fakeIndexedDb, {
       databaseName: DATABASE_NAME,
     }),
     configHttpFactory: () => ({}),
     configActivatorFactory: () => ({}),
-    configClientFactory: () => ({
+    configClientFactory: ({ identity }) => ({
       activeDocument: captureDocument(),
-      async initialize() {},
+      async initialize() { identity.appliedConfigRevision = 'synthetic-config'; },
+      async requireConfig() {},
       healthSummary() { return { status: 'healthy', detail: null }; },
     }),
     transportFactory: (options) => new AgentWebSocketClient({
       ...options,
+      onValidationError: (error) => validationErrors.push(error),
       scheduler: scheduler(),
       random: () => 0.5,
       idFactory: () => `90000000-0000-4000-8000-${String(++generatedId).padStart(12, '0')}`,
@@ -162,15 +168,8 @@ function worker(fakeIndexedDb) {
   return {
     runtime,
     sockets,
+    validationErrors,
     listener: chromeApi.listeners[0],
-    waitForAcknowledgment(sourceSeq) {
-      if (acknowledgedSourceSeqs.has(sourceSeq)) return Promise.resolve();
-      return new Promise((resolve) => {
-        acknowledgmentWaiters.push((savedSourceSeq) => {
-          if (savedSourceSeq === sourceSeq) resolve();
-        });
-      });
-    },
   };
 }
 
@@ -197,20 +196,24 @@ function dispatchCapture(listener, observation) {
   });
 }
 
-function session(connectionId, committedSourceSeq) {
+function session(connectionId, committedSourceSeq, agentStreamId) {
   return {
     type: 'agent.session',
-    protocol_version: '1',
+    protocol_version: '2',
     message_id: '00000000-0000-4000-8000-000000000021',
     payload: {
       connection_id: connectionId,
       fencing_token: `fence-${committedSourceSeq}`,
       creator_account_id: ACCOUNT_ID,
       agent_installation_id: INSTALLATION_ID,
-      agent_stream_id: STREAM_ID,
+      agent_stream_id: agentStreamId,
       committed_source_seq: committedSourceSeq,
       resume_action: 'resume',
       required_config_revision: 'synthetic-config',
+      reconnect_auth_ticket: 'synthetic-reconnect-ticket',
+      config_auth_ticket: 'synthetic-config-ticket',
+      pending_snapshot_id: null,
+      next_expected_chunk_index: 0,
       lease: {
         heartbeat_interval_seconds: 20,
         lease_timeout_seconds: 60,
@@ -219,17 +222,18 @@ function session(connectionId, committedSourceSeq) {
   };
 }
 
-function acknowledgment(connectionId, committedSourceSeq) {
+function acknowledgment(connectionId, committedSourceSeq, agentStreamId) {
   return {
     type: 'ingest.ack',
-    protocol_version: '1',
+    protocol_version: '2',
     message_id: '00000000-0000-4000-8000-000000000022',
     payload: {
       connection_id: connectionId,
       creator_account_id: ACCOUNT_ID,
-      agent_stream_id: STREAM_ID,
+      agent_stream_id: agentStreamId,
       snapshot_id: null,
       committed_source_seq: committedSourceSeq,
+      snapshot_progress: null,
     },
   };
 }
@@ -238,8 +242,12 @@ async function bind(workerInstance, connectionId, committedSourceSeq) {
   await workerInstance.runtime.start();
   const socket = workerInstance.sockets[0];
   socket.open();
-  socket.receive(session(connectionId, committedSourceSeq));
-  await new Promise((resolve) => setImmediate(resolve));
+  socket.receive(session(
+    connectionId,
+    committedSourceSeq,
+    workerInstance.runtime.transport.identity.agentStreamId,
+  ));
+  await waitFor(() => workerInstance.runtime.transport.session !== null, 'Agent session');
   return socket;
 }
 
@@ -250,11 +258,13 @@ test('worker suspension replays the same IndexedDB outbox once, in order, on the
     ok: true,
     event_type: 'chat.observed',
     source_seq: 1,
+    material_transition: true,
   });
   assert.deepEqual(await dispatchCapture(firstWorker.listener, MESSAGE_OBSERVATION), {
     ok: true,
     event_type: 'message.observed',
     source_seq: 2,
+    material_transition: true,
   });
   const retainedEventIds = (await firstWorker.runtime.transport.outbox.entries())
     .map((item) => item.event_id);
@@ -263,11 +273,22 @@ test('worker suspension replays the same IndexedDB outbox once, in order, on the
   const restartedWorker = worker(fakeIndexedDb);
   const connectionId = '10000000-0000-4000-8000-000000000051';
   const replaySocket = await bind(restartedWorker, connectionId, 0);
+  await waitFor(
+    () => replaySocket.sent.filter((value) => JSON.parse(value).type === 'ingest.delta').length === 2,
+    'durable outbox replay',
+  );
   const replayed = replaySocket.sent
     .map((value) => JSON.parse(value))
     .filter((document) => document.type === 'ingest.delta')
     .map(parseAgentToBrainMessage);
-  assert.equal(replayed.length, 2);
+  assert.equal(
+    replayed.length,
+    2,
+    JSON.stringify({
+      sent: replaySocket.sent.map((value) => JSON.parse(value)),
+      validationErrors: restartedWorker.validationErrors.map((error) => error?.stack ?? String(error)),
+    }),
+  );
   assert.deepEqual(replayed.map((message) => message.payload.source_seq), [1, 2]);
   assert.deepEqual(replayed.map((message) => message.payload.change.type), [
     'chat.upsert',
@@ -278,8 +299,15 @@ test('worker suspension replays the same IndexedDB outbox once, in order, on the
   assert.ok(replayed.every((message) => message.payload.creator_account_id === ACCOUNT_ID));
   assert.ok(replayed.every((message) => message.payload.fencing_token === 'fence-0'));
 
-  replaySocket.receive(acknowledgment(connectionId, 2));
-  await restartedWorker.waitForAcknowledgment(2);
+  replaySocket.receive(acknowledgment(
+    connectionId,
+    2,
+    restartedWorker.runtime.transport.identity.agentStreamId,
+  ));
+  await waitFor(
+    () => restartedWorker.runtime.transport.identity.lastAcknowledgedSourceSeq === 2,
+    'durable acknowledgement',
+  );
   restartedWorker.runtime.transport.stop();
 
   const acknowledgedWorker = worker(fakeIndexedDb);
@@ -308,19 +336,21 @@ test('message-first capture uses the production IndexedDB transaction for its pa
     ok: true,
     event_type: 'message.observed',
     source_seq: 2,
+    material_transition: true,
   });
-  let state = instance.runtime.transport.outbox.snapshotState();
-  assert.deepEqual(state.outbox.map((item) => item.source_seq), [1, 2]);
-  assert.deepEqual(state.outbox.map((item) => item.change.type), [
+  let entries = await instance.runtime.transport.outbox.entries();
+  assert.deepEqual(entries.map((item) => item.source_seq), [1, 2]);
+  assert.deepEqual(entries.map((item) => item.change.type), [
     'chat.upsert',
     'message.upsert',
   ]);
-  assert.equal(state.chats[0].display_name, null);
+  assert.equal(entries[0].change.chat.record_kind, 'placeholder');
 
   assert.deepEqual(await dispatchCapture(instance.listener, CHAT_OBSERVATION), {
     ok: true,
     event_type: 'chat.observed',
     source_seq: 3,
+    material_transition: true,
   });
   assert.deepEqual(await dispatchCapture(instance.listener, {
     ...MESSAGE_OBSERVATION,
@@ -334,14 +364,15 @@ test('message-first capture uses the production IndexedDB transaction for its pa
     ok: true,
     event_type: 'message.observed',
     source_seq: 4,
+    material_transition: true,
   });
-  state = instance.runtime.transport.outbox.snapshotState();
-  assert.deepEqual(state.outbox.map((item) => item.source_seq), [1, 2, 3, 4]);
+  entries = await instance.runtime.transport.outbox.entries();
+  assert.deepEqual(entries.map((item) => item.source_seq), [1, 2, 3, 4]);
   assert.equal(
-    state.outbox.filter((item) => item.change.type === 'chat.upsert').length,
+    entries.filter((item) => item.change.type === 'chat.upsert').length,
     2,
   );
-  assert.equal(state.chats[0].display_name, 'Synthetic Fan');
-  assert.equal(state.messages.length, 2);
+  assert.equal(entries[2].change.chat.display_name, 'Synthetic Fan');
+  assert.equal(entries.filter((item) => item.change.type === 'message.upsert').length, 2);
   instance.runtime.transport.stop();
 });

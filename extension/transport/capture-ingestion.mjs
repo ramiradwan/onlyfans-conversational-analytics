@@ -1,7 +1,7 @@
 import { rawIngestChange } from '../protocol/validation.mjs';
 
 export const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
-export const CAPTURE_PROTOCOL_VERSION = '1';
+export const CAPTURE_PROTOCOL_VERSION = '2';
 
 const OBSERVATION_KEYS = Object.freeze([
   'event_type',
@@ -164,6 +164,7 @@ function mapChat(observation, observedAt) {
     type: 'chat.upsert',
     chat: {
       chat_id: chatId,
+      record_kind: 'full',
       platform_user_id: platformUserId,
       display_name: displayName,
       updated_at: updatedAt,
@@ -229,9 +230,10 @@ function placeholderChatForMessage(change) {
     type: 'chat.upsert',
     chat: {
       chat_id: message.chat_id,
-      platform_user_id: message.chat_id,
+      record_kind: 'placeholder',
+      platform_user_id: null,
       display_name: null,
-      updated_at: message.sent_at,
+      updated_at: null,
     },
   };
 }
@@ -240,7 +242,7 @@ function invalid(reason, eventType = 'unknown') {
   return { ok: false, reason, eventType };
 }
 
-/** Maps one page observation to exactly one protocol v1 raw-ingest change. */
+/** Maps one page observation to exactly one protocol-v2 raw-ingest change. */
 export function mapPlatformObservation(observation) {
   if (!isRecord(observation) || typeof observation.event_type !== 'string') {
     return invalid('malformed_observation');
@@ -407,7 +409,8 @@ export class CaptureIngestionService {
       return {
         ok: true,
         event_type: mapped.eventType,
-        source_seq: item.source_seq,
+        source_seq: item?.source_seq ?? null,
+        material_transition: item !== null,
       };
     } catch (_error) {
       this.diagnostics.record('enqueue_failed', mapped.eventType);

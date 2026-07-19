@@ -6,8 +6,6 @@ import { AgentCommandService } from './agent-command-service.mjs';
 
 const CONNECTING = 0;
 const OPEN = 1;
-export const DEV_AUTH_TICKET = 'bridge-clean-dev-ticket-v1';
-export const DEV_ACCOUNT_ID = 'dev-creator-account';
 export const LEASE_EXPIRED_CLOSE_CODE = 4001;
 
 const defaultScheduler = {
@@ -22,15 +20,30 @@ const asyncNoOp = async () => {};
 
 export class AgentWebSocketClient {
   constructor(options) {
-    this.url = options.url ?? 'ws://localhost:8000/ws/agent';
+    this.url = options.url ?? 'ws://bridge.localhost:17871/ws/agent';
     this.identity = options.identity;
-    this.creatorAccountId = options.creatorAccountId ?? DEV_ACCOUNT_ID;
-    this.authTicket = options.authTicket ?? DEV_AUTH_TICKET;
+    if (typeof options.creatorAccountId !== 'string' || options.creatorAccountId.length === 0) {
+      throw new Error('A Brain-authorized creatorAccountId is required');
+    }
+    if (typeof options.authTicket !== 'string' || options.authTicket.length === 0) {
+      throw new Error('A Brain authTicket is required');
+    }
+    this.creatorAccountId = options.creatorAccountId;
+    this.authTicket = options.authTicket;
+    if (
+      options.reconnectAuthTicket !== undefined
+      && options.reconnectAuthTicket !== null
+      && (typeof options.reconnectAuthTicket !== 'string' || options.reconnectAuthTicket.length === 0)
+    ) throw new Error('The Agent reconnect auth ticket is invalid');
+    this.reconnectAuthTicket = options.reconnectAuthTicket ?? null;
+    this.persistReconnectAuthTicket = options.persistReconnectAuthTicket ?? asyncNoOp;
+    this.bootstrapAuthTicketUsed = false;
     this.extensionVersion = options.extensionVersion ?? '2.0.0';
     this.capabilities = options.capabilities ?? [
       'capture.chats',
       'capture.messages',
       'capture.presence',
+      'history.sync',
       'command.message.send',
     ];
     this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
@@ -43,6 +56,7 @@ export class AgentWebSocketClient {
     this.persistence = options.persistence ?? {};
     this.outbox = options.outbox ?? null;
     this.onSession = options.onSession ?? noOp;
+    this.onSessionLost = options.onSessionLost ?? noOp;
     this.onSyncRequired = options.onSyncRequired ?? noOp;
     this.onIngestAcknowledged = options.onIngestAcknowledged ?? noOp;
     this.onIngestRejected = options.onIngestRejected ?? noOp;
@@ -89,6 +103,7 @@ export class AgentWebSocketClient {
     this.syncRequired = false;
     this.sentSourceSeqs = new Set();
     this.flushPromise = null;
+    this.snapshotSendPromise = null;
 
   }
 
@@ -103,6 +118,13 @@ export class AgentWebSocketClient {
     if (this.socket && [CONNECTING, OPEN].includes(this.socket.readyState)) return;
     this.clearReconnect();
     this.openSocket();
+  }
+
+  replaceAuthTicket(authTicket) {
+    if (typeof authTicket !== 'string' || authTicket.length === 0) {
+      throw new Error('A Brain authTicket is required');
+    }
+    this.authTicket = authTicket;
   }
 
   reconcileConnection() {
@@ -121,6 +143,8 @@ export class AgentWebSocketClient {
     const socket = this.socket;
     this.socket = null;
     this.session = null;
+    this.configClient?.clearSessionAuthorization?.();
+    this.onSessionLost({ reason: 'stopped' });
     socket?.close(1000, 'Agent stopped');
   }
 
@@ -174,18 +198,26 @@ export class AgentWebSocketClient {
       return this.flushOutbox();
     }
     this.flushPromise = (async () => {
-      const entries = await this.outbox.entries();
-      for (const item of entries) {
-        if (this.syncRequired || this.sentSourceSeqs.has(item.source_seq)) continue;
-        const sent = this.sendBound('ingest.delta', {
-          event_id: item.event_id,
-          source_seq: item.source_seq,
-          change: item.change,
-          agent_installation_id: this.identity.agentInstallationId,
-          agent_stream_id: this.identity.agentStreamId,
-        });
-        if (!sent) break;
-        this.sentSourceSeqs.add(item.source_seq);
+      let after = this.identity.lastAcknowledgedSourceSeq;
+      while (!this.syncRequired) {
+        const entries = typeof this.outbox.entriesPage === 'function'
+          ? await this.outbox.entriesPage(after, 100)
+          : await this.outbox.entries();
+        for (const item of entries) {
+          if (this.syncRequired || this.sentSourceSeqs.has(item.source_seq)) continue;
+          const sent = this.sendBound('ingest.delta', {
+            event_id: item.event_id,
+            source_seq: item.source_seq,
+            acquisition_origin: item.acquisition_origin ?? 'passive',
+            change: item.change,
+            agent_installation_id: this.identity.agentInstallationId,
+            agent_stream_id: this.identity.agentStreamId,
+          });
+          if (!sent) return;
+          this.sentSourceSeqs.add(item.source_seq);
+        }
+        if (entries.length < 100 || typeof this.outbox.entriesPage !== 'function') break;
+        after = entries.at(-1).source_seq;
       }
     })();
     try {
@@ -232,7 +264,7 @@ export class AgentWebSocketClient {
     if (!this.session || !this.socket || this.socket.readyState !== OPEN) return false;
     const document = {
       type,
-      protocol_version: '1',
+      protocol_version: '2',
       message_id: this.idFactory(),
       ...(correlationId ? { correlation_id: correlationId } : {}),
       payload: {
@@ -253,12 +285,22 @@ export class AgentWebSocketClient {
     this.session = null;
     socket.onopen = () => {
       if (this.socket !== socket) return;
+      const authTicket = this.reconnectAuthTicket ?? (
+        this.bootstrapAuthTicketUsed ? null : this.authTicket
+      );
+      if (authTicket === null) {
+        this.reconnectAllowed = false;
+        this.onValidationError(new Error('No reusable Agent reconnect credential is available'));
+        socket.close(1008, 'Agent reconnect credential unavailable');
+        return;
+      }
+      if (this.reconnectAuthTicket === null) this.bootstrapAuthTicketUsed = true;
       const hello = {
         type: 'agent.hello',
-        protocol_version: '1',
+        protocol_version: '2',
         message_id: this.idFactory(),
         payload: {
-          auth_ticket: this.authTicket,
+          auth_ticket: authTicket,
           agent_installation_id: this.identity.agentInstallationId,
           requested_creator_account_id: this.creatorAccountId,
           capabilities: this.capabilities,
@@ -336,7 +378,15 @@ export class AgentWebSocketClient {
       this.socket?.close(1008, 'Session identity conflict');
       return;
     }
+    this.reconnectAuthTicket = session.reconnect_auth_ticket;
+    void Promise.resolve(this.persistReconnectAuthTicket(session.reconnect_auth_ticket))
+      .catch((error) => {
+        this.reconnectAllowed = false;
+        this.onValidationError(error);
+        this.socket?.close(1011, 'Agent reconnect credential could not be stored');
+      });
     this.session = session;
+    this.configClient?.bindSessionAuthorization?.(session.config_auth_ticket);
     this.sentSourceSeqs.clear();
     this.syncRequired = session.resume_action === 'snapshot_required';
     this.reconnectAttempt = 0;
@@ -361,10 +411,20 @@ export class AgentWebSocketClient {
         reason: 'missing_checkpoint',
         expected_agent_stream_id: session.agent_stream_id,
         expected_next_source_seq: session.committed_source_seq + 1,
-        snapshot: { include_chats: true, include_messages: true },
+        pending_snapshot_id: session.pending_snapshot_id,
+        next_expected_chunk_index: session.next_expected_chunk_index,
+        snapshot: {
+          include_chats: true,
+          include_messages: true,
+          include_coverage_evidence: true,
+          max_frame_bytes: 524_288,
+          max_records_per_chunk: 100,
+        },
       }).catch((error) => this.onValidationError(error));
     } else {
-      void this.flushOutbox().catch((error) => this.onValidationError(error));
+      void this.reconcileLocalSnapshot(session)
+        .then(() => this.flushOutbox())
+        .catch((error) => this.onValidationError(error));
     }
   }
 
@@ -372,8 +432,52 @@ export class AgentWebSocketClient {
     this.syncRequired = true;
     this.onSyncRequired(payload);
     if (this.outbox === null) return;
-    const snapshot = await this.outbox.createSnapshot();
-    this.sendSnapshot(snapshot);
+    const manifest = await this.outbox.prepareSnapshot();
+    const canResume = payload.pending_snapshot_id === manifest.snapshot_id;
+    if (canResume) {
+      await this.sendNextSnapshotFrame(payload.next_expected_chunk_index);
+      return;
+    }
+    const begin = await this.outbox.snapshotBeginFrame();
+    this.sendSnapshot(begin);
+  }
+
+  async reconcileLocalSnapshot(session) {
+    if (this.outbox === null || typeof this.outbox.currentSnapshotManifest !== 'function') return;
+    const manifest = await this.outbox.currentSnapshotManifest();
+    if (manifest === null || session.committed_source_seq < manifest.through_seq) return;
+    await this.outbox.acknowledge(
+      session.committed_source_seq,
+      manifest.snapshot_id,
+      {
+        snapshot_id: manifest.snapshot_id,
+        next_expected_chunk_index: manifest.chunk_count,
+        committed: true,
+      },
+    );
+    this.syncRequired = false;
+  }
+
+  async sendNextSnapshotFrame(nextExpectedChunkIndex) {
+    if (this.snapshotSendPromise !== null) return this.snapshotSendPromise;
+    this.snapshotSendPromise = (async () => {
+      const manifest = await this.outbox.currentSnapshotManifest();
+      if (manifest === null || manifest.state !== 'ready') {
+        throw new Error('A ready local snapshot is required');
+      }
+      if (nextExpectedChunkIndex < manifest.chunk_count) {
+        this.sendSnapshot(await this.outbox.snapshotChunkFrame(nextExpectedChunkIndex));
+      } else if (nextExpectedChunkIndex === manifest.chunk_count) {
+        this.sendSnapshot(await this.outbox.snapshotCommitFrame());
+      } else {
+        throw new Error('Brain requested a snapshot chunk beyond the manifest');
+      }
+    })();
+    try {
+      return await this.snapshotSendPromise;
+    } finally {
+      this.snapshotSendPromise = null;
+    }
   }
 
   matchesSession(message) {
@@ -400,6 +504,7 @@ export class AgentWebSocketClient {
           const result = await this.outbox.acknowledge(
             message.payload.committed_source_seq,
             message.payload.snapshot_id,
+            message.payload.snapshot_progress,
           );
           snapshotAcknowledged = result.snapshotAcknowledged;
         }
@@ -416,6 +521,10 @@ export class AgentWebSocketClient {
         if (snapshotAcknowledged) {
           this.syncRequired = false;
           await this.flushOutbox();
+        } else if (message.payload.snapshot_progress !== null) {
+          await this.sendNextSnapshotFrame(
+            message.payload.snapshot_progress.next_expected_chunk_index,
+          );
         }
         return;
       }
@@ -433,7 +542,15 @@ export class AgentWebSocketClient {
             reason: 'sequence_gap',
             expected_agent_stream_id: this.identity.agentStreamId,
             expected_next_source_seq: this.identity.lastAcknowledgedSourceSeq + 1,
-            snapshot: { include_chats: true, include_messages: true },
+            pending_snapshot_id: null,
+            next_expected_chunk_index: 0,
+            snapshot: {
+              include_chats: true,
+              include_messages: true,
+              include_coverage_evidence: true,
+              max_frame_bytes: 524_288,
+              max_records_per_chunk: 100,
+            },
           });
         }
         return;
@@ -498,6 +615,8 @@ export class AgentWebSocketClient {
     if (this.socket !== socket) return;
     this.socket = null;
     this.session = null;
+    this.configClient?.clearSessionAuthorization?.();
+    this.onSessionLost({ reason: 'disconnected' });
     this.clearHeartbeat();
     if (!this.stopped && this.reconnectAllowed) this.scheduleReconnect();
   }

@@ -7,7 +7,14 @@ const PRIMARY_KEYS = Object.freeze({
   [INGESTION_STORES.outbox]: 'source_seq',
   [INGESTION_STORES.chats]: 'chat_id',
   [INGESTION_STORES.messages]: 'message_id',
-  [INGESTION_STORES.snapshot]: 'key',
+  [INGESTION_STORES.coverageEvidence]: 'evidence_key',
+  [INGESTION_STORES.historyJobs]: 'job_id',
+  [INGESTION_STORES.commandResults]: 'key',
+  [INGESTION_STORES.config]: 'key',
+  [INGESTION_STORES.snapshotManifests]: 'snapshot_id',
+  [INGESTION_STORES.snapshotChunks]: 'key',
+  [INGESTION_STORES.snapshotOverrides]: 'key',
+  [INGESTION_STORES.credentials]: 'key',
 });
 
 function compareKeys(left, right) {
@@ -110,6 +117,32 @@ export class InMemoryIngestionStorage {
           .filter(([, value]) => value[indexName] === key)
           .map(([primary]) => clone(primary))
           .sort(compareKeys);
+      },
+      getPage(storeName, { afterKey = null, limit = 100 } = {}) {
+        return [...store(storeName)]
+          .filter(([key]) => afterKey === null || compareKeys(key, afterKey) > 0)
+          .sort(([left], [right]) => compareKeys(left, right))
+          .slice(0, limit)
+          .map(([key, value]) => ({ key: clone(key), value: clone(value) }));
+      },
+      getPageFromIndex(
+        storeName,
+        indexName,
+        { afterIndexKey = null, limit = 100 } = {},
+      ) {
+        return [...store(storeName)]
+          .filter(([, value]) => (
+            afterIndexKey === null || compareKeys(value[indexName], afterIndexKey) > 0
+          ))
+          .sort(([leftKey, left], [rightKey, right]) => (
+            compareKeys(left[indexName], right[indexName]) || compareKeys(leftKey, rightKey)
+          ))
+          .slice(0, limit)
+          .map(([key, value]) => ({
+            key: clone(key),
+            indexKey: clone(value[indexName]),
+            value: clone(value),
+          }));
       },
       put(storeName, value, suppliedKey = undefined) {
         ensureWritable();

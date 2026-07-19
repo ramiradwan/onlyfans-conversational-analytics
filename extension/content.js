@@ -3,7 +3,7 @@
   globalThis.__OFCA_CAPTURE_BRIDGE_ACTIVE__ = true;
 
   const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
-  const PROTOCOL_VERSION = '1';
+  const PROTOCOL_VERSION = '2';
   const pageOrigin = window.location.origin;
   let droppedEnvelopeCount = 0;
   let deliveryFailureCount = 0;

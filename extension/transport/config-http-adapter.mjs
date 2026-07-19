@@ -16,7 +16,7 @@ export class ConfigFetchError extends Error {
 }
 
 export function createConfigHttpAdapter(options = {}) {
-  const endpoint = options.endpoint ?? 'http://localhost:8000/api/v1/agent/config';
+  const endpoint = options.endpoint ?? 'http://bridge.localhost:17871/api/v1/agent/config';
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const scheduler = options.scheduler ?? defaultScheduler;
   const timeoutMs = options.timeoutMs ?? 5_000;
@@ -29,7 +29,7 @@ export function createConfigHttpAdapter(options = {}) {
     async fetchConfig(context) {
       const request = parseAgentConfigGetRequest({
         operation: 'agent.config.get',
-        protocol_version: '1',
+        protocol_version: '2',
         auth_ticket: context.authTicket,
         agent_installation_id: context.agentInstallationId,
         creator_account_id: context.creatorAccountId,
@@ -39,6 +39,7 @@ export function createConfigHttpAdapter(options = {}) {
       });
       const url = new URL(endpoint);
       for (const [key, value] of Object.entries(request)) {
+        if (key === 'auth_ticket') continue;
         if (value === null) continue;
         if (Array.isArray(value)) {
           for (const item of value) url.searchParams.append(key, item);
@@ -52,9 +53,10 @@ export function createConfigHttpAdapter(options = {}) {
       try {
         const response = await fetchImpl(url.toString(), {
           method: 'GET',
-          headers: request.current_etag
-            ? { 'If-None-Match': request.current_etag }
-            : {},
+          headers: {
+            Authorization: `Bearer ${request.auth_ticket}`,
+            ...(request.current_etag ? { 'If-None-Match': request.current_etag } : {}),
+          },
           signal: controller.signal,
           credentials: 'omit',
         });

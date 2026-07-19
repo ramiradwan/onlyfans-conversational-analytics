@@ -6,8 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   AgentWebSocketClient,
-  DEV_ACCOUNT_ID,
-  DEV_AUTH_TICKET,
   LEASE_EXPIRED_CLOSE_CODE,
 } from '../transport/agent-websocket.mjs';
 import {
@@ -20,9 +18,11 @@ import {
 } from '../protocol/index.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURE_ROOT = path.resolve(HERE, '../../shared/fixtures/protocol/v1');
+const FIXTURE_ROOT = path.resolve(HERE, '../../shared/fixtures/protocol/v2');
 const INSTALLATION_ID = '20000000-0000-4000-8000-000000000001';
 const STREAM_ID = '30000000-0000-4000-8000-000000000001';
+const TEST_ACCOUNT_ID = 'dev-creator-account';
+const TEST_AUTH_TICKET = 'test-agent-auth-ticket';
 
 async function fixture(name) {
   return JSON.parse(await readFile(path.join(FIXTURE_ROOT, `${name}.json`), 'utf8'));
@@ -104,6 +104,8 @@ function harness(overrides = {}) {
   const scheduler = createScheduler();
   let id = 1;
   const client = new AgentWebSocketClient({
+    creatorAccountId: TEST_ACCOUNT_ID,
+    authTicket: TEST_AUTH_TICKET,
     identity: {
       agentInstallationId: INSTALLATION_ID,
       agentStreamId: STREAM_ID,
@@ -139,8 +141,9 @@ test('golden Agent hello/session starts validated heartbeats', async () => {
   const h = harness({ now: () => now });
   const socket = await connectAndBind(h);
   const hello = JSON.parse(socket.sent[0]);
-  assert.equal(hello.payload.auth_ticket, DEV_AUTH_TICKET);
-  assert.equal(hello.payload.requested_creator_account_id, DEV_ACCOUNT_ID);
+  assert.equal(hello.payload.auth_ticket, TEST_AUTH_TICKET);
+  assert.equal(hello.payload.requested_creator_account_id, TEST_ACCOUNT_ID);
+  assert.equal(hello.payload.capabilities.includes('history.sync'), true);
   assert.equal(h.scheduler.intervals[0].delay, 20_000);
 
   now += 20_000;
@@ -150,8 +153,38 @@ test('golden Agent hello/session starts validated heartbeats', async () => {
   assert.equal(heartbeat.payload.fencing_token, 'fence-42');
 });
 
+test('a bootstrap pairing ticket is sent at most once when no session is established', () => {
+  const validationErrors = [];
+  const h = harness({ onValidationError: (error) => validationErrors.push(error.message) });
+  h.client.start();
+  const first = h.sockets[0];
+  first.open();
+  assert.equal(JSON.parse(first.sent[0]).payload.auth_ticket, TEST_AUTH_TICKET);
+
+  first.drop();
+  assert.equal(h.scheduler.runNextTimeout(), 500);
+  const second = h.sockets[1];
+  second.open();
+
+  assert.equal(second.sent.length, 0);
+  assert.equal(second.closeCode, 1008);
+  assert.equal(second.closeReason, 'Agent reconnect credential unavailable');
+  assert.deepEqual(validationErrors, ['No reusable Agent reconnect credential is available']);
+  assert.equal(h.scheduler.timeouts.filter((task) => !task.cleared).length, 0);
+});
+
+test('a persisted reconnect ticket is preferred to the bootstrap pairing ticket', () => {
+  const h = harness({ reconnectAuthTicket: 'persisted-reconnect-ticket' });
+  h.client.start();
+  h.sockets[0].open();
+  const hello = parseAgentToBrainMessage(JSON.parse(h.sockets[0].sent[0]));
+  assert.equal(hello.payload.auth_ticket, 'persisted-reconnect-ticket');
+  assert.notEqual(hello.payload.auth_ticket, TEST_AUTH_TICKET);
+});
+
 test('heartbeat activity is scoped to a bound live session and stops on disconnect', async () => {
-  const h = harness();
+  const losses = [];
+  const h = harness({ onSessionLost: (event) => losses.push(event.reason) });
   h.client.start();
   const socket = h.sockets[0];
   assert.equal(h.scheduler.intervals.length, 0);
@@ -164,6 +197,7 @@ test('heartbeat activity is scoped to a bound live session and stops on disconne
 
   socket.drop();
   assert.equal(h.scheduler.intervals[0].cleared, true);
+  assert.deepEqual(losses, ['disconnected']);
 });
 
 test('wake reconciliation sends one heartbeat only when the negotiated interval is due', async () => {
@@ -185,9 +219,23 @@ test('wake reconciliation sends one heartbeat only when the negotiated interval 
   assert.equal(socket.sent.length, initialFrames + 1);
 });
 
-test('connection drop uses exponential backoff and re-handshakes', async () => {
-  const h = harness();
+test('connection drop rotates and persists reconnect auth separately from config auth', async () => {
+  const persisted = [];
+  const configBindings = [];
+  const configClears = [];
+  const h = harness({
+    persistReconnectAuthTicket: async (ticket) => { persisted.push(ticket); },
+    configClient: {
+      activeDocument: null,
+      bindSessionAuthorization(ticket) { configBindings.push(ticket); },
+      clearSessionAuthorization() { configClears.push(true); },
+      async requireConfig() {},
+    },
+  });
   const first = await connectAndBind(h);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(persisted, ['agent-reconnect-ticket-42']);
+  assert.deepEqual(configBindings, ['agent-config-ticket-42']);
   first.drop();
   assert.equal(h.scheduler.timeouts[0].delay, 500);
   h.scheduler.runNextTimeout();
@@ -195,13 +243,46 @@ test('connection drop uses exponential backoff and re-handshakes', async () => {
 
   const second = h.sockets[1];
   second.open();
-  assert.equal(JSON.parse(second.sent[0]).type, 'agent.hello');
+  const secondHello = JSON.parse(second.sent[0]);
+  assert.equal(secondHello.type, 'agent.hello');
+  assert.equal(secondHello.payload.auth_ticket, 'agent-reconnect-ticket-42');
+  assert.notEqual(secondHello.payload.auth_ticket, 'agent-config-ticket-42');
   const session = await fixture('agent.session');
   session.payload.connection_id = '10000000-0000-4000-8000-000000000099';
   session.payload.fencing_token = 'fence-99';
+  session.payload.reconnect_auth_ticket = 'agent-reconnect-ticket-43';
+  session.payload.config_auth_ticket = 'agent-config-ticket-43';
   second.receive(session);
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(h.client.session.connection_id, session.payload.connection_id);
   assert.equal(h.client.session.fencing_token, 'fence-99');
+  assert.deepEqual(persisted, ['agent-reconnect-ticket-42', 'agent-reconnect-ticket-43']);
+  assert.deepEqual(configBindings, ['agent-config-ticket-42', 'agent-config-ticket-43']);
+  assert.equal(configClears.length, 1);
+
+  second.drop();
+  h.scheduler.runNextTimeout();
+  const third = h.sockets[2];
+  third.open();
+  const thirdHello = JSON.parse(third.sent[0]);
+  assert.equal(thirdHello.payload.auth_ticket, 'agent-reconnect-ticket-43');
+  assert.notEqual(thirdHello.payload.auth_ticket, 'agent-config-ticket-43');
+});
+
+test('reconnect-ticket persistence failure closes the session without retrying', async () => {
+  const validationErrors = [];
+  const h = harness({
+    persistReconnectAuthTicket: async () => { throw new Error('session storage unavailable'); },
+    onValidationError: (error) => validationErrors.push(error.message),
+  });
+  const socket = await connectAndBind(h);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(socket.closeCode, 1011);
+  assert.equal(socket.closeReason, 'Agent reconnect credential could not be stored');
+  assert.deepEqual(validationErrors, ['session storage unavailable']);
+  assert.equal(h.client.session, null);
+  assert.equal(h.scheduler.timeouts.filter((task) => !task.cleared).length, 0);
 });
 
 test('validated ack, sync, config, command, and result-ack dispatch is correlated', async () => {
@@ -307,7 +388,7 @@ test('invalid fixtures and fatal protocol errors close safely without crashing',
   assert.equal(fatalHarness.scheduler.timeouts.length, 0);
 });
 
-test('Chrome adapter persists stable identity and exposes wake events to a mock', async () => {
+test('Chrome adapter persists only stable installation identity and exposes wake events', async () => {
   const values = {};
   const listeners = [];
   const alarmListeners = [];
@@ -340,9 +421,9 @@ test('Chrome adapter persists stable identity and exposes wake events to a mock'
   );
   const identity = await adapter.loadAgentIdentity();
   assert.equal(identity.agentInstallationId, '90000000-0000-4000-8000-000000000001');
-  assert.equal(identity.agentStreamId, '90000000-0000-4000-8000-000000000002');
-  await adapter.saveAcknowledgedSourceSeq(12);
-  assert.equal(values.last_acknowledged_source_seq, 12);
+  assert.deepEqual(Object.keys(values), ['agent_installation_id']);
+  assert.equal(adapter.saveAcknowledgedSourceSeq, undefined);
+  assert.equal(adapter.saveCommandState, undefined);
 
   let wakes = 0;
   adapter.onWake(() => { wakes += 1; });

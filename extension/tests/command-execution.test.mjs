@@ -12,7 +12,7 @@ import { AgentWebSocketClient } from '../transport/agent-websocket.mjs';
 import { createChromeAdapter } from '../transport/chrome-adapter.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURE_ROOT = path.resolve(HERE, '../../shared/fixtures/protocol/v1');
+const FIXTURE_ROOT = path.resolve(HERE, '../../shared/fixtures/protocol/v2');
 const NOW = Date.parse('2026-07-18T10:05:00Z');
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -269,6 +269,8 @@ function scheduler() {
 
 function websocketClient(persistence, executor, socket, idFactory, config = appliedConfig()) {
   return new AgentWebSocketClient({
+    creatorAccountId: 'dev-creator-account',
+    authTicket: 'brain-ticket-1',
     identity: {
       agentInstallationId: '20000000-0000-4000-8000-000000000001',
       agentStreamId: '30000000-0000-4000-8000-000000000001',
@@ -393,7 +395,7 @@ test('unacknowledged result is rebound and resent after worker restarts until ac
   );
 });
 
-test('Chrome adapter stores durable command state behind chrome.storage.local', async () => {
+test('Chrome adapter never stores account command state in installation-global storage', async () => {
   const values = {};
   const chromeMock = {
     runtime: {},
@@ -412,8 +414,8 @@ test('Chrome adapter stores durable command state behind chrome.storage.local', 
     },
   };
   const adapter = createChromeAdapter(chromeMock);
-  const state = { version: 1, records: {}, pending_command_ids: [] };
-  await adapter.saveCommandState(state);
-  assert.deepEqual(await adapter.loadCommandState(), state);
-  assert.deepEqual(values.durable_command_results_v1, state);
+  await adapter.loadAgentInstallationId();
+  assert.equal(adapter.saveCommandState, undefined);
+  assert.equal(adapter.loadCommandState, undefined);
+  assert.deepEqual(Object.keys(values), ['agent_installation_id']);
 });
