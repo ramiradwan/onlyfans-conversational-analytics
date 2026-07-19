@@ -14,5 +14,13 @@
   },
   "devDependencies": {
     "esbuild": "0.25.6"
-  }
+  },
+  "description": "The Agent is an MV3 browser extension for OnlyFans Conversational Analytics. It captures conversation data available to the logged-in creator, persists unacknowledged ingestion locally, and communicates with Brain through the role-specific protocol-v2 Agent channel.",
+  "main": "background.js",
+  "directories": {
+    "test": "tests"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
