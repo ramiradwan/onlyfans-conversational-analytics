@@ -40,7 +40,7 @@ Choose **a well-known static ticket in the production-shaped handshake for expli
 
 ### Development binding
 
-- The non-secret ticket literal is `bridge-clean-dev-ticket-v1`.
+- Development authentication uses an explicit non-secret fixture supplied by the local Brain; the extension has no compiled fallback credential.
 - When and only when Brain is in explicit local-development authentication mode, a valid occurrence of that ticket maps to:
   - `principal_id = "dev-principal"`
   - `creator_account_id = "dev-creator-account"`

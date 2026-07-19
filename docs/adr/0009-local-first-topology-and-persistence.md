@@ -17,7 +17,7 @@ Agent is independently scheduled as an MV3 extension, while Brain owns authentic
 - Keep acknowledged ingest, configuration, commands, authentication state, checkpoints, and view revisions durable.
 - Make graph, search, analytics, and Bridge read models rebuildable from canonical data.
 - Keep backup, update, recovery, and rollback understandable on a single-user machine.
-- Preserve the repository interfaces and protocol-v1 schemas.
+- Preserve the repository interfaces while allowing a coordinated protocol revision under a superseding ADR.
 
 ## Considered options
 
@@ -212,7 +212,7 @@ This ADR does not select:
 
 ### Protocol compatibility
 
-These decisions do not change the protocol-v1 schemas or fixtures. The role-specific WebSocket operations, configuration request and response, `state.snapshot`, `state.delta`, `state.resync`, and `system.state` cover the required external behavior. SQLite repositories, projections, migrations, backup, and local UI hosting remain internal implementation concerns.
+ADR 0010 supersedes this ADR's former protocol-v1 compatibility constraint with one coordinated protocol-v2 schema replacement. The local-first process topology, SQLite authority boundaries, projection rebuild model, backup, and local UI hosting decisions remain unchanged.
 
 ## Consequences
 
