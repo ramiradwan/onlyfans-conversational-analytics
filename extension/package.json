@@ -3,6 +3,16 @@
   "private": true,
   "version": "2.0.0",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "build": "node build.mjs",
+    "audit": "node build.mjs --audit",
+    "qualify:snapshot": "node --expose-gc qualification/snapshot-100k.mjs",
+    "qualify:snapshot:ci": "node --expose-gc qualification/snapshot-100k.mjs --messages=10000"
+  },
+  "dependencies": {
+    "local-authenticated-read-connector": "file:vendor/local-authenticated-read-connector-0.2.0-beta.6.tgz"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.6"
   }
 }
