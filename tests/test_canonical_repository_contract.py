@@ -25,11 +25,11 @@ from app.services.command_execution import (
     CommandDeliveryTarget,
     CommandService,
 )
-from app.transport.manager import DEV_AUTH_TICKET, InMemoryTransportManager
+from app.transport.manager import DEV_AGENT_AUTH_TICKET, InMemoryTransportManager
 from app.transport.ingestion import IngestionService, StreamKey
 
 
-FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v1"
+FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 ACCOUNT_ID = "dev-creator-account"
 NOW = datetime(2026, 7, 18, 10, 5, tzinfo=timezone.utc)
 ACTION = {
@@ -88,78 +88,15 @@ def repositories(request, tmp_path: Path) -> CanonicalRepositories:
 
 
 @pytest.mark.asyncio
-async def test_ingestion_contiguity_dedup_atomic_replacement_and_revision_contract(
-    repositories: CanonicalRepositories,
-) -> None:
-    service = IngestionService(repositories.ingestion)
-    key = stream_key()
-
-    snapshot = await service.ingest_snapshot(key, payload("ingest.snapshot"))
-    delta = await service.ingest_delta(key, payload("ingest.delta"))
-    duplicate = await service.ingest_delta(key, payload("ingest.delta"))
-
-    assert (snapshot.status, snapshot.committed_source_seq) == ("accepted", 10)
-    assert (delta.status, delta.committed_source_seq) == ("accepted", 11)
-    assert (duplicate.status, duplicate.committed_source_seq) == ("duplicate", 11)
-    assert duplicate.state_delta is None
-    assert [snapshot.state_delta["view_revision"], delta.state_delta["view_revision"]] == [
-        1,
-        2,
-    ]
-
-    gap_document = fixture("ingest.delta")
-    gap_document["payload"].update(source_seq=13, event_id=str(uuid4()))
-    gap = await service.ingest_delta(
-        key, AGENT_TO_BRAIN_ADAPTER.validate_json(json.dumps(gap_document)).payload
-    )
-    assert (gap.status, gap.code, gap.retryable) == ("gap", "sequence_gap", True)
-
-    conflicting = fixture("ingest.delta")
-    conflicting["payload"]["event_id"] = str(uuid4())
-    conflict = await service.ingest_delta(
-        key, AGENT_TO_BRAIN_ADAPTER.validate_json(json.dumps(conflicting)).payload
-    )
-    assert (conflict.status, conflict.code) == ("rejected", "invariant_failed")
-
-    before = service.state_snapshot_payload(ACCOUNT_ID)
-    invalid_document = fixture("ingest.snapshot")
-    invalid_document["payload"].update(snapshot_id=str(uuid4()), through_seq=12)
-    invalid_document["payload"]["chats"].append(
-        deepcopy(invalid_document["payload"]["chats"][0])
-    )
-    invalid = await service.ingest_snapshot(
-        key, AGENT_TO_BRAIN_ADAPTER.validate_json(json.dumps(invalid_document)).payload
-    )
-    after = service.state_snapshot_payload(ACCOUNT_ID)
-
-    assert invalid.status == "rejected"
-    assert service.checkpoint(key) == 11
-    assert after["view_revision"] == before["view_revision"] == 2
-    assert after["conversations"] == before["conversations"]
-
-    persisted_stream = repositories.ingestion.stream(key)
-    skipped_revision = repositories.ingestion.account_read_model(ACCOUNT_ID)
-    assert persisted_stream is not None
-    skipped_revision.view_revision += 2
-    assert not repositories.ingestion.commit_snapshot(
-        key,
-        expected_checkpoint=11,
-        stream=persisted_stream,
-        account=skipped_revision,
-    )
-    assert repositories.ingestion.account_read_model(ACCOUNT_ID).view_revision == 2
-
-
-@pytest.mark.asyncio
 async def test_configuration_immutability_monotonic_digest_etag_and_drift_contract(
     repositories: CanonicalRepositories,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     authority = AgentConfigurationAuthority(repositories.configuration)
     installation_id = uuid4()
-    initial = authority.bind_installation(ACCOUNT_ID, installation_id, "config-7")
+    initial = authority.bind_installation(ACCOUNT_ID, installation_id, "config-8")
     assert initial.required_config_revision == "config-8"
-    assert initial.applied_config_revision == "config-7"
+    assert initial.applied_config_revision == "config-8"
 
     published = await authority.publish(
         ACCOUNT_ID,
@@ -177,18 +114,20 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
     manager = InMemoryTransportManager(repositories)
     monkeypatch.setattr(transport_ws, "transport_manager", manager)
     parameters = {
-        "auth_ticket": DEV_AUTH_TICKET,
         "agent_installation_id": str(installation_id),
         "creator_account_id": ACCOUNT_ID,
-        "supported_config_schema_versions": "1",
+        "supported_config_schema_versions": "2",
     }
-    response = TestClient(app).get("/api/v1/agent/config", params=parameters)
+    auth = {"Authorization": f"Bearer {DEV_AGENT_AUTH_TICKET}"}
+    response = TestClient(app).get(
+        "/api/v1/agent/config", params=parameters, headers=auth
+    )
     assert response.status_code == 200
     assert response.json()["digest"] == published.digest
     not_modified = TestClient(app).get(
         "/api/v1/agent/config",
         params=parameters,
-        headers={"If-None-Match": f'W/"{published.etag}"'},
+        headers={**auth, "If-None-Match": f'W/"{published.etag}"'},
     )
     assert not_modified.status_code == 304
     assert not_modified.content == b""
@@ -196,7 +135,7 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
 
     drift = authority.installation(ACCOUNT_ID, installation_id)
     assert drift.required_config_revision == "config-9"
-    assert drift.applied_config_revision == "config-7"
+    assert drift.applied_config_revision == "config-8"
     converged = authority.record_report(
         ACCOUNT_ID,
         installation_id,
@@ -330,7 +269,7 @@ async def test_command_identity_deadline_result_dedup_and_receipt_contract(
         creator_account_id=ACCOUNT_ID,
         agent_installation_id=stream.agent_installation_id,
         agent_stream_id=stream.agent_stream_id,
-        applied_config_revision="config-7",
+        applied_config_revision="config-8",
         now=NOW,
     )
     monkeypatch.setattr(transport_ws, "transport_manager", manager)
@@ -338,7 +277,7 @@ async def test_command_identity_deadline_result_dedup_and_receipt_contract(
         json.dumps(
             {
                 "type": "command.result",
-                "protocol_version": "1",
+                "protocol_version": "2",
                 "message_id": str(uuid4()),
                 "payload": {
                     "connection_id": str(lease.connection_id),

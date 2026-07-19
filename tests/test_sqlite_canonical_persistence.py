@@ -29,7 +29,7 @@ from app.services.command_execution import CommandDeliveryTarget, CommandService
 from app.transport.ingestion import IngestionService, StreamKey
 
 
-FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v1"
+FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 ACCOUNT_ID = "dev-creator-account"
 NOW = datetime(2026, 7, 18, 10, 5, tzinfo=timezone.utc)
 ACTION = {
@@ -87,7 +87,7 @@ def test_authoritative_connection_uses_wal_full_sync_foreign_keys_and_timeout(
         assert connection.execute("PRAGMA busy_timeout").fetchone()[0] == 7_500
 
 
-def test_fresh_sqlite_bootstrap_retains_config_7_and_requires_config_8(
+def test_fresh_sqlite_bootstrap_is_hard_cut_to_config_8(
     tmp_path: Path,
 ) -> None:
     repositories = create_canonical_repositories(
@@ -95,81 +95,20 @@ def test_fresh_sqlite_bootstrap_retains_config_7_and_requires_config_8(
     )
     authority = AgentConfigurationAuthority(repositories.configuration)
 
-    assert repositories.configuration.document(ACCOUNT_ID, "config-7") is not None
+    assert repositories.configuration.document(ACCOUNT_ID, "config-7") is None
     assert repositories.configuration.document(ACCOUNT_ID, "config-8") is not None
     assert authority.required_document(ACCOUNT_ID).config_revision == "config-8"
-
-
-def test_existing_sqlite_config_7_is_migrated_without_mutating_history(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "existing.sqlite3"
-    repositories = create_canonical_repositories("sqlite", canonical_path=path)
-    legacy = build_config_document(
-        creator_account_id=ACCOUNT_ID,
-        config_revision="config-7",
-        issued_at=datetime(2026, 7, 18, 10, 0, tzinfo=timezone.utc),
-        capture_policy={
-            "observation_interval_seconds": 30,
-            "rules": [
-                {
-                    "resource": "messages",
-                    "url_pattern": "/api2/v2/chats/*/messages",
-                    "enabled": True,
-                }
-            ],
-        },
-        command_policy={
-            "allowed_actions": ["message.send"],
-            "max_text_length": 1000,
-            "require_idempotency": True,
-        },
-    )
-    assert legacy.digest == (
-        "sha256:80b15a3978003cae44786f14180e7d812e163c51e0aad057fe15fd229235c367"
-    )
-    repositories.configuration.add_document(legacy)
-    repositories.configuration.set_required(ACCOUNT_ID, legacy.config_revision)
-    installation_id = uuid4()
-    repositories.configuration.save_installation(
-        ConfigInstallationRecord(
-            creator_account_id=ACCOUNT_ID,
-            agent_installation_id=installation_id,
-            required_config_revision=legacy.config_revision,
-            applied_config_revision=legacy.config_revision,
-        )
-    )
-
-    authority = AgentConfigurationAuthority(repositories.configuration)
-
-    retained = repositories.configuration.document(ACCOUNT_ID, "config-7")
-    assert retained is not None and retained.digest == legacy.digest
-    assert repositories.configuration.document(ACCOUNT_ID, "config-8") is not None
-    assert authority.required_document(ACCOUNT_ID).config_revision == "config-8"
-    installation = authority.installation(ACCOUNT_ID, installation_id)
-    assert installation.required_config_revision == "config-8"
-    assert installation.applied_config_revision == "config-7"
-
-    restarted = create_canonical_repositories("sqlite", canonical_path=path)
-    restarted_authority = AgentConfigurationAuthority(restarted.configuration)
-    assert restarted_authority.required_document(ACCOUNT_ID).config_revision == "config-8"
-    assert restarted.configuration.document(ACCOUNT_ID, "config-7").digest == legacy.digest
 
 
 @pytest.mark.asyncio
-async def test_committed_canonical_state_survives_fresh_repository_connections(
+async def test_configuration_and_commands_survive_fresh_repository_connections(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "canonical.sqlite3"
     first = create_canonical_repositories("sqlite", canonical_path=path)
-    ingestion = IngestionService(first.ingestion)
-    stream = key()
-    assert (await ingestion.ingest_snapshot(stream, payload("ingest.snapshot"))).status == "accepted"
-    assert (await ingestion.ingest_delta(stream, payload("ingest.delta"))).status == "accepted"
-
     configuration = AgentConfigurationAuthority(first.configuration)
     installation_id = uuid4()
-    configuration.bind_installation(ACCOUNT_ID, installation_id, "config-7")
+    configuration.bind_installation(ACCOUNT_ID, installation_id, "config-8")
     published = await configuration.publish(
         ACCOUNT_ID,
         capture_policy=CAPTURE_POLICY,
@@ -210,8 +149,6 @@ async def test_committed_canonical_state_survives_fresh_repository_connections(
     second = create_canonical_repositories("sqlite", canonical_path=path)
     restarted_configuration = AgentConfigurationAuthority(second.configuration)
     restarted_command = second.commands.get(command.command_id)
-    assert second.ingestion.checkpoint(stream) == 11
-    assert second.ingestion.account_read_model(ACCOUNT_ID).view_revision == 2
     assert restarted_configuration.required_document(ACCOUNT_ID).config_revision == "config-9"
     assert restarted_configuration.installation(
         ACCOUNT_ID, installation_id
@@ -219,64 +156,6 @@ async def test_committed_canonical_state_survives_fresh_repository_connections(
     assert restarted_command is not None
     assert restarted_command.state == "succeeded"
     assert restarted_command.result_apply_count == 1
-
-
-@pytest.mark.asyncio
-async def test_snapshot_replacement_is_atomic_across_connections(tmp_path: Path) -> None:
-    path = tmp_path / "canonical.sqlite3"
-    repositories = create_canonical_repositories("sqlite", canonical_path=path)
-    service = IngestionService(repositories.ingestion)
-    stream = key()
-    await service.ingest_snapshot(stream, payload("ingest.snapshot"))
-
-    assert repositories.database is not None
-    reader = repositories.database.connect()
-    try:
-        reader.execute("BEGIN")
-        old_checkpoint = reader.execute(
-            "SELECT committed_source_seq FROM ingest_checkpoints"
-        ).fetchone()[0]
-        old_chat = reader.execute(
-            "SELECT document_json FROM canonical_chats"
-        ).fetchone()[0]
-
-        replacement_document = fixture("ingest.snapshot")
-        replacement_document["payload"].update(
-            snapshot_id=str(uuid4()), through_seq=12
-        )
-        replacement_document["payload"]["chats"][0]["display_name"] = "Jordan"
-        replacement_document["payload"]["messages"][0]["text"] = "Replaced"
-        replacement = await service.ingest_snapshot(
-            stream,
-            AGENT_TO_BRAIN_ADAPTER.validate_json(
-                json.dumps(replacement_document)
-            ).payload,
-        )
-        assert replacement.status == "accepted"
-
-        assert reader.execute(
-            "SELECT committed_source_seq FROM ingest_checkpoints"
-        ).fetchone()[0] == old_checkpoint
-        assert reader.execute(
-            "SELECT document_json FROM canonical_chats"
-        ).fetchone()[0] == old_chat
-        reader.commit()
-
-        assert reader.execute(
-            "SELECT committed_source_seq FROM ingest_checkpoints"
-        ).fetchone()[0] == 12
-        new_chat = json.loads(
-            reader.execute("SELECT document_json FROM canonical_chats").fetchone()[0]
-        )
-        new_message = json.loads(
-            reader.execute("SELECT document_json FROM canonical_messages").fetchone()[0]
-        )
-        assert (new_chat["display_name"], new_message["text"]) == (
-            "Jordan",
-            "Replaced",
-        )
-    finally:
-        reader.close()
 
 
 def test_migrations_are_idempotent_checksummed_and_backed_up(tmp_path: Path) -> None:

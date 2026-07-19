@@ -16,6 +16,22 @@ venv/
 .env
 
 # ------------------------
+# Local runtime data
+# ------------------------
+canonical.sqlite3
+canonical.sqlite3-*
+projections.sqlite3
+projections.sqlite3-*
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+backups/
+projection-backups/
+.bridge-installation-migration.lock
+.projection-migration.lock
+*.migration.lock
+
+# ------------------------
 # IDE settings
 # ------------------------
 .vscode/
