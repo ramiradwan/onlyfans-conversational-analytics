@@ -4,8 +4,10 @@ import net from 'node:net';
 import { PRODUCT_ROOT, pythonExecutable } from './paths.mjs';
 
 const BRAIN_HOST = '127.0.0.1';
-export const BRAIN_PORT = 8000;
-export const BRAIN_HTTP_URL = `http://${BRAIN_HOST}:${BRAIN_PORT}`;
+export const BRAIN_PORT = 17_871;
+export const BRAIN_ORIGIN = `http://bridge.localhost:${BRAIN_PORT}`;
+export const BRAIN_LOOPBACK_URL = `http://${BRAIN_HOST}:${BRAIN_PORT}`;
+export const BRAIN_HTTP_URL = BRAIN_ORIGIN;
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -35,8 +37,10 @@ async function waitForExit(child, timeoutMs) {
 }
 
 export class BrainProcess {
-  constructor({ databasePath }) {
-    this.databasePath = databasePath;
+  constructor({ canonicalDatabasePath, extensionId, projectionDatabasePath }) {
+    this.canonicalDatabasePath = canonicalDatabasePath;
+    this.extensionId = extensionId;
+    this.projectionDatabasePath = projectionDatabasePath;
     this.child = null;
     this.output = [];
   }
@@ -69,8 +73,11 @@ export class BrainProcess {
           ...process.env,
           PYTHONUNBUFFERED: '1',
           BROADCAST_URL: 'memory://',
+          BRIDGE_ORIGIN: BRAIN_ORIGIN,
           CANONICAL_PERSISTENCE_BACKEND: 'sqlite',
-          CANONICAL_DATABASE_PATH: this.databasePath,
+          CANONICAL_DATABASE_PATH: this.canonicalDatabasePath,
+          PROJECTION_DATABASE_PATH: this.projectionDatabasePath,
+          EXTENSION_ID: this.extensionId,
           WEBSOCKET_AUTH_MODE: 'development_stub',
           WEBSOCKET_BIND_HOST: BRAIN_HOST,
           AGENT_HEARTBEAT_INTERVAL_SECONDS: '1',
@@ -95,7 +102,7 @@ export class BrainProcess {
         throw new Error(`Brain exited during startup.\n${this.recentOutput()}`);
       }
       try {
-        const response = await fetch(`${BRAIN_HTTP_URL}/health`, { cache: 'no-store' });
+        const response = await fetch(`${BRAIN_LOOPBACK_URL}/health`, { cache: 'no-store' });
         if (response.ok) return;
       } catch {
         // The listener is not ready yet.

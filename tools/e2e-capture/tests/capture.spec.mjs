@@ -5,10 +5,16 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
-import { BrainProcess } from '../lib/brain.mjs';
-import { readBrainSummary } from '../lib/brain-probe.mjs';
+import { BRAIN_ORIGIN, BrainProcess } from '../lib/brain.mjs';
 import {
+  readBrainSummary,
+  requestAgentPairingTicket,
+} from '../lib/brain-probe.mjs';
+import {
+  bindAgentFromBridgePage,
   contentBridgeIsActive,
+  extensionId,
+  extensionOutboxProof,
   extensionState,
   extensionWorker,
   extensionWorkerTargetCount,
@@ -17,7 +23,7 @@ import {
   startExtensionWorker,
   terminateExtensionWorker,
 } from '../lib/extension-browser.mjs';
-import { assertBuiltSpa } from '../lib/paths.mjs';
+import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 import { readSqliteProof } from '../lib/sqlite-proof.mjs';
 
 const IDENTITY_PATH = '/api2/v2/users/me';
@@ -98,32 +104,44 @@ function expectNoDrops(state) {
   expect(Object.values(state.drops).reduce((sum, count) => sum + count, 0)).toBe(0);
 }
 
-function expectStableCanonicalProof(after, before) {
-  expect(after.eventIds).toEqual(before.eventIds);
-  expect(after.eventSequences).toEqual(before.eventSequences);
-  expect(after.eventChangeTypes).toEqual(before.eventChangeTypes);
-  expect(after.eventCount).toBe(before.eventCount);
-  expect(after.committedSourceSeq).toBe(before.committedSourceSeq);
-  expect(after.canonicalChatCount).toBe(before.canonicalChatCount);
-  expect(after.canonicalMessageCount).toBe(before.canonicalMessageCount);
-  expect(after.readModelChatCount).toBe(before.readModelChatCount);
-  expect(after.readModelMessageCount).toBe(before.readModelMessageCount);
-  expect(after.viewRevision).toBe(before.viewRevision);
+function expectStablePersistenceProof(after, before) {
+  expect(after).toEqual(before);
 }
 
 test('real MV3 capture proves exact ordering, durable replay, and alarm recovery', async () => {
   test.slow();
   assertBuiltSpa();
+  assertBuiltExtension();
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'ofca-e2e-capture-'));
   const browserProfile = path.join(temporaryRoot, 'chromium-profile');
-  const databasePath = path.join(temporaryRoot, 'canonical.sqlite3');
-  const brain = new BrainProcess({ databasePath });
+  const canonicalDatabasePath = path.join(temporaryRoot, 'canonical.sqlite3');
+  const projectionDatabasePath = path.join(temporaryRoot, 'projections.sqlite3');
+  const databasePaths = { canonicalDatabasePath, projectionDatabasePath };
+  let brain = null;
   let context = null;
+  let worker = null;
 
   try {
-    await test.step('start the real SQLite Brain and unpacked extension', async () => {
-      await brain.start();
+    await test.step('load the audited MV3 artifact and pair it through the exact Bridge origin', async () => {
       context = await launchExtensionBrowser(browserProfile);
+      worker = await extensionWorker(context);
+      const actualExtensionId = extensionId(worker);
+      brain = new BrainProcess({
+        ...databasePaths,
+        extensionId: actualExtensionId,
+      });
+      await brain.start();
+
+      const pairing = await requestAgentPairingTicket();
+      expect(pairing.creatorAccountId).toBe('dev-creator-account');
+      expect(pairing.extensionId).toBe(actualExtensionId);
+      const bindingPage = context.pages()[0] ?? await context.newPage();
+      await bindingPage.goto(`${BRAIN_ORIGIN}/health`, { waitUntil: 'domcontentloaded' });
+      await bindAgentFromBridgePage(bindingPage, {
+        extensionId: actualExtensionId,
+        creatorAccountId: pairing.creatorAccountId,
+        authTicket: pairing.pairingTicket,
+      });
     });
 
     const platform = new SyntheticPlatform();
@@ -136,7 +154,6 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       () => globalThis.fixtureDocumentToken,
     );
 
-    let worker = await extensionWorker(context);
     await test.step('prove both page worlds and Brain-owned capture policy are active', async () => {
       await expect.poll(
         () => platformPage.evaluate(() => globalThis.__OFCA_PAGE_HOOK_ACTIVE__ === true),
@@ -200,6 +217,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     });
 
     let initialConnection;
+    const bridgeMessageTraffic = [];
     const bridgePage = await test.step('prove exact Brain, SQLite, heartbeat, and Inbox state', async () => {
       const first = await waitForBrain(
         (candidate) => (
@@ -207,6 +225,8 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
           && candidate.appliedConfigRevision === candidate.requiredConfigRevision
           && candidate.conversationCount === 2
           && candidate.messageCount === 4
+          && candidate.analyticsBasis === 'synced_subset'
+          && candidate.summaryOnly === true
           && candidate.viewRevision > 0
         ),
         'Brain did not project the exact initial two-conversation/four-message state.',
@@ -224,7 +244,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       );
       expect(second.connectionToken).toBe(initialConnection);
 
-      const proof = await readSqliteProof(databasePath);
+      const proof = await readSqliteProof(databasePaths);
       expect(proof.streamCount).toBe(1);
       expect(proof.committedSourceSeq).toBe(6);
       expect(proof.eventCount).toBe(6);
@@ -242,24 +262,122 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(proof.canonicalMessageCount).toBe(4);
       expect(proof.readModelChatCount).toBe(2);
       expect(proof.readModelMessageCount).toBe(4);
+      expect(proof.messageAnalysisCount).toBe(4);
+      expect(proof.lpgNodeCount).toBe(6);
+      expect(proof.lpgEdgeCount).toBe(4);
+      expect([1, 2]).toContain(proof.inactiveReadModelChatCount);
+      expect(proof.inactiveReadModelMessageCount).toBe(3);
+      expect(proof.inactiveMessageAnalysisCount).toBe(3);
+      expect(proof.inactiveLpgNodeCount).toBe(
+        proof.inactiveReadModelChatCount + proof.inactiveReadModelMessageCount,
+      );
+      expect(proof.inactiveLpgEdgeCount).toBe(3);
+      expect(proof.inactiveReadModelMessageCount).toBeLessThan(proof.readModelMessageCount);
+      expect(proof.projectionSlotCount).toBe(2);
+      expect(proof.maximumProjectionSlotsPerAccount).toBe(2);
+      expect(proof.projectionSlotCountsByAccount).toEqual([
+        { creatorAccountId: 'dev-creator-account', slotCount: 2 },
+      ]);
+      expect(proof.activeProjectionSlots).toHaveLength(1);
+      expect(proof.inactiveProjectionSlots).toHaveLength(1);
+      expect(proof.activeProjectionSlots[0].projectionSlot)
+        .not.toBe(proof.inactiveProjectionSlots[0].projectionSlot);
+      expect(proof.activeProjectionSlots[0].generationId)
+        .not.toBe(proof.inactiveProjectionSlots[0].generationId);
+      expect(proof.canonicalAccountIds).toEqual(['dev-creator-account']);
+      expect(proof.projectionAccountIds).toEqual(['dev-creator-account']);
+      expect(proof.projectionReadRevision).toBe(proof.viewRevision);
 
       const page = await context.newPage();
-      await page.goto('http://localhost:8000/', { waitUntil: 'domcontentloaded' });
+      page.on('request', (request) => {
+        const url = new URL(request.url());
+        if (url.pathname.startsWith('/api/v1/conversations/') && url.pathname.endsWith('/messages')) {
+          bridgeMessageTraffic.push({ kind: 'request', method: request.method(), path: url.pathname });
+        }
+      });
+      page.on('response', (response) => {
+        const url = new URL(response.url());
+        if (url.pathname.startsWith('/api/v1/conversations/') && url.pathname.endsWith('/messages')) {
+          bridgeMessageTraffic.push({ kind: 'response', path: url.pathname, status: response.status() });
+        }
+      });
+      page.on('requestfailed', (request) => {
+        const url = new URL(request.url());
+        if (url.pathname.startsWith('/api/v1/conversations/') && url.pathname.endsWith('/messages')) {
+          bridgeMessageTraffic.push({
+            kind: 'failure',
+            path: url.pathname,
+            reason: request.failure()?.errorText ?? 'unknown',
+          });
+        }
+      });
+      await page.goto(`${BRAIN_ORIGIN}/`, { waitUntil: 'domcontentloaded' });
+      const dashboard = page.getByRole('main');
+      await expect(
+        dashboard.getByRole('heading', { name: 'Creator dashboard' }),
+      ).toBeVisible();
+      for (const [title, value] of [
+        ['Total conversations', '2+'],
+        ['Total messages', '4+'],
+        ['Inbound messages', '3+'],
+        ['Outbound messages', '1+'],
+      ]) {
+        const card = dashboard.getByText(title, { exact: true }).locator('..');
+        await expect(card.getByText(value, { exact: true })).toBeVisible();
+        await expect(
+          card.getByText(/Based on synced messages · sample \d+ · As of/),
+        ).toBeVisible();
+      }
+      await expect(dashboard.getByText('Ask is not connected')).toBeVisible();
+      await expect(dashboard.getByRole('textbox')).toHaveCount(0);
+      await expect(dashboard.getByRole('button', { name: /export/i })).toHaveCount(0);
+      await expect(dashboard.getByText(/revenue/i)).toHaveCount(0);
+      await expect(dashboard.getByText(/spend/i)).toHaveCount(0);
+
+      const firstPageResponsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.origin === BRAIN_ORIGIN
+          && url.pathname.startsWith('/api/v1/conversations/')
+          && url.pathname.endsWith('/messages');
+      });
       await page.getByRole('link', { name: 'Inbox', exact: true }).click();
       await expect(page.getByRole('heading', { name: 'Inbox' })).toBeVisible();
-      await expect(page.getByText('Live', { exact: true })).toBeVisible();
+      const firstPageResponse = await firstPageResponsePromise;
+      expect(firstPageResponse.status()).toBe(200);
+      const firstPage = await firstPageResponse.json();
+      expect(firstPage.conversation_id).toBe(SYNTHETIC.messageOnlyPeerId);
+      expect(firstPage.items.map((item) => item.message_id)).toEqual([
+        SYNTHETIC.messageOnlyMessageId,
+      ]);
+      await expect(page.getByRole('main').getByText('Degraded', { exact: true })).toBeVisible();
       const conversationRows = page.locator('[aria-label="Conversation list"] [role="button"]');
       await expect(conversationRows).toHaveCount(2);
 
+      await expect(page.getByRole('article')).toHaveCount(1);
+      await expect(page.getByRole('button', { name: 'No earlier stored messages' })).toBeVisible();
+
+      const primaryPageResponsePromise = page.waitForResponse((response) => (
+        new URL(response.url()).pathname
+          === `/api/v1/conversations/${SYNTHETIC.chatId}/messages`
+      ));
       await page.getByRole('button', {
         name: new RegExp(`^Conversation with ${SYNTHETIC.displayName},`),
       }).click();
+      const primaryPageResponse = await primaryPageResponsePromise;
+      expect(primaryPageResponse.status()).toBe(200);
+      const primaryPage = await primaryPageResponse.json();
+      expect(primaryPage.items.map((item) => item.message_id)).toEqual(
+        SYNTHETIC.historyMessageIds,
+      );
       await expect(page.getByRole('article')).toHaveCount(3);
+      await expect(page.getByRole('button', { name: 'No earlier stored messages' })).toBeVisible();
       const primaryMessageRows = await page.getByRole('article').count();
 
-      await page.getByRole('button', {
-        name: new RegExp(`^Conversation with Fan ${SYNTHETIC.messageOnlyPeerId},`),
-      }).click();
+      const messageOnlyRow = conversationRows.filter({
+        hasText: SYNTHETIC.messageOnlyText,
+      });
+      await expect(messageOnlyRow).toHaveCount(1);
+      await messageOnlyRow.click();
       await expect(page.getByRole('article')).toHaveCount(1);
       const messageOnlyRows = await page.getByRole('article').count();
       expect(primaryMessageRows + messageOnlyRows).toBe(4);
@@ -284,11 +402,13 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
           && candidate.outbox?.lastSourceSeq === 8
           && candidate.outbox?.acknowledgedSourceSeq === 6
           && candidate.outbox?.pendingEntries === 2
-          && candidate.outbox?.pendingSequences.join(',') === '7,8'
         ),
         'The offline message-only peer did not remain as pending parent/message sequences 7-8.',
       );
-      pendingEventIds = [...pending.outbox.pendingEventIds];
+      const outboxProof = await extensionOutboxProof(worker);
+      expect(outboxProof.sequences).toEqual([7, 8]);
+      expect(outboxProof.changeTypes).toEqual(['chat.upsert', 'message.upsert']);
+      pendingEventIds = outboxProof.eventIds;
       expect(pendingEventIds).toHaveLength(2);
       expect(new Set(pendingEventIds).size).toBe(2);
       expectNoDrops(pending);
@@ -329,7 +449,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(recovered.heartbeatTimerPresent).toBe(true);
       expect(recovered.workerInstanceId).not.toBe(oldWorkerInstanceId);
 
-      const proof = await readSqliteProof(databasePath);
+      const proof = await readSqliteProof(databasePaths);
       expect(proof.committedSourceSeq).toBe(8);
       expect(proof.eventCount).toBe(8);
       expect(proof.eventSequences).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
@@ -337,8 +457,35 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(proof.eventChangeTypes.slice(6)).toEqual(['chat.upsert', 'message.upsert']);
       expect(proof.canonicalChatCount).toBe(3);
       expect(proof.canonicalMessageCount).toBe(5);
+      expect(proof.readModelChatCount).toBe(3);
+      expect(proof.readModelMessageCount).toBe(5);
+      expect(proof.messageAnalysisCount).toBe(5);
+      expect(proof.lpgNodeCount).toBe(8);
+      expect(proof.lpgEdgeCount).toBe(5);
+      expect([2, 3]).toContain(proof.inactiveReadModelChatCount);
+      expect(proof.inactiveReadModelMessageCount).toBe(4);
+      expect(proof.inactiveMessageAnalysisCount).toBe(4);
+      expect(proof.inactiveLpgNodeCount).toBe(
+        proof.inactiveReadModelChatCount + proof.inactiveReadModelMessageCount,
+      );
+      expect(proof.inactiveLpgEdgeCount).toBe(4);
+      expect(proof.inactiveReadModelMessageCount).toBeLessThan(proof.readModelMessageCount);
+      expect(proof.projectionSlotCount).toBe(2);
+      expect(proof.maximumProjectionSlotsPerAccount).toBe(2);
+      expect(proof.projectionSlotCountsByAccount).toEqual([
+        { creatorAccountId: 'dev-creator-account', slotCount: 2 },
+      ]);
+      expect(proof.activeProjectionSlots).toHaveLength(1);
+      expect(proof.inactiveProjectionSlots).toHaveLength(1);
+      expect(proof.activeProjectionSlots[0].projectionSlot)
+        .not.toBe(proof.inactiveProjectionSlots[0].projectionSlot);
+      expect(proof.activeProjectionSlots[0].generationId)
+        .not.toBe(proof.inactiveProjectionSlots[0].generationId);
+      expect(proof.activeProjectionSlots[0].readRevision)
+        .toBeGreaterThan(proof.inactiveProjectionSlots[0].readRevision);
+      expect(proof.projectionReadRevision).toBe(proof.viewRevision);
 
-      await waitForBrain(
+      const replayed = await waitForBrain(
         (candidate) => (
           candidate.agentStatus === 'connected'
           && candidate.connectionToken !== initialConnection
@@ -347,6 +494,11 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         ),
         'Brain did not bind the replacement worker and expose the replayed offline peer.',
       );
+      expect(replayed.conversationCount).toBe(proof.readModelChatCount);
+      expect(replayed.messageCount).toBe(proof.readModelMessageCount);
+      await expect(
+        bridgePage.locator('[aria-label="Conversation list"] [role="button"]'),
+      ).toHaveCount(proof.readModelChatCount);
       expect(await platformPage.evaluate(() => globalThis.fixtureDocumentToken))
         .toBe(platformDocumentToken);
     });
@@ -354,7 +506,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     let acknowledgedProof;
     let acknowledgedBrain;
     await test.step('terminate a second worker and prove acknowledged events never replay', async () => {
-      acknowledgedProof = await readSqliteProof(databasePath);
+      acknowledgedProof = await readSqliteProof(databasePaths);
       acknowledgedBrain = await readBrainSummary();
       const oldWorker = worker;
       const oldWorkerInstanceId = (await extensionState(oldWorker)).workerInstanceId;
@@ -393,7 +545,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         'Brain did not bind a distinct second replacement connection.',
       );
       await sleep(2_000);
-      expectStableCanonicalProof(await readSqliteProof(databasePath), acknowledgedProof);
+      expectStablePersistenceProof(await readSqliteProof(databasePaths), acknowledgedProof);
       expect((await readBrainSummary()).viewRevision).toBe(acknowledgedBrain.viewRevision);
       expect(rebound.viewRevision).toBe(acknowledgedBrain.viewRevision);
       expect(await platformPage.evaluate(() => globalThis.fixtureDocumentToken))
@@ -457,11 +609,26 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         'Brain did not observe alarm-driven Agent recovery.',
       );
       expect(recovered.connectionToken).not.toBe(before.connectionToken);
-      expectStableCanonicalProof(await readSqliteProof(databasePath), acknowledgedProof);
+      expectStablePersistenceProof(await readSqliteProof(databasePaths), acknowledgedProof);
       expect(recovered.viewRevision).toBe(acknowledgedBrain.viewRevision);
       expect(await platformPage.evaluate(() => globalThis.fixtureDocumentToken))
         .toBe(platformDocumentToken);
-      await expect(bridgePage.getByText('Live', { exact: true })).toBeVisible({ timeout: 30_000 });
+      await expect(bridgePage.getByRole('heading', { name: 'Inbox' }))
+        .toBeVisible({ timeout: 30_000 });
+      try {
+        await expect(bridgePage.getByRole('article')).toHaveCount(1, { timeout: 30_000 });
+      } catch (error) {
+        const ui = {
+          loading: await bridgePage.getByText('Loading messages…', { exact: true }).count(),
+          unavailable: await bridgePage.getByText('Message history is unavailable.', { exact: true }).count(),
+          noStored: await bridgePage.getByText('No stored messages yet', { exact: true }).count(),
+          tryAgain: await bridgePage.getByRole('button', { name: 'Try again' }).count(),
+        };
+        throw new Error(
+          `${error.message}\nFinal Inbox state: ${JSON.stringify(ui)}`
+          + `\nMessage-page traffic: ${JSON.stringify(bridgeMessageTraffic)}`,
+        );
+      }
     });
 
     await test.step('enforce the synthetic safety and no-reload boundary', async () => {
@@ -479,7 +646,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     });
   } finally {
     await context?.close().catch(() => undefined);
-    await brain.stop().catch(() => undefined);
+    await brain?.stop().catch(() => undefined);
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 });

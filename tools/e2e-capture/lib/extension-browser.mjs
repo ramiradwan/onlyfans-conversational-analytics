@@ -1,7 +1,8 @@
 import { chromium } from '@playwright/test';
 
-import { EXTENSION_ROOT } from './paths.mjs';
-import { RECONCILE_ALARM_NAME } from '../../../extension/transport/chrome-adapter.mjs';
+import { EXTENSION_DIST } from './paths.mjs';
+
+const RECONCILE_ALARM_NAME = 'ofca-agent-reconcile';
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -13,8 +14,9 @@ export async function launchExtensionBrowser(userDataDir) {
     viewport: { width: 1280, height: 800 },
     serviceWorkers: 'allow',
     args: [
-      `--disable-extensions-except=${EXTENSION_ROOT}`,
-      `--load-extension=${EXTENSION_ROOT}`,
+      `--disable-extensions-except=${EXTENSION_DIST}`,
+      `--load-extension=${EXTENSION_DIST}`,
+      '--host-resolver-rules=MAP bridge.localhost 127.0.0.1',
       '--disable-background-networking',
       '--disable-component-update',
       '--disable-default-apps',
@@ -23,6 +25,84 @@ export async function launchExtensionBrowser(userDataDir) {
       '--no-default-browser-check',
       '--no-first-run',
     ],
+  });
+}
+
+export function extensionId(worker) {
+  const id = new URL(worker.url()).hostname;
+  if (!/^[a-p]{32}$/.test(id)) {
+    throw new Error(`Chromium returned an invalid unpacked extension ID: ${id}`);
+  }
+  return id;
+}
+
+export async function bindAgentFromBridgePage(
+  page,
+  { extensionId: targetExtensionId, creatorAccountId, authTicket },
+) {
+  return page.evaluate(
+    ({ extensionId: id, creatorAccountId: account, authTicket: ticket }) => (
+      new Promise((resolve, reject) => {
+        if (typeof globalThis.chrome?.runtime?.sendMessage !== 'function') {
+          reject(new Error('Chrome external messaging is unavailable at the Bridge origin.'));
+          return;
+        }
+        chrome.runtime.sendMessage(id, {
+          type: 'ofca.agent.bind',
+          protocol_version: '2',
+          creator_account_id: account,
+          auth_ticket: ticket,
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          if (response?.ok !== true) {
+            reject(new Error(`Agent rejected pairing: ${response?.code ?? 'unknown'}`));
+            return;
+          }
+          resolve(response);
+        });
+      })
+    ),
+    {
+      extensionId: targetExtensionId,
+      creatorAccountId,
+      authTicket,
+    },
+  );
+}
+
+export async function extensionOutboxProof(worker) {
+  return worker.evaluate(async () => {
+    const databases = await indexedDB.databases();
+    const matches = databases.filter(({ name }) => (
+      typeof name === 'string' && name.startsWith('onlyfans-agent-account-v2-')
+    ));
+    if (matches.length !== 1) {
+      throw new Error(`Expected one account-partitioned Agent database, found ${matches.length}.`);
+    }
+    const database = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(matches[0].name);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error ?? new Error('Unable to open Agent IndexedDB.'));
+    });
+    try {
+      const rows = await new Promise((resolve, reject) => {
+        const request = database.transaction(['outbox'], 'readonly')
+          .objectStore('outbox')
+          .getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('Unable to read Agent outbox.'));
+      });
+      return {
+        eventIds: rows.map((row) => row.event_id),
+        sequences: rows.map((row) => row.source_seq),
+        changeTypes: rows.map((row) => row.change?.type ?? null),
+      };
+    } finally {
+      database.close();
+    }
   });
 }
 

@@ -1,5 +1,6 @@
 const PLATFORM_ORIGIN = 'https://onlyfans.com';
 const PLATFORM_SOCKET = 'wss://ws2.onlyfans.com/ws3/';
+const BRAIN_ORIGIN = 'http://bridge.localhost:17871';
 
 export const SYNTHETIC = Object.freeze({
   creatorId: 'fixture-creator',
@@ -99,10 +100,7 @@ export class SyntheticPlatform {
     await context.route('**/*', async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      if (
-        (url.origin === 'http://localhost:8000' || url.origin === 'http://127.0.0.1:8000')
-        && request.method() === 'GET'
-      ) {
+      if (url.origin === BRAIN_ORIGIN) {
         await route.continue();
         return;
       }
