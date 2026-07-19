@@ -163,7 +163,7 @@ class CommandService:
         self._validate_deadline(deadline)
         if idempotency_policy != "deduplicate":
             raise ValueError(
-                "Protocol v1 commands require command_id deduplication"
+                "Commands require command_id deduplication"
             )
         identifier = command_id or uuid4()
         if self.repository.get(identifier) is not None:

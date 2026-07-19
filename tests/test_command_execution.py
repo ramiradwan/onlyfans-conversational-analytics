@@ -49,7 +49,7 @@ async def bind_agent(
         creator_account_id=DEV_ACCOUNT_ID,
         agent_installation_id=uuid4(),
         agent_stream_id=uuid4(),
-        applied_config_revision="config-7",
+        applied_config_revision="config-8",
         now=now,
     )
 
@@ -67,7 +67,7 @@ def result_message(lease, command_id, *, status: str = "succeeded"):
     )
     document = {
         "type": "command.result",
-        "protocol_version": "1",
+        "protocol_version": "2",
         "message_id": str(uuid4()),
         "payload": {
             "connection_id": str(lease.connection_id),

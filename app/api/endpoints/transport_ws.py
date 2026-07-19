@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -12,6 +13,7 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     Response,
     WebSocket,
     WebSocketDisconnect,
@@ -24,7 +26,9 @@ from app.protocol import (
     BRIDGE_TO_BRAIN_ADAPTER,
     AgentConfigDocumentResponse,
     AgentConfigGetRequest,
+    MAX_SNAPSHOT_FRAME_BYTES,
 )
+from app.persistence.history import InvariantViolation
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
     HEARTBEAT_INTERVAL_SECONDS,
@@ -90,8 +94,8 @@ def _classify_validation_error(
     if document is None:
         return "validation_failed", None, "Frame is not a JSON object"
     message_id = _safe_uuid(document.get("message_id"))
-    if document.get("protocol_version") != "1":
-        return "unsupported_version", message_id, "Only protocol version 1 is supported"
+    if document.get("protocol_version") != "2":
+        return "unsupported_version", message_id, "Only protocol version 2 is supported"
     message_type = document.get("type")
     allowed = AGENT_TYPES if role == "agent" else BRIDGE_TYPES
     other = BRIDGE_TYPES if role == "agent" else AGENT_TYPES
@@ -99,7 +103,7 @@ def _classify_validation_error(
         return "wrong_role", message_id, f"{message_type!s} is not allowed on the {role} endpoint"
     if message_type not in allowed:
         return "validation_failed", message_id, "Unknown or malformed message discriminator"
-    return "validation_failed", message_id, "Message failed protocol v1 validation"
+    return "validation_failed", message_id, "Message failed protocol v2 validation"
 
 
 async def _protocol_error(
@@ -134,7 +138,7 @@ async def _invalid_ingest(
     document: dict[str, Any],
     *,
     code: str = "invalid_payload",
-    detail: str = "Ingest message failed protocol v1 validation",
+    detail: str = "Ingest message failed protocol v2 validation",
     retryable: bool = False,
 ) -> bool:
     message_id = _safe_uuid(document.get("message_id"))
@@ -235,11 +239,23 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
         return True
 
     if message.type in {"ingest.snapshot", "ingest.delta"}:
-        key = transport_manager.stream_key(lease)
-        if message.type == "ingest.snapshot":
-            outcome = await transport_manager.ingestion.ingest_snapshot(key, message.payload)
-        else:
-            outcome = await transport_manager.ingestion.ingest_delta(key, message.payload)
+        try:
+            if message.type == "ingest.snapshot":
+                outcome = transport_manager.ingest_snapshot(lease, message.payload)
+            else:
+                outcome = transport_manager.ingest_delta(lease, message.payload)
+        except (InvariantViolation, sqlite3.IntegrityError, ValueError) as error:
+            await _invalid_ingest(
+                websocket,
+                lease,
+                {
+                    "message_id": str(message.message_id),
+                    "payload": message.payload.model_dump(mode="json"),
+                },
+                code="invariant_failed",
+                detail=str(error) or "Canonical ingestion invariant failed",
+            )
+            return True
 
         if outcome.status in {"gap", "rejected"}:
             await _invalid_ingest(
@@ -255,6 +271,13 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
             )
             return True
 
+        snapshot_progress = None
+        if message.type == "ingest.snapshot":
+            snapshot_progress = {
+                "snapshot_id": str(message.payload.snapshot_id),
+                "next_expected_chunk_index": outcome.next_expected_chunk_index or 0,
+                "committed": outcome.snapshot_committed,
+            }
         await transport_manager.send_agent(
             websocket,
             "ingest.ack",
@@ -266,13 +289,12 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
                     str(outcome.snapshot_id) if outcome.snapshot_id is not None else None
                 ),
                 "committed_source_seq": outcome.committed_source_seq,
+                "snapshot_progress": snapshot_progress,
             },
             correlation_id=message.message_id,
         )
-        if outcome.state_delta is not None:
-            await transport_manager.broadcast_state_delta(
-                lease.creator_account_id, outcome.state_delta
-            )
+        if outcome.canonical_revision is not None:
+            transport_manager.schedule_projection(lease.creator_account_id)
         return True
 
     if message.type == "config.applied":
@@ -327,8 +349,12 @@ async def _agent_socket(websocket: WebSocket) -> None:
             )
             return
         try:
-            principal_id, account_id = transport_manager.authenticate(
-                hello.payload.auth_ticket, hello.payload.requested_creator_account_id
+            principal_id, account_id, reconnect_auth_ticket, config_auth_ticket = (
+                transport_manager.authenticate_agent_handshake(
+                hello.payload.auth_ticket,
+                hello.payload.requested_creator_account_id,
+                hello.payload.agent_installation_id,
+                )
             )
         except AuthenticationError as error:
             await _protocol_error(
@@ -346,10 +372,18 @@ async def _agent_socket(websocket: WebSocket) -> None:
             creator_account_id=account_id,
             agent_installation_id=hello.payload.agent_installation_id,
             agent_stream_id=hello.payload.agent_stream_id,
+            config_auth_ticket=config_auth_ticket,
             applied_config_revision=hello.payload.applied_config_revision,
         )
         checkpoint = transport_manager.checkpoint_for(lease)
-        resume_action = "resume" if checkpoint is not None else "snapshot_required"
+        pending_snapshot = transport_manager.pending_snapshot_for(lease)
+        resume_action = (
+            "resume"
+            if checkpoint is not None
+            and pending_snapshot is None
+            and hello.payload.last_acknowledged_source_seq <= checkpoint
+            else "snapshot_required"
+        )
         required_config = transport_manager.required_config_document(account_id)
         await transport_manager.send_agent(
             websocket,
@@ -362,7 +396,15 @@ async def _agent_socket(websocket: WebSocket) -> None:
                 "agent_stream_id": str(lease.agent_stream_id),
                 "committed_source_seq": checkpoint or 0,
                 "resume_action": resume_action,
+                "pending_snapshot_id": (
+                    None if pending_snapshot is None else str(pending_snapshot[0])
+                ),
+                "next_expected_chunk_index": (
+                    0 if pending_snapshot is None else pending_snapshot[1]
+                ),
                 "required_config_revision": required_config.config_revision,
+                "reconnect_auth_ticket": reconnect_auth_ticket,
+                "config_auth_ticket": lease.config_auth_ticket,
                 "lease": {
                     "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_SECONDS,
                     "lease_timeout_seconds": LEASE_TIMEOUT_SECONDS,
@@ -378,21 +420,48 @@ async def _agent_socket(websocket: WebSocket) -> None:
                 {
                     "connection_id": str(lease.connection_id),
                     "creator_account_id": account_id,
-                    "reason": "missing_checkpoint",
+                    "reason": (
+                        "missing_checkpoint"
+                        if checkpoint is None
+                        else "local_reset"
+                    ),
                     "expected_agent_stream_id": str(lease.agent_stream_id),
                     "expected_next_source_seq": (checkpoint or 0) + 1,
+                    "pending_snapshot_id": (
+                        None if pending_snapshot is None else str(pending_snapshot[0])
+                    ),
+                    "next_expected_chunk_index": (
+                        0 if pending_snapshot is None else pending_snapshot[1]
+                    ),
                     "snapshot": {
                         "include_chats": True,
                         "include_messages": True,
+                        "include_coverage_evidence": True,
+                        "max_records_per_chunk": 100,
+                        "max_frame_bytes": MAX_SNAPSHOT_FRAME_BYTES,
                     },
                 },
             )
         while True:
             raw = await websocket.receive_text()
+            raw_document = _safe_document(raw)
+            if (
+                raw_document is not None
+                and raw_document.get("type") == "ingest.snapshot"
+                and len(raw.encode("utf-8")) > MAX_SNAPSHOT_FRAME_BYTES
+            ):
+                if await _invalid_ingest(
+                    websocket,
+                    lease,
+                    raw_document,
+                    code="frame_too_large",
+                    detail="Snapshot frame exceeds the 512 KiB protocol limit",
+                ):
+                    continue
             try:
                 message = AGENT_TO_BRAIN_ADAPTER.validate_json(raw)
             except ValidationError:
-                document = _safe_document(raw)
+                document = raw_document
                 if (
                     document is not None
                     and document.get("type") in {"ingest.snapshot", "ingest.delta"}
@@ -460,7 +529,10 @@ async def _bridge_socket(websocket: WebSocket) -> None:
             return
         try:
             principal_id, account_id = transport_manager.authenticate(
-                hello.payload.auth_ticket, hello.payload.requested_creator_account_id
+                hello.payload.auth_ticket,
+                hello.payload.requested_creator_account_id,
+                role="bridge",
+                bridge_session_id=hello.payload.bridge_session_id,
             )
         except AuthenticationError as error:
             await _protocol_error(
@@ -485,7 +557,7 @@ async def _bridge_socket(websocket: WebSocket) -> None:
                 "connection_id": str(binding.connection_id),
                 "bridge_session_id": str(binding.bridge_session_id),
                 "creator_account_id": account_id,
-                "negotiated_protocol_version": "1",
+                "negotiated_protocol_version": "2",
                 "server_version": settings.version,
             },
             correlation_id=hello.message_id,
@@ -541,7 +613,7 @@ async def _bridge_socket(websocket: WebSocket) -> None:
                     fatal=True,
                 )
                 return
-            # Protocol v1 uses a full snapshot for resynchronization.
+            # Projection activation and resynchronization use bounded v2 snapshots.
             await transport_manager.send_bridge(
                 websocket,
                 "state.snapshot",
@@ -567,19 +639,25 @@ async def bridge_websocket(websocket: WebSocket) -> None:
 
 @router.get("/api/v1/agent/config", response_model=AgentConfigDocumentResponse)
 async def get_agent_config(
+    request: Request,
     response: Response,
-    protocol_version: str = Query("1"),
-    auth_ticket: str | None = Query(None),
+    protocol_version: str = Query("2"),
     agent_installation_id: UUID = Query(...),
     creator_account_id: str = Query(...),
     current_etag: str | None = Query(None),
     current_config_revision: str | None = Query(None),
-    supported_config_schema_versions: list[str] = Query(["1"]),
+    supported_config_schema_versions: list[str] = Query(["2"]),
+    authorization: str | None = Header(None, alias="Authorization"),
     if_none_match: str | None = Header(None, alias="If-None-Match"),
 ) -> AgentConfigDocumentResponse | Response:
     """Return the authenticated immutable configuration required for this Agent."""
-    if auth_ticket is None:
+    if "auth_ticket" in request.query_params:
+        raise HTTPException(status_code=400, detail="Authentication ticket must not appear in the URL")
+    if authorization is None:
         raise HTTPException(status_code=401, detail="Authentication ticket is required")
+    scheme, separator, auth_ticket = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer" or not auth_ticket:
+        raise HTTPException(status_code=401, detail="Bearer authentication ticket is required")
     try:
         request_model = AgentConfigGetRequest.model_validate(
             {
@@ -597,7 +675,9 @@ async def get_agent_config(
         raise HTTPException(status_code=400, detail=str(error)) from error
     try:
         transport_manager.authenticate_agent_config(
-            request_model.auth_ticket, request_model.creator_account_id
+            request_model.auth_ticket,
+            request_model.creator_account_id,
+            request_model.agent_installation_id,
         )
     except AuthenticationError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error

@@ -11,24 +11,13 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 from uuid import UUID
 
+from app.core.config import settings
 from app.protocol import AgentConfigDocumentResponse
 
 
-BOOTSTRAP_ACCOUNT_ID = "dev-creator-account"
-LEGACY_BOOTSTRAP_CONFIG_REVISION = "config-7"
+DEVELOPMENT_BOOTSTRAP_ACCOUNT_ID = "dev-creator-account"
 BOOTSTRAP_CONFIG_REVISION = "config-8"
-LEGACY_BOOTSTRAP_ISSUED_AT = datetime(2026, 7, 18, 10, 0, tzinfo=timezone.utc)
 BOOTSTRAP_ISSUED_AT = datetime(2026, 7, 18, 10, 1, tzinfo=timezone.utc)
-LEGACY_BOOTSTRAP_CAPTURE_POLICY = {
-    "observation_interval_seconds": 30,
-    "rules": [
-        {
-            "resource": "messages",
-            "url_pattern": "/api2/v2/chats/*/messages",
-            "enabled": True,
-        }
-    ],
-}
 BOOTSTRAP_CAPTURE_POLICY = {
     "observation_interval_seconds": 30,
     "rules": [
@@ -58,6 +47,16 @@ BOOTSTRAP_COMMAND_POLICY = {
     "allowed_actions": ["message.send"],
     "max_text_length": 1000,
     "require_idempotency": True,
+}
+BOOTSTRAP_HISTORY_ACQUISITION_POLICY = {
+    "enabled": False,
+    "consent_revision": None,
+    "authorized_platform_creator_id": None,
+    "recent_window_days": 30,
+    "page_size": 100,
+    "pages_per_wake": 2,
+    "request_interval_ms": 500,
+    "retry_limit": 3,
 }
 
 
@@ -109,12 +108,13 @@ def build_config_document(
     issued_at: datetime,
     capture_policy: dict[str, Any],
     command_policy: dict[str, Any],
-    config_schema_version: str = "1",
+    history_acquisition: dict[str, Any] | None = None,
+    config_schema_version: str = "2",
 ) -> AgentConfigDocumentResponse:
     """Normalize a document once, then seal it with its content digest."""
     draft = {
         "operation": "agent.config.document",
-        "protocol_version": "1",
+        "protocol_version": "2",
         "creator_account_id": creator_account_id,
         "config_revision": config_revision,
         "config_schema_version": config_schema_version,
@@ -123,6 +123,7 @@ def build_config_document(
         "issued_at": issued_at,
         "capture_policy": capture_policy,
         "command_policy": command_policy,
+        "history_acquisition": history_acquisition or BOOTSTRAP_HISTORY_ACQUISITION_POLICY,
     }
     normalized = AgentConfigDocumentResponse.model_validate(draft)
     draft["digest"] = config_document_digest(normalized)
@@ -259,37 +260,41 @@ class InMemoryAgentConfigRepository(AgentConfigRepository):
 class AgentConfigurationAuthority:
     """Own immutable documents and required-versus-applied installation state."""
 
-    def __init__(self, repository: AgentConfigRepository) -> None:
+    def __init__(
+        self,
+        repository: AgentConfigRepository,
+        *,
+        bootstrap_account_id: str | None = None,
+    ) -> None:
         self.repository = repository
         self._publish_lock = asyncio.Lock()
+        if bootstrap_account_id is not None:
+            self.bootstrap_account_id = bootstrap_account_id
+        elif settings.websocket_auth_mode == "local_session":
+            if not settings.local_creator_account_id:
+                raise RuntimeError("Local session account binding is not configured")
+            self.bootstrap_account_id = settings.local_creator_account_id
+        elif (
+            settings.environment.lower() in {"development", "dev", "local", "test"}
+            and settings.websocket_auth_mode == "development_stub"
+        ):
+            self.bootstrap_account_id = DEVELOPMENT_BOOTSTRAP_ACCOUNT_ID
+        else:
+            raise RuntimeError("No exact account is authorized for Agent configuration")
         self.bootstrap()
 
     def bootstrap(self) -> None:
-        legacy = build_config_document(
-            creator_account_id=BOOTSTRAP_ACCOUNT_ID,
-            config_revision=LEGACY_BOOTSTRAP_CONFIG_REVISION,
-            issued_at=LEGACY_BOOTSTRAP_ISSUED_AT,
-            capture_policy=LEGACY_BOOTSTRAP_CAPTURE_POLICY,
-            command_policy=BOOTSTRAP_COMMAND_POLICY,
-        )
         current = build_config_document(
-            creator_account_id=BOOTSTRAP_ACCOUNT_ID,
+            creator_account_id=self.bootstrap_account_id,
             config_revision=BOOTSTRAP_CONFIG_REVISION,
             issued_at=BOOTSTRAP_ISSUED_AT,
             capture_policy=BOOTSTRAP_CAPTURE_POLICY,
             command_policy=BOOTSTRAP_COMMAND_POLICY,
+            history_acquisition=BOOTSTRAP_HISTORY_ACQUISITION_POLICY,
         )
-
-        existing_legacy = self.repository.document(
-            BOOTSTRAP_ACCOUNT_ID, LEGACY_BOOTSTRAP_CONFIG_REVISION
-        )
-        if existing_legacy is None:
-            self.repository.add_document(legacy)
-        elif existing_legacy.digest != legacy.digest:
-            raise RuntimeError("Persisted bootstrap configuration content has changed")
 
         existing_current = self.repository.document(
-            BOOTSTRAP_ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION
+            self.bootstrap_account_id, BOOTSTRAP_CONFIG_REVISION
         )
         if existing_current is None:
             publish_document = getattr(self.repository, "publish_document", None)
@@ -301,14 +306,14 @@ class AgentConfigurationAuthority:
             raise RuntimeError("Persisted bootstrap configuration content has changed")
 
         try:
-            required = self.repository.required_document(BOOTSTRAP_ACCOUNT_ID)
+            required = self.repository.required_document(self.bootstrap_account_id)
         except LookupError:
             required = None
         if required is None or _config_revision_sequence(
             required.config_revision
         ) < _config_revision_sequence(BOOTSTRAP_CONFIG_REVISION):
             self.repository.require_for_account(
-                BOOTSTRAP_ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION
+                self.bootstrap_account_id, BOOTSTRAP_CONFIG_REVISION
             )
 
     def reset(self) -> None:
@@ -324,6 +329,7 @@ class AgentConfigurationAuthority:
         *,
         capture_policy: dict[str, Any],
         command_policy: dict[str, Any],
+        history_acquisition: dict[str, Any] | None = None,
         issued_at: datetime | None = None,
     ) -> AgentConfigDocumentResponse:
         _ensure_dependency_closed_capture_policy(capture_policy)
@@ -334,6 +340,9 @@ class AgentConfigurationAuthority:
                 issued_at=issued_at or datetime.now(timezone.utc),
                 capture_policy=capture_policy,
                 command_policy=command_policy,
+                history_acquisition=(
+                    history_acquisition or BOOTSTRAP_HISTORY_ACQUISITION_POLICY
+                ),
             )
             publish_document = getattr(self.repository, "publish_document", None)
             if callable(publish_document):
@@ -391,6 +400,14 @@ class AgentConfigurationAuthority:
                     f"Agent reported unknown configuration {applied_config_revision}"
                 ),
             )
+        if (
+            record.applied_config_revision is not None
+            and _config_revision_sequence(applied_config_revision)
+            < _config_revision_sequence(record.applied_config_revision)
+        ):
+            # Heartbeats can arrive after a newer exact acknowledgement. They
+            # describe an old frame, not a rollback of effective settings.
+            return record
         return replace(
             record,
             applied_config_revision=applied_config_revision,
@@ -419,6 +436,15 @@ class AgentConfigurationAuthority:
             record = replace(
                 record, last_failure="Agent reported an unknown revision or digest"
             )
+        elif (
+            outcome == "applied"
+            and record.applied_config_revision is not None
+            and _config_revision_sequence(config_revision)
+            < _config_revision_sequence(record.applied_config_revision)
+        ):
+            # A late acknowledgement is harmless and must never regress the
+            # installation/effective history revision.
+            pass
         elif outcome == "applied":
             record = replace(
                 record,

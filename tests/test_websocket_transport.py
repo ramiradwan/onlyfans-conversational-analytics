@@ -13,7 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.core.config import Settings, settings
 from app.main import app
-from app.transport import DEV_ACCOUNT_ID, DEV_AUTH_TICKET, transport_manager
+from app.transport import DEV_ACCOUNT_ID, DEV_AGENT_AUTH_TICKET, transport_manager
 from app.transport.manager import (
     HEARTBEAT_INTERVAL_SECONDS,
     LEASE_EXPIRED_CLOSE_CODE,
@@ -25,7 +25,7 @@ from app.transport.manager import (
 )
 
 
-FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v1"
+FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 
 
 def fixture(name: str) -> dict:
@@ -81,6 +81,89 @@ def bind_agent_payload(message: dict, session: dict, hello: dict) -> dict:
     return message
 
 
+def commit_fixture_snapshot(socket, session: dict, hello: dict) -> tuple[dict, dict]:
+    begin = bind_agent_payload(fixture("ingest.snapshot"), session, hello)
+    begin["payload"].update(
+        chunk_count=2,
+        record_counts={"chats": 1, "messages": 1, "coverage_evidence": 0},
+    )
+    socket.send_json(begin)
+    assert socket.receive_json()["type"] == "ingest.ack"
+    identity = {
+        name: begin["payload"][name]
+        for name in (
+            "connection_id",
+            "fencing_token",
+            "creator_account_id",
+            "agent_installation_id",
+            "agent_stream_id",
+            "snapshot_id",
+        )
+    }
+    frames = [
+        {
+            "type": "ingest.snapshot",
+            "protocol_version": "2",
+            "message_id": str(uuid4()),
+            "payload": {
+                **identity,
+                "frame_kind": "chunk",
+                "chunk_index": 0,
+                "entity_kind": "chat",
+                "records": [
+                    {
+                        "tombstone": False,
+                        "chat": {
+                            "record_kind": "full",
+                            "chat_id": "chat-1",
+                            "platform_user_id": "fan-1",
+                            "display_name": "Fan One",
+                            "updated_at": "2026-07-19T10:00:00Z",
+                        },
+                    }
+                ],
+            },
+        },
+        {
+            "type": "ingest.snapshot",
+            "protocol_version": "2",
+            "message_id": str(uuid4()),
+            "payload": {
+                **identity,
+                "frame_kind": "chunk",
+                "chunk_index": 1,
+                "entity_kind": "message",
+                "records": [
+                    {
+                        "tombstone": False,
+                        "message": {
+                            "message_id": "message-1",
+                            "chat_id": "chat-1",
+                            "sender_platform_user_id": "fan-1",
+                            "text": "Hello",
+                            "sent_at": "2026-07-19T10:00:00Z",
+                            "direction": "inbound",
+                        },
+                    }
+                ],
+            },
+        },
+    ]
+    for frame in frames:
+        socket.send_json(frame)
+        assert socket.receive_json()["type"] == "ingest.ack"
+    commit = {
+        "type": "ingest.snapshot",
+        "protocol_version": "2",
+        "message_id": str(uuid4()),
+        "payload": {**identity, "frame_kind": "commit", "chunk_count": 2},
+    }
+    socket.send_json(commit)
+    ack = socket.receive_json()
+    assert ack["type"] == "ingest.ack"
+    return commit, ack
+
+
 def test_agent_and_bridge_complete_role_specific_handshakes() -> None:
     client = TestClient(app)
     with client.websocket_connect("/ws/agent") as agent:
@@ -100,7 +183,7 @@ def test_agent_and_bridge_complete_role_specific_handshakes() -> None:
         assert initial[0]["payload"]["conversations"] == []
         assert initial[1]["payload"]["freshness"] == "unknown"
         assert initial[2]["payload"]["status"] == "disconnected"
-        assert initial[3]["payload"]["readiness"] == "ready"
+        assert initial[3]["payload"]["readiness"] == "unavailable"
 
 
 def test_agent_drop_reconnects_with_new_connection_and_fence() -> None:
@@ -131,10 +214,7 @@ def test_valid_fixture_exchange_routes_ack_and_presence_end_to_end() -> None:
             assert connected["type"] == "agent.state"
             assert connected["payload"]["status"] == "connected"
 
-            snapshot = bind_agent_payload(fixture("ingest.snapshot"), session, hello)
-            agent.send_json(snapshot)
-            snapshot_ack = agent.receive_json()
-            assert snapshot_ack["type"] == "ingest.ack"
+            snapshot, snapshot_ack = commit_fixture_snapshot(agent, session, hello)
             assert snapshot_ack["correlation_id"] == snapshot["message_id"]
             assert snapshot_ack["payload"]["snapshot_id"] == snapshot["payload"]["snapshot_id"]
 
@@ -148,6 +228,9 @@ def test_valid_fixture_exchange_routes_ack_and_presence_end_to_end() -> None:
             observed["payload"]["observed_at"] = utc_now().isoformat()
             agent.send_json(observed)
             presence = bridge.receive_json()
+            while presence["type"] != "presence.state":
+                assert presence["type"] in {"state.snapshot", "state.delta"}
+                presence = bridge.receive_json()
             assert presence["type"] == "presence.state"
             assert presence["payload"]["freshness"] == "current"
             assert presence["payload"]["online_platform_user_ids"] == ["fan-1", "fan-2"]
@@ -171,7 +254,7 @@ def test_invalid_ingest_fixture_is_rejected_without_crashing_connection() -> Non
         heartbeat = bind_agent_payload(fixture("agent.heartbeat"), session, hello)
         agent.send_json(heartbeat)
         lease = transport_manager.active_agents[DEV_ACCOUNT_ID]
-        assert lease.applied_config_revision == "config-7"
+        assert lease.applied_config_revision == "config-8"
 
 
 @pytest.mark.parametrize(
@@ -428,12 +511,12 @@ def test_bridge_resync_returns_correlated_snapshot() -> None:
 def test_agent_config_transport_validates_stub_auth_and_etag() -> None:
     client = TestClient(app)
     params = {
-        "auth_ticket": DEV_AUTH_TICKET,
         "agent_installation_id": str(uuid4()),
         "creator_account_id": DEV_ACCOUNT_ID,
-        "supported_config_schema_versions": "1",
+        "supported_config_schema_versions": "2",
     }
-    response = client.get("/api/v1/agent/config", params=params)
+    auth = {"Authorization": f"Bearer {DEV_AGENT_AUTH_TICKET}"}
+    response = client.get("/api/v1/agent/config", params=params, headers=auth)
     assert response.status_code == 200
     assert response.json()["operation"] == "agent.config.document"
     assert response.headers["etag"] == REQUIRED_CONFIG_REVISION
@@ -441,11 +524,12 @@ def test_agent_config_transport_validates_stub_auth_and_etag() -> None:
     not_modified = client.get(
         "/api/v1/agent/config",
         params={**params, "current_etag": REQUIRED_CONFIG_REVISION},
+        headers=auth,
     )
     assert not_modified.status_code == 304
 
     unauthorized = client.get(
-        "/api/v1/agent/config", params={**params, "auth_ticket": "wrong"}
+        "/api/v1/agent/config", params=params, headers={"Authorization": "Bearer wrong"}
     )
     assert unauthorized.status_code == 401
 
@@ -455,7 +539,9 @@ def test_development_stub_fails_closed_for_production_or_non_local_exposure(monk
     with pytest.raises(RuntimeError):
         transport_manager.validate_auth_configuration()
     with pytest.raises(AuthenticationError):
-        transport_manager.authenticate(DEV_AUTH_TICKET, DEV_ACCOUNT_ID)
+        transport_manager.authenticate(
+            DEV_AGENT_AUTH_TICKET, DEV_ACCOUNT_ID, role="agent"
+        )
 
     monkeypatch.setattr(settings, "environment", "development")
     monkeypatch.setattr(settings, "websocket_bind_host", "0.0.0.0")

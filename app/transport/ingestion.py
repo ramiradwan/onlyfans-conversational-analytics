@@ -203,7 +203,7 @@ class IngestionService:
                 deepcopy(account.conversations[conversation_id])
                 for conversation_id in sorted(account.conversations)
             ],
-            # Protocol v1 requires this slice; this read model represents it
+            # The bounded state contract requires this slice; this read model represents it
             # with the canonical empty analytics value.
             "analytics": dict(ZERO_ANALYTICS),
         }

@@ -1,8 +1,7 @@
-"""Process-local broadcaster for legacy internal notifications.
+"""Process-local memory broadcaster for legacy internal notifications.
 
-The single-process runtime uses the broadcaster package's memory backend by
-default. An external adapter, such as Redis, must be selected explicitly with
-``BROADCAST_URL``.
+It is not an authoritative persistence or distribution boundary. The shipped
+single-process topology deliberately rejects external broker adapters.
 """
 
 from broadcaster import Broadcast

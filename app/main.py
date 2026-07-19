@@ -2,8 +2,8 @@
 Main entry point for the OnlyFans Conversational Analytics API.
 
 This FastAPI app exposes:
-- API routes for conversation ingestion and insights
-- WebSocket hub for extension, frontend, and other real-time services
+- authenticated protocol-v2 ingestion, settings, and message-page routes
+- Agent and Bridge WebSocket transports
 - Frontend React app (built with Vite) served via Jinja2 templates
 - Static assets (JS/CSS) from the Vite build
 """
@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.endpoints import frontend, insights, schema, transport_ws
+from app.api.endpoints import frontend, history, transport_ws
 from app.core.config import settings
 from app.core.broadcast import broadcast
 from app.transport import transport_manager
@@ -30,11 +30,15 @@ app = FastAPI(
 # CORS for frontend + extension
 # Loose in dev, configurable via settings/environment
 # -------------------------------------------------
-allowed_origins = [
-    "http://localhost:5173",     # Vite dev server
-    "http://127.0.0.1:5173",
-    "http://localhost:8000",     # FastAPI backend
-]
+allowed_origins = [settings.bridge_origin]
+if settings.websocket_auth_mode == "development_stub":
+    allowed_origins.extend(
+        [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:8000",
+        ]
+    )
 
 # Add extension origin if extension_id is set
 if settings.extension_id:
@@ -56,10 +60,8 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # -------------------------------------------------
 # Router Registration
 # -------------------------------------------------
-app.include_router(insights.router, prefix="/api/insights", tags=["Insights"])
 app.include_router(transport_ws.router, tags=["Transport"])
-app.include_router(schema.router)  # schemas endpoint
-app.include_router(frontend.router, tags=["Frontend"])  # serves / via Jinja template
+app.include_router(history.router)
 
 # -------------------------------------------------
 # Startup & Shutdown events — manage Broadcast lifecycle
@@ -86,3 +88,7 @@ async def health_check():
         "version": settings.version,
         "environment": settings.environment,
     }
+
+
+# Keep the SPA catch-all last so explicit health/API routes always win.
+app.include_router(frontend.router, tags=["Frontend"])

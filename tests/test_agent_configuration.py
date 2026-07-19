@@ -11,18 +11,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.services.agent_configuration import (
     BOOTSTRAP_CAPTURE_POLICY,
     BOOTSTRAP_CONFIG_REVISION,
-    LEGACY_BOOTSTRAP_CONFIG_REVISION,
     AgentConfigurationAuthority,
     InMemoryAgentConfigRepository,
     config_document_digest,
 )
-from app.transport import DEV_ACCOUNT_ID, DEV_AUTH_TICKET, transport_manager
+from app.transport import DEV_ACCOUNT_ID, DEV_AGENT_AUTH_TICKET, transport_manager
 
 
-FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v1"
+FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 
 
 def fixture(name: str) -> dict:
@@ -38,11 +38,16 @@ def reset_transport() -> None:
 
 def config_params(**overrides) -> dict[str, str]:
     values = {
-        "auth_ticket": DEV_AUTH_TICKET,
         "agent_installation_id": str(uuid4()),
         "creator_account_id": DEV_ACCOUNT_ID,
-        "supported_config_schema_versions": "1",
+        "supported_config_schema_versions": "2",
     }
+    values.update(overrides)
+    return values
+
+
+def config_headers(ticket: str = DEV_AGENT_AUTH_TICKET, **overrides: str) -> dict[str, str]:
+    values = {"Authorization": f"Bearer {ticket}"}
     values.update(overrides)
     return values
 
@@ -79,7 +84,9 @@ def bind_report(
 
 def test_authenticated_config_fetch_has_real_digest_and_conditional_etag() -> None:
     client = TestClient(app)
-    response = client.get("/api/v1/agent/config", params=config_params())
+    response = client.get(
+        "/api/v1/agent/config", params=config_params(), headers=config_headers()
+    )
     assert response.status_code == 200
     document = response.json()
     assert document["digest"] == config_document_digest(document)
@@ -88,7 +95,7 @@ def test_authenticated_config_fetch_has_real_digest_and_conditional_etag() -> No
     not_modified = client.get(
         "/api/v1/agent/config",
         params=config_params(),
-        headers={"If-None-Match": f'"{document["etag"]}"'},
+        headers=config_headers(**{"If-None-Match": f'"{document["etag"]}"'}),
     )
     assert not_modified.status_code == 304
     assert not_modified.content == b""
@@ -97,13 +104,12 @@ def test_authenticated_config_fetch_has_real_digest_and_conditional_etag() -> No
 
 def test_config_fetch_rejects_missing_invalid_and_unauthorized_stub_context() -> None:
     client = TestClient(app)
-    missing = config_params()
-    missing.pop("auth_ticket")
-    assert client.get("/api/v1/agent/config", params=missing).status_code == 401
+    assert client.get("/api/v1/agent/config", params=config_params()).status_code == 401
     assert (
         client.get(
             "/api/v1/agent/config",
-            params=config_params(auth_ticket="wrong"),
+            params=config_params(),
+            headers=config_headers("wrong"),
         ).status_code
         == 401
     )
@@ -111,8 +117,9 @@ def test_config_fetch_rejects_missing_invalid_and_unauthorized_stub_context() ->
         client.get(
             "/api/v1/agent/config",
             params=config_params(creator_account_id="another-account"),
+            headers=config_headers(),
         ).status_code
-        == 403
+        == 401
     )
 
 
@@ -152,16 +159,13 @@ def test_repository_seals_each_monotonic_revision_against_mutation() -> None:
         repository.add_document(stored)
 
 
-def test_bootstrap_retains_config_7_and_requires_dependency_closed_config_8() -> None:
+def test_bootstrap_requires_dependency_closed_config_8() -> None:
     repository = InMemoryAgentConfigRepository()
     authority = AgentConfigurationAuthority(repository)
 
-    legacy = repository.document(DEV_ACCOUNT_ID, LEGACY_BOOTSTRAP_CONFIG_REVISION)
     current = repository.document(DEV_ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION)
-    assert legacy is not None
     assert current is not None
     assert authority.required_document(DEV_ACCOUNT_ID).config_revision == "config-8"
-    assert [rule.resource for rule in legacy.capture_policy.rules] == ["messages"]
     assert current.capture_policy.model_dump(mode="json") == BOOTSTRAP_CAPTURE_POLICY
     assert {
         (rule.resource, rule.url_pattern)
@@ -294,7 +298,12 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
                 revision=initial.config_revision,
                 digest=initial.digest,
             )
-            agent.send_json(stale)
+            asyncio.run(
+                transport_manager.record_config_applied(
+                    transport_manager.active_agents[DEV_ACCOUNT_ID],
+                    AGENT_TO_BRAIN_ADAPTER.validate_json(json.dumps(stale)).payload,
+                )
+            )
             stale_state = bridge.receive_json()
             assert stale_state["payload"]["required_config_revision"] == "config-9"
             assert stale_state["payload"]["applied_config_revision"] == "config-8"
@@ -306,7 +315,12 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
                 revision=published.config_revision,
                 digest=published.digest,
             )
-            agent.send_json(current)
+            asyncio.run(
+                transport_manager.record_config_applied(
+                    transport_manager.active_agents[DEV_ACCOUNT_ID],
+                    AGENT_TO_BRAIN_ADAPTER.validate_json(json.dumps(current)).payload,
+                )
+            )
             converged = bridge.receive_json()
             assert converged["payload"]["required_config_revision"] == "config-9"
             assert converged["payload"]["applied_config_revision"] == "config-9"
