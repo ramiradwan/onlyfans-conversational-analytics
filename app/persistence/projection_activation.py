@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -10,10 +9,12 @@ from threading import RLock
 from typing import Callable, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.identity import CanonicalIdentity, canonical_identity
 from app.analytics.ownership import BuildOwner
 from app.analytics.opaque_refs import account_ref as analytics_account_ref
 from app.persistence.database import CanonicalSQLite
+from app.persistence.history import HistoryRepository
 from app.transport.ingestion import AccountReadModel
 
 
@@ -403,14 +404,14 @@ class SQLiteProjectionActivationRepository:
             existing = connection.execute(
                 """
                 SELECT scheduler_owner_id,scheduler_capability_digest,state
-                FROM projection_publication_epochs WHERE publication_epoch=?
+                FROM analytics_projection_publication_epochs WHERE publication_epoch=?
                 """,
                 (publication_epoch,),
             ).fetchone()
             if existing is None:
                 connection.execute(
                     """
-                    INSERT INTO projection_publication_epochs (
+                    INSERT INTO analytics_projection_publication_epochs (
                         publication_epoch,scheduler_owner_id,
                         scheduler_capability_digest,state,opened_at
                     ) VALUES (?, ?, ?, 'open', ?)
@@ -442,7 +443,7 @@ class SQLiteProjectionActivationRepository:
             row = connection.execute(
                 """
                 SELECT scheduler_owner_id,scheduler_capability_digest,state
-                FROM projection_publication_epochs WHERE publication_epoch=?
+                FROM analytics_projection_publication_epochs WHERE publication_epoch=?
                 """,
                 (publication_epoch,),
             ).fetchone()
@@ -542,7 +543,7 @@ class SQLiteProjectionActivationRepository:
     ) -> None:
         updated = connection.execute(
             """
-            UPDATE projection_publication_epochs
+            UPDATE analytics_projection_publication_epochs
             SET state='revoked',revoked_at=?
             WHERE publication_epoch=? AND scheduler_owner_id=?
               AND scheduler_capability_digest=? AND state='open'
@@ -558,7 +559,7 @@ class SQLiteProjectionActivationRepository:
             return
         existing = connection.execute(
             """
-            SELECT state FROM projection_publication_epochs
+            SELECT state FROM analytics_projection_publication_epochs
             WHERE publication_epoch=? AND scheduler_owner_id=?
               AND scheduler_capability_digest=?
             """,
@@ -611,7 +612,7 @@ class SQLiteProjectionActivationRepository:
         )
         with self.database.transaction() as connection:
             existing = connection.execute(
-                "SELECT * FROM projection_activation_intents WHERE generation_id = ?",
+                "SELECT * FROM analytics_projection_activation_intents WHERE generation_id = ?",
                 (generation_id,),
             ).fetchone()
             if existing is not None:
@@ -630,7 +631,7 @@ class SQLiteProjectionActivationRepository:
                 raise ProjectionActivationConflict("canonical identity changed")
             pending = connection.execute(
                 """
-                SELECT 1 FROM projection_activation_intents
+                SELECT 1 FROM analytics_projection_activation_intents
                 WHERE creator_account_id = ? AND state = 'reserved'
                 """,
                 (creator_account_id,),
@@ -642,7 +643,7 @@ class SQLiteProjectionActivationRepository:
             sequence = int(
                 connection.execute(
                     """
-                    INSERT INTO projection_witness_sequences (
+                    INSERT INTO analytics_projection_witness_sequences (
                         creator_account_id, last_witness_sequence
                     ) VALUES (?, 1)
                     ON CONFLICT (creator_account_id) DO UPDATE SET
@@ -656,7 +657,7 @@ class SQLiteProjectionActivationRepository:
             intent_id = str(uuid4())
             connection.execute(
                 """
-                INSERT INTO projection_activation_intents (
+                INSERT INTO analytics_projection_activation_intents (
                     intent_id, creator_account_id, generation_id,
                     account_ref,
                     canonical_revision, canonical_content_digest,
@@ -723,7 +724,7 @@ class SQLiteProjectionActivationRepository:
     def get(self, generation_id: str) -> ProjectionActivationIntent | None:
         with self.database.read() as connection:
             row = connection.execute(
-                "SELECT * FROM projection_activation_intents WHERE generation_id = ?",
+                "SELECT * FROM analytics_projection_activation_intents WHERE generation_id = ?",
                 (generation_id,),
             ).fetchone()
             return None if row is None else _intent(row)
@@ -734,7 +735,7 @@ class SQLiteProjectionActivationRepository:
                 _intent(row)
                 for row in connection.execute(
                     """
-                    SELECT * FROM projection_activation_intents
+                    SELECT * FROM analytics_projection_activation_intents
                     WHERE state = 'reserved'
                     ORDER BY creator_account_id, witness_sequence
                     """
@@ -748,7 +749,7 @@ class SQLiteProjectionActivationRepository:
         result: ProjectionActivationIntent | None = None
         with self.database.transaction() as connection:
             row = connection.execute(
-                "SELECT * FROM projection_activation_intents WHERE intent_id = ?",
+                "SELECT * FROM analytics_projection_activation_intents WHERE intent_id = ?",
                 (expected_intent.intent_id,),
             ).fetchone()
             if row is None:
@@ -774,7 +775,7 @@ class SQLiteProjectionActivationRepository:
             if identity_changed or epoch_revoked:
                 connection.execute(
                     """
-                    UPDATE projection_activation_intents
+                    UPDATE analytics_projection_activation_intents
                     SET state = 'cancelled', cancelled_at = ?
                     WHERE intent_id = ? AND state = 'reserved'
                     """,
@@ -789,7 +790,7 @@ class SQLiteProjectionActivationRepository:
             else:
                 updated = connection.execute(
                     """
-                    UPDATE projection_activation_intents
+                    UPDATE analytics_projection_activation_intents
                     SET state = 'completed', completed_at = ?
                     WHERE intent_id = ? AND state = 'reserved'
                       AND creator_account_id=? AND generation_id=?
@@ -841,7 +842,7 @@ class SQLiteProjectionActivationRepository:
     def cancel(self, intent_id: str) -> ProjectionActivationIntent:
         with self.database.transaction() as connection:
             row = connection.execute(
-                "SELECT * FROM projection_activation_intents WHERE intent_id = ?",
+                "SELECT * FROM analytics_projection_activation_intents WHERE intent_id = ?",
                 (intent_id,),
             ).fetchone()
             if row is None:
@@ -854,7 +855,7 @@ class SQLiteProjectionActivationRepository:
             now = _now()
             connection.execute(
                 """
-                UPDATE projection_activation_intents
+                UPDATE analytics_projection_activation_intents
                 SET state = 'cancelled', cancelled_at = ?
                 WHERE intent_id = ? AND state = 'reserved'
                 """,
@@ -867,7 +868,7 @@ class SQLiteProjectionActivationRepository:
     ) -> ProjectionActivationIntent:
         with self.database.transaction() as connection:
             row = connection.execute(
-                "SELECT * FROM projection_activation_intents WHERE intent_id=?",
+                "SELECT * FROM analytics_projection_activation_intents WHERE intent_id=?",
                 (expected.intent_id,),
             ).fetchone()
             if row is None:
@@ -881,7 +882,7 @@ class SQLiteProjectionActivationRepository:
             now = _now()
             updated = connection.execute(
                 """
-                UPDATE projection_activation_intents
+                UPDATE analytics_projection_activation_intents
                 SET state='cancelled', cancelled_at=?
                 WHERE intent_id=? AND state='completed'
                 """,
@@ -896,32 +897,16 @@ def _sqlite_identity(
     connection: sqlite3.Connection, creator_account_id: str
 ) -> CanonicalIdentity | None:
     row = connection.execute(
-        "SELECT view_revision FROM account_read_models WHERE creator_account_id = ?",
+        "SELECT canonical_revision FROM account_heads WHERE creator_account_id = ?",
         (creator_account_id,),
     ).fetchone()
     if row is None:
         return None
-    account = AccountReadModel(view_revision=int(row[0]))
-    for chat in connection.execute(
-        """
-        SELECT conversation_id, document_json FROM read_model_chats
-        WHERE creator_account_id = ? ORDER BY conversation_id
-        """,
-        (creator_account_id,),
-    ):
-        value = json.loads(chat["document_json"])
-        value["messages"] = []
-        account.conversations[chat["conversation_id"]] = value
-    for message in connection.execute(
-        """
-        SELECT conversation_id, document_json FROM read_model_messages
-        WHERE creator_account_id = ? ORDER BY conversation_id, ordinal
-        """,
-        (creator_account_id,),
-    ):
-        account.conversations[message["conversation_id"]]["messages"].append(
-            json.loads(message["document_json"])
-        )
+    source = HistoryAnalyticsSource(
+        HistoryRepository.__new__(HistoryRepository),
+        connection=connection,
+    )
+    account = source.account_read_model(creator_account_id)
     return canonical_identity(account)
 
 
@@ -932,7 +917,7 @@ def _sqlite_publication_epoch_open(
 ) -> bool:
     row = connection.execute(
         """
-        SELECT 1 FROM projection_publication_epochs
+        SELECT 1 FROM analytics_projection_publication_epochs
         WHERE publication_epoch=? AND scheduler_capability_digest=?
           AND state='open'
         """,

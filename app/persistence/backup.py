@@ -695,7 +695,7 @@ def _projections_high_water(connection: sqlite3.Connection) -> dict[str, Any]:
                epoch.scheduler_capability_digest,
                epoch.state AS publication_epoch_state
         FROM projection_generations AS generation
-        JOIN projection_publication_epochs AS epoch
+        JOIN analytics_projection_publication_epochs AS epoch
           ON epoch.publication_epoch=generation.publication_epoch
         WHERE generation.status='active' ORDER BY generation.creator_account_id
         """
@@ -773,7 +773,7 @@ def _witnesses(connection: sqlite3.Connection) -> list[dict[str, Any]]:
             "SELECT name FROM sqlite_master WHERE type='table'"
         )
     }
-    if "projection_activation_intents" not in tables:
+    if "analytics_projection_activation_intents" not in tables:
         return []
     return [
         {
@@ -817,8 +817,8 @@ def _witnesses(connection: sqlite3.Connection) -> list[dict[str, Any]]:
             SELECT intent.*, epoch.scheduler_owner_id
                 AS publication_scheduler_owner_id,
                    epoch.state AS publication_epoch_state
-            FROM projection_activation_intents AS intent
-            JOIN projection_publication_epochs AS epoch
+            FROM analytics_projection_activation_intents AS intent
+            JOIN analytics_projection_publication_epochs AS epoch
               ON epoch.publication_epoch=intent.publication_epoch
              AND epoch.scheduler_capability_digest=
                  intent.publication_capability_digest

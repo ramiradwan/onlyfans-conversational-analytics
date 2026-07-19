@@ -57,13 +57,15 @@ def activation_case(request, tmp_path: Path) -> ActivationCase:
     MigrationRunner(database).run()
     with database.transaction() as connection:
         connection.execute(
-            "INSERT INTO account_read_models VALUES ('account-a', 0)"
+            """INSERT INTO account_heads(
+                   creator_account_id,canonical_revision,view_revision,data_revision,updated_at
+               ) VALUES ('account-a',0,0,0,'2026-07-19T00:00:00+00:00')"""
         )
 
     def advance() -> CanonicalIdentity:
         with database.transaction() as connection:
             connection.execute(
-                "UPDATE account_read_models SET view_revision=1 WHERE creator_account_id='account-a'"
+                "UPDATE account_heads SET canonical_revision=1 WHERE creator_account_id='account-a'"
             )
         return advanced
 

@@ -7,9 +7,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.persistence.database import CanonicalSQLite
 from app.persistence.history import HistoryRepository, ProjectionRepository
 from app.persistence.migrations import MigrationRunner
+from app.persistence.projection_activation import (
+    SQLiteProjectionActivationRepository,
+)
 from app.persistence.repositories import (
     SQLiteAgentConfigRepository,
     SQLiteCommandRepository,
@@ -32,6 +36,8 @@ class CanonicalRepositories:
     commands: CommandRepository
     database: CanonicalSQLite
     projection_database: CanonicalSQLite
+    ingestion: HistoryAnalyticsSource
+    projection_activation: SQLiteProjectionActivationRepository
     temporary_directory: TemporaryDirectory[str] | None = None
 
 
@@ -76,5 +82,7 @@ def create_canonical_repositories(
         ),
         database=database,
         projection_database=projection.database,
+        ingestion=HistoryAnalyticsSource(history),
+        projection_activation=SQLiteProjectionActivationRepository(database),
         temporary_directory=temporary_directory,
     )

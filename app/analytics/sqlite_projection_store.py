@@ -23,7 +23,11 @@ from app.analytics.identity import (
     CanonicalIdentity,
     pipeline_identity_digest,
 )
-from app.analytics.opaque_refs import account_ref
+from app.analytics.opaque_refs import (
+    AccountPartitionRef,
+    account_ref,
+    validated_account_ref,
+)
 from app.analytics.ownership import (
     capability_digest,
     current_build_owner,
@@ -640,7 +644,7 @@ class SQLiteAnalyticsProjectionStore:
                 (generation_id,),
             ).fetchone()
         if row is not None:
-            self.collect_garbage(row[0])
+            self.collect_garbage(validated_account_ref(row[0]))
 
     def clear(self, creator_account_id: str) -> None:
         identity = self.canonical_identity_reader(creator_account_id)
@@ -845,17 +849,14 @@ class SQLiteAnalyticsProjectionStore:
                 counts["cancelled"] += 1
         accounts = sorted({row["creator_account_id"] for row in rows})
         for account_id in accounts:
-            self.collect_garbage(account_id)
+            self.collect_garbage(validated_account_ref(account_id))
         return counts
 
-    def collect_garbage(self, creator_account_id: str) -> int:
-        """Delete at most one configured batch beyond the rollback retention."""
+    def collect_garbage(self, partition_ref: AccountPartitionRef | str) -> int:
+        """Delete one bounded retired-generation batch for a validated partition."""
 
-        partition_ref = (
-            creator_account_id
-            if creator_account_id.startswith("a1:")
-            else account_ref(creator_account_id)
-        )
+        partition_ref = validated_account_ref(partition_ref)
+
         with self.database.transaction() as connection:
             rows = connection.execute(
                 """
