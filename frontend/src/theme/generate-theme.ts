@@ -98,16 +98,20 @@ function validateTextContrast(colorSchemes: JsonObject): void {
     const scheme = getObject(colorSchemes, schemeName);
     const text = getObject(scheme, 'text');
     const background = getObject(scheme, 'background');
-    for (const textRole of ['primary', 'secondary']) {
+    const foregroundRoles: Array<[string, string]> = [
+      ['text.primary', getString(text, 'primary')],
+      ['text.secondary', getString(text, 'secondary')],
+      ['success.main', getString(getObject(scheme, 'success'), 'main')],
+    ];
+    for (const [foregroundRole, foreground] of foregroundRoles) {
       for (const surfaceRole of ['default', 'paper']) {
-        const foreground = getString(text, textRole);
         const surface = getString(background, surfaceRole);
         const ratio = contrastRatio(foreground, surface);
         if (ratio < 4.5) {
           throw new Error(
             schemeName +
               '.' +
-              textRole +
+              foregroundRole +
               ' on background.' +
               surfaceRole +
               ' has ' +

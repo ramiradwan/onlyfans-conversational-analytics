@@ -2,10 +2,13 @@ import '@mui/material/Button';
 import '@mui/material/Chip';
 import '@mui/material/styles';
 import type { PaletteColor, PaletteColorOptions, Theme as MuiTheme } from '@mui/material/styles';
+import type { CSSProperties } from '@mui/system';
 
 import type { brandPalette, brandTypography } from '../theme/generated/tokens';
 
-type BridgeEffectStyles = Record<string, string | number>;
+type BridgeEffectStyles = CSSProperties & {
+  '&::before'?: CSSProperties;
+};
 
 declare module '@mui/material/styles' {
   interface Theme {
@@ -40,6 +43,8 @@ declare module '@mui/material/styles' {
       subtle: string;
       glass: string;
       chartInsetShadow: string;
+      elevation: string;
+      rim: string;
     };
     communication: {
       incomingSurface: string;
@@ -51,6 +56,17 @@ declare module '@mui/material/styles' {
       sentiment: string;
       volume: string;
       neutral: string;
+      positive: string;
+      negative: string;
+      unknown: string;
+      categorical1: string;
+      categorical2: string;
+      categorical3: string;
+      categorical4: string;
+      categorical5: string;
+      categorical6: string;
+      categorical7: string;
+      categorical8: string;
     };
   }
 

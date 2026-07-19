@@ -112,7 +112,7 @@ export const HorizontalBarsPlaceholder = ({ bars = 5 }: { bars?: number }) => {
           key={idx}  
           sx={{  
             height: 16,  
-            width: `${60 + Math.random() * 40}%`,  
+            width: `${60 + ((idx * 17 + 13) % 41)}%`,
             bgcolor: theme.vars.palette.placeholder,  
             borderRadius: 1,  
           }}  

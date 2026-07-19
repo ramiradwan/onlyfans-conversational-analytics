@@ -49,6 +49,31 @@ function buildPalette(scheme: SchemeTokens): PaletteOptions {
   };
 }
 
+function surfaceEffect(theme: Theme) {
+  return {
+    border: 'none',
+    borderRadius: `${componentTokens.MuiPaper.borderRadius}px`,
+    boxShadow: theme.vars.palette.surface.elevation,
+    position: 'relative' as const,
+    '&::before': {
+      background: theme.vars.palette.surface.rim,
+      borderRadius: 'inherit',
+      content: '""',
+      inset: 0,
+      mask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+      maskComposite: 'exclude',
+      padding: effectTokens.borders.thin,
+      pointerEvents: 'none',
+      position: 'absolute' as const,
+    },
+  };
+}
+
+const focusRing = (theme: Theme) => ({
+  outline: effectTokens.focus.width + ' solid ' + theme.vars.palette.primary.main,
+  outlineOffset: effectTokens.focus.offset,
+});
+
 export const theme = createTheme({
   cssVariables: {
     cssVarPrefix: 'bridge',
@@ -66,41 +91,28 @@ export const theme = createTheme({
   shape,
   typography,
   effects: {
-    cardBorder: (theme: Theme) => ({
-      border: effectTokens.borders.thin + ' solid ' + theme.vars.palette.divider,
-      borderRadius: componentTokens.MuiPaper.borderRadius,
-    }),
-    chartFrame: (theme: Theme) => ({
-      border: effectTokens.borders.thin + ' solid ' + theme.vars.palette.divider,
-      borderRadius: shape.borderRadius,
-      boxShadow: theme.vars.palette.surface.chartInsetShadow,
-    }),
+    cardBorder: surfaceEffect,
+    chartFrame: surfaceEffect,
     glassmorphism: (theme: Theme) => ({
       backdropFilter: effectTokens.glassmorphism.backdropFilter,
       backgroundColor: theme.vars.palette.surface.glass,
+      WebkitBackdropFilter: effectTokens.glassmorphism.backdropFilter,
     }),
-    headerBorder: (theme: Theme) => ({
-      borderBottom: effectTokens.borders.thin + ' solid ' + theme.vars.palette.divider,
-    }),
-    sideBorder: (theme: Theme) => ({
-      borderRight: effectTokens.borders.thin + ' solid ' + theme.vars.palette.divider,
-    }),
+    headerBorder: () => ({}),
+    sideBorder: () => ({}),
   },
   components: {
     MuiButton: {
       defaultProps: { disableElevation: true },
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
-          borderRadius: componentTokens.MuiButton.borderRadius,
+          borderRadius: `${componentTokens.MuiButton.borderRadius}px`,
           transition:
             'transform ' + effectTokens.motion.duration + ' ' + effectTokens.motion.easing,
           '&:active': {
             transform: 'scale(' + componentTokens.MuiButton.activeScale + ')',
           },
-          '&:focus-visible': {
-            outline: effectTokens.focus.width + ' solid ' + theme.vars.palette.primary.main,
-            outlineOffset: effectTokens.focus.offset,
-          },
+          '&:focus-visible': focusRing(theme),
         }),
       },
     },
@@ -108,8 +120,34 @@ export const theme = createTheme({
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
           backgroundImage: 'none',
-          border: effectTokens.borders.thin + ' solid ' + theme.vars.palette.divider,
-          boxShadow: 'none',
+          ...surfaceEffect(theme),
+        }),
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: ({ theme }: { theme: Theme }) => ({
+          '&:focus-visible': focusRing(theme),
+        }),
+      },
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: ({ theme }: { theme: Theme }) => ({
+          borderRadius: `${componentTokens.MuiButton.borderRadius}px`,
+          transition:
+            'background-color ' +
+            effectTokens.motion.duration +
+            ' ' +
+            effectTokens.motion.easing +
+            ', transform ' +
+            effectTokens.motion.duration +
+            ' ' +
+            effectTokens.motion.easing,
+          '&:active': {
+            transform: 'scale(' + componentTokens.MuiButton.activeScale + ')',
+          },
+          '&:focus-visible': focusRing(theme),
         }),
       },
     },
@@ -117,7 +155,7 @@ export const theme = createTheme({
       defaultProps: { elevation: 0 },
       styleOverrides: {
         root: { backgroundImage: 'none' },
-        rounded: { borderRadius: componentTokens.MuiPaper.borderRadius },
+        rounded: { borderRadius: `${componentTokens.MuiPaper.borderRadius}px` },
         outlined: ({ theme }: { theme: Theme }) => ({
           border: effectTokens.borders.thin + ' solid ' + theme.vars.palette.divider,
         }),
@@ -139,7 +177,7 @@ export const theme = createTheme({
             transform: 'scale(' + componentTokens.MuiListItemButton.activeScale + ')',
           },
           '&:focus-visible': {
-            outline: effectTokens.focus.width + ' solid ' + theme.vars.palette.primary.main,
+            ...focusRing(theme),
             outlineOffset: '-' + effectTokens.focus.offset,
           },
         }),
@@ -161,6 +199,18 @@ export const theme = createTheme({
             backgroundColor: theme.vars.palette.action.hover,
           },
         }),
+      },
+    },
+    MuiCssBaseline: {
+      styleOverrides: {
+        '@media (prefers-reduced-motion: reduce)': {
+          '*, *::before, *::after': {
+            animationDuration: '0.01ms !important',
+            animationIterationCount: '1 !important',
+            scrollBehavior: 'auto !important',
+            transitionDuration: '0.01ms !important',
+          },
+        },
       },
     },
   },

@@ -5,6 +5,7 @@ import { KpiCardSkeleton } from './KpiCardSkeleton';
 interface KpiCardProps {  
   title: string;  
   value: string | number;  
+  detail?: string;
   isLoading?: boolean;  
   /**  
    * Controls flex behavior.  
@@ -20,7 +21,7 @@ interface KpiCardProps {
  * Now includes `theme.effects.cardBorder` for visual consistency  
  * with other Paper/Card surfaces in dashboards.  
  */  
-export function KpiCard({ title, value, isLoading, grow }: KpiCardProps) {  
+export function KpiCard({ title, value, detail, isLoading, grow }: KpiCardProps) {
   if (isLoading) {  
     return <KpiCardSkeleton grow={grow} />;  
   }  
@@ -40,7 +41,12 @@ export function KpiCard({ title, value, isLoading, grow }: KpiCardProps) {
         <Typography variant="h5" component="div">  
           {value}  
         </Typography>  
+        {detail && (
+          <Typography color="text.secondary" sx={{ display: 'block', mt: 0.75 }} variant="caption">
+            {detail}
+          </Typography>
+        )}
       </CardContent>  
     </Card>  
   );  
-}  
+}
