@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import BinaryIO
 from uuid import uuid4
 
-from app.persistence.database import CanonicalSQLite
+from app.persistence.database import LocalSQLite
+from app.persistence.private_files import (
+    PrivateFileSecurityError,
+    apply_private_file_security,
+    sync_directory,
+    sync_file,
+)
 
 
 MIGRATION_NAME = re.compile(r"^(?P<version>[0-9]{4})_(?P<name>[a-z0-9_]+)\.sql$")
@@ -59,6 +65,13 @@ class InstallationMigrationLock:
     def __enter__(self) -> "InstallationMigrationLock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
         handle = open(self.path, "a+b")
+        try:
+            apply_private_file_security(self.path)
+        except PrivateFileSecurityError as error:
+            handle.close()
+            raise MigrationLockError(
+                "migration lock private-file security failed"
+            ) from error
         handle.seek(0, os.SEEK_END)
         if handle.tell() == 0:
             handle.write(b"0")
@@ -82,10 +95,6 @@ class InstallationMigrationLock:
                         handle.fileno(), lock_flags
                     )
                 self._handle = handle
-                try:
-                    os.chmod(self.path, 0o600)
-                except OSError:
-                    pass
                 return self
             except OSError as error:
                 if time.monotonic() >= deadline:
@@ -112,12 +121,54 @@ class InstallationMigrationLock:
         handle.close()
 
 
+def load_migration_catalog(
+    migrations_dir: str | Path | None = None,
+) -> list[Migration]:
+    """Load and checksum the contiguous repository migration catalog."""
+
+    directory = Path(migrations_dir or Path(__file__).with_name("sql"))
+    migrations: list[Migration] = []
+    if not directory.is_dir():
+        raise MigrationError(f"migration directory is missing: {directory}")
+    for path in sorted(directory.iterdir()):
+        if not path.is_file():
+            continue
+        match = MIGRATION_NAME.fullmatch(path.name)
+        if match is None:
+            if path.suffix == ".sql":
+                raise MigrationError(f"invalid migration filename: {path.name}")
+            continue
+        raw = path.read_bytes()
+        sql = raw.decode("utf-8")
+        if TRANSACTION_CONTROL.search(sql):
+            raise MigrationError(
+                f"migration {path.name} must not manage its own transaction"
+            )
+        migrations.append(
+            Migration(
+                version=int(match.group("version")),
+                name=match.group("name"),
+                sql=sql,
+                checksum=hashlib.sha256(raw).hexdigest(),
+            )
+        )
+    if not migrations:
+        raise MigrationError("the canonical migration catalog is empty")
+    versions = [item.version for item in migrations]
+    expected = list(range(1, len(migrations) + 1))
+    if versions != expected:
+        raise MigrationError(
+            f"migration versions must be contiguous from 0001: {versions!r}"
+        )
+    return migrations
+
+
 class MigrationRunner:
     """Validate and apply an ordered SQL catalog to one canonical database."""
 
     def __init__(
         self,
-        database: CanonicalSQLite,
+        database: LocalSQLite,
         *,
         migrations_dir: str | Path | None = None,
         lock_path: str | Path | None = None,
@@ -155,40 +206,7 @@ class MigrationRunner:
                 return completed
 
     def _load_catalog(self) -> list[Migration]:
-        migrations: list[Migration] = []
-        if not self.migrations_dir.is_dir():
-            raise MigrationError(f"migration directory is missing: {self.migrations_dir}")
-        for path in sorted(self.migrations_dir.iterdir()):
-            if not path.is_file():
-                continue
-            match = MIGRATION_NAME.fullmatch(path.name)
-            if match is None:
-                if path.suffix == ".sql":
-                    raise MigrationError(f"invalid migration filename: {path.name}")
-                continue
-            raw = path.read_bytes()
-            sql = raw.decode("utf-8")
-            if TRANSACTION_CONTROL.search(sql):
-                raise MigrationError(
-                    f"migration {path.name} must not manage its own transaction"
-                )
-            migrations.append(
-                Migration(
-                    version=int(match.group("version")),
-                    name=match.group("name"),
-                    sql=sql,
-                    checksum=hashlib.sha256(raw).hexdigest(),
-                )
-            )
-        if not migrations:
-            raise MigrationError("the canonical migration catalog is empty")
-        versions = [item.version for item in migrations]
-        expected = list(range(1, len(migrations) + 1))
-        if versions != expected:
-            raise MigrationError(
-                f"migration versions must be contiguous from 0001: {versions!r}"
-            )
-        return migrations
+        return load_migration_catalog(self.migrations_dir)
 
     @staticmethod
     def _ensure_ledger(connection: sqlite3.Connection) -> None:
@@ -252,13 +270,11 @@ class MigrationRunner:
         try:
             backup = sqlite3.connect(temporary)
             try:
-                try:
-                    os.chmod(temporary, 0o600)
-                except OSError:
-                    pass
+                apply_private_file_security(temporary)
                 source.backup(backup)
             finally:
                 backup.close()
+            apply_private_file_security(temporary)
             verification = sqlite3.connect(temporary)
             try:
                 result = verification.execute("PRAGMA integrity_check").fetchone()[0]
@@ -268,14 +284,18 @@ class MigrationRunner:
                     )
             finally:
                 verification.close()
+            sync_file(temporary)
             os.replace(temporary, destination)
+            apply_private_file_security(destination)
+            sync_directory(destination.parent)
+        except PrivateFileSecurityError as error:
+            temporary.unlink(missing_ok=True)
+            raise MigrationError(
+                "pre-migration backup private-file security failed"
+            ) from error
         except BaseException:
             temporary.unlink(missing_ok=True)
             raise
-        try:
-            os.chmod(destination, 0o600)
-        except OSError:
-            pass
         return destination
 
     @staticmethod
