@@ -268,6 +268,7 @@ def test_direct_sql_topic_pair_requires_both_matching_fields(tmp_path: Path) -> 
                 )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("sample", range(3))
 def test_50k_node_short_lease_build_stays_live_under_repeated_runs(
     tmp_path: Path,
@@ -743,6 +744,7 @@ def test_inflight_algorithm_cannot_return_or_cache_after_generation_replacement(
         ).fetchone()[0] == 0
 
 
+@pytest.mark.slow
 def test_16400_disjoint_edges_materialize_only_the_root_frontier(
     tmp_path: Path,
 ) -> None:
