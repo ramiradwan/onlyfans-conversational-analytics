@@ -401,7 +401,7 @@ class SQLiteGraphReader:
                         _timestamp(bounds.end_time),
                         _timestamp(bounds.start_time),
                         _timestamp(bounds.end_time),
-                        max(bounds.max_results, bounds.max_edges_examined) + 1,
+                        min(bounds.max_results, bounds.max_edges_examined) + 1,
                     ),
                 ).fetchall()
         except sqlite3.OperationalError as exc:
@@ -411,8 +411,7 @@ class SQLiteGraphReader:
         cap = min(bounds.max_results, bounds.max_edges_examined)
         result = GraphDegreeResult(
             degree=min(len(rows), cap),
-            truncated=len(rows) > cap
-            or (len(rows) >= bounds.max_edges_examined),
+            truncated=len(rows) > cap,
         )
         if self._active_generation_id(
             partition_key,

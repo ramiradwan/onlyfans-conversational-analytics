@@ -398,6 +398,8 @@ class _SnapshotGraphStore:
                         visited.add(adjacent)
                         frontier.append((adjacent, depth + 1))
                     if edge.source_id in visited and edge.target_id in visited:
+                        if edge.edge_id in selected_edges:
+                            continue
                         if len(selected_edges) < result_limit:
                             selected_edges[edge.edge_id] = edge
                         else:
@@ -576,18 +578,18 @@ class _SnapshotGraphStore:
                 if bounds.root_policy == "require_in_scope":
                     raise KeyError("graph_node_out_of_scope")
                 return GraphDegreeResult(degree=0)
-            adjacency, _ = self._traversal_adjacency(
+            adjacency, scan_truncated = self._traversal_adjacency(
                 partition_key,
-                bounds.model_copy(update={"max_edges_examined": 1_000_000}),
+                bounds,
                 direction,
                 relations,
                 budget,
             )
             count = len(adjacency.get(node_id, []))
-            truncated = count >= bounds.max_edges_examined
+            cap = min(bounds.max_results, bounds.max_edges_examined)
             result = GraphDegreeResult(
-                degree=min(count, bounds.max_results),
-                truncated=truncated or count > bounds.max_results,
+                degree=min(count, cap),
+                truncated=scan_truncated or count > cap,
             )
             budget.check()
             return result

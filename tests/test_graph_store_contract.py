@@ -434,6 +434,29 @@ def test_degree_max_results_counts_edges_not_materialized_nodes(
     assert not result.truncated
 
 
+def test_degree_examination_cap_is_truthful(
+    graph_case: GraphHarness,
+) -> None:
+    root = node("degree-cap-root")
+    leaves = [node(f"degree-cap-{index}") for index in range(3)]
+    publish(
+        graph_case,
+        [root, *leaves],
+        [edge(str(index), root.node_id, leaf.node_id) for index, leaf in enumerate(leaves)],
+    )
+    result = graph_case.reader.degree(
+        account_ref("account-a"),
+        root.node_id,
+        bounds=traversal_bounds(
+            max_results=10,
+            max_edges_examined=1,
+            max_visited=4,
+        ),
+    )
+    assert result.degree == 1
+    assert result.truncated
+
+
 def test_path_max_results_is_path_count_not_frontier_node_cap(
     graph_case: GraphHarness,
 ) -> None:
@@ -654,6 +677,23 @@ def test_memory_reader_rechecks_cancellation_immediately_before_return(
             bounds=traversal_bounds(max_results=1, max_visited=2),
             cancellation_check=lambda: cancelled,
         )
+
+
+def test_exact_undirected_edge_cap_is_not_falsely_truncated(
+    graph_case: GraphHarness,
+) -> None:
+    left, right = node("exact-left"), node("exact-right")
+    publish(graph_case, [left, right], [edge("exact", left.node_id, right.node_id)])
+
+    result = graph_case.reader.neighborhood(
+        account_ref("account-a"),
+        left.node_id,
+        bounds=traversal_bounds(max_results=1, max_visited=2),
+        direction="both",
+    )
+
+    assert len(result.edges) == 1
+    assert not result.truncated
 
 
 def test_caps_never_return_edges_without_both_selected_endpoints(
