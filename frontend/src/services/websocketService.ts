@@ -5,6 +5,7 @@ import {
   type BridgeSessionMessage,
   type BridgeToBrainMessage,
   type PresenceStateMessage,
+  type ProtocolVersion,
   type ProtocolErrorMessage,
   type StateDeltaMessage,
 } from '../protocol';
@@ -14,9 +15,7 @@ import {
 } from '../store/transportStore';
 
 const OPEN = 1;
-const DEV_AUTH_TICKET = 'bridge-clean-dev-ticket-v1';
-const DEV_ACCOUNT_ID = 'dev-creator-account';
-const DEFAULT_URL = 'ws://localhost:8000/ws/bridge';
+const DEFAULT_URL = 'ws://bridge.localhost:17871/ws/bridge';
 
 interface MessageEventLike {
   data: unknown;
@@ -51,6 +50,7 @@ export interface BridgeWebSocketOptions {
   now?: () => number;
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
+  protocolVersion?: ProtocolVersion;
 }
 
 const defaultScheduler: Scheduler = {
@@ -74,7 +74,7 @@ export class BridgeWebSocketService {
   private presenceTimer: ReturnType<typeof setTimeout> | null = null;
   private url: string;
   private creatorAccountId: string;
-  private readonly authTicket: string;
+  private authTicket: string;
   private readonly bridgeSessionId: string;
   private readonly clientVersion: string;
   private readonly webSocketFactory: (url: string) => WebSocketLike;
@@ -85,14 +85,15 @@ export class BridgeWebSocketService {
   private readonly now: () => number;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
+  private readonly protocolVersion: ProtocolVersion;
   private reconnectAttempt = 0;
   private manuallyStopped = true;
   private reconnectAllowed = true;
 
   constructor(options: BridgeWebSocketOptions = {}) {
     this.url = normalizeUrl(options.url ?? DEFAULT_URL);
-    this.creatorAccountId = options.creatorAccountId ?? DEV_ACCOUNT_ID;
-    this.authTicket = options.authTicket ?? DEV_AUTH_TICKET;
+    this.creatorAccountId = options.creatorAccountId ?? '';
+    this.authTicket = options.authTicket ?? '';
     this.bridgeSessionId = options.bridgeSessionId ?? (options.idFactory ?? defaultIdFactory)();
     this.clientVersion = options.clientVersion ?? '0.7.1';
     this.webSocketFactory =
@@ -104,14 +105,24 @@ export class BridgeWebSocketService {
     this.now = options.now ?? Date.now;
     this.reconnectBaseMs = options.reconnectBaseMs ?? 500;
     this.reconnectMaxMs = options.reconnectMaxMs ?? 30_000;
+    this.protocolVersion = options.protocolVersion ?? '2';
   }
 
-  connect(url = this.url, creatorAccountId = this.creatorAccountId): void {
+  connect(
+    url = this.url,
+    creatorAccountId = this.creatorAccountId,
+    authTicket = this.authTicket,
+  ): void {
+    if (!creatorAccountId || !authTicket) {
+      throw new Error('Bridge connection requires an account-bound authentication ticket');
+    }
     const normalizedUrl = normalizeUrl(url);
-    const accountChanged = creatorAccountId !== this.creatorAccountId;
-    if (accountChanged) this.disconnect();
+    const bindingChanged =
+      creatorAccountId !== this.creatorAccountId || authTicket !== this.authTicket;
+    if (bindingChanged) this.disconnect();
     this.url = normalizedUrl;
     this.creatorAccountId = creatorAccountId;
+    this.authTicket = authTicket;
     this.manuallyStopped = false;
     this.reconnectAllowed = true;
     if (this.socket?.readyState === OPEN || this.store.getState().connection === 'connecting') return;
@@ -135,7 +146,7 @@ export class BridgeWebSocketService {
     if (!session || !this.socket || this.socket.readyState !== OPEN) return false;
     const message: BridgeToBrainMessage = {
       type: 'state.resync',
-      protocol_version: '1',
+      protocol_version: session.negotiated_protocol_version,
       message_id: this.idFactory(),
       payload: {
         connection_id: session.connection_id,
@@ -160,13 +171,13 @@ export class BridgeWebSocketService {
       this.store.setConnection('handshaking');
       const hello: BridgeToBrainMessage = {
         type: 'bridge.hello',
-        protocol_version: '1',
+        protocol_version: this.protocolVersion,
         message_id: this.idFactory(),
         payload: {
           auth_ticket: this.authTicket,
           bridge_session_id: this.bridgeSessionId,
           requested_creator_account_id: this.creatorAccountId,
-          capabilities: ['state.snapshot', 'state.delta', 'presence.state'],
+          capabilities: ['state.snapshot', 'state.delta', 'presence.state', 'message.page'],
           client_version: this.clientVersion,
           last_view_revision: this.store.getState().viewRevision,
         },

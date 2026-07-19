@@ -29,5 +29,9 @@ export const usePermissions = () => {
   
     // Graph Explorer is available only to the Creator role.
     canViewGraphExplorer: isCreator,  
+
+    // Settings status is visible to both roles; only creators can change acquisition consent.
+    canViewSettings: isCreator || isOperator,
+    canManageHistorySync: isCreator,
   };  
 };

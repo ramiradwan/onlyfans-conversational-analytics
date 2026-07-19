@@ -1,6 +1,7 @@
 // src/routing/useAppRoutes.tsx  
 import React from 'react';  
 import { Navigate, RouteObject } from 'react-router-dom';  
+import { GlobalLoader } from '../common/GlobalLoader';
 import { usePermissions } from '../hooks/usePermissions';  
   
 // Lazy-load views — must have default exports  
@@ -8,6 +9,7 @@ const CreatorDashboardView = React.lazy(() => import('../views/CreatorDashboardV
 const OperatorInboxView = React.lazy(() => import('../views/OperatorInboxView'));  
 const AnalyticsView = React.lazy(() => import('../views/AnalyticsView'));  
 const GraphExplorerView = React.lazy(() => import('../views/GraphExplorerView'));  
+const SettingsView = React.lazy(() => import('../views/SettingsView'));
   
 /**  
  * Role-based routing (Spec 11.2a)  
@@ -15,8 +17,10 @@ const GraphExplorerView = React.lazy(() => import('../views/GraphExplorerView'))
 export const useAppRoutes = (): RouteObject[] => {  
   const {  
     canViewAnalytics,  
+    canViewDashboard,
     canViewInbox,  
     canViewGraphExplorer,  
+    canViewSettings,
     isOperator,  
   } = usePermissions();  
   
@@ -25,7 +29,9 @@ export const useAppRoutes = (): RouteObject[] => {
       index: true,  
       element: isOperator  
         ? <Navigate to="/inbox" replace />  
-        : <CreatorDashboardView />,  
+        : canViewDashboard
+          ? <CreatorDashboardView />
+          : <GlobalLoader />,
     },  
     ...(canViewInbox  
       ? [{ path: 'inbox', element: <OperatorInboxView /> }]  
@@ -36,6 +42,9 @@ export const useAppRoutes = (): RouteObject[] => {
     ...(canViewGraphExplorer  
       ? [{ path: 'graph-explorer', element: <GraphExplorerView /> }]  
       : []),  
+    ...(canViewSettings
+      ? [{ path: 'settings', element: <SettingsView /> }]
+      : []),
     {  
       path: '*',  
       element: <Navigate to="/" replace />,  
@@ -43,4 +52,4 @@ export const useAppRoutes = (): RouteObject[] => {
   ];  
   
   return routes;  
-};  
+};

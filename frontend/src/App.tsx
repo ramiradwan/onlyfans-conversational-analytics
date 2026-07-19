@@ -1,18 +1,18 @@
-// src/App.tsx
-
 import { CssBaseline, GlobalStyles } from '@mui/material';
 import InitColorSchemeScript from '@mui/material/InitColorSchemeScript';
 import { ThemeProvider } from '@mui/material/styles';
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 
 import { getConfig } from '@/config/fastapiConfig';
+import { requestAgentPairingTicket } from '@services/agentPairingApi';
+import { bindAgentToBrain } from '@services/extensionBinding';
 import { websocketService } from '@services/websocketService';
+import { useUserStore } from '@store/userStore';
 
 import { AppRouter } from './routing/AppRouter';
 import { theme } from './theme';
 
-// Global styles using theme.vars for flicker-free dark/light mode
 const globalStyles = (
   <GlobalStyles
     styles={(theme) => ({
@@ -26,32 +26,64 @@ const globalStyles = (
       body: {
         fontFamily: theme.typography.fontFamily,
       },
+      '*': {
+        boxSizing: 'border-box',
+      },
     })}
   />
 );
 
 export function App() {
   useEffect(() => {
-    const { FASTAPI_WS_URL, CREATOR_ID } = getConfig();
-    const creatorAccountId = CREATOR_ID ?? 'dev-creator-account';
-
-    if (!FASTAPI_WS_URL) {
-      console.error('[App] Missing FASTAPI_WS_URL in injected config');
+    const {
+      BRIDGE_AUTH_TICKET,
+      CREATOR_ID,
+      EXTENSION_ID,
+      FASTAPI_WS_URL,
+      BRIDGE_ROLE,
+    } = getConfig();
+    const userRole = BRIDGE_ROLE === 'creator'
+      ? 'creator-ceo'
+      : BRIDGE_ROLE === 'operator'
+        ? 'operator'
+        : null;
+    useUserStore.getState().actions.setUserRole(userRole);
+    if (!FASTAPI_WS_URL || !CREATOR_ID || !BRIDGE_AUTH_TICKET || userRole === null) {
+      console.error('[App] Missing required Brain URL, account, role, or Bridge binding');
       return;
     }
-    websocketService.connect(FASTAPI_WS_URL, creatorAccountId);
+    const creatorAccountId = CREATOR_ID;
+    const controller = new AbortController();
+    if (EXTENSION_ID && EXTENSION_ID !== 'dev-extension-id') {
+      void requestAgentPairingTicket(controller.signal)
+        .then((ticket) => {
+          return bindAgentToBrain({
+            extensionId: EXTENSION_ID,
+            creatorAccountId,
+            authTicket: ticket.pairing_ticket,
+          });
+        })
+        .catch(() => {
+          // Brain-owned Agent state presents pairing failures; never log credentials.
+        });
+    }
+    websocketService.connect(FASTAPI_WS_URL, creatorAccountId, BRIDGE_AUTH_TICKET);
 
     return () => {
+      controller.abort();
       websocketService.disconnect();
+      useUserStore.getState().actions.setUserRole(null);
     };
   }, []);
 
   return (
     <>
-      {/* Prevent SSR flicker — must match theme.cssVariables.colorSchemeSelector */}
-      <InitColorSchemeScript attribute="data-mui-color-scheme" defaultMode="dark" />
+      <InitColorSchemeScript
+        attribute="data-mui-color-scheme"
+        defaultMode="light"
+      />
 
-      <ThemeProvider theme={theme} defaultMode="dark" disableTransitionOnChange>
+      <ThemeProvider theme={theme} defaultMode="light" disableTransitionOnChange>
         <CssBaseline />
         {globalStyles}
         <BrowserRouter>

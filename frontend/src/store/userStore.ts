@@ -12,8 +12,8 @@ interface UserStoreState {
 }
 
 export const useUserStore = create<UserStoreState>((set) => ({
-  // Hardcoded as 'creator-ceo' for scaffolding per Spec 3.1/11.2
-  role: 'creator-ceo',
+  // The signed Brain session supplies the presentation role at bootstrap.
+  role: null,
   actions: {
     setUserRole: (role) => set({ role }),
   },

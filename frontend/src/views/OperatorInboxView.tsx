@@ -10,16 +10,30 @@ import {
   styled,
   Typography,
 } from '@mui/material';
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { ChatListPane } from '../components/inbox/ChatListPane';
 import { sortConversations } from '../components/inbox/inboxModel';
 import { MessageStreamPane } from '../components/inbox/MessageStreamPane';
 import {
+  messageApi as defaultMessageApi,
+  MessageApiError,
+  StaleMessageCursorError,
+  type MessageApi,
+} from '../services/messageApi';
+import {
   bridgeTransportStore,
-  type BridgeTransportState,
   type BridgeTransportStore,
+  type BridgeTransportState,
 } from '../store/transportStore';
+import { coverageProgressLabel } from '../utils/dataReadiness';
 
 const InboxRoot = styled(Box)(({ theme }) => ({
   backgroundColor: theme.vars.palette.background.default,
@@ -56,11 +70,11 @@ const StatusAlert = styled(Alert)(({ theme }) => ({
 
 type IssuePresentation = {
   detail: string;
-  severity: 'error' | 'warning';
+  severity: 'error' | 'info' | 'warning';
   title: string;
 };
 
-function getIssue(state: Readonly<BridgeTransportState>): IssuePresentation | null {
+function getIssue(state: ReturnType<OperatorInboxStore['getState']>): IssuePresentation | null {
   if (state.protocolError !== null) {
     return {
       detail: state.protocolError.detail,
@@ -70,21 +84,44 @@ function getIssue(state: Readonly<BridgeTransportState>): IssuePresentation | nu
   }
   if (state.readModelState === 'resyncing') {
     return {
-      detail: 'Showing the latest complete snapshot while a fresh snapshot is requested.',
+      detail:
+        state.viewRevision === null
+          ? 'Refreshing snapshot. Waiting for a complete conversation snapshot.'
+          : 'Refreshing snapshot. Showing the latest complete snapshot while a fresh snapshot is requested.',
       severity: 'warning',
       title: 'Refreshing conversations',
     };
   }
   if (state.readModelState === 'degraded') {
     return {
-      detail: state.system?.detail ?? 'Showing cached data until the Bridge reconnects.',
+      detail:
+        state.viewRevision === null
+          ? state.system?.detail ?? 'Conversation data is unavailable until the Bridge reconnects.'
+          : state.system?.detail ?? 'Showing cached data until the Bridge reconnects.',
       severity: 'warning',
-      title: 'Realtime updates paused',
+      title: state.viewRevision === null ? 'Conversation data unavailable' : 'Realtime updates paused',
+    };
+  }
+  if (
+    state.viewRevision === null &&
+    (state.connection === 'disconnected' || state.connection === 'error')
+  ) {
+    return {
+      detail: 'Conversation data is unavailable until the Bridge reconnects.',
+      severity: 'error',
+      title: 'Conversation data unavailable',
     };
   }
   if (state.system?.readiness === 'unavailable') {
     return {
       detail: state.system.detail ?? 'The processing service is currently unavailable.',
+      severity: 'error',
+      title: 'Conversation data unavailable',
+    };
+  }
+  if (state.projection.status === 'unavailable') {
+    return {
+      detail: state.projection.reason ?? 'The message projection is unavailable.',
       severity: 'error',
       title: 'Conversation data unavailable',
     };
@@ -110,6 +147,13 @@ function getIssue(state: Readonly<BridgeTransportState>): IssuePresentation | nu
       title: state.agent.status === 'stale' ? 'Agent connection is stale' : 'Agent disconnected',
     };
   }
+  if (state.liveFreshness.status !== 'current') {
+    return {
+      detail: 'Stored conversations remain available, but newer platform activity may be delayed.',
+      severity: 'warning',
+      title: 'Updates delayed',
+    };
+  }
   if (
     state.viewRevision !== null &&
     (state.connection === 'disconnected' || state.connection === 'error')
@@ -120,14 +164,77 @@ function getIssue(state: Readonly<BridgeTransportState>): IssuePresentation | nu
       title: 'Realtime updates paused',
     };
   }
+  if (state.coverage.status !== 'complete') {
+    return {
+      detail:
+        state.coverage.phase === 'paused'
+          ? 'Historical acquisition is paused. The Inbox shows only locally stored messages.'
+          : `${coverageProgressLabel(state.coverage)}. Earlier messages may not be stored yet.`,
+      severity: 'info',
+      title: state.coverage.phase === 'paused' ? 'History paused' : 'History still syncing',
+    };
+  }
+  if (
+    state.projection.status !== 'current' ||
+    state.projection.projected_revision < state.projection.canonical_revision
+  ) {
+    return {
+      detail: 'Historical acquisition is complete while Brain updates the message projection.',
+      severity: 'warning',
+      title: 'Updating conversations',
+    };
+  }
   return null;
 }
 
+type OperatorInboxState = Omit<
+  Pick<
+    BridgeTransportState,
+    | 'agent'
+    | 'connection'
+    | 'conversations'
+    | 'coverage'
+    | 'liveFreshness'
+    | 'messagePages'
+    | 'presence'
+    | 'projection'
+    | 'protocolError'
+    | 'readModelState'
+    | 'session'
+    | 'system'
+    | 'viewRevision'
+  >,
+  'agent' | 'presence' | 'protocolError' | 'system'
+> & {
+  agent: Pick<
+    NonNullable<BridgeTransportState['agent']>,
+    'connection_id' | 'degraded_reason' | 'status'
+  > | null;
+  presence: Pick<
+    NonNullable<BridgeTransportState['presence']>,
+    'freshness' | 'online_platform_user_ids'
+  > | null;
+  protocolError: Pick<NonNullable<BridgeTransportState['protocolError']>, 'detail' | 'fatal'> | null;
+  system: Pick<NonNullable<BridgeTransportState['system']>, 'detail' | 'readiness'> | null;
+};
+
+interface OperatorInboxStore {
+  getState(): Readonly<OperatorInboxState>;
+  subscribe(listener: () => void): () => void;
+  beginMessagePage: BridgeTransportStore['beginMessagePage'];
+  applyMessagePage: BridgeTransportStore['applyMessagePage'];
+  failMessagePage: BridgeTransportStore['failMessagePage'];
+  clearMessagePage: BridgeTransportStore['clearMessagePage'];
+  setActiveConversation?: BridgeTransportStore['setActiveConversation'];
+}
+
 interface OperatorInboxViewProps {
-  store?: BridgeTransportStore;
+  messageApi?: MessageApi;
+  store?: OperatorInboxStore;
 }
 
 export default function OperatorInboxView({
+  messageApi = defaultMessageApi,
   store = bridgeTransportStore,
 }: OperatorInboxViewProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
@@ -143,13 +250,17 @@ export default function OperatorInboxView({
     conversations[0] ??
     null;
   const activeConversationId = selectedConversation?.conversation_id ?? null;
+  const messageState =
+    activeConversationId === null ? null : state.messagePages[activeConversationId] ?? null;
   const hasSnapshot = state.viewRevision !== null;
   const issue = getIssue(state);
   const isResyncing = state.readModelState === 'resyncing';
   const statusLabel = issue
     ? isResyncing
       ? 'Resyncing'
-      : 'Degraded'
+      : hasSnapshot
+        ? 'Degraded'
+        : 'Unavailable'
     : hasSnapshot && state.readModelState === 'realtime'
       ? 'Live'
       : 'Connecting';
@@ -166,10 +277,128 @@ export default function OperatorInboxView({
   );
   const isOnline =
     selectedConversation !== null &&
+    selectedConversation.platform_user_id !== null &&
     state.presence?.freshness === 'current' &&
     state.presence.online_platform_user_ids.includes(
       selectedConversation.platform_user_id,
     );
+  const initialPageRequest = useRef<{
+    conversationId: string;
+    controller: AbortController;
+  } | null>(null);
+  const lastReplacementAttemptKey = useRef<string | null>(null);
+  const pageRecoveryKey =
+    activeConversationId !== null &&
+    state.viewRevision !== null &&
+    state.readModelState === 'realtime' &&
+    state.projection.status === 'current' &&
+    state.projection.projected_revision >= state.projection.canonical_revision &&
+    !['disconnected', 'error'].includes(state.connection)
+      ? [
+          activeConversationId,
+          state.session?.connection_id ?? 'no-bridge-session',
+          state.agent?.connection_id ?? 'no-agent-session',
+          state.agent?.status ?? 'no-agent-status',
+          state.projection.canonical_revision,
+          state.projection.projected_revision,
+          state.projection.projected_at ?? 'not-projected',
+          state.viewRevision,
+        ].join('|')
+      : null;
+
+  const loadPage = useCallback(
+    async function loadConversationPage(
+      mode: 'replace' | 'prepend',
+      signal?: AbortSignal,
+      retryStale = true,
+    ): Promise<void> {
+      if (activeConversationId === null) return;
+      if (mode === 'replace' && pageRecoveryKey !== null) {
+        lastReplacementAttemptKey.current = pageRecoveryKey;
+      }
+      const current = store.getState().messagePages[activeConversationId];
+      const before = mode === 'prepend' ? current?.olderCursor ?? null : null;
+      const projectionEpoch = store.beginMessagePage(
+        activeConversationId,
+        mode === 'replace',
+      );
+      try {
+        const page = await messageApi.getPage({
+          before,
+          conversationId: activeConversationId,
+          limit: 50,
+          signal,
+        });
+        const result = store.applyMessagePage(page, mode, projectionEpoch);
+        if (result === 'stale') throw new StaleMessageCursorError();
+        if (result === 'invalid') throw new MessageApiError('Brain returned a mismatched message page.');
+      } catch (error) {
+        if (signal?.aborted) return;
+        if (error instanceof StaleMessageCursorError) {
+          store.clearMessagePage(activeConversationId);
+          if (retryStale) {
+            await loadConversationPage('replace', signal, false);
+            return;
+          }
+          store.failMessagePage(
+            activeConversationId,
+            'The message window changed repeatedly. Try loading it again.',
+          );
+          return;
+        }
+        store.failMessagePage(
+          activeConversationId,
+          error instanceof Error ? error.message : 'Message history is temporarily unavailable.',
+        );
+      }
+    },
+    [activeConversationId, messageApi, pageRecoveryKey, store],
+  );
+
+  useEffect(() => {
+    store.setActiveConversation?.(activeConversationId);
+  }, [activeConversationId, store]);
+
+  useEffect(() => {
+    return () => {
+      initialPageRequest.current?.controller.abort();
+      initialPageRequest.current = null;
+    };
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    if (
+      activeConversationId === null ||
+      messageState !== null ||
+      initialPageRequest.current?.conversationId === activeConversationId
+    ) return;
+    const controller = new AbortController();
+    initialPageRequest.current = { conversationId: activeConversationId, controller };
+    void loadPage('replace', controller.signal).finally(() => {
+      if (initialPageRequest.current?.controller === controller) {
+        initialPageRequest.current = null;
+      }
+    });
+  }, [activeConversationId, loadPage, messageState]);
+
+  useEffect(() => {
+    if (
+      activeConversationId === null ||
+      messageState?.status !== 'error' ||
+      pageRecoveryKey === null ||
+      lastReplacementAttemptKey.current === pageRecoveryKey
+    ) return;
+
+    lastReplacementAttemptKey.current = pageRecoveryKey;
+    initialPageRequest.current?.controller.abort();
+    const controller = new AbortController();
+    initialPageRequest.current = { conversationId: activeConversationId, controller };
+    void loadPage('replace', controller.signal, false).finally(() => {
+      if (initialPageRequest.current?.controller === controller) {
+        initialPageRequest.current = null;
+      }
+    });
+  }, [activeConversationId, loadPage, messageState?.status, pageRecoveryKey]);
 
   return (
     <InboxRoot>
@@ -185,7 +414,15 @@ export default function OperatorInboxView({
         <Chip
           icon={statusIcon}
           label={statusLabel}
-          color={issue ? (issue.severity === 'error' ? 'error' : 'warning') : 'success'}
+            color={
+              issue
+                ? issue.severity === 'error'
+                  ? 'error'
+                  : issue.severity === 'info'
+                    ? 'info'
+                    : 'warning'
+                : 'success'
+            }
           variant="outlined"
           aria-live="polite"
         />
@@ -209,6 +446,9 @@ export default function OperatorInboxView({
           conversation={selectedConversation}
           isLoading={!hasSnapshot}
           isOnline={isOnline}
+          messageState={messageState}
+          onLoadOlder={() => void loadPage('prepend')}
+          onReloadLatest={() => void loadPage('replace')}
         />
       </InboxGrid>
     </InboxRoot>

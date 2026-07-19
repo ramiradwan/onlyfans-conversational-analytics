@@ -14,9 +14,10 @@ import {
   Typography,
 } from '@mui/material';
 
-import { formatTimestamp, getConversationTitle, getLastMessage } from './inboxModel';
+import { formatTimestamp, getConversationTitle } from './inboxModel';
 import { MessageFlagIcon } from './MessageFlagIcons';
-import type { ConversationView } from '../../protocol';
+import type { ConversationRecord } from '../../protocol';
+import { conversationLatestMessage } from '../../store/transportStore';
 import { componentTokens } from '../../theme';
 
 const Pane = styled(Paper)(({ theme }) => ({
@@ -87,7 +88,7 @@ const EmptyState = styled(Box)(({ theme }) => ({
 }));
 
 interface ChatListPaneProps {
-  conversations: readonly ConversationView[];
+  conversations: readonly ConversationRecord[];
   isLoading: boolean;
   onSelectConversation(conversationId: string): void;
   selectedConversationId: string | null;
@@ -140,7 +141,7 @@ export function ChatListPane({
         ) : (
           <List aria-label="Conversation list" disablePadding>
             {conversations.map((conversation) => {
-              const lastMessage = getLastMessage(conversation.messages);
+              const lastMessage = conversationLatestMessage(conversation);
               const title = getConversationTitle(conversation);
               const selected = selectedConversationId === conversation.conversation_id;
               const lastActivity = conversation.last_message_at ?? lastMessage?.sent_at ?? null;

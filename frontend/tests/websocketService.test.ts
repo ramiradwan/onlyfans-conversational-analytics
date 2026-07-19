@@ -9,7 +9,7 @@ import {
 } from '../src/services/websocketService';
 import { createBridgeTransportStore } from '../src/store/transportStore';
 
-const FIXTURES = resolve(process.cwd(), '../shared/fixtures/protocol/v1');
+const FIXTURES = resolve(process.cwd(), '../shared/fixtures/protocol/v2');
 const BRIDGE_SESSION_ID = '60000000-0000-4000-8000-000000000001';
 
 function fixture(name: string): Record<string, any> {
@@ -54,7 +54,9 @@ function harness() {
   const sockets: MockSocket[] = [];
   const store = createBridgeTransportStore();
   const service = new BridgeWebSocketService({
+    authTicket: 'test-bridge-auth-ticket',
     bridgeSessionId: BRIDGE_SESSION_ID,
+    creatorAccountId: 'dev-creator-account',
     store,
     random: () => 0.5,
     idFactory: () => '90000000-0000-4000-8000-000000000001',
@@ -75,7 +77,7 @@ function completeHandshake(socket: MockSocket, connectionId?: string): void {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date('2026-07-18T10:04:01Z'));
+  vi.setSystemTime(new Date('2026-07-19T10:04:01Z'));
 });
 
 afterEach(() => {
@@ -91,7 +93,7 @@ describe('Bridge WebSocket lifecycle', () => {
 
     const hello = parseBridgeToBrainMessage(JSON.parse(socket.sent[0]));
     expect(hello.type).toBe('bridge.hello');
-    expect(hello.payload.auth_ticket).toBe('bridge-clean-dev-ticket-v1');
+    expect(hello.payload.auth_ticket).toBe('test-bridge-auth-ticket');
     expect(hello.payload.bridge_session_id).toBe(BRIDGE_SESSION_ID);
 
     completeHandshake(socket);

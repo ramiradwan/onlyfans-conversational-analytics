@@ -55,7 +55,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const directionLabel = message.direction === 'outbound' ? 'Outbound message' : 'Inbound message';
 
   return (
-    <BubbleRow messageDirection={message.direction}>
+    <BubbleRow data-message-id={message.message_id} messageDirection={message.direction}>
       <BubbleSurface
         role="article"
         messageDirection={message.direction}
