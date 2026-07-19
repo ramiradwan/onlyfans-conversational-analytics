@@ -1,105 +1,55 @@
-# App  
-  
-This folder contains the main application code for the **OnlyFans Conversational Analytics** platform.  
-  
-The backend is a **FastAPI** service that ingests conversation data from a Chrome extension, enriches it with NLP, builds a **Labeled Property Graph (LPG)**, computes analytics, and streams updates to frontend clients over **WebSockets** via a Redis Pub/Sub backend.  
-  
----  
-  
-## Structure  
-  
-- **main.py** — FastAPI entry point:  
-  - Initializes the API  
-  - Configures CORS for frontend + extension  
-  - Mounts static files from the Vite build  
-  - Registers API and WS routers  
-  - Manages global `Broadcast` lifecycle (Redis Pub/Sub)  
-  
-- **core/config.py** — Environment variables and configuration via `pydantic-settings`:  
-  - Redis connection URL  
-  - Extension ID  
-  - Cosmos DB connection settings  
-  - Other service configs  
-  
-- **models/** — Pydantic models for **type‑safe** data validation:  
-  - `core.py` — Base OnlyFans message & conversation models, system payloads  
-  - `ingest.py` — Snapshot (`cache_update`) and delta (`new_raw_message`) payloads  
-  - `graph.py` — LPG vertices, edges, enrichment payloads  
-  - `insights.py` — Analytics response models  
-  - `commands.py` — AI‑generated command payloads  
-  - `auth.py` — Authentication models  
-  - `wss.py` — Typed WebSocket message envelopes (Incoming / Outgoing discriminated unions)  
-  
-- **services/** — Business logic and data processing:  
-  - `data_ingest.py` — Race‑condition‑safe ingestion pipeline with delta queues  
-  - `enrichment.py` — NLP enrichment (topics, actions, sentiment, outcomes)  
-  - `graph_builder.py` — Build/rebuild/append LPG vertices & edges  
-  - `insights_service.py` — Compute and broadcast analytics metrics  
-  - `onlyfans_client.py` — Retrieve cached chats/messages from ingestion cache  
-  
-- **api/endpoints/** — FastAPI route definitions:  
-  - `websocket.py` — Unified WS hub for extension & frontend clients  
-  - `insights.py` — REST analytics endpoints  
-  - `schema.py` — `/api/v1/schemas/wss` for auto‑generation of WS TS types  
-  - `frontend.py` — Serves frontend app via Jinja template  
-  
-- **utils/** — Helper functions and utilities:  
-  - Logging  
-  - Normalization  
-  - Time parsing  
-  
----  
-  
-## Notes  
-  
-The application is built to support:  
-  
-- **Creator analytics dashboards** for OnlyFans  
-- **Therapy‑research‑style graph models** stored in Azure Cosmos DB via the Gremlin API  
-- Real‑time WS updates for:  
-  - Initial full sync (`full_sync_response`)  
-  - New messages (`append_message`)  
-  - Analytics metrics (`analytics_update`)  
-  - NLP enrichment results (`enrichment_result`)  
-  - AI‑generated commands (`command_to_execute`)  
-  
----  
-  
-## Implementation Highlights
-  
-- **Stateless Pub/Sub backend** — Global `Broadcast` object using Redis  
-- **Type‑safe WS protocol** — Pydantic discriminated unions in `wss.py`  
-- **Auto‑generated WS TypeScript types** — `/api/v1/schemas/wss` endpoint  
-- **Race‑condition‑safe ingestion** — Per‑user `asyncio.Queue` for deltas until snapshot processed  
-- **Unified WS hub** — All extension/frontend WS traffic handled in `websocket.py`  
-- **WebSocket ingestion** — Raw ingestion uses the Agent WebSocket transport
-  
----  
-  
-## Data Flow Overview  
-  
-```mermaid  
-flowchart LR
-    EXT[Agent: Chrome Extension IndexedDB]
-    WS_IN[WebSocket: IncomingWssMessage]
-    INGEST[DataIngestService]
-    ENRICH[EnrichmentService]
-    GRAPH[GraphBuilder]
-    COSMOS[Azure Cosmos DB - Gremlin API]
-    INSIGHTS[InsightsService]
-    WS_OUT[WebSocket: OutgoingWssMessage]
-    FRONT[Frontend React App]
+# Brain application
 
-    EXT --> WS_IN
-    WS_IN --> INGEST
-    INGEST --> ENRICH
-    ENRICH --> GRAPH
-    GRAPH --> COSMOS
-    COSMOS --> INSIGHTS
-    INSIGHTS --> WS_OUT
-    INGEST --> WS_OUT
-    WS_OUT --> FRONT
-    FRONT --> EXT
-    EXT --> FRONT
+`app/` is the local-first Brain runtime. It serves the compiled Bridge, accepts
+authenticated protocol-v2 Agent ingestion, owns canonical SQLite truth, and builds
+rebuildable read models in a separate projections SQLite database.
 
+## Local session bootstrap
+
+The shipped runtime uses `WEBSOCKET_AUTH_MODE=local_session`. The launcher supplies
+a random `LOCAL_SESSION_BOOTSTRAP_TOKEN` of at least 32 characters and exact
+`LOCAL_PRINCIPAL_ID`, `LOCAL_CREATOR_ACCOUNT_ID`, and independently verified
+`LOCAL_PLATFORM_CREATOR_ID` values.
+
+The launcher sends:
+
+```http
+POST /api/v1/session/bootstrap
+Host: bridge.localhost:17871
+Authorization: Bootstrap <launcher-secret>
 ```
+
+Brain compares the credential without placing it in a URL, atomically records its
+hash as consumed in durable SQLite state, sets the signed
+`__Host-bridge_session` HttpOnly/Secure/SameSite=Strict cookie, and redirects to
+`/`. Reuse remains rejected after process restart. Authenticated HTML and bootstrap
+responses use `Cache-Control: no-store`.
+
+Development and tests explicitly select `development_stub`; non-development
+configuration never falls back to the development account.
+
+## Runtime boundaries
+
+- `api/endpoints/transport_ws.py` implements Agent/Bridge protocol-v2 transport and
+  authenticated Agent configuration.
+- `api/endpoints/history.py` implements creator-authorized history settings and
+  projection-owned REST message paging.
+- `persistence/history.py` commits canonical ingestion and activates bounded read
+  models.
+- `persistence/sql/` is the authoritative canonical schema.
+- `persistence/projection_sql/` is the independent, disposable projection schema.
+- `persistence/projection_pipeline.py` is the deterministic local NLP/LPG seam.
+
+Snapshot entities are staged in typed SQLite columns and merged with set-based
+validation/upserts. Projection work is durable, processed off the event loop in
+bounded batches, and activated through canonical intents. SQLite transaction
+visibility keeps the previous generation readable until the replacement generation
+and its durable Bridge change-log entry commit atomically.
+
+When no local NLP model is configured, the pipeline persists an explicit
+`unavailable` analysis with `unknown` sentiment; it does not invent a score or
+coerce unavailable analytics to zero. Signer and passive messages enter this same
+canonical projection path.
+
+`app/main.py` mounts only the protocol-v2 transport, authenticated history API,
+and frontend routes. Static or sample insight routes are not part of the runtime.

@@ -1,96 +1,38 @@
-# Models  
-  
-Contains all **Pydantic data schemas** for OnlyFans Conversational Analytics.  
-  
-Models are the **single source of truth** for:  
-- REST API request/response bodies  
-- WebSocket message payloads  
-- Internal service data structures (graph, enrichment, analytics)  
-  
-All models are **pure data definitions** — no business logic — and include explicit type hints, docstrings, and optional validators/examples for schema clarity.  
-  
----  
-  
-## Structure  
-  
-### **core.py**  
-Base OnlyFans data structures:  
-- `UserRef` — Fan/creator profile reference.  
-- `Message` — Chat message object with full OnlyFans API field parity.  
-- `ChatThread` — Conversation thread with optional embedded `Message` list.  
-- `SyncResponse` — REST snapshot response for chats/messages.  
-- System payloads: `ConnectionInfo`, `SystemStatus`, `WssError`, `KeepalivePayload`.  
-  
-### **ingest.py**  
-Incoming WebSocket payloads from **Agent ➔ Brain**:  
-- `CacheUpdatePayload` — Full snapshot (`cache_update`) with `chats` and `messages` lists. Includes rich `example` metadata for schema generation.  
-- `NewRawMessagePayload` — Single delta message (`new_raw_message`) with `message` object.  
-  
-### **graph.py**  
-Labeled Property Graph (LPG) vertices & edges:  
-- Vertices: `Fan`, `Creator`, `ConversationNode`, `Topic`, `EngagementAction`, `InteractionOutcome`  
-- Edge: `GraphEdge`  
-- **New:** `EnrichmentResultPayload` — payload for WS `enrichment_result` messages.  
-  
-### **insights.py**  
-Analytics response models:  
-- `TopicMetricsResponse`  
-- `SentimentTrendPoint`  
-- `SentimentTrendResponse`  
-- `ResponseTimeMetricsResponse`  
-- `AnalyticsUpdate` — granular metric updates, includes optional `priorityScores` and `unreadCounts`.  
-- `FullSyncResponse` — complete snapshot of conversations + analytics.  
-  
-### **commands.py**  
-AI‑generated commands from **Brain ➔ Agent**:  
-- `SendMessageCommand` — instructs the Agent to send a message in a chat. Includes `chat_id`, `text`, optional `media_url` with example values.  
-  
-### **auth.py**  
-Authentication data for OnlyFans API:  
-- `AuthData` — optional `auth_cookie` for direct API calls.  
-  
-### **wss.py**  
-WebSocket message envelopes with **Pydantic discriminated unions**:  
-- **IncomingWssMessage** — `cache_update`, `new_raw_message`, `keepalive`, optional `online_users_update` (presence heartbeat).  
-- **OutgoingWssMessage** — `connection_ack`, `system_status`, `system_error`, `full_sync_response`, `append_message`, `analytics_update`, `command_to_execute`, `enrichment_result`, optional `online_users_update`.  
-  
-Presence payloads now include `description` and `example` metadata for frontend schema generation.  
-  
----  
-  
-## Purpose  
-- Enforce **type safety** across REST and WS flows.  
-- Provide a **single source of truth** for payload schemas.  
-- Enable **auto‑generation** of frontend TypeScript types:  
-  - REST: from `/openapi.json` via `@hey-api/openapi-ts`  
-  - WS: from `/api/v1/schemas/wss` via `json-schema-to-typescript`  
-  
----  
-  
-## Schema Consistency  
-- All WS messages use `IncomingWssMessage` / `OutgoingWssMessage` unions with `Field(discriminator="type")`.  
-- Payload models are reused across REST and WS to avoid divergence.  
-- Graph, enrichment, and analytics models are isolated but composable.  
-- Example values are included where possible to improve generated frontend docs.  
-  
----  
-  
-## Example WS Contract  
-  
-**Agent ➔ Brain:**  
-```json  
-{ "type": "cache_update", "payload": { "chats": [...], "messages": [...] } }  
-{ "type": "new_raw_message", "payload": { "message": {...} } }  
-{ "type": "keepalive", "payload": {} }  
-{ "type": "online_users_update", "payload": { "user_ids": [123, 456], "timestamp": "2025-11-08T12:34:56Z" } }  
-```  
-  
-**Brain ➔ Bridge/Agent:**  
-```json  
-{ "type": "full_sync_response", "payload": { "conversations": [...], "analytics": {...} } }  
-{ "type": "append_message", "payload": { "conversationId": "...", ... } }  
-{ "type": "analytics_update", "payload": { "topics": [...], ... } }  
-{ "type": "enrichment_result", "payload": { "conversation_id": "...", "topics": [...], ... } }  
-{ "type": "command_to_execute", "payload": { "chat_id": "...", "text": "..." } }  
-{ "type": "online_users_update", "payload": { "user_ids": [123, 456], "timestamp": "2025-11-08T12:34:56Z" } }  
-```  
+# Models
+
+The active public contracts are split by boundary rather than collected in one model module.
+
+## Wire protocol
+
+`app/protocol/` is the source of truth for protocol version 2:
+
+- role-specific Agent and Bridge message unions;
+- bounded `ingest.snapshot` begin/chunk/commit frames;
+- account-scoped raw chat, message, tombstone, and coverage evidence;
+- bounded Bridge conversation summaries and readiness state;
+- immutable Agent configuration documents.
+
+Every stack validates the shared fixtures in `shared/fixtures/protocol/v2/`.
+
+## History HTTP models
+
+`history.py` defines authenticated REST request and response models for:
+
+- creator-controlled history settings;
+- paged conversation messages;
+- acquisition coverage, projection readiness, and live freshness;
+- partial analytics with explicit basis, range, sample size, and revision.
+
+Transport authority supplies the creator account. Clients do not select an account in request parameters.
+
+## Internal models
+
+Domain-specific internal models remain local to their owning service or persistence module. Internal records do not become wire contracts merely because they are represented with Pydantic or dataclasses.
+
+## Contract rules
+
+- Use strict schemas and reject unknown fields at external boundaries.
+- Keep protocol, configuration, extension, IndexedDB, signer, and SQLite versions independent.
+- Preserve raw observations and canonical facts separately from derived projections.
+- Represent unavailable or partial analysis explicitly; do not substitute sample values.
+- Add or change public operations only through an accepted architecture decision and synchronized cross-language fixtures.

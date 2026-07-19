@@ -1,227 +1,103 @@
-# PROJECT GUIDE — OnlyFans Conversational Analytics  
-  
-This document defines the **source-of-truth overview** for how this project is structured, coded, and extended.    
-It is **aligned with [`communication-spec.md`](communication-spec.md)** and intended for both humans and AI code generators and to ensure consistent architecture, style, and purpose across the codebase.  
-  
----  
-  
-## PROJECT NAME  
-**OnlyFans Conversational Analytics** — A FastAPI + Pydantic application that ingests, enriches, stores, and analyzes creator–fan conversations using a therapy-research-style **Labeled Property Graph (LPG)** in Azure Cosmos DB (Gremlin API).  
-  
----  
-  
-## PROJECT GOALS  
-1. Fetch creator–fan conversations from the OnlyFans API or local extension database.    
-2. Enrich messages with NLP (topic extraction, sentiment, embeddings).    
-3. Store enriched data in a **Labeled Property Graph** modeled after psychotherapy research schemas.    
-4. Provide analytical endpoints for dashboards (volume, trends, sentiment, engagement metrics).    
-5. Integrate a modern **Vite + React** frontend served directly from FastAPI.    
-6. Maintain a clean, modular architecture that’s easy to extend.    
-7. Integrate a browser extension to enable compliant OF ↔ FastAPI bridge.    
-  
----  
-  
-## FOLDER STRUCTURE & PURPOSES  
-  
-### [`app/`](app/)  
-* **Purpose:** Main backend application code.  
-* **Files:**  
-  * [`main.py`](app/main.py): FastAPI entry point. Registers all routes and WS endpoints, connects/disconnects global broadcaster.  
-  * [`core/config.py`](app/core/config.py): Centralized configuration — includes `REDIS_URL` (Pydantic `RedisSettings`) for Pub/Sub.  
-* **Subfolders:**  
-  * [`models/`](app/models/): Pydantic data schemas.  
-  * [`models/wss.py`](app/models/wss.py): WS payload models with `type: Literal[...]` discriminators; contains `IncomingWssMessage` and `OutgoingWssMessage` unions.  
-  * [`services/`](app/services/): Business logic and data processing.  
-  * [`api/endpoints/`](app/api/endpoints/): All REST + WS endpoints.  
-  * [`utils/`](app/utils/): Helper utilities (logging, time parsing, normalization).  
-  * [`static/`](app/static/): Vite build artifacts.  
-  * [`templates/`](app/templates/): Jinja templates used for serving frontend entrypoints.  
-  
-### [`app/models/`](app/models/)  
-* **Purpose:** Define all data models for type safety and validation.  
-* **Files:**  
-  * [`core.py`](app/models/core.py): Raw message/conversation models before enrichment.  
-  * [`graph.py`](app/models/graph.py): LPG node and edge models.  
-  * [`insights.py`](app/models/insights.py): Response models for analytics endpoints.  
-  * [`wss.py`](app/models/wss.py): WS type-safe message contracts.  
-* **Style:**  
-  * Use `BaseModel` from Pydantic v2+.  
-  * Include type hints and optional fields.  
-  * Keep models pure (no methods except validators).  
-  
-### [`app/services/`](app/services/)  
-* **Purpose:** Implement business logic and data workflows.  
-* **Files:**  
-  * [`onlyfans_client.py`](app/services/onlyfans_client.py): Handles authenticated calls to the OnlyFans API or extension DB.  
-  * [`enrichment.py`](app/services/enrichment.py): NLP enrichment (sentiment, topics, embeddings). Publishes AI commands via broadcaster.  
-  * [`graph_builder.py`](app/services/graph_builder.py): Implements `rebuild_graph_from_snapshot()` and `append_graph_from_delta()` for Cosmos DB.  
-  * [`insights_service.py`](app/services/insights_service.py): Executes Gremlin queries to compute analytics metrics.  
-  * [`data_ingest.py`](app/services/data_ingest.py): **Dual-mode ingestion** with per-user `asyncio.Queue`:  
-    - `handle_snapshot(user_id, payload)`  
-    - `handle_delta(user_id, payload)`  
-    - `_process_delta_queue(user_id)`  
-* **Style:**  
-  * Keep functions small and focused.  
-  * No direct HTTP response handling — return Python objects/models only.  
-  
-### [`app/api/endpoints/`](app/api/endpoints/)  
-* **Purpose:** Define HTTP/WS endpoints and map them to services.  
-* **Files:**  
-  * [`websocket.py`](app/api/endpoints/websocket.py): Stateless WS endpoint using Redis broadcaster + Pydantic unions.  
-  * [`schema.py`](app/api/endpoints/schema.py): GET `/api/v1/schemas/wss` — returns `OutgoingWssMessage` JSON schema for frontend type generation.  
-  * [`insights.py`](app/api/endpoints/insights.py): REST analytics endpoints.  
-  * [`frontend.py`](app/api/endpoints/frontend.py): Serves compiled React frontend.  
-* **Style:**  
-  * Validate inputs with Pydantic models.  
-  * Return typed responses.  
-  * WS errors via `system_error` payload.  
-  
-### [`app/utils/`](app/utils/)  
-* **Purpose:** Reusable helper functions.  
-* **Files:**  
-  * [`logger.py`](app/utils/logger.py): Configures logging.  
-  * [`time.py`](app/utils/time.py): Time conversion and formatting helpers.  
-  * [`normalization.py`](app/utils/normalization.py): Cleans and normalizes raw message payloads.  
-* **Style:**  
-  * Keep utilities stateless and pure.  
-  
----  
-  
-## GRAPH SCHEMA (LPG)  
-**Vertices:**  
-* `Fan(fanId, joinDate, demographics, sentimentProfile)`  
-* `Creator(creatorId, niche, styleProfile)`  
-* `ConversationNode(conversationId, startDate, endDate, messageCount, averageResponseTime, turns, silencePercentage)`  
-* `Topic(topicId, description, embedding, category)`  
-* `EngagementAction(actionId, name, embedding, type)`  
-* `InteractionOutcome(outcomeId, name, score, date)`  
-  
-**Edges:**  
-* `HAS_CONVERSATION(fan -> conversation)`  
-* `DISCUSS_TOPIC(conversation -> topic)`  
-* `USES_ENGAGEMENT(conversation -> engagementAction)`  
-* `TARGETS_TOPIC(engagementAction -> topic)`  
-* `RESULTS_IN_OUTCOME(conversation -> interactionOutcome)`  
-* `FOLLOWED_BY(conversation -> conversation)` — chronological linkage.  
-  
----  
-  
-## CODING STYLE  
-* **Language:** Python 3.10+  
-* **Framework:** FastAPI  
-* **Models:** Pydantic BaseModel + Discriminated Unions  
-* **Type Safety:** Always use explicit type hints (`List[str]`, `Optional[float]`, etc.)  
-* **Error Handling:** REST → `HTTPException`; WS → `system_error` payloads  
-* **Imports:** Absolute imports only  
-* **Docstrings:** Short, purpose-driven  
-* **Function Size:** Small, single-purpose  
-* **Separation of Concerns:**  
-  * Endpoints → network I/O  
-  * Services → business logic  
-  * Models → data validation  
-  
----  
-  
-## NLP ENRICHMENT PIPELINE  
-* **Input:** Raw conversation messages (from API or extension DB).  
-* **Steps:**  
-  1. Sentiment analysis (transformer or spaCy).  
-  2. Topic extraction (NER or keyword clustering).  
-  3. Semantic embeddings (`sentence-transformers`).  
-  4. Engagement action classification.  
-* **Output:** Enriched conversation data ready for LPG insertion.  
-  
----  
-  
-## GREMLIN QUERY PATTERNS  
-* **Precision Engagement Analysis:** Find engagement actions that correlate with positive sentiment for similar topics.  
-* **Mechanism of Engagement Change:** Trace sequences of engagement actions over time.  
-* **Community Detection:** Louvain clustering on Topics to reveal social substructures.  
-* **Centrality Analysis:** Identify “keystone topics” with high interconnectivity.  
-  
----  
-  
-## BEST PRACTICES  
-* Keep each folder’s `README.md` up to date.  
-* Use `.env` for secrets (API keys, DB connection).  
-* Log all service-level errors.  
-* Write unit tests for services before deployment.  
-* No manual edits to generated type files.  
-  
----  
-  
-## AI PROMPT USAGE  
-When asking AI to generate or refactor code:  
-1. **Paste this document first** into the session.  
-2. Describe the feature or file you want.  
-3. The AI must:  
-   * Place new code in the correct folder.  
-   * Follow Pydantic + FastAPI + LPG conventions.  
-   * Integrate cleanly with enrichment or insights flows.  
-   * Maintain WS type safety via [`wss.py`](app/models/wss.py).  
-   * Respect MV3 keepalive handling.  
-  
----  
-  
-## FRONTEND INTEGRATION (VITE + FASTAPI)  
-**Purpose:** Provide a unified full-stack architecture where the **FastAPI backend** (NLP, enrichment, graph, analytics) serves both API endpoints and the **React frontend** built with **Vite** — without breaking the domain-driven backend structure.  
-  
-**Type Synchronization:**  
-* REST: Generated from `/openapi.json` via `@hey-api/openapi-ts`.  
-* WS: Generated from `/api/v1/schemas/wss` via `json-schema-to-typescript`.  
-  
-**State Management:** Zustand store implementing snapshot-then-delta logic.  
-  
----  
-  
-## BROWSER EXTENSION INTEGRATION (MV3 Agent)  
-**Purpose:** Capture OnlyFans events, store in IndexedDB, forward to Brain via WS.  
-  
-**Files:**  
-* [`manifest.json`](extension/manifest.json): MV3; `"minimum_chrome_version": "116"`, `"externally_connectable"`, necessary permissions.  
-* [`background.js`](extension/background.js): Service Worker:  
-  - Connect WS to Brain; keepalive every ~20s.  
-  - Snapshot: send `cache_update` from IndexedDB.  
-  - Delta: send `new_raw_message` on each event.  
-  - Commands: forward `command_to_execute` to active tab via `chrome.tabs.sendMessage`.  
-* [`content.js`](extension/content.js): Isolated world bridge.  
-* [`page-hook.js`](extension/page-hook.js): Monkey-patches fetch/WS/XHR to capture events.  
-  
-**IndexedDB Schema:**  
-* DB: `OnlyFansAnalyticsDB`  
-* Stores: `messages`, `chats`  
-  
-**Security:**  
-* Captures creator-visible conversation data and executes only configured, validated, allow-listed actions.
-* Restrict external connections.  
-  
----  
-  
-## SYSTEM DIAGRAM  
-```mermaid  
-graph LR  
-    subgraph Agent  
-        PH[page-hook.js] --> CT[content.js]  
-        CT --> BG[background.js]  
-    end  
-  
-    subgraph Brain  
-        WS[websocket.py] --> DI[data_ingest.py]  
-        DI --> GB[graph_builder.py]  
-        DI --> PUB[Redis Pub/Sub broadcaster]  
-    end  
-  
-    subgraph Bridge  
-        US[useSocket hook] --> ZS[Zustand store]  
-    end  
-  
-    BG -- cache_update/new_raw_message --> WS  
-    WS -- full_sync_response/append_message --> US  
-    PUB -- command_to_execute --> BG
+# Project guide — OnlyFans Conversational Analytics
+
+This is the implementation guide for contributors and code-generation tools. Accepted architecture decisions in [`docs/adr/`](docs/adr/README.md) are normative. In particular, [ADR 0009](docs/adr/0009-local-first-topology-and-persistence.md) defines the production runtime and persistence topology, and [ADR 0010](docs/adr/0010-signer-history-acquisition-and-bounded-state.md) defines signer-backed history acquisition and protocol v2. If this guide differs from an ADR, correct this guide.
+
+## Product purpose
+
+The product is a local-first conversation analytics system:
+
+- Agent is a Chrome MV3 extension that captures creator-visible activity and may acquire consented historical pages through a bundled read-only signer.
+- Brain is one loopback-only FastAPI/Pydantic process. It authenticates Agent and Bridge, validates protocol messages, owns canonical SQLite truth, coordinates projections, runs enrichment/analytics, and serves the compiled frontend.
+- Bridge is a React/Vite application. It consumes Brain-owned summary state and authenticated REST pages; it never reads Agent storage or acts as an ingestion/command proxy.
+
+NLP enrichment, therapy-research-style labeled property graph (LPG) modeling, and analytics remain product goals. Their results are rebuildable projections. Cosmos DB, Redis, an external broker, or any hosted conversation-data service is not part of the authoritative production path.
+
+## Architecture invariants
+
+1. Conversation data remains on the creator-controlled machine. Hosted services may provision identity/grants but do not receive conversation content.
+2. `auth.sqlite3` and `canonical.sqlite3` are authoritative. `projections.sqlite3` is rebuildable. No correctness rule depends on a cross-file transaction.
+3. Brain runs as one application worker and publishes post-commit changes in process. A second writer/process requires a new architecture decision.
+4. Agent is the only raw-ingestion producer. Delivery is an account-scoped durable outbox with contiguous source sequence, idempotency, fencing, acknowledgements, and explicit repair.
+5. Canonical chats and messages are keyed by `(creator_account_id, platform_entity_id)`. Installation, stream, event, sequence, and passive/signer origin are provenance only.
+6. Protocol `"2"`, Agent-config schema `"2"`, extension semver, signer semver/signing schema, IndexedDB version, and SQLite schema versions are independent.
+7. Bridge WebSocket state is bounded: conversation summaries, one-message previews, analytics, coverage, projection, and freshness. Historical message bodies always use authenticated REST paging.
+8. Acquisition coverage, projection readiness, and live freshness are independent. Brain derives completeness from typed evidence; Agent never supplies a trusted completion flag.
+9. Raw platform response bodies, cookies, signing rules/headers, and raw upstream cursors never leave Agent and never appear in logs or diagnostics.
+
+## Repository map
+
+### `app/` — Brain
+
+- `app/main.py`: constructs FastAPI and registers HTTP/WebSocket/frontend routes.
+- `app/protocol/`: Pydantic v2 protocol/config contracts and directional unions.
+- `app/api/endpoints/`: transport, settings, message-page, insight, schema, and frontend endpoints.
+- `app/transport/`: connection/session manager and ingest routing.
+- `app/persistence/`: repository interfaces, SQLite databases/migrations, canonical history, projection generation/read models.
+- `app/services/`: configuration, ingest, command, enrichment, graph, and analytics workflows.
+- `app/models/`: domain and response models.
+
+Network endpoints validate with Pydantic and delegate business logic. Services do not construct HTTP responses. Canonical mutation, deduplication, checkpoint advancement, coverage transition, revision allocation, and projection work are committed together in `canonical.sqlite3`. Projection workers consume durable work after commit.
+
+### `extension/` — Agent
+
+- `background.js`: composes the runtime and bundled signer; it contains no development account fallback.
+- `transport/durable-outbox.mjs`: account-scoped entities, deterministic merge, atomic page commit, outbox, jobs, and bounded snapshot construction.
+- `transport/indexeddb-ingestion-storage.mjs`: one IndexedDB database per Brain-authorized account. Only installation ID may use global Chrome persistent storage.
+- `transport/history-coordinator.mjs`: consent/session/identity gates and cross-page scheduling.
+- `transport/agent-websocket.mjs`: protocol-v2 session/fence, delta/snapshot replay, progress acknowledgement, and restart recovery.
+- `protocol/`: dependency-free v2 validation aligned with Python/shared fixtures.
+- `build.mjs`: deterministic, lockfile-pinned MV3 bundle and permission/remote-code audit.
+
+The signer validates one page and returns typed items, opaque continuation, and boundary evidence. Agent advances the continuation only after one atomic `commitPage`. `webRequest` is observation-only; do not add `webRequestBlocking`, cookies, debugger, native messaging, remote code, or unexpected origins.
+
+### `frontend/` — Bridge
+
+- React, TypeScript, Vite, MUI, and Zustand are the supported stack.
+- `src/protocol/` validates Brain-owned v2 messages.
+- `src/store/transportStore.ts` owns account-scoped summary/readiness state and bounded page caches.
+- `src/services/messageApi.ts` and `historySettingsApi.ts` own authenticated REST access.
+- `src/views/SettingsView.tsx` hosts history consent/controls; all roles may view, creators mutate.
+- Dashboard, Inbox, Analytics, and AppBar must represent partial coverage, projection failure, and delayed live state truthfully.
+
+Do not reintroduce complete message arrays into WebSocket snapshots or clone all history into Zustand. Keep page caches and rendered DOM bounded; preserve scroll anchor/focus on prepend.
+
+## Coding conventions
+
+- Python 3.10+, FastAPI, Pydantic v2, explicit types, absolute imports, small purpose-driven functions.
+- JavaScript/TypeScript uses exact runtime validation at trust boundaries and deterministic normalized material for equality.
+- REST errors use typed HTTP status/details; WebSocket failures use the protocol union and safe details.
+- Never log conversation text, user identifiers where unnecessary, auth tickets, cookies, signer rules, upstream cursors, raw bodies, or frames.
+- Preserve unrelated dirty work. Generated assets/types are changed only through their owning generator.
+
+## NLP, LPG, and analytics
+
+Canonical messages feed the same enrichment path regardless of passive or signer origin. Sentiment, topics, embeddings, engagement classification, graph nodes/edges, rankings, and aggregates are projection data. They must be deterministic from canonical truth or carry an explicit model/build version and canonical high-water mark.
+
+Partial metrics carry `basis`, observed/complete range, sample size, as-of time, and projection revision. Partial additive counts are lower bounds. Ratios/averages/rankings may describe only the synchronized subset. Lifetime/exact and trend claims require complete compatible coverage. Projection failure renders unavailable, never sample/static fallback.
+
+## Contract and security verification
+
+- Shared fixtures under `shared/fixtures/protocol/v2` must validate identically in Python, Agent, and Bridge. Do not add v1 compatibility directories or fallback selection.
+- Run deterministic merge permutations against Agent and Brain.
+- Fault-inject every page-commit write and snapshot stage/commit boundary.
+- Test worker/Brain restart, account switching, stream resets, multiple installations, stale cursors, CSRF/authorization, and projection activation.
+- Qualify snapshots at 10,000 messages in CI and 100,000 messages for Beta, proving every frame below 512 KiB and memory proportional to one frame.
+- Audit the built extension for pinned signer code, observation-only permissions, no remote code, and read-only network methods.
+- Verify Settings/Inbox keyboard and screen-reader behavior, visible focus, text-plus-icon status, stable prepend, bounded cache/DOM, and no serious/critical automated accessibility findings.
+
+## Common commands
+
+```powershell
+./.venv/Scripts/python -m pytest
+cd frontend
+npm run typecheck
+npm run lint
+npm test
+npm run build
+cd ../extension
+npm test
+npm run build
+npm run audit
 ```
 
----
-  
-✅ **This file** (`AI-instructions.md`) is the authoritative reference for all future AI or human contributions to this repository.    
-  
-Any generated or refactored code must **strictly conform** to the structure, style, and conventions defined here and in [`communication-spec.md`](communication-spec.md).  
+The communication details live in [`communication-spec.md`](communication-spec.md); frontend behavior and design tokens live in [`frontend/frontend-design-spec.md`](frontend/frontend-design-spec.md).

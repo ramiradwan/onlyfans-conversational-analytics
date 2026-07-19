@@ -1,435 +1,231 @@
-# 🎨 **FRONTEND UX/UI DESIGN SPECIFICATION**
+# Bridge Frontend Design Specification
 
-**Project:** OnlyFans Conversational Analytics (“Bridge”)  
-**Author:** UX/UI Specialist · Principal Product Designer  
-**Date:** 2025-11-16  
-**Version:** 7.1
+**Status:** Durable design-system and interface contract
 
------
+**Scope:** Responsive browser frontend
 
-## **1. Overview**
+## 1. Purpose and scope
 
-### **1.1 Purpose**
+This document defines durable boundaries for the frontend visual system, layout, component behavior, interaction, accessibility, and verification. It is not an inventory of the current interface, a token catalogue, or a framework migration guide.
 
-Defines the **single source of truth** for Bridge’s frontend UX, UI, interaction model, component architecture, and visual design — aligned to a **formal 3-tier token architecture**, **MUI v7 CSS variables system**, and **integrated WCAG 2.2 Level AA compliance**. Agent–Brain–Bridge communication behavior is governed by the accepted ADRs, as stated in Section 12.
+Feature scope, routes, roles, permissions, metrics, data semantics, consent policy, and protocol behavior are defined elsewhere. The frontend represents those contracts without redefining them. The [accepted architecture decisions](../docs/adr/README.md) and [communication specification](../communication-spec.md) remain authoritative for application behavior.
 
-Serves as:
+Authority is applied in this order:
 
-  * **Design System Reference** — principles, components, accessibility, motion
-  * **Frontend Engineering Contract** — theme tokens, layouts, RBAC, WS/REST mapping, token governance rules
+1. applicable law, security policy, and WCAG 2.2;
+2. accepted product and architecture contracts;
+3. this design specification;
+4. versioned design-system and framework implementation profiles.
 
-### **1.2 Scope**
+## 2. Design direction
 
-**In-Scope**
+Bridge combines the responsiveness and finish expected from high-quality consumer applications with the stability and clarity of professional analytical software.
 
-  * Conversational analytics dashboard
-  * Fan360 intelligence panel
-  * Inbox + conversation workflows
-  * Role-based dashboards for **Creator** and **Operator**
+Familiar patterns are reused when they improve recognition without weakening control, comparison, or transparency. “Calm” describes controlled salience, coherent organization, predictable behavior, and clear system state; it does not prescribe sparse screens, pastel color, or low information density.
 
-**Out of Scope**
+Demographic and persona labels do not prescribe palette, typography, spatial composition, or motion. Perceived quality supports usability but never substitutes for correctness or accessibility.
 
-  * Backend data processing/model training
-  * Hosted integrations
+## 3. Token and component architecture
 
-**Constraints**
+The design system distinguishes reference values, semantic roles, and component-specific decisions. These layers need not map to exactly three files or framework objects.
 
-  * Browsers: Chrome / Safari ≥ 2023
-  * Viewports: ≥ 1280px desktop + adaptive tablet
-  * Compliance: WCAG 2.2 AA (required)
+- Components consume semantic or component roles rather than reference values.
+- Semantic names describe purpose or state rather than temporary appearance.
+- Semantic roles remain stable across themes even when their values change.
+- Component-specific tokens cover legitimate needs that shared semantic roles cannot express.
+- Raw visual values stay in approved token, theme, asset, or visualization definitions rather than ordinary component code.
+- Generated design-system files are build outputs, not manual editing surfaces.
+- Repeated interaction and state behavior belongs in shared components or primitives.
 
-### **1.3 Success Metrics**
+The implementation profile defines the active token schema, public component APIs, framework mappings, and approved exceptions.
 
-| Metric | Target |
-| :--- | :--- |
-| Lighthouse UX | ≥ 90 |
-| Usability: task success | ≥ 95% |
-| FCP | \< 1s |
-| TTI | \< 2.5s |
-| Max actionable items per view | ≤ 7 |
+## 4. Color and themes
 
------
+- Light and dark themes receive equivalent component and state coverage.
+- Color roles keep the same meaning across themes and related workflows.
+- Interactive color is not reused decoratively where it creates a false affordance.
+- State, category, and urgency remain understandable without color alone.
+- Text and required non-text elements meet WCAG 2.2 contrast requirements in their rendered context.
+- Contrast on translucent, layered, hover, focus, selected, disabled, and data-visualization states is evaluated on the final composite.
 
-## **2. Product Goals & UX Principles**
+Generated, adaptive, or user-derived palettes remain within the semantic role model. They are accepted only after contrast and state-distinguishability checks, with a validated fallback available. Exact palettes and theme-generation methods remain open design decisions.
 
-**Primary Goal:**
-Deliver a **calm, information-dense**, high-trust interface that enables creators and teams to interpret conversations, assess audiences, and act decisively with minimal cognitive load.
+## 5. Typography, iconography, and material
 
-| Principle | Description | Implementation Examples |
-| :--- | :--- | :--- |
-| **Clarity \> Cleverness** | Plain language, predictable actions | Buttons labeled “View Analytics” not “Crunch Numbers” |
-| **Stress-Optimized** | Assist multitasking and accuracy | High-visibility CTAs, reduced decision surfaces |
-| **Calm Interfaces** | Whitespace + progressive disclosure | Show top insights first; drill-down on demand |
-| **Role-Targeted** | Surfaces change dynamically by persona | Operator sees Inbox-first; Creator sees Insights-first |
-| **Transparency = Trust** | Show system state transitions | “Synced”, “Saving…”, “Reconnected” |
-| **Accessible by Default** | WCAG AA mandatory | Contrast ≥ 4.5:1, full keyboard flow |
-| **Feedback as Reassurance** | Microfeedback on all actions | Save toasts, message-ready indicators |
-| **Conversation-First** | Conversations anchor navigation | Inbox prioritized by sentiment + LTV |
+### Typography
 
------
+- Type styles use named semantic roles and a limited, coherent hierarchy.
+- Primary reading text remains legible at normal desktop viewing distance, browser zoom, and increased text size.
+- Relative sizing respects browser and operating-system scaling.
+- Metadata can be compact but does not become the only location for essential information.
+- Truncation never becomes the only way to access meaning.
 
-## **3. Users & Personas**
+Font family, scale, weight, and measure belong to the implementation profile.
 
-### **3.1 Roles**
+### Iconography
 
-| Role | Primary Goals | UX Priorities |
-| :--- | :--- | :--- |
-| **Creator-CEO (“Alex”)** | Understand engagement, triage fans | Calm dashboards, actionable insights |
-| **Operator (“Marco/Sarah”)** | Communicate efficiently | Minimal friction, responsive chat |
+- Icons use a consistent visual family and retain recognizable silhouettes at their rendered size.
+- Every icon-only control has an accessible name. Unfamiliar or ambiguous actions also include visible explanatory text.
+- Directional icons mirror only when their meaning follows reading progression.
+- Essential text is not embedded in icons or images.
 
-### **3.2 Persona Extensions**
+### Surfaces and effects
 
-| Persona | Motivations | Pain Points | Behaviors |
-| :--- | :--- | :--- | :--- |
-| **Creator-CEO** | Wants strategic clarity | Overwhelmed by complex dashboards | Logs in weekly, skims insights |
-| **Operator** | Wants to hit goals fast | Dislikes cluttered, laggy UIs | Chats continuously, multitasks heavily |
+- Surface changes clarify hierarchy, grouping, or interaction.
+- Borders, elevation, translucency, blur, gradients, and rim effects preserve edge definition, contrast, and reading clarity.
+- Content remains understandable when transparency, blur, animation, or advanced rendering effects are unavailable.
 
------
+No material treatment, including glassmorphism, is a defining product characteristic.
 
-## **4. Requirements**
+## 6. Layout and responsive behavior
 
-### **4.1 Functional**
+The primary workspace is desktop-oriented. Narrower and touch-capable configurations are defined by the implementation profile.
 
-  * Filter conversations (unread, sentiment, fan value)
-  * Real-time analytics via WebSocket
-  * RBAC-driven UI layouts and routing
-  * Progressive disclosure for analytics layering
+- Layout follows task priority, comparison needs, reading order, and available space.
+- Related elements are grouped through proximity, alignment, hierarchy, or a common region; containers are added only when they improve structure.
+- Dense views remain appropriate when scan paths, grouping, and control ownership are clear.
+- Responsive changes preserve information meaning, reading order, and access to primary actions.
+- Components reflow, resize, collapse, or progressively disclose secondary content instead of compressing the desktop composition.
+- Browser zoom and text enlargement preserve supported workflows without clipping or loss of functionality.
+- Touch-capable layouts provide WCAG-conforming targets or spacing while retaining keyboard and pointer operation.
 
-### **4.2 Non-Functional**
+The implementation profile versions the supported CSS viewport ranges, orientations, zoom and text-scale conditions, and input modes. Supported workflows remain operable throughout that matrix. Breakpoints, grid systems, shell dimensions, card layouts, and use of container queries also belong to that profile.
 
-  * WS round-trip \< 200ms
-  * Keyboard + screen-reader fully supported
-  * Responsive 768–1920px
-  * Motion ≤ 200ms; honors `prefers-reduced-motion`
+## 7. Navigation and wayfinding
 
------
+- Current location is visually and programmatically identifiable.
+- Navigation patterns and placement remain consistent within the same viewport class.
+- Navigation integrates with browser history, deep links, refresh, and state restoration according to the routing contract.
+- Collapsed navigation retains clear access, focus behavior, and a recovery path.
+- High-frequency destinations remain distinguishable from secondary navigation.
 
-## **5. Information Architecture**
+This specification does not prescribe route names, navigation count, shell composition, or role-specific destinations.
 
-### **5.1 Primary Navigation**
+## 8. Component states and interaction
 
-  * Dashboard (Creator-only)
-  * Inbox (Conversation-first)
-  * Analytics (Creator-only)
-  * Settings
+Shared interactive components expose the states relevant to their behavior, including rest, hover where applicable, focus, active, selected, disabled, read-only, loading, and error.
 
-**Implementation:** Navigation is managed by `react-router-dom`. The `AppDrawer`'s `<ListItemButton>` components are `NavLink` components, mapping their `active` state to the `selected` prop. The URL is the single source of truth for the user's location.
+- State differences remain perceivable without relying on color alone.
+- Focus stays visible and follows meaningful reading and interaction order.
+- Pointer interactions have a keyboard path unless an equivalent control covers an inherently pointer-specific operation.
+- Drag, resize, reorder, pan, multipoint, and path-based interactions provide a non-dragging single-pointer alternative unless the gesture itself is essential.
+- Essential information and actions are not disclosed only on hover.
+- Modal contexts set predictable initial focus, contain focus while open, provide keyboard-accessible completion or dismissal, and restore focus on close. Non-modal overlays do not trap focus.
+- Async actions acknowledge input within the feedback threshold defined by the implementation profile and communicate continued work without blocking unrelated tasks.
+- Valid existing content remains until its replacement is ready unless a product contract explicitly invalidates it.
+- Disabled, unavailable, read-only, empty, partial, and error states remain semantically distinct.
+- Destructive or difficult-to-reverse actions provide confirmation or a reliable recovery path.
+- Optimistic feedback is corrected visibly when the underlying operation fails.
 
-### **5.2 Core Flow**
+### Motion
 
-**KPI → Fan Analytics → Conversation Thread → Sentiment → Action**
+- Motion communicates state, continuity, causality, or orientation.
+- Decorative motion remains restrained and never delays interaction or obscures results.
+- Structural transitions preserve object correspondence when it aids understanding.
+- Reduced-motion preferences receive a functional low-motion alternative.
+- Flashing content stays within WCAG 2.2 limits.
+- Equivalent effects favor rendering paths that avoid layout instability and input delay.
 
-### **5.3 Layout Patterns**
+Exact durations and easing curves belong to the implementation profile.
 
-  * **Persistent `AppShell`:** The core layout consists of a persistent `AppShell` component containing the `AppAppBar` and `AppDrawer`. This shell renders a `react-router-dom` `<Outlet />`, which displays the active, role-specific view.
-  * **"Calm" Surface Convention:** To support the "Calm Interfaces" principle (2.0), the layout strictly differentiates "chrome" (navigation/containers) from "content."
-      * **Chrome (`background.paper`):** `AppAppBar`, `AppDrawer`, `Card`, and `Paper` surfaces.
-      * **Content (`background.default`):** The main `<Box component="main">` that hosts the `<Outlet />` and the background of the `MessageStreamPane`.
-  * Bento Grid for KPIs and insights.
-  * Left drawer (persistent at ≥1024px, collapsible below).
-  * ≤ 2 clicks from KPI → conversation detail.
+## 9. Data visualization
 
------
+- Color assignments remain semantically stable or categorically consistent within a view.
+- Whenever color carries meaning, the same meaning is available through labels, position, shape, pattern, direct annotation, or an equivalent text or table.
+- Category count stays within the discriminability of the selected encodings.
+- Every non-decorative visualization exposes an accessible name and a textual or tabular equivalent appropriate to the same task.
+- Keyboard and assistive-technology users can reach the same information available through pointer interaction.
+- Analytical comparison never depends on animation.
+- Uncertainty, partial values, and unavailable values remain perceptibly and programmatically distinct without implying false precision.
 
-## **6. Visual Language (2025–2026)**
+The product contracts determine what data means; this specification governs how those meanings remain perceptible.
 
-### **6.1 Token Architecture**
+## 10. Accessibility and input
 
-| Tier | Purpose | Spec Location | MUI Mapping |
-| :--- | :--- | :--- | :--- |
-| **Tier 1: Global / Reference Tokens** | Raw, immutable design decisions (brand hex, font sizes, spacing primitives, effects). Never used directly in components. | `theme.brandPalette`, `theme.brandTypography`, `theme.effects` | Custom top-level keys |
-| **Tier 2: Semantic / Alias Tokens** | Contextual roles that adapt per mode (light/dark); reference Tier 1. Drive majority of styling. | `theme.palette`, `theme.typography`, `theme.spacing` | MUI native theme keys |
-| **Tier 3: Component Tokens** | Scoped to specific components for unique cases. Governed “escape hatch” to avoid token sprawl. | `theme.components` overrides | MUI component override API |
+WCAG 2.2 Level AA is the release baseline. The rendered frontend provides:
 
-**Governance Mandates:**
+- semantic structure and accessible names;
+- complete keyboard operation and logical focus management;
+- visible focus indicators;
+- screen-reader-compatible status and error updates;
+- required text and non-text contrast;
+- non-color equivalents for meaningful state;
+- usable zoom, text enlargement, and reflow;
+- compliant target sizing or spacing;
+- operability in supported platform high-contrast and forced-color modes;
+- reduced-motion behavior; and
+- accessible alternatives for complex visual content.
 
-  * 80% of styling from Tier 2; ≤20% from Tier 3.
-  * Tier 2 expresses **context/intent**, not component detail.
-  * Tier 3 only when semantic tokens are insufficient — no hard-coded `sx` values.
-  * Tier 1 never used directly in components — only inside `createTheme`.
-  * All token aliases resolved **at build time** — no runtime alias lookups.
+Accessibility is evaluated across component states, overlays, themes, responsive layouts, and supported input methods. Theme-generation settings and automated scans contribute evidence but do not establish conformance by themselves.
 
-### **6.2 Color System**
+APCA can be recorded as a secondary diagnostic. It does not replace WCAG 2.2 conformance.
 
-  * **Tier 1:** Brand colors stored in `theme.brandPalette` (immutable).
-  * **Tier 2:** Semantic colors, including custom ones (`accent`, `calm`), added via **`augmentColor()`**:
-      * Auto-generate `light`, `dark`, and `contrastText`.
-      * Enforce WCAG AA via `contrastThreshold: 4.5`.
-      * Available to component `color` props (e.g., `<Button color="accent">`).
-  * **Tier 3:** Component-specific variants in `theme.components`.
+## 11. Localization and content resilience
 
-### **6.3 Typography**
+- Layouts tolerate translated text, long names, large values, and missing optional content.
+- Date, time, number, and currency presentation uses locale-aware formatting.
+- Layout and directional icons mirror only when their meaning follows reading progression. Absolute-direction, media, time, and brand symbols retain their intended orientation.
+- Logical DOM and focus order follow the rendered task sequence rather than a mechanical reversal.
+- User-visible text remains external to images and decorative assets.
+- Interfaces do not rely on fixed copy length for alignment or control sizing.
 
-  * Tier 1: Font size primitives in `theme.brandTypography`.
-  * Tier 2: Semantic styles in `theme.typography`.
+Supported locales and formal expansion budgets belong to product requirements and the implementation profile.
 
-### **6.4 Effects**
+## 12. Performance and rendering
 
-  * Tier 1 reusable effects (e.g., `theme.effects.glassmorphism`) with type-safe definitions, reused in modals, loaders, panels.
+- Visual effects and motion stay within the runtime and bundle budgets defined by the implementation profile.
+- Loading patterns preserve layout stability and reflect the shape of expected content where useful.
+- Progressive and background work does not blank unrelated valid content.
+- Design-system defaults avoid unnecessary rendering work; exceptional effects remain measurable and removable.
+- The interface retains a clear hierarchy when advanced effects or animation are reduced.
 
------
-
-## **7. Interaction & Feedback**
+### Bounded conversation history
 
-| State | Behavior |
-| :--- | :--- |
-| Hover | Subtle elevate/tint |
-| Focus | 2px visible outline (AA compliant) |
-| Active | `scale(0.97)` |
-| Disabled | Opacity reduction |
-| Motion | ≤ 200ms / `ease-in-out` |
+- Realtime state contains conversation summaries and at most one latest-message preview; complete historical arrays are never treated as WebSocket view state.
+- Historical messages are loaded through authenticated, bounded pages. The active conversation retains at most the configured page window, inactive conversations use bounded LRU retention, and rendered rows are virtualized.
+- Prepending an older page preserves the first visible message and its pixel offset without moving keyboard or screen-reader focus.
+- A live append follows the tail only when the reader is already near the bottom. Reading older history is never interrupted by forced scrolling.
+- A projection-generation change invalidates stale pages and cursors. Recovery requests are bounded and keep loading, empty, unavailable, and locally exhausted states distinct.
 
------
+### Readiness, consent, and truthfulness
 
-## **8. Accessibility**
+- Acquisition coverage, projection readiness, and live freshness remain independently perceivable and programmatically available. A combined status follows the product-defined priority order and uses text plus an icon rather than color alone.
+- “Up to date” is reserved for complete applicable acquisition, a current projection, current live freshness, and aligned desired/effective history configuration.
+- Partial analytics identify their synchronized-subset basis, observed range, sample size, and as-of time. A partial zero never reads as an unqualified lifetime zero; unavailable projections never render sample/static fallback values.
+- History controls distinguish desired from effective running/paused/revoked state. All authorized roles can inspect status, while mutation controls are shown only to creators and require explicit consent.
+- Progress announcements describe meaningful phase changes, not page-level acquisition noise.
 
-  * WCAG 2.2 AA mandatory:
-      * Normal text ≥ 4.5:1
-      * Large text ≥ 3:1
-      * Non-text UI ≥ 3:1
-  * `contrastThreshold: 4.5` in `createTheme` ensures systemic compliance via `augmentColor()`.
-  * **Token Contrast Compliance Matrix** must be executed pre-release; failures remediated.
+The implementation profile versions numeric budgets with the representative device and browser, viewport, dataset, network conditions, measurement method, and percentile. Supported browser targets remain part of the release criteria.
 
------
+## 13. Governance and creative latitude
 
-## **9. Cognitive Load Reduction**
+This specification remains independent of a particular MUI major version. A separate implementation profile maps these boundaries to the active MUI and MUI X releases, token files, component APIs, and migration constraints.
 
-  * ≤ 7 actionable elements per view
-  * Summaries → details → expert layers
-  * Collapsible groups
-  * Contextual tooltips instead of help modals
-
------
-
-## **10. Privacy & Trust**
-
-  * RBAC content gating
-  * Explicit user consent for data import/analysis
-  * Real-time connection indicator
-  * Auto-logout after inactivity
-
------
-
-## **11. Engineering Reference**
-
-### **11.1 Component Architecture (React + MUI)**
-
-```tsx
-// App.tsx: Provides Theme, Router, and global state
-<ThemeProvider theme={theme}>
-  <CssBaseline />
-  <GlobalStateProvider> {/* e.g., Zustand */}
-    <BrowserRouter>
-      <AppRouter />
-    </BrowserRouter>
-  </GlobalStateProvider>
-</ThemeProvider>
-
-// AppRouter.tsx: Selects the correct layout shell
-<Routes>
-  <Route path="/" element={<AppShell />}>
-    {/* Role-based routes from useAppRoutes() are injected here */}
-    <Route index element={<RoleSpecificLandingView />} />
-    <Route path="inbox" element={<OperatorInboxView />} />
-    <Route path="analytics" element={<AnalyticsView />} />
-    {/* ...etc */}
-  </Route>
-  {/* <Route path="/login" element={<LoginView />} /> */}
-</Routes>
-
-// AppShell.tsx: The persistent layout
-<Box sx={{ display: 'flex', height: '100vh' }}>
-  <AppAppBar />
-  <AppDrawer />
-  <Box 
-    component="main" 
-    sx={{ 
-      flexGrow: 1, 
-      p: 3, 
-      bgcolor: 'background.default', // "Calm" content area (5.3)
-      height: 'calc(100vh - 64px)', // 64px = AppBar height
-      overflow: 'auto'
-    }}
-  >
-    <Outlet /> {/* Role-based views are rendered here */}
-  </Box>
-</Box>
-```
-
-### **11.2 PermissionGuard (RBAC)**
-
-```ts
-export const usePermissions = () => {
-  const role = useStore(s => s.user.role); // 'creator-ceo' or 'chatter'
-
-  return {
-    isCreator: role === 'creator-ceo',
-    isOperator: role === 'chatter',
-  };
-};
-```
-
-### **11.2a Role-Based Routing**
-
-RBAC is implemented at the **routing layer**, not with conditional rendering.
-
-1.  A `usePermissions()` hook (11.2) provides the user's role.
-2.  A `useAppRoutes()` hook consumes `usePermissions()` to generate a role-specific array of `<Route>` definitions.
-3.  This enforces the "Operator sees Inbox-first" rule (3.1) by setting the `/` (index) route to `<Navigate to="/inbox" />` for the "Operator" role, while mapping it to `<CreatorDashboardView />` for the "Creator" role.
-
-### **11.3 Theme Configuration — MUI v7 Golden Path**
-
-```ts
-export const theme = createTheme({
-  cssVariables: { enabled: true, colorSchemeSelector: 'data-mui-color-scheme' },
-
-  // Tier 1: Global Tokens
-  brandPalette: {
-    groundedTech: { primary: '#2563EB', warmNeutral: '#A47864' },
-    optimisticAccent: { primary: '#FACC15', muted: '#707070' },
-    calmClear: { primary: '#0062E0', etherealBlue: '#E0F0FF' }
-  },
-
-  // Tier 2: Semantic Tokens
-  colorSchemes: {
-    light: { 
-      palette: { 
-        primary: { main: '#2563EB' }, 
-        background: { default: '#F9FAFB', paper: '#FFFFFF' } 
-      } 
-    },
-    dark: { 
-      palette: { 
-        primary: { main: '#3B82F6' }, 
-        background: { default: '#121212', paper: '#1E1E1E' } 
-      } 
-    }
-  },
-
-  // Tier 3: Component Tokens
-  components: {
-    MuiButton: {
-      styleOverrides: {
-        root: ({ theme }) => ({
-          backgroundColor: theme.vars.palette.primary.main,
-          [theme.getColorSchemeSelector('dark')]: {
-            backgroundColor: theme.vars.palette.primary.dark
-          }
-        })
-      }
-    }
-  }
-});
-```
-
------
-
-## **12. WebSocket / REST → UI Mapping**
-
-### **12.1 Normative Communication Authority**
-
-The accepted ADRs in [`docs/adr/`](../docs/adr/README.md) are normative over this frontend specification and every other secondary specification. [ADR 0006](../docs/adr/0006-canonical-communication-matrix.md) is the canonical operation matrix. This section is a synchronized UI-facing restatement; if it drifts from an accepted ADR, the ADR governs.
-
-### **12.2 Canonical Communication Matrix**
-
-The following 25 rows reproduce ADR 0006, including operations that do not directly update Bridge UI state.
-
-| Message type or operation | Transport | Sender | Receiver | Payload essence | Failure behavior |
-| --- | --- | --- | --- | --- | --- |
-| `agent.hello` | WebSocket | Agent | Brain | Protocol/capabilities, `agent_installation_id`, requested `creator_account_id`, source stream/checkpoint, applied config revision | Must be first. Brain rejects unauthenticated, unauthorized, incompatible, or incomplete hello and closes; no ingest is accepted. |
-| `agent.session` | WebSocket | Brain | Agent | Accepted `connection_id`, fencing token, bound account, durable checkpoint/resume action, required config revision, lease parameters | Without it Agent sends no domain messages. Loss causes reconnect and a new connection/fencing identity. |
-| `bridge.hello` | WebSocket | Bridge | Brain | Protocol/capabilities, `bridge_session_id`, requested account, optional last view revision | Must be first. Brain rejects invalid identity/version and closes; Bridge clears account-scoped state. |
-| `bridge.session` | WebSocket | Brain | Bridge | Accepted `connection_id`, bound account, protocol/server versions | Without it Bridge does not render account state. Loss causes reconnect and a new initial snapshot. |
-| `agent.heartbeat` | WebSocket | Agent | Brain | Connection/fencing identity, current applied config revision, health summary | Best effort and not replayed. Missed lease transitions `agent.state` to stale/disconnected; it does not itself change platform-user presence or ingestion progress. |
-| `sync.required` | WebSocket | Brain | Agent | Reason, expected source state, snapshot requirements | Agent pauses later deltas, builds/sends a consistent snapshot, and retries after reconnect if the notice is lost. |
-| `ingest.snapshot` | WebSocket | Agent | Brain | `snapshot_id`, source stream, `through_seq`, complete account-scoped chats/messages | Brain validates and atomically replaces only the fenced stream/account. No ack means safe resend. Invalid non-retryable content gets `ingest.rejected`; transient failure leaves checkpoint unchanged. |
-| `ingest.delta` | WebSocket | Agent | Brain | Stable `event_id`, source stream/sequence, one typed raw change | Persisted in Agent outbox until acknowledged. Brain deduplicates and accepts only the next contiguous sequence; gap leads to rejection or `sync.required`. |
-| `ingest.ack` | WebSocket | Brain | Agent | Accepted snapshot identity and/or highest contiguous committed source sequence | Agent retains and resends until it observes the ack. Duplicate acks are harmless. |
-| `ingest.rejected` | WebSocket | Brain | Agent | Correlation/event identity, validation code, retryable flag, safe detail | Retryable items remain queued with backoff. Non-retryable items block contiguous progress until explicit repair/quarantine policy or resync; no silent skip. |
-| `state.snapshot` | WebSocket | Brain | Bridge | Complete canonical conversation/analytics read model and `view_revision` | Sent after every v1 Bridge bind/resync. Bridge stays loading/degraded until valid; reconnect/resync on loss or invalid payload. |
-| `state.delta` | WebSocket | Brain | Bridge | Next `view_revision` and an atomic typed change set for conversation/analytics state | Bridge ignores duplicates, applies only the next revision, and sends `state.resync` on a gap or invalid change. |
-| `state.resync` | WebSocket | Bridge | Brain | Last applied view revision and reason for recovery | Idempotent. Brain returns `state.snapshot`; Bridge does not claim realtime state while waiting. |
-| `presence.observed` | WebSocket | Agent | Brain | Complete normalized online `platform_user_id` list, observation id/time | Ephemeral and never outbox-replayed. Invalid/out-of-order data is ignored/rejected; silence expires to unknown rather than offline. |
-| `presence.state` | WebSocket | Brain | Bridge | Authoritative list, `current/unknown` freshness, server receipt/expiry and last-observation metadata | Bridge replaces the presence slice and marks it unknown at `expires_at`. A reconnect receives current state; stale data is never rendered as current. |
-| `agent.state` | WebSocket | Brain | Bridge | `connected/stale/disconnected`, active installation metadata, required/applied config revisions, degraded reason | Brain derives it from shared leases/state and sends an initial value. Bridge never substitutes local extension detection; expiry yields stale/disconnected. |
-| `system.state` | WebSocket | Brain | Bridge | Account processing mode, readiness/degraded state, safe operational detail | Last value is replaceable state. Bridge marks degraded on expiry/disconnect and receives a fresh value after binding. |
-| `protocol.error` | WebSocket | Brain | Agent or Bridge | Error code, correlation/message id, retryability/fatal flag, safe detail | Fatal errors close after delivery attempt. Nonfatal errors leave the relevant checkpoint/revision unchanged; clients follow the indicated retry/resync action. |
-| `agent.config.get` | HTTPS request (`GET /api/v1/agent/config`) | Agent | Brain | Authenticated context, current ETag/revision and supported config schema | Timeout/5xx keeps last known good config and retries. Unauthorized fails the Agent session; `304` reuses validated cached content. |
-| `agent.config.document` | HTTPS response | Brain | Agent | Immutable config revision, schema version, digest/ETag, capture and command policy | Agent rejects invalid/unsupported/digest-mismatched content, keeps last known good config, and reports degraded; it never partially applies. |
-| `config.available` | WebSocket | Brain | Agent | Newly required config revision/digest | Signal is idempotent. Loss self-heals because every new `agent.session` repeats the required revision. |
-| `config.applied` | WebSocket | Agent | Brain | Applied revision/digest, activation outcome, relevant capability status | Agent repeats applied revision in hello/heartbeat. Brain retains required/applied mismatch and exposes degraded `agent.state` until confirmed. |
-| `command.execute` | WebSocket | Brain | Agent | `command_id`, bound account, allowed typed action, deadline, idempotency policy | Agent validates account, allow-list, deadline, and fencing before execution. Duplicate `command_id` returns stored result; Brain does not blindly retry a non-idempotent action without deduplication. |
-| `command.result` | WebSocket | Agent | Brain | `command_id`, accepted/succeeded/failed status, safe result/error metadata | Agent persists terminal results until acknowledged. Brain deduplicates; timeout becomes an auditable unknown/failed command state, not a Bridge proxy fallback. |
-| `command.result.ack` | WebSocket | Brain | Agent | `command_id` and recorded terminal result identity | Agent may compact the persisted result only after ack; duplicate acks are harmless. |
-
-### **12.3 Bridge UI Consequences**
-
-| Canonical operation | Required Bridge behavior |
-| --- | --- |
-| `bridge.hello` | Send first for the selected account. Clear account-scoped state if identity/version validation fails. |
-| `bridge.session` | Record the accepted session, but do not render account state until a valid `state.snapshot` arrives. |
-| `state.snapshot` | Replace the conversation/analytics read model and its `view_revision`; remain loading/degraded on loss or invalid data. |
-| `state.delta` | Apply one atomic next-revision change set, ignore duplicates, and request `state.resync` on a gap or invalid change. |
-| `state.resync` | Send the last applied revision and recovery reason; do not claim realtime state while awaiting `state.snapshot`. |
-| `presence.state` | Replace the presence view, gate online rendering on `freshness: current`, and mark it unknown at `expires_at`. |
-| `agent.state` | Render Brain-derived Agent connectivity and required/applied configuration drift; never substitute local extension detection. |
-| `system.state` | Replace readiness/degraded state and mark it degraded on expiry or Brain disconnection. |
-| `protocol.error` | Follow its fatal/retry/resync instruction and expose only its safe detail. Domain failures remain in their owning state/result. |
-
-Agent-ingestion, presence-observation, Agent-configuration, and Agent-command operations do not directly enter a Bridge handler. Command state may reach the UI only through Brain-owned `state.snapshot`/`state.delta`; Bridge never originates or proxies a command.
-
-Exact state-store names and component assignments are implementation choices, not communication-contract requirements.
-
-## **13. Loading, Error & Motion Patterns**
-
-  * GlobalLoader = Glassmorphism + Lottie
-  * Snackbar = centralized error handling
-  * Skeletons for KPI & Fan360 load states
-  * Motion ≤ 200 ms, `ease-in-out`
-
------
-
-## **14. Validation & Testing**
-
-### **14.1 UX Validation**
-
-  * 5 users per role, 90% success threshold
-  * Lighthouse accessibility ≥ 95
-  * React Profiler + Lighthouse performance targets met
-
-### **14.2 QA Checklist — v7 Tokens**
-
-  * ✅ Tier 1 defined in top-level keys; never used directly in components.
-  * ✅ Tier 2 references Tier 1; custom colors via `augmentColor()`; light/dark parity validated.
-  * ✅ Tier 3 overrides scoped and governed; interaction/focus states reference Tier 2 tokens.
-  * ✅ No `theme.palette.mode` checks; all styles use `theme.vars` and selectors.
-  * ✅ WCAG AA compliance matrix executed; failures remediated before release.
-  * ✅ All aliases resolved at build time.
-
------
-
-## **15. Risks & Mitigation**
-
-| Risk | Impact | Mitigation |
-| :--- | :--- | :--- |
-| Token Swamp | Design drift | Enforce 80/20 Tier 2/Tier 3 rule |
-| Accessibility failure | Compliance risk | Automated contrast checks via matrix |
-| Performance regression | Build/runtime cost | No runtime alias resolution; pre-processing in CI |
-| Dark mode flicker | UX degradation | CSS variable engine + selectors |
-
------
-
-## **16. Glossary**
-
-  * **Tier 1: Global Tokens** — Raw, immutable design decisions stored in top-level theme keys.
-  * **Tier 2: Semantic Tokens** — Contextual values in MUI’s `palette`, `typography`, etc.
-  * **Tier 3: Component Tokens** — Scoped overrides in `theme.components`.
-  * **`AppShell`** — The persistent layout component (`AppBar`, `AppDrawer`) that hosts the `Outlet`.
-  * **`Outlet`** — The `react-router-dom` component that renders the active, role-based view.
-  * **"Calm" Surface** — The `background.default` (content) vs. `background.paper` (chrome) convention.
-  * **Glassmorphism Token** — Reusable Tier 1 effect object for frosted overlays.    
-  * **CSS Variable Engine** — MUI v7 system for theme-aware, flicker-free mode toggling.
-
------
-
-✅ **End of v7.1 Specification**
+Framework migration does not alter accessibility, state semantics, or public design-system contracts without a separately reviewed change.
+
+Designers retain latitude over palette values, typography, spacing, radii, density, composition, iconography, elevation, motion character, and responsive structure. Exceptions to shared patterns identify the concrete interface need they serve.
+
+## 14. Verification and review
+
+Mechanical constraints belong in tooling where they can be checked reliably. The implementation profile names the exact tools, rule sets, fixtures, environments, and blocking thresholds.
+
+| Concern | Checked through |
+|---|---|
+| Semantic markup, accessible names, and common keyboard or pointer issues | Static analysis, component and browser tests, and manual keyboard runs |
+| Raw visual values and token bypass | Static-analysis rules or restricted-syntax policies outside approved source files |
+| Token references and component state APIs | Compile-time contracts and component tests |
+| Theme and semantic contrast | Token-generation checks and rendered contrast tests |
+| Light/dark, responsive, focus, and state coverage | Enumerated fixture coverage and deterministic visual regression |
+| Reduced motion and flashing | Stylesheet checks, component tests, and manual verification |
+| Charts and equivalent representations | Component fixtures plus keyboard and screen-reader review |
+| Localization and bidirectional layout | Pseudolocale, RTL, and visual-regression fixtures |
+| Accessibility environments | Versioned browser, assistive-technology, zoom, reflow, and forced-color test matrix |
+| Performance | Repeatable build and runtime measurements against the versioned profile |
+
+Hierarchy, density, familiarity, composite legibility, and the suitability of a visual treatment remain design-review judgments. Static analysis does not attempt to infer demographic preference, satisfaction, or adoption.
+
+## 15. Evidence and revision boundary
+
+Supporting evidence must be reviewed from a repository-local, versioned source before it becomes normative. Until then, this specification distinguishes standards and accepted product contracts from explicitly labeled design hypotheses.
+
+This document changes when normative requirements or durable frontend design boundaries change. Token values, component inventories, framework releases, route changes, and feature behavior belong to versioned implementation or product records.

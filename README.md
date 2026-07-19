@@ -11,7 +11,7 @@ OnlyFans Conversational Analytics is a local-first system that captures creator-
 - **Brain** — a FastAPI backend that authenticates Agent and Bridge connections, validates and persists ingestion, derives analytics and presence state, coordinates commands, and serves the local API.
 - **Bridge** — a React dashboard that consumes Brain-owned snapshots and revisioned updates. It does not read Agent storage or act as an Agent transport.
 
-Conversation processing stays in the creator-controlled local runtime. Hosted services are limited to customer authentication, installation provisioning, and signed offline-verifiable grants; they do not receive conversation data.
+Conversation processing stays in the creator-controlled local runtime. External provisioning may issue signed offline-verifiable grants, but it does not receive conversation data.
 
 ## Architecture
 
@@ -25,8 +25,15 @@ Conversation processing stays in the creator-controlled local runtime. Hosted se
 ```powershell
 ./.venv/Scripts/python -m pytest
 cd frontend
+npm run typecheck
+npm run lint
 npm test
 npm run build
 cd ../extension
 npm test
+npm run build
+npm run audit
+npm run qualify:snapshot:ci
 ```
+
+The 100,000-message qualification (`npm run qualify:snapshot`) and one explicitly consented, sanitized live read-only pagination run are additional Beta gates. Deterministic checks alone do not authorize a Beta declaration.
