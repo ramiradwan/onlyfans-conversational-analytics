@@ -1,27 +1,22 @@
-import { Alert, Typography } from '@mui/material';
 import {
   AppShell,
+  CreatorDashboardView,
   MemoryRouter,
   Route,
   Routes,
+  createPreviewBridgeStore,
+  seedPreviewShellStore,
 } from 'onlyfans-analytics-frontend';
 
-export function AnalyticsShell() {
+const previewStore = createPreviewBridgeStore();
+seedPreviewShellStore();
+
+export function CreatorWorkspace() {
   return (
-    <MemoryRouter initialEntries={['/analytics']}>
+    <MemoryRouter initialEntries={['/']}>
       <Routes>
         <Route element={<AppShell />}>
-          <Route
-            path="/analytics"
-            element={
-              <Alert severity="info" sx={{ mt: 2 }}>
-                <Typography variant="subtitle2">Analytics workspace</Typography>
-                <Typography variant="body2">
-                  Routed content fills the persistent navigation shell.
-                </Typography>
-              </Alert>
-            }
-          />
+          <Route index element={<CreatorDashboardView store={previewStore} />} />
         </Route>
       </Routes>
     </MemoryRouter>

@@ -20,7 +20,11 @@
       "@routing/*": ["routing/*/index.ts", "routing/*/index.tsx", "routing/*"],
       "@services/*": ["services/*"],
       "@common/*": ["common/*"],
-      "@config/*": ["config/*"]
-    }
-  }
+      "@config/*": ["config/*"],
+      "onlyfans-analytics-frontend": ["../.design-sync/entry.ts"]
+    },
+    "skipLibCheck": true,
+    "types": ["vite/client", "node"]
+  },
+  "include": ["entry.ts", "preview-helpers.tsx", "previews/**/*.tsx", "../src/**/*.ts", "../src/**/*.tsx", "../src/types/**/*.d.ts"]
 }

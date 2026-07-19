@@ -1,10 +1,18 @@
 import { Box } from '@mui/material';
-import { AppAppBar } from 'onlyfans-analytics-frontend';
+import {
+  AppAppBar,
+  MemoryRouter,
+  seedPreviewShellStore,
+} from 'onlyfans-analytics-frontend';
 
-export function DesktopHeader() {
+seedPreviewShellStore();
+
+export function LiveDesktopHeader() {
   return (
-    <Box sx={{ height: 88, position: 'relative', width: '100%' }}>
-      <AppAppBar drawerWidth={0} onDrawerToggle={() => {}} />
-    </Box>
+    <MemoryRouter initialEntries={['/']}>
+      <Box sx={{ height: 88, position: 'relative', width: '100%' }}>
+        <AppAppBar drawerWidth={0} headerHeight={72} onDrawerToggle={() => {}} />
+      </Box>
+    </MemoryRouter>
   );
 }

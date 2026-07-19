@@ -8,9 +8,9 @@ export function DashboardMetrics() {
         Today at a glance
       </Typography>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-        <KpiCard title="Avg. response time" value="4.8 min" grow />
-        <KpiCard title="Overall sentiment" value="84%" grow />
-        <KpiCard title="Unread messages" value={27} grow />
+        <KpiCard title="Total conversations" value={4} grow />
+        <KpiCard title="Total messages" value={8} grow />
+        <KpiCard title="Inbound messages" value={5} grow />
       </Stack>
     </Box>
   );
@@ -19,7 +19,7 @@ export function DashboardMetrics() {
 export function LoadingState() {
   return (
     <Box sx={{ bgcolor: 'background.default', p: 2, maxWidth: 360 }}>
-      <KpiCard title="Revenue today" value="€1,284" isLoading />
+      <KpiCard title="Total messages" value={0} isLoading />
     </Box>
   );
 }

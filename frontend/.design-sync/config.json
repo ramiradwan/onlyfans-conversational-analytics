@@ -17,7 +17,8 @@
     "MemoryRouter": null,
     "Route": null,
     "Routes": null,
-    "App": "src/App.tsx",
+    "App": null,
+    "LegacyMessageBubble": null,
     "GlobalLoader": "src/common/GlobalLoader.tsx",
     "KpiCard": "src/components/KpiCard.tsx",
     "KpiCardSkeleton": "src/components/KpiCardSkeleton.tsx",
@@ -45,39 +46,31 @@
     "AnalyticsView": "src/views/AnalyticsView.tsx",
     "CreatorDashboardView": "src/views/CreatorDashboardView.tsx",
     "GraphExplorerView": "src/views/GraphExplorerView.tsx",
-    "OperatorInboxView": "src/views/OperatorInboxView.tsx",
-    "CreateBridgeTransportStore": null,
-    "UseAnalyticsStore": null,
-    "UseSystemStore": null,
-    "UseUserStore": null,
-    "PreviewFrame": null,
-    "PreviewLabel": null,
-    "PreviewStack": null
+    "OperatorInboxView": "src/views/OperatorInboxView.tsx"
   },
   "dtsPropsFor": {
     "AnalyticsView": "  // No props.",
-    "App": "  // No props.",
-    "AppAppBar": "  drawerWidth: number;\n  onDrawerToggle: () => void;",
-    "AppDrawer": "  drawerWidth: number;\n  mobileOpen: boolean;\n  onDrawerToggle: () => void;",
+    "AppAppBar": "  drawerWidth: number;\n  headerHeight?: number;\n  onDrawerToggle: () => void;",
+    "AppDrawer": "  drawerWidth: number;\n  mobileDrawerWidth?: number;\n  mobileOpen: boolean;\n  onDrawerClose?: () => void;\n  onDrawerToggle?: () => void;",
     "AppShell": "  // No props.",
-    "AsyncContent": "  isLoading: boolean;\n  data: unknown[] | null | undefined;\n  placeholder: React.ReactNode;\n  emptyMessage: React.ReactNode;\n  render: (data: unknown[]) => React.ReactNode;",
+    "AsyncContent": "  isLoading: boolean;\n  data: any[] | null | undefined;\n  placeholder: React.ReactNode;\n  emptyMessage: React.ReactNode;\n  render: (data: any[]) => React.ReactNode;",
     "ChartPlaceholder": "  height?: number;",
-    "ChatListPane": "  conversations: ReadonlyArray<{\n    conversation_id: string;\n    platform_user_id: string;\n    display_name: string | null;\n    unread_count: number;\n    last_message_at: string | null;\n    messages: Array<{\n      message_id: string;\n      text: string;\n      sent_at: string;\n      direction: 'inbound' | 'outbound';\n      sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n    }>;\n  }>;\n  isLoading: boolean;\n  onSelectConversation: (conversationId: string) => void;\n  selectedConversationId: string | null;",
+    "ChatListPane": "  conversations: ReadonlyArray<{ conversation_id: string; platform_user_id: string | null; display_name: string | null; unread_count: number; last_message_at: string | null; latest_message: { message_id: string; text: string; sent_at: string; direction: 'inbound' | 'outbound'; sentiment: 'positive' | 'neutral' | 'negative' | 'unknown'; } | null; coverage: { status: 'unknown' | 'partial' | 'complete'; boundary: 'history_start' | null; earliest_available_at: string | null; latest_acquired_at: string | null; data_as_of: string | null; reason_code: string | null; }; }>;\n  isLoading: boolean;\n  onSelectConversation: (conversationId: string) => void;\n  selectedConversationId: string | null;",
     "ChatListPlaceholder": "  rows?: number;",
-    "CreatorDashboardView": "  // No props.",
+    "CreatorDashboardView": "  store?: {\n    getState(): Readonly<{ connection: 'idle' | 'connecting' | 'handshaking' | 'connected' | 'reconnecting' | 'disconnected' | 'error'; readModelState: 'empty' | 'loading' | 'realtime' | 'resyncing' | 'degraded'; viewRevision: number | null; protocolError: { detail: string; fatal: boolean } | null; system: { readiness: 'ready' | 'degraded' | 'unavailable'; detail: string | null; } | null; agent: { status: 'connected' | 'stale' | 'disconnected'; degraded_reason: string | null; required_config_revision: string; applied_config_revision: string | null; required_history_settings_revision: number; applied_history_settings_revision: number | null; } | null; analytics: { total_conversations: { value: number | null; basis: 'complete' | 'synced_subset'; observed_range: { start: string | null; end: string | null; }; complete_range: { start: string | null; end: string | null; } | null; sample_size: number; as_of: string; projection_revision: number; }; total_messages: { value: number | null; basis: 'complete' | 'synced_subset'; observed_range: { start: string | null; end: string | null; }; complete_range: { start: string | null; end: string | null; } | null; sample_size: number; as_of: string; projection_revision: number; }; inbound_messages: { value: number | null; basis: 'complete' | 'synced_subset'; observed_range: { start: string | null; end: string | null; }; complete_range: { start: string | null; end: string | null; } | null; sample_size: number; as_of: string; projection_revision: number; }; outbound_messages: { value: number | null; basis: 'complete' | 'synced_subset'; observed_range: { start: string | null; end: string | null; }; complete_range: { start: string | null; end: string | null; } | null; sample_size: number; as_of: string; projection_revision: number; }; } | null; conversations: Array<{ conversation_id: string; platform_user_id: string | null; display_name: string | null; unread_count: number; last_message_at: string | null; latest_message: { message_id: string; text: string; sent_at: string; direction: 'inbound' | 'outbound'; sentiment: 'positive' | 'neutral' | 'negative' | 'unknown'; } | null; coverage: { status: 'unknown' | 'partial' | 'complete'; boundary: 'history_start' | null; earliest_available_at: string | null; latest_acquired_at: string | null; data_as_of: string | null; reason_code: string | null; }; }>; coverage: { status: 'unknown' | 'partial' | 'complete'; phase: 'not_started' | 'discovering' | 'backfilling' | 'paused' | 'repairing' | 'blocked' | 'complete'; generation_id: string | null; as_of: string | null; discovered_conversations: number | null; complete_conversations: number; complete_as_of: string | null; reason: string | null; }; projection: { status: 'pending' | 'current' | 'degraded' | 'unavailable'; canonical_revision: number; projected_revision: number; projected_at: string | null; reason: string | null; }; liveFreshness: { status: 'current' | 'delayed' | 'unknown'; last_observed_at: string | null; last_committed_at: string | null; expires_at: string | null; pending_count: number | null; reason: string | null; }; }>;\n    subscribe(listener: () => void): () => void;\n  };",
     "Fan360Placeholder": "  // No props.",
     "GlobalLoader": "  // No props.",
     "GraphExplorerView": "  // No props.",
     "HorizontalBarsPlaceholder": "  bars?: number;",
-    "KpiCard": "  title: string;\n  value: string | number;\n  isLoading?: boolean;\n  grow?: boolean;",
+    "KpiCard": "  title: string;\n  value: string | number;\n  detail?: string;\n  isLoading?: boolean;\n  grow?: boolean;",
     "KpiCardSkeleton": "  grow?: boolean;",
     "KpiPlaceholder": "  // No props.",
     "MessageBubble": "  message: {\n    message_id: string;\n    text: string;\n    sent_at: string;\n    direction: 'inbound' | 'outbound';\n    sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n  };",
     "MessageFlagIcon": "  sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n  context?: 'latest' | 'message';",
-    "MessageStreamPane": "  conversation: {\n    conversation_id: string;\n    platform_user_id: string;\n    display_name: string | null;\n    unread_count: number;\n    last_message_at: string | null;\n    messages: Array<{\n      message_id: string;\n      text: string;\n      sent_at: string;\n      direction: 'inbound' | 'outbound';\n      sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n    }>;\n  } | null;\n  isLoading: boolean;\n  isOnline: boolean;",
+    "MessageStreamPane": "  conversation: { conversation_id: string; platform_user_id: string | null; display_name: string | null; unread_count: number; last_message_at: string | null; latest_message: { message_id: string; text: string; sent_at: string; direction: 'inbound' | 'outbound'; sentiment: 'positive' | 'neutral' | 'negative' | 'unknown'; } | null; coverage: { status: 'unknown' | 'partial' | 'complete'; boundary: 'history_start' | null; earliest_available_at: string | null; latest_acquired_at: string | null; data_as_of: string | null; reason_code: string | null; }; } | null;\n  isLoading: boolean;\n  isOnline: boolean;\n  messageState: { items: Array<{ message_id: string; text: string; sent_at: string; direction: 'inbound' | 'outbound'; sentiment: 'positive' | 'neutral' | 'negative' | 'unknown'; }>; olderCursor: string | null; hasOlderStoredItems: boolean; hasNewerUncachedItems: boolean; conversationCoverage: { status: 'unknown' | 'partial' | 'complete'; boundary: 'history_start' | null; earliest_available_at: string | null; latest_acquired_at: string | null; data_as_of: string | null; reason_code: string | null; }; projection: { status: 'pending' | 'current' | 'degraded' | 'unavailable'; canonical_revision: number; projected_revision: number; projected_at: string | null; reason: string | null; } | null; projectionGeneration: string | null; readRevision: number | null; generatedAt: string | null; status: 'idle' | 'loading' | 'ready' | 'error'; error: string | null; } | null;\n  onLoadOlder: () => void;\n  onReloadLatest: () => void;",
     "MessageStreamPlaceholder": "  bubbles?: number;",
-    "OperatorInboxView": "  store?: {\n    getState(): Readonly<Record<string, unknown>>;\n    subscribe(listener: () => void): () => void;\n  };",
-    "Panel": "  children: React.ReactNode;\n  sx?: unknown;",
+    "OperatorInboxView": "  messageApi?: {\n    getPage(input: { before?: string | null; conversationId: string; limit?: number; signal?: AbortSignal; }): Promise<unknown>;\n  };\n  store?: {\n    getState(): Readonly<{ connection: 'idle' | 'connecting' | 'handshaking' | 'connected' | 'reconnecting' | 'disconnected' | 'error'; readModelState: 'empty' | 'loading' | 'realtime' | 'resyncing' | 'degraded'; viewRevision: number | null; protocolError: { detail: string; fatal: boolean } | null; system: { readiness: 'ready' | 'degraded' | 'unavailable'; detail: string | null; } | null; agent: { status: 'connected' | 'stale' | 'disconnected'; degraded_reason: string | null; required_config_revision: string; applied_config_revision: string | null; required_history_settings_revision: number; applied_history_settings_revision: number | null; } | null; conversations: Array<{ conversation_id: string; platform_user_id: string | null; display_name: string | null; unread_count: number; last_message_at: string | null; latest_message: { message_id: string; text: string; sent_at: string; direction: 'inbound' | 'outbound'; sentiment: 'positive' | 'neutral' | 'negative' | 'unknown'; } | null; coverage: { status: 'unknown' | 'partial' | 'complete'; boundary: 'history_start' | null; earliest_available_at: string | null; latest_acquired_at: string | null; data_as_of: string | null; reason_code: string | null; }; }>; messagePages: Readonly<Record<string, { items: Array<{ message_id: string; text: string; sent_at: string; direction: 'inbound' | 'outbound'; sentiment: 'positive' | 'neutral' | 'negative' | 'unknown'; }>; olderCursor: string | null; hasOlderStoredItems: boolean; hasNewerUncachedItems: boolean; conversationCoverage: { status: 'unknown' | 'partial' | 'complete'; boundary: 'history_start' | null; earliest_available_at: string | null; latest_acquired_at: string | null; data_as_of: string | null; reason_code: string | null; }; projection: { status: 'pending' | 'current' | 'degraded' | 'unavailable'; canonical_revision: number; projected_revision: number; projected_at: string | null; reason: string | null; } | null; projectionGeneration: string | null; readRevision: number | null; generatedAt: string | null; status: 'idle' | 'loading' | 'ready' | 'error'; error: string | null; }>>; presence: { freshness: 'current' | 'unknown'; online_platform_user_ids: string[]; } | null; }>;\n    subscribe(listener: () => void): () => void;\n    beginMessagePage(conversationId: string, reset?: boolean): void;\n    applyMessagePage(page: unknown, mode?: 'replace' | 'prepend'): 'applied' | 'stale' | 'invalid';\n    failMessagePage(conversationId: string, detail: string): void;\n    clearMessagePage(conversationId: string): void;\n  };",
+    "Panel": "  children: React.ReactNode;\n  sx?: Record<string, unknown> | ((theme: unknown) => Record<string, unknown>) | ReadonlyArray<Record<string, unknown> | ((theme: unknown) => Record<string, unknown>) | false | null | undefined>;",
     "QueryInput": "  onSend: (text: string) => void;\n  disabled?: boolean;",
     "QueryResponseBubble": "  response: {\n    id: string;\n    question: string;\n    answer?: string;\n    gremlinQuery?: string;\n    result?: Record<string, unknown> | unknown[];\n  };",
     "QueryResponseBubbleSkeleton": "  // No props.",
@@ -96,10 +89,6 @@
     }
   },
   "overrides": {
-    "App": {
-      "cardMode": "single",
-      "viewport": "960x640"
-    },
     "AnalyticsView": {
       "cardMode": "single",
       "viewport": "1100x760"
@@ -110,6 +99,7 @@
     },
     "AppDrawer": {
       "cardMode": "single",
+      "primaryStory": "MobileNavigation",
       "viewport": "520x520"
     },
     "AppShell": {
@@ -118,7 +108,7 @@
     },
     "CreatorDashboardView": {
       "cardMode": "single",
-      "viewport": "1100x760"
+      "viewport": "1320x760"
     },
     "GlobalLoader": {
       "cardMode": "single",

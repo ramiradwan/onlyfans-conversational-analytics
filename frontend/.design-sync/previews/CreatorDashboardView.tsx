@@ -1,14 +1,15 @@
 import { Box } from '@mui/material';
 import {
   CreatorDashboardView,
-  seedPreviewAnalytics,
+  createPreviewBridgeStore,
 } from 'onlyfans-analytics-frontend';
 
-export function LoadedDashboard() {
-  seedPreviewAnalytics();
+const previewStore = createPreviewBridgeStore();
+
+export function CanonicalSnapshot() {
   return (
-    <Box sx={{ minWidth: 980 }}>
-      <CreatorDashboardView />
+    <Box sx={{ height: 760, minWidth: 980 }}>
+      <CreatorDashboardView store={previewStore} />
     </Box>
   );
 }

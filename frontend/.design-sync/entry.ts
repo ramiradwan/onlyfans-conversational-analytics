@@ -1,11 +1,9 @@
 export { ThemeProvider } from '@mui/material/styles';
 export { MemoryRouter, Route, Routes } from 'react-router-dom';
 
-export { App } from '../src/App';
 export { GlobalLoader } from '../src/common/GlobalLoader';
 export { KpiCard } from '../src/components/KpiCard';
 export { KpiCardSkeleton } from '../src/components/KpiCardSkeleton';
-export { MessageBubble as LegacyMessageBubble } from '../src/components/MessageBubble';
 export { QueryInput } from '../src/components/QueryInput';
 export {
   QueryResponseBubble,
@@ -38,14 +36,16 @@ export { default as OperatorInboxView } from '../src/views/OperatorInboxView';
 
 export { createBridgeTransportStore } from '../src/store/transportStore';
 export {
+  createPreviewBridgeStore,
   createPreviewInboxStore,
   conversation as createPreviewConversation,
   message as createPreviewMessage,
   previewConversations,
   previewNoop,
   seedPreviewAnalytics,
+  seedPreviewShellStore,
 } from './preview-helpers';
 export { analyticsStoreActions, useAnalyticsStore } from '../src/store/analyticsStore';
 export { useSystemStore } from '../src/store/systemStore';
 export { useUserStore } from '../src/store/userStore';
-export { theme } from '../src/theme';
+export { componentTokens, theme } from '../src/theme';

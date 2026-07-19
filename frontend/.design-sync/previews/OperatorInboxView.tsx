@@ -4,10 +4,17 @@ import {
   createPreviewInboxStore,
 } from 'onlyfans-analytics-frontend';
 
+const previewMessageApi = {
+  getPage: async () => new Promise<never>(() => {}),
+};
+
 export function LiveInbox() {
   return (
     <Box sx={{ height: 620, minWidth: 840 }}>
-      <OperatorInboxView store={createPreviewInboxStore()} />
+      <OperatorInboxView
+        messageApi={previewMessageApi}
+        store={createPreviewInboxStore()}
+      />
     </Box>
   );
 }
