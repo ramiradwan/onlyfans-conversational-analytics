@@ -1,0 +1,1 @@
+{"operation":"agent.config.get","protocol_version":"2","auth_ticket":"agent-config-ticket-42","agent_installation_id":"20000000-0000-4000-8000-000000000001","creator_account_id":"dev-creator-account","current_etag":"config-8","current_config_revision":"config-8","supported_config_schema_versions":["2"]}

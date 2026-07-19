@@ -1,0 +1,1 @@
+{"type":"presence.state","protocol_version":"2","message_id":"00000000-0000-4000-8000-000000000015","payload":{"creator_account_id":"dev-creator-account","freshness":"current","online_platform_user_ids":["fan-1","fan-2"],"server_received_at":"2026-07-19T10:04:01Z","expires_at":"2026-07-19T10:06:01Z","last_observation":{"observation_id":18,"observed_at":"2026-07-19T10:04:00Z"}}}

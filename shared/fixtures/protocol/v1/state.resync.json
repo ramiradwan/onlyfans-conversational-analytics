@@ -1,1 +1,0 @@
-{"type":"state.resync","protocol_version":"1","message_id":"00000000-0000-4000-8000-000000000013","payload":{"connection_id":"10000000-0000-4000-8000-000000000002","bridge_session_id":"60000000-0000-4000-8000-000000000001","creator_account_id":"dev-creator-account","last_applied_view_revision":42,"reason":"revision_gap"}}

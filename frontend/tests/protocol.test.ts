@@ -12,7 +12,7 @@ import {
   isBridgeToBrainMessage,
 } from '../src/protocol';
 
-const fixtureRoot = resolve(process.cwd(), '..', 'shared', 'fixtures', 'protocol', 'v1');
+const fixtureRoot = resolve(process.cwd(), '..', 'shared', 'fixtures', 'protocol', 'v2');
 
 const agentToBrain = new Set([
   'agent.hello',
@@ -57,7 +57,7 @@ function validatesOperation(operation: string, value: unknown): boolean {
   throw new Error(`Unmapped operation fixture: ${operation}`);
 }
 
-describe('protocol v1 golden fixtures', () => {
+describe('protocol v2 golden fixtures', () => {
   const validFixtures = readdirSync(fixtureRoot).filter((name) => name.endsWith('.json')).sort();
 
   it('contains and validates one fixture for every matrix operation', () => {
@@ -77,13 +77,17 @@ describe('protocol v1 golden fixtures', () => {
   it('rejects each invalid fixture through its directional guard', () => {
     const invalidRoot = `${fixtureRoot}/invalid`;
     const invalidGuards: Record<string, (value: unknown) => boolean> = {
+      'empty-consent.agent.config.document.json': isAgentConfigDocumentResponse,
       'malformed-discriminator.unknown-command.json': isBrainToAgentMessage,
+      'missing-authorization.agent.config.document.json': isAgentConfigDocumentResponse,
       'missing-identity.ingest.delta.json': isAgentToBrainMessage,
+      'missing-resume.agent.session.json': isBrainToAgentMessage,
+      'missing-window.agent.config.document.json': isAgentConfigDocumentResponse,
       'unknown-extra.bridge.hello.json': isBridgeToBrainMessage,
       'wrong-enum.agent.state.json': isBrainToBridgeMessage,
       'wrong-type.state.snapshot.json': isBrainToBridgeMessage,
     };
-    expect(readdirSync(invalidRoot).filter((name) => name.endsWith('.json'))).toHaveLength(5);
+    expect(readdirSync(invalidRoot).filter((name) => name.endsWith('.json'))).toHaveLength(9);
     for (const [fixture, guard] of Object.entries(invalidGuards)) {
       expect(guard(readJson(`${invalidRoot}/${fixture}`)), fixture).toBe(false);
     }

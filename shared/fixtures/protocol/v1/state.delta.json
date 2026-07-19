@@ -1,1 +1,0 @@
-{"type":"state.delta","protocol_version":"1","message_id":"00000000-0000-4000-8000-000000000012","payload":{"creator_account_id":"dev-creator-account","view_revision":43,"committed_at":"2026-07-18T10:03:00Z","changes":[{"type":"analytics.replace","analytics":{"total_conversations":1,"total_messages":2,"inbound_messages":1,"outbound_messages":1}}]}}

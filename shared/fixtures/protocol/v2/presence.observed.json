@@ -1,0 +1,1 @@
+{"type":"presence.observed","protocol_version":"2","message_id":"00000000-0000-4000-8000-000000000014","payload":{"connection_id":"10000000-0000-4000-8000-000000000001","fencing_token":"fence-42","creator_account_id":"dev-creator-account","observation_id":18,"observed_at":"2026-07-19T10:04:00Z","online_platform_user_ids":["fan-1","fan-2"]}}

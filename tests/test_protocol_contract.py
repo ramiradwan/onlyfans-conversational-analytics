@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from app.protocol import (
     AGENT_TO_BRAIN_ADAPTER,
@@ -13,7 +13,7 @@ from app.protocol import (
 )
 
 
-FIXTURE_ROOT = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v1"
+FIXTURE_ROOT = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 
 AGENT_TO_BRAIN = {
     "agent.hello",
@@ -73,6 +73,10 @@ def test_every_operation_has_a_valid_golden_fixture(fixture: Path) -> None:
 
 
 INVALID_ADAPTERS = {
+    "empty-consent.agent.config.document": TypeAdapter(AgentConfigDocumentResponse),
+    "missing-window.agent.config.document": TypeAdapter(AgentConfigDocumentResponse),
+    "missing-resume.agent.session": BRAIN_TO_AGENT_ADAPTER,
+    "missing-authorization.agent.config.document": TypeAdapter(AgentConfigDocumentResponse),
     "wrong-enum.agent.state": BRAIN_TO_BRIDGE_ADAPTER,
     "missing-identity.ingest.delta": AGENT_TO_BRAIN_ADAPTER,
     "unknown-extra.bridge.hello": BRIDGE_TO_BRAIN_ADAPTER,
@@ -83,7 +87,7 @@ INVALID_ADAPTERS = {
 
 @pytest.mark.parametrize("fixture", sorted((FIXTURE_ROOT / "invalid").glob("*.json")), ids=lambda path: path.stem)
 def test_every_invalid_fixture_is_rejected(fixture: Path) -> None:
-    assert len(INVALID_ADAPTERS) == 5
+    assert len(INVALID_ADAPTERS) == 9
     with pytest.raises(ValidationError):
         INVALID_ADAPTERS[fixture.stem].validate_json(fixture.read_text(encoding="utf-8"))
 
@@ -92,6 +96,17 @@ def test_protocol_error_is_valid_for_both_recipient_roles() -> None:
     document = (FIXTURE_ROOT / "protocol.error.json").read_text(encoding="utf-8")
     assert BRAIN_TO_AGENT_ADAPTER.validate_json(document) is not None
     assert BRAIN_TO_BRIDGE_ADAPTER.validate_json(document) is not None
+
+
+@pytest.mark.parametrize(
+    "code", ["chunk_conflict", "snapshot_incomplete", "frame_too_large"]
+)
+def test_snapshot_rejection_codes_are_part_of_v2_contract(code: str) -> None:
+    import json
+
+    document = json.loads((FIXTURE_ROOT / "ingest.rejected.json").read_text(encoding="utf-8"))
+    document["payload"]["code"] = code
+    assert BRAIN_TO_AGENT_ADAPTER.validate_json(json.dumps(document)) is not None
 
 
 def test_role_specific_unions_reject_wrong_role_messages() -> None:

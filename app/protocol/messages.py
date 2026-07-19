@@ -1,4 +1,4 @@
-"""Role-and-direction-specific WebSocket discriminated unions for protocol v1."""
+"""Role-specific discriminated unions for WebSocket protocol v2."""
 
 from __future__ import annotations
 
@@ -8,199 +8,59 @@ from uuid import UUID
 from pydantic import Field, TypeAdapter
 
 from .common import StrictModel
-from .payloads import (
-    AgentHeartbeatPayload,
-    AgentHelloPayload,
-    AgentSessionPayload,
-    AgentStatePayload,
-    BridgeHelloPayload,
-    BridgeSessionPayload,
-    CommandExecutePayload,
-    CommandResultAckPayload,
-    CommandResultPayload,
-    ConfigAppliedPayload,
-    ConfigAvailablePayload,
-    IngestAckPayload,
-    IngestDeltaPayload,
-    IngestRejectedPayload,
-    IngestSnapshotPayload,
-    PresenceObservedPayload,
-    PresenceStatePayload,
-    ProtocolErrorPayload,
-    StateDeltaPayload,
-    StateResyncPayload,
-    StateSnapshotPayload,
-    SyncRequiredPayload,
-    SystemStatePayload,
-)
+from .payloads import *
 
 
 class WebSocketMessage(StrictModel):
-    protocol_version: Literal["1"]
+    protocol_version: Literal["2"]
     message_id: UUID
     correlation_id: UUID | None = None
 
 
-class AgentHelloMessage(WebSocketMessage):
-    type: Literal["agent.hello"]
-    payload: AgentHelloPayload
+def _message(name: str, value: str, payload_type):
+    return type(name, (WebSocketMessage,), {
+        "__annotations__": {"type": Literal[value], "payload": payload_type},
+        "__module__": __name__,
+    })
 
 
-class AgentSessionMessage(WebSocketMessage):
-    type: Literal["agent.session"]
-    payload: AgentSessionPayload
+AgentHelloMessage = _message("AgentHelloMessage", "agent.hello", AgentHelloPayload)
+AgentSessionMessage = _message("AgentSessionMessage", "agent.session", AgentSessionPayload)
+BridgeHelloMessage = _message("BridgeHelloMessage", "bridge.hello", BridgeHelloPayload)
+BridgeSessionMessage = _message("BridgeSessionMessage", "bridge.session", BridgeSessionPayload)
+AgentHeartbeatMessage = _message("AgentHeartbeatMessage", "agent.heartbeat", AgentHeartbeatPayload)
+SyncRequiredMessage = _message("SyncRequiredMessage", "sync.required", SyncRequiredPayload)
+IngestSnapshotMessage = _message("IngestSnapshotMessage", "ingest.snapshot", IngestSnapshotPayload)
+IngestDeltaMessage = _message("IngestDeltaMessage", "ingest.delta", IngestDeltaPayload)
+IngestAckMessage = _message("IngestAckMessage", "ingest.ack", IngestAckPayload)
+IngestRejectedMessage = _message("IngestRejectedMessage", "ingest.rejected", IngestRejectedPayload)
+StateSnapshotMessage = _message("StateSnapshotMessage", "state.snapshot", StateSnapshotPayload)
+StateDeltaMessage = _message("StateDeltaMessage", "state.delta", StateDeltaPayload)
+StateResyncMessage = _message("StateResyncMessage", "state.resync", StateResyncPayload)
+PresenceObservedMessage = _message("PresenceObservedMessage", "presence.observed", PresenceObservedPayload)
+PresenceStateMessage = _message("PresenceStateMessage", "presence.state", PresenceStatePayload)
+AgentStateMessage = _message("AgentStateMessage", "agent.state", AgentStatePayload)
+SystemStateMessage = _message("SystemStateMessage", "system.state", SystemStatePayload)
+ProtocolErrorMessage = _message("ProtocolErrorMessage", "protocol.error", ProtocolErrorPayload)
+ConfigAvailableMessage = _message("ConfigAvailableMessage", "config.available", ConfigAvailablePayload)
+ConfigAppliedMessage = _message("ConfigAppliedMessage", "config.applied", ConfigAppliedPayload)
+CommandExecuteMessage = _message("CommandExecuteMessage", "command.execute", CommandExecutePayload)
+CommandResultMessage = _message("CommandResultMessage", "command.result", CommandResultPayload)
+CommandResultAckMessage = _message("CommandResultAckMessage", "command.result.ack", CommandResultAckPayload)
 
-
-class BridgeHelloMessage(WebSocketMessage):
-    type: Literal["bridge.hello"]
-    payload: BridgeHelloPayload
-
-
-class BridgeSessionMessage(WebSocketMessage):
-    type: Literal["bridge.session"]
-    payload: BridgeSessionPayload
-
-
-class AgentHeartbeatMessage(WebSocketMessage):
-    type: Literal["agent.heartbeat"]
-    payload: AgentHeartbeatPayload
-
-
-class SyncRequiredMessage(WebSocketMessage):
-    type: Literal["sync.required"]
-    payload: SyncRequiredPayload
-
-
-class IngestSnapshotMessage(WebSocketMessage):
-    type: Literal["ingest.snapshot"]
-    payload: IngestSnapshotPayload
-
-
-class IngestDeltaMessage(WebSocketMessage):
-    type: Literal["ingest.delta"]
-    payload: IngestDeltaPayload
-
-
-class IngestAckMessage(WebSocketMessage):
-    type: Literal["ingest.ack"]
-    payload: IngestAckPayload
-
-
-class IngestRejectedMessage(WebSocketMessage):
-    type: Literal["ingest.rejected"]
-    payload: IngestRejectedPayload
-
-
-class StateSnapshotMessage(WebSocketMessage):
-    type: Literal["state.snapshot"]
-    payload: StateSnapshotPayload
-
-
-class StateDeltaMessage(WebSocketMessage):
-    type: Literal["state.delta"]
-    payload: StateDeltaPayload
-
-
-class StateResyncMessage(WebSocketMessage):
-    type: Literal["state.resync"]
-    payload: StateResyncPayload
-
-
-class PresenceObservedMessage(WebSocketMessage):
-    type: Literal["presence.observed"]
-    payload: PresenceObservedPayload
-
-
-class PresenceStateMessage(WebSocketMessage):
-    type: Literal["presence.state"]
-    payload: PresenceStatePayload
-
-
-class AgentStateMessage(WebSocketMessage):
-    type: Literal["agent.state"]
-    payload: AgentStatePayload
-
-
-class SystemStateMessage(WebSocketMessage):
-    type: Literal["system.state"]
-    payload: SystemStatePayload
-
-
-class ProtocolErrorMessage(WebSocketMessage):
-    type: Literal["protocol.error"]
-    payload: ProtocolErrorPayload
-
-
-class ConfigAvailableMessage(WebSocketMessage):
-    type: Literal["config.available"]
-    payload: ConfigAvailablePayload
-
-
-class ConfigAppliedMessage(WebSocketMessage):
-    type: Literal["config.applied"]
-    payload: ConfigAppliedPayload
-
-
-class CommandExecuteMessage(WebSocketMessage):
-    type: Literal["command.execute"]
-    payload: CommandExecutePayload
-
-
-class CommandResultMessage(WebSocketMessage):
-    type: Literal["command.result"]
-    payload: CommandResultPayload
-
-
-class CommandResultAckMessage(WebSocketMessage):
-    type: Literal["command.result.ack"]
-    payload: CommandResultAckPayload
-
-
-AgentToBrainMessage: TypeAlias = Annotated[
-    Union[
-        AgentHelloMessage,
-        AgentHeartbeatMessage,
-        IngestSnapshotMessage,
-        IngestDeltaMessage,
-        PresenceObservedMessage,
-        ConfigAppliedMessage,
-        CommandResultMessage,
-    ],
-    Field(discriminator="type"),
-]
-
-BrainToAgentMessage: TypeAlias = Annotated[
-    Union[
-        AgentSessionMessage,
-        SyncRequiredMessage,
-        IngestAckMessage,
-        IngestRejectedMessage,
-        ProtocolErrorMessage,
-        ConfigAvailableMessage,
-        CommandExecuteMessage,
-        CommandResultAckMessage,
-    ],
-    Field(discriminator="type"),
-]
-
-BridgeToBrainMessage: TypeAlias = Annotated[
-    Union[BridgeHelloMessage, StateResyncMessage],
-    Field(discriminator="type"),
-]
-
-BrainToBridgeMessage: TypeAlias = Annotated[
-    Union[
-        BridgeSessionMessage,
-        StateSnapshotMessage,
-        StateDeltaMessage,
-        PresenceStateMessage,
-        AgentStateMessage,
-        SystemStateMessage,
-        ProtocolErrorMessage,
-    ],
-    Field(discriminator="type"),
-]
-
+AgentToBrainMessage: TypeAlias = Annotated[Union[
+    AgentHelloMessage, AgentHeartbeatMessage, IngestSnapshotMessage, IngestDeltaMessage,
+    PresenceObservedMessage, ConfigAppliedMessage, CommandResultMessage,
+], Field(discriminator="type")]
+BrainToAgentMessage: TypeAlias = Annotated[Union[
+    AgentSessionMessage, SyncRequiredMessage, IngestAckMessage, IngestRejectedMessage,
+    ProtocolErrorMessage, ConfigAvailableMessage, CommandExecuteMessage, CommandResultAckMessage,
+], Field(discriminator="type")]
+BridgeToBrainMessage: TypeAlias = Annotated[Union[BridgeHelloMessage, StateResyncMessage], Field(discriminator="type")]
+BrainToBridgeMessage: TypeAlias = Annotated[Union[
+    BridgeSessionMessage, StateSnapshotMessage, StateDeltaMessage, PresenceStateMessage,
+    AgentStateMessage, SystemStateMessage, ProtocolErrorMessage,
+], Field(discriminator="type")]
 
 AGENT_TO_BRAIN_ADAPTER = TypeAdapter(AgentToBrainMessage)
 BRAIN_TO_AGENT_ADAPTER = TypeAdapter(BrainToAgentMessage)

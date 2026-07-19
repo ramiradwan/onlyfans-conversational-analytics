@@ -1,0 +1,1 @@
+{"type":"bridge.hello","protocol_version":"2","message_id":"90000000-0000-4000-8000-000000000003","payload":{"auth_ticket":"test-bridge-auth-ticket","bridge_session_id":"60000000-0000-4000-8000-000000000001","requested_creator_account_id":"dev-creator-account","capabilities":["state.snapshot"],"client_version":"0.7.1","last_view_revision":null,"account_owner":"client-claim"}}
