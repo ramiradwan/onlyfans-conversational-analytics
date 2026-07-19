@@ -9,6 +9,7 @@ const IDENTITY_KEYS = [
 const INGESTION_STATE_KEY = 'durable_ingestion_v1';
 const APPLIED_CONFIG_KEY = 'applied_agent_config_v1';
 const COMMAND_STATE_KEY = 'durable_command_results_v1';
+export const RECONCILE_ALARM_NAME = 'ofca-agent-reconcile';
 
 
 function storageGet(storage, keys) {
@@ -125,7 +126,20 @@ export function createChromeAdapter(chromeApi = globalThis.chrome, idFactory = (
         event.addListener(wrapper);
         return [event, wrapper];
       });
-      return () => wrappers.forEach(([event, wrapper]) => event.removeListener?.(wrapper));
+      const alarmEvent = chromeApi.alarms?.onAlarm;
+      const alarmWrapper = (alarm) => {
+        if (alarm?.name === RECONCILE_ALARM_NAME) listener();
+      };
+      if (alarmEvent?.addListener) alarmEvent.addListener(alarmWrapper);
+      const alarmCreation = chromeApi.alarms?.create?.(RECONCILE_ALARM_NAME, {
+        delayInMinutes: 1,
+        periodInMinutes: 1,
+      });
+      alarmCreation?.catch?.(() => undefined);
+      return () => {
+        wrappers.forEach(([event, wrapper]) => event.removeListener?.(wrapper));
+        alarmEvent?.removeListener?.(alarmWrapper);
+      };
     },
   };
 }

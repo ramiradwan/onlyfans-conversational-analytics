@@ -65,3 +65,48 @@ jobs:
         with:
           name: frontend-dist
           path: app/static/dist/
+
+  capture-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            tools/e2e-capture/package-lock.json
+
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Build production Bridge
+        run: npm run build --prefix frontend
+
+      - name: Install pinned E2E dependencies
+        run: npm ci --prefix tools/e2e-capture
+
+      - name: Install Playwright Chromium and system dependencies
+        working-directory: tools/e2e-capture
+        run: npx playwright install --with-deps chromium
+
+      - name: Run capture E2E beneath Xvfb
+        working-directory: tools/e2e-capture
+        run: xvfb-run --auto-servernum npm test

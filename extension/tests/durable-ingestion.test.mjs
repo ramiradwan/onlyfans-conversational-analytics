@@ -150,6 +150,19 @@ test('capture persists before send and a new worker reconstructs the durable out
   assert.deepEqual(await restarted.entries(), [captured]);
 });
 
+test('message upserts cannot bypass dependency-closed capture', async () => {
+  const storage = new InMemoryIngestionStorage();
+  const outbox = new DurableIngestOutbox({ storage });
+  await outbox.initialize();
+  const h = clientHarness(outbox);
+
+  await assert.rejects(
+    h.client.captureDelta(messageChange),
+    /captureMessageWithParent/,
+  );
+  assert.deepEqual(await outbox.entries(), []);
+});
+
 test('reconnect flushes the retained outbox in order with the new fence', async () => {
   const storage = new InMemoryIngestionStorage();
   let event = 1;

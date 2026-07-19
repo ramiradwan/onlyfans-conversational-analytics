@@ -15,9 +15,11 @@ from app.protocol import AgentConfigDocumentResponse
 
 
 BOOTSTRAP_ACCOUNT_ID = "dev-creator-account"
-BOOTSTRAP_CONFIG_REVISION = "config-7"
-BOOTSTRAP_ISSUED_AT = datetime(2026, 7, 18, 10, 0, tzinfo=timezone.utc)
-BOOTSTRAP_CAPTURE_POLICY = {
+LEGACY_BOOTSTRAP_CONFIG_REVISION = "config-7"
+BOOTSTRAP_CONFIG_REVISION = "config-8"
+LEGACY_BOOTSTRAP_ISSUED_AT = datetime(2026, 7, 18, 10, 0, tzinfo=timezone.utc)
+BOOTSTRAP_ISSUED_AT = datetime(2026, 7, 18, 10, 1, tzinfo=timezone.utc)
+LEGACY_BOOTSTRAP_CAPTURE_POLICY = {
     "observation_interval_seconds": 30,
     "rules": [
         {
@@ -25,6 +27,31 @@ BOOTSTRAP_CAPTURE_POLICY = {
             "url_pattern": "/api2/v2/chats/*/messages",
             "enabled": True,
         }
+    ],
+}
+BOOTSTRAP_CAPTURE_POLICY = {
+    "observation_interval_seconds": 30,
+    "rules": [
+        {
+            "resource": "chats",
+            "url_pattern": "/api2/v2/chats",
+            "enabled": True,
+        },
+        {
+            "resource": "chats",
+            "url_pattern": "/api2/v2/users/*/chats",
+            "enabled": True,
+        },
+        {
+            "resource": "messages",
+            "url_pattern": "/api2/v2/chats/*/messages",
+            "enabled": True,
+        },
+        {
+            "resource": "messages",
+            "url_pattern": "/ws3",
+            "enabled": True,
+        },
     ],
 }
 BOOTSTRAP_COMMAND_POLICY = {
@@ -53,6 +80,26 @@ def config_document_digest(document: AgentConfigDocumentResponse | dict[str, Any
         sort_keys=True,
     ).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def _ensure_dependency_closed_capture_policy(capture_policy: dict[str, Any]) -> None:
+    rules = capture_policy.get("rules")
+    if not isinstance(rules, list):
+        return
+    enabled_resources = {
+        rule.get("resource")
+        for rule in rules
+        if isinstance(rule, dict) and rule.get("enabled") is True
+    }
+    if "messages" in enabled_resources and "chats" not in enabled_resources:
+        raise ValueError("Enabled message capture requires enabled chat capture")
+
+
+def _config_revision_sequence(revision: str) -> int:
+    prefix, separator, value = revision.rpartition("-")
+    if not separator or prefix != "config" or not value.isdigit():
+        raise ValueError("Config revisions must use the monotonic config-N form")
+    return int(value)
 
 
 def build_config_document(
@@ -146,10 +193,7 @@ class InMemoryAgentConfigRepository(AgentConfigRepository):
 
     @staticmethod
     def _sequence(revision: str) -> int:
-        prefix, separator, value = revision.rpartition("-")
-        if not separator or prefix != "config" or not value.isdigit():
-            raise ValueError("Config revisions must use the monotonic config-N form")
-        return int(value)
+        return _config_revision_sequence(revision)
 
     def add_document(self, document: AgentConfigDocumentResponse) -> None:
         key = (document.creator_account_id, document.config_revision)
@@ -221,32 +265,49 @@ class AgentConfigurationAuthority:
         self.bootstrap()
 
     def bootstrap(self) -> None:
-        document = build_config_document(
+        legacy = build_config_document(
+            creator_account_id=BOOTSTRAP_ACCOUNT_ID,
+            config_revision=LEGACY_BOOTSTRAP_CONFIG_REVISION,
+            issued_at=LEGACY_BOOTSTRAP_ISSUED_AT,
+            capture_policy=LEGACY_BOOTSTRAP_CAPTURE_POLICY,
+            command_policy=BOOTSTRAP_COMMAND_POLICY,
+        )
+        current = build_config_document(
             creator_account_id=BOOTSTRAP_ACCOUNT_ID,
             config_revision=BOOTSTRAP_CONFIG_REVISION,
             issued_at=BOOTSTRAP_ISSUED_AT,
             capture_policy=BOOTSTRAP_CAPTURE_POLICY,
             command_policy=BOOTSTRAP_COMMAND_POLICY,
         )
-        existing = self.repository.document(
+
+        existing_legacy = self.repository.document(
+            BOOTSTRAP_ACCOUNT_ID, LEGACY_BOOTSTRAP_CONFIG_REVISION
+        )
+        if existing_legacy is None:
+            self.repository.add_document(legacy)
+        elif existing_legacy.digest != legacy.digest:
+            raise RuntimeError("Persisted bootstrap configuration content has changed")
+
+        existing_current = self.repository.document(
             BOOTSTRAP_ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION
         )
-        if existing is None:
+        if existing_current is None:
             publish_document = getattr(self.repository, "publish_document", None)
             if callable(publish_document):
-                publish_document(document)
-            else:
-                self.repository.add_document(document)
-                self.repository.set_required(
-                    BOOTSTRAP_ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION
-                )
-            return
-        if existing.digest != document.digest:
+                publish_document(current)
+                return
+            self.repository.add_document(current)
+        elif existing_current.digest != current.digest:
             raise RuntimeError("Persisted bootstrap configuration content has changed")
+
         try:
-            self.repository.required_document(BOOTSTRAP_ACCOUNT_ID)
+            required = self.repository.required_document(BOOTSTRAP_ACCOUNT_ID)
         except LookupError:
-            self.repository.set_required(
+            required = None
+        if required is None or _config_revision_sequence(
+            required.config_revision
+        ) < _config_revision_sequence(BOOTSTRAP_CONFIG_REVISION):
+            self.repository.require_for_account(
                 BOOTSTRAP_ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION
             )
 
@@ -265,6 +326,7 @@ class AgentConfigurationAuthority:
         command_policy: dict[str, Any],
         issued_at: datetime | None = None,
     ) -> AgentConfigDocumentResponse:
+        _ensure_dependency_closed_capture_policy(capture_policy)
         async with self._publish_lock:
             document = build_config_document(
                 creator_account_id=creator_account_id,

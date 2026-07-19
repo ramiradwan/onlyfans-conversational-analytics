@@ -8,12 +8,21 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from starlette.websockets import WebSocketDisconnect
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.main import app
 from app.transport import DEV_ACCOUNT_ID, DEV_AUTH_TICKET, transport_manager
-from app.transport.manager import AuthenticationError, utc_now
+from app.transport.manager import (
+    HEARTBEAT_INTERVAL_SECONDS,
+    LEASE_EXPIRED_CLOSE_CODE,
+    LEASE_TIMEOUT_SECONDS,
+    REQUIRED_CONFIG_REVISION,
+    AuthenticationError,
+    InMemoryTransportManager,
+    utc_now,
+)
 
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v1"
@@ -77,6 +86,10 @@ def test_agent_and_bridge_complete_role_specific_handshakes() -> None:
     with client.websocket_connect("/ws/agent") as agent:
         _, agent_session = agent_handshake(agent)
         assert agent_session["payload"]["resume_action"] == "snapshot_required"
+        assert agent_session["payload"]["lease"] == {
+            "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_SECONDS,
+            "lease_timeout_seconds": LEASE_TIMEOUT_SECONDS,
+        }
 
     with client.websocket_connect("/ws/bridge") as bridge:
         _, bridge_session, initial = bridge_handshake(bridge)
@@ -243,12 +256,157 @@ def test_lease_and_presence_expiry_derive_stale_disconnected_and_unknown() -> No
         assert transport_manager.agent_state_payload(DEV_ACCOUNT_ID)["status"] == "stale"
         asyncio.run(transport_manager.expire(lease.last_heartbeat_at + timedelta(seconds=120)))
         assert transport_manager.agent_state_payload(DEV_ACCOUNT_ID)["status"] == "disconnected"
+        assert DEV_ACCOUNT_ID not in transport_manager.active_agents
+        assert lease.connection_id not in transport_manager.agent_connections
 
         asyncio.run(transport_manager.expire(record.expires_at))
         presence = transport_manager.presence_state_payload(DEV_ACCOUNT_ID)
         assert presence["freshness"] == "unknown"
         assert presence["online_platform_user_ids"] == []
         assert presence["last_observation"] is not None
+
+
+class RecordingWebSocket:
+    def __init__(self, name: str, events: list[tuple]) -> None:
+        self.name = name
+        self.events = events
+
+    async def send_text(self, text: str) -> None:
+        document = json.loads(text)
+        self.events.append((self.name, "send", document))
+
+    async def close(self, code: int, reason: str) -> None:
+        self.events.append((self.name, "close", code, reason))
+
+
+@pytest.mark.asyncio
+async def test_hard_lease_expiry_closes_then_broadcasts_disconnected() -> None:
+    manager = InMemoryTransportManager()
+    events: list[tuple] = []
+    bridge = RecordingWebSocket("bridge", events)
+    await manager.bind_bridge(
+        bridge,
+        principal_id="principal",
+        creator_account_id=DEV_ACCOUNT_ID,
+        bridge_session_id=uuid4(),
+    )
+    agent = RecordingWebSocket("agent", events)
+    lease = await manager.bind_agent(
+        agent,
+        principal_id="principal",
+        creator_account_id=DEV_ACCOUNT_ID,
+        agent_installation_id=uuid4(),
+        agent_stream_id=uuid4(),
+        applied_config_revision=REQUIRED_CONFIG_REVISION,
+    )
+
+    events.clear()
+    await manager.expire(
+        lease.last_heartbeat_at + timedelta(seconds=lease.lease_timeout_seconds)
+    )
+    assert events[-1][2]["type"] == "agent.state"
+    assert events[-1][2]["payload"]["status"] == "stale"
+
+    events.clear()
+    await manager.expire(
+        lease.last_heartbeat_at + timedelta(seconds=lease.lease_timeout_seconds * 2)
+    )
+    assert DEV_ACCOUNT_ID not in manager.active_agents
+    assert lease.connection_id not in manager.agent_connections
+    assert events[0] == (
+        "agent",
+        "close",
+        LEASE_EXPIRED_CLOSE_CODE,
+        "Agent heartbeat lease expired",
+    )
+    assert events[1][0:2] == ("bridge", "send")
+    assert events[1][2]["type"] == "agent.state"
+    assert events[1][2]["payload"]["status"] == "disconnected"
+
+
+@pytest.mark.asyncio
+async def test_hard_expiry_does_not_retire_a_lease_refreshed_while_waiting() -> None:
+    manager = InMemoryTransportManager()
+    events: list[tuple] = []
+    agent = RecordingWebSocket("agent", events)
+    lease = await manager.bind_agent(
+        agent,
+        principal_id="principal",
+        creator_account_id=DEV_ACCOUNT_ID,
+        agent_installation_id=uuid4(),
+        agent_stream_id=uuid4(),
+        applied_config_revision=REQUIRED_CONFIG_REVISION,
+    )
+    expiry_time = lease.last_heartbeat_at + timedelta(
+        seconds=lease.lease_timeout_seconds * 2
+    )
+
+    await manager._agent_command_lock.acquire()
+    expiry = asyncio.create_task(manager.expire(expiry_time))
+    await asyncio.sleep(0)
+    await manager.heartbeat(
+        lease,
+        REQUIRED_CONFIG_REVISION,
+        now=expiry_time - timedelta(seconds=1),
+    )
+    manager._agent_command_lock.release()
+    await expiry
+
+    assert manager.active_agents[DEV_ACCOUNT_ID] is lease
+    assert manager.agent_connections[lease.connection_id] is lease
+    assert lease.status == "connected"
+    assert not any(event[1] == "close" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_expiry_sweeper_does_not_resurrect_a_disconnected_socket() -> None:
+    manager = InMemoryTransportManager()
+    events: list[tuple] = []
+    agent = RecordingWebSocket("agent", events)
+    lease = await manager.bind_agent(
+        agent,
+        principal_id="principal",
+        creator_account_id=DEV_ACCOUNT_ID,
+        agent_installation_id=uuid4(),
+        agent_stream_id=uuid4(),
+        applied_config_revision=REQUIRED_CONFIG_REVISION,
+    )
+
+    await manager.disconnect_agent(lease.connection_id)
+    await manager.expire(lease.last_heartbeat_at + timedelta(seconds=1))
+
+    assert manager.active_agents[DEV_ACCOUNT_ID] is lease
+    assert lease.status == "disconnected"
+    assert manager.agent_state_payload(DEV_ACCOUNT_ID)["status"] == "disconnected"
+
+
+def test_agent_lease_timing_defaults_are_configurable() -> None:
+    assert Settings.model_fields["agent_heartbeat_interval_seconds"].default == 20
+    assert Settings.model_fields["agent_lease_timeout_seconds"].default == 60
+    custom = Settings(
+        agent_heartbeat_interval_seconds=7,
+        agent_lease_timeout_seconds=21,
+    )
+    assert custom.agent_heartbeat_interval_seconds == 7
+    assert custom.agent_lease_timeout_seconds == 21
+
+
+@pytest.mark.parametrize(
+    ("heartbeat_interval", "lease_timeout"),
+    [(21, 21), (22, 21)],
+)
+def test_agent_lease_timing_rejects_heartbeat_at_or_after_timeout(
+    heartbeat_interval: int,
+    lease_timeout: int,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match="Agent heartbeat interval must be less than lease timeout",
+    ):
+        Settings(
+            agent_heartbeat_interval_seconds=heartbeat_interval,
+            agent_lease_timeout_seconds=lease_timeout,
+        )
 
 
 def test_bridge_resync_returns_correlated_snapshot() -> None:
@@ -278,10 +436,11 @@ def test_agent_config_transport_validates_stub_auth_and_etag() -> None:
     response = client.get("/api/v1/agent/config", params=params)
     assert response.status_code == 200
     assert response.json()["operation"] == "agent.config.document"
-    assert response.headers["etag"] == "config-7"
+    assert response.headers["etag"] == REQUIRED_CONFIG_REVISION
 
     not_modified = client.get(
-        "/api/v1/agent/config", params={**params, "current_etag": "config-7"}
+        "/api/v1/agent/config",
+        params={**params, "current_etag": REQUIRED_CONFIG_REVISION},
     )
     assert not_modified.status_code == 304
 

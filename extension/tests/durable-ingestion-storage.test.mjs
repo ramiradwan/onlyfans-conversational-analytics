@@ -49,6 +49,49 @@ test('invariant 1: each enqueue assigns a monotonic contiguous source_seq', asyn
   assert.deepEqual((await outbox.entries()).map((item) => item.source_seq), [1, 2, 3]);
 });
 
+test('message capture atomically creates a missing parent and preserves an existing rich chat', async () => {
+  const storage = new InMemoryIngestionStorage();
+  let generatedId = 0;
+  const outbox = new DurableIngestOutbox({
+    storage,
+    idFactory: () => eventId(++generatedId),
+  });
+  await outbox.initialize();
+  const placeholder = chatChange('chat-1', null);
+
+  const first = await outbox.enqueueMessageWithParent(
+    messageChange('message-1', 'chat-1'),
+    placeholder,
+  );
+  assert.equal(first.parentCreated, true);
+  assert.deepEqual(first.items.map((item) => item.source_seq), [1, 2]);
+  assert.deepEqual(first.items.map((item) => item.change.type), [
+    'chat.upsert',
+    'message.upsert',
+  ]);
+
+  await outbox.enqueue(chatChange('chat-1', 'Rich Fan'), eventId(++generatedId));
+  const second = await outbox.enqueueMessageWithParent(
+    messageChange('message-2', 'chat-1'),
+    placeholder,
+  );
+  assert.equal(second.parentCreated, false);
+  assert.deepEqual(second.items.map((item) => item.change.type), ['message.upsert']);
+  assert.equal(outbox.snapshotState().chats[0].display_name, 'Rich Fan');
+
+  const failingStorage = new InMemoryIngestionStorage();
+  const failing = new DurableIngestOutbox({ storage: failingStorage });
+  await failing.initialize();
+  failingStorage.failNextWriteTransactionAfter(2);
+  await assert.rejects(
+    failing.enqueueMessageWithParent(messageChange('message-x', 'chat-x'), chatChange('chat-x')),
+    /Injected transaction failure/,
+  );
+  assert.deepEqual(failing.snapshotState().outbox, []);
+  assert.deepEqual(failing.snapshotState().chats, []);
+  assert.deepEqual(failing.snapshotState().messages, []);
+});
+
 test('invariant 2: mutation store groups are atomic and a mid-transaction failure rolls back', async () => {
   const storage = new InMemoryIngestionStorage();
   const outbox = new DurableIngestOutbox({ storage });

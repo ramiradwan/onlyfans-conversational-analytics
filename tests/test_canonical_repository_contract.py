@@ -42,6 +42,11 @@ CAPTURE_POLICY = {
     "observation_interval_seconds": 60,
     "rules": [
         {
+            "resource": "chats",
+            "url_pattern": "/api2/v2/chats",
+            "enabled": True,
+        },
+        {
             "resource": "messages",
             "url_pattern": "/api2/v2/chats/*/messages",
             "enabled": True,
@@ -153,7 +158,8 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
     authority = AgentConfigurationAuthority(repositories.configuration)
     installation_id = uuid4()
     initial = authority.bind_installation(ACCOUNT_ID, installation_id, "config-7")
-    assert initial.required_config_revision == initial.applied_config_revision == "config-7"
+    assert initial.required_config_revision == "config-8"
+    assert initial.applied_config_revision == "config-7"
 
     published = await authority.publish(
         ACCOUNT_ID,
@@ -165,7 +171,7 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
         },
         issued_at=NOW,
     )
-    assert published.config_revision == published.etag == "config-8"
+    assert published.config_revision == published.etag == "config-9"
     assert published.digest == config_document_digest(published)
     assert authority.required_document(ACCOUNT_ID).etag == published.etag
     manager = InMemoryTransportManager(repositories)
@@ -189,12 +195,12 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
     assert not_modified.headers["etag"] == published.etag
 
     drift = authority.installation(ACCOUNT_ID, installation_id)
-    assert drift.required_config_revision == "config-8"
+    assert drift.required_config_revision == "config-9"
     assert drift.applied_config_revision == "config-7"
     converged = authority.record_report(
         ACCOUNT_ID,
         installation_id,
-        config_revision="config-8",
+        config_revision="config-9",
         digest=published.digest,
         outcome="applied",
         capability_details=[],
@@ -221,7 +227,7 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
 
     bad_digest = build_config_document(
         creator_account_id=ACCOUNT_ID,
-        config_revision="config-9",
+        config_revision="config-10",
         issued_at=NOW,
         capture_policy=CAPTURE_POLICY,
         command_policy={

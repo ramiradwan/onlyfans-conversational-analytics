@@ -282,6 +282,70 @@ export class DurableIngestOutbox {
     });
   }
 
+  async enqueueMessageWithParent(messageChange, parentChange) {
+    if (messageChange?.type !== 'message.upsert' || parentChange?.type !== 'chat.upsert') {
+      throw new Error('Dependency-closed capture requires chat.upsert then message.upsert');
+    }
+    if (messageChange.message?.chat_id !== parentChange.chat?.chat_id) {
+      throw new Error('Message and placeholder parent must use the same chat_id');
+    }
+    return this.queueMutation(async () => {
+      const committed = await this.storage.runTransaction(
+        'readwrite',
+        [
+          INGESTION_STORES.meta,
+          INGESTION_STORES.outbox,
+          INGESTION_STORES.chats,
+          INGESTION_STORES.messages,
+        ],
+        async (tx) => {
+          const meta = await tx.get(INGESTION_STORES.meta, INGESTION_META_KEY);
+          const existingParent = await tx.get(
+            INGESTION_STORES.chats,
+            parentChange.chat.chat_id,
+          );
+          const changes = existingParent === undefined || existingParent === null
+            ? [parentChange, messageChange]
+            : [messageChange];
+          const items = changes.map((change, index) => ({
+            event_id: this.idFactory(),
+            source_seq: meta.last_source_seq + index + 1,
+            change: clone(change),
+          }));
+          const nextMeta = {
+            ...meta,
+            last_source_seq: items.at(-1).source_seq,
+          };
+          await tx.put(INGESTION_STORES.meta, nextMeta, INGESTION_META_KEY);
+          const applied = [];
+          for (const item of items) {
+            await tx.put(INGESTION_STORES.outbox, item);
+            applied.push({
+              item,
+              deletedMessageIds: await applyRawChange(tx, item.change),
+            });
+          }
+          return {
+            applied,
+            nextMeta,
+            parentCreated: changes.length === 2,
+          };
+        },
+      );
+
+      this.cache.meta = clone(committed.nextMeta);
+      for (const applied of committed.applied) {
+        this.cache.outbox.set(applied.item.source_seq, clone(applied.item));
+        this.applyChangeToCache(applied.item.change, applied.deletedMessageIds);
+      }
+      return {
+        items: committed.applied.map(({ item }) => clone(item)),
+        messageItem: clone(committed.applied.at(-1).item),
+        parentCreated: committed.parentCreated,
+      };
+    });
+  }
+
   async createSnapshot(snapshotId = this.idFactory()) {
     return this.queueMutation(async () => {
       const committed = await this.storage.runTransaction(

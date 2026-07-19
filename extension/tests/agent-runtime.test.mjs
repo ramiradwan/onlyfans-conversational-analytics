@@ -10,9 +10,11 @@ function fakeTransport() {
   return {
     starts: 0,
     reconnectChecks: 0,
+    reconcileChecks: 0,
     stops: 0,
     start() { this.starts += 1; },
     ensureConnected() { this.reconnectChecks += 1; },
+    reconcileConnection() { this.reconcileChecks += 1; },
     stop() { this.stops += 1; },
     sendConfigApplied() { return true; },
   };
@@ -48,7 +50,8 @@ test('wake listeners register synchronously and startup is idempotent while stor
   assert.equal(transport.starts, 1);
 
   await listeners[0]();
-  assert.equal(transport.reconnectChecks, 1);
+  assert.equal(transport.reconcileChecks, 1);
+  assert.equal(transport.reconnectChecks, 0);
   assert.equal(initializeCalls, 1);
 });
 

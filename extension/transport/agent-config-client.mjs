@@ -121,6 +121,20 @@ async function validateDocument(document, context) {
       );
     }
   }
+  const enabledCaptureResources = new Set(
+    parsed.capture_policy.rules
+      .filter((rule) => rule.enabled)
+      .map((rule) => rule.resource),
+  );
+  if (
+    enabledCaptureResources.has('messages')
+    && !enabledCaptureResources.has('chats')
+  ) {
+    throw new ConfigActivationError(
+      'unsafe_capture_policy',
+      'Enabled message capture requires enabled chat capture',
+    );
+  }
   const resourceCapabilities = {
     chats: 'capture.chats',
     messages: 'capture.messages',

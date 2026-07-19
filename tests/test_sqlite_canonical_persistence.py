@@ -22,6 +22,7 @@ from app.persistence.migrations import (
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.services.agent_configuration import (
     AgentConfigurationAuthority,
+    ConfigInstallationRecord,
     build_config_document,
 )
 from app.services.command_execution import CommandDeliveryTarget, CommandService
@@ -40,6 +41,11 @@ ACTION = {
 CAPTURE_POLICY = {
     "observation_interval_seconds": 60,
     "rules": [
+        {
+            "resource": "chats",
+            "url_pattern": "/api2/v2/chats",
+            "enabled": True,
+        },
         {
             "resource": "messages",
             "url_pattern": "/api2/v2/chats/*/messages",
@@ -79,6 +85,75 @@ def test_authoritative_connection_uses_wal_full_sync_foreign_keys_and_timeout(
         assert connection.execute("PRAGMA synchronous").fetchone()[0] == 2
         assert connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         assert connection.execute("PRAGMA busy_timeout").fetchone()[0] == 7_500
+
+
+def test_fresh_sqlite_bootstrap_retains_config_7_and_requires_config_8(
+    tmp_path: Path,
+) -> None:
+    repositories = create_canonical_repositories(
+        "sqlite", canonical_path=tmp_path / "fresh.sqlite3"
+    )
+    authority = AgentConfigurationAuthority(repositories.configuration)
+
+    assert repositories.configuration.document(ACCOUNT_ID, "config-7") is not None
+    assert repositories.configuration.document(ACCOUNT_ID, "config-8") is not None
+    assert authority.required_document(ACCOUNT_ID).config_revision == "config-8"
+
+
+def test_existing_sqlite_config_7_is_migrated_without_mutating_history(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "existing.sqlite3"
+    repositories = create_canonical_repositories("sqlite", canonical_path=path)
+    legacy = build_config_document(
+        creator_account_id=ACCOUNT_ID,
+        config_revision="config-7",
+        issued_at=datetime(2026, 7, 18, 10, 0, tzinfo=timezone.utc),
+        capture_policy={
+            "observation_interval_seconds": 30,
+            "rules": [
+                {
+                    "resource": "messages",
+                    "url_pattern": "/api2/v2/chats/*/messages",
+                    "enabled": True,
+                }
+            ],
+        },
+        command_policy={
+            "allowed_actions": ["message.send"],
+            "max_text_length": 1000,
+            "require_idempotency": True,
+        },
+    )
+    assert legacy.digest == (
+        "sha256:80b15a3978003cae44786f14180e7d812e163c51e0aad057fe15fd229235c367"
+    )
+    repositories.configuration.add_document(legacy)
+    repositories.configuration.set_required(ACCOUNT_ID, legacy.config_revision)
+    installation_id = uuid4()
+    repositories.configuration.save_installation(
+        ConfigInstallationRecord(
+            creator_account_id=ACCOUNT_ID,
+            agent_installation_id=installation_id,
+            required_config_revision=legacy.config_revision,
+            applied_config_revision=legacy.config_revision,
+        )
+    )
+
+    authority = AgentConfigurationAuthority(repositories.configuration)
+
+    retained = repositories.configuration.document(ACCOUNT_ID, "config-7")
+    assert retained is not None and retained.digest == legacy.digest
+    assert repositories.configuration.document(ACCOUNT_ID, "config-8") is not None
+    assert authority.required_document(ACCOUNT_ID).config_revision == "config-8"
+    installation = authority.installation(ACCOUNT_ID, installation_id)
+    assert installation.required_config_revision == "config-8"
+    assert installation.applied_config_revision == "config-7"
+
+    restarted = create_canonical_repositories("sqlite", canonical_path=path)
+    restarted_authority = AgentConfigurationAuthority(restarted.configuration)
+    assert restarted_authority.required_document(ACCOUNT_ID).config_revision == "config-8"
+    assert restarted.configuration.document(ACCOUNT_ID, "config-7").digest == legacy.digest
 
 
 @pytest.mark.asyncio
@@ -137,7 +212,7 @@ async def test_committed_canonical_state_survives_fresh_repository_connections(
     restarted_command = second.commands.get(command.command_id)
     assert second.ingestion.checkpoint(stream) == 11
     assert second.ingestion.account_read_model(ACCOUNT_ID).view_revision == 2
-    assert restarted_configuration.required_document(ACCOUNT_ID).config_revision == "config-8"
+    assert restarted_configuration.required_document(ACCOUNT_ID).config_revision == "config-9"
     assert restarted_configuration.installation(
         ACCOUNT_ID, installation_id
     ).required_config_revision == published.config_revision
@@ -338,7 +413,7 @@ def test_configuration_publication_rolls_back_document_if_required_update_fails(
     authority = AgentConfigurationAuthority(repositories.configuration)
     document = build_config_document(
         creator_account_id=ACCOUNT_ID,
-        config_revision="config-8",
+        config_revision="config-9",
         issued_at=NOW,
         capture_policy=CAPTURE_POLICY,
         command_policy={
@@ -359,5 +434,5 @@ def test_configuration_publication_rolls_back_document_if_required_update_fails(
         )
     with pytest.raises(sqlite3.IntegrityError, match="required update rejected"):
         repositories.configuration.publish_document(document)  # type: ignore[attr-defined]
-    assert repositories.configuration.document(ACCOUNT_ID, "config-8") is None
-    assert authority.required_document(ACCOUNT_ID).config_revision == "config-7"
+    assert repositories.configuration.document(ACCOUNT_ID, "config-9") is None
+    assert authority.required_document(ACCOUNT_ID).config_revision == "config-8"

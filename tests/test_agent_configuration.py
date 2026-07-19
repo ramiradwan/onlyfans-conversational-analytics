@@ -12,6 +12,9 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services.agent_configuration import (
+    BOOTSTRAP_CAPTURE_POLICY,
+    BOOTSTRAP_CONFIG_REVISION,
+    LEGACY_BOOTSTRAP_CONFIG_REVISION,
     AgentConfigurationAuthority,
     InMemoryAgentConfigRepository,
     config_document_digest,
@@ -138,28 +141,81 @@ def test_repository_seals_each_monotonic_revision_against_mutation() -> None:
             issued_at=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
         )
     )
-    assert published.config_revision == "config-8"
+    assert published.config_revision == "config-9"
 
     capture_policy["rules"][0]["enabled"] = False
     published.capture_policy.rules[0].enabled = False
-    stored = repository.document(DEV_ACCOUNT_ID, "config-8")
+    stored = repository.document(DEV_ACCOUNT_ID, "config-9")
     assert stored is not None
     assert stored.capture_policy.rules[0].enabled is True
     with pytest.raises(ValueError, match="immutable"):
         repository.add_document(stored)
 
 
+def test_bootstrap_retains_config_7_and_requires_dependency_closed_config_8() -> None:
+    repository = InMemoryAgentConfigRepository()
+    authority = AgentConfigurationAuthority(repository)
+
+    legacy = repository.document(DEV_ACCOUNT_ID, LEGACY_BOOTSTRAP_CONFIG_REVISION)
+    current = repository.document(DEV_ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION)
+    assert legacy is not None
+    assert current is not None
+    assert authority.required_document(DEV_ACCOUNT_ID).config_revision == "config-8"
+    assert [rule.resource for rule in legacy.capture_policy.rules] == ["messages"]
+    assert current.capture_policy.model_dump(mode="json") == BOOTSTRAP_CAPTURE_POLICY
+    assert {
+        (rule.resource, rule.url_pattern)
+        for rule in current.capture_policy.rules
+        if rule.enabled
+    } == {
+        ("chats", "/api2/v2/chats"),
+        ("chats", "/api2/v2/users/*/chats"),
+        ("messages", "/api2/v2/chats/*/messages"),
+        ("messages", "/ws3"),
+    }
+
+
+def test_publish_rejects_message_capture_without_chat_dependency() -> None:
+    authority = AgentConfigurationAuthority(InMemoryAgentConfigRepository())
+    with pytest.raises(ValueError, match="requires enabled chat capture"):
+        asyncio.run(
+            authority.publish(
+                DEV_ACCOUNT_ID,
+                capture_policy={
+                    "observation_interval_seconds": 60,
+                    "rules": [
+                        {
+                            "resource": "messages",
+                            "url_pattern": "/api2/v2/chats/*/messages",
+                            "enabled": True,
+                        }
+                    ],
+                },
+                command_policy={
+                    "allowed_actions": [],
+                    "max_text_length": 500,
+                    "require_idempotency": True,
+                },
+            )
+        )
+
+
 def test_publish_signals_connected_agent_and_new_session_self_heals_loss() -> None:
     client = TestClient(app)
     with client.websocket_connect("/ws/agent") as agent:
         _, session = agent_handshake(agent)
-        assert session["payload"]["required_config_revision"] == "config-7"
+        assert session["payload"]["required_config_revision"] == "config-8"
         published = asyncio.run(
             transport_manager.publish_config(
                 DEV_ACCOUNT_ID,
                 capture_policy={
                     "observation_interval_seconds": 60,
                     "rules": [
+                        {
+                            "resource": "chats",
+                            "url_pattern": "/api2/v2/chats",
+                            "enabled": True,
+                        },
                         {
                             "resource": "messages",
                             "url_pattern": "/api2/v2/chats/*/messages",
@@ -176,7 +232,7 @@ def test_publish_signals_connected_agent_and_new_session_self_heals_loss() -> No
         )
         available = agent.receive_json()
         assert available["type"] == "config.available"
-        assert available["payload"]["required_config_revision"] == "config-8"
+        assert available["payload"]["required_config_revision"] == "config-9"
         assert available["payload"]["digest"] == published.digest
 
         assert asyncio.run(transport_manager.signal_config_available(DEV_ACCOUNT_ID))
@@ -186,7 +242,7 @@ def test_publish_signals_connected_agent_and_new_session_self_heals_loss() -> No
 
     with client.websocket_connect("/ws/agent") as reconnected:
         _, repeated = agent_handshake(reconnected)
-        assert repeated["payload"]["required_config_revision"] == "config-8"
+        assert repeated["payload"]["required_config_revision"] == "config-9"
 
 
 def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation() -> None:
@@ -199,7 +255,9 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
             bridge.receive_json()
 
         with client.websocket_connect("/ws/agent") as agent:
-            _, session = agent_handshake(agent)
+            hello = fixture("agent.hello")
+            hello["payload"]["applied_config_revision"] = "config-8"
+            _, session = agent_handshake(agent, hello)
             connected = bridge.receive_json()
             assert connected["type"] == "agent.state"
             assert connected["payload"]["degraded_reason"] is None
@@ -225,8 +283,8 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
                 )
             )
             drift = bridge.receive_json()
-            assert drift["payload"]["required_config_revision"] == "config-8"
-            assert drift["payload"]["applied_config_revision"] == "config-7"
+            assert drift["payload"]["required_config_revision"] == "config-9"
+            assert drift["payload"]["applied_config_revision"] == "config-8"
             assert drift["payload"]["degraded_reason"] is not None
             assert agent.receive_json()["type"] == "config.available"
 
@@ -238,8 +296,8 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
             )
             agent.send_json(stale)
             stale_state = bridge.receive_json()
-            assert stale_state["payload"]["required_config_revision"] == "config-8"
-            assert stale_state["payload"]["applied_config_revision"] == "config-7"
+            assert stale_state["payload"]["required_config_revision"] == "config-9"
+            assert stale_state["payload"]["applied_config_revision"] == "config-8"
             assert stale_state["payload"]["degraded_reason"] is not None
 
             current = bind_report(
@@ -250,7 +308,7 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
             )
             agent.send_json(current)
             converged = bridge.receive_json()
-            assert converged["payload"]["required_config_revision"] == "config-8"
-            assert converged["payload"]["applied_config_revision"] == "config-8"
+            assert converged["payload"]["required_config_revision"] == "config-9"
+            assert converged["payload"]["applied_config_revision"] == "config-9"
             assert converged["payload"]["degraded_reason"] is None
 

@@ -36,8 +36,9 @@ DEV_AUTH_TICKET = "bridge-clean-dev-ticket-v1"
 DEV_PRINCIPAL_ID = "dev-principal"
 DEV_ACCOUNT_ID = "dev-creator-account"
 REQUIRED_CONFIG_REVISION = BOOTSTRAP_CONFIG_REVISION
-HEARTBEAT_INTERVAL_SECONDS = 20
-LEASE_TIMEOUT_SECONDS = 60
+HEARTBEAT_INTERVAL_SECONDS = settings.agent_heartbeat_interval_seconds
+LEASE_TIMEOUT_SECONDS = settings.agent_lease_timeout_seconds
+LEASE_EXPIRED_CLOSE_CODE = 4001
 PRESENCE_TTL_SECONDS = 120
 STATE_DELTA_FLUSH_SECONDS = 0.1
 
@@ -434,18 +435,48 @@ class InMemoryTransportManager:
 
     async def expire(self, now: datetime) -> None:
         self.commands.expire(now)
+        expired_leases: list[tuple[str, AgentLease]] = []
         for account_id, lease in list(self.active_agents.items()):
             age = (now - lease.last_heartbeat_at).total_seconds()
-            desired: Literal["connected", "stale", "disconnected"]
             if age >= lease.lease_timeout_seconds * 2:
-                desired = "disconnected"
-            elif age >= lease.lease_timeout_seconds:
+                hard_expired = False
+                async with self._agent_command_lock:
+                    if self.active_agents.get(account_id) is not lease:
+                        continue
+                    age = (now - lease.last_heartbeat_at).total_seconds()
+                    if age >= lease.lease_timeout_seconds * 2:
+                        self.active_agents.pop(account_id, None)
+                        self.agent_connections.pop(lease.connection_id, None)
+                        lease.status = "disconnected"
+                        expired_leases.append((account_id, lease))
+                        hard_expired = True
+                if hard_expired:
+                    continue
+
+            # A transport-level disconnect is authoritative until the lease is
+            # hard-retired. Only a fresh handshake can make that Agent live again.
+            if lease.status == "disconnected":
+                continue
+
+            desired: Literal["connected", "stale"]
+            if age >= lease.lease_timeout_seconds:
                 desired = "stale"
             else:
                 desired = "connected"
             if desired != lease.status:
                 lease.status = desired
                 await self.broadcast_agent_state(account_id)
+
+        for account_id, lease in expired_leases:
+            try:
+                await lease.websocket.close(
+                    code=LEASE_EXPIRED_CLOSE_CODE,
+                    reason="Agent heartbeat lease expired",
+                )
+            except Exception:
+                # The transport may already have disappeared; lease retirement is authoritative.
+                pass
+            await self.broadcast_agent_state(account_id)
 
         for account_id, record in list(self.presence.items()):
             if record.freshness == "current" and now >= record.expires_at:

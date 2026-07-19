@@ -39,6 +39,11 @@ async function configDocument(revision, overrides = {}) {
       observation_interval_seconds: 30,
       rules: [
         {
+          resource: 'chats',
+          url_pattern: '/api2/v2/chats',
+          enabled: true,
+        },
+        {
           resource: 'messages',
           url_pattern: '/api2/v2/chats/*/messages',
           enabled: true,
@@ -569,7 +574,7 @@ test('configuration requiring an unsupported capability is rejected', async () =
   const h = await clientHarness({
     initial: good,
     response: required,
-    capabilities: ['capture.messages', 'command.message.send'],
+    capabilities: ['capture.chats', 'capture.messages', 'command.message.send'],
   });
   const result = await h.client.requireConfig({
     required_config_revision: 'config-8',
@@ -578,4 +583,28 @@ test('configuration requiring an unsupported capability is rejected', async () =
   assert.equal(result.status, 'failed');
   assert.equal(h.identity.appliedConfigRevision, 'config-7');
   assert.match(result.error.message, /unsupported capability/);
+});
+
+test('message-only capture configuration is rejected without replacing the last known good', async () => {
+  const good = await configDocument('config-7');
+  const unsafe = await configDocument('config-8', {
+    capture_policy: {
+      observation_interval_seconds: 30,
+      rules: [{
+        resource: 'messages',
+        url_pattern: '/api2/v2/chats/*/messages',
+        enabled: true,
+      }],
+    },
+  });
+  unsafe.digest = await calculateConfigDigest(unsafe);
+  const h = await clientHarness({ initial: good, response: unsafe });
+  const result = await h.client.requireConfig({
+    required_config_revision: 'config-8',
+    digest: unsafe.digest,
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error.code, 'unsafe_capture_policy');
+  assert.equal(h.identity.appliedConfigRevision, 'config-7');
+  assert.deepEqual(h.activator.current(), good);
 });

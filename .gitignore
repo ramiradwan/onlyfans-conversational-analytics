@@ -45,6 +45,9 @@ frontend/.eslintcache
 # ------------------------
 extension/dist/
 extension/node_modules/
+tools/e2e-capture/node_modules/
+tools/e2e-capture/playwright-report/
+tools/e2e-capture/test-results/
 
 # ------------------------
 # Logs

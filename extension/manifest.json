@@ -5,6 +5,7 @@
   "version": "2.0.0",
   "minimum_chrome_version": "116",
   "permissions": [
+    "alarms",
     "storage",
     "unlimitedStorage",
     "tabs",
@@ -21,9 +22,17 @@
   "content_scripts": [
     {
       "matches": ["https://onlyfans.com/*"],
+      "js": ["page-hook.js"],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://onlyfans.com/*"],
       "js": ["content.js"],
       "run_at": "document_start",
-      "all_frames": false
+      "all_frames": false,
+      "world": "ISOLATED"
     }
   ],
   "externally_connectable": {

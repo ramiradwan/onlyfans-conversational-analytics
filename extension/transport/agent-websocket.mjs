@@ -8,6 +8,7 @@ const CONNECTING = 0;
 const OPEN = 1;
 export const DEV_AUTH_TICKET = 'bridge-clean-dev-ticket-v1';
 export const DEV_ACCOUNT_ID = 'dev-creator-account';
+export const LEASE_EXPIRED_CLOSE_CODE = 4001;
 
 const defaultScheduler = {
   setTimeout: (handler, delay) => setTimeout(handler, delay),
@@ -80,6 +81,8 @@ export class AgentWebSocketClient {
     this.session = null;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
+    this.heartbeatIntervalMs = null;
+    this.lastHeartbeatSentAt = null;
     this.reconnectAttempt = 0;
     this.stopped = true;
     this.reconnectAllowed = true;
@@ -100,6 +103,14 @@ export class AgentWebSocketClient {
     if (this.socket && [CONNECTING, OPEN].includes(this.socket.readyState)) return;
     this.clearReconnect();
     this.openSocket();
+  }
+
+  reconcileConnection() {
+    if (this.socket?.readyState === OPEN && this.session !== null) {
+      return this.sendHeartbeatIfDue();
+    }
+    this.ensureConnected();
+    return false;
   }
 
   stop() {
@@ -133,9 +144,21 @@ export class AgentWebSocketClient {
   }
 
   async captureDelta(change, eventId = null) {
+    if (change?.type === 'message.upsert') {
+      throw new Error('message.upsert capture requires captureMessageWithParent');
+    }
     const item = await this.outbox.enqueue(change, eventId ?? this.idFactory());
     await this.flushOutbox();
     return item;
+  }
+
+  async captureMessageWithParent(messageChange, parentChange) {
+    if (this.outbox === null) {
+      throw new Error('Dependency-closed capture requires a durable outbox');
+    }
+    const result = await this.outbox.enqueueMessageWithParent(messageChange, parentChange);
+    await this.flushOutbox();
+    return result.messageItem;
   }
 
   async flushOutbox() {
@@ -186,10 +209,23 @@ export class AgentWebSocketClient {
   }
 
   sendHeartbeat() {
-    return this.sendBound('agent.heartbeat', {
+    const sent = this.sendBound('agent.heartbeat', {
       applied_config_revision: this.identity.appliedConfigRevision,
       health: this.health(),
     });
+    if (sent) this.lastHeartbeatSentAt = this.now();
+    return sent;
+  }
+
+  sendHeartbeatIfDue() {
+    if (
+      this.heartbeatIntervalMs === null
+      || (
+        this.lastHeartbeatSentAt !== null
+        && this.now() - this.lastHeartbeatSentAt < this.heartbeatIntervalMs
+      )
+    ) return false;
+    return this.sendHeartbeat();
   }
 
   sendBound(type, payload, correlationId = null) {
@@ -305,6 +341,7 @@ export class AgentWebSocketClient {
     this.syncRequired = session.resume_action === 'snapshot_required';
     this.reconnectAttempt = 0;
     this.startHeartbeat(session.lease.heartbeat_interval_seconds * 1000);
+    this.lastHeartbeatSentAt = this.now();
     this.onSession(session);
     void this.resendCommandResults()
       .catch((error) => this.onValidationError(error));
@@ -384,6 +421,10 @@ export class AgentWebSocketClient {
       }
       case 'ingest.rejected':
         this.onIngestRejected(message.payload);
+        if (message.payload.code === 'stale_fence') {
+          this.forceReconnect('Agent lease fencing token is stale');
+          return;
+        }
         if (!message.payload.retryable) this.syncRequired = true;
         if (message.payload.code === 'sequence_gap') {
           await this.handleSyncRequired({
@@ -435,7 +476,22 @@ export class AgentWebSocketClient {
 
   startHeartbeat(delay) {
     this.clearHeartbeat();
-    this.heartbeatTimer = this.scheduler.setInterval(() => this.sendHeartbeat(), delay);
+    this.heartbeatIntervalMs = delay;
+    this.heartbeatTimer = this.scheduler.setInterval(() => this.sendHeartbeatIfDue(), delay);
+  }
+
+  forceReconnect(reason = 'Agent session must be renewed') {
+    this.reconnectAllowed = true;
+    const socket = this.socket;
+    if (socket === null) {
+      this.ensureConnected();
+      return;
+    }
+    try {
+      socket.close(LEASE_EXPIRED_CLOSE_CODE, reason);
+    } catch (_error) {
+      this.handleClose(socket);
+    }
   }
 
   handleClose(socket) {
@@ -468,5 +524,7 @@ export class AgentWebSocketClient {
   clearHeartbeat() {
     if (this.heartbeatTimer !== null) this.scheduler.clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = null;
+    this.heartbeatIntervalMs = null;
+    this.lastHeartbeatSentAt = null;
   }
 }

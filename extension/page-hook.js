@@ -1,191 +1,349 @@
-/* page-hook.js — MAIN world network interceptor for OnlyFans  
-   Injected securely via chrome.scripting.executeScript in background.js  
-   Captures network events and forwards them to content.js (_OF_FORWARDER_)  
-   Receives commands from content.js (_OF_BACKEND_) and executes them  
-*/  
-  
-(function () {  
-  // Prevent double injection  
-  if (window.__OF_HOOK_ACTIVE__) return;  
-  window.__OF_HOOK_ACTIVE__ = true;  
-  
-  console.log("[OF Hook] MAIN world interceptor active");  
-  
-  const FORWARD_TYPE = "_OF_FORWARDER_";  
-  const BACKEND_TYPE = "_OF_BACKEND_";  
-  
-  // ========== Helper: Safe Forward ==========  
-  function forward(payload) {  
-    if (!payload || typeof payload !== "object" || !payload.event) {  
-      console.warn("[OF Hook] Ignored malformed payload:", payload);  
-      return;  
-    }  
-    window.postMessage({ type: FORWARD_TYPE, payload }, "*");  
-  }  
-  
-  // ========== User ID Detection ==========  
-  function detectUserIdFromApi(url, parsedBody) {  
-    let uid = null;  
-    if (/\/api2\/v2\/users\/me/.test(url) && typeof parsedBody?.id === "number") {  
-      uid = parsedBody.id;  
-    } else if (/\/api2\/v2\/init/.test(url) && typeof parsedBody?.user?.id === "number") {  
-      uid = parsedBody.user.id;  
-    } else if (/\/api2\/v2\/chats(\?|$)/.test(url) && Array.isArray(parsedBody?.list)) {  
-      const meChat = parsedBody.list.find(  
-        c => (c.withUser?.is_me === true || c.withUser?.me === true) && typeof c.withUser?.id === "number"  
-      );  
-      if (meChat) uid = meChat.withUser.id;  
-    }  
-    if (uid) {  
-      forward({ event: "set_user_id", user_id: String(uid) });  
-      console.log("[OF Hook] Detected creator user_id:", uid);  
-    }  
-  }  
-  
-  // ========== Target URL Patterns ==========  
-  const FETCH_URL_PATTERNS = [  
-    /^https:\/\/onlyfans\.com\/api2\/v2\/chats(\?|$)/,  
-    /^https:\/\/onlyfans\.com\/api2\/v2\/chats\/\d+\/messages(\?|$)/,  
-    /^https:\/\/onlyfans\.com\/api2\/v2\/messages\/\d+\/like$/,  
-    /^https:\/\/onlyfans\.com\/api2\/v2\/chats\/\d+\/messages$/,  
-    /^https:\/\/onlyfans\.com\/api2\/v2\/chats\/\d+\/mark-as-read$/,  
-    /^https:\/\/onlyfans\.com\/api2\/v2\/users\/\d+\/chats(\?|$)/,  
-    /^https:\/\/onlyfans\.com\/api2\/v2\/users\/me(\?|$)/,  
-    /^https:\/\/onlyfans\.com\/api2\/v2\/init(\?|$)/  
-  ];  
-  
-  const WSS_URL_PATTERN = "wss://ws2.onlyfans.com/ws3/";  
-  
-  // ========== WebSocket Interception ==========  
-  try {  
-    const OriginalWS = window.WebSocket;  
-    window.WebSocket = function (url, protocols) {  
-      const ws = protocols ? new OriginalWS(url, protocols) : new OriginalWS(url);  
-      if (url.startsWith(WSS_URL_PATTERN)) {  
-        console.log("[OF Hook] Capturing OnlyFans WS:", url);  
-        ws.addEventListener("message", event => {  
-          try {  
-            const parsed = JSON.parse(event.data);  
-            if (parsed && typeof parsed === "object") {  
-              if (Array.isArray(parsed.online) && parsed.online.every(id => Number.isInteger(id))) {  
-                forward({ event: "ws_message", url, data: { online: parsed.online } });  
-                return;  
-              }  
-              forward({ event: "ws_message", url, data: parsed });  
-            }  
-          } catch (err) {  
-            console.warn("[OF Hook] WS parse error:", err);  
-          }  
-        });  
-        window.activeOfSocket = ws;  
-      }  
-      return ws;  
-    };  
-  } catch (err) {  
-    console.error("[OF Hook] Failed to patch WebSocket:", err);  
-  }  
-  
-  // ========== Fetch Interception ==========  
-  try {  
-    const originalFetch = window.fetch;  
-    window.fetch = async function (input, init) {  
-      const url = typeof input === "string" ? input : input.url;  
-      const isTarget = FETCH_URL_PATTERNS.some(p => p.test(url));  
-      if (!isTarget) return originalFetch.apply(this, arguments);  
-  
-      if (init?.body) forward({ event: "fetch_request", url, body: init.body });  
-  
-      const response = await originalFetch.apply(this, arguments);  
-      const cloned = response.clone();  
-  
-      cloned.text().then(body => {  
-        let payload = { event: "fetch_response", url, body };  
-        try {  
-          const parsedBody = JSON.parse(body);  
-          detectUserIdFromApi(url, parsedBody);  
-          if (/\/api2\/v2\/chats(\?|$)/.test(url)) {  
-            let chatsArray = Array.isArray(parsedBody?.list) ? parsedBody.list : [];  
-            chatsArray = chatsArray.map(c => ({  
-              ...c,  
-              id: c.id || c.chat_id || "unknown",  
-              createdAt: c.createdAt || c.created_at || new Date().toISOString()  
-            }));  
-            payload = { event: "fetch_response", url, body: JSON.stringify({ chats: chatsArray }) };  
-          }  
-          if (/\/chats\/\d+\/messages/.test(url)) {  
-            let msgsArray = Array.isArray(parsedBody?.messages) ? parsedBody.messages : [];  
-            msgsArray = msgsArray.map(m => ({  
-              ...m,  
-              id: m.id || m.message_id || `msg_${Date.now()}`,  
-              createdAt: m.createdAt || m.created_at || new Date().toISOString(),  
-              previews: Array.isArray(m.previews)  
-                ? m.previews.filter(p => typeof p === "object" && p !== null)  
-                : []  
-            }));  
-            payload = { event: "fetch_response", url, body: JSON.stringify({ messages: msgsArray }) };  
-          }  
-        } catch {}  
-        forward(payload);  
-      }).catch(e => console.warn("[OF Hook] Failed to read response body:", e));  
-  
-      return response;  
-    };  
-  } catch (err) {  
-    console.error("[OF Hook] Failed to patch fetch:", err);  
-  }  
-  
-  // ========== XHR Interception ==========  
-  try {  
-    const open = XMLHttpRequest.prototype.open;  
-    XMLHttpRequest.prototype.open = function (...args) {  
-      this._url = args[1];  
-      return open.apply(this, args);  
-    };  
-    const send = XMLHttpRequest.prototype.send;  
-    XMLHttpRequest.prototype.send = function (body) {  
-      const url = this._url || "";  
-      const isTarget = FETCH_URL_PATTERNS.some(p => p.test(url));  
-      if (isTarget) {  
-        if (body) forward({ event: "fetch_request", url, body });  
-        this.addEventListener("load", function () {  
-          let payload = { event: "fetch_response", url, body: this.responseText };  
-          try {  
-            const parsedBody = JSON.parse(this.responseText);  
-            detectUserIdFromApi(url, parsedBody);  
-          } catch {}  
-          forward(payload);  
-        });  
-      }  
-      return send.call(this, body);  
-    };  
-  } catch (err) {  
-    console.error("[OF Hook] Failed to patch XHR:", err);  
-  }  
-  
-  // ========== Command Execution ==========  
-  window.addEventListener("message", event => {  
-    if (event.source !== window || event.data?.type !== BACKEND_TYPE) return;  
-    const payload = event.data.payload;  
-  
-    if (payload?.action === "send_ws_message" && window.activeOfSocket) {  
-      try {  
-        window.activeOfSocket.send(JSON.stringify(payload.data));  
-      } catch (err) {  
-        console.error("[OF Hook] Failed to send WS message:", err);  
-      }  
-    }  
-  
-    if (payload?.action === "send_fetch_command" && payload.url && payload.init) {  
-      const allowed = [  
-        /^https:\/\/onlyfans\.com\/api2\/v2\/chats\/\d+\/messages$/,  
-        /^https:\/\/onlyfans\.com\/api2\/v2\/chats\/\d+\/mark-as-read$/,  
-        /^https:\/\/onlyfans\.com\/api2\/v2\/messages\/\d+\/like$/  
-      ].some(p => p.test(payload.url));  
-      if (!allowed) {  
-        return console.warn("[OF Hook] Blocked disallowed fetch:", payload.url);  
-      }  
-      fetch(payload.url, payload.init).catch(e => console.error("[OF Hook] Fetch fail:", e));  
-    }  
-  });  
-  
-})();  
+(function installObservationHook() {
+  if (globalThis.__OFCA_PAGE_HOOK_ACTIVE__) return;
+  globalThis.__OFCA_PAGE_HOOK_ACTIVE__ = true;
+
+  const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
+  const PROTOCOL_VERSION = '1';
+  const MAX_PAYLOAD_WRAPPER_DEPTH = 3;
+  const PAYLOAD_WRAPPER_KEYS = Object.freeze(['data', 'response', 'result']);
+  const targetOrigin = window.location.origin;
+  const xhrUrls = new WeakMap();
+  let creatorPlatformUserId = null;
+
+  function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  function identifier(value) {
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+    if (Number.isSafeInteger(value) && value >= 0) return String(value);
+    return null;
+  }
+
+  function postObservation(observation) {
+    try {
+      window.postMessage(
+        {
+          type: CAPTURE_MESSAGE_TYPE,
+          protocol_version: PROTOCOL_VERSION,
+          observation,
+        },
+        targetOrigin,
+      );
+    } catch (_error) {
+      // A non-cloneable platform record is ignored without exposing its contents.
+    }
+  }
+
+  function postDiagnostic(sourceEventType, code, sourcePath) {
+    postObservation({
+      event_type: 'hook.diagnostic',
+      source_event_type: sourceEventType,
+      code,
+      observed_at: new Date().toISOString(),
+      source_path: sourcePath,
+    });
+  }
+
+  function resolveUrl(input) {
+    try {
+      const value = typeof input === 'string' || input instanceof URL
+        ? String(input)
+        : input?.url;
+      return typeof value === 'string' ? new URL(value, window.location.href) : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function classifyPath(pathname) {
+    if (/^\/api2\/v2\/(?:users\/me|init)\/?$/.test(pathname)) return 'identity';
+    if (/^\/api2\/v2\/(?:chats|users\/[^/]+\/chats)\/?$/.test(pathname)) return 'chats';
+    if (/^\/api2\/v2\/chats\/[^/]+\/messages\/?$/.test(pathname)) return 'messages';
+    return null;
+  }
+
+  function boundedPayloads(value) {
+    const pending = [{ value, depth: 0 }];
+    const payloads = [];
+    const seen = new Set();
+    while (pending.length > 0) {
+      const candidate = pending.shift();
+      if (
+        candidate === undefined
+        || candidate.depth > MAX_PAYLOAD_WRAPPER_DEPTH
+        || (!isRecord(candidate.value) && !Array.isArray(candidate.value))
+        || seen.has(candidate.value)
+      ) continue;
+      seen.add(candidate.value);
+      payloads.push(candidate.value);
+      if (!isRecord(candidate.value) || candidate.depth === MAX_PAYLOAD_WRAPPER_DEPTH) continue;
+      for (const key of PAYLOAD_WRAPPER_KEYS) {
+        if (Object.hasOwn(candidate.value, key)) {
+          pending.push({ value: candidate.value[key], depth: candidate.depth + 1 });
+        }
+      }
+    }
+    return payloads;
+  }
+
+  function recordsFrom(value, keys) {
+    const payloads = boundedPayloads(value);
+    for (const payload of payloads) {
+      if (Array.isArray(payload)) {
+        const records = payload.filter(isRecord);
+        return {
+          recognized: payload.length === 0 || records.length > 0,
+          records,
+        };
+      }
+      for (const key of keys) {
+        if (Object.hasOwn(payload, key) && Array.isArray(payload[key])) {
+          const records = payload[key].filter(isRecord);
+          return {
+            recognized: payload[key].length === 0 || records.length > 0,
+            records,
+          };
+        }
+      }
+    }
+    return { recognized: false, records: [] };
+  }
+
+  function chatRecords(body) {
+    const extraction = recordsFrom(body, ['list', 'chats', 'items']);
+    if (extraction.recognized) return extraction;
+    const record = boundedPayloads(body).find((payload) => (
+      isRecord(payload)
+      && (isRecord(payload.withUser) || isRecord(payload.with_user))
+    ));
+    return record === undefined
+      ? extraction
+      : { recognized: true, records: [record] };
+  }
+
+  function messageRecords(body) {
+    const extraction = recordsFrom(body, ['list', 'messages', 'items']);
+    if (extraction.recognized) return extraction;
+    for (const payload of boundedPayloads(body)) {
+      if (!isRecord(payload)) continue;
+      if (isRecord(payload.message)) {
+        return { recognized: true, records: [payload.message] };
+      }
+      if (
+        ('text' in payload || 'body' in payload)
+        && ('id' in payload || 'message_id' in payload || 'messageId' in payload)
+      ) return { recognized: true, records: [payload] };
+    }
+    return extraction;
+  }
+
+  function contextChatId(pathname) {
+    const match = /^\/api2\/v2\/chats\/([^/]+)\/messages\/?$/.exec(pathname);
+    if (!match) return null;
+    try {
+      return decodeURIComponent(match[1]);
+    } catch (_error) {
+      return match[1];
+    }
+  }
+
+  function updateCreatorIdentity(pathname, body) {
+    const rawId = /^\/api2\/v2\/users\/me\/?$/.test(pathname)
+      ? body?.id
+      : body?.user?.id;
+    const detected = identifier(rawId);
+    if (detected !== null) creatorPlatformUserId = detected;
+  }
+
+  function emitRecords(resource, pathname, body, sourceEventType) {
+    const extraction = resource === 'chats' ? chatRecords(body) : messageRecords(body);
+    if (!extraction.recognized) {
+      postDiagnostic(sourceEventType, 'unrecognized_payload', pathname);
+      return;
+    }
+    const { records } = extraction;
+    const observedAt = new Date().toISOString();
+    const chatId = resource === 'messages' ? contextChatId(pathname) : null;
+    for (const record of records) {
+      postObservation({
+        event_type: resource === 'chats' ? 'chat.observed' : 'message.observed',
+        observed_at: observedAt,
+        source_path: pathname,
+        creator_platform_user_id: creatorPlatformUserId,
+        context_chat_id: chatId,
+        record,
+      });
+    }
+  }
+
+  function handleResponseBody(url, body, sourceEventType) {
+    const resource = classifyPath(url.pathname);
+    if (resource === 'identity') {
+      updateCreatorIdentity(url.pathname, body);
+      return;
+    }
+    if (resource === 'chats' || resource === 'messages') {
+      emitRecords(resource, url.pathname, body, sourceEventType);
+    }
+  }
+
+  async function observeFetchResponse(url, response) {
+    try {
+      handleResponseBody(url, await response.clone().json(), 'http.response');
+    } catch (_error) {
+      postDiagnostic('http.response', 'invalid_json', url.pathname);
+    }
+  }
+
+  function webSocketMessageRecords(frame) {
+    if (!isRecord(frame)) return [];
+    for (const key of ['api2_chat_message', 'new_message']) {
+      if (!Object.hasOwn(frame, key)) continue;
+      const extraction = messageRecords(frame[key]);
+      if (extraction.recognized) return extraction.records;
+    }
+    const eventName = String(frame.type ?? frame.event ?? frame.method ?? '').toLowerCase();
+    const messageEvents = new Set([
+      'new_message',
+      'message',
+      'message_created',
+      'message_updated',
+      'messages.new',
+      'chat.message',
+      'chat_message',
+    ]);
+    if (!messageEvents.has(eventName)) return [];
+    const payload = frame.data ?? frame.payload ?? frame.message ?? frame;
+    const extraction = messageRecords(payload);
+    return extraction.recognized ? extraction.records : [];
+  }
+
+  function webSocketContextChatId(record, frame) {
+    const explicit = identifier(
+      record.chat_id
+      ?? record.chatId
+      ?? record.chat?.id
+      ?? frame.chat_id
+      ?? frame.chatId,
+    );
+    if (explicit !== null) return explicit;
+    const senderId = identifier(
+      record.sender_platform_user_id
+      ?? record.senderPlatformUserId
+      ?? record.sender_id
+      ?? record.senderId
+      ?? record.fromUser?.id
+      ?? record.from_user?.id
+      ?? record.sender?.id,
+    );
+    const recipientId = identifier(
+      record.toUser?.id
+      ?? record.to_user?.id
+      ?? record.recipient?.id
+      ?? record.recipient_id
+      ?? record.recipientId,
+    );
+    const creatorId = identifier(creatorPlatformUserId);
+    if (creatorId === null) {
+      const senderIsCreator = record.isFromCreator
+        ?? record.is_from_creator
+        ?? record.isOutgoing
+        ?? record.is_outgoing
+        ?? record.outgoing
+        ?? record.fromUser?.is_me
+        ?? record.fromUser?.isMe
+        ?? record.fromUser?.me
+        ?? record.from_user?.is_me;
+      if (senderIsCreator === true) return recipientId;
+      if (senderIsCreator === false) return senderId;
+      const direction = typeof record.direction === 'string'
+        ? record.direction.toLowerCase()
+        : null;
+      if (['outbound', 'creator', 'outgoing', 'sent'].includes(direction)) {
+        return recipientId;
+      }
+      if (['inbound', 'fan', 'incoming', 'received'].includes(direction)) {
+        return senderId;
+      }
+      return null;
+    }
+    if (senderId !== null && senderId !== creatorId) return senderId;
+    return recipientId !== null && recipientId !== creatorId ? recipientId : null;
+  }
+
+  if (typeof window.WebSocket === 'function') {
+    const OriginalWebSocket = window.WebSocket;
+    window.WebSocket = new Proxy(OriginalWebSocket, {
+      construct(target, argumentsList, newTarget) {
+        const socket = Reflect.construct(target, argumentsList, newTarget);
+        const url = resolveUrl(argumentsList[0]);
+        if (url?.protocol === 'wss:' && url.hostname === 'ws2.onlyfans.com') {
+          socket.addEventListener('message', (event) => {
+            if (typeof event.data !== 'string') return;
+            let frame;
+            try {
+              frame = JSON.parse(event.data);
+            } catch (_error) {
+              postDiagnostic('websocket.message', 'invalid_json', url.pathname);
+              return;
+            }
+            const records = webSocketMessageRecords(frame);
+            if (records.length === 0) return;
+            const observedAt = new Date().toISOString();
+            for (const record of records) {
+              postObservation({
+                event_type: 'message.observed',
+                observed_at: observedAt,
+                source_path: url.pathname,
+                creator_platform_user_id: creatorPlatformUserId,
+                context_chat_id: webSocketContextChatId(record, frame),
+                record,
+              });
+            }
+          });
+        }
+        return socket;
+      },
+    });
+  }
+
+  if (typeof window.fetch === 'function') {
+    const originalFetch = window.fetch;
+    window.fetch = async function observedFetch(...args) {
+      const url = resolveUrl(args[0]);
+      const response = await originalFetch.apply(this, args);
+      if (
+        url?.origin === targetOrigin
+        && classifyPath(url.pathname) !== null
+      ) void observeFetchResponse(url, response);
+      return response;
+    };
+  }
+
+  if (typeof XMLHttpRequest === 'function') {
+    const originalOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function observedOpen(_method, rawUrl, ...rest) {
+      xhrUrls.set(this, resolveUrl(rawUrl));
+      return originalOpen.call(this, _method, rawUrl, ...rest);
+    };
+
+    const originalSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function observedSend(...args) {
+      const url = xhrUrls.get(this);
+      if (url?.origin === targetOrigin && classifyPath(url.pathname) !== null) {
+        this.addEventListener('load', () => {
+          try {
+            const body = this.responseType === 'json'
+              ? this.response
+              : JSON.parse(this.responseText);
+            handleResponseBody(url, body, 'http.response');
+          } catch (_error) {
+            postDiagnostic('http.response', 'invalid_json', url.pathname);
+          }
+        });
+      }
+      return originalSend.apply(this, args);
+    };
+  }
+})();

@@ -49,7 +49,15 @@ export class AgentRuntime {
 
   wake() {
     if (this.transport !== null) {
-      this.transport.ensureConnected();
+      try {
+        if (typeof this.transport.reconcileConnection === 'function') {
+          this.transport.reconcileConnection();
+        } else {
+          this.transport.ensureConnected();
+        }
+      } catch (error) {
+        return Promise.reject(error);
+      }
       return Promise.resolve(this.transport);
     }
     if (this.startupPromise !== null) return this.startupPromise;
@@ -135,6 +143,8 @@ export function createAgentRuntime(options = {}) {
 
       transport = transportFactory({
         identity,
+        creatorAccountId,
+        authTicket,
         persistence: chromeAdapter,
         outbox: durableOutbox,
         configClient: configuration,

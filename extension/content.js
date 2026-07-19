@@ -1,42 +1,66 @@
-/* content.js — Isolated World Message Bridge  
-   Matches: Full-Stack Comm Spec v1.1.0 + Expert Review Injection Strategy  
-*/  
-console.log("[Content.js] Isolated bridge loaded");  
-  
-/**  
- * UPSTREAM FLOW (Page ➔ Agent ➔ Brain)  
- */  
-window.addEventListener(  
-  "message",  
-  event => {  
-    if (event.source !== window || !event.data?.type) return;  
-  
-    if (event.data.type === "_OF_FORWARDER_") {  
-      const payload = event.data.payload;  
-      if (!payload || typeof payload !== "object") {  
-        console.warn("[Content.js] Ignored malformed forwarder payload:", event.data);  
-        return;  
-      }  
-      chrome.runtime.sendMessage({ type: "_OF_FORWARDER_", payload });  
-    }  
-  },  
-  false  
-);  
-  
-/**  
- * DOWNSTREAM FLOW (Agent ➔ Page)  
- */  
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {  
-  if (sender.id !== chrome.runtime.id) return;  
-  
-  if (message.type === "_OF_BACKEND_") {  
-    window.postMessage({ type: "_OF_BACKEND_", payload: message.payload }, "*");  
-    sendResponse({ ok: true });  
-    return;  
-  }  
-  if (["connection_status", "connection_ack", "system_status", "online_users_update"].includes(message.type)) {  
-    window.postMessage({ type: "_OF_BACKEND_", payload: message }, "*");  
-    sendResponse({ ok: true });  
-    return;  
-  }  
-});  
+(function installCaptureBridge() {
+  if (globalThis.__OFCA_CAPTURE_BRIDGE_ACTIVE__) return;
+  globalThis.__OFCA_CAPTURE_BRIDGE_ACTIVE__ = true;
+
+  const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
+  const PROTOCOL_VERSION = '1';
+  const pageOrigin = window.location.origin;
+  let droppedEnvelopeCount = 0;
+  let deliveryFailureCount = 0;
+
+  function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  function hasExactKeys(value, expected) {
+    const keys = Object.keys(value);
+    return keys.length === expected.length && keys.every((key) => expected.includes(key));
+  }
+
+  function reportBridgeDrop(reason) {
+    droppedEnvelopeCount += 1;
+    console.warn('[Agent] capture bridge dropped an envelope', {
+      reason,
+      count: droppedEnvelopeCount,
+    });
+  }
+
+  function reportDeliveryFailure() {
+    deliveryFailureCount += 1;
+    console.warn('[Agent] capture bridge delivery failed', {
+      reason: 'runtime_delivery_failed',
+      count: deliveryFailureCount,
+    });
+  }
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window || event.origin !== pageOrigin) return;
+
+    const envelope = event.data;
+    if (!isRecord(envelope) || envelope.type !== CAPTURE_MESSAGE_TYPE) return;
+    if (
+      envelope.protocol_version !== PROTOCOL_VERSION
+      || !hasExactKeys(envelope, ['type', 'protocol_version', 'observation'])
+    ) {
+      reportBridgeDrop('invalid_page_envelope');
+      return;
+    }
+
+    try {
+      chrome.runtime.sendMessage(
+        {
+          type: CAPTURE_MESSAGE_TYPE,
+          protocol_version: PROTOCOL_VERSION,
+          observation: envelope.observation,
+        },
+        (response) => {
+          if (chrome.runtime.lastError || response?.retryable === true) {
+            reportDeliveryFailure();
+          }
+        },
+      );
+    } catch (_error) {
+      reportDeliveryFailure();
+    }
+  });
+})();
