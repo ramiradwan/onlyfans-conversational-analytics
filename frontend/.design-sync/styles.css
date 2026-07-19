@@ -1,0 +1,9 @@
+html {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

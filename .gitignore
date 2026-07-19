@@ -39,6 +39,11 @@ app/static/dist/*
 frontend/.vite/
 frontend/.swc/
 frontend/.eslintcache
+frontend/.ds-sync/
+frontend/ds-bundle/
+frontend/.design-sync/.cache/
+frontend/.design-sync/learnings/
+frontend/.design-sync/node_modules
 
 # ------------------------
 # Extension build outputs (if any)

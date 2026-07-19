@@ -1,0 +1,146 @@
+{
+  "projectId": "d8562fa6-acb5-4110-be4a-d3fbf6d82f34",
+  "pkg": "onlyfans-analytics-frontend",
+  "globalName": "BridgeDesignSystem",
+  "shape": "package",
+  "buildCmd": "npm run build",
+  "entry": ".design-sync/entry.ts",
+  "srcDir": "src",
+  "tsconfig": ".design-sync/tsconfig.json",
+  "cssEntry": ".design-sync/styles.css",
+  "extraFonts": [
+    "src/assets/fonts/fonts.css"
+  ],
+  "readmeHeader": ".design-sync/conventions.md",
+  "componentSrcMap": {
+    "ThemeProvider": null,
+    "MemoryRouter": null,
+    "Route": null,
+    "Routes": null,
+    "App": "src/App.tsx",
+    "GlobalLoader": "src/common/GlobalLoader.tsx",
+    "KpiCard": "src/components/KpiCard.tsx",
+    "KpiCardSkeleton": "src/components/KpiCardSkeleton.tsx",
+    "QueryInput": "src/components/QueryInput.tsx",
+    "QueryResponseBubble": "src/components/QueryResponseBubble.tsx",
+    "QueryResponseBubbleSkeleton": "src/components/QueryResponseBubble.tsx",
+    "ThemeToggle": "src/components/ThemeToggle.tsx",
+    "UserQueryBubble": "src/components/UserQueryBubble.tsx",
+    "ChatListPane": "src/components/inbox/ChatListPane.tsx",
+    "MessageBubble": "src/components/inbox/MessageBubble.tsx",
+    "MessageFlagIcon": "src/components/inbox/MessageFlagIcons.tsx",
+    "MessageStreamPane": "src/components/inbox/MessageStreamPane.tsx",
+    "ChartPlaceholder": "src/components/placeholders/index.tsx",
+    "KpiPlaceholder": "src/components/placeholders/index.tsx",
+    "HorizontalBarsPlaceholder": "src/components/placeholders/index.tsx",
+    "TablePlaceholder": "src/components/placeholders/index.tsx",
+    "ChatListPlaceholder": "src/components/placeholders/index.tsx",
+    "MessageStreamPlaceholder": "src/components/placeholders/index.tsx",
+    "Fan360Placeholder": "src/components/placeholders/index.tsx",
+    "AsyncContent": "src/components/ui/AsyncContent.tsx",
+    "Panel": "src/components/ui/Panel.tsx",
+    "AppAppBar": "src/layouts/AppAppBar.tsx",
+    "AppDrawer": "src/layouts/AppDrawer.tsx",
+    "AppShell": "src/layouts/AppShell.tsx",
+    "AnalyticsView": "src/views/AnalyticsView.tsx",
+    "CreatorDashboardView": "src/views/CreatorDashboardView.tsx",
+    "GraphExplorerView": "src/views/GraphExplorerView.tsx",
+    "OperatorInboxView": "src/views/OperatorInboxView.tsx",
+    "CreateBridgeTransportStore": null,
+    "UseAnalyticsStore": null,
+    "UseSystemStore": null,
+    "UseUserStore": null,
+    "PreviewFrame": null,
+    "PreviewLabel": null,
+    "PreviewStack": null
+  },
+  "dtsPropsFor": {
+    "AnalyticsView": "  // No props.",
+    "App": "  // No props.",
+    "AppAppBar": "  drawerWidth: number;\n  onDrawerToggle: () => void;",
+    "AppDrawer": "  drawerWidth: number;\n  mobileOpen: boolean;\n  onDrawerToggle: () => void;",
+    "AppShell": "  // No props.",
+    "AsyncContent": "  isLoading: boolean;\n  data: unknown[] | null | undefined;\n  placeholder: React.ReactNode;\n  emptyMessage: React.ReactNode;\n  render: (data: unknown[]) => React.ReactNode;",
+    "ChartPlaceholder": "  height?: number;",
+    "ChatListPane": "  conversations: ReadonlyArray<{\n    conversation_id: string;\n    platform_user_id: string;\n    display_name: string | null;\n    unread_count: number;\n    last_message_at: string | null;\n    messages: Array<{\n      message_id: string;\n      text: string;\n      sent_at: string;\n      direction: 'inbound' | 'outbound';\n      sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n    }>;\n  }>;\n  isLoading: boolean;\n  onSelectConversation: (conversationId: string) => void;\n  selectedConversationId: string | null;",
+    "ChatListPlaceholder": "  rows?: number;",
+    "CreatorDashboardView": "  // No props.",
+    "Fan360Placeholder": "  // No props.",
+    "GlobalLoader": "  // No props.",
+    "GraphExplorerView": "  // No props.",
+    "HorizontalBarsPlaceholder": "  bars?: number;",
+    "KpiCard": "  title: string;\n  value: string | number;\n  isLoading?: boolean;\n  grow?: boolean;",
+    "KpiCardSkeleton": "  grow?: boolean;",
+    "KpiPlaceholder": "  // No props.",
+    "MessageBubble": "  message: {\n    message_id: string;\n    text: string;\n    sent_at: string;\n    direction: 'inbound' | 'outbound';\n    sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n  };",
+    "MessageFlagIcon": "  sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n  context?: 'latest' | 'message';",
+    "MessageStreamPane": "  conversation: {\n    conversation_id: string;\n    platform_user_id: string;\n    display_name: string | null;\n    unread_count: number;\n    last_message_at: string | null;\n    messages: Array<{\n      message_id: string;\n      text: string;\n      sent_at: string;\n      direction: 'inbound' | 'outbound';\n      sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n    }>;\n  } | null;\n  isLoading: boolean;\n  isOnline: boolean;",
+    "MessageStreamPlaceholder": "  bubbles?: number;",
+    "OperatorInboxView": "  store?: {\n    getState(): Readonly<Record<string, unknown>>;\n    subscribe(listener: () => void): () => void;\n  };",
+    "Panel": "  children: React.ReactNode;\n  sx?: unknown;",
+    "QueryInput": "  onSend: (text: string) => void;\n  disabled?: boolean;",
+    "QueryResponseBubble": "  response: {\n    id: string;\n    question: string;\n    answer?: string;\n    gremlinQuery?: string;\n    result?: Record<string, unknown> | unknown[];\n  };",
+    "QueryResponseBubbleSkeleton": "  // No props.",
+    "TablePlaceholder": "  rows?: number;",
+    "ThemeToggle": "  // No props.",
+    "UserQueryBubble": "  text: string;"
+  },
+  "provider": {
+    "component": "ThemeProvider",
+    "props": {
+      "theme": {
+        "$ref": "theme"
+      },
+      "defaultMode": "light",
+      "disableTransitionOnChange": true
+    }
+  },
+  "overrides": {
+    "App": {
+      "cardMode": "single",
+      "viewport": "960x640"
+    },
+    "AnalyticsView": {
+      "cardMode": "single",
+      "viewport": "1100x760"
+    },
+    "AppAppBar": {
+      "cardMode": "single",
+      "viewport": "960x180"
+    },
+    "AppDrawer": {
+      "cardMode": "single",
+      "viewport": "520x520"
+    },
+    "AppShell": {
+      "cardMode": "single",
+      "viewport": "960x640"
+    },
+    "CreatorDashboardView": {
+      "cardMode": "single",
+      "viewport": "1100x760"
+    },
+    "GlobalLoader": {
+      "cardMode": "single",
+      "primaryStory": "ProcessingOverlay",
+      "viewport": "760x520"
+    },
+    "GraphExplorerView": {
+      "cardMode": "single",
+      "viewport": "900x560"
+    },
+    "KpiCard": {
+      "cardMode": "column"
+    },
+    "KpiCardSkeleton": {
+      "cardMode": "column"
+    },
+    "KpiPlaceholder": {
+      "cardMode": "column"
+    },
+    "OperatorInboxView": {
+      "cardMode": "single",
+      "viewport": "1100x720"
+    }
+  }
+}

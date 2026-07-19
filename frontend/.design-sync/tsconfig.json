@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "baseUrl": "../src",
+    "resolveJsonModule": true,
+    "paths": {
+      "@/*": ["*"],
+      "@types/*": ["types/*"],
+      "@components/*": ["components/*/index.ts", "components/*/index.tsx", "components/*"],
+      "@hooks/*": ["hooks/*"],
+      "@store/*": ["store/*"],
+      "@theme/*": ["theme/*/index.ts", "theme/*/index.tsx", "theme/*"],
+      "@assets/*": ["assets/*"],
+      "@utils/*": ["utils/*/index.ts", "utils/*/index.tsx", "utils/*"],
+      "@views/*": ["views/*"],
+      "@layouts/*": ["layouts/*"],
+      "@routing/*": ["routing/*/index.ts", "routing/*/index.tsx", "routing/*"],
+      "@services/*": ["services/*"],
+      "@common/*": ["common/*"],
+      "@config/*": ["config/*"]
+    }
+  }
+}
