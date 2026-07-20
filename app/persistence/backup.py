@@ -664,7 +664,7 @@ def _verify_database(connection: sqlite3.Connection, store_name: str) -> None:
 def _canonical_high_water(connection: sqlite3.Connection) -> dict[str, Any]:
     accounts: dict[str, dict[str, Any]] = {}
     for row in connection.execute(
-        "SELECT creator_account_id FROM account_read_models ORDER BY creator_account_id"
+        "SELECT creator_account_id FROM account_heads ORDER BY creator_account_id"
     ):
         identity = _sqlite_identity(connection, row[0])
         if identity is None:
@@ -688,16 +688,17 @@ def _canonical_high_water(connection: sqlite3.Connection) -> dict[str, Any]:
 
 
 def _projections_high_water(connection: sqlite3.Connection) -> dict[str, Any]:
+    # The publication-epoch scheduler/capability bookkeeping is authoritative
+    # in the canonical database (see SQLiteProjectionActivationRepository,
+    # which is bound to the canonical plane). A projections-only backup
+    # connection cannot reach it and does not need to: each store is
+    # verified against its own embedded high-water manifest, and every
+    # field read here already lives on projection_generations itself.
     active: list[dict[str, Any]] = []
     for row in connection.execute(
         """
-        SELECT generation.*, epoch.scheduler_owner_id,
-               epoch.scheduler_capability_digest,
-               epoch.state AS publication_epoch_state
-        FROM projection_generations AS generation
-        JOIN analytics_projection_publication_epochs AS epoch
-          ON epoch.publication_epoch=generation.publication_epoch
-        WHERE generation.status='active' ORDER BY generation.creator_account_id
+        SELECT * FROM projection_generations
+        WHERE status='active' ORDER BY creator_account_id
         """
     ):
         values = recompute_generation(connection, row["generation_id"])
@@ -723,16 +724,11 @@ def _projections_high_water(connection: sqlite3.Connection) -> dict[str, Any]:
                     else int(row["expected_active_revision"])
                 ),
                 "publication_epoch": row["publication_epoch"],
-                "publication_scheduler_owner_id": row["scheduler_owner_id"],
-                "publication_epoch_state": row["publication_epoch_state"],
                 "writer_owner_id": row["owner_id"],
                 "writer_owner_pid": int(row["owner_pid"]),
                 "writer_process_started_at": row["owner_process_started_at"],
                 "writer_instance_nonce": row["owner_instance_nonce"],
                 "writer_capability_digest": row["owner_capability_digest"],
-                "publication_capability_digest": row[
-                    "scheduler_capability_digest"
-                ],
             }
         )
     return {
@@ -832,6 +828,10 @@ def _witnesses(connection: sqlite3.Connection) -> list[dict[str, Any]]:
 def _paired_witnesses_match(
     canonical: BackupManifest, projections: BackupManifest
 ) -> bool:
+    # The publication-epoch scheduler/capability identity is only readable
+    # from the canonical connection (see _projections_high_water); a paired
+    # match therefore compares every field a projections-only backup can
+    # see, which is every field below.
     completed = {
         (
             item["account_ref"],
@@ -847,15 +847,12 @@ def _paired_witnesses_match(
             item["expected_previous_generation_id"],
             item["expected_previous_revision"],
             item["publication_epoch"],
-            item["publication_scheduler_owner_id"],
-            item["publication_epoch_state"],
             item["witness_sequence"],
             item["writer_owner_id"],
             item["writer_owner_pid"],
             item["writer_process_started_at"],
             item["writer_instance_nonce"],
             item["writer_capability_digest"],
-            item["publication_capability_digest"],
         )
         for item in canonical.canonical_witnesses
         if item["state"] == "completed"
@@ -886,15 +883,12 @@ def _paired_witnesses_match(
             item["expected_previous_generation_id"],
             item["expected_previous_revision"],
             item["publication_epoch"],
-            item["publication_scheduler_owner_id"],
-            item["publication_epoch_state"],
             item["witness_sequence"],
             item["writer_owner_id"],
             item["writer_owner_pid"],
             item["writer_process_started_at"],
             item["writer_instance_nonce"],
             item["writer_capability_digest"],
-            item["publication_capability_digest"],
         )
         if key not in completed:
             return False

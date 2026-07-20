@@ -13,15 +13,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator
 
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.errors import AnalyticsError, CanonicalAccountNotFound
 from app.analytics.pipeline import AnalyticsPipeline
+from app.persistence.history import HistoryRepository
 from app.persistence.migrations import (
     Migration,
     MigrationError,
     MigrationRunner,
     load_migration_catalog,
 )
-from app.persistence.repositories import SQLiteIngestionRepository
 
 
 class RebuildFailure(RuntimeError):
@@ -394,7 +395,7 @@ def _account_id(arguments: argparse.Namespace) -> str:
 @contextmanager
 def _open_source(
     arguments: argparse.Namespace,
-) -> Iterator[tuple[SQLiteIngestionRepository, ReadOnlyCanonicalDatabase]]:
+) -> Iterator[tuple[HistoryAnalyticsSource, ReadOnlyCanonicalDatabase]]:
     if getattr(arguments, "backend", "sqlite") != "sqlite":
         raise RebuildFailure(
             "canonical_backend_invalid",
@@ -409,11 +410,18 @@ def _open_source(
     database = ReadOnlyCanonicalDatabase(canonical_path)
     with database:
         database.validate_schema()
-        yield SQLiteIngestionRepository(database), database  # type: ignore[arg-type]
+        # The pinned read-only connection is bound directly; HistoryRepository
+        # itself is never touched (see HistoryAnalyticsSource._read), so an
+        # uninitialized instance is safe here.
+        source = HistoryAnalyticsSource(
+            HistoryRepository.__new__(HistoryRepository),
+            connection=database.connection,
+        )
+        yield source, database
 
 
 def _serialized_projection(
-    source: SQLiteIngestionRepository,
+    source: HistoryAnalyticsSource,
     account_id: str,
 ) -> str:
     try:
