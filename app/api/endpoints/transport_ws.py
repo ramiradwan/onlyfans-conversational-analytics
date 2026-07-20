@@ -574,6 +574,12 @@ async def _bridge_socket(websocket: WebSocket) -> None:
         await transport_manager.send_bridge(
             websocket, "system.state", transport_manager.system_state_payload(account_id)
         )
+        # A fresh bind (reload / deep-link) that lands while durable projection work
+        # is still pending would otherwise be stranded on the stale bind-time
+        # readiness above: nothing re-drives the projection until the next commit.
+        # Schedule a convergence pass so a caught-up generation re-broadcasts both
+        # state.snapshot and a corrected system.state. It is a no-op when current.
+        transport_manager.schedule_projection(account_id)
 
         while True:
             raw = await websocket.receive_text()

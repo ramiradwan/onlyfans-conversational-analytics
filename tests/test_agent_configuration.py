@@ -305,9 +305,14 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
                 )
             )
             stale_state = bridge.receive_json()
+            assert stale_state["type"] == "agent.state"
             assert stale_state["payload"]["required_config_revision"] == "config-9"
             assert stale_state["payload"]["applied_config_revision"] == "config-8"
             assert stale_state["payload"]["degraded_reason"] is not None
+            # Applying config now also refreshes readiness (configuration alignment
+            # can change), so a system.state trails each agent.state.
+            stale_readiness = bridge.receive_json()
+            assert stale_readiness["type"] == "system.state"
 
             current = bind_report(
                 fixture("config.applied"),
@@ -322,7 +327,10 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
                 )
             )
             converged = bridge.receive_json()
+            assert converged["type"] == "agent.state"
             assert converged["payload"]["required_config_revision"] == "config-9"
             assert converged["payload"]["applied_config_revision"] == "config-9"
             assert converged["payload"]["degraded_reason"] is None
+            converged_readiness = bridge.receive_json()
+            assert converged_readiness["type"] == "system.state"
 

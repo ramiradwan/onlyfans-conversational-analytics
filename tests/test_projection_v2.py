@@ -672,6 +672,62 @@ def test_background_projection_keeps_previous_generation_readable() -> None:
     assert new_generation["read_revision"] == initial["view_revision"] + 1
 
 
+class _RecordingBridge:
+    def __init__(self, sent: list[dict]) -> None:
+        self._sent = sent
+
+    async def send_text(self, text: str) -> None:
+        self._sent.append(json.loads(text))
+
+    async def close(self, code: int, reason: str) -> None:  # pragma: no cover - unused
+        pass
+
+
+def test_projection_catch_up_rebroadcasts_recovered_system_state() -> None:
+    """A caught-up read model must re-emit system.state, not just state.snapshot.
+
+    Regression for the live-canary finding: after a commit the Bridge rendered the
+    freshly delivered conversations while the readiness chip stayed frozen on the
+    stale bind-time "unavailable"/"degraded" value, because system.state was only
+    ever sent once at bind and never refreshed when the projection recovered.
+    """
+    repositories = create_canonical_repositories("memory")
+    key = commit_seed(repositories, messages=[raw_message("message-1")])
+    assert repositories.projection.catch_up(ACCOUNT) is not None
+    manager = InMemoryTransportManager(repositories)
+    sent: list[dict] = []
+
+    async def exercise() -> None:
+        await manager.bind_bridge(
+            _RecordingBridge(sent),
+            principal_id="principal",
+            creator_account_id=ACCOUNT,
+            bridge_session_id=uuid4(),
+        )
+        # New canonical data lands; the durable read-model projection now lags.
+        commit_message_delta(
+            repositories,
+            key,
+            sequence=1,
+            origin="passive",
+            message=raw_message("message-2"),
+        )
+        sent.clear()
+        # The commit handler serializes durable projection work per account.
+        await manager.schedule_projection(ACCOUNT)
+
+    asyncio.run(exercise())
+
+    types = [message["type"] for message in sent]
+    assert "state.snapshot" in types
+    assert "system.state" in types
+    system = next(message for message in sent if message["type"] == "system.state")
+    detail = system["payload"]["detail"] or ""
+    assert "projection=pending" not in detail
+    assert "projection=unavailable" not in detail
+    assert system["payload"]["readiness"] in {"ready", "degraded"}
+
+
 def run_scale_qualification(message_count: int) -> tuple[int, int, float]:
     repositories = create_canonical_repositories("memory")
     key, commit = stage_snapshot(

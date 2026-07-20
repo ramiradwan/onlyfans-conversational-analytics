@@ -690,6 +690,11 @@ class InMemoryTransportManager:
                 return latest
             latest = snapshot
             await self._broadcast_bridge(account_id, "state.snapshot", snapshot)
+            # The newly activated generation makes readiness recover; system.state
+            # is otherwise a bind-only one-shot, so without this the Bridge keeps
+            # rendering the freshly delivered data under a stale "unavailable" /
+            # "degraded" readiness that never corrects itself.
+            await self.broadcast_system_state(account_id)
 
     def schedule_projection(
         self, account_id: str
@@ -1107,6 +1112,10 @@ class InMemoryTransportManager:
     async def broadcast_presence_state(self, account_id: str) -> None:
         await self._broadcast_bridge(account_id, "presence.state", self.presence_state_payload(account_id))
 
+    async def broadcast_system_state(self, account_id: str) -> None:
+        """Re-emit the replaceable readiness signal after any input to it changes."""
+        await self._broadcast_bridge(account_id, "system.state", self.system_state_payload(account_id))
+
     async def broadcast_state_delta(self, account_id: str, payload: dict[str, Any]) -> None:
         """Queue ordered deltas without blocking independent presence delivery."""
         if not any(
@@ -1172,6 +1181,9 @@ class InMemoryTransportManager:
                 lease.creator_account_id, payload.config_revision
             )
         await self.broadcast_agent_state(lease.creator_account_id)
+        # Applying config can flip configuration_aligned; refresh readiness so the
+        # dashboard leaves "configuration=pending" without waiting for a reconnect.
+        await self.broadcast_system_state(lease.creator_account_id)
 
     async def signal_config_available(self, account_id: str) -> bool:
         lease = self.active_agents.get(account_id)
