@@ -1,0 +1,49 @@
+{
+  "connection_id": "12000000-0000-4000-8000-000000000001",
+  "fencing_token": "synthetic-fence-beta",
+  "creator_account_id": "synthetic-creator-beta",
+  "agent_installation_id": "22000000-0000-4000-8000-000000000001",
+  "snapshot_id": "42000000-0000-4000-8000-000000000001",
+  "agent_stream_id": "32000000-0000-4000-8000-000000000001",
+  "through_seq": 8,
+  "chats": [
+    {
+      "chat_id": "beta-conversation-1",
+      "platform_user_id": "synthetic-participant-c",
+      "display_name": "Participant C",
+      "updated_at": "2026-07-13T12:02:00Z"
+    },
+    {
+      "chat_id": "beta-conversation-2",
+      "platform_user_id": "synthetic-participant-d",
+      "display_name": "Participant D",
+      "updated_at": "2026-07-14T15:00:00Z"
+    }
+  ],
+  "messages": [
+    {
+      "message_id": "beta-message-1",
+      "chat_id": "beta-conversation-1",
+      "sender_platform_user_id": "synthetic-participant-c",
+      "text": "The file link has an error and I am confused.",
+      "sent_at": "2026-07-13T12:00:00Z",
+      "direction": "inbound"
+    },
+    {
+      "message_id": "beta-message-2",
+      "chat_id": "beta-conversation-1",
+      "sender_platform_user_id": "synthetic-creator-beta",
+      "text": "Sorry about the issue. I will send https://example.invalid/demo.",
+      "sent_at": "2026-07-13T12:02:00Z",
+      "direction": "outbound"
+    },
+    {
+      "message_id": "beta-message-3",
+      "chat_id": "beta-conversation-2",
+      "sender_platform_user_id": "synthetic-participant-d",
+      "text": "Thanks for the welcome message #demo",
+      "sent_at": "2026-07-14T15:00:00Z",
+      "direction": "inbound"
+    }
+  ]
+}

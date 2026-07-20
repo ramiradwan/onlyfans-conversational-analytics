@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -11,22 +13,55 @@ from app.analytics.opaque_refs import account_ref
 from app.analytics.rebuild import rebuild_from_args
 from app.models.analytics import GraphNodeKind, GraphRelation
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
-from app.protocol.payloads import IngestDeltaPayload, IngestSnapshotPayload
+from app.persistence.history import HistoryRepository, StreamKey
+from app.protocol.payloads import (
+    IngestDeltaPayload,
+    IngestSnapshotBeginPayload,
+    IngestSnapshotChunkPayload,
+    IngestSnapshotCommitPayload,
+    SnapshotRecordCounts,
+)
 from app.services.data_ingest import CanonicalAnalyticsConsumer
 from app.services.onlyfans_client import OnlyFansClient
-from app.transport.ingestion import AccountReadModel, IngestionService, StreamKey
+from app.transport.ingestion import AccountReadModel
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 
 
-def snapshot(name: str) -> IngestSnapshotPayload:
-    return IngestSnapshotPayload.model_validate_json(
+@dataclass(frozen=True, slots=True)
+class FixtureSnapshot:
+    """A fixture's flat chat/message document, ready for chunked canonical seeding."""
+
+    connection_id: UUID
+    fencing_token: str
+    creator_account_id: str
+    agent_installation_id: UUID
+    agent_stream_id: UUID
+    snapshot_id: UUID
+    through_seq: int
+    chats: list[dict]
+    messages: list[dict]
+
+
+def snapshot(name: str) -> FixtureSnapshot:
+    document = json.loads(
         (FIXTURES / f"{name}.snapshot.json").read_text(encoding="utf-8")
+    )
+    return FixtureSnapshot(
+        connection_id=UUID(document["connection_id"]),
+        fencing_token=document["fencing_token"],
+        creator_account_id=document["creator_account_id"],
+        agent_installation_id=UUID(document["agent_installation_id"]),
+        agent_stream_id=UUID(document["agent_stream_id"]),
+        snapshot_id=UUID(document["snapshot_id"]),
+        through_seq=0,
+        chats=document["chats"],
+        messages=document["messages"],
     )
 
 
-def stream_key(payload: IngestSnapshotPayload) -> StreamKey:
+def stream_key(payload: FixtureSnapshot) -> StreamKey:
     return StreamKey(
         payload.creator_account_id,
         payload.agent_installation_id,
@@ -34,14 +69,85 @@ def stream_key(payload: IngestSnapshotPayload) -> StreamKey:
     )
 
 
+def _seed_identity(payload: FixtureSnapshot) -> dict:
+    return {
+        "connection_id": payload.connection_id,
+        "fencing_token": payload.fencing_token,
+        "creator_account_id": payload.creator_account_id,
+        "agent_installation_id": payload.agent_installation_id,
+        "agent_stream_id": payload.agent_stream_id,
+        "snapshot_id": payload.snapshot_id,
+    }
+
+
+def seed_canonical_snapshot(history: HistoryRepository, payload: FixtureSnapshot) -> None:
+    """Write one fixture snapshot through the signer-v2 chunked canonical path."""
+    key = stream_key(payload)
+    identity = _seed_identity(payload)
+    begin = IngestSnapshotBeginPayload(
+        **identity,
+        frame_kind="begin",
+        through_seq=payload.through_seq,
+        chunk_count=2,
+        record_counts=SnapshotRecordCounts(
+            chats=len(payload.chats),
+            messages=len(payload.messages),
+            coverage_evidence=0,
+        ),
+        max_frame_bytes=524288,
+    )
+    assert history.begin_snapshot(key, begin).status == "accepted"
+    chat_chunk = IngestSnapshotChunkPayload(
+        **identity,
+        frame_kind="chunk",
+        chunk_index=0,
+        entity_kind="chat",
+        records=[
+            {
+                "tombstone": False,
+                "chat": {
+                    "record_kind": "full",
+                    "chat_id": item["chat_id"],
+                    "platform_user_id": item["platform_user_id"],
+                    "display_name": item.get("display_name"),
+                    "updated_at": item["updated_at"],
+                },
+            }
+            for item in payload.chats
+        ],
+    )
+    assert history.add_snapshot_chunk(key, chat_chunk).status == "accepted"
+    message_chunk = IngestSnapshotChunkPayload(
+        **identity,
+        frame_kind="chunk",
+        chunk_index=1,
+        entity_kind="message",
+        records=[
+            {
+                "tombstone": False,
+                "message": {
+                    "message_id": item["message_id"],
+                    "chat_id": item["chat_id"],
+                    "sender_platform_user_id": item["sender_platform_user_id"],
+                    "text": item["text"],
+                    "sent_at": item["sent_at"],
+                    "direction": item["direction"],
+                },
+            }
+            for item in payload.messages
+        ],
+    )
+    assert history.add_snapshot_chunk(key, message_chunk).status == "accepted"
+    commit = IngestSnapshotCommitPayload(**identity, frame_kind="commit", chunk_count=2)
+    assert history.commit_snapshot(key, commit).status == "accepted"
+
+
 async def seed(
     repositories: CanonicalRepositories, name: str
-) -> tuple[IngestionService, IngestSnapshotPayload]:
+) -> FixtureSnapshot:
     payload = snapshot(name)
-    service = IngestionService(repositories.ingestion)
-    outcome = await service.ingest_snapshot(stream_key(payload), payload)
-    assert outcome.status == "accepted"
-    return service, payload
+    seed_canonical_snapshot(repositories.history, payload)
+    return payload
 
 
 @pytest.fixture(params=["memory", "sqlite"], ids=["memory", "sqlite"])
@@ -57,7 +163,7 @@ def repositories(request, tmp_path: Path) -> CanonicalRepositories:
 async def test_pipeline_consumes_both_canonical_backends_idempotently(
     repositories: CanonicalRepositories,
 ) -> None:
-    _, payload = await seed(repositories, "creator-alpha")
+    payload = await seed(repositories, "creator-alpha")
     pipeline = AnalyticsPipeline(repositories.ingestion)
 
     first = pipeline.project_account(payload.creator_account_id)
@@ -84,7 +190,7 @@ async def test_pipeline_consumes_both_canonical_backends_idempotently(
 async def test_pipeline_is_revision_aware_and_forced_rebuild_is_equivalent(
     repositories: CanonicalRepositories,
 ) -> None:
-    service, payload = await seed(repositories, "creator-alpha")
+    payload = await seed(repositories, "creator-alpha")
     pipeline = AnalyticsPipeline(repositories.ingestion)
     initial = pipeline.project_account(payload.creator_account_id)
     delta_document = {
@@ -95,6 +201,7 @@ async def test_pipeline_is_revision_aware_and_forced_rebuild_is_equivalent(
         "event_id": "51000000-0000-4000-8000-000000000001",
         "agent_stream_id": str(payload.agent_stream_id),
         "source_seq": payload.through_seq + 1,
+        "acquisition_origin": "signer",
         "change": {
             "type": "message.upsert",
             "message": {
@@ -108,7 +215,7 @@ async def test_pipeline_is_revision_aware_and_forced_rebuild_is_equivalent(
         },
     }
     delta = IngestDeltaPayload.model_validate_json(json.dumps(delta_document))
-    outcome = await service.ingest_delta(stream_key(payload), delta)
+    outcome = repositories.history.commit_delta(stream_key(payload), delta)
 
     refreshed = pipeline.project_account(payload.creator_account_id)
     rebuilt = pipeline.rebuild_account(payload.creator_account_id)
@@ -125,8 +232,8 @@ async def test_pipeline_is_revision_aware_and_forced_rebuild_is_equivalent(
 @pytest.mark.asyncio
 async def test_synthetic_accounts_remain_isolated_in_metrics_and_graph() -> None:
     repositories = create_canonical_repositories("memory")
-    _, alpha = await seed(repositories, "creator-alpha")
-    _, beta = await seed(repositories, "creator-beta")
+    alpha = await seed(repositories, "creator-alpha")
+    beta = await seed(repositories, "creator-beta")
     pipeline = AnalyticsPipeline(repositories.ingestion)
 
     alpha_artifact = pipeline.project_account(alpha.creator_account_id).artifact
@@ -148,7 +255,7 @@ async def test_synthetic_accounts_remain_isolated_in_metrics_and_graph() -> None
 @pytest.mark.asyncio
 async def test_legacy_service_names_are_read_only_canonical_adapters() -> None:
     repositories = create_canonical_repositories("memory")
-    _, payload = await seed(repositories, "creator-alpha")
+    payload = await seed(repositories, "creator-alpha")
     consumer = CanonicalAnalyticsConsumer(repositories.ingestion)
     client = OnlyFansClient(repositories.ingestion)
 
@@ -177,7 +284,7 @@ async def test_rebuild_entry_point_is_stable_across_fresh_sqlite_connections(
     repositories = create_canonical_repositories(
         "sqlite", canonical_path=database_path
     )
-    _, payload = await seed(repositories, "creator-beta")
+    payload = await seed(repositories, "creator-beta")
     arguments = argparse.Namespace(
         backend="sqlite",
         canonical_path=database_path,

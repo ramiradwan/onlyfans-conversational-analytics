@@ -1,0 +1,87 @@
+{
+  "connection_id": "11000000-0000-4000-8000-000000000001",
+  "fencing_token": "synthetic-fence-alpha",
+  "creator_account_id": "synthetic-creator-alpha",
+  "agent_installation_id": "21000000-0000-4000-8000-000000000001",
+  "snapshot_id": "41000000-0000-4000-8000-000000000001",
+  "agent_stream_id": "31000000-0000-4000-8000-000000000001",
+  "through_seq": 20,
+  "chats": [
+    {
+      "chat_id": "alpha-conversation-1",
+      "platform_user_id": "synthetic-participant-a",
+      "display_name": "Participant A",
+      "updated_at": "2026-07-10T09:06:00Z"
+    },
+    {
+      "chat_id": "alpha-conversation-2",
+      "platform_user_id": "synthetic-participant-b",
+      "display_name": "Participant B",
+      "updated_at": "2026-07-11T10:04:00Z"
+    },
+    {
+      "chat_id": "alpha-conversation-3",
+      "platform_user_id": "synthetic-participant-a",
+      "display_name": "Participant A",
+      "updated_at": "2026-07-12T08:03:00Z"
+    }
+  ],
+  "messages": [
+    {
+      "message_id": "alpha-message-1",
+      "chat_id": "alpha-conversation-1",
+      "sender_platform_user_id": "synthetic-participant-a",
+      "text": "Hello, could you help with the upload issue?",
+      "sent_at": "2026-07-10T09:00:00Z",
+      "direction": "inbound"
+    },
+    {
+      "message_id": "alpha-message-2",
+      "chat_id": "alpha-conversation-1",
+      "sender_platform_user_id": "synthetic-creator-alpha",
+      "text": "Thanks for the details. I will send a helpful link.",
+      "sent_at": "2026-07-10T09:04:00Z",
+      "direction": "outbound"
+    },
+    {
+      "message_id": "alpha-message-3",
+      "chat_id": "alpha-conversation-1",
+      "sender_platform_user_id": "synthetic-participant-a",
+      "text": "Great, the problem is resolved. Thanks!",
+      "sent_at": "2026-07-10T09:06:00Z",
+      "direction": "inbound"
+    },
+    {
+      "message_id": "alpha-message-4",
+      "chat_id": "alpha-conversation-2",
+      "sender_platform_user_id": "synthetic-participant-b",
+      "text": "What is the price for tomorrow?",
+      "sent_at": "2026-07-11T10:00:00Z",
+      "direction": "inbound"
+    },
+    {
+      "message_id": "alpha-message-5",
+      "chat_id": "alpha-conversation-2",
+      "sender_platform_user_id": "synthetic-creator-alpha",
+      "text": "The price is $20. I will schedule tomorrow at 14:00.",
+      "sent_at": "2026-07-11T10:04:00Z",
+      "direction": "outbound"
+    },
+    {
+      "message_id": "alpha-message-6",
+      "chat_id": "alpha-conversation-3",
+      "sender_platform_user_id": "synthetic-participant-a",
+      "text": "Hi again, is the video available today?",
+      "sent_at": "2026-07-12T08:00:00Z",
+      "direction": "inbound"
+    },
+    {
+      "message_id": "alpha-message-7",
+      "chat_id": "alpha-conversation-3",
+      "sender_platform_user_id": "synthetic-creator-alpha",
+      "text": "Yes, I will upload the video today.",
+      "sent_at": "2026-07-12T08:03:00Z",
+      "direction": "outbound"
+    }
+  ]
+}

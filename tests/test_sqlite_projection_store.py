@@ -11,6 +11,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -46,9 +47,14 @@ from app.models.analytics import (
     RebuildArtifact,
 )
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
+from app.persistence.history import HistoryRepository, StreamKey
 from app.persistence.projection_activation import ProjectionActivationConflict
-from app.protocol.payloads import IngestSnapshotPayload
-from app.transport.ingestion import IngestionService, StreamKey
+from app.protocol.payloads import (
+    IngestSnapshotBeginPayload,
+    IngestSnapshotChunkPayload,
+    IngestSnapshotCommitPayload,
+    SnapshotRecordCounts,
+)
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
@@ -69,7 +75,6 @@ def prepare_empty_canonical(path: Path) -> CanonicalRepositories:
     repositories = create_canonical_repositories(
         "sqlite",
         canonical_path=path,
-        projection_path=path.with_name("history-projections.sqlite3"),
     )
     assert repositories.database is not None
     if not repositories.ingestion.account_exists("account-a"):
@@ -133,7 +138,7 @@ async def test_scheduler_recovery_publishes_sqlite_once_through_owned_executor(
     tmp_path: Path,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    store = make_store(tmp_path / "projections.sqlite3", repositories)
+    store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     scheduler = InProcessProjectionScheduler(
         pipeline_for(repositories, store), worker_count=2, queue_capacity=4
     )
@@ -153,7 +158,7 @@ def test_projection_and_graph_survive_restart_with_exact_completed_witness(
     tmp_path: Path,
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
-    projections_path = tmp_path / "projections.sqlite3"
+    projections_path = tmp_path / "analytics-projections.sqlite3"
     repositories = prepare_empty_canonical(canonical_path)
     stores = create_analytics_stores(
         "sqlite",
@@ -200,7 +205,7 @@ def test_canonical_advance_immediately_hides_stale_projection_and_graph(
     tmp_path: Path,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    store = make_store(tmp_path / "projections.sqlite3", repositories)
+    store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     pipeline_for(repositories, store).project_account("account-a")
     assert store.get("account-a") is not None
     partition_ref = account_ref("account-a")
@@ -216,7 +221,7 @@ def test_production_graph_mutators_cannot_touch_active_generation(
     tmp_path: Path,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    store = make_store(tmp_path / "projections.sqlite3", repositories)
+    store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     pipeline_for(repositories, store).project_account("account-a")
     active = store.database.active_generation("account-a")
     partition_ref = account_ref("account-a")
@@ -235,7 +240,7 @@ def test_production_graph_deadline_includes_active_identity_resolution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    store = make_store(tmp_path / "projections.sqlite3", repositories)
+    store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     pipeline_for(repositories, store).project_account("account-a")
     original = store.canonical_identity_reader
 
@@ -291,7 +296,7 @@ def test_subprocess_crash_reopen_at_every_activation_boundary(
     tmp_path: Path, crash_stage: str
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
-    projections_path = tmp_path / "projections.sqlite3"
+    projections_path = tmp_path / "analytics-projections.sqlite3"
     prepare_empty_canonical(canonical_path)
     result = subprocess.run(
         [
@@ -335,7 +340,7 @@ def test_reserved_activation_is_cancelled_after_advance_and_reopen(
     tmp_path: Path,
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
-    projections_path = tmp_path / "projections.sqlite3"
+    projections_path = tmp_path / "analytics-projections.sqlite3"
     prepare_empty_canonical(canonical_path)
     result = subprocess.run(
         [
@@ -367,7 +372,7 @@ def test_concurrent_process_cannot_retire_live_build_or_rollback_winner(
     tmp_path: Path,
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
-    projections_path = tmp_path / "projections.sqlite3"
+    projections_path = tmp_path / "analytics-projections.sqlite3"
     ready = tmp_path / "writer.ready"
     release = tmp_path / "writer.release"
     prepare_empty_canonical(canonical_path)
@@ -422,7 +427,7 @@ def test_copied_persisted_owner_fields_without_capability_cannot_write(
     tmp_path: Path,
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
-    projection_path = tmp_path / "projections.sqlite3"
+    projection_path = tmp_path / "analytics-projections.sqlite3"
     repositories = prepare_empty_canonical(canonical_path)
 
     class StopBeforeValidation(RuntimeError):
@@ -490,7 +495,7 @@ def test_50000_node_stage_renews_short_writer_lease_through_validation(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(
-        tmp_path / "projections.sqlite3",
+        tmp_path / "analytics-projections.sqlite3",
         repositories,
         lease_seconds=0.5,
     )
@@ -546,7 +551,7 @@ def test_startup_quarantines_active_generation_without_exact_witness(
     tmp_path: Path, damage: str
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    store = make_store(tmp_path / "projections.sqlite3", repositories)
+    store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     pipeline_for(repositories, store).project_account("account-a")
     active = store.database.active_generation("account-a")
     assert active is not None and repositories.database is not None
@@ -580,7 +585,7 @@ def test_startup_quarantines_active_generation_without_exact_witness(
                 (datetime.now(timezone.utc).isoformat(), active.generation_id),
             )
 
-    reopened = make_store(tmp_path / "projections.sqlite3", repositories)
+    reopened = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     assert reopened.database.active_generation("account-a") is None
     assert reopened.get("account-a") is None
 
@@ -589,7 +594,7 @@ def test_tampered_pending_generation_is_cancelled_and_never_activated(
     tmp_path: Path,
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
-    projections_path = tmp_path / "projections.sqlite3"
+    projections_path = tmp_path / "analytics-projections.sqlite3"
     prepare_empty_canonical(canonical_path)
     result = subprocess.run(
         [
@@ -629,7 +634,7 @@ def test_active_rows_are_schema_immutable_and_digest_checked_on_read(
     tmp_path: Path,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    store = make_store(tmp_path / "projections.sqlite3", repositories)
+    store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     pipeline_for(repositories, store).project_account("account-a")
     active = store.database.active_generation("account-a")
     assert active is not None
@@ -653,7 +658,7 @@ def test_concurrent_generation_cas_prevents_delayed_replacement(
     tmp_path: Path,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    store = make_store(tmp_path / "projections.sqlite3", repositories)
+    store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     pipeline = pipeline_for(repositories, store)
     pipeline.project_account("account-a")
     advance(repositories, 1)
@@ -671,7 +676,7 @@ def test_delayed_lower_revision_cannot_rollback_newer_generation(
     tmp_path: Path,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    store = make_store(tmp_path / "projections.sqlite3", repositories)
+    store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     pipeline = pipeline_for(repositories, store)
     delayed_revision_zero = pipeline.build_candidate("account-a")
     advance(repositories, 1)
@@ -687,7 +692,7 @@ def test_active_before_canonical_completion_is_retired_and_reservation_cancelled
     tmp_path: Path,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    path = tmp_path / "projections.sqlite3"
+    path = tmp_path / "analytics-projections.sqlite3"
     store = make_store(path, repositories)
     pipeline = pipeline_for(repositories, store)
     candidate = pipeline.build_candidate("account-a")
@@ -755,7 +760,7 @@ def test_completed_witness_that_loses_local_epoch_is_cancelled_and_never_visible
             raise PausedAfterCompletion()
 
     store = SQLiteAnalyticsProjectionStore(
-        tmp_path / "projections.sqlite3",
+        tmp_path / "analytics-projections.sqlite3",
         activation=repositories.projection_activation,
         canonical_identity_reader=identity_reader(repositories),
         crash_hook=checkpoint,
@@ -774,7 +779,7 @@ def test_completed_witness_that_loses_local_epoch_is_cancelled_and_never_visible
         candidate.publication_epoch,
         f"direct-pipeline-{id(pipeline):x}",
     )
-    reopened = make_store(tmp_path / "projections.sqlite3", repositories)
+    reopened = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     reconciled = repositories.projection_activation.get(completed.generation_id)
     assert reconciled is not None and reconciled.state == "cancelled"
     assert reopened.database.active_generation("account-a") is None
@@ -787,7 +792,7 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    store = make_store(tmp_path / "projections.sqlite3", repositories)
+    store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
     pipeline = pipeline_for(repositories, store)
     scheduler = InProcessProjectionScheduler(
         pipeline, worker_count=1, queue_capacity=2
@@ -861,7 +866,7 @@ def test_verified_dead_owner_reclaims_live_lease_without_waiting_for_timeout(
         if stage == "built":
             raise StopAfterBuild()
 
-    path = tmp_path / "projections.sqlite3"
+    path = tmp_path / "analytics-projections.sqlite3"
     store = SQLiteAnalyticsProjectionStore(
         path,
         activation=repositories.projection_activation,
@@ -911,7 +916,7 @@ async def test_deleted_projection_file_returns_unavailable_then_rebuilds_once(
     tmp_path: Path,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
-    path = tmp_path / "projections.sqlite3"
+    path = tmp_path / "analytics-projections.sqlite3"
     stores = create_analytics_stores(
         "sqlite",
         projections_path=path,
@@ -958,7 +963,7 @@ async def test_valid_empty_projection_file_replacement_is_quarantined_and_rebuil
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
     repositories = prepare_empty_canonical(canonical_path)
-    path = tmp_path / "projections.sqlite3"
+    path = tmp_path / "analytics-projections.sqlite3"
     stores = create_analytics_stores(
         "sqlite",
         projections_path=path,
@@ -1022,7 +1027,7 @@ async def test_graph_digest_tamper_quarantines_projection_and_self_heals(
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
     repositories = prepare_empty_canonical(canonical_path)
-    path = tmp_path / "projections.sqlite3"
+    path = tmp_path / "analytics-projections.sqlite3"
     stores = create_analytics_stores(
         "sqlite",
         projections_path=path,
@@ -1067,7 +1072,7 @@ async def test_non_sqlite_projection_file_cannot_block_canonical_readiness(
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
     repositories = prepare_empty_canonical(canonical_path)
-    path = tmp_path / "projections.sqlite3"
+    path = tmp_path / "analytics-projections.sqlite3"
     path.write_bytes(b"synthetic-not-a-sqlite-projection")
     assert repositories.ingestion.account_read_model("account-a").view_revision == 0
     stores = create_analytics_stores(
@@ -1100,7 +1105,7 @@ def test_retired_generation_gc_is_bounded_and_preserves_pending(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(
-        tmp_path / "projections.sqlite3",
+        tmp_path / "analytics-projections.sqlite3",
         repositories,
         rollback_retention=1,
         gc_batch_size=2,
@@ -1122,34 +1127,97 @@ def test_retired_generation_gc_is_bounded_and_preserves_pending(
     pipeline.discard_candidate(pending)
 
 
-@pytest.mark.skip(
-    reason="Exercises the canonical ingestion write-path "
-    "(SQLiteIngestionRepository over canonical_chats/canonical_messages) and the "
-    "unified single-model IngestSnapshotPayload. This branch still carries the "
-    "protocol-v2 canonical schema and the discriminated-union payload, so this "
-    "belongs to the later backend ingestion port."
-)
+def _fixture_identity(document: dict) -> dict:
+    return {
+        "connection_id": UUID(document["connection_id"]),
+        "fencing_token": document["fencing_token"],
+        "creator_account_id": document["creator_account_id"],
+        "agent_installation_id": UUID(document["agent_installation_id"]),
+        "agent_stream_id": UUID(document["agent_stream_id"]),
+        "snapshot_id": UUID(document["snapshot_id"]),
+    }
+
+
+def seed_canonical_snapshot(history: HistoryRepository, fixture_name: str) -> str:
+    """Write one fixture snapshot through the signer-v2 chunked canonical path."""
+    document = json.loads(
+        (FIXTURES / f"{fixture_name}.snapshot.json").read_text(encoding="utf-8")
+    )
+    identity = _fixture_identity(document)
+    key = StreamKey(
+        identity["creator_account_id"],
+        identity["agent_installation_id"],
+        identity["agent_stream_id"],
+    )
+    chats = document["chats"]
+    messages = document["messages"]
+    begin = IngestSnapshotBeginPayload(
+        **identity,
+        frame_kind="begin",
+        through_seq=0,
+        chunk_count=2,
+        record_counts=SnapshotRecordCounts(
+            chats=len(chats), messages=len(messages), coverage_evidence=0
+        ),
+        max_frame_bytes=524288,
+    )
+    assert history.begin_snapshot(key, begin).status == "accepted"
+    chat_chunk = IngestSnapshotChunkPayload(
+        **identity,
+        frame_kind="chunk",
+        chunk_index=0,
+        entity_kind="chat",
+        records=[
+            {
+                "tombstone": False,
+                "chat": {
+                    "record_kind": "full",
+                    "chat_id": item["chat_id"],
+                    "platform_user_id": item["platform_user_id"],
+                    "display_name": item.get("display_name"),
+                    "updated_at": item["updated_at"],
+                },
+            }
+            for item in chats
+        ],
+    )
+    assert history.add_snapshot_chunk(key, chat_chunk).status == "accepted"
+    message_chunk = IngestSnapshotChunkPayload(
+        **identity,
+        frame_kind="chunk",
+        chunk_index=1,
+        entity_kind="message",
+        records=[
+            {
+                "tombstone": False,
+                "message": {
+                    "message_id": item["message_id"],
+                    "chat_id": item["chat_id"],
+                    "sender_platform_user_id": item["sender_platform_user_id"],
+                    "text": item["text"],
+                    "sent_at": item["sent_at"],
+                    "direction": item["direction"],
+                },
+            }
+            for item in messages
+        ],
+    )
+    assert history.add_snapshot_chunk(key, message_chunk).status == "accepted"
+    commit = IngestSnapshotCommitPayload(**identity, frame_kind="commit", chunk_count=2)
+    assert history.commit_snapshot(key, commit).status == "accepted"
+    return identity["creator_account_id"]
+
+
 @pytest.mark.asyncio
 async def test_deleting_projections_allows_deterministic_canonical_rebuild(
     tmp_path: Path,
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
-    projections_path = tmp_path / "projections.sqlite3"
+    projections_path = tmp_path / "analytics-projections.sqlite3"
     repositories = create_canonical_repositories(
         "sqlite", canonical_path=canonical_path
     )
-    payload = IngestSnapshotPayload.model_validate_json(
-        (FIXTURES / "creator-beta.snapshot.json").read_text(encoding="utf-8")
-    )
-    outcome = await IngestionService(repositories.ingestion).ingest_snapshot(
-        StreamKey(
-            payload.creator_account_id,
-            payload.agent_installation_id,
-            payload.agent_stream_id,
-        ),
-        payload,
-    )
-    assert outcome.status == "accepted"
+    creator_account_id = seed_canonical_snapshot(repositories.history, "creator-beta")
 
     def build() -> RebuildArtifact:
         stores = create_analytics_stores(
@@ -1162,7 +1230,7 @@ async def test_deleting_projections_allows_deterministic_canonical_rebuild(
             repositories.ingestion,
             projections=stores.projections,
             graph=stores.graph,
-        ).rebuild_account(payload.creator_account_id).artifact
+        ).rebuild_account(creator_account_id).artifact
 
     first = build()
     projections_path.unlink()

@@ -7,6 +7,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -26,9 +27,14 @@ from app.persistence.backup import (
     verify_backup,
 )
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
+from app.persistence.history import HistoryRepository, StreamKey
 from app.persistence.private_files import _windows_acl_is_owner_only
-from app.protocol.payloads import IngestSnapshotPayload
-from app.transport.ingestion import IngestionService, StreamKey
+from app.protocol.payloads import (
+    IngestSnapshotBeginPayload,
+    IngestSnapshotChunkPayload,
+    IngestSnapshotCommitPayload,
+    SnapshotRecordCounts,
+)
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
@@ -40,7 +46,7 @@ class Runtime:
     projections_path: Path
     repositories: CanonicalRepositories
     stores: AnalyticsStores
-    payload: IngestSnapshotPayload
+    creator_account_id: str
     artifact: object
 
 
@@ -53,24 +59,94 @@ def identity_reader(repositories: CanonicalRepositories):
     return read
 
 
+def _fixture_identity(document: dict) -> dict:
+    return {
+        "connection_id": UUID(document["connection_id"]),
+        "fencing_token": document["fencing_token"],
+        "creator_account_id": document["creator_account_id"],
+        "agent_installation_id": UUID(document["agent_installation_id"]),
+        "agent_stream_id": UUID(document["agent_stream_id"]),
+        "snapshot_id": UUID(document["snapshot_id"]),
+    }
+
+
+def seed_canonical_snapshot(history: HistoryRepository, fixture_name: str) -> str:
+    """Write one fixture snapshot through the signer-v2 chunked canonical path."""
+    document = json.loads(
+        (FIXTURES / f"{fixture_name}.snapshot.json").read_text(encoding="utf-8")
+    )
+    identity = _fixture_identity(document)
+    key = StreamKey(
+        identity["creator_account_id"],
+        identity["agent_installation_id"],
+        identity["agent_stream_id"],
+    )
+    chats = document["chats"]
+    messages = document["messages"]
+    begin = IngestSnapshotBeginPayload(
+        **identity,
+        frame_kind="begin",
+        through_seq=0,
+        chunk_count=2,
+        record_counts=SnapshotRecordCounts(
+            chats=len(chats), messages=len(messages), coverage_evidence=0
+        ),
+        max_frame_bytes=524288,
+    )
+    assert history.begin_snapshot(key, begin).status == "accepted"
+    chat_chunk = IngestSnapshotChunkPayload(
+        **identity,
+        frame_kind="chunk",
+        chunk_index=0,
+        entity_kind="chat",
+        records=[
+            {
+                "tombstone": False,
+                "chat": {
+                    "record_kind": "full",
+                    "chat_id": item["chat_id"],
+                    "platform_user_id": item["platform_user_id"],
+                    "display_name": item.get("display_name"),
+                    "updated_at": item["updated_at"],
+                },
+            }
+            for item in chats
+        ],
+    )
+    assert history.add_snapshot_chunk(key, chat_chunk).status == "accepted"
+    message_chunk = IngestSnapshotChunkPayload(
+        **identity,
+        frame_kind="chunk",
+        chunk_index=1,
+        entity_kind="message",
+        records=[
+            {
+                "tombstone": False,
+                "message": {
+                    "message_id": item["message_id"],
+                    "chat_id": item["chat_id"],
+                    "sender_platform_user_id": item["sender_platform_user_id"],
+                    "text": item["text"],
+                    "sent_at": item["sent_at"],
+                    "direction": item["direction"],
+                },
+            }
+            for item in messages
+        ],
+    )
+    assert history.add_snapshot_chunk(key, message_chunk).status == "accepted"
+    commit = IngestSnapshotCommitPayload(**identity, frame_kind="commit", chunk_count=2)
+    assert history.commit_snapshot(key, commit).status == "accepted"
+    return identity["creator_account_id"]
+
+
 async def seeded_runtime(tmp_path: Path) -> Runtime:
     canonical_path = tmp_path / "canonical.sqlite3"
-    projections_path = tmp_path / "projections.sqlite3"
+    projections_path = tmp_path / "analytics-projections.sqlite3"
     repositories = create_canonical_repositories(
         "sqlite", canonical_path=canonical_path
     )
-    payload = IngestSnapshotPayload.model_validate_json(
-        (FIXTURES / "creator-beta.snapshot.json").read_text(encoding="utf-8")
-    )
-    outcome = await IngestionService(repositories.ingestion).ingest_snapshot(
-        StreamKey(
-            payload.creator_account_id,
-            payload.agent_installation_id,
-            payload.agent_stream_id,
-        ),
-        payload,
-    )
-    assert outcome.status == "accepted"
+    creator_account_id = seed_canonical_snapshot(repositories.history, "creator-beta")
     stores = create_analytics_stores(
         "sqlite",
         projections_path=projections_path,
@@ -82,13 +158,13 @@ async def seeded_runtime(tmp_path: Path) -> Runtime:
         repositories.ingestion,
         projections=stores.projections,
         graph=stores.graph,
-    ).project_account(payload.creator_account_id).artifact
+    ).project_account(creator_account_id).artifact
     return Runtime(
         canonical_path,
         projections_path,
         repositories,
         stores,
-        payload,
+        creator_account_id,
         artifact,
     )
 
@@ -104,7 +180,7 @@ def refresh_external_hash(backup_path: Path) -> None:
 
 
 def populate_algorithm_metric(runtime: Runtime) -> None:
-    partition_ref = account_ref(runtime.payload.creator_account_id)
+    partition_ref = account_ref(runtime.creator_account_id)
     result = runtime.stores.graph.compute_centrality(
         partition_ref,
         algorithm="degree",
@@ -134,18 +210,18 @@ async def test_canonical_only_restore_discards_projection_and_rebuilds(
     )
     assert verify_backup(backup_path, expected_store="canonical") == manifest
     identity = identity_reader(runtime.repositories)(
-        runtime.payload.creator_account_id
+        runtime.creator_account_id
     )
     assert identity is not None
     assert manifest.high_water["account_identities"] == {
-        runtime.payload.creator_account_id: {
+        runtime.creator_account_id: {
             "revision": identity.revision,
             "content_digest": identity.content_digest,
         }
     }
 
     restored_dir = tmp_path / "restored"
-    restored_projection_path = restored_dir / "projections.sqlite3"
+    restored_projection_path = restored_dir / "analytics-projections.sqlite3"
     restored_projection_path.parent.mkdir(parents=True)
     restored_projection_path.write_bytes(b"stale disposable projection")
     restored_canonical_path = restored_dir / "canonical.sqlite3"
@@ -170,7 +246,7 @@ async def test_canonical_only_restore_discards_projection_and_rebuilds(
         restored.ingestion,
         projections=restored_stores.projections,
         graph=restored_stores.graph,
-    ).rebuild_account(runtime.payload.creator_account_id).artifact
+    ).rebuild_account(runtime.creator_account_id).artifact
     assert rebuilt == runtime.artifact
 
 
@@ -207,7 +283,7 @@ async def test_matching_backup_pair_round_trips_full_completed_witness(
     assert active["intent_id"] == witness["intent_id"]
 
     restored_canonical = tmp_path / "pair" / "canonical.sqlite3"
-    restored_projection = tmp_path / "pair" / "projections.sqlite3"
+    restored_projection = tmp_path / "pair" / "analytics-projections.sqlite3"
     _, restored_projection_manifest = restore_backup_pair(
         canonical_backup,
         restored_canonical,
@@ -226,7 +302,7 @@ async def test_matching_backup_pair_round_trips_full_completed_witness(
     )
     assert isinstance(stores.projections, SQLiteAnalyticsProjectionStore)
     assert stores.projections.get_artifact(
-        runtime.payload.creator_account_id
+        runtime.creator_account_id
     ) == runtime.artifact
 
 
@@ -242,16 +318,16 @@ async def test_mismatched_backup_pair_exposes_no_projection_and_rebuilds(
     with runtime.repositories.database.transaction() as connection:
         connection.execute(
             """
-            UPDATE account_read_models SET view_revision=2
+            UPDATE account_heads SET canonical_revision=2
             WHERE creator_account_id=?
             """,
-            (runtime.payload.creator_account_id,),
+            (runtime.creator_account_id,),
         )
     canonical_backup = tmp_path / "new-canonical.backup.sqlite3"
     backup_canonical_database(runtime.repositories.database, canonical_backup)
 
     restored_canonical = tmp_path / "mismatch" / "canonical.sqlite3"
-    restored_projection = tmp_path / "mismatch" / "projections.sqlite3"
+    restored_projection = tmp_path / "mismatch" / "analytics-projections.sqlite3"
     restored_projection.parent.mkdir(parents=True)
     restored_projection.write_bytes(b"must be discarded")
     _, projection_manifest = restore_backup_pair(
@@ -272,12 +348,12 @@ async def test_mismatched_backup_pair_exposes_no_projection_and_rebuilds(
         activation=repositories.projection_activation,
         canonical_identity_reader=identity_reader(repositories),
     )
-    assert stores.projections.get(runtime.payload.creator_account_id) is None
+    assert stores.projections.get(runtime.creator_account_id) is None
     rebuilt = AnalyticsPipeline(
         repositories.ingestion,
         projections=stores.projections,
         graph=stores.graph,
-    ).project_account(runtime.payload.creator_account_id)
+    ).project_account(runtime.creator_account_id)
     assert rebuilt.artifact.projection.source_revision == 2
 
 
@@ -474,7 +550,7 @@ async def test_paired_restore_rejects_cross_destination_hardlinks_atomically(
     target_dir = tmp_path / "targets"
     target_dir.mkdir()
     canonical_target = target_dir / "canonical.sqlite3"
-    projection_target = target_dir / "projections.sqlite3"
+    projection_target = target_dir / "analytics-projections.sqlite3"
     canonical_target.write_bytes(b"paired-target-sentinel")
     os.link(canonical_target, projection_target)
 
@@ -506,7 +582,7 @@ async def test_paired_restore_honors_overwrite_false_for_each_destination(
     first = tmp_path / "first"
     first.mkdir()
     first_canonical = first / "canonical.sqlite3"
-    first_projection = first / "projections.sqlite3"
+    first_projection = first / "analytics-projections.sqlite3"
     first_canonical.write_bytes(b"canonical-sentinel")
     with pytest.raises(FileExistsError):
         restore_backup_pair(
@@ -522,7 +598,7 @@ async def test_paired_restore_honors_overwrite_false_for_each_destination(
     second = tmp_path / "second"
     second.mkdir()
     second_canonical = second / "canonical.sqlite3"
-    second_projection = second / "projections.sqlite3"
+    second_projection = second / "analytics-projections.sqlite3"
     second_projection.write_bytes(b"projection-sentinel")
     with pytest.raises(FileExistsError):
         restore_backup_pair(
@@ -548,7 +624,7 @@ async def test_projection_publication_failure_leaves_restored_authority_only(
     backup_canonical_database(runtime.repositories.database, canonical_backup)
     backup_projections_database(runtime.stores.database, projection_backup)
     canonical_target = tmp_path / "restored" / "canonical.sqlite3"
-    projection_target = tmp_path / "restored" / "projections.sqlite3"
+    projection_target = tmp_path / "restored" / "analytics-projections.sqlite3"
     original_publish = backup_module._publish_staged_file
     publications = 0
 
@@ -579,8 +655,8 @@ async def test_projection_publication_failure_leaves_restored_authority_only(
     restored = create_canonical_repositories(
         "sqlite", canonical_path=canonical_target
     )
-    assert identity_reader(restored)(runtime.payload.creator_account_id) == (
-        identity_reader(runtime.repositories)(runtime.payload.creator_account_id)
+    assert identity_reader(restored)(runtime.creator_account_id) == (
+        identity_reader(runtime.repositories)(runtime.creator_account_id)
     )
 
 

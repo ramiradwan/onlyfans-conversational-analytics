@@ -1,52 +1,85 @@
-"""  
-OnlyFansClient:  
-Client for retrieving chats and messages from a creator-owned OnlyFans account.  
-  
-Sources:  
-- DataIngestService in-memory cache (populated via extension ingestion flow)  
+"""Read-only compatibility facade over canonical persisted conversations."""
 
-This legacy facade never accepts or performs direct platform authentication.
-"""  
-  
-from typing import List, Union  
-from app.models.core import ChatThread, Message  
-from app.services.data_ingest import DataIngestService  
-  
-  
-class OnlyFansClient:  
-    """Legacy facade for retrieving chat data from the local ingestion cache."""
-  
-    def __init__(self):
-        self.data_ingest = DataIngestService()  
-  
-    async def get_chats(self, user_id: str, limit: int = 20, offset: int = 0) -> List[ChatThread]:  
-        """  
-        Get chats for a given user_id from ingestion cache.  
-        """  
-        chats = self.data_ingest.get_cached_chats(user_id)  
-        if limit or offset:  
-            chats = chats[offset:offset+limit]  
-        return chats  
-  
-    async def get_messages(self, user_id: str, chat_id: Union[int, str], limit: int = 20, offset: int = 0) -> List[Message]:  
-        """  
-        Get messages for a specific chat from ingestion cache.  
-        """  
-        messages = [  
-            m for m in self.data_ingest.get_cached_messages(user_id)  
-            if str(m.chat_id) == str(chat_id)  
-        ]  
-        if limit or offset:  
-            messages = messages[offset:offset+limit]  
-        return messages  
-  
-    async def get_chat_with_messages(self, user_id: str, chat_id: Union[int, str], message_limit: int = 20) -> ChatThread:  
-        """  
-        Get a chat with its messages from ingestion cache.  
-        """  
-        chats = await self.get_chats(user_id, limit=100)  
-        chat = next((c for c in chats if str(c.id) == str(chat_id)), None)  
-        if not chat:  
-            raise ValueError("Requested chat was not found in the bound account cache")
-        chat.messages = await self.get_messages(user_id, chat_id, limit=message_limit)  
+from __future__ import annotations
+
+from app.analytics.pipeline import CanonicalReadModelSource
+from app.models.core import ChatThread, Message, UserRef
+
+
+class OnlyFansClient:
+    """Expose legacy chat models without maintaining a second data cache."""
+
+    def __init__(self, repository: CanonicalReadModelSource) -> None:
+        self.repository = repository
+
+    async def get_chats(
+        self,
+        creator_account_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[ChatThread]:
+        account = self.repository.account_read_model(creator_account_id)
+        chats = [
+            self._chat(conversation)
+            for _, conversation in sorted(account.conversations.items())
+        ]
+        return chats[offset : offset + limit]
+
+    async def get_messages(
+        self,
+        creator_account_id: str,
+        chat_id: int | str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[Message]:
+        account = self.repository.account_read_model(creator_account_id)
+        conversation = account.conversations.get(str(chat_id))
+        if conversation is None:
+            return []
+        messages = [
+            self._message(str(chat_id), item)
+            for item in conversation.get("messages", [])
+        ]
+        return messages[offset : offset + limit]
+
+    async def get_chat_with_messages(
+        self,
+        creator_account_id: str,
+        chat_id: int | str,
+        message_limit: int = 20,
+    ) -> ChatThread:
+        account = self.repository.account_read_model(creator_account_id)
+        conversation = account.conversations.get(str(chat_id))
+        if conversation is None:
+            raise ValueError(f"Chat {chat_id} not found.")
+        chat = self._chat(conversation)
+        chat.messages = [
+            self._message(str(chat_id), item)
+            for item in conversation.get("messages", [])[:message_limit]
+        ]
         return chat
+
+    @staticmethod
+    def _chat(conversation: dict) -> ChatThread:
+        return ChatThread(
+            id=conversation["conversation_id"],
+            withUser=UserRef(
+                id=conversation["platform_user_id"],
+                displayName=conversation.get("display_name"),
+            ),
+            unread_count=conversation.get("unread_count", 0),
+            messages=[
+                OnlyFansClient._message(conversation["conversation_id"], item)
+                for item in conversation.get("messages", [])
+            ],
+        )
+
+    @staticmethod
+    def _message(chat_id: str, message: dict) -> Message:
+        return Message(
+            id=message["message_id"],
+            chat_id=chat_id,
+            text=message["text"],
+            created_at=message["sent_at"],
+            is_inbound=message["direction"] == "inbound",
+        )
