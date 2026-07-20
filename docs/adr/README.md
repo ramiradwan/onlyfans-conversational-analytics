@@ -1,6 +1,6 @@
 # Architecture decision records
 
-These decision records define the Agent-Brain-Bridge communication architecture, authentication boundary, local runtime topology, and signer-backed history acquisition.
+These decision records define the Agent-Brain-Bridge communication architecture, authentication boundary, local runtime topology, signer-backed history acquisition, and conversational-analytics boundaries.
 
 ## Index
 
@@ -14,3 +14,5 @@ These decision records define the Agent-Brain-Bridge communication architecture,
 - [ADR 0008: Separate hosted customer provisioning from local runtime authentication](0008-production-authentication.md) — A dedicated external CIAM tenant and signed grants provision installations while runtime authentication and conversation data remain local.
 - [ADR 0009: Use a local-first production topology and explicit persistence boundary](0009-local-first-topology-and-persistence.md) — Accepted single-machine topology with a loopback Brain, conditional `http://bridge.localhost:17871` Bridge host, authoritative SQLite stores, rebuildable projections, and in-process event distribution.
 - [ADR 0010: Integrate signer history acquisition with bounded account-scoped state](0010-signer-history-acquisition-and-bounded-state.md) — Protocol v2, one-page signer ownership, account isolation, evidence-derived coverage, bounded snapshot repair, mandatory message paging, settings, and three-dimensional readiness.
+- [ADR 0012: Define explicit internal boundaries within Brain](0012-brain-internal-boundaries.md) — Proposed one-process boundary between the transport/control shell, runtime/security kernel, and canonical analytics engine.
+- [ADR 0013: Define canonical conversational-analytics scope](0013-conversational-analytics-scope.md) — Proposed separation of source observations, canonical facts, versioned enrichment, and rebuildable analytics, graph, search, and Bridge projections.
