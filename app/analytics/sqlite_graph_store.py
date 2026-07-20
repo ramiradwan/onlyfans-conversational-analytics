@@ -1659,6 +1659,16 @@ class SQLiteGraphReader:
             raise GraphReferentialIntegrityError("graph_account_mismatch")
 
 
+_INITIAL_GRAPH_WRITE_CHUNK = 500
+# The adaptive chunk size only ever shrinks (see _record_operation_duration).
+# Flooring it keeps a pathological run of slow writes — e.g. a Windows SQLite
+# I/O hiccup under a short test lease — from collapsing the chunk toward 1 and
+# turning a 50k-row replace() into ~50k heartbeat-gated iterations that hang for
+# minutes. The floor bounds the iteration count without touching the per-chunk
+# lease heartbeat barrier that keeps the generation fenced.
+_MIN_GRAPH_WRITE_CHUNK = 64
+
+
 class SQLiteGraphGenerationWriter:
     """Owner- and lease-fenced writer for one SQLite building generation."""
 
@@ -1678,7 +1688,7 @@ class SQLiteGraphGenerationWriter:
         self.partition_key = partition_key
         self._owner = owner
         self._lease_seconds = lease_seconds
-        self._chunk_size = 500
+        self._chunk_size = _INITIAL_GRAPH_WRITE_CHUNK
         self._worst_operation_seconds = 0.0
         self._lease_deadline_monotonic: float | None = (
             time.monotonic() + lease_seconds
@@ -1929,9 +1939,14 @@ class SQLiteGraphGenerationWriter:
             self._worst_operation_seconds * 0.75,
         )
         target_duration = self._lease_seconds / 5
-        if elapsed > target_duration and self._chunk_size > 1:
-            scaled = max(1, int(self._chunk_size * target_duration / elapsed))
-            self._chunk_size = min(self._chunk_size - 1, scaled)
+        if elapsed > target_duration and self._chunk_size > _MIN_GRAPH_WRITE_CHUNK:
+            scaled = max(
+                _MIN_GRAPH_WRITE_CHUNK,
+                int(self._chunk_size * target_duration / elapsed),
+            )
+            self._chunk_size = max(
+                _MIN_GRAPH_WRITE_CHUNK, min(self._chunk_size - 1, scaled)
+            )
 
     def _remaining_lease_seconds(self) -> float:
         with self._state_lock:
