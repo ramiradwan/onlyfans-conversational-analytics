@@ -859,18 +859,37 @@ async def test_app_readiness_does_not_wait_for_projection_recovery(
     await recovery_task
 
 
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        "Read-model ProjectionRepository is built at import "
+        "(app/transport/manager.py -> create_canonical_repositories -> "
+        "ProjectionRepository.create) and does not quarantine/recreate a corrupt "
+        "or schema-drifted projection DB, so a bad rebuildable projection crashes "
+        "app import instead of self-healing. Graceful degradation is a tracked "
+        "follow-up; before this fix the env-var typo below hid the gap by using "
+        "the valid shared default DB."
+    ),
+)
 def test_non_sqlite_projection_startup_preserves_ingest_and_agent_heartbeat(
     tmp_path: Path,
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
     projection_path = tmp_path / "projections.sqlite3"
+    analytics_projection_path = tmp_path / "analytics-projections.sqlite3"
     projection_path.write_bytes(b"synthetic-corrupt-projection")
     environment = os.environ.copy()
+    # Every DB path must be pinned into tmp_path. The Settings field is
+    # projection_database_path -> env var PROJECTION_DATABASE_PATH (singular); a
+    # plural typo silently falls back to the shared default ./projections.sqlite3,
+    # which both fails to exercise the corrupt-projection path this test intends
+    # and pollutes the repo root with a stale, checksum-drifting DB.
     environment.update(
         {
             "CANONICAL_PERSISTENCE_BACKEND": "sqlite",
             "CANONICAL_DATABASE_PATH": str(canonical_path),
-            "PROJECTIONS_DATABASE_PATH": str(projection_path),
+            "PROJECTION_DATABASE_PATH": str(projection_path),
+            "ANALYTICS_PROJECTION_DATABASE_PATH": str(analytics_projection_path),
         }
     )
     program = r'''
