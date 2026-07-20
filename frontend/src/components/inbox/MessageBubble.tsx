@@ -4,6 +4,7 @@ import { formatTimestamp } from './inboxModel';
 import { MessageFlagIcon } from './MessageFlagIcons';
 import type { MessageView } from '../../protocol';
 import { componentTokens } from '../../theme';
+import { sanitizeMessageHtml } from '../../utils/sanitizeMessageHtml';
 
 const BubbleRow = styled('li', {
   shouldForwardProp: (property) => property !== 'messageDirection',
@@ -61,9 +62,25 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         messageDirection={message.direction}
         aria-label={directionLabel}
       >
-        <Typography component="p" variant="body1" sx={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-          {message.text}
-        </Typography>
+        <Typography
+          component="p"
+          variant="body1"
+          sx={(theme) => ({
+            margin: 0,
+            whiteSpace: 'pre-wrap',
+            '& p': { margin: 0 },
+            '& p + p': { marginTop: '0.5em' },
+            '& ul, & ol': { margin: '0.25em 0', paddingInlineStart: '1.25em' },
+            '& a': {
+              color: theme.vars.palette.primary.main,
+              textDecoration: 'underline',
+              wordBreak: 'break-word',
+            },
+          })}
+          // Message text is untrusted platform content; sanitizeMessageHtml() runs
+          // it through a strict allowlist before it ever reaches the DOM.
+          dangerouslySetInnerHTML={{ __html: sanitizeMessageHtml(message.text) }}
+        />
         <BubbleMetadata>
           <MessageFlagIcon sentiment={message.sentiment} />
           <Typography
