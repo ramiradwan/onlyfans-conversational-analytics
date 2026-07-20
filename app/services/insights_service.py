@@ -195,6 +195,37 @@ def launch_default_projection_scheduler() -> asyncio.Task[None]:
     return _STARTUP_TASK
 
 
+async def request_projection_rebuild(
+    creator_account_id: str,
+    *,
+    source: CanonicalReadModelSource | None = None,
+) -> bool:
+    """Schedule a derived-analytics rebuild after a canonical commit.
+
+    The projection scheduler is otherwise driven only by the one-time startup
+    recovery sweep, so without a post-commit trigger freshly committed
+    conversations stay analytically stale until the process restarts. Returns
+    True when a rebuild was requested. With no explicit ``source`` the request
+    is skipped unless the canonical backend persists analytics projections, so
+    memory-backed tests and non-sqlite deployments keep the startup-only
+    behavior and never spin the coordinator on the ingestion hot path.
+    """
+
+    if source is None:
+        from app.core.config import settings
+
+        if settings.canonical_persistence_backend != "sqlite":
+            return False
+    runtime = analytics_runtime(source)
+    if runtime.scheduler.closed:
+        return False
+    account = await _canonical_account(runtime, creator_account_id)
+    await runtime.scheduler.request_recovery(
+        creator_account_id, account.view_revision
+    )
+    return True
+
+
 async def shutdown_default_projection_scheduler(*, timeout: float = 5.0) -> bool:
     """Close publication/admission and await bounded owned-worker shutdown."""
 

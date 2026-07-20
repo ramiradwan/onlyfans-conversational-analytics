@@ -29,6 +29,7 @@ from app.protocol import (
     MAX_SNAPSHOT_FRAME_BYTES,
 )
 from app.persistence.history import InvariantViolation
+from app.utils.logger import logger
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
     HEARTBEAT_INTERVAL_SECONDS,
@@ -295,6 +296,7 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
         )
         if outcome.canonical_revision is not None:
             transport_manager.schedule_projection(lease.creator_account_id)
+            await _schedule_analytics_rebuild(lease.creator_account_id)
         return True
 
     if message.type == "config.applied":
@@ -318,6 +320,25 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
         return True
 
     return True
+
+
+async def _schedule_analytics_rebuild(account_id: str) -> None:
+    """Rebuild derived analytics projections after a canonical commit.
+
+    Fire-and-forget and defensive: the derived-analytics coordinator must never
+    fail or slow the canonical ingestion path. The ingest.ack has already been
+    sent by the time this runs, so the awaited scheduling only enqueues a
+    coalesced rebuild and returns.
+    """
+
+    from app.services import insights_service
+
+    try:
+        await insights_service.request_projection_rebuild(account_id)
+    except Exception:
+        logger.exception(
+            "[ANALYTICS] post-commit projection rebuild scheduling failed"
+        )
 
 
 async def _agent_socket(websocket: WebSocket) -> None:

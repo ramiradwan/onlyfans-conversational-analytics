@@ -727,23 +727,58 @@ async def test_get_is_read_only_and_preserves_revision_tagged_failure(
     assert await runtime.scheduler.close(timeout=1)
 
 
-# NOTE: test_projection_scheduling_seam_runs_only_after_successful_commit and
-# test_projection_scheduling_failure_log_contains_only_fixed_diagnostics
-# previously lived here. Both exercised app.transport.ingestion.IngestionService
-# .set_projection_scheduler, a post-commit scheduling hook on the in-memory
-# ingestion cache that app/services/data_ingest.py's docstring calls "the
-# retired in-memory ingestion cache" (see commit 0608dcc). That hook no
-# longer exists on IngestionService, and canonical commits on the signer-v2
-# path (app.persistence.history.HistoryRepository) do not currently call
-# insights_service.projection_scheduler().schedule(...) anywhere either — the
-# only production callers of that scheduler are process startup recovery
-# (app.main.startup_event -> insights_service.launch_default_projection_scheduler)
-# and this test module's own seed_default() helper, which schedules and waits
-# explicitly. Real-time "schedule an analytics rebuild right after a new
-# canonical commit" wiring appears to be a genuine gap, not something this
-# port can safely re-invent without more context, so these two tests were
-# deleted rather than pointed at a mechanism that doesn't exist. Flagged for
-# a follow-up stage.
+# The signer-v2 canonical commit path now drives a post-commit analytics
+# rebuild: app/api/endpoints/transport_ws.py acks the commit, schedules the
+# durable read-model projection, then calls
+# insights_service.request_projection_rebuild(account_id), which coalesces a
+# scheduler-owned rebuild for the committed view_revision. This closes the gap
+# that the former IngestionService.set_projection_scheduler seam covered before
+# the in-memory ingestion cache was retired. The two tests below pin the new
+# contract: the request targets the committed revision, and it stays a no-op on
+# the non-sqlite default backend so memory-backed flows keep the startup-only
+# behavior and never spin the coordinator on the ingestion hot path.
+
+
+@pytest.mark.asyncio
+async def test_request_projection_rebuild_schedules_recovery_for_committed_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    account_id = "post-commit-rebuild-account"
+    source = MutableCanonicalSource({account_id: 7})
+    runtime = insights_service.analytics_runtime(source)
+    recorded: list[tuple[str, int]] = []
+
+    async def spy_request_recovery(
+        creator_account_id: str, canonical_revision: int
+    ) -> None:
+        recorded.append((creator_account_id, canonical_revision))
+
+    monkeypatch.setattr(
+        runtime.scheduler, "request_recovery", spy_request_recovery
+    )
+
+    requested = await insights_service.request_projection_rebuild(
+        account_id, source=source
+    )
+    assert requested is True
+    # The rebuild targets the committed canonical view revision, not a stale one.
+    assert recorded == [(account_id, 7)]
+    assert await runtime.scheduler.close(timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_request_projection_rebuild_is_noop_for_non_sqlite_default_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core import config
+
+    monkeypatch.setattr(
+        config.settings, "canonical_persistence_backend", "memory"
+    )
+    # No explicit source => the guard consults the backend and skips the request
+    # so the coordinator is never touched on memory-backed deployments/tests.
+    requested = await insights_service.request_projection_rebuild("any-account")
+    assert requested is False
 
 
 @pytest.mark.asyncio
