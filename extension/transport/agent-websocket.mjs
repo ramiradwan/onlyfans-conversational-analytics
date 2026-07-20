@@ -8,6 +8,13 @@ const CONNECTING = 0;
 const OPEN = 1;
 export const LEASE_EXPIRED_CLOSE_CODE = 4001;
 
+// The WebSocket API accepts only close code 1000 or the 3000-4999 range; passing
+// a reserved code (1002/1008/1011) throws InvalidAccessError and leaves the
+// socket to flap. Map reserved codes into the application range.
+function safeCloseCode(code) {
+  return code === 1000 || (code >= 3000 && code <= 4999) ? code : 4000 + (code % 1000);
+}
+
 const defaultScheduler = {
   setTimeout: (handler, delay) => setTimeout(handler, delay),
   clearTimeout: (handle) => clearTimeout(handle),
@@ -291,7 +298,7 @@ export class AgentWebSocketClient {
       if (authTicket === null) {
         this.reconnectAllowed = false;
         this.onValidationError(new Error('No reusable Agent reconnect credential is available'));
-        socket.close(1008, 'Agent reconnect credential unavailable');
+        socket.close(safeCloseCode(1008), 'Agent reconnect credential unavailable');
         return;
       }
       if (this.reconnectAuthTicket === null) this.bootstrapAuthTicketUsed = true;
@@ -324,7 +331,7 @@ export class AgentWebSocketClient {
       decoded = JSON.parse(String(raw));
     } catch (error) {
       this.onValidationError(error);
-      socket.close(1002, 'Malformed JSON from Brain');
+      socket.close(safeCloseCode(1002), 'Malformed JSON from Brain');
       return;
     }
     let message;
@@ -332,7 +339,7 @@ export class AgentWebSocketClient {
       message = parseBrainToAgentMessage(decoded);
     } catch (error) {
       this.onValidationError(error);
-      socket.close(1002, 'Invalid protocol frame from Brain');
+      socket.close(safeCloseCode(1002), 'Invalid protocol frame from Brain');
       return;
     }
 
@@ -340,20 +347,20 @@ export class AgentWebSocketClient {
       this.onProtocolError(message.payload);
       if (message.payload.fatal) {
         this.reconnectAllowed = message.payload.retryable;
-        socket.close(1002, message.payload.code);
+        socket.close(safeCloseCode(1002), message.payload.code);
       }
       return;
     }
     if (!this.session) {
       if (message.type !== 'agent.session') {
-        socket.close(1002, 'Expected agent.session');
+        socket.close(safeCloseCode(1002), 'Expected agent.session');
         return;
       }
       this.acceptSession(message.payload);
       return;
     }
     if (message.type === 'agent.session') {
-      socket.close(1002, 'Duplicate agent.session');
+      socket.close(safeCloseCode(1002), 'Duplicate agent.session');
       return;
     }
     if (message.type === 'command.execute') {
@@ -362,7 +369,7 @@ export class AgentWebSocketClient {
     }
     if (!this.matchesSession(message)) {
       this.reconnectAllowed = false;
-      socket.close(1008, 'Session identity conflict');
+      socket.close(safeCloseCode(1008), 'Session identity conflict');
       return;
     }
     this.dispatch(message).catch((error) => this.onValidationError(error));
@@ -375,7 +382,7 @@ export class AgentWebSocketClient {
       session.agent_stream_id !== this.identity.agentStreamId
     ) {
       this.reconnectAllowed = false;
-      this.socket?.close(1008, 'Session identity conflict');
+      this.socket?.close(safeCloseCode(1008), 'Session identity conflict');
       return;
     }
     this.reconnectAuthTicket = session.reconnect_auth_ticket;
@@ -383,7 +390,7 @@ export class AgentWebSocketClient {
       .catch((error) => {
         this.reconnectAllowed = false;
         this.onValidationError(error);
-        this.socket?.close(1011, 'Agent reconnect credential could not be stored');
+        this.socket?.close(safeCloseCode(1011), 'Agent reconnect credential could not be stored');
       });
     this.session = session;
     this.configClient?.bindSessionAuthorization?.(session.config_auth_ticket);

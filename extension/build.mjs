@@ -16,13 +16,13 @@ import { build } from 'esbuild';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(ROOT, 'dist');
 const SIGNER_PACKAGE = 'local-authenticated-read-connector';
-const SIGNER_VERSION = '0.2.0-beta.6';
+const SIGNER_VERSION = '0.2.0-beta.9';
 const SIGNER_SPEC =
-  'file:vendor/local-authenticated-read-connector-0.2.0-beta.6.tgz';
+  'file:vendor/local-authenticated-read-connector-0.2.0-beta.9.tgz';
 const SIGNER_TARBALL = path.join(
   ROOT,
   'vendor',
-  'local-authenticated-read-connector-0.2.0-beta.6.tgz',
+  'local-authenticated-read-connector-0.2.0-beta.9.tgz',
 );
 const EXPECTED_PERMISSIONS = Object.freeze([
   'alarms',

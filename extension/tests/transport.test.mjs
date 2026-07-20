@@ -167,7 +167,9 @@ test('a bootstrap pairing ticket is sent at most once when no session is establi
   second.open();
 
   assert.equal(second.sent.length, 0);
-  assert.equal(second.closeCode, 1008);
+  // Browsers reject reserved WebSocket close codes. The transport maps the
+  // protocol's 1008 policy-violation outcome to its application-safe 4008.
+  assert.equal(second.closeCode, 4008);
   assert.equal(second.closeReason, 'Agent reconnect credential unavailable');
   assert.deepEqual(validationErrors, ['No reusable Agent reconnect credential is available']);
   assert.equal(h.scheduler.timeouts.filter((task) => !task.cleared).length, 0);
@@ -278,7 +280,8 @@ test('reconnect-ticket persistence failure closes the session without retrying',
   const socket = await connectAndBind(h);
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(socket.closeCode, 1011);
+  // 1011 is a reserved close code, so the browser-safe transport close is 4011.
+  assert.equal(socket.closeCode, 4011);
   assert.equal(socket.closeReason, 'Agent reconnect credential could not be stored');
   assert.deepEqual(validationErrors, ['session storage unavailable']);
   assert.equal(h.client.session, null);
@@ -374,7 +377,8 @@ test('invalid fixtures and fatal protocol errors close safely without crashing',
     await readFile(path.join(FIXTURE_ROOT, 'invalid/malformed-discriminator.unknown-command.json'), 'utf8'),
   );
   socket.receive(invalid);
-  assert.equal(socket.closeCode, 1002);
+  // 1002 is reserved by the WebSocket API and is represented on the wire as 4002.
+  assert.equal(socket.closeCode, 4002);
   assert.equal(validationErrors.length, 1);
 
   const fatalHarness = harness();
@@ -384,7 +388,7 @@ test('invalid fixtures and fatal protocol errors close safely without crashing',
   error.payload.fatal = true;
   error.payload.retryable = false;
   fatalSocket.receive(error);
-  assert.equal(fatalSocket.closeCode, 1002);
+  assert.equal(fatalSocket.closeCode, 4002);
   assert.equal(fatalHarness.scheduler.timeouts.length, 0);
 });
 

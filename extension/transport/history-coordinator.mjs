@@ -137,10 +137,17 @@ export class HistoryAcquisitionCoordinator {
     this.runController = null;
     this.runAuthorizationIdentity = null;
     this.stopped = false;
+    // Bounded backoff so a persistent signer/refresh failure cannot re-run on
+    // every wake and reload the platform tab in a tight loop.
+    this.backoffUntil = 0;
+    this.failureStreak = 0;
   }
 
   wake() {
     if (this.stopped) return Promise.resolve({ status: 'stopped', pages: 0 });
+    if (this.running === null && this.clock() < this.backoffUntil) {
+      return Promise.resolve({ status: 'deferred', pages: 0 });
+    }
     const authorization = this.#authorization();
     const nextIdentity = authorization === null ? null : authorizationIdentity(authorization);
     if (this.running !== null) {
@@ -158,7 +165,16 @@ export class HistoryAcquisitionCoordinator {
     const controller = new AbortController();
     this.runController = controller;
     this.runAuthorizationIdentity = nextIdentity;
-    const run = this.#run(authorization, controller.signal);
+    const run = this.#run(authorization, controller.signal).then(
+      (result) => { this.failureStreak = 0; this.backoffUntil = 0; return result; },
+      (error) => {
+        if (!isAbort(error, controller.signal)) {
+          this.failureStreak += 1;
+          this.backoffUntil = this.clock() + Math.min(60_000, 3_000 * 2 ** (this.failureStreak - 1));
+        }
+        throw error;
+      },
+    );
     this.running = run.finally(() => {
       if (this.running === run || this.runController === controller) {
         this.running = null;
