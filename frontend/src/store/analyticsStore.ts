@@ -13,7 +13,7 @@ import {
 } from '../analytics';
 
 interface AnalyticsStoreActions {
-  activate(): void;
+  activate(): Promise<void>;
   deactivate(): void;
   refresh(): Promise<void>;
   setDateRange(range: AnalyticsDateRange): Promise<void>;
@@ -169,11 +169,11 @@ export function createAnalyticsStore(
     };
 
     const actions: AnalyticsStoreActions = {
-      activate() {
+      async activate() {
         if (active) return;
         active = true;
         set({ state: loadingState() });
-        void refresh();
+        await refresh();
       },
       deactivate() {
         active = false;

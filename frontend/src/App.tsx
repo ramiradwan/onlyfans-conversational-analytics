@@ -69,7 +69,7 @@ export function App() {
         });
     }
     websocketService.connect(FASTAPI_WS_URL, creatorAccountId, BRIDGE_AUTH_TICKET);
-    analyticsStoreActions.activate();
+    void analyticsStoreActions.activate();
 
     return () => {
       controller.abort();
