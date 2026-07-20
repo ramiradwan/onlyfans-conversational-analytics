@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     canonical_persistence_backend: Literal["memory", "sqlite"] = "sqlite"
     canonical_database_path: Path = Path("canonical.sqlite3")
     projection_database_path: Path = Path("projections.sqlite3")
+    # The protocol-v2 read model above and the rebuildable analytics
+    # projection store below are different schemas and must never share a
+    # file; a shared file causes a migration checksum error on open.
+    analytics_projection_database_path: Path = Path("analytics-projections.sqlite3")
     security_signing_secret: SecretStr = SecretStr(
         "onlyfans-local-development-signing-secret"
     )
