@@ -371,3 +371,47 @@ describe('OperatorInboxView summary and REST-page integration', () => {
     await waitFor(() => expect(store.getState().liveFreshness.status).toBe('delayed'));
   });
 });
+
+describe('OperatorInboxView projection reason presentation', () => {
+  it('replaces the raw projection_missing reason code with friendly text', () => {
+    const store = createBridgeTransportStore();
+    store.bindAccount(ACCOUNT_ID);
+    store.applySnapshot({
+      ...snapshot([]),
+      projection: {
+        status: 'unavailable',
+        canonical_revision: 7,
+        projected_revision: 0,
+        projected_at: null,
+        reason: 'projection_missing',
+      },
+    });
+
+    renderInbox(store, apiFor({}));
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Preparing conversation data');
+    expect(alert.textContent).not.toContain('projection_missing');
+  });
+
+  it('falls back to a generic message for an unrecognized projection reason code', () => {
+    const store = createBridgeTransportStore();
+    store.bindAccount(ACCOUNT_ID);
+    store.applySnapshot({
+      ...snapshot([]),
+      projection: {
+        status: 'unavailable',
+        canonical_revision: 7,
+        projected_revision: 0,
+        projected_at: null,
+        reason: 'projection_exploded_unexpectedly',
+      },
+    });
+
+    renderInbox(store, apiFor({}));
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).not.toContain('projection_exploded_unexpectedly');
+    expect(alert.textContent).toContain('This needs attention');
+  });
+});

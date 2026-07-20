@@ -67,6 +67,35 @@ export function metricEvidenceLabel(metric: AnalyticsMetric | null | undefined):
   return `${basis} · sample ${new Intl.NumberFormat().format(metric.sample_size)} · As of ${new Date(metric.as_of).toLocaleString()}`;
 }
 
+// Brain reports readiness setbacks as internal snake_case codes (e.g.
+// "projection_missing"). Those are identifiers for us, not copy — map the ones we
+// know about to friendly text, and fall back to a generic message for anything else
+// so an unrecognized code never reaches the screen verbatim.
+const PROJECTION_REASON_TEXT: Record<string, string> = {
+  projection_missing: 'Preparing conversation data…',
+  projection_activation_pending: 'Applying the latest update…',
+  projection_lag: 'Catching up to the latest messages…',
+  projection_degraded: 'Conversation data needs attention.',
+};
+
+const COVERAGE_REASON_TEXT: Record<string, string> = {
+  consent_revoked: 'History sync was turned off.',
+  configuration_not_applied: 'Waiting for the Agent to apply the latest history settings.',
+  history_sync_paused: 'History sync is paused.',
+};
+
+const UNRECOGNIZED_REASON_TEXT = 'This needs attention.';
+
+export function humanizeProjectionReason(reason: string | null, whenAbsent: string): string {
+  if (reason === null) return whenAbsent;
+  return PROJECTION_REASON_TEXT[reason] ?? UNRECOGNIZED_REASON_TEXT;
+}
+
+export function humanizeCoverageReason(reason: string | null, whenAbsent: string): string {
+  if (reason === null) return whenAbsent;
+  return COVERAGE_REASON_TEXT[reason] ?? UNRECOGNIZED_REASON_TEXT;
+}
+
 export function coverageProgressLabel(coverage: HistoricalCoverage): string {
   if (coverage.status === 'complete') return 'Historical coverage complete';
   if (coverage.phase === 'paused') return 'Historical sync paused';

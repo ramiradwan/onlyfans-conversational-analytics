@@ -39,7 +39,7 @@ import {
   type BridgeTransportStore,
   type BridgeTransportState,
 } from '../store/transportStore';
-import { coverageProgressLabel } from '../utils/dataReadiness';
+import { coverageProgressLabel, humanizeProjectionReason } from '../utils/dataReadiness';
 
 const InboxRoot = styled(Box)(({ theme }) => ({
   backgroundColor: theme.vars.palette.background.default,
@@ -131,7 +131,10 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): IssuePrese
   }
   if (state.projection.status === 'unavailable') {
     return {
-      detail: state.projection.reason ?? 'The message projection is unavailable.',
+      detail: humanizeProjectionReason(
+        state.projection.reason,
+        'The message projection is unavailable.',
+      ),
       severity: 'error',
       title: 'Conversation data unavailable',
     };

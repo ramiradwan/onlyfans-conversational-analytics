@@ -335,4 +335,44 @@ describe('CreatorDashboardView v2 analytics evidence', () => {
     expect(screen.getByRole('alert').textContent).toContain('Realtime updates paused');
     expectKpi('Total messages', '19');
   });
+
+  it('replaces a raw coverage reason code with friendly text when history sync is blocked', () => {
+    const store = readyStore(
+      snapshot({
+        coverage: {
+          ...COMPLETE_COVERAGE,
+          status: 'partial',
+          phase: 'blocked',
+          complete_as_of: null,
+          reason: 'consent_revoked',
+        },
+      }),
+    );
+
+    renderDashboard(store);
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('History sync was turned off');
+    expect(alert.textContent).not.toContain('consent_revoked');
+  });
+
+  it('falls back to a generic message for an unrecognized coverage reason code', () => {
+    const store = readyStore(
+      snapshot({
+        coverage: {
+          ...COMPLETE_COVERAGE,
+          status: 'partial',
+          phase: 'blocked',
+          complete_as_of: null,
+          reason: 'agent_reported_a_new_code',
+        },
+      }),
+    );
+
+    renderDashboard(store);
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).not.toContain('agent_reported_a_new_code');
+    expect(alert.textContent).toContain('This needs attention');
+  });
 });

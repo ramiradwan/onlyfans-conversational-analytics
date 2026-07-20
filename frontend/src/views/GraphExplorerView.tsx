@@ -7,6 +7,7 @@ import { AnalyticsStateFrame } from '../components/analytics';
 import { GraphSummaryPanel, type GraphQueryGate } from '../components/graph';
 import { Panel } from '../components/ui';
 import { bridgeTransportStore } from '../store/transportStore';
+import { humanizeProjectionReason } from '../utils/dataReadiness';
 
 export default function GraphExplorerView() {
   const state = useSyncExternalStore(
@@ -56,8 +57,10 @@ export default function GraphExplorerView() {
           ) : (
             <Alert severity={state.projection.status === 'unavailable' ? 'error' : 'warning'}>
               <AlertTitle>Graph data is not ready</AlertTitle>
-              {state.projection.reason ??
-                'Brain is still building the local graph projection from canonical messages.'}
+              {humanizeProjectionReason(
+                state.projection.reason,
+                'Brain is still building the local graph projection from canonical messages.',
+              )}
             </Alert>
           )}
         </Panel>

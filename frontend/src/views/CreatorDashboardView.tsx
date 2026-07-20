@@ -40,6 +40,7 @@ import {
   canShowCompleteAnalytics,
   coverageProgressLabel,
   formatAdditiveMetric,
+  humanizeCoverageReason,
   isConfigurationAligned,
   isFullyCurrent,
   metricEvidenceLabel,
@@ -169,7 +170,7 @@ function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): IssuePr
   }
   if (state.coverage.phase === 'blocked') {
     return {
-      detail: `Historical sync is blocked${state.coverage.reason ? `: ${state.coverage.reason}` : '.'}`,
+      detail: humanizeCoverageReason(state.coverage.reason, 'Historical sync is blocked.'),
       severity: 'warning',
       title: 'Historical coverage needs attention',
     };
