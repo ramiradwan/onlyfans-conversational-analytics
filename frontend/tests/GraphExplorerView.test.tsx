@@ -144,7 +144,7 @@ describe('GraphExplorerView projection truthfulness', () => {
     );
 
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Conversation data needs attention');
+    expect(alert.textContent).toContain('The local graph projection needs attention');
     expect(alert.textContent).not.toContain('projection_degraded');
   });
 });

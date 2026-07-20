@@ -352,7 +352,7 @@ describe('CreatorDashboardView v2 analytics evidence', () => {
     renderDashboard(store);
 
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('History sync was turned off');
+    expect(alert.textContent).toContain('Historical sync was turned off');
     expect(alert.textContent).not.toContain('consent_revoked');
   });
 

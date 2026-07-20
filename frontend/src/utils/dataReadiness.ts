@@ -79,16 +79,20 @@ const PROJECTION_REASON_TEXT: Record<string, string> = {
 };
 
 const COVERAGE_REASON_TEXT: Record<string, string> = {
-  consent_revoked: 'History sync was turned off.',
-  configuration_not_applied: 'Waiting for the Agent to apply the latest history settings.',
-  history_sync_paused: 'History sync is paused.',
+  consent_revoked: 'Historical sync was turned off.',
+  configuration_not_applied: 'The requested history configuration has not been applied by the bound Agent.',
+  history_sync_paused: 'Historical sync is paused.',
 };
 
 const UNRECOGNIZED_REASON_TEXT = 'This needs attention.';
 
-export function humanizeProjectionReason(reason: string | null, whenAbsent: string): string {
+export function humanizeProjectionReason(
+  reason: string | null,
+  whenAbsent: string,
+  overrides?: Record<string, string>,
+): string {
   if (reason === null) return whenAbsent;
-  return PROJECTION_REASON_TEXT[reason] ?? UNRECOGNIZED_REASON_TEXT;
+  return overrides?.[reason] ?? PROJECTION_REASON_TEXT[reason] ?? UNRECOGNIZED_REASON_TEXT;
 }
 
 export function humanizeCoverageReason(reason: string | null, whenAbsent: string): string {

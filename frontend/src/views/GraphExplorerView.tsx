@@ -60,6 +60,7 @@ export default function GraphExplorerView() {
               {humanizeProjectionReason(
                 state.projection.reason,
                 'Brain is still building the local graph projection from canonical messages.',
+                { projection_degraded: 'The local graph projection needs attention.' },
               )}
             </Alert>
           )}
