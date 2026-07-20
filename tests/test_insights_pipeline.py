@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,19 +12,129 @@ from app.api.dependencies import get_authenticated_account_session
 from app.analytics.opaque_refs import account_ref
 from app.main import app
 from app.models.auth import AuthenticatedAccountSession
-from app.protocol.payloads import IngestSnapshotPayload
+from app.persistence.history import HistoryRepository, StreamKey
+from app.protocol.payloads import (
+    IngestSnapshotBeginPayload,
+    IngestSnapshotChunkPayload,
+    IngestSnapshotCommitPayload,
+    SnapshotRecordCounts,
+)
 from app.services import insights_service
 from app.transport import transport_manager
-from app.transport.ingestion import StreamKey
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 
 
-def alpha_snapshot() -> IngestSnapshotPayload:
-    return IngestSnapshotPayload.model_validate_json(
+@dataclass(frozen=True, slots=True)
+class FixtureSnapshot:
+    """A fixture's flat chat/message document, ready for chunked canonical seeding."""
+
+    connection_id: UUID
+    fencing_token: str
+    creator_account_id: str
+    agent_installation_id: UUID
+    agent_stream_id: UUID
+    snapshot_id: UUID
+    chats: list[dict]
+    messages: list[dict]
+
+
+def alpha_snapshot() -> FixtureSnapshot:
+    document = json.loads(
         (FIXTURES / "creator-alpha.snapshot.json").read_text(encoding="utf-8")
     )
+    return FixtureSnapshot(
+        connection_id=UUID(document["connection_id"]),
+        fencing_token=document["fencing_token"],
+        creator_account_id=document["creator_account_id"],
+        agent_installation_id=UUID(document["agent_installation_id"]),
+        agent_stream_id=UUID(document["agent_stream_id"]),
+        snapshot_id=UUID(document["snapshot_id"]),
+        chats=document["chats"],
+        messages=document["messages"],
+    )
+
+
+def stream_key(payload: FixtureSnapshot) -> StreamKey:
+    return StreamKey(
+        payload.creator_account_id,
+        payload.agent_installation_id,
+        payload.agent_stream_id,
+    )
+
+
+def _seed_identity(payload: FixtureSnapshot) -> dict:
+    return {
+        "connection_id": payload.connection_id,
+        "fencing_token": payload.fencing_token,
+        "creator_account_id": payload.creator_account_id,
+        "agent_installation_id": payload.agent_installation_id,
+        "agent_stream_id": payload.agent_stream_id,
+        "snapshot_id": payload.snapshot_id,
+    }
+
+
+def seed_canonical_snapshot(history: HistoryRepository, payload: FixtureSnapshot) -> None:
+    """Write one fixture snapshot through the signer-v2 chunked canonical path."""
+    key = stream_key(payload)
+    identity = _seed_identity(payload)
+    begin = IngestSnapshotBeginPayload(
+        **identity,
+        frame_kind="begin",
+        through_seq=0,
+        chunk_count=2,
+        record_counts=SnapshotRecordCounts(
+            chats=len(payload.chats),
+            messages=len(payload.messages),
+            coverage_evidence=0,
+        ),
+        max_frame_bytes=524288,
+    )
+    assert history.begin_snapshot(key, begin).status == "accepted"
+    chat_chunk = IngestSnapshotChunkPayload(
+        **identity,
+        frame_kind="chunk",
+        chunk_index=0,
+        entity_kind="chat",
+        records=[
+            {
+                "tombstone": False,
+                "chat": {
+                    "record_kind": "full",
+                    "chat_id": item["chat_id"],
+                    "platform_user_id": item["platform_user_id"],
+                    "display_name": item.get("display_name"),
+                    "updated_at": item["updated_at"],
+                },
+            }
+            for item in payload.chats
+        ],
+    )
+    assert history.add_snapshot_chunk(key, chat_chunk).status == "accepted"
+    message_chunk = IngestSnapshotChunkPayload(
+        **identity,
+        frame_kind="chunk",
+        chunk_index=1,
+        entity_kind="message",
+        records=[
+            {
+                "tombstone": False,
+                "message": {
+                    "message_id": item["message_id"],
+                    "chat_id": item["chat_id"],
+                    "sender_platform_user_id": item["sender_platform_user_id"],
+                    "text": item["text"],
+                    "sent_at": item["sent_at"],
+                    "direction": item["direction"],
+                },
+            }
+            for item in payload.messages
+        ],
+    )
+    assert history.add_snapshot_chunk(key, message_chunk).status == "accepted"
+    commit = IngestSnapshotCommitPayload(**identity, frame_kind="commit", chunk_count=2)
+    assert history.commit_snapshot(key, commit).status == "accepted"
 
 
 @pytest.fixture(autouse=True)
@@ -35,18 +148,15 @@ def reset_runtime():
     insights_service.reset_analytics_runtimes()
 
 
-async def seed_default_runtime() -> IngestSnapshotPayload:
+async def seed_default_runtime() -> FixtureSnapshot:
     payload = alpha_snapshot()
-    outcome = await transport_manager.ingestion.ingest_snapshot(
-        StreamKey(
-            payload.creator_account_id,
-            payload.agent_installation_id,
-            payload.agent_stream_id,
-        ),
-        payload,
+    seed_canonical_snapshot(transport_manager.history, payload)
+    account = transport_manager.ingestion.account_read_model(
+        payload.creator_account_id
     )
-    assert outcome.status == "accepted"
-    await insights_service.projection_scheduler().wait(payload.creator_account_id)
+    scheduler = insights_service.projection_scheduler()
+    await scheduler.schedule(payload.creator_account_id, account.view_revision)
+    await scheduler.wait(payload.creator_account_id)
     return payload
 
 

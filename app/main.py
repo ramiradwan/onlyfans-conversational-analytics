@@ -8,14 +8,19 @@ This FastAPI app exposes:
 - Static assets (JS/CSS) from the Vite build
 """
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.endpoints import frontend, history, transport_ws
+from app.api.endpoints import frontend, history, insights, transport_ws
 from app.core.config import settings
 from app.core.broadcast import broadcast
+from app.services import insights_service
 from app.transport import transport_manager
+
+logger = logging.getLogger(__name__)
 
 # -------------------------------------------------
 # FastAPI application metadata from settings
@@ -62,6 +67,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # -------------------------------------------------
 app.include_router(transport_ws.router, tags=["Transport"])
 app.include_router(history.router)
+app.include_router(insights.router)
 
 # -------------------------------------------------
 # Startup & Shutdown events — manage Broadcast lifecycle
@@ -70,10 +76,22 @@ app.include_router(history.router)
 async def startup_event():
     await broadcast.connect()
     await transport_manager.start()
+    # Recover every canonical account's analytics projection in the
+    # background; readiness must not wait on this potentially slow replay.
+    insights_service.launch_default_projection_scheduler()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await transport_manager.stop()
+    drained = await insights_service.shutdown_default_projection_scheduler(
+        timeout=5.0
+    )
+    if not drained:
+        logger.warning(
+            "analytics_scheduler_event "
+            "reason_code=analytics_projection_shutdown_timeout "
+            "event_type=shutdown count=1"
+        )
     await broadcast.disconnect()
 
 # -------------------------------------------------

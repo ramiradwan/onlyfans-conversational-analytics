@@ -126,6 +126,8 @@ class InMemoryTransportManager:
         self._agent_config_grants: dict[str, AgentConfigGrant] = {}
         self.history = repositories.history
         self.projection = repositories.projection
+        self.ingestion = repositories.ingestion
+        self.projection_activation = repositories.projection_activation
         self.config_authority = AgentConfigurationAuthority(repositories.configuration)
         self.commands = CommandService(repositories.commands)
         self.canonical_database = repositories.database

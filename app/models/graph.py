@@ -97,8 +97,9 @@ class ExtendedConversationNode(ConversationNode):
     Used in WS payloads when the frontend requires richer context,  
     such as displaying the other participant's profile or ranking conversations.  
     """  
-    priorityScore: float | None = None  
-    withUser: UserRef | None = None  
+    priorityScore: float | None = None
+    withUser: UserRef | None = None
+    analyticsRef: str | None = None
   
   
 class GraphEdge(BaseModel):  
