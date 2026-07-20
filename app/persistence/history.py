@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -11,8 +12,8 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from app.persistence.database import CanonicalSQLite
-from app.persistence.migrations import MigrationRunner
+from app.persistence.database import CanonicalSQLite, LocalSQLite
+from app.persistence.migrations import MigrationChecksumError, MigrationRunner
 from app.persistence.projection_pipeline import (
     CanonicalProjectionConversation,
     CanonicalProjectionMessage,
@@ -1761,6 +1762,22 @@ PROJECTION_BATCH_SIZE = 256
 CONVERSATION_BATCH_SIZE = 64
 
 
+def _quarantine_projection_files(path: Path) -> None:
+    """Move a projection database and its WAL/SHM sidecars aside for rebuild.
+
+    Requires no open connections to the path; raises otherwise.
+    """
+    nonce = uuid4().hex
+    with LocalSQLite.exclusive_lifecycle(path) as target:
+        for suffix in ("", "-wal", "-shm"):
+            source = Path(f"{target}{suffix}")
+            if source.exists():
+                os.replace(
+                    source,
+                    target.with_name(f".{target.name}.{nonce}.quarantine{suffix}"),
+                )
+
+
 class ProjectionRepository:
     """Disposable generation-based read models built from canonical account truth."""
 
@@ -1783,14 +1800,27 @@ class ProjectionRepository:
         *,
         pipeline: ProjectionPipeline | None = None,
     ) -> "ProjectionRepository":
-        database = CanonicalSQLite(path)
         migrations_dir = Path(__file__).with_name("projection_sql")
-        MigrationRunner(
-            database,
-            migrations_dir=migrations_dir,
-            lock_path=database.path.parent / ".projection-migration.lock",
-            backups_dir=database.path.parent / "projection-backups",
-        ).run()
+
+        def _open() -> CanonicalSQLite:
+            database = CanonicalSQLite(path)
+            MigrationRunner(
+                database,
+                migrations_dir=migrations_dir,
+                lock_path=database.path.parent / ".projection-migration.lock",
+                backups_dir=database.path.parent / "projection-backups",
+            ).run()
+            return database
+
+        try:
+            database = _open()
+        except (sqlite3.DatabaseError, MigrationChecksumError):
+            # The read model is rebuildable derived state. Quarantine an
+            # unreadable or schema-drifted file and recreate it empty; canonical
+            # catch-up repopulates it. Canonical corruption is never recovered
+            # this way.
+            _quarantine_projection_files(Path(path))
+            database = _open()
         return cls(database, canonical, pipeline=pipeline)
 
     def reset(self) -> None:

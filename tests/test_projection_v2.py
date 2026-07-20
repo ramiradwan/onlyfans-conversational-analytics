@@ -728,6 +728,29 @@ def test_projection_catch_up_rebroadcasts_recovered_system_state() -> None:
     assert system["payload"]["readiness"] in {"ready", "degraded"}
 
 
+def test_schema_drifted_projection_db_is_quarantined_and_rebuilt(tmp_path) -> None:
+    from app.persistence.history import ProjectionRepository
+
+    canonical_path = tmp_path / "canonical.sqlite3"
+    projection_path = tmp_path / "projections.sqlite3"
+    repositories = create_canonical_repositories(
+        "sqlite",
+        canonical_path=canonical_path,
+        projection_path=projection_path,
+    )
+    with repositories.projection.database.transaction() as connection:
+        connection.execute(
+            "UPDATE schema_migrations SET checksum='drift' WHERE version=1"
+        )
+
+    rebuilt = ProjectionRepository.create(projection_path, repositories.history)
+
+    assert projection_path.read_bytes().startswith(b"SQLite format 3\x00")
+    quarantined = list(tmp_path.glob(".projections.sqlite3.*.quarantine"))
+    assert len(quarantined) == 1
+    assert rebuilt.state(ACCOUNT)["status"] in {"unavailable", "current", "pending"}
+
+
 def run_scale_qualification(message_count: int) -> tuple[int, int, float]:
     repositories = create_canonical_repositories("memory")
     key, commit = stage_snapshot(

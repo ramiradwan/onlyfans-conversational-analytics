@@ -859,18 +859,6 @@ async def test_app_readiness_does_not_wait_for_projection_recovery(
     await recovery_task
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Read-model ProjectionRepository is built at import "
-        "(app/transport/manager.py -> create_canonical_repositories -> "
-        "ProjectionRepository.create) and does not quarantine/recreate a corrupt "
-        "or schema-drifted projection DB, so a bad rebuildable projection crashes "
-        "app import instead of self-healing. Graceful degradation is a tracked "
-        "follow-up; before this fix the env-var typo below hid the gap by using "
-        "the valid shared default DB."
-    ),
-)
 def test_non_sqlite_projection_startup_preserves_ingest_and_agent_heartbeat(
     tmp_path: Path,
 ) -> None:
@@ -1021,6 +1009,10 @@ asyncio.run(run())
         "ingest": "accepted",
     }
     assert canonical_path.read_bytes().startswith(b"SQLite format 3\x00")
+    quarantined = list(tmp_path.glob(".projections.sqlite3.*.quarantine"))
+    assert len(quarantined) == 1
+    assert quarantined[0].read_bytes() == b"synthetic-corrupt-projection"
+    assert projection_path.read_bytes().startswith(b"SQLite format 3\x00")
 
 
 @pytest.mark.asyncio
