@@ -12,3 +12,9 @@ export const HEALTH_CHECK = '/health';
 
 export const WS_AGENT = '/ws/agent';
 export const WS_BRIDGE = '/ws/bridge';
+
+export const INSIGHTS_FULL = '/api/v1/insights/full';
+export const INSIGHTS_PROJECTION = '/api/v1/insights/projection';
+export const INSIGHTS_TOPICS = '/api/v1/insights/topics';
+export const INSIGHTS_SENTIMENT_TREND = '/api/v1/insights/sentiment-trend';
+export const INSIGHTS_RESPONSE_TIME = '/api/v1/insights/response-time';

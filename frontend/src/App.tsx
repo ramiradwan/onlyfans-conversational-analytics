@@ -8,6 +8,7 @@ import { getConfig } from '@/config/fastapiConfig';
 import { requestAgentPairingTicket } from '@services/agentPairingApi';
 import { bindAgentToBrain } from '@services/extensionBinding';
 import { websocketService } from '@services/websocketService';
+import { analyticsStoreActions } from '@store/analyticsStore';
 import { useUserStore } from '@store/userStore';
 
 import { AppRouter } from './routing/AppRouter';
@@ -68,10 +69,12 @@ export function App() {
         });
     }
     websocketService.connect(FASTAPI_WS_URL, creatorAccountId, BRIDGE_AUTH_TICKET);
+    analyticsStoreActions.activate();
 
     return () => {
       controller.abort();
       websocketService.disconnect();
+      analyticsStoreActions.deactivate();
       useUserStore.getState().actions.setUserRole(null);
     };
   }, []);

@@ -67,6 +67,8 @@ declare module '@mui/material/styles' {
       categorical6: string;
       categorical7: string;
       categorical8: string;
+      opportunity: string;
+      grid: string;
     };
   }
 

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -158,16 +159,27 @@ function emitTokens(resolved: JsonObject): string {
   );
 }
 
-function main(): void {
-  const raw = JSON.parse(fs.readFileSync(sourcePath, 'utf8')) as JsonValue;
+/**
+ * Deterministically resolves `tokens.json` source text into the generated module
+ * source. Pure and side-effect free so it can be exercised directly by tests without
+ * touching the filesystem.
+ */
+export function generateThemeSource(tokensJsonSource: string): string {
+  const raw = JSON.parse(tokensJsonSource) as JsonValue;
   if (!isObject(raw)) throw new Error('tokens.json must contain a JSON object');
   const resolved = resolveValue(raw, raw);
   if (!isObject(resolved)) throw new Error('Resolved token source must be an object');
   validateTextContrast(getObject(getObject(resolved, 'tier2'), 'colorSchemes'));
+  return emitTokens(resolved).replace(/\r\n/g, '\n');
+}
 
+function main(): void {
+  const source = generateThemeSource(fs.readFileSync(sourcePath, 'utf8'));
   fs.mkdirSync(path.dirname(generatedPath), { recursive: true });
-  fs.writeFileSync(generatedPath, emitTokens(resolved).replace(/\r\n/g, '\n'), 'utf8');
+  fs.writeFileSync(generatedPath, source, 'utf8');
   console.log('Theme generated deterministically from tokens.json');
 }
 
-main();
+const isMainModule = process.argv[1] !== undefined
+  && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMainModule) main();

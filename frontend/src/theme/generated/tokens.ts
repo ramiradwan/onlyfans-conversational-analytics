@@ -173,8 +173,10 @@ export const semanticColorSchemes = {
       "categorical6": "#D95926",
       "categorical7": "#9085E9",
       "categorical8": "#E66767",
+      "grid": "rgba(255, 255, 255, 0.16)",
       "negative": "#E66767",
       "neutral": "#33333F",
+      "opportunity": "#C98500",
       "positive": "#008300",
       "sentiment": "#8B87FF",
       "unknown": "#9085E9",
@@ -246,8 +248,10 @@ export const semanticColorSchemes = {
       "categorical6": "#EB6834",
       "categorical7": "#4A3AA7",
       "categorical8": "#E34948",
+      "grid": "rgba(17, 24, 39, 0.14)",
       "negative": "#E34948",
       "neutral": "#9B99A8",
+      "opportunity": "#EDA100",
       "positive": "#008300",
       "sentiment": "#5B57F2",
       "unknown": "#4A3AA7",
@@ -381,11 +385,22 @@ export const componentTokens = {
   "MuiPaper": {
     "borderRadius": 18
   },
+  "analytics": {
+    "barGap": 2,
+    "barThickness": 12,
+    "chartHeight": 280,
+    "dataEndRadius": 4,
+    "markHitTarget": 24,
+    "markSize": 8,
+    "metricIconSize": 48,
+    "refreshOpacity": 0.56
+  },
   "inbox": {
     "bubbleMaxWidth": "44rem",
     "bubbleRadius": 16,
     "bubbleWidth": "78%",
-    "conversationPaneMinWidth": "18rem"
+    "conversationPaneMinWidth": "18rem",
+    "insightsPaneMinWidth": "17rem"
   },
   "shell": {
     "dashboardMaxWidth": 1320,

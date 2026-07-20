@@ -19,8 +19,14 @@ import {
   useSyncExternalStore,
 } from 'react';
 
+import type {
+  AnalyticsConversationInsight,
+  AnalyticsReadState,
+  AnalyticsWindowSource,
+} from '../analytics';
 import { ChatListPane } from '../components/inbox/ChatListPane';
-import { sortConversations } from '../components/inbox/inboxModel';
+import { ConversationInsightsPanel } from '../components/inbox/ConversationInsightsPanel';
+import { getConversationTitle, sortConversations } from '../components/inbox/inboxModel';
 import { MessageStreamPane } from '../components/inbox/MessageStreamPane';
 import {
   messageApi as defaultMessageApi,
@@ -50,7 +56,9 @@ const InboxHeader = styled(Stack)(({ theme }) => ({
   marginBottom: theme.spacing(2),
 }));
 
-const InboxGrid = styled(Box)(({ theme }) => ({
+const InboxGrid = styled(Box, {
+  shouldForwardProp: (property) => property !== '$withInsights',
+})<{ $withInsights: boolean }>(({ theme, $withInsights }) => ({
   display: 'grid',
   flex: 1,
   gap: theme.spacing(2),
@@ -59,7 +67,9 @@ const InboxGrid = styled(Box)(({ theme }) => ({
   minHeight: 0,
   overflow: 'hidden',
   [theme.breakpoints.up('md')]: {
-    gridTemplateColumns: 'minmax(18rem, 0.85fr) minmax(0, 2fr)',
+    gridTemplateColumns: $withInsights
+      ? 'minmax(18rem, 0.85fr) minmax(0, 2fr) minmax(17rem, 0.85fr)'
+      : 'minmax(18rem, 0.85fr) minmax(0, 2fr)',
     gridTemplateRows: 'minmax(0, 1fr)',
   },
 }));
@@ -231,11 +241,24 @@ interface OperatorInboxStore {
 interface OperatorInboxViewProps {
   messageApi?: MessageApi;
   store?: OperatorInboxStore;
+  /**
+   * Session-bound analytics read state (see `store/analyticsStore`). Omitted in
+   * production today: protocol-v2's `ConversationSummary` carries no reference to the
+   * opaque analytics identifier `AnalyticsUpdateDocument.conversation_metrics` uses, so
+   * there is no honest way to resolve a canonical conversation to its analytics yet.
+   * Passing this prop opts into rendering `ConversationInsightsPanel`.
+   */
+  analyticsState?: AnalyticsReadState;
+  conversationInsight?: AnalyticsConversationInsight | null;
+  analyticsWindowSource?: AnalyticsWindowSource;
 }
 
 export default function OperatorInboxView({
   messageApi = defaultMessageApi,
   store = bridgeTransportStore,
+  analyticsState,
+  conversationInsight = null,
+  analyticsWindowSource,
 }: OperatorInboxViewProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -435,7 +458,7 @@ export default function OperatorInboxView({
         </StatusAlert>
       )}
 
-      <InboxGrid aria-busy={!hasSnapshot}>
+      <InboxGrid aria-busy={!hasSnapshot} $withInsights={analyticsState !== undefined}>
         <ChatListPane
           conversations={conversations}
           isLoading={!hasSnapshot}
@@ -450,6 +473,14 @@ export default function OperatorInboxView({
           onLoadOlder={() => void loadPage('prepend')}
           onReloadLatest={() => void loadPage('replace')}
         />
+        {analyticsState !== undefined && (
+          <ConversationInsightsPanel
+            analyticsState={analyticsState}
+            fanName={selectedConversation ? getConversationTitle(selectedConversation) : null}
+            insight={conversationInsight}
+            windowSource={analyticsWindowSource}
+          />
+        )}
       </InboxGrid>
     </InboxRoot>
   );
