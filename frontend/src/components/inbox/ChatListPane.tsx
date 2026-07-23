@@ -49,11 +49,22 @@ const ConversationItem = styled(ListItemButton)(({ theme }) => ({
   gap: theme.spacing(1),
   minHeight: theme.spacing(9),
   padding: theme.spacing(1.5, 2),
+  position: 'relative',
   '&.Mui-selected': {
     backgroundColor: theme.vars.palette.action.selected,
   },
   '&.Mui-selected:hover': {
     backgroundColor: theme.vars.palette.action.selected,
+  },
+  '&.Mui-selected::before': {
+    backgroundColor: theme.vars.palette.primary.main,
+    borderRadius: 999,
+    bottom: '18%',
+    content: '""',
+    insetInlineStart: 2,
+    position: 'absolute',
+    top: '18%',
+    width: 3,
   },
   '&:hover': {
     backgroundColor: theme.vars.palette.action.hover,
@@ -183,7 +194,7 @@ export function ChatListPane({
                         justifyContent: 'space-between'
                       }}>
                         <Typography variant="body1" noWrap sx={{
-                          fontWeight: 600
+                          fontWeight: selected ? 700 : 600
                         }}>
                           {title}
                         </Typography>

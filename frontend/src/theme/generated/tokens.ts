@@ -7,24 +7,24 @@ export const brandPalette = {
   },
   "dataViz": {
     "dark": {
-      "aqua": "#199E70",
-      "blue": "#3987E5",
+      "aqua": "#009F6D",
+      "blue": "#00ABC1",
       "green": "#008300",
-      "magenta": "#D55181",
-      "orange": "#D95926",
-      "red": "#E66767",
-      "violet": "#9085E9",
-      "yellow": "#C98500"
+      "magenta": "#DF92D1",
+      "orange": "#DD480D",
+      "red": "#C83452",
+      "violet": "#7E7FF3",
+      "yellow": "#EDCA19"
     },
     "light": {
-      "aqua": "#1BAF7A",
-      "blue": "#2A78D6",
+      "aqua": "#1DB07B",
+      "blue": "#0094A8",
       "green": "#008300",
-      "magenta": "#E87BA4",
-      "orange": "#EB6834",
-      "red": "#E34948",
-      "violet": "#4A3AA7",
-      "yellow": "#EDA100"
+      "magenta": "#CA7BBD",
+      "orange": "#DC5C2B",
+      "red": "#8F0731",
+      "violet": "#1B3BAA",
+      "yellow": "#A98F00"
     }
   },
   "feedback": {
@@ -52,6 +52,7 @@ export const brandPalette = {
     "300": "#D8D7E2",
     "400": "#9B99A8",
     "500": "#6F6D7E",
+    "550": "#6B6979",
     "600": "#5C5A69",
     "700": "#33333F",
     "800": "#24242F",
@@ -165,21 +166,21 @@ export const semanticColorSchemes = {
       "main": "#8B87FF"
     },
     "chart": {
-      "categorical1": "#3987E5",
+      "categorical1": "#00ABC1",
       "categorical2": "#008300",
-      "categorical3": "#D55181",
-      "categorical4": "#C98500",
-      "categorical5": "#199E70",
-      "categorical6": "#D95926",
-      "categorical7": "#9085E9",
-      "categorical8": "#E66767",
+      "categorical3": "#DF92D1",
+      "categorical4": "#EDCA19",
+      "categorical5": "#009F6D",
+      "categorical6": "#DD480D",
+      "categorical7": "#7E7FF3",
+      "categorical8": "#C83452",
       "grid": "rgba(255, 255, 255, 0.16)",
-      "negative": "#E66767",
+      "negative": "#C83452",
       "neutral": "#33333F",
-      "opportunity": "#C98500",
+      "opportunity": "#EDCA19",
       "positive": "#008300",
       "sentiment": "#8B87FF",
-      "unknown": "#9085E9",
+      "unknown": "#7E7FF3",
       "volume": "#A78BFA"
     },
     "communication": {
@@ -194,7 +195,7 @@ export const semanticColorSchemes = {
       "main": "#E66767"
     },
     "info": {
-      "main": "#3987E5"
+      "main": "#00ABC1"
     },
     "mode": "dark",
     "placeholder": "#24242F",
@@ -208,7 +209,6 @@ export const semanticColorSchemes = {
       "main": "#4CAF50"
     },
     "surface": {
-      "chartInsetShadow": "inset 0 0 3px rgba(255, 255, 255, 0.08)",
       "elevation": "0 2px 4px rgba(0, 0, 0, 0.50), 0 20px 48px -24px rgba(0, 0, 0, 0.85)",
       "glass": "rgba(9, 9, 14, 0.78)",
       "rim": "linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0))",
@@ -216,6 +216,7 @@ export const semanticColorSchemes = {
     },
     "text": {
       "disabled": "#6F6D7E",
+      "muted": "#9B99A8",
       "primary": "#F4F3F9",
       "secondary": "#B6B4C4"
     },
@@ -240,21 +241,21 @@ export const semanticColorSchemes = {
       "main": "#5B57F2"
     },
     "chart": {
-      "categorical1": "#2A78D6",
+      "categorical1": "#0094A8",
       "categorical2": "#008300",
-      "categorical3": "#E87BA4",
-      "categorical4": "#EDA100",
-      "categorical5": "#1BAF7A",
-      "categorical6": "#EB6834",
-      "categorical7": "#4A3AA7",
-      "categorical8": "#E34948",
+      "categorical3": "#CA7BBD",
+      "categorical4": "#A98F00",
+      "categorical5": "#1DB07B",
+      "categorical6": "#DC5C2B",
+      "categorical7": "#1B3BAA",
+      "categorical8": "#8F0731",
       "grid": "rgba(17, 24, 39, 0.14)",
-      "negative": "#E34948",
+      "negative": "#8F0731",
       "neutral": "#9B99A8",
-      "opportunity": "#EDA100",
+      "opportunity": "#A98F00",
       "positive": "#008300",
       "sentiment": "#5B57F2",
-      "unknown": "#4A3AA7",
+      "unknown": "#1B3BAA",
       "volume": "#8B5CF6"
     },
     "communication": {
@@ -269,7 +270,7 @@ export const semanticColorSchemes = {
       "main": "#C9363E"
     },
     "info": {
-      "main": "#2A78D6"
+      "main": "#0094A8"
     },
     "mode": "light",
     "placeholder": "#E8E8F0",
@@ -283,7 +284,6 @@ export const semanticColorSchemes = {
       "main": "#008300"
     },
     "surface": {
-      "chartInsetShadow": "inset 0 0 3px rgba(17, 17, 26, 0.08)",
       "elevation": "0 1px 2px rgba(17, 17, 26, 0.04), 0 12px 32px -14px rgba(17, 17, 26, 0.16)",
       "glass": "rgba(255, 255, 255, 0.76)",
       "rim": "linear-gradient(180deg, rgba(17, 17, 26, 0.10), rgba(17, 17, 26, 0.02) 42%, rgba(17, 17, 26, 0))",
@@ -291,6 +291,7 @@ export const semanticColorSchemes = {
     },
     "text": {
       "disabled": "#9B99A8",
+      "muted": "#6B6979",
       "primary": "#17161F",
       "secondary": "#5C5A69"
     },
@@ -410,20 +411,20 @@ export const componentTokens = {
   },
   "skeleton": {
     "avatar": {
-      "animation": "wave",
+      "animation": false,
       "height": 40,
       "variant": "circular",
       "width": 40
     },
     "chart": {
-      "animation": "wave",
+      "animation": false,
       "maxHeight": "40vh",
       "minHeight": 200,
       "variant": "rectangular",
       "width": "100%"
     },
     "kpiTitle": {
-      "animation": "wave",
+      "animation": false,
       "sx": {
         "fontSize": "0.875rem",
         "width": "60%"
@@ -431,7 +432,7 @@ export const componentTokens = {
       "variant": "text"
     },
     "kpiValue": {
-      "animation": "wave",
+      "animation": false,
       "sx": {
         "fontSize": "1.5rem",
         "mt": 0.5,
@@ -440,7 +441,7 @@ export const componentTokens = {
       "variant": "text"
     },
     "table": {
-      "animation": "wave",
+      "animation": false,
       "maxHeight": "30vh",
       "minHeight": 150,
       "variant": "rectangular",

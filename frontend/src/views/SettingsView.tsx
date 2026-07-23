@@ -353,7 +353,8 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
         <DialogContent>
           <Typography variant="body2">
             Historical acquisition will stop and this browser’s paged message cache will be cleared.
-            Live capture status is managed separately.
+            History already synced to the server is retained — revoking stops further collection, it
+            does not delete data already acquired. Live capture status is managed separately.
           </Typography>
         </DialogContent>
         <DialogActions>

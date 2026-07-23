@@ -232,8 +232,8 @@ function sentimentColor(sentiment: Sentiment, chart: {
 function ChartSkeleton() {
   return (
     <Stack spacing={1.5} sx={{ height: CHART_HEIGHT, justifyContent: 'flex-end' }}>
-      <Skeleton height="60%" variant="rounded" animation="wave" />
-      <Skeleton width="100%" animation="wave" />
+      <Skeleton height="60%" variant="rounded" animation={false} />
+      <Skeleton width="100%" animation={false} />
     </Stack>
   );
 }
@@ -549,7 +549,10 @@ export default function CreatorDashboardView({
                             label: item.label,
                             value: item.count,
                           })),
-                          faded: { additionalRadius: -3, color: 'gray' },
+                          faded: {
+                            additionalRadius: -3,
+                            color: 'var(--bridge-palette-text-disabled)',
+                          },
                           highlightScope: { fade: 'global', highlight: 'item' },
                           highlighted: { additionalRadius: 4 },
                           innerRadius: '58%',

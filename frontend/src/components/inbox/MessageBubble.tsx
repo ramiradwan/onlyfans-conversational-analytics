@@ -65,18 +65,18 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         <Typography
           component="p"
           variant="body1"
-          sx={(theme) => ({
+          sx={{
             margin: 0,
             whiteSpace: 'pre-wrap',
             '& p': { margin: 0 },
             '& p + p': { marginTop: '0.5em' },
             '& ul, & ol': { margin: '0.25em 0', paddingInlineStart: '1.25em' },
             '& a': {
-              color: theme.vars.palette.primary.main,
+              color: 'inherit',
               textDecoration: 'underline',
               wordBreak: 'break-word',
             },
-          })}
+          }}
           // Message text is untrusted platform content; sanitizeMessageHtml() runs
           // it through a strict allowlist before it ever reaches the DOM.
           dangerouslySetInnerHTML={{ __html: sanitizeMessageHtml(message.text) }}

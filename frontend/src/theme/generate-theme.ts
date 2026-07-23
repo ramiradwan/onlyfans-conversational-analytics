@@ -74,54 +74,181 @@ function getString(parent: JsonObject, key: string): string {
   return value;
 }
 
-function relativeLuminance(hex: string): number {
-  const match = /^#([0-9a-f]{6})$/i.exec(hex);
-  if (!match) {
-    throw new Error('Contrast validation requires a six-digit hex color, received ' + hex);
+type RgbColor = { r: number; g: number; b: number; a: number };
+
+function parseColor(value: string): RgbColor {
+  const hexMatch = /^#([0-9a-f]{6})$/i.exec(value);
+  if (hexMatch) {
+    const [r, g, b] = [0, 2, 4].map((offset) =>
+      Number.parseInt(hexMatch[1].slice(offset, offset + 2), 16),
+    );
+    return { r, g, b, a: 1 };
   }
-  const channels = [0, 2, 4].map(
-    (offset) => Number.parseInt(match[1].slice(offset, offset + 2), 16) / 255,
-  );
-  const [red, green, blue] = channels.map((channel) =>
-    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
-  );
+  const rgbaMatch =
+    /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(value);
+  if (rgbaMatch) {
+    return {
+      r: Number.parseFloat(rgbaMatch[1]),
+      g: Number.parseFloat(rgbaMatch[2]),
+      b: Number.parseFloat(rgbaMatch[3]),
+      a: rgbaMatch[4] === undefined ? 1 : Number.parseFloat(rgbaMatch[4]),
+    };
+  }
+  throw new Error('Contrast validation requires a hex or rgb(a) color, received ' + value);
+}
+
+// Composites a possibly-translucent color over an opaque backdrop before measuring.
+function flattenOverBackground(value: string, backdropHex: string): { r: number; g: number; b: number } {
+  const color = parseColor(value);
+  if (color.a >= 1) return color;
+  const backdrop = parseColor(backdropHex);
+  return {
+    r: color.a * color.r + (1 - color.a) * backdrop.r,
+    g: color.a * color.g + (1 - color.a) * backdrop.g,
+    b: color.a * color.b + (1 - color.a) * backdrop.b,
+  };
+}
+
+function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
+  const [red, green, blue] = [r, g, b].map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
 
-function contrastRatio(foreground: string, background: string): number {
-  const light = Math.max(relativeLuminance(foreground), relativeLuminance(background));
-  const dark = Math.min(relativeLuminance(foreground), relativeLuminance(background));
+// `backdrop` must resolve to an opaque surface; `foreground`/`backdrop` may be hex or rgb(a).
+function contrastRatio(foreground: string, backdrop: string): number {
+  const foregroundLuminance = relativeLuminance(flattenOverBackground(foreground, backdrop));
+  const backdropLuminance = relativeLuminance(flattenOverBackground(backdrop, backdrop));
+  const light = Math.max(foregroundLuminance, backdropLuminance);
+  const dark = Math.min(foregroundLuminance, backdropLuminance);
   return (light + 0.05) / (dark + 0.05);
 }
 
-function validateTextContrast(colorSchemes: JsonObject): void {
+function requireRatio(
+  ratio: number,
+  minimum: number,
+  schemeName: string,
+  foregroundRole: string,
+  surfaceRole: string,
+): void {
+  if (ratio < minimum) {
+    throw new Error(
+      schemeName +
+        '.' +
+        foregroundRole +
+        ' on ' +
+        surfaceRole +
+        ' has ' +
+        ratio.toFixed(2) +
+        ':1 contrast, below the ' +
+        minimum +
+        ':1 minimum',
+    );
+  }
+}
+
+function validateContrast(colorSchemes: JsonObject): void {
   for (const schemeName of ['light', 'dark']) {
     const scheme = getObject(colorSchemes, schemeName);
     const text = getObject(scheme, 'text');
     const background = getObject(scheme, 'background');
-    const foregroundRoles: Array<[string, string]> = [
+    const surface = getObject(scheme, 'surface');
+    const primary = getObject(scheme, 'primary');
+
+    const backgroundDefault = getString(background, 'default');
+    const backgroundPaper = getString(background, 'paper');
+    const surfaceSubtle = getString(surface, 'subtle');
+    const surfaceGlass = getString(surface, 'glass');
+    // The AppBar renders its translucent glass surface over ambient page content;
+    // background.default is used as the representative backdrop for that composite.
+    const appBarComposite = flattenOverBackground(surfaceGlass, backgroundDefault);
+    const appBarCompositeHex =
+      '#' +
+      [appBarComposite.r, appBarComposite.g, appBarComposite.b]
+        .map((channel) => Math.round(channel).toString(16).padStart(2, '0'))
+        .join('');
+
+    const textSurfaces: Array<[string, string]> = [
+      ['background.default', backgroundDefault],
+      ['background.paper', backgroundPaper],
+      ['surface.subtle', surfaceSubtle],
+      ['surface.glass (AppBar composite)', appBarCompositeHex],
+    ];
+    const textForegroundRoles: Array<[string, string]> = [
       ['text.primary', getString(text, 'primary')],
       ['text.secondary', getString(text, 'secondary')],
-      ['success.main', getString(getObject(scheme, 'success'), 'main')],
+      ...(('muted' in text ? [['text.muted', getString(text, 'muted')]] : []) as Array<
+        [string, string]
+      >),
     ];
-    for (const [foregroundRole, foreground] of foregroundRoles) {
-      for (const surfaceRole of ['default', 'paper']) {
-        const surface = getString(background, surfaceRole);
-        const ratio = contrastRatio(foreground, surface);
-        if (ratio < 4.5) {
-          throw new Error(
-            schemeName +
-              '.' +
-              foregroundRole +
-              ' on background.' +
-              surfaceRole +
-              ' has ' +
-              ratio.toFixed(2) +
-              ':1 contrast',
-          );
-        }
+    for (const [foregroundRole, foreground] of textForegroundRoles) {
+      for (const [surfaceRole, surfaceColor] of textSurfaces) {
+        requireRatio(
+          contrastRatio(foreground, surfaceColor),
+          4.5,
+          schemeName,
+          foregroundRole,
+          surfaceRole,
+        );
       }
     }
+
+    // Feedback foregrounds are checked against background.default and background.paper.
+    const feedbackForegroundRoles: Array<[string, string]> = [
+      ['success.main', getString(getObject(scheme, 'success'), 'main')],
+      ['warning.main', getString(getObject(scheme, 'warning'), 'main')],
+      ['error.main', getString(getObject(scheme, 'error'), 'main')],
+    ];
+    for (const [foregroundRole, foreground] of feedbackForegroundRoles) {
+      for (const [surfaceRole, surfaceColor] of [
+        ['background.default', backgroundDefault],
+        ['background.paper', backgroundPaper],
+      ] as Array<[string, string]>) {
+        requireRatio(
+          contrastRatio(foreground, surfaceColor),
+          4.5,
+          schemeName,
+          foregroundRole,
+          surfaceRole,
+        );
+      }
+    }
+
+    // Message bubbles render body text (text.primary) and metadata (text.secondary)
+    // on their own opaque surfaces; links inherit the body color, so no separate link
+    // role is measured. Both surfaces are validated in both directions.
+    const communication = getObject(scheme, 'communication');
+    const bubbleSurfaces: Array<[string, string]> = [
+      ['communication.incomingSurface', getString(communication, 'incomingSurface')],
+      ['communication.outgoingSurface', getString(communication, 'outgoingSurface')],
+    ];
+    const bubbleForegroundRoles: Array<[string, string]> = [
+      ['text.primary', getString(text, 'primary')],
+      ['text.secondary', getString(text, 'secondary')],
+    ];
+    for (const [foregroundRole, foreground] of bubbleForegroundRoles) {
+      for (const [surfaceRole, surfaceColor] of bubbleSurfaces) {
+        requireRatio(
+          contrastRatio(foreground, surfaceColor),
+          4.5,
+          schemeName,
+          foregroundRole,
+          surfaceRole,
+        );
+      }
+    }
+
+    // Non-text: the selected/active state indicator (a solid bar, not the wash) must
+    // remain perceivable against the surface it is drawn on (WCAG 1.4.11, 3:1 minimum).
+    requireRatio(
+      contrastRatio(getString(primary, 'main'), backgroundPaper),
+      3,
+      schemeName,
+      'primary.main (selection cue)',
+      'background.paper',
+    );
   }
 }
 
@@ -169,7 +296,7 @@ export function generateThemeSource(tokensJsonSource: string): string {
   if (!isObject(raw)) throw new Error('tokens.json must contain a JSON object');
   const resolved = resolveValue(raw, raw);
   if (!isObject(resolved)) throw new Error('Resolved token source must be an object');
-  validateTextContrast(getObject(getObject(resolved, 'tier2'), 'colorSchemes'));
+  validateContrast(getObject(getObject(resolved, 'tier2'), 'colorSchemes'));
   return emitTokens(resolved).replace(/\r\n/g, '\n');
 }
 

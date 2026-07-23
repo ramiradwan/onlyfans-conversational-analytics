@@ -71,7 +71,7 @@ function BrandMark({ labelled }: { labelled: boolean }) {
             Bridge
           </Typography>
           <Typography variant="caption" noWrap sx={{
-            color: 'text.disabled'
+            color: 'text.muted'
           }}>
             Creator studio
           </Typography>
@@ -99,10 +99,11 @@ function DrawerNavItem({
       aria-label={labelled ? undefined : item.label}
       sx={(theme) => ({
         borderRadius: labelled ? 1.75 : 1.75,
-        color: theme.vars.palette.text.disabled,
+        color: theme.vars.palette.text.muted,
         justifyContent: labelled ? 'initial' : 'center',
         minHeight: 46,
         mx: labelled ? 1.25 : 'auto',
+        position: 'relative',
         px: labelled ? 1.5 : 0,
         width: labelled ? 'auto' : 46,
         '&:hover': {
@@ -113,8 +114,21 @@ function DrawerNavItem({
           bgcolor: theme.vars.palette.action.selected,
           color: theme.vars.palette.primary.main,
         },
+        '&.active::before': {
+          bgcolor: theme.vars.palette.primary.main,
+          borderRadius: 999,
+          bottom: '18%',
+          content: '""',
+          insetInlineStart: 2,
+          position: 'absolute',
+          top: '18%',
+          width: 3,
+        },
         '&.active .MuiListItemIcon-root': {
           color: theme.vars.palette.primary.main,
+        },
+        '&.active .MuiListItemText-primary': {
+          fontWeight: 700,
         },
       })}
     >
@@ -193,7 +207,7 @@ function DrawerContent({
                   Bridge account
                 </Typography>
                 <Typography variant="caption" noWrap sx={{
-                  color: 'text.disabled'
+                  color: 'text.muted'
                 }}>
                   Workspace
                 </Typography>

@@ -37,7 +37,6 @@ const Plot = styled(Box)(({ theme }) => ({
   minHeight: componentTokens.analytics.chartHeight,
   overflow: 'hidden',
   position: 'relative',
-  ...theme.effects.chartFrame(theme),
 }));
 
 const ChartSvg = styled('svg')({

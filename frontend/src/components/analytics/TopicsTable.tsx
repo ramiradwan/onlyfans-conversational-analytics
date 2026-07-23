@@ -81,7 +81,7 @@ export function TopicsTable({ topics }: TopicsTableProps) {
             <th scope="col">Topic</th>
             <th scope="col">Message volume</th>
             <th scope="col">Share</th>
-            <th scope="col">Change</th>
+            <th scope="col">Change vs. prior window</th>
           </tr>
         </thead>
         <tbody>

@@ -1,13 +1,31 @@
+import CheckIcon from '@mui/icons-material/Check';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import MonitorIcon from '@mui/icons-material/Monitor';
-import { IconButton, Tooltip } from '@mui/material';
+import { IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Tooltip } from '@mui/material';
 import { useColorScheme } from '@mui/material/styles';
 import * as React from 'react';
+
+/** Matches the `Mode` union accepted by MUI's `useColorScheme().setMode`. */
+type Mode = 'light' | 'dark' | 'system';
+
+const MODES: readonly { icon: React.ReactNode; label: string; value: Mode }[] = [
+  { icon: <LightModeIcon fontSize="small" />, label: 'Light', value: 'light' },
+  { icon: <DarkModeIcon fontSize="small" />, label: 'Dark', value: 'dark' },
+  { icon: <MonitorIcon fontSize="small" />, label: 'System', value: 'system' },
+];
+
+function iconForMode(mode: Mode): React.ReactNode {
+  return MODES.find((entry) => entry.value === mode)?.icon ?? <MonitorIcon fontSize="small" />;
+}
 
 export function ThemeToggle() {
   const { mode, setMode } = useColorScheme();
   const [mounted, setMounted] = React.useState(false);
+  const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null);
+  const menuId = React.useId();
+  const buttonId = React.useId();
+  const open = Boolean(anchorEl);
 
   React.useEffect(() => {
     setMounted(true);
@@ -15,35 +33,57 @@ export function ThemeToggle() {
 
   if (!mounted || !mode) return null;
 
-  let icon: React.ReactNode;
-  let label: string;
-  switch (mode) {
-    case 'light':
-      icon = <DarkModeIcon />;
-      label = 'Switch to dark mode';
-      break;
-    case 'dark':
-      icon = <LightModeIcon />;
-      label = 'Switch to system mode';
-      break;
-    case 'system':
-    default:
-      icon = <MonitorIcon />;
-      label = 'Switch to light mode';
-      break;
-  }
+  const handleOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
 
-  const handleToggle = () => {
-    const nextMode =
-      mode === 'light' ? 'dark' : mode === 'dark' ? 'system' : 'light';
+  const handleClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleSelect = (nextMode: Mode) => {
     setMode(nextMode);
+    handleClose();
   };
 
   return (
-    <Tooltip title={label}>
-      <IconButton onClick={handleToggle} aria-label={label} color="inherit">
-        {icon}
-      </IconButton>
-    </Tooltip>
+    <>
+      <Tooltip title="Color mode">
+        <IconButton
+          id={buttonId}
+          aria-controls={open ? menuId : undefined}
+          aria-expanded={open ? 'true' : undefined}
+          aria-haspopup="menu"
+          aria-label={`Color mode: ${mode}. Choose light, dark, or system.`}
+          color="inherit"
+          onClick={handleOpen}
+        >
+          {iconForMode(mode)}
+        </IconButton>
+      </Tooltip>
+      <Menu
+        id={menuId}
+        anchorEl={anchorEl}
+        open={open}
+        onClose={handleClose}
+        slotProps={{ list: { 'aria-labelledby': buttonId, role: 'menu' } }}
+      >
+        {MODES.map((entry) => (
+          <MenuItem
+            key={entry.value}
+            role="menuitemradio"
+            aria-checked={mode === entry.value}
+            selected={mode === entry.value}
+            onClick={() => handleSelect(entry.value)}
+          >
+            <ListItemIcon>{entry.icon}</ListItemIcon>
+            <ListItemText>{entry.label}</ListItemText>
+            {mode === entry.value && (
+              <CheckIcon fontSize="small" aria-hidden="true" sx={{ ml: 2 }} />
+            )}
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
   );
 }

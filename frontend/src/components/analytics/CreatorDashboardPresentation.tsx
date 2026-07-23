@@ -38,14 +38,14 @@ const Bento = styled(Box)(({ theme }) => ({
   display: 'grid',
   gap: theme.spacing(2),
   gridTemplateColumns: 'minmax(0, 1fr)',
-  [theme.breakpoints.up('lg')]: {
+  [theme.breakpoints.up('md')]: {
     gridTemplateColumns: 'minmax(0, 2fr) minmax(17rem, 1fr)',
   },
 }));
 
 const TopicsCell = styled(Box)(({ theme }) => ({
   minWidth: 0,
-  [theme.breakpoints.up('lg')]: {
+  [theme.breakpoints.up('md')]: {
     gridColumn: '1 / -1',
   },
 }));

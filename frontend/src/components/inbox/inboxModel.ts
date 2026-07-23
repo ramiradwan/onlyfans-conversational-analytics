@@ -50,14 +50,33 @@ export function sortMessages(messages: readonly MessageView[]): MessageView[] {
   });
 }
 
-export function formatTimestamp(value: string | null): string {
+export function formatTimestamp(value: string | null, now: Date = new Date()): string {
   if (value === null) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat('en-GB', {
+
+  const time = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
     hour12: false,
     minute: '2-digit',
     timeZone: 'UTC',
   }).format(date);
+
+  // Time alone (14:32) makes a message from last week indistinguishable from one
+  // minutes old, overstating freshness. Prefix the date once the value falls outside
+  // the current UTC day; the year is added only when it differs from the current year.
+  const sameYear = date.getUTCFullYear() === now.getUTCFullYear();
+  const sameDay =
+    sameYear &&
+    date.getUTCMonth() === now.getUTCMonth() &&
+    date.getUTCDate() === now.getUTCDate();
+  if (sameDay) return time;
+
+  const dateLabel = new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  }).format(date);
+  return `${dateLabel}, ${time}`;
 }

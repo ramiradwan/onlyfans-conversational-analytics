@@ -61,10 +61,10 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
         }}>{state.message}</Typography>
         <LoadingGrid>
           {Array.from({ length: 4 }, (_, index) => (
-            <Skeleton key={index} variant="rounded" height={112} animation="wave" />
+            <Skeleton key={index} variant="rounded" height={112} animation={false} />
           ))}
         </LoadingGrid>
-        <Skeleton variant="rounded" height={300} animation="wave" />
+        <Skeleton variant="rounded" height={300} animation={false} />
       </Stack>
     );
   }

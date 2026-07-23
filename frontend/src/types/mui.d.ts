@@ -11,6 +11,10 @@ type BridgeEffectStyles = CSSProperties & {
 };
 
 declare module '@mui/material/styles' {
+  interface TypeText {
+    muted: string;
+  }
+
   interface Theme {
     brandPalette: typeof brandPalette;
     brandTypography: typeof brandTypography;
@@ -42,7 +46,6 @@ declare module '@mui/material/styles' {
     surface: {
       subtle: string;
       glass: string;
-      chartInsetShadow: string;
       elevation: string;
       rim: string;
     };

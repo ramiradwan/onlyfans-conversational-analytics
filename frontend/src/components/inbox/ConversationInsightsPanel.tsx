@@ -34,12 +34,10 @@ const Root = styled(Paper)(({ theme }) => ({
   minWidth: componentTokens.inbox.insightsPaneMinWidth,
   overflowY: 'auto',
   padding: theme.spacing(2),
-  ...theme.effects.cardBorder(theme),
 }));
 
 const Section = styled(Box)(({ theme }) => ({
   backgroundColor: theme.vars.palette.surface.subtle,
-  border: `1px solid ${theme.vars.palette.divider}`,
   borderRadius: Number(theme.shape.borderRadius) * 2,
   display: 'grid',
   gap: theme.spacing(1),

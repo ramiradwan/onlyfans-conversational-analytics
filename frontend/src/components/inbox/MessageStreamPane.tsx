@@ -227,7 +227,11 @@ export function MessageStreamPane({
           alignItems: 'center'
         }}>
           {messageState?.hasNewerUncachedItems && (
-            <Button size="small" onClick={onReloadLatest}>
+            <Button
+              size="small"
+              disabled={messageState.status === 'loading'}
+              onClick={onReloadLatest}
+            >
               Return to latest
             </Button>
           )}

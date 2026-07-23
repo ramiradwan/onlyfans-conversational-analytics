@@ -1,11 +1,11 @@
 # Frontend — OnlyFans Conversational Analytics (“Bridge”)  
   
-React 19 + MUI v7 + Vite application served via **FastAPI**, implementing the finalized    
+React 19 + MUI v9 + Vite application served via **FastAPI**, implementing the finalized    
 [**frontend-design-spec.md**](frontend-design-spec.md) and [**communication-spec.md**](/communication-spec.md).  
   
 Implements:  
   
-- **Persistent `AppShell` layout** with MUI v7 CSS variable theming  
+- **Persistent `AppShell` layout** with MUI v9 CSS variable theming  
 - **Role-based routing** (Creator vs Operator) via `useAppRoutes()` + `<Outlet />`  
 - **Snapshot‑then‑delta** state hydration across multiple Zustand stores  
 - **3‑tier design token pipeline** with generated MUI theme  
@@ -18,7 +18,7 @@ Implements:
   
 | Feature | Implementation |  
 | --- | --- |  
-| **Framework** | React 19, MUI v7 (CSS variables enabled), Vite |  
+| **Framework** | React 19, MUI v9 (CSS variables enabled), Vite |  
 | **Served by** | FastAPI — Jinja injects `FASTAPI_CONFIG` into `index.html` |  
 | **Data Sources** | **WebSocket** — Event-driven updates from backend<br>**REST** — Bootstrap snapshot (dev mode) & analytics endpoints |  
 | **State Management** | Multiple [Zustand](https://github.com/pmndrs/zustand) domain stores: `chatStore`, `analyticsStore`, `enrichmentStore`, `systemStore`, `userStore` |  

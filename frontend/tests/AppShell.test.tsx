@@ -152,22 +152,67 @@ describe('application shell routing and navigation', () => {
 });
 
 describe('ThemeToggle', () => {
-  it('cycles light, dark, and system modes through accessible labels', async () => {
+  // useColorScheme persists `mode` to localStorage; reset it so each test
+  // starts from the ThemeProvider's own defaultMode instead of a previous
+  // test's selection.
+  beforeEach(() => window.localStorage.clear());
+
+  it('exposes a menu-button trigger with correct ARIA before opening', async () => {
     render(
       <ThemeProvider theme={theme} defaultMode="light">
         <ThemeToggle />
       </ThemeProvider>,
     );
 
-    const darkButton = await screen.findByRole('button', { name: 'Switch to dark mode' });
-    fireEvent.click(darkButton);
+    const trigger = await screen.findByRole('button', {
+      name: 'Color mode: light. Choose light, dark, or system.',
+    });
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBeNull();
+  });
 
-    const systemButton = await screen.findByRole('button', { name: 'Switch to system mode' });
-    fireEvent.click(systemButton);
+  it('lets a user pick any mode directly from the menu, with the active mode marked', async () => {
+    render(
+      <ThemeProvider theme={theme} defaultMode="light">
+        <ThemeToggle />
+      </ThemeProvider>,
+    );
 
-    const lightButton = await screen.findByRole('button', { name: 'Switch to light mode' });
-    fireEvent.click(lightButton);
+    const trigger = await screen.findByRole('button', { name: /Color mode: light/ });
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
-    expect(await screen.findByRole('button', { name: 'Switch to dark mode' })).toBeTruthy();
+    const menu = await screen.findByRole('menu');
+    const lightItem = within(menu).getByRole('menuitemradio', { name: /Light/ });
+    const darkItem = within(menu).getByRole('menuitemradio', { name: /Dark/ });
+    const systemItem = within(menu).getByRole('menuitemradio', { name: /System/ });
+    expect(lightItem.getAttribute('aria-checked')).toBe('true');
+    expect(darkItem.getAttribute('aria-checked')).toBe('false');
+    expect(systemItem.getAttribute('aria-checked')).toBe('false');
+
+    // Direct selection: jump straight to "system" without passing through "dark".
+    fireEvent.click(systemItem);
+
+    const reopenedTrigger = await screen.findByRole('button', { name: /Color mode: system/ });
+    fireEvent.click(reopenedTrigger);
+    const reopenedMenu = await screen.findByRole('menu');
+    expect(
+      within(reopenedMenu).getByRole('menuitemradio', { name: /System/ }).getAttribute('aria-checked'),
+    ).toBe('true');
+  });
+
+  it('closes the menu on Escape', async () => {
+    render(
+      <ThemeProvider theme={theme} defaultMode="light">
+        <ThemeToggle />
+      </ThemeProvider>,
+    );
+
+    const trigger = await screen.findByRole('button', { name: /Color mode: light/ });
+    fireEvent.click(trigger);
+    await screen.findByRole('menu');
+
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });

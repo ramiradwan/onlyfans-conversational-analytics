@@ -18,7 +18,6 @@ const FilterForm = styled('form')(({ theme }) => ({
   flexWrap: 'wrap',
   gap: theme.spacing(1.5),
   padding: theme.spacing(1.5, 2),
-  ...theme.effects.cardBorder(theme),
 }));
 
 const DateGroup = styled(Stack)(({ theme }) => ({
