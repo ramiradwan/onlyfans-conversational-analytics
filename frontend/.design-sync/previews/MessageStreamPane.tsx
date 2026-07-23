@@ -29,7 +29,7 @@ const messageState: ConversationMessageState = {
 
 export function ActiveConversation() {
   return (
-    <Box sx={{ height: 480, maxWidth: 760 }}>
+    <Box sx={{ height: 600, maxWidth: 760 }}>
       <MessageStreamPane
         conversation={previewConversations[0]}
         isLoading={false}

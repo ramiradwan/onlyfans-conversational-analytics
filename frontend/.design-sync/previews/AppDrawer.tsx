@@ -6,16 +6,9 @@ import {
 
 seedPreviewShellStore();
 
-export function DesktopNavigation() {
-  return (
-    <MemoryRouter initialEntries={['/']}>
-      <div style={{ height: 440, position: 'relative', width: 76 }}>
-        <AppDrawer drawerWidth={76} mobileOpen={false} />
-      </div>
-    </MemoryRouter>
-  );
-}
-
+// The permanent desktop rail is sm-gated (display xs:none / sm:block) and cannot
+// render at the same narrow capture viewport that the open mobile drawer needs;
+// the collapsed desktop rail is shown in context by the AppShell preview instead.
 export function MobileNavigation() {
   return (
     <MemoryRouter initialEntries={['/analytics']}>

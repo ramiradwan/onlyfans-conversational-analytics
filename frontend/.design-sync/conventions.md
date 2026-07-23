@@ -16,7 +16,7 @@ Light is the first-run mode; `ThemeToggle` persists the viewer's choice. For com
 
 ## Styling idiom
 
-This is a MUI v7 theme/prop system—not a utility-class library. Compose the bundled React components, use MUI layout primitives for glue, and style through `sx` and theme-aware props. Do not invent CSS class names.
+This is a MUI v9 theme/prop system—not a utility-class library. Compose the bundled React components, use MUI layout primitives for glue, and style through `sx` and theme-aware props. Do not invent CSS class names.
 
 - Surfaces: content/workspace backgrounds use `background.default`; chrome, cards, drawers, and panels use `background.paper`.
 - Text: use `text.primary`, `text.secondary`, and `text.disabled` through `color` or `sx`.
