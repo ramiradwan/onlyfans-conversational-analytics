@@ -95,20 +95,3 @@ declare module '@mui/material/Chip' {
     calm: true;
   }
 }
-
-declare module '@mui/x-data-grid/themeAugmentation' {
-  interface Components {
-    MuiDataGrid?: {
-      defaultProps?: Record<string, unknown>;
-      styleOverrides?: {
-        root?:
-          | React.CSSProperties
-          | ((props: { theme: MuiTheme }) => React.CSSProperties);
-        [slot: string]:
-          | React.CSSProperties
-          | ((props: { theme: MuiTheme }) => React.CSSProperties)
-          | undefined;
-      };
-    };
-  }
-}

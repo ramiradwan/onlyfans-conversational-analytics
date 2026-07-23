@@ -26,27 +26,35 @@ export function KpiCard({ title, value, detail, isLoading, grow }: KpiCardProps)
     return <KpiCardSkeleton grow={grow} />;  
   }  
   
-  return (  
+  return (
     <Card  
       sx={(theme) => ({  
         flex: grow ? 1 : 'unset',  
         bgcolor: theme.vars.palette.background.paper,  
         ...theme.effects.cardBorder(theme),  
       })}  
-    >  
+    >
       <CardContent>  
-        <Typography variant="body2" color="text.secondary" gutterBottom>  
+        <Typography variant="body2" gutterBottom sx={{
+          color: 'text.secondary'
+        }}>  
           {title}  
         </Typography>  
         <Typography variant="h5" component="div">  
           {value}  
         </Typography>  
         {detail && (
-          <Typography color="text.secondary" sx={{ display: 'block', mt: 0.75 }} variant="caption">
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'text.secondary',
+              display: 'block',
+              mt: 0.75
+            }}>
             {detail}
           </Typography>
         )}
-      </CardContent>  
-    </Card>  
+      </CardContent>
+    </Card>
   );  
 }

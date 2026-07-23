@@ -65,7 +65,9 @@ export function TopicsTable({ topics }: TopicsTableProps) {
 
   if (topics.length === 0) {
     return (
-      <Typography color="text.secondary">
+      <Typography sx={{
+        color: 'text.secondary'
+      }}>
         No topic observations are available for the stated data window.
       </Typography>
     );

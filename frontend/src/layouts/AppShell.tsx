@@ -1,4 +1,4 @@
-import { Box, CssBaseline, useTheme } from '@mui/material';
+import { Box, useTheme } from '@mui/material';
 import { useCallback, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 
@@ -23,8 +23,6 @@ export function AppShell() {
 
   return (
     <Box sx={{ display: 'flex', height: '100dvh', minHeight: 0 }}>
-      <CssBaseline />
-
       <AppAppBar
         drawerWidth={desktopRailWidth}
         headerHeight={headerHeight}

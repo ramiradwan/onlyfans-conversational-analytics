@@ -60,7 +60,9 @@ export function AnalyticsPresentation({
           <Typography component="h1" variant="h4">
             Analytics
           </Typography>
-          <Typography component="p" variant="body1" color="text.secondary">
+          <Typography component="p" variant="body1" sx={{
+            color: 'text.secondary'
+          }}>
             Inspect sentiment, response behavior, and topic magnitude without inferred outcomes.
           </Typography>
         </Box>

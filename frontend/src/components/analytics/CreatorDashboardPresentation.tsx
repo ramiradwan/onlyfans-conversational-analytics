@@ -118,7 +118,9 @@ export function CreatorDashboardPresentation({
           <Typography component="h1" variant="h4">
             Conversation overview
           </Typography>
-          <Typography component="p" variant="body1" color="text.secondary">
+          <Typography component="p" variant="body1" sx={{
+            color: 'text.secondary'
+          }}>
             Date controls request a range; each result states its confirmed data window.
           </Typography>
         </Box>

@@ -194,7 +194,9 @@ export function AppAppBar({
           <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700, lineHeight: 1.2 }}>
             Bridge
           </Typography>
-          <Typography variant="caption" color="text.disabled" noWrap>
+          <Typography variant="caption" noWrap sx={{
+            color: 'text.disabled'
+          }}>
             Conversational analytics
           </Typography>
         </Stack>

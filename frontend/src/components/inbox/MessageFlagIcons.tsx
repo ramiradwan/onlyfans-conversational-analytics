@@ -1,6 +1,6 @@
 import MoodIcon from '@mui/icons-material/Mood';
 import MoodBadIcon from '@mui/icons-material/MoodBad';
-import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
+import RemoveCircleOutlinedIcon from '@mui/icons-material/RemoveCircleOutlined';
 import { styled, Tooltip } from '@mui/material';
 
 import type { MessageView } from '../../protocol';
@@ -39,7 +39,7 @@ export function MessageFlagIcon({
     ) : sentiment === 'negative' ? (
       <MoodBadIcon fontSize="inherit" />
     ) : (
-      <RemoveCircleOutlineIcon fontSize="inherit" />
+      <RemoveCircleOutlinedIcon fontSize="inherit" />
     );
 
   return (

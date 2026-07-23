@@ -1,6 +1,6 @@
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
-import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import PauseCircleOutlinedIcon from '@mui/icons-material/PauseCircleOutlined';
+import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined';
 import {
   Alert,
   AlertTitle,
@@ -125,7 +125,12 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
       <Stack spacing={3}>
         <Box>
           <Typography component="h1" variant="h4">Settings</Typography>
-          <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'text.secondary',
+              mt: 0.5
+            }}>
             Control local historical acquisition and see exactly what data is ready.
           </Typography>
         </Box>
@@ -152,10 +157,14 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
         )}
 
         <Panel>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{
+            justifyContent: 'space-between'
+          }}>
             <Box>
               <Typography component="h2" variant="h6">Historical coverage</Typography>
-              <Typography color="text.secondary" variant="body2">
+              <Typography variant="body2" sx={{
+                color: 'text.secondary'
+              }}>
                 {coverageProgressLabel(transport.coverage)}
               </Typography>
             </Box>
@@ -172,7 +181,9 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
                 value={progress}
                 variant="determinate"
               />
-              <Typography color="text.secondary" variant="caption">
+              <Typography variant="caption" sx={{
+                color: 'text.secondary'
+              }}>
                 {transport.snapshotProgress.completeConversations} of{' '}
                 {transport.snapshotProgress.discoveredConversations ?? 'unknown'} conversations complete
               </Typography>
@@ -185,22 +196,33 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
         </Panel>
 
         <Panel>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{
+            justifyContent: 'space-between'
+          }}>
             <Box>
               <Typography component="h2" variant="h6">Historical message sync</Typography>
-              <Typography color="text.secondary" variant="body2" sx={{ maxWidth: 680 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: 'text.secondary',
+                  maxWidth: 680
+                }}>
                 Read older creator-visible conversations through your authenticated browser session.
                 Acquisition is read-only, stays local, and can be paused or revoked at any time.
               </Typography>
             </Box>
             {settings && (
-              <Stack alignItems={{ sm: 'flex-end' }} spacing={0.75}>
+              <Stack spacing={0.75} sx={{
+                alignItems: { sm: 'flex-end' }
+              }}>
                 <Chip
                   color={stateColor(settings.effective_state)}
                   label={`Effective: ${sentenceCase(settings.effective_state)}`}
                   variant="outlined"
                 />
-                <Typography color="text.secondary" variant="caption">
+                <Typography variant="caption" sx={{
+                  color: 'text.secondary'
+                }}>
                   Requested: {sentenceCase(settings.desired_state)}
                 </Typography>
               </Stack>
@@ -225,26 +247,39 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
               )}
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
                 <Box>
-                  <Typography color="text.secondary" variant="caption">Recent-first priority</Typography>
+                  <Typography variant="caption" sx={{
+                    color: 'text.secondary'
+                  }}>Recent-first priority</Typography>
                   <Typography variant="body2">
                     Start with the latest {settings.recent_window_days} days
                   </Typography>
-                  <Typography color="text.secondary" display="block" variant="caption">
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: 'text.secondary',
+                      display: 'block'
+                    }}>
                     Sync then continues to the proven start of available history.
                   </Typography>
                 </Box>
                 <Box>
-                  <Typography color="text.secondary" variant="caption">Page size</Typography>
+                  <Typography variant="caption" sx={{
+                    color: 'text.secondary'
+                  }}>Page size</Typography>
                   <Typography variant="body2">{settings.page_size} messages</Typography>
                 </Box>
                 <Box>
-                  <Typography color="text.secondary" variant="caption">Applied revision</Typography>
+                  <Typography variant="caption" sx={{
+                    color: 'text.secondary'
+                  }}>Applied revision</Typography>
                   <Typography variant="body2">
                     {settings.effective_config_revision ?? 'Waiting to apply'}
                   </Typography>
                 </Box>
                 <Box>
-                  <Typography color="text.secondary" variant="caption">
+                  <Typography variant="caption" sx={{
+                    color: 'text.secondary'
+                  }}>
                     Authorized platform identity
                   </Typography>
                   <Typography variant="body2">
@@ -271,7 +306,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
                     <Button
                       disabled={!consentAccepted || busy}
                       onClick={() => void update('running', true)}
-                      startIcon={<PlayCircleOutlineIcon />}
+                      startIcon={<PlayCircleOutlinedIcon />}
                       variant="contained"
                     >
                       Start historical sync
@@ -280,7 +315,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
                     <Button
                       disabled={busy}
                       onClick={() => void update('paused')}
-                      startIcon={<PauseCircleOutlineIcon />}
+                      startIcon={<PauseCircleOutlinedIcon />}
                       variant="outlined"
                     >
                       Pause sync
@@ -289,7 +324,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
                     <Button
                       disabled={busy}
                       onClick={() => void update('running')}
-                      startIcon={<PlayCircleOutlineIcon />}
+                      startIcon={<PlayCircleOutlinedIcon />}
                       variant="contained"
                     >
                       Resume sync
@@ -301,7 +336,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
                       color="error"
                       disabled={busy}
                       onClick={() => setConfirmRevoke(true)}
-                      startIcon={<DeleteOutlineIcon />}
+                      startIcon={<DeleteOutlinedIcon />}
                     >
                       Revoke consent
                     </Button>

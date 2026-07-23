@@ -54,8 +54,8 @@ const renderResult = (result: unknown) => {
   
 export function QueryResponseBubble({ response }: { response: QueryResponse }) {  
   const { answer, gremlinQuery, result } = response;  
-  return (  
-    <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>  
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
       <Bubble>  
         <Stack spacing={2}>  
           <Typography variant="body1">{answer}</Typography>  
@@ -79,7 +79,9 @@ export function QueryResponseBubble({ response }: { response: QueryResponse }) {
                   fontSize="small"  
                   sx={{ mr: 1, color: 'text.secondary' }}  
                 />  
-                <Typography variant="body2" color="text.secondary">  
+                <Typography variant="body2" sx={{
+                  color: 'text.secondary'
+                }}>  
                   Generated Query  
                 </Typography>  
               </AccordionSummary>  
@@ -98,8 +100,8 @@ export function QueryResponseBubble({ response }: { response: QueryResponse }) {
             </Accordion>  
           )}  
         </Stack>  
-      </Bubble>  
-    </Box>  
+      </Bubble>
+    </Box>
   );  
 }  
   

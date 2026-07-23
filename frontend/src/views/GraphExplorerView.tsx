@@ -24,18 +24,29 @@ export default function GraphExplorerView() {
       <Stack spacing={3}>
         <Box>
           <Typography component="h1" variant="h4">Graph explorer</Typography>
-          <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'text.secondary',
+              mt: 0.5
+            }}>
             Brain-owned labeled-property-graph projection status
           </Typography>
         </Box>
 
         <Panel>
-          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2}>
-            <Stack direction="row" spacing={1.5} alignItems="center">
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{
+            justifyContent: 'space-between'
+          }}>
+            <Stack direction="row" spacing={1.5} sx={{
+              alignItems: 'center'
+            }}>
               <AccountTreeOutlinedIcon color={projectionCurrent ? 'success' : 'disabled'} />
               <Box>
                 <Typography component="h2" variant="h6">Local graph projection</Typography>
-                <Typography color="text.secondary" variant="body2">
+                <Typography variant="body2" sx={{
+                  color: 'text.secondary'
+                }}>
                   Canonical revision {state.projection.canonical_revision}; projected revision{' '}
                   {state.projection.projected_revision}
                 </Typography>
@@ -93,7 +104,12 @@ export function GraphExplorerPresentation({
       <Stack spacing={3}>
         <Box>
           <Typography component="h1" variant="h4">Graph explorer</Typography>
-          <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'text.secondary',
+              mt: 0.5
+            }}>
             Canonical relationship graph projection
           </Typography>
         </Box>

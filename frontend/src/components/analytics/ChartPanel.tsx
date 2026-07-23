@@ -44,12 +44,16 @@ export function ChartPanel({
   return (
     <Root role="region" aria-labelledby={titleId}>
       <Header>
-        <Box minWidth={0}>
+        <Box sx={{
+          minWidth: 0
+        }}>
           <Typography id={titleId} component="h2" variant="h6">
             {title}
           </Typography>
           {description && (
-            <Typography component="p" variant="body2" color="text.secondary">
+            <Typography component="p" variant="body2" sx={{
+              color: 'text.secondary'
+            }}>
               {description}
             </Typography>
           )}

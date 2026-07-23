@@ -40,7 +40,8 @@ vi.mock('../src/components/KpiCard', () => ({
   ),
 }));
 
-vi.mock('@mui/x-charts/LineChart', () => ({
+vi.mock('@mui/x-charts/LineChart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mui/x-charts/LineChart')>()),
   LineChart: ({ 'aria-label': ariaLabel }: { 'aria-label'?: string }) => (
     <div aria-label={ariaLabel} role="img" />
   ),

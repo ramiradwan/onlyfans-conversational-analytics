@@ -433,7 +433,9 @@ export default function OperatorInboxView({
           <Typography component="h1" variant="h5">
             Inbox
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             Conversation read model
           </Typography>
         </Box>

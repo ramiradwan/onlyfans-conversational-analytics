@@ -260,7 +260,9 @@ export function SentimentEngagementTrend({
 
   if (sentiment.length === 0) {
     return (
-      <Typography color="text.secondary">
+      <Typography sx={{
+        color: 'text.secondary'
+      }}>
         No sentiment observations are available for the stated data window.
       </Typography>
     );
@@ -435,16 +437,22 @@ export function SentimentEngagementTrend({
       </Plot>
 
       <DateExtent aria-hidden="true">
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" sx={{
+          color: 'text.secondary'
+        }}>
           {formatDateLabel(sentiment[0].at)}
         </Typography>
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" sx={{
+          color: 'text.secondary'
+        }}>
           {formatDateLabel(latestSentiment.at)}
         </Typography>
       </DateExtent>
 
       {!engagement?.length && (
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" sx={{
+          color: 'text.secondary'
+        }}>
           Engagement trend is unavailable from the current bounded projection.
         </Typography>
       )}

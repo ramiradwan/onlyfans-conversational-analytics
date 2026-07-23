@@ -56,7 +56,9 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
   if (state.status === 'loading') {
     return (
       <Stack spacing={2} role="status" aria-live="polite">
-        <Typography color="text.secondary">{state.message}</Typography>
+        <Typography sx={{
+          color: 'text.secondary'
+        }}>{state.message}</Typography>
         <LoadingGrid>
           {Array.from({ length: 4 }, (_, index) => (
             <Skeleton key={index} variant="rounded" height={112} animation="wave" />
@@ -74,7 +76,9 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
         <Typography component="h2" variant="h6">
           Analytics are building
         </Typography>
-        <Typography color="text.secondary">{state.message}</Typography>
+        <Typography sx={{
+          color: 'text.secondary'
+        }}>{state.message}</Typography>
       </StateCard>
     );
   }
@@ -86,7 +90,9 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
         <Typography component="h2" variant="h6">
           Analytics are unavailable
         </Typography>
-        <Typography color="text.secondary">{state.message}</Typography>
+        <Typography sx={{
+          color: 'text.secondary'
+        }}>{state.message}</Typography>
       </StateCard>
     );
   }

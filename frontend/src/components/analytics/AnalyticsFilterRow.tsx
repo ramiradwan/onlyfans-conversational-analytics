@@ -90,7 +90,9 @@ export function AnalyticsFilterRow({
         </Button>
       </Stack>
       {isRefreshing && (
-        <Typography role="status" variant="caption" color="text.secondary" aria-live="polite">
+        <Typography role="status" variant="caption" aria-live="polite" sx={{
+          color: 'text.secondary'
+        }}>
           Refreshing while the prior frame remains visible…
         </Typography>
       )}

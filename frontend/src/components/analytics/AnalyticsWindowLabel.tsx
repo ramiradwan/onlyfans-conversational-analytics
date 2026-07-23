@@ -15,7 +15,9 @@ export function AnalyticsWindowLabel({ source }: AnalyticsWindowLabelProps) {
     <Typography
       component="p"
       variant="caption"
-      color="text.secondary"
+      sx={{
+        color: 'text.secondary'
+      }}
     >
       Data window: {label}
     </Typography>

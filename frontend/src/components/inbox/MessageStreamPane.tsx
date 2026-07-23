@@ -216,12 +216,16 @@ export function MessageStreamPane({
             {isLoading ? 'Messages' : title}
           </Typography>
           {conversation !== null && !loadingMessages && (
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{
+              color: 'text.secondary'
+            }}>
               {messages.length === 1 ? '1 message loaded' : `${messages.length} messages loaded`}
             </Typography>
           )}
         </Box>
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction="row" spacing={1} sx={{
+          alignItems: 'center'
+        }}>
           {messageState?.hasNewerUncachedItems && (
             <Button size="small" onClick={onReloadLatest}>
               Return to latest
@@ -244,7 +248,9 @@ export function MessageStreamPane({
         {loadingMessages ? (
           <CenteredState role="status">
             <Typography variant="body2">Loading messages…</Typography>
-            <Stack spacing={2} width="100%">
+            <Stack spacing={2} sx={{
+              width: '100%'
+            }}>
               <Skeleton variant="rounded" width="58%" height={72} />
               <Skeleton variant="rounded" width="62%" height={88} sx={{ alignSelf: 'flex-end' }} />
               <Skeleton variant="rounded" width="48%" height={72} />
@@ -275,7 +281,12 @@ export function MessageStreamPane({
         ) : (
           <MessagesList aria-label={'Messages with ' + title}>
             <li>
-                <Stack alignItems="center" spacing={1} sx={{ pb: 1 }}>
+                <Stack
+                  spacing={1}
+                  sx={{
+                    alignItems: 'center',
+                    pb: 1
+                  }}>
                   <Button
                     disabled={!canLoadOlder || messageState?.status === 'loading'}
                     onClick={loadOlder}

@@ -20,7 +20,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import { LineChart } from '@mui/x-charts/LineChart';
+import { LineChart, lineClasses } from '@mui/x-charts/LineChart';
 import { PieChart } from '@mui/x-charts/PieChart';
 import { useMemo, useSyncExternalStore } from 'react';
 
@@ -241,10 +241,13 @@ function ChartSkeleton() {
 function EmptyChart({ children }: { children: string }) {
   return (
     <Stack
-      alignItems="center"
-      justifyContent="center"
-      sx={{ color: 'text.secondary', minHeight: CHART_HEIGHT, textAlign: 'center' }}
-    >
+      sx={{
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'text.secondary',
+        minHeight: CHART_HEIGHT,
+        textAlign: 'center'
+      }}>
       <DataObjectIcon aria-hidden="true" sx={{ fontSize: 36, mb: 1, opacity: 0.55 }} />
       <Typography variant="body2">{children}</Typography>
     </Stack>
@@ -348,19 +351,31 @@ export default function CreatorDashboardView({
         sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}
       >
         <Stack
-          alignItems={{ sm: 'flex-end' }}
           direction={{ xs: 'column', sm: 'row' }}
-          justifyContent="space-between"
           spacing={2}
-        >
+          sx={{
+            alignItems: { sm: 'flex-end' },
+            justifyContent: 'space-between'
+          }}>
           <Box>
             <Typography component="h1" variant="h4">
               Creator dashboard
             </Typography>
-            <Typography color="text.secondary" sx={{ mt: 0.5 }} variant="body2">
+            <Typography
+              variant="body2"
+              sx={{
+                color: 'text.secondary',
+                mt: 0.5
+              }}>
               Bounded conversation analytics with explicit coverage and freshness.
             </Typography>
-            <Typography color="text.secondary" display="block" sx={{ mt: 0.5 }} variant="caption">
+            <Typography
+              variant="caption"
+              sx={{
+                color: 'text.secondary',
+                display: 'block',
+                mt: 0.5
+              }}>
               Coverage: {state.coverage.status} · As of{' '}
               {state.coverage.as_of ? formatUtcDateTime(state.coverage.as_of) : 'not established'} ·
               Projection revision {state.projection.projected_revision}/
@@ -412,7 +427,9 @@ export default function CreatorDashboardView({
                 <Typography component="h2" id="message-activity-title" variant="h6">
                   Message activity
                 </Typography>
-                <Typography color="text.secondary" variant="body2">
+                <Typography variant="body2" sx={{
+                  color: 'text.secondary'
+                }}>
                   Daily inbound and outbound messages in UTC
                 </Typography>
               </Box>
@@ -459,8 +476,8 @@ export default function CreatorDashboardView({
                       ]}
                       slotProps={{ tooltip: { trigger: 'axis' } }}
                       sx={{
-                        '& .MuiLineElement-root': { strokeWidth: 2 },
-                        '& .MuiMarkElement-root': {
+                        [`& .${lineClasses.line}`]: { strokeWidth: 2 },
+                        [`& .${lineClasses.mark}`]: {
                           stroke: 'var(--bridge-palette-background-paper)',
                           strokeWidth: 2,
                         },
@@ -476,11 +493,12 @@ export default function CreatorDashboardView({
                     />
                   </Box>
                   <Typography
-                    color="text.secondary"
                     id="message-activity-description"
-                    sx={{ mb: 0.5 }}
                     variant="caption"
-                  >
+                    sx={{
+                      color: 'text.secondary',
+                      mb: 0.5
+                    }}>
                     Hover or focus the chart for daily values. The complete values are listed below.
                   </Typography>
                   <ActivityTable activity={model.messageActivity} />
@@ -495,7 +513,9 @@ export default function CreatorDashboardView({
                 <Typography component="h2" id="sentiment-mix-title" variant="h6">
                   Sentiment mix
                 </Typography>
-                <Typography color="text.secondary" variant="body2">
+                <Typography variant="body2" sx={{
+                  color: 'text.secondary'
+                }}>
                   All message sentiment classifications
                 </Typography>
               </Box>
@@ -546,7 +566,9 @@ export default function CreatorDashboardView({
                       {model.sentimentCounts.map((item) => (
                         <TableRow key={item.sentiment}>
                           <TableCell component="th" scope="row">
-                            <Stack alignItems="center" direction="row" spacing={1}>
+                            <Stack direction="row" spacing={1} sx={{
+                              alignItems: 'center'
+                            }}>
                               <Box
                                 aria-hidden="true"
                                 sx={(theme) => ({
@@ -583,7 +605,9 @@ export default function CreatorDashboardView({
                 <Typography component="h2" variant="h6">
                   Most active conversations
                 </Typography>
-                <Typography color="text.secondary" variant="body2">
+                <Typography variant="body2" sx={{
+                  color: 'text.secondary'
+                }}>
                   Ranked by message count, then latest activity and conversation ID
                 </Typography>
               </Box>
@@ -616,18 +640,29 @@ export default function CreatorDashboardView({
                         <TableRow key={conversation.conversationId} hover>
                           <TableCell sx={{ color: 'text.secondary' }}>{index + 1}</TableCell>
                           <TableCell component="th" scope="row">
-                            <Typography variant="body2" fontWeight={700}>
+                            <Typography variant="body2" sx={{
+                              fontWeight: 700
+                            }}>
                               {conversation.displayName}
                             </Typography>
-                            <Typography color="text.secondary" variant="caption">
+                            <Typography variant="caption" sx={{
+                              color: 'text.secondary'
+                            }}>
                               {conversation.platformUserId}
                             </Typography>
                           </TableCell>
                           <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                            <Typography component="span" variant="body2" fontWeight={700}>
+                            <Typography component="span" variant="body2" sx={{
+                              fontWeight: 700
+                            }}>
                               {NUMBER_FORMAT.format(conversation.messageCount)}
                             </Typography>
-                            <Typography color="text.secondary" display="block" variant="caption">
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: 'text.secondary',
+                                display: 'block'
+                              }}>
                               {NUMBER_FORMAT.format(conversation.inboundCount)} in ·{' '}
                               {NUMBER_FORMAT.format(conversation.outboundCount)} out
                             </Typography>
@@ -646,12 +681,19 @@ export default function CreatorDashboardView({
 
           <Grid size={{ xs: 12, lg: 5 }} sx={{ display: 'flex' }}>
             <Panel sx={{ flex: 1 }}>
-              <Stack alignItems="center" direction="row" justifyContent="space-between">
+              <Stack
+                direction="row"
+                sx={{
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
                 <Box>
                   <Typography component="h2" variant="h6">
                     Ask your data
                   </Typography>
-                  <Typography color="text.secondary" variant="body2">
+                  <Typography variant="body2" sx={{
+                    color: 'text.secondary'
+                  }}>
                     Natural-language analytics
                   </Typography>
                 </Box>
@@ -659,14 +701,24 @@ export default function CreatorDashboardView({
               </Stack>
               <Divider />
               <Stack
-                alignItems="center"
-                justifyContent="center"
                 spacing={1.5}
-                sx={{ flex: 1, minHeight: 220, textAlign: 'center' }}
-              >
+                sx={{
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flex: 1,
+                  minHeight: 220,
+                  textAlign: 'center'
+                }}>
                 <DataObjectIcon aria-hidden="true" color="disabled" sx={{ fontSize: 40 }} />
-                <Typography fontWeight={700}>Ask is not connected</Typography>
-                <Typography color="text.secondary" sx={{ maxWidth: 360 }} variant="body2">
+                <Typography sx={{
+                  fontWeight: 700
+                }}>Ask is not connected</Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: 'text.secondary',
+                    maxWidth: 360
+                  }}>
                   The canonical Bridge protocol does not expose a query service, so this dashboard
                   does not generate answers or accept prompts.
                 </Typography>
@@ -677,12 +729,13 @@ export default function CreatorDashboardView({
 
         {!hasSnapshot && (
           <Stack
-            alignItems="center"
             direction="row"
             role="status"
             spacing={1}
-            sx={{ color: 'text.secondary' }}
-          >
+            sx={{
+              alignItems: 'center',
+              color: 'text.secondary'
+            }}>
             <CircularProgress aria-hidden="true" size={16} />
             <Typography variant="body2">
               Loading dashboard. Waiting for the first analytics snapshot…

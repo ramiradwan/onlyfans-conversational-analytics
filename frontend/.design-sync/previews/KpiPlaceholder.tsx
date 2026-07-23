@@ -4,7 +4,12 @@ import { KpiPlaceholder } from 'onlyfans-analytics-frontend';
 export function DashboardMetricsLoading() {
   return (
     <Box sx={{ bgcolor: 'background.default', p: 2, width: '100%' }}>
-      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
+      <Typography
+        variant="subtitle2"
+        sx={{
+          color: 'text.secondary',
+          mb: 1.5
+        }}>
         Loading key metrics
       </Typography>
       <Grid container spacing={2}>

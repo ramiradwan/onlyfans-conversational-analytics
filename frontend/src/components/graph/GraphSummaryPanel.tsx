@@ -93,7 +93,11 @@ function CountList({ values }: { values: Readonly<Record<string, number>> }) {
     ([left], [right]) => left.localeCompare(right),
   );
   if (rows.length === 0) {
-    return <Typography color="text.secondary">No projected classes.</Typography>;
+    return (
+      <Typography sx={{
+        color: 'text.secondary'
+      }}>No projected classes.</Typography>
+    );
   }
   return (
     <Counts>
@@ -172,7 +176,9 @@ export function GraphSummaryPanel({
       <Panel role="region" aria-labelledby="graph-query-title">
         <Box>
           <Typography id="graph-query-title" component="h2" variant="h6">Ask about relationships</Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             Natural-language graph queries require a bounded, engine-neutral query API.
           </Typography>
         </Box>

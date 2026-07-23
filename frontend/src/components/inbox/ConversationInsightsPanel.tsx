@@ -100,7 +100,9 @@ export function ConversationInsightsPanel({
         <Typography id={titleId} component="h2" variant="h6">
           Conversation insights
         </Typography>
-        <Typography id={descriptionId} variant="body2" color="text.secondary">
+        <Typography id={descriptionId} variant="body2" sx={{
+          color: 'text.secondary'
+        }}>
           {fanName ?? 'No fan selected'}
         </Typography>
         {windowSource && <AnalyticsWindowLabel source={windowSource} />}
@@ -133,7 +135,9 @@ export function ConversationInsightsPanel({
       )}
 
       {analyticsState.status !== 'loading' && fanName === null && (
-        <Typography color="text.secondary">
+        <Typography sx={{
+          color: 'text.secondary'
+        }}>
           Choose a conversation to inspect its projected signals.
         </Typography>
       )}
@@ -169,7 +173,9 @@ export function ConversationInsightsPanel({
             <Typography variant="body2">
               {sentimentLabel(insight.averageSentimentScore)} · {formatSentimentScore(insight.averageSentimentScore)}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" sx={{
+              color: 'text.secondary'
+            }}>
               Directional range: −1 to +1
             </Typography>
           </Section>
@@ -179,13 +185,21 @@ export function ConversationInsightsPanel({
               Topics
             </Typography>
             {topics.length ? (
-              <Stack direction="row" useFlexGap flexWrap="wrap" gap={1}>
+              <Stack
+                direction="row"
+                useFlexGap
+                sx={{
+                  flexWrap: 'wrap',
+                  gap: 1
+                }}>
                 {topics.map(([label, count]) => (
                   <Chip key={label} label={`${label} · ${formatCount(count)}`} size="small" variant="outlined" />
                 ))}
               </Stack>
             ) : (
-              <Typography variant="body2" color="text.secondary">No projected topics.</Typography>
+              <Typography variant="body2" sx={{
+                color: 'text.secondary'
+              }}>No projected topics.</Typography>
             )}
           </Section>
 
@@ -203,18 +217,24 @@ export function ConversationInsightsPanel({
                 ))}
               </DefinitionList>
             ) : (
-              <Typography variant="body2" color="text.secondary">No projected engagement states.</Typography>
+              <Typography variant="body2" sx={{
+                color: 'text.secondary'
+              }}>No projected engagement states.</Typography>
             )}
           </Section>
 
           <Section>
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" spacing={1} sx={{
+              alignItems: 'center'
+            }}>
               <AccountTreeOutlinedIcon color="disabled" aria-hidden="true" />
               <Typography component="h3" variant="subtitle2">
                 Relationship graph
               </Typography>
             </Stack>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: 'text.secondary'
+            }}>
               Fan-level paths and neighborhoods remain unavailable until bounded graph query APIs are integrated.
             </Typography>
           </Section>

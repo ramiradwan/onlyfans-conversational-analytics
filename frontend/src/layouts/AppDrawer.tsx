@@ -42,9 +42,12 @@ function BrandMark({ labelled }: { labelled: boolean }) {
     <Stack
       direction="row"
       spacing={1.25}
-      alignItems="center"
-      sx={{ minHeight: 72, px: labelled ? 2 : 0, justifyContent: labelled ? 'flex-start' : 'center' }}
-    >
+      sx={{
+        alignItems: 'center',
+        minHeight: 72,
+        px: labelled ? 2 : 0,
+        justifyContent: labelled ? 'flex-start' : 'center'
+      }}>
       <Box
         aria-hidden="true"
         sx={(theme) => ({
@@ -67,7 +70,9 @@ function BrandMark({ labelled }: { labelled: boolean }) {
           <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700, lineHeight: 1.2 }}>
             Bridge
           </Typography>
-          <Typography variant="caption" color="text.disabled" noWrap>
+          <Typography variant="caption" noWrap sx={{
+            color: 'text.disabled'
+          }}>
             Creator studio
           </Typography>
         </Box>
@@ -163,9 +168,10 @@ function DrawerContent({
           <Stack
             direction="row"
             spacing={1.25}
-            alignItems="center"
-            sx={{ justifyContent: labelled ? 'flex-start' : 'center' }}
-          >
+            sx={{
+              alignItems: 'center',
+              justifyContent: labelled ? 'flex-start' : 'center'
+            }}>
             <Avatar
               aria-label="Account"
               sx={(theme) => ({
@@ -181,10 +187,14 @@ function DrawerContent({
             </Avatar>
             {labelled && (
               <Box sx={{ minWidth: 0 }}>
-                <Typography variant="body2" fontWeight={700} noWrap>
+                <Typography variant="body2" noWrap sx={{
+                  fontWeight: 700
+                }}>
                   Bridge account
                 </Typography>
-                <Typography variant="caption" color="text.disabled" noWrap>
+                <Typography variant="caption" noWrap sx={{
+                  color: 'text.disabled'
+                }}>
                   Workspace
                 </Typography>
               </Box>

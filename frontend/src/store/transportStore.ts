@@ -137,6 +137,7 @@ export const UNKNOWN_LIVE_FRESHNESS: LiveFreshness = {
 export function isConversationSummary(
   conversation: ConversationRecord,
 ): conversation is ConversationSummary {
+  void conversation;
   return true;
 }
 

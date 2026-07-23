@@ -4,7 +4,12 @@ import { UserQueryBubble } from 'onlyfans-analytics-frontend';
 export function AnalyticsQuestions() {
   return (
     <Box sx={{ bgcolor: 'background.default', maxWidth: 720, p: 2 }}>
-      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Typography
+        variant="subtitle2"
+        sx={{
+          color: 'text.secondary',
+          mb: 2
+        }}>
         Recent questions
       </Typography>
       <Stack spacing={1.5}>

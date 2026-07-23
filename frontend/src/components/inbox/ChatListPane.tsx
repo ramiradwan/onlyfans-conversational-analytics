@@ -107,7 +107,9 @@ export function ChatListPane({
           Conversations
         </Typography>
         {!isLoading && (
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" sx={{
+            color: 'text.secondary'
+          }}>
             {conversations.length}
           </Typography>
         )}
@@ -116,11 +118,15 @@ export function ChatListPane({
       <ScrollArea>
         {isLoading ? (
           <LoadingState role="status" aria-live="polite">
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" sx={{
+              color: 'text.secondary'
+            }}>
               Loading conversations…
             </Typography>
             {Array.from({ length: 4 }, (_, index) => (
-              <Stack key={index} direction="row" spacing={2} alignItems="center">
+              <Stack key={index} direction="row" spacing={2} sx={{
+                alignItems: 'center'
+              }}>
                 <Skeleton variant="circular" width={40} height={40} />
                 <Box sx={{ flex: 1 }}>
                   <Skeleton variant="text" width="48%" />
@@ -173,8 +179,12 @@ export function ChatListPane({
                   <ListItemText
                     disableTypography
                     primary={
-                      <Stack direction="row" spacing={1} justifyContent="space-between">
-                        <Typography variant="body1" fontWeight={600} noWrap>
+                      <Stack direction="row" spacing={1} sx={{
+                        justifyContent: 'space-between'
+                      }}>
+                        <Typography variant="body1" noWrap sx={{
+                          fontWeight: 600
+                        }}>
                           {title}
                         </Typography>
                         {lastActivity !== null && (
@@ -182,9 +192,10 @@ export function ChatListPane({
                             component="time"
                             dateTime={lastActivity}
                             variant="caption"
-                            color="text.secondary"
-                            sx={{ flexShrink: 0 }}
-                          >
+                            sx={{
+                              color: 'text.secondary',
+                              flexShrink: 0
+                            }}>
                             {formatTimestamp(lastActivity)}
                           </Typography>
                         )}

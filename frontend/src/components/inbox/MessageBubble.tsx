@@ -87,7 +87,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             component="time"
             dateTime={message.sent_at}
             variant="caption"
-            color="inherit"
+            sx={{
+              color: 'inherit'
+            }}
           >
             {formatTimestamp(message.sent_at)}
           </Typography>

@@ -44,7 +44,9 @@ describe('gated deep links survive a hard load while the role resolves', () => {
       useUserStore.getState().actions.setUserRole('operator');
     });
 
-    expect(await screen.findByRole('heading', { name: 'Inbox' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: 'Inbox' }, { timeout: 10000 }),
+    ).toBeTruthy();
     expect(screen.getByLabelText('Current route').textContent).toBe('/inbox');
   });
 

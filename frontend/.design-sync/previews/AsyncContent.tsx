@@ -15,7 +15,9 @@ export function Loaded() {
         placeholder={<Skeleton variant="rounded" height={72} />}
         emptyMessage="No topics available."
         render={(items) => (
-          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+          <Stack direction="row" spacing={1} useFlexGap sx={{
+            flexWrap: 'wrap'
+          }}>
             {items.map((topic) => (
               <Chip key={topic} label={topic} color="primary" variant="outlined" />
             ))}

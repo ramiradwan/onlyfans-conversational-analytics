@@ -16,8 +16,16 @@ export function SentimentStates() {
       </Typography>
       <Stack spacing={1.25}>
         {states.map(([label, sentiment]) => (
-          <Stack key={sentiment} direction="row" alignItems="center" justifyContent="space-between">
-            <Typography variant="body2" color="text.secondary">
+          <Stack
+            key={sentiment}
+            direction="row"
+            sx={{
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+            <Typography variant="body2" sx={{
+              color: 'text.secondary'
+            }}>
               {label}
             </Typography>
             <Box sx={{ minWidth: 24, textAlign: 'center' }}>
@@ -32,7 +40,13 @@ export function SentimentStates() {
 
 export function LatestMessageContext() {
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ p: 2 }}>
+    <Stack
+      direction="row"
+      spacing={1}
+      sx={{
+        alignItems: 'center',
+        p: 2
+      }}>
       <Typography variant="body2">Latest message</Typography>
       <MessageFlagIcon sentiment="positive" context="latest" />
     </Stack>

@@ -66,16 +66,24 @@ export function MetricCard({
 }: MetricCardProps) {
   return (
     <Root role="group" aria-label={`${label} metric`}>
-      <Stack direction="row" spacing={2} alignItems="flex-start">
+      <Stack direction="row" spacing={2} sx={{
+        alignItems: 'flex-start'
+      }}>
         <IconTile $tone={tone} aria-hidden="true">
           {icon}
         </IconTile>
-        <Box minWidth={0}>
-          <Typography component={labelComponent} variant="body2" color="text.secondary">
+        <Box sx={{
+          minWidth: 0
+        }}>
+          <Typography component={labelComponent} variant="body2" sx={{
+            color: 'text.secondary'
+          }}>
             {label}
           </Typography>
           <Value>{value}</Value>
-          <Typography component="p" variant="caption" color="text.secondary">
+          <Typography component="p" variant="caption" sx={{
+            color: 'text.secondary'
+          }}>
             {supportingText}
           </Typography>
           <AnalyticsWindowLabel source={windowSource} />

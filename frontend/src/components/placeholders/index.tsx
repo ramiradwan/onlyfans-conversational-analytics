@@ -246,10 +246,12 @@ export const MessageStreamPlaceholder = ({ bubbles = 4 }: { bubbles?: number }) 
  */  
 export const Fan360Placeholder = () => {  
   const theme = useTheme();  
-  return (  
-    <Stack spacing={2}>  
-      <Skeleton width="40%" height={20} animation={false} sx={{ bgcolor: theme.vars.palette.placeholder }} />  
-      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">  
+  return (
+    <Stack spacing={2}>
+      <Skeleton width="40%" height={20} animation={false} sx={{ bgcolor: theme.vars.palette.placeholder }} />
+      <Stack direction="row" spacing={1} useFlexGap sx={{
+        flexWrap: 'wrap'
+      }}>  
         {Array.from({ length: 3 }).map((_, idx) => (  
           <Skeleton  
             key={idx}  
@@ -260,8 +262,8 @@ export const Fan360Placeholder = () => {
             sx={{ bgcolor: theme.vars.palette.placeholder }}  
           />  
         ))}  
-      </Stack>  
-      <Skeleton width="50%" height={20} animation={false} sx={{ bgcolor: theme.vars.palette.placeholder }} />  
+      </Stack>
+      <Skeleton width="50%" height={20} animation={false} sx={{ bgcolor: theme.vars.palette.placeholder }} />
       <Stack spacing={1}>  
         {Array.from({ length: 2 }).map((_, idx) => (  
           <Skeleton  
@@ -273,7 +275,7 @@ export const Fan360Placeholder = () => {
             sx={{ bgcolor: theme.vars.palette.placeholder }}  
           />  
         ))}  
-      </Stack>  
-    </Stack>  
+      </Stack>
+    </Stack>
   );  
 };  

@@ -7,7 +7,12 @@ import {
 export function ConversationExchange() {
   return (
     <Box sx={{ bgcolor: 'background.default', p: 2, maxWidth: 680 }}>
-      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
+      <Typography
+        variant="subtitle2"
+        sx={{
+          color: 'text.secondary',
+          mb: 2
+        }}>
         Conversation with Bailey Hart
       </Typography>
       <Stack component="ol" spacing={1.5} sx={{ listStyle: 'none', m: 0, p: 0 }}>

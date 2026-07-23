@@ -10,52 +10,19 @@ import type {
   StateSnapshotPayload,
   SystemStatePayload,
 } from '../src/protocol';
-import { analyticsStoreActions } from '../src/store/analyticsStore';
+import { setAnalyticsStoryState } from '../src/store/analyticsStore';
 import {
   bridgeTransportStore,
   createBridgeTransportStore,
   type BridgeTransportStore,
 } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
+import { storyModelState } from '../src/story-only/analyticsFixtures';
 
 export const previewNoop = () => {};
 
 export function seedPreviewAnalytics() {
-  analyticsStoreActions.handleAnalyticsUpdate({
-    topics: [
-      { topic: 'Behind the scenes', volume: 184, percentage_of_total: 0.31, trend: 0.14 },
-      { topic: 'Custom content', volume: 149, percentage_of_total: 0.25, trend: 0.09 },
-      { topic: 'Fitness routines', volume: 112, percentage_of_total: 0.19, trend: 0.04 },
-      { topic: 'Travel', volume: 86, percentage_of_total: 0.14, trend: -0.02 },
-      { topic: 'Live sessions', volume: 65, percentage_of_total: 0.11, trend: 0.06 },
-    ],
-    sentiment_trend: {
-      trend: [
-        { date: '2026-07-12', sentiment_score: 0.68 },
-        { date: '2026-07-13', sentiment_score: 0.71 },
-        { date: '2026-07-14', sentiment_score: 0.73 },
-        { date: '2026-07-15', sentiment_score: 0.78 },
-        { date: '2026-07-16', sentiment_score: 0.76 },
-        { date: '2026-07-17', sentiment_score: 0.82 },
-        { date: '2026-07-18', sentiment_score: 0.84 },
-      ],
-    },
-    response_time_metrics: {
-      average_handling_time_minutes: 4.8,
-      silence_percentage: 12,
-      turns: 386,
-    },
-    priorityScores: {
-      bailey: 0.92,
-      alex: 0.78,
-      casey: 0.66,
-    },
-    unreadCounts: {
-      bailey: 3,
-      alex: 1,
-      casey: 0,
-    },
-  });
+  setAnalyticsStoryState(storyModelState);
 }
 
 export function PreviewFrame({
@@ -86,7 +53,13 @@ export function PreviewFrame({
 
 export function PreviewLabel({ children }: { children: ReactNode }) {
   return (
-    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+    <Typography
+      variant="caption"
+      sx={{
+        color: 'text.secondary',
+        display: 'block',
+        mb: 1
+      }}>
       {children}
     </Typography>
   );

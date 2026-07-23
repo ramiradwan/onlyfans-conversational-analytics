@@ -4,24 +4,27 @@ import { ThemeToggle } from 'onlyfans-analytics-frontend';
 export function InApplicationBar() {
   return (
     <Stack
-      alignItems="center"
       direction="row"
-      justifyContent="space-between"
       sx={{
+        alignItems: 'center',
+        justifyContent: 'space-between',
         bgcolor: 'background.paper',
         border: 1,
         borderColor: 'divider',
         borderRadius: 2,
         boxShadow: 1,
         minWidth: 360,
-        p: 2,
-      }}
-    >
+        p: 2
+      }}>
       <Box>
-        <Typography fontWeight={600} variant="subtitle1">
+        <Typography variant="subtitle1" sx={{
+          fontWeight: 600
+        }}>
           Bridge
         </Typography>
-        <Typography color="text.secondary" variant="caption">
+        <Typography variant="caption" sx={{
+          color: 'text.secondary'
+        }}>
           Appearance follows your selected mode
         </Typography>
       </Box>

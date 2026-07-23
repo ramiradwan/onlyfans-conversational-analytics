@@ -13,8 +13,15 @@ import importPlugin from "eslint-plugin-import";
   
 export default [  
   {  
-    // Ignore build artifacts and dependencies  
-    ignores: ["node_modules/", "dist/", "build/"],  
+    // Ignore build artifacts, dependencies, and generated sources
+    ignores: [
+      "node_modules/",
+      "dist/",
+      "build/",
+      "src/theme/generated/**",
+      "src/types/backend.ts",
+      "src/types/backend-wss.ts",
+    ],
   },  
   {  
     files: ["src/**/*.{ts,tsx}"],  
@@ -64,10 +71,50 @@ export default [
       ...importPlugin.configs.recommended.rules,  
       ...importPlugin.configs.typescript.rules,  
   
-      // Temporarily relaxed rules (warnings instead of errors)  
-      "no-restricted-imports": "warn",  
-      "no-restricted-properties": "warn",  
-      "no-restricted-syntax": "warn",  
+      // Style consistency
+      "quotes": ["error", "single", { avoidEscape: true }],
+      "jsx-quotes": ["error", "prefer-double"],
+
+      // MUI v9 and design-system guardrails
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@mui/icons-material",
+              message:
+                "Import icons by path (e.g. @mui/icons-material/Delete) for tree-shaking.",
+            },
+            {
+              name: "@mui/styles",
+              message:
+                "The JSS styling engine is removed in MUI v9. Use the sx prop or styled().",
+            },
+            {
+              name: "@mui/material/styles",
+              importNames: ["makeStyles", "withStyles", "createMuiTheme"],
+              message:
+                "Legacy styling API. Use the sx prop, styled(), or createTheme.",
+            },
+          ],
+          patterns: [
+            {
+              group: ["@material-ui", "@material-ui/*"],
+              message: "Legacy MUI v4 packages. Use @mui/* v9.",
+            },
+          ],
+        },
+      ],
+      "no-restricted-properties": "warn",
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.type='Identifier'][object.name='theme'][property.name='palette']",
+          message:
+            "Use theme.vars.palette.* so color-scheme switching works; theme.palette.* bypasses the CSS variables.",
+        },
+      ],
       "import/no-unresolved": "warn",  
       "@typescript-eslint/no-explicit-any": "warn",  
       "no-undef": "warn",  
