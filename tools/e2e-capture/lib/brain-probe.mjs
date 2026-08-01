@@ -30,10 +30,33 @@ function requestBrain(pathname, { headers = {}, method = 'GET' } = {}) {
   });
 }
 
-async function servedBootstrap() {
+async function browserSessionCookieHeader(context) {
+  const cookies = await context.cookies(BRAIN_ORIGIN);
+  const header = cookies.map(({ name, value }) => `${name}=${value}`).join('; ');
+  if (!header) throw new Error('Browser context does not have a local Bridge session cookie.');
+  return header;
+}
+
+export async function bootstrapBrowserLocalSession(page, bootstrapToken) {
+  const status = await page.evaluate(async (token) => {
+    const response = await fetch('/api/v1/session/bootstrap', {
+      method: 'POST',
+      headers: { Authorization: `Bootstrap ${token}` },
+    });
+    return response.status;
+  }, bootstrapToken);
+  if (status !== 200) {
+    throw new Error(`Local session bootstrap failed (${status}).`);
+  }
+  await browserSessionCookieHeader(page.context());
+}
+
+async function servedBootstrap(context) {
+  const cookie = await browserSessionCookieHeader(context);
   const response = await requestBrain('/', {
     headers: {
       Accept: 'text/html',
+      Cookie: cookie,
     },
   });
   if (response.status < 200 || response.status >= 300) {
@@ -69,15 +92,17 @@ async function servedBootstrap() {
   return { config, csrfToken: csrfMatch[1] };
 }
 
-export async function readServedRuntimeConfig() {
-  return (await servedBootstrap()).config;
+export async function readServedRuntimeConfig(context) {
+  return (await servedBootstrap(context)).config;
 }
 
-export async function requestAgentPairingTicket() {
-  const { config, csrfToken } = await servedBootstrap();
+export async function requestAgentPairingTicket(context) {
+  const cookie = await browserSessionCookieHeader(context);
+  const { config, csrfToken } = await servedBootstrap(context);
   const response = await requestBrain('/api/v1/agent/pairing', {
     headers: {
       Accept: 'application/json',
+      Cookie: cookie,
       Origin: BRAIN_ORIGIN,
       'X-CSRF-Token': csrfToken,
     },
@@ -102,8 +127,8 @@ export async function requestAgentPairingTicket() {
   };
 }
 
-export async function readBrainSummary({ timeoutMs = 10_000 } = {}) {
-  const config = await readServedRuntimeConfig();
+export async function readBrainSummary(context, { timeoutMs = 10_000 } = {}) {
+  const config = await readServedRuntimeConfig(context);
   return new Promise((resolve, reject) => {
     const probeUrl = new URL(config.FASTAPI_WS_URL);
     probeUrl.hostname = '127.0.0.1';

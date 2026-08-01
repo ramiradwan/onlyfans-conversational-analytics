@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import net from 'node:net';
 
 import { PRODUCT_ROOT, pythonExecutable } from './paths.mjs';
@@ -40,6 +41,10 @@ export class BrainProcess {
   constructor({ canonicalDatabasePath, extensionId, projectionDatabasePath }) {
     this.canonicalDatabasePath = canonicalDatabasePath;
     this.extensionId = extensionId;
+    this.localSessionBootstrapToken = randomBytes(32).toString('base64url');
+    this.localPrincipalId = 'e2e-local-principal';
+    this.localCreatorAccountId = 'dev-creator-account';
+    this.localPlatformCreatorId = 'e2e-local-platform-creator';
     this.projectionDatabasePath = projectionDatabasePath;
     this.child = null;
     this.output = [];
@@ -78,8 +83,13 @@ export class BrainProcess {
           CANONICAL_DATABASE_PATH: this.canonicalDatabasePath,
           PROJECTION_DATABASE_PATH: this.projectionDatabasePath,
           EXTENSION_ID: this.extensionId,
-          WEBSOCKET_AUTH_MODE: 'development_stub',
+          WEBSOCKET_AUTH_MODE: 'local_session',
           WEBSOCKET_BIND_HOST: BRAIN_HOST,
+          LOCAL_SESSION_BOOTSTRAP_TOKEN: this.localSessionBootstrapToken,
+          LOCAL_PRINCIPAL_ID: this.localPrincipalId,
+          LOCAL_CREATOR_ACCOUNT_ID: this.localCreatorAccountId,
+          LOCAL_PLATFORM_CREATOR_ID: this.localPlatformCreatorId,
+          LOCAL_BRIDGE_ROLE: 'creator',
           AGENT_HEARTBEAT_INTERVAL_SECONDS: '1',
           AGENT_LEASE_TIMEOUT_SECONDS: '3',
         },

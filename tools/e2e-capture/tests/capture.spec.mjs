@@ -7,6 +7,7 @@ import { expect, test } from '@playwright/test';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
 import { BRAIN_ORIGIN, BrainProcess } from '../lib/brain.mjs';
 import {
+  bootstrapBrowserLocalSession,
   readBrainSummary,
   requestAgentPairingTicket,
 } from '../lib/brain-probe.mjs';
@@ -65,16 +66,25 @@ async function waitForExtensionState(
   return latest;
 }
 
-async function waitForBrain(predicate, message, { timeoutMs = 25_000 } = {}) {
+async function waitForBrain(context, predicate, message, { timeoutMs = 25_000 } = {}) {
   let latest = null;
-  await expect.poll(async () => {
-    try {
-      latest = await readBrainSummary();
-      return predicate(latest);
-    } catch {
-      return false;
-    }
-  }, { message, timeout: timeoutMs }).toBe(true);
+  let lastError = null;
+  try {
+    await expect.poll(async () => {
+      try {
+        latest = await readBrainSummary(context);
+        return predicate(latest);
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        return false;
+      }
+    }, { message, timeout: timeoutMs }).toBe(true);
+  } catch (error) {
+    const diagnostic = lastError === null
+      ? `Last Brain summary: ${JSON.stringify(latest)}`
+      : `Last Brain probe error: ${lastError}`;
+    throw new Error(`${message}\n${diagnostic}`, { cause: error });
+  }
   return latest;
 }
 
@@ -132,11 +142,12 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       });
       await brain.start();
 
-      const pairing = await requestAgentPairingTicket();
-      expect(pairing.creatorAccountId).toBe('dev-creator-account');
-      expect(pairing.extensionId).toBe(actualExtensionId);
       const bindingPage = context.pages()[0] ?? await context.newPage();
       await bindingPage.goto(`${BRAIN_ORIGIN}/health`, { waitUntil: 'domcontentloaded' });
+      await bootstrapBrowserLocalSession(bindingPage, brain.localSessionBootstrapToken);
+      const pairing = await requestAgentPairingTicket(context);
+      expect(pairing.creatorAccountId).toBe('dev-creator-account');
+      expect(pairing.extensionId).toBe(actualExtensionId);
       await bindAgentFromBridgePage(bindingPage, {
         extensionId: actualExtensionId,
         creatorAccountId: pairing.creatorAccountId,
@@ -220,6 +231,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     const bridgeMessageTraffic = [];
     const bridgePage = await test.step('prove exact Brain, SQLite, heartbeat, and Inbox state', async () => {
       const first = await waitForBrain(
+        context,
         (candidate) => (
           candidate.agentStatus === 'connected'
           && candidate.appliedConfigRevision === candidate.requiredConfigRevision
@@ -235,6 +247,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
 
       await sleep(2_200);
       const second = await waitForBrain(
+        context,
         (candidate) => (
           candidate.agentStatus === 'connected'
           && Date.parse(candidate.lastHeartbeatAt) > Date.parse(first.lastHeartbeatAt)
@@ -449,6 +462,17 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(recovered.heartbeatTimerPresent).toBe(true);
       expect(recovered.workerInstanceId).not.toBe(oldWorkerInstanceId);
 
+      const replayed = await waitForBrain(
+        context,
+        (candidate) => (
+          candidate.agentStatus === 'connected'
+          && candidate.connectionToken !== initialConnection
+          && candidate.conversationCount === 3
+          && candidate.messageCount === 5
+        ),
+        'Brain did not bind the replacement worker and expose the replayed offline peer.',
+      );
+
       const proof = await readSqliteProof(databasePaths);
       expect(proof.committedSourceSeq).toBe(8);
       expect(proof.eventCount).toBe(8);
@@ -485,15 +509,6 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         .toBeGreaterThan(proof.inactiveProjectionSlots[0].readRevision);
       expect(proof.projectionReadRevision).toBe(proof.viewRevision);
 
-      const replayed = await waitForBrain(
-        (candidate) => (
-          candidate.agentStatus === 'connected'
-          && candidate.connectionToken !== initialConnection
-          && candidate.conversationCount === 3
-          && candidate.messageCount === 5
-        ),
-        'Brain did not bind the replacement worker and expose the replayed offline peer.',
-      );
       expect(replayed.conversationCount).toBe(proof.readModelChatCount);
       expect(replayed.messageCount).toBe(proof.readModelMessageCount);
       await expect(
@@ -507,7 +522,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     let acknowledgedBrain;
     await test.step('terminate a second worker and prove acknowledged events never replay', async () => {
       acknowledgedProof = await readSqliteProof(databasePaths);
-      acknowledgedBrain = await readBrainSummary();
+      acknowledgedBrain = await readBrainSummary(context);
       const oldWorker = worker;
       const oldWorkerInstanceId = (await extensionState(oldWorker)).workerInstanceId;
       const watcher = watchExtensionWorkers(context);
@@ -538,6 +553,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       );
       expect(replacement.workerInstanceId).not.toBe(oldWorkerInstanceId);
       const rebound = await waitForBrain(
+        context,
         (candidate) => (
           candidate.agentStatus === 'connected'
           && candidate.connectionToken !== acknowledgedBrain.connectionToken
@@ -546,14 +562,14 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       );
       await sleep(2_000);
       expectStablePersistenceProof(await readSqliteProof(databasePaths), acknowledgedProof);
-      expect((await readBrainSummary()).viewRevision).toBe(acknowledgedBrain.viewRevision);
+      expect((await readBrainSummary(context)).viewRevision).toBe(acknowledgedBrain.viewRevision);
       expect(rebound.viewRevision).toBe(acknowledgedBrain.viewRevision);
       expect(await platformPage.evaluate(() => globalThis.fixtureDocumentToken))
         .toBe(platformDocumentToken);
     });
 
     await test.step('hard-expire a third worker and recover only from the production alarm', async () => {
-      const before = await readBrainSummary();
+      const before = await readBrainSummary(context);
       const oldWorker = worker;
       const alarm = await waitForSafeAlarmWindow(oldWorker);
       const oldWorkerInstanceId = (await extensionState(oldWorker)).workerInstanceId;
@@ -564,6 +580,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         expect(terminated.stopMethod).toBe('stopWorker');
 
         const retired = await waitForBrain(
+          context,
           (candidate) => (
             candidate.agentStatus === 'disconnected'
             && candidate.connectionToken === null
@@ -600,6 +617,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       );
       expect(alarmReplacement.workerInstanceId).not.toBe(oldWorkerInstanceId);
       const recovered = await waitForBrain(
+        context,
         (candidate) => (
           candidate.agentStatus === 'connected'
           && candidate.connectionToken !== null
