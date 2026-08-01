@@ -1,0 +1,15 @@
+{
+  "aud": "urn:bridge-clean:local-brain:installation",
+  "exp": 1786924800,
+  "grant_type": "installation_grant",
+  "iat": 1784332800,
+  "installation_id": "wrong-installation-fixture",
+  "installation_key_id": "ik1.jcWDzvJIkKO1XtDL-Mp1vw",
+  "installation_key_jkt": "jcWDzvJIkKO1XtDL-Mp1vyrlHsT8kuAyj4DYblC1ByA",
+  "iss": "urn:bridge-clean:commercial-control-plane",
+  "jti": "0198a1b2-c3d4-7100-8000-000000000001",
+  "nbf": 1784332800,
+  "organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+  "profile": "urn:bridge-clean:grant-profile:v1",
+  "sub": "installation:0198a1b2-c3d4-7000-8000-000000000002"
+}

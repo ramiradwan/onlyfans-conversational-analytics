@@ -1,0 +1,23 @@
+{
+  "aud": "urn:bridge-clean:local-brain:license",
+  "entitlement_id": "0198a1b2-c3d4-7200-8000-000000000003",
+  "exp": 1784419200,
+  "features": [
+    "agent-capture",
+    "analytics-processing",
+    "command-execution",
+    "ingestion"
+  ],
+  "grant_type": "license_entitlement",
+  "iat": 1784332800,
+  "installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+  "installation_key_id": "ik1.jcWDzvJIkKO1XtDL-Mp1vw",
+  "installation_key_jkt": "jcWDzvJIkKO1XtDL-Mp1vyrlHsT8kuAyj4DYblC1ByA",
+  "iss": "urn:bridge-clean:commercial-control-plane",
+  "jti": "0198a1b2-c3d4-7100-8000-000000000004",
+  "nbf": 1784332800,
+  "organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+  "product_id": "bridge-clean",
+  "profile": "urn:bridge-clean:grant-profile:v1",
+  "sub": "installation:wrong-fixture-subject"
+}

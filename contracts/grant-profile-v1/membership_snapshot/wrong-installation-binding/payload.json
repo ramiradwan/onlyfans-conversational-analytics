@@ -1,0 +1,28 @@
+{
+  "allowed_creator_account_ids": [
+    "creator-account-fixture-001"
+  ],
+  "aud": "urn:bridge-clean:local-brain:membership",
+  "ciam_issuer": "https://identity.test.invalid/fixture-tenant",
+  "ciam_subject": "fixture-customer-subject-001",
+  "exp": 1784419200,
+  "grant_type": "membership_snapshot",
+  "iat": 1784332800,
+  "installation_id": "wrong-installation-fixture",
+  "installation_key_id": "ik1.jcWDzvJIkKO1XtDL-Mp1vw",
+  "installation_key_jkt": "jcWDzvJIkKO1XtDL-Mp1vyrlHsT8kuAyj4DYblC1ByA",
+  "iss": "urn:bridge-clean:commercial-control-plane",
+  "jti": "0198a1b2-c3d4-7100-8000-000000000003",
+  "membership_id": "0198a1b2-c3d4-7200-8000-000000000002",
+  "nbf": 1784332800,
+  "organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+  "profile": "urn:bridge-clean:grant-profile:v1",
+  "roles": [
+    "creator_operator"
+  ],
+  "scopes": [
+    "runtime:existing-data",
+    "runtime:licensed-processing"
+  ],
+  "sub": "principal:eyJpc3N1ZXIiOiJodHRwczovL2lkZW50aXR5LnRlc3QuaW52YWxpZC9maXh0dXJlLXRlbmFudCIsInN1YmplY3QiOiJmaXh0dXJlLWN1c3RvbWVyLXN1YmplY3QtMDAxIn0"
+}

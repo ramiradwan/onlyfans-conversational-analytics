@@ -1,0 +1,5 @@
+{
+  "alg": "ES256",
+  "kid": "bc1.ib.lieBKwKUb4XJjbk0GhaosQ",
+  "typ": "urn:bridge-clean:grant:creator-binding:v1"
+}

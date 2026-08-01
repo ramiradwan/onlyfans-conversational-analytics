@@ -1,0 +1,10 @@
+# Vendored contract fixture bytes are part of their SHA-256 integrity boundary.
+contracts/** text eol=lf
+
+# Compact cryptographic encodings are opaque bytes, not text to normalize.
+contracts/**/*.jws -text !eol
+contracts/**/*.jwk -text !eol
+
+# Fixture cases are generated review noise; manifests, pins, schemas, docs, and
+# loaders remain visible because they define the reviewable contract boundary.
+contracts/grant-profile-v1/*/*/** linguist-generated=true

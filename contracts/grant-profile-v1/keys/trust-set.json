@@ -1,0 +1,55 @@
+{
+  "environment": "TEST-VECTORS-ONLY-NOT-A-PRODUCTION-TRUST-SET",
+  "keys": [
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.ib.lieBKwKUb4XJjbk0GhaosQ",
+        "kty": "EC",
+        "x": "kk7pYnerwyWlgk6xvTnOf_WL-ODmoSg9BTW5S-n_5fs",
+        "y": "AIJIsDATE2WPe4_LolHxRuaktsQHPz2mE66BneXJk60"
+      },
+      "purpose": "installation-binding",
+      "thumbprint": "lieBKwKUb4XJjbk0GhaosT8tKOo9nEzofyYAGVvPw1M"
+    },
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.ms.QmRxtxWOB8FvtbBX-gbfhQ",
+        "kty": "EC",
+        "x": "RJ8VsQZNQRAT1F0bNJThuJJm7CUGLR1yMKO1dI0LYs8",
+        "y": "uUNj0r83wjp10iNk6gL5chrrY9mLlU_gXgtR-bxaPks"
+      },
+      "purpose": "membership",
+      "thumbprint": "QmRxtxWOB8FvtbBX-gbfhZHCLuXRR6iEbMy5wuCXvTQ"
+    },
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.le.Gk1uCyHIXKOn0t1xVZOQ4w",
+        "kty": "EC",
+        "x": "mX2rKdMxUOrcoC_9TEcDtq5TL1P55TIVInRQHigonh0",
+        "y": "wHHp3DuU0RbjmZ3ektzoCCVlCMNWz0VRZfrS8iDbY-c"
+      },
+      "purpose": "license",
+      "thumbprint": "Gk1uCyHIXKOn0t1xVZOQ4-_ylN9zkiT-F4HFtlsbKUE"
+    },
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.ms.iJkvZVUv4KRAtrPGjvoTVQ",
+        "kty": "EC",
+        "x": "e4nOTEVPhF_3VEjujhR0rHrqjL7mY9SSxSFXwFOqErE",
+        "y": "YHq2_RyBhWrIj4k0R3PAcdmxBt4-4AZEGNWyPAtdII8"
+      },
+      "purpose": "membership",
+      "thumbprint": "iJkvZVUv4KRAtrPGjvoTVdYxHYXfnjBfXpq_8e5IIww"
+    }
+  ],
+  "production_usable": false,
+  "profile": "urn:bridge-clean:test-trust-set:v1"
+}

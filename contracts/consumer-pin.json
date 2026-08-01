@@ -1,0 +1,17 @@
+{
+  "aggregate_bundle_sha256": "e87f17e983ab1ae5be03003882c1da6c875828f23e5cad316531b9393d8f141c",
+  "consumer_pin_version": 1,
+  "contract_manifest_path": "manifest.json",
+  "contract_manifest_sha256": "41a72d224b30b81b8279e35da8a6dbaf2854fb7c5e5160f0051a18ff986f247c",
+  "export_set": [
+    "grant-profile-v1"
+  ],
+  "generator_version": "1.0.0",
+  "supported_profiles": [
+    "urn:bridge-clean:grant-profile:v1"
+  ],
+  "trust_set_path": "grant-profile-v1/keys/trust-set.json",
+  "trust_set_sha256": "78bbff6a37b5c5ac12ad508cdefb16c22cf4fb6b90a2ec88639572c8839c2b75",
+  "vector_manifest_path": "grant-profile-v1/manifest.json",
+  "vector_manifest_sha256": "040eb98f4f3ed6f3d36de2bb833803f719ff4e7cd8c91a83abad945f10b3516c"
+}

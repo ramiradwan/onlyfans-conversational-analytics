@@ -1,0 +1,16 @@
+{
+  "expected_audience": "urn:bridge-clean:local-brain:membership",
+  "expected_grant_type": "membership_snapshot",
+  "expected_installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+  "expected_installation_key_id": "ik1.jcWDzvJIkKO1XtDL-Mp1vw",
+  "expected_installation_key_jkt": "jcWDzvJIkKO1XtDL-Mp1vyrlHsT8kuAyj4DYblC1ByA",
+  "expected_organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+  "expected_subject": "principal:eyJpc3N1ZXIiOiJodHRwczovL2lkZW50aXR5LnRlc3QuaW52YWxpZC9maXh0dXJlLXRlbmFudCIsInN1YmplY3QiOiJmaXh0dXJlLWN1c3RvbWVyLXN1YmplY3QtMDAxIn0",
+  "fixed_verifier_time": 1784336400,
+  "requested_creator_account_ids": [
+    "creator-account-fixture-001"
+  ],
+  "requested_operation": "runtime:licensed-processing",
+  "tombstones": [],
+  "trust_domain": "ADR-0010-TEST-VECTORS-ONLY"
+}

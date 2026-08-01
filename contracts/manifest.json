@@ -1,0 +1,1837 @@
+{
+  "content_digest": "e87f17e983ab1ae5be03003882c1da6c875828f23e5cad316531b9393d8f141c",
+  "export_set": [
+    "grant-profile-v1"
+  ],
+  "files": [
+    {
+      "path": "grant-profile-v1/creator_account_binding/at-grace-end/expected.json",
+      "sha256": "0dd07e9cb60fb62f963879ed0d8683787b7e36a28949845d9616c66257ee7df2",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/at-grace-end/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/at-grace-end/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/at-grace-end/token.jws",
+      "sha256": "100538e6e3fee65887e125caa0d02d490138ca25032b4d87a979dfe1c40692fd",
+      "size": 1213
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/at-grace-end/verification-context.json",
+      "sha256": "9df5396792a758f53cd7c61fa1ea4bb03e61bbc2f277ca9da65bc4e4ef3c6648",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/cross-type-substitution/expected.json",
+      "sha256": "a9a45a6ec23800602b42519662d11c5dbf59cc89e375a244e204ce705c6aa94e",
+      "size": 83
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/cross-type-substitution/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/cross-type-substitution/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/cross-type-substitution/token.jws",
+      "sha256": "baac96c09f79a697965f78aeefef9ce6248dc5ce76d9574a273d3c36dbbd7e00",
+      "size": 1524
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/cross-type-substitution/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/expired-beyond-grace/expected.json",
+      "sha256": "0dd07e9cb60fb62f963879ed0d8683787b7e36a28949845d9616c66257ee7df2",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/expired-beyond-grace/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/expired-beyond-grace/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/expired-beyond-grace/token.jws",
+      "sha256": "100538e6e3fee65887e125caa0d02d490138ca25032b4d87a979dfe1c40692fd",
+      "size": 1213
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/expired-beyond-grace/verification-context.json",
+      "sha256": "4b406a9c13387e5f63d8cc28fdbdab956e6d150b46c3e37fe121f95ed59e85fc",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/high-s-signature/expected.json",
+      "sha256": "758bf5b8247fad97a4a27b3a6e07531537b67b6f96e5d029d34b767532e3839b",
+      "size": 80
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/high-s-signature/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/high-s-signature/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/high-s-signature/token.jws",
+      "sha256": "d4080a12050ba12dc4c9800e8d384c8d94bf9973fd427f876f58bfe49feb24cd",
+      "size": 1213
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/high-s-signature/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/noncanonical-payload/expected.json",
+      "sha256": "149877572061d8f298ab7cc275d81829b92140755722a73d204a6483b68f8e88",
+      "size": 84
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/noncanonical-payload/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/noncanonical-payload/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/noncanonical-payload/token.jws",
+      "sha256": "435870b27884b40f35b71d225275a2879492881a1ba832c5ec18a05b77dc4bc2",
+      "size": 1278
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/noncanonical-payload/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/not-yet-valid/expected.json",
+      "sha256": "d94a35631da6b332d20acbed33e2f9c90ca0cdd69990379ae932dd1b6f019e9f",
+      "size": 77
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/not-yet-valid/payload.json",
+      "sha256": "753167d8446a52453f76679c32003ea43498e5507b5384567c4f87840f901441",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/not-yet-valid/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/not-yet-valid/token.jws",
+      "sha256": "cb0a2b00542898b08835214d424e84818f9e7c9b7c59bd6e75132b23146da116",
+      "size": 1213
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/not-yet-valid/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/revoked-jti/expected.json",
+      "sha256": "d68ef10d8e0e9596cb685781d8ec83b622a9c87a9c68bca3be074f0e76b2a2f3",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/revoked-jti/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/revoked-jti/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/revoked-jti/token.jws",
+      "sha256": "100538e6e3fee65887e125caa0d02d490138ca25032b4d87a979dfe1c40692fd",
+      "size": 1213
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/revoked-jti/verification-context.json",
+      "sha256": "6ef8e45391f0140e888f8fd58e533a56b3f64d2a122b16dca41d3a6fa1d810a1",
+      "size": 894
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/tampered-payload/expected.json",
+      "sha256": "57562e62594a02119069409f73d65694c6f4d29014265ffcd7346e1a555957ce",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/tampered-payload/payload.json",
+      "sha256": "62e79d7fcadb3674c97dea755b850d781560d6d829caadc4658b8cf611a2e5e5",
+      "size": 795
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/tampered-payload/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/tampered-payload/token.jws",
+      "sha256": "a561c65b07540e5b5247c7d90d5e4914c07cfeab3e6f4db763c4de28d0a62036",
+      "size": 1199
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/tampered-payload/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/unknown-kid/expected.json",
+      "sha256": "76ae2c273f0b812310802dd137459dc64a53630ea387bc9a4958f3e36ab8ce7d",
+      "size": 75
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/unknown-kid/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/unknown-kid/protected.json",
+      "sha256": "801e87abe39c0655b5ed62a588cc3e107c127c50bb4aa0c4a64e1ac938567ccb",
+      "size": 121
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/unknown-kid/token.jws",
+      "sha256": "00f2e9284f5fd356c3e9bffe786ae9dfd5601f5e008b7770618f8f9c0ae7ecc7",
+      "size": 1218
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/unknown-kid/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-current/expected.json",
+      "sha256": "e306460df0dd5eade3e858f80837671a4b259bd99edd5bb815e4948a6c06ef3e",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-current/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-current/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-current/token.jws",
+      "sha256": "100538e6e3fee65887e125caa0d02d490138ca25032b4d87a979dfe1c40692fd",
+      "size": 1213
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-current/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-grace/expected.json",
+      "sha256": "0e643bcaf665b6597a376d8ca08d5cd7d2b79b396a80a79b135ee2d492be0b66",
+      "size": 69
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-grace/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-grace/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-grace/token.jws",
+      "sha256": "100538e6e3fee65887e125caa0d02d490138ca25032b4d87a979dfe1c40692fd",
+      "size": 1213
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/valid-grace/verification-context.json",
+      "sha256": "c66186c71f387411503f058bdae769dbf52549917a8ad0fa7c02a4ef0e265f2a",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-audience/expected.json",
+      "sha256": "85796dc25b3d988dd02eb8319a40301443dbc66ba745ae44ee2801d163a02359",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-audience/payload.json",
+      "sha256": "5eb9b650f1be7bd944c306d131481fe2086f90e61c7a0dd4aceb49d7cee90b4b",
+      "size": 804
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-audience/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-audience/token.jws",
+      "sha256": "0dcb392dce0f8156cdc1c96397b6f61c2d4789cf1771d229eac16f2978c260a6",
+      "size": 1211
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-audience/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-installation-binding/expected.json",
+      "sha256": "82fcbb977ef3773823a791b826ff6a8910f45a0aae71d20c780699ad353a7710",
+      "size": 85
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-installation-binding/payload.json",
+      "sha256": "0e279b1f6526d415db567d26726212daed0f09a44c9a70d7d7d2af636e2710f1",
+      "size": 795
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-installation-binding/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-installation-binding/token.jws",
+      "sha256": "8adf572633740deb59ae203b3b4866e9081e820438368a66acde2e31d099ea0b",
+      "size": 1199
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-installation-binding/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-purpose-key/expected.json",
+      "sha256": "165c94839ba063d150c7926d3f906d43ebd360f92db7135d9a8d5c419f31138e",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-purpose-key/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-purpose-key/protected.json",
+      "sha256": "cf0ad18d4767cc38c0ac9a60a15ad3a999a9a1891e329116c17d94293f836b0c",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-purpose-key/token.jws",
+      "sha256": "e1044ab7a45c5fb4d08508590694033b90fd77ae4c96e75e966675d4997646ec",
+      "size": 1213
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-purpose-key/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-subject/expected.json",
+      "sha256": "4b9355c30f75262a15d878791b8befd944fc5edf42886af1941fef115127939e",
+      "size": 80
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-subject/payload.json",
+      "sha256": "b36ad52500cb4163d28a74e288421dfdffeb76a4eb26d234666c5c8cecae41c5",
+      "size": 754
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-subject/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-subject/token.jws",
+      "sha256": "471b64a4b1646b783f296c75fca1b542fd8a89a07e32684cb12766fd04fda58a",
+      "size": 1145
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-subject/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-typ/expected.json",
+      "sha256": "d75a5cb04e4730fb73be4e9270e2a91899b55dc0a917966663f36093e7e68c26",
+      "size": 76
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-typ/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-typ/protected.json",
+      "sha256": "a9e3274af1c64ce414b02a464e8e7366b6ecaace277bd5c9cccb63515d111f48",
+      "size": 107
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-typ/token.jws",
+      "sha256": "0d603e9632c14705e9ba908117972d928caf56f9b3892e058658531e52bf983b",
+      "size": 1199
+    },
+    {
+      "path": "grant-profile-v1/creator_account_binding/wrong-typ/verification-context.json",
+      "sha256": "346edf97d32043782821bbfea2bf331eaa543b98419bc2cfc78cc56e26c797ab",
+      "size": 760
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/at-grace-end/expected.json",
+      "sha256": "0dd07e9cb60fb62f963879ed0d8683787b7e36a28949845d9616c66257ee7df2",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/at-grace-end/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/at-grace-end/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/at-grace-end/token.jws",
+      "sha256": "3dd11e4752a3213b91f8bf1307fd48f3baa45b8f37017937ed66e1e43a3470b8",
+      "size": 982
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/at-grace-end/verification-context.json",
+      "sha256": "f7ac7130df1a39f93769bfe003d06dd5b76c9482e92fede7fb262d3622d198b4",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/cross-type-substitution/expected.json",
+      "sha256": "a9a45a6ec23800602b42519662d11c5dbf59cc89e375a244e204ce705c6aa94e",
+      "size": 83
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/cross-type-substitution/payload.json",
+      "sha256": "2389f638b3f2836b40b55c0d4532ed2e60128080d0c062f2bf4258f2554acfd7",
+      "size": 805
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/cross-type-substitution/protected.json",
+      "sha256": "3d4ae638c72d80a1019df461cf4c9c40fe57407a6e03faa6b93419d057b41cc4",
+      "size": 117
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/cross-type-substitution/token.jws",
+      "sha256": "100538e6e3fee65887e125caa0d02d490138ca25032b4d87a979dfe1c40692fd",
+      "size": 1213
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/cross-type-substitution/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/expired-beyond-grace/expected.json",
+      "sha256": "0dd07e9cb60fb62f963879ed0d8683787b7e36a28949845d9616c66257ee7df2",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/expired-beyond-grace/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/expired-beyond-grace/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/expired-beyond-grace/token.jws",
+      "sha256": "3dd11e4752a3213b91f8bf1307fd48f3baa45b8f37017937ed66e1e43a3470b8",
+      "size": 982
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/expired-beyond-grace/verification-context.json",
+      "sha256": "9284f214ed4bfd33e84bc2b2a4a03a6ab51bb43a2a52cb8edcda4b36e0203e4a",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/high-s-signature/expected.json",
+      "sha256": "758bf5b8247fad97a4a27b3a6e07531537b67b6f96e5d029d34b767532e3839b",
+      "size": 80
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/high-s-signature/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/high-s-signature/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/high-s-signature/token.jws",
+      "sha256": "75c689d54a394e1c99e449cba401094a3386858dd744cd895f4d020020df4e2a",
+      "size": 982
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/high-s-signature/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/noncanonical-payload/expected.json",
+      "sha256": "149877572061d8f298ab7cc275d81829b92140755722a73d204a6483b68f8e88",
+      "size": 84
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/noncanonical-payload/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/noncanonical-payload/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/noncanonical-payload/token.jws",
+      "sha256": "f3db07be630c15b5db16fb3bd905018a002d77425a0682ebb23583a535b19c70",
+      "size": 1035
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/noncanonical-payload/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/not-yet-valid/expected.json",
+      "sha256": "d94a35631da6b332d20acbed33e2f9c90ca0cdd69990379ae932dd1b6f019e9f",
+      "size": 77
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/not-yet-valid/payload.json",
+      "sha256": "cd8f886436a961fb4971fa3d8986b421902f82739fe0915e8da0ae9295c12218",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/not-yet-valid/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/not-yet-valid/token.jws",
+      "sha256": "ee59cbd1f1677dd2f5d75fba79ccbddfca98157fe42e46b614e5e1965ea7476c",
+      "size": 982
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/not-yet-valid/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/revoked-jti/expected.json",
+      "sha256": "d68ef10d8e0e9596cb685781d8ec83b622a9c87a9c68bca3be074f0e76b2a2f3",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/revoked-jti/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/revoked-jti/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/revoked-jti/token.jws",
+      "sha256": "3dd11e4752a3213b91f8bf1307fd48f3baa45b8f37017937ed66e1e43a3470b8",
+      "size": 982
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/revoked-jti/verification-context.json",
+      "sha256": "54cddc3627e3978720ed2b04a38558595e60c5ee5c8970ff4fcddbb54748d0e0",
+      "size": 844
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/tampered-payload/expected.json",
+      "sha256": "57562e62594a02119069409f73d65694c6f4d29014265ffcd7346e1a555957ce",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/tampered-payload/payload.json",
+      "sha256": "72e7986f012a5d60567426e543f9a1fdee77ecd5019ac7653c8c9274906a6aa9",
+      "size": 613
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/tampered-payload/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/tampered-payload/token.jws",
+      "sha256": "fd1255f8ae4a86e890b3919547249f2112c2083eadf04b44dd8deea64b79df1e",
+      "size": 969
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/tampered-payload/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/unknown-kid/expected.json",
+      "sha256": "76ae2c273f0b812310802dd137459dc64a53630ea387bc9a4958f3e36ab8ce7d",
+      "size": 75
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/unknown-kid/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/unknown-kid/protected.json",
+      "sha256": "bad08e892e1dd29d4f999896fa3e0d07065ce9e7a345401bfc300c8d78518771",
+      "size": 118
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/unknown-kid/token.jws",
+      "sha256": "53a59db4f6ae734f895e74be19bf3e4555d8b417a6b67fbe271dcfeb74f8a513",
+      "size": 987
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/unknown-kid/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-current/expected.json",
+      "sha256": "e306460df0dd5eade3e858f80837671a4b259bd99edd5bb815e4948a6c06ef3e",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-current/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-current/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-current/token.jws",
+      "sha256": "3dd11e4752a3213b91f8bf1307fd48f3baa45b8f37017937ed66e1e43a3470b8",
+      "size": 982
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-current/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-grace/expected.json",
+      "sha256": "0e643bcaf665b6597a376d8ca08d5cd7d2b79b396a80a79b135ee2d492be0b66",
+      "size": 69
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-grace/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-grace/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-grace/token.jws",
+      "sha256": "3dd11e4752a3213b91f8bf1307fd48f3baa45b8f37017937ed66e1e43a3470b8",
+      "size": 982
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/valid-grace/verification-context.json",
+      "sha256": "ea2787a7938ec5ecc075ffe0894c8c5655fca684ffbee35ff8ce50d4212a19ea",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-audience/expected.json",
+      "sha256": "85796dc25b3d988dd02eb8319a40301443dbc66ba745ae44ee2801d163a02359",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-audience/payload.json",
+      "sha256": "0bf6fed2304baf040813e339d54b89a262d8d587ed8dedafd92b9247345a7947",
+      "size": 625
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-audience/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-audience/token.jws",
+      "sha256": "08d3c434a0aeded9396cab90a02283f162460f6dd7359d4f3e17b0fb68d1b4f5",
+      "size": 985
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-audience/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-installation-binding/expected.json",
+      "sha256": "82fcbb977ef3773823a791b826ff6a8910f45a0aae71d20c780699ad353a7710",
+      "size": 85
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-installation-binding/payload.json",
+      "sha256": "8d38d584856d0bf8681d7b174e9a784c540cc734d078df30836674e2b75975dc",
+      "size": 613
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-installation-binding/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-installation-binding/token.jws",
+      "sha256": "76c772a5fa5f47e8dd0c7393b8bb8e812c20b7f7815dc447bcfb20ef22b2fdee",
+      "size": 969
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-installation-binding/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-purpose-key/expected.json",
+      "sha256": "165c94839ba063d150c7926d3f906d43ebd360f92db7135d9a8d5c419f31138e",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-purpose-key/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-purpose-key/protected.json",
+      "sha256": "59e684623ddb639e7f2261f71644881b018815888259ccb2c4656cf39af68fab",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-purpose-key/token.jws",
+      "sha256": "2c57e67846e839daa08a48592554c365f41ca66ee206831caa4bfa4c20422531",
+      "size": 982
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-purpose-key/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-subject/expected.json",
+      "sha256": "4b9355c30f75262a15d878791b8befd944fc5edf42886af1941fef115127939e",
+      "size": 80
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-subject/payload.json",
+      "sha256": "6d7f5cdb8112694e1dbfb83de2b81b78c87eff03bea03db55d5b54c35988443f",
+      "size": 608
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-subject/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-subject/token.jws",
+      "sha256": "58d9f2539b7e7ca10958b9605b9b0bb052abf59ddd0f34c71a61109fb62e95ea",
+      "size": 962
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-subject/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-typ/expected.json",
+      "sha256": "d75a5cb04e4730fb73be4e9270e2a91899b55dc0a917966663f36093e7e68c26",
+      "size": 76
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-typ/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-typ/protected.json",
+      "sha256": "a9e3274af1c64ce414b02a464e8e7366b6ecaace277bd5c9cccb63515d111f48",
+      "size": 107
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-typ/token.jws",
+      "sha256": "eed22757b763ca5275c56339ec74f0e2f4d4e9b84096f3efbdda8495eba4b207",
+      "size": 972
+    },
+    {
+      "path": "grant-profile-v1/installation_grant/wrong-typ/verification-context.json",
+      "sha256": "8643e10a31a0754a851ceb1872b45bd1574bf5d5a98e88ceb28b1abcbab855ae",
+      "size": 710
+    },
+    {
+      "path": "grant-profile-v1/keys/installation-binding.public.jwk",
+      "sha256": "6889ac6600f67dc290b79893ffb168ce5c66cb26c1f5c4ceb73baf64670e6ed2",
+      "size": 186
+    },
+    {
+      "path": "grant-profile-v1/keys/license.public.jwk",
+      "sha256": "2d3774d81205c44388fab77babd29ede33c7ee9da91d8cc9198aa9dc918ecf82",
+      "size": 186
+    },
+    {
+      "path": "grant-profile-v1/keys/membership.public.jwk",
+      "sha256": "d69c758efb1d5e1fee1ae0e2ce8f360ee66a87862879e4db33859828ec51be3a",
+      "size": 186
+    },
+    {
+      "path": "grant-profile-v1/keys/trust-set.json",
+      "sha256": "78bbff6a37b5c5ac12ad508cdefb16c22cf4fb6b90a2ec88639572c8839c2b75",
+      "size": 1668
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/at-grace-end/expected.json",
+      "sha256": "0dd07e9cb60fb62f963879ed0d8683787b7e36a28949845d9616c66257ee7df2",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/at-grace-end/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/at-grace-end/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/at-grace-end/token.jws",
+      "sha256": "27cae0831bdf0d9968bd45d7914195c98b45efbd2842eb65c2194704fd5a51df",
+      "size": 1260
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/at-grace-end/verification-context.json",
+      "sha256": "45baa0a64a0a379f21233f10251d8fe3beb5d03142583541196509f92812a633",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/cross-type-substitution/expected.json",
+      "sha256": "a9a45a6ec23800602b42519662d11c5dbf59cc89e375a244e204ce705c6aa94e",
+      "size": 83
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/cross-type-substitution/payload.json",
+      "sha256": "aec8b458a694f123e6422776e958b0db8f05b119f4671f767bb382784793ac9b",
+      "size": 623
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/cross-type-substitution/protected.json",
+      "sha256": "c75697cee74ae076f1b42248dcfbf4572da18e9323a23ebf29aa86ddd15ef00f",
+      "size": 114
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/cross-type-substitution/token.jws",
+      "sha256": "3dd11e4752a3213b91f8bf1307fd48f3baa45b8f37017937ed66e1e43a3470b8",
+      "size": 982
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/cross-type-substitution/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/expired-beyond-grace/expected.json",
+      "sha256": "0dd07e9cb60fb62f963879ed0d8683787b7e36a28949845d9616c66257ee7df2",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/expired-beyond-grace/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/expired-beyond-grace/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/expired-beyond-grace/token.jws",
+      "sha256": "27cae0831bdf0d9968bd45d7914195c98b45efbd2842eb65c2194704fd5a51df",
+      "size": 1260
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/expired-beyond-grace/verification-context.json",
+      "sha256": "0bdde5ad068f09c3591bc7d7af1810734345e734db3bfd52f93d305b6f53dca3",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/high-s-signature/expected.json",
+      "sha256": "758bf5b8247fad97a4a27b3a6e07531537b67b6f96e5d029d34b767532e3839b",
+      "size": 80
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/high-s-signature/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/high-s-signature/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/high-s-signature/token.jws",
+      "sha256": "9d3a55540878789e6c7d3b4303f19ff5ae1adf0fbc65193e21dba2afbe5beaf0",
+      "size": 1260
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/high-s-signature/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/noncanonical-payload/expected.json",
+      "sha256": "149877572061d8f298ab7cc275d81829b92140755722a73d204a6483b68f8e88",
+      "size": 84
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/noncanonical-payload/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/noncanonical-payload/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/noncanonical-payload/token.jws",
+      "sha256": "6275a18af79b5bed25eb269ab12a0c3556887b8cbe9decb142de6be44a859ff7",
+      "size": 1344
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/noncanonical-payload/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/not-yet-valid/expected.json",
+      "sha256": "d94a35631da6b332d20acbed33e2f9c90ca0cdd69990379ae932dd1b6f019e9f",
+      "size": 77
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/not-yet-valid/payload.json",
+      "sha256": "c08fee36feb8a44259416ff6d77c0b90c59295f8d2c93f41c3b447b502a7d552",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/not-yet-valid/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/not-yet-valid/token.jws",
+      "sha256": "d1009293437e5345a4688c0e6a66cf0527e3000349cab1247173500c2347d38b",
+      "size": 1260
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/not-yet-valid/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/revoked-jti/expected.json",
+      "sha256": "d68ef10d8e0e9596cb685781d8ec83b622a9c87a9c68bca3be074f0e76b2a2f3",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/revoked-jti/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/revoked-jti/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/revoked-jti/token.jws",
+      "sha256": "27cae0831bdf0d9968bd45d7914195c98b45efbd2842eb65c2194704fd5a51df",
+      "size": 1260
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/revoked-jti/verification-context.json",
+      "sha256": "4d24e17f2508116dc205e211b709cfc3b2046f337b5b2933a87ec3f57ba7c3ee",
+      "size": 896
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/tampered-payload/expected.json",
+      "sha256": "57562e62594a02119069409f73d65694c6f4d29014265ffcd7346e1a555957ce",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/tampered-payload/payload.json",
+      "sha256": "379ab47a719b4267ffee8ef3efcf3ded1cb147204016d980721a39d2db842602",
+      "size": 862
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/tampered-payload/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/tampered-payload/token.jws",
+      "sha256": "1a9184f57741013589c2157c4dd2e86b657c291121f3cf9e98b3a89f518b92b1",
+      "size": 1247
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/tampered-payload/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/unknown-kid/expected.json",
+      "sha256": "76ae2c273f0b812310802dd137459dc64a53630ea387bc9a4958f3e36ab8ce7d",
+      "size": 75
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/unknown-kid/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/unknown-kid/protected.json",
+      "sha256": "942f5ff28b3747585ea3f59324b597de1277697c590fc9823e6fd7ee5193206d",
+      "size": 113
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/unknown-kid/token.jws",
+      "sha256": "404535faf54ee30c8bb4699960035e840855999fedf44a7f12a27f6ae51e0224",
+      "size": 1265
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/unknown-kid/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-current/expected.json",
+      "sha256": "e306460df0dd5eade3e858f80837671a4b259bd99edd5bb815e4948a6c06ef3e",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-current/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-current/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-current/token.jws",
+      "sha256": "27cae0831bdf0d9968bd45d7914195c98b45efbd2842eb65c2194704fd5a51df",
+      "size": 1260
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-current/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-grace/expected.json",
+      "sha256": "0e643bcaf665b6597a376d8ca08d5cd7d2b79b396a80a79b135ee2d492be0b66",
+      "size": 69
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-grace/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-grace/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-grace/token.jws",
+      "sha256": "27cae0831bdf0d9968bd45d7914195c98b45efbd2842eb65c2194704fd5a51df",
+      "size": 1260
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/valid-grace/verification-context.json",
+      "sha256": "e7dfcb925c3827a1f043cce3a9ae8a653be648d012c4f039d10f0ee397abdd55",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-audience/expected.json",
+      "sha256": "85796dc25b3d988dd02eb8319a40301443dbc66ba745ae44ee2801d163a02359",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-audience/payload.json",
+      "sha256": "6508bc87d7befa172de1d82e356989d885e75857c5d21887e753f13dbd28d294",
+      "size": 879
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-audience/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-audience/token.jws",
+      "sha256": "99057642fd6a2cf16b14b9397247cf7bfd394e8dea48d66b573f8531803a9441",
+      "size": 1270
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-audience/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-installation-binding/expected.json",
+      "sha256": "82fcbb977ef3773823a791b826ff6a8910f45a0aae71d20c780699ad353a7710",
+      "size": 85
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-installation-binding/payload.json",
+      "sha256": "4ff589f923c40b89ae48b635ff907faf943d01964a49e030c9422d326bd2d734",
+      "size": 862
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-installation-binding/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-installation-binding/token.jws",
+      "sha256": "57d1b2818490a4a196cf0026843f8f111eab414d4505a5b30a6f31a2f68b8264",
+      "size": 1247
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-installation-binding/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-purpose-key/expected.json",
+      "sha256": "165c94839ba063d150c7926d3f906d43ebd360f92db7135d9a8d5c419f31138e",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-purpose-key/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-purpose-key/protected.json",
+      "sha256": "ed599838ed2771e598f81eb8c32bc06744c7b576c184d83bd7b8cd48cc7a429b",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-purpose-key/token.jws",
+      "sha256": "9d049271fb2ba93f4ca5c0e16f34f456a215077fa2897bff181de7ca687b9f48",
+      "size": 1260
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-purpose-key/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-subject/expected.json",
+      "sha256": "4b9355c30f75262a15d878791b8befd944fc5edf42886af1941fef115127939e",
+      "size": 80
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-subject/payload.json",
+      "sha256": "aed885c48fc4a406e4c2f9877222115d42399b31c4ac1660fc22e1baab62c5b9",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-subject/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-subject/token.jws",
+      "sha256": "969dde5374d7050d93cd43daf137e8608f3acf2b15e00acc828453762ac4a493",
+      "size": 1174
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-subject/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-typ/expected.json",
+      "sha256": "d75a5cb04e4730fb73be4e9270e2a91899b55dc0a917966663f36093e7e68c26",
+      "size": 76
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-typ/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-typ/protected.json",
+      "sha256": "18fb84f73b55eac8a7412b752c54073d0277f11d951a42cd66808b64028012e1",
+      "size": 107
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-typ/token.jws",
+      "sha256": "4de8532834f3e31b839f2525706b9f1bd4928994b3fea16c0531890d7d06a175",
+      "size": 1257
+    },
+    {
+      "path": "grant-profile-v1/license_entitlement/wrong-typ/verification-context.json",
+      "sha256": "472785de55a571fe7c322829c5e2f0cf8e31e640c76d24ad2c9aa386f01f5ecb",
+      "size": 762
+    },
+    {
+      "path": "grant-profile-v1/manifest.json",
+      "sha256": "040eb98f4f3ed6f3d36de2bb833803f719ff4e7cd8c91a83abad945f10b3516c",
+      "size": 67633
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-boundary/expected.json",
+      "sha256": "e306460df0dd5eade3e858f80837671a4b259bd99edd5bb815e4948a6c06ef3e",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-boundary/payload.json",
+      "sha256": "9691928a7ed41210f22600d778a7b80f72d388d67c5fc15a48aaf06988bfb3c8",
+      "size": 2849
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-boundary/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-boundary/token.jws",
+      "sha256": "cd647a7ba4fab7f5b5d5497c8b9496e9947397cecd9b9bf381cbc705e29ae7d3",
+      "size": 3456
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-boundary/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-exceeded/expected.json",
+      "sha256": "a5bd6c187e8ca48473e51341ac56137b682139f4d6bb7d14f2de1c70fe1f075b",
+      "size": 84
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-exceeded/payload.json",
+      "sha256": "53e5e07007e5298f8cb1ac25e91417e14dbd2ee6ac1c24755acecb357005f936",
+      "size": 2285
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-exceeded/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-exceeded/token.jws",
+      "sha256": "22491abcac864a6d1cdf32537d852d39d284115f9467971d2bf31ae1678c8207",
+      "size": 2698
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/account-cap-exceeded/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/at-grace-end/expected.json",
+      "sha256": "0dd07e9cb60fb62f963879ed0d8683787b7e36a28949845d9616c66257ee7df2",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/at-grace-end/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/at-grace-end/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/at-grace-end/token.jws",
+      "sha256": "baac96c09f79a697965f78aeefef9ce6248dc5ce76d9574a273d3c36dbbd7e00",
+      "size": 1524
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/at-grace-end/verification-context.json",
+      "sha256": "01bcd2e77f3f5653e2cb908d85821be0fcfe87cc7d87724b821202afe44e1146",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/creator-account-not-allowed/expected.json",
+      "sha256": "eac0e1f2b93b478d096287f5b579336b896b1942501c8870a822a62309b00adb",
+      "size": 91
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/creator-account-not-allowed/payload.json",
+      "sha256": "71ac2f528633863015d01cd5723466a925ddba4d6a09fbca82ebcd2a9b337452",
+      "size": 1048
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/creator-account-not-allowed/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/creator-account-not-allowed/token.jws",
+      "sha256": "34dd5188502939012344db581c3051674421941819f9e9dcbe84118201d1b318",
+      "size": 1486
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/creator-account-not-allowed/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/cross-type-substitution/expected.json",
+      "sha256": "a9a45a6ec23800602b42519662d11c5dbf59cc89e375a244e204ce705c6aa94e",
+      "size": 83
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/cross-type-substitution/payload.json",
+      "sha256": "3d5f73294a026a6fbdf756171ce9819a7aa9a6d0f7573e8399344ce578858f9c",
+      "size": 872
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/cross-type-substitution/protected.json",
+      "sha256": "3c482a056deb5fe0a1da9c32bb46c3a37087bda8dab17f8cc79aa467751f4d28",
+      "size": 109
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/cross-type-substitution/token.jws",
+      "sha256": "27cae0831bdf0d9968bd45d7914195c98b45efbd2842eb65c2194704fd5a51df",
+      "size": 1260
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/cross-type-substitution/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/delegated-installer-runtime-denied/expected.json",
+      "sha256": "bb49cb9405754a84cc84b28e8aef40c6745df3bf3c7c84371ecb000dce20ae94",
+      "size": 83
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/delegated-installer-runtime-denied/payload.json",
+      "sha256": "c7b2b4a6079a123a0f6377cd7a6377b0f0ca7a4446e566980e15e3ff57e26d35",
+      "size": 1079
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/delegated-installer-runtime-denied/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/delegated-installer-runtime-denied/token.jws",
+      "sha256": "089a8272704962165a971ec4137bf4b28b0e23809262d4c86002c45df2cbb40e",
+      "size": 1520
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/delegated-installer-runtime-denied/verification-context.json",
+      "sha256": "4f09f88d95826fd15962d3789dd0c92a28f93e122500936fc3beeb96ea103d0f",
+      "size": 801
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/duplicate-role/expected.json",
+      "sha256": "b6d142cbedf167d645b8ade51f8e1ecde9937c18e9f36339be7fa333a825a3a5",
+      "size": 83
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/duplicate-role/payload.json",
+      "sha256": "cee368bd1d064e8c91c84fb37d56d3dee076a194e86f569e0589388afdab9f04",
+      "size": 1109
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/duplicate-role/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/duplicate-role/token.jws",
+      "sha256": "f9a08e0fd240aa27625630a26d2189433edf04e3fece27b55854e4c488896082",
+      "size": 1550
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/duplicate-role/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/expired-beyond-grace/expected.json",
+      "sha256": "0dd07e9cb60fb62f963879ed0d8683787b7e36a28949845d9616c66257ee7df2",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/expired-beyond-grace/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/expired-beyond-grace/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/expired-beyond-grace/token.jws",
+      "sha256": "baac96c09f79a697965f78aeefef9ce6248dc5ce76d9574a273d3c36dbbd7e00",
+      "size": 1524
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/expired-beyond-grace/verification-context.json",
+      "sha256": "891a2c6513ec1dc8abf4f2e8073bc6cdfd00a9fb8f9499f812aacca5a1af58e8",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/high-s-signature/expected.json",
+      "sha256": "758bf5b8247fad97a4a27b3a6e07531537b67b6f96e5d029d34b767532e3839b",
+      "size": 80
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/high-s-signature/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/high-s-signature/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/high-s-signature/token.jws",
+      "sha256": "2d41356007c1c41581d085e27f17563ac76cd30551022cd365fa69fcb0aa1295",
+      "size": 1524
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/high-s-signature/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/multi-role-exact-union/expected.json",
+      "sha256": "e306460df0dd5eade3e858f80837671a4b259bd99edd5bb815e4948a6c06ef3e",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/multi-role-exact-union/payload.json",
+      "sha256": "75152ad02c23ea66fb76c4d077098f06cc26be49af3ceaea0bef3333e3daf491",
+      "size": 1284
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/multi-role-exact-union/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/multi-role-exact-union/token.jws",
+      "sha256": "2b42e99477cf7751d5565f1b778bf9fd7422f3e6050f9561d0f08e10e751a510",
+      "size": 1743
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/multi-role-exact-union/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/noncanonical-payload/expected.json",
+      "sha256": "149877572061d8f298ab7cc275d81829b92140755722a73d204a6483b68f8e88",
+      "size": 84
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/noncanonical-payload/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/noncanonical-payload/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/noncanonical-payload/token.jws",
+      "sha256": "72ac83c1957279ea8c798bf19c4ee2d179066a09de1994774e8177229abc0507",
+      "size": 1626
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/noncanonical-payload/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/not-yet-valid/expected.json",
+      "sha256": "d94a35631da6b332d20acbed33e2f9c90ca0cdd69990379ae932dd1b6f019e9f",
+      "size": 77
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/not-yet-valid/payload.json",
+      "sha256": "78bbfdf4739f5f3311899046258672b55d1aeac3e220b378caf27d1993856a40",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/not-yet-valid/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/not-yet-valid/token.jws",
+      "sha256": "501b86a51b609fbf4e77c2f0a650e9bd3d9fe432c6d6653113eb7243cb95c316",
+      "size": 1524
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/not-yet-valid/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/revoked-jti/expected.json",
+      "sha256": "d68ef10d8e0e9596cb685781d8ec83b622a9c87a9c68bca3be074f0e76b2a2f3",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/revoked-jti/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/revoked-jti/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/revoked-jti/token.jws",
+      "sha256": "baac96c09f79a697965f78aeefef9ce6248dc5ce76d9574a273d3c36dbbd7e00",
+      "size": 1524
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/revoked-jti/verification-context.json",
+      "sha256": "4ed12bb8c67ff80057f6a980ce130c28f675500120733c40d60230b25984e04c",
+      "size": 941
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/role-scope-mismatch/expected.json",
+      "sha256": "96458d22fc14e5f6fe7f565a38c888ad2a1eae8eaceeb079a4f674db3c800c1a",
+      "size": 83
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/role-scope-mismatch/payload.json",
+      "sha256": "77b0eef0e2e9ec6c388af695a5123be2ea08a65f2e5320dd7a9fc2aa826b41b8",
+      "size": 1050
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/role-scope-mismatch/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/role-scope-mismatch/token.jws",
+      "sha256": "f561557edbd27f8d762896d5189315c904845518fadbc4d11bdbc393c6ea4df6",
+      "size": 1484
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/role-scope-mismatch/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/tampered-payload/expected.json",
+      "sha256": "57562e62594a02119069409f73d65694c6f4d29014265ffcd7346e1a555957ce",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/tampered-payload/payload.json",
+      "sha256": "2e43f87d0d146753716665b0eda3a91fc6cd7dd042183020d092bc7ce663dae1",
+      "size": 1075
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/tampered-payload/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/tampered-payload/token.jws",
+      "sha256": "214c841c6e8213af3e46b7f467ec962da5d7f6377fd07f1e486ada0ee5e4f511",
+      "size": 1511
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/tampered-payload/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unknown-kid/expected.json",
+      "sha256": "76ae2c273f0b812310802dd137459dc64a53630ea387bc9a4958f3e36ab8ce7d",
+      "size": 75
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unknown-kid/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unknown-kid/protected.json",
+      "sha256": "ac564b575fff803af7e080348dd4c38f1c7a8419e6f11d909433202b3ab4228e",
+      "size": 116
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unknown-kid/token.jws",
+      "sha256": "9e02fa181ca0d01ebdcc07fc919a56b1b5809a8d3c8213ec8ed8f709973b7b69",
+      "size": 1529
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unknown-kid/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unsorted-roles/expected.json",
+      "sha256": "9a5a4e624feab468068198358520134834e6db3702f1e0c8a04b09795df5d83c",
+      "size": 76
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unsorted-roles/payload.json",
+      "sha256": "72cf769190321b984d4b29be74cd5645a315b97817a9983443b210cc6466d727",
+      "size": 1325
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unsorted-roles/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unsorted-roles/token.jws",
+      "sha256": "13d84eedcdb0b1040992ea94501d2ad5338e71e52e10674ed28517cd862cdf81",
+      "size": 1784
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/unsorted-roles/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-current/expected.json",
+      "sha256": "e306460df0dd5eade3e858f80837671a4b259bd99edd5bb815e4948a6c06ef3e",
+      "size": 71
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-current/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-current/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-current/token.jws",
+      "sha256": "baac96c09f79a697965f78aeefef9ce6248dc5ce76d9574a273d3c36dbbd7e00",
+      "size": 1524
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-current/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-grace/expected.json",
+      "sha256": "0e643bcaf665b6597a376d8ca08d5cd7d2b79b396a80a79b135ee2d492be0b66",
+      "size": 69
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-grace/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-grace/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-grace/token.jws",
+      "sha256": "baac96c09f79a697965f78aeefef9ce6248dc5ce76d9574a273d3c36dbbd7e00",
+      "size": 1524
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/valid-grace/verification-context.json",
+      "sha256": "38151e4efeade691c5e919893379efc44b6dc280d8c0712f201fc1c379d3c3ef",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-audience/expected.json",
+      "sha256": "85796dc25b3d988dd02eb8319a40301443dbc66ba745ae44ee2801d163a02359",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-audience/payload.json",
+      "sha256": "cac101ce35915c3e705cda40829144a7b1ba3d5bd590c28f79fab335a87ebb4e",
+      "size": 1089
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-audience/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-audience/token.jws",
+      "sha256": "4dacea2cebb4c5235c59ae1aa1024d3a09761ddc5404b5f7ccc100189f28e73f",
+      "size": 1530
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-audience/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-installation-binding/expected.json",
+      "sha256": "82fcbb977ef3773823a791b826ff6a8910f45a0aae71d20c780699ad353a7710",
+      "size": 85
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-installation-binding/payload.json",
+      "sha256": "5382dc91c33091f734b469f210dd1c3b4455b66baa4912b5db6e8325669fa20f",
+      "size": 1075
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-installation-binding/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-installation-binding/token.jws",
+      "sha256": "345b22046f869c3266c7ee3c9dc89c62e886bd92ea1ac6a867ba0f33a083f44d",
+      "size": 1511
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-installation-binding/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-purpose-key/expected.json",
+      "sha256": "165c94839ba063d150c7926d3f906d43ebd360f92db7135d9a8d5c419f31138e",
+      "size": 81
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-purpose-key/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-purpose-key/protected.json",
+      "sha256": "e457f6eab89f6f42c3cc009df3edb85a09bb29128e5dea43c2841d7591be3f00",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-purpose-key/token.jws",
+      "sha256": "8f58543c267d6a6139eb1f2ee757b74634c0aa69763670dc8f1853ca41b1ed00",
+      "size": 1524
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-purpose-key/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-subject/expected.json",
+      "sha256": "4b9355c30f75262a15d878791b8befd944fc5edf42886af1941fef115127939e",
+      "size": 80
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-subject/payload.json",
+      "sha256": "92de7e99cc41dd41a109b99ed0282e76646ce62a0e64cbb0a6da690aabfc8aa5",
+      "size": 978
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-subject/protected.json",
+      "sha256": "c53d0d3da0f897844035157c49a0879fcf9b28694d03b33da23ea4e43e19865e",
+      "size": 112
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-subject/token.jws",
+      "sha256": "d6420c6e80bada7a0cc5e491f234d8e1704d3eaf417eadaea1fd032be7792670",
+      "size": 1382
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-subject/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-typ/expected.json",
+      "sha256": "d75a5cb04e4730fb73be4e9270e2a91899b55dc0a917966663f36093e7e68c26",
+      "size": 76
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-typ/payload.json",
+      "sha256": "5f38cca3c955e0fa7be92cec7872be6dccc5bb97d627aa03950e525cff8cee4c",
+      "size": 1085
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-typ/protected.json",
+      "sha256": "c736aeb46f3ff2ddf24174d01a0d7bf319f597a8c6a323b9b5affc53db331ec5",
+      "size": 107
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-typ/token.jws",
+      "sha256": "a3645d8dc7992651a57a3c7bb7d58e021352938a96e6ee194007dd4dab15ed60",
+      "size": 1517
+    },
+    {
+      "path": "grant-profile-v1/membership_snapshot/wrong-typ/verification-context.json",
+      "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
+      "size": 807
+    }
+  ],
+  "manifest_version": 2,
+  "profiles": [
+    "urn:bridge-clean:grant-profile:v1"
+  ]
+}

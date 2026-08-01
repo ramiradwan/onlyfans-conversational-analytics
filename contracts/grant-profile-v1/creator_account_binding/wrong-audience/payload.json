@@ -1,0 +1,18 @@
+{
+  "approval_id": "0198a1b2-c3d4-7200-8000-000000000001",
+  "approval_revision": 1,
+  "aud": "urn:bridge-clean:local-brain:wrong-audience",
+  "creator_account_id": "creator-account-fixture-001",
+  "exp": 1784937600,
+  "grant_type": "creator_account_binding",
+  "iat": 1784332800,
+  "installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+  "installation_key_id": "ik1.jcWDzvJIkKO1XtDL-Mp1vw",
+  "installation_key_jkt": "jcWDzvJIkKO1XtDL-Mp1vyrlHsT8kuAyj4DYblC1ByA",
+  "iss": "urn:bridge-clean:commercial-control-plane",
+  "jti": "0198a1b2-c3d4-7100-8000-000000000002",
+  "nbf": 1784332800,
+  "organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+  "profile": "urn:bridge-clean:grant-profile:v1",
+  "sub": "installation:0198a1b2-c3d4-7000-8000-000000000002:creator:creator-account-fixture-001"
+}

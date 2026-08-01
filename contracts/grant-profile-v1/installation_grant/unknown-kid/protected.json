@@ -1,0 +1,5 @@
+{
+  "alg": "ES256",
+  "kid": "bc1.unknown.TEST_ONLY_UNKNOWN_KEY",
+  "typ": "urn:bridge-clean:grant:installation:v1"
+}

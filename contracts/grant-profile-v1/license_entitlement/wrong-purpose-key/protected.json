@@ -1,0 +1,5 @@
+{
+  "alg": "ES256",
+  "kid": "bc1.ms.QmRxtxWOB8FvtbBX-gbfhQ",
+  "typ": "urn:bridge-clean:grant:license:v1"
+}
