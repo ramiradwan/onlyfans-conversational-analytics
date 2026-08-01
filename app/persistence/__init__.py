@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from app.persistence.database import CanonicalSQLite
+from app.persistence.database import AuthSQLite, CanonicalSQLite
 from app.persistence.migrations import (
     MigrationChecksumError,
     MigrationError,
@@ -18,6 +18,7 @@ from app.persistence.repositories import (
 
 __all__ = [
     "CanonicalRepositories",
+    "AuthSQLite",
     "CanonicalSQLite",
     "MigrationChecksumError",
     "MigrationError",

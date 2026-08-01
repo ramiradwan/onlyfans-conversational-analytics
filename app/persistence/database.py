@@ -180,6 +180,12 @@ class CanonicalSQLite(LocalSQLite):
     store_name = "canonical"
 
 
+class AuthSQLite(LocalSQLite):
+    """Authoritative local authentication database."""
+
+    store_name = "auth"
+
+
 class ProjectionsSQLite(LocalSQLite):
     """Disposable projections database using the accepted full-sync topology."""
 
