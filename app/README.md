@@ -4,12 +4,25 @@
 authenticated protocol-v2 Agent ingestion, owns canonical SQLite truth, and builds
 rebuildable read models in a separate projections SQLite database.
 
-## Local session bootstrap
+## First-run production configuration
 
-The shipped runtime uses `WEBSOCKET_AUTH_MODE=local_session`. The launcher supplies
-a random `LOCAL_SESSION_BOOTSTRAP_TOKEN` of at least 32 characters and exact
-`LOCAL_PRINCIPAL_ID`, `LOCAL_CREATOR_ACCOUNT_ID`, and independently verified
-`LOCAL_PLATFORM_CREATOR_ID` values.
+The shipped runtime uses `WEBSOCKET_AUTH_MODE=local_session`. Before importing
+`app.main`, the launcher calls
+`app.core.first_run.initialize_production_configuration` with
+`VerifiedGrantBindings` emitted by its grant-verification step and the packaged
+Chrome extension ID. The initializer generates the bootstrap token and signing
+secret with the operating system cryptographic random source. It stores them,
+the verified bindings, their bundle digest, and absolute SQLite paths in
+`runtime.env` below the platform-standard per-user application-data directory.
+Neither secret is returned or logged.
+
+The initializer creates `runtime.env` once. A second call with identical inputs
+reuses it without regenerating secrets. Different verified bindings or an
+extension ID change fail closed and require an explicit reprovisioning workflow.
+At startup, `app.core.config` reads this file; a source checkout may instead use
+the explicitly development-only `app/.env.example` as `app/.env`.
+
+## Local session bootstrap
 
 The launcher sends:
 

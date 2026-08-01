@@ -1,22 +1,27 @@
 # app/core/config.py
 
 from functools import lru_cache
+import re
 from pathlib import Path
 from typing import Literal
-from dotenv import load_dotenv
+
+from dotenv import dotenv_values
 from pydantic import Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.runtime_paths import runtime_configuration_file
 
 
 RESERVED_CONFIGURATION_PREFIX = "replace-with-"
 CHROME_EXTENSION_ID_LENGTH = 32
 
 
-# Load the application-local environment file before constructing settings.
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
-
-
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        case_sensitive=False,
+        hide_input_in_errors=True,
+    )
+
     app_name: str = "OnlyFans Conversational Analytics"
     environment: str = "development"
     version: str = "0.7.5"
@@ -27,6 +32,7 @@ class Settings(BaseSettings):
     # The shipped runtime is local-first and durable. Tests must opt in to the
     # disposable backend explicitly (see tests/conftest.py).
     canonical_persistence_backend: Literal["memory", "sqlite"] = "sqlite"
+    auth_database_path: Path = Path("auth.sqlite3")
     canonical_database_path: Path = Path("canonical.sqlite3")
     projection_database_path: Path = Path("projections.sqlite3")
     # The protocol-v2 read model above and the rebuildable analytics
@@ -49,6 +55,8 @@ class Settings(BaseSettings):
     local_creator_account_id: str = ""
     local_platform_creator_id: str = ""
     local_bridge_role: Literal["creator", "operator"] = "creator"
+    identity_binding_source: Literal["development", "verified_grants"] = "development"
+    verified_grant_bundle_sha256: str = ""
     development_platform_creator_id: str = "dev-platform-creator"
     broadcast_url: Literal["memory://"] = "memory://"
 
@@ -64,6 +72,10 @@ class Settings(BaseSettings):
         production_mode = self.environment.lower() not in {
             "development", "dev", "local", "test"
         }
+        if production_mode and self.websocket_auth_mode != "local_session":
+            raise ValueError(
+                "Production requires TPM-gated local session authentication"
+            )
         signing_secret = self.security_signing_secret.get_secret_value()
         if production_mode and (
             signing_secret == "onlyfans-local-development-signing-secret"
@@ -100,6 +112,16 @@ class Settings(BaseSettings):
                     "Brain account, and platform creator bindings"
                 )
             if production_mode and (
+                self.identity_binding_source != "verified_grants"
+                or re.fullmatch(
+                    r"[0-9a-f]{64}", self.verified_grant_bundle_sha256
+                )
+                is None
+            ):
+                raise ValueError(
+                    "Production identity bindings must come from a verified grant bundle"
+                )
+            if production_mode and (
                 len(self.extension_id) != CHROME_EXTENSION_ID_LENGTH
                 or not self.extension_id.islower()
                 or any(character < "a" or character > "p" for character in self.extension_id)
@@ -109,14 +131,21 @@ class Settings(BaseSettings):
                 )
         return self
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-
-
 @lru_cache()
 def get_settings() -> Settings:
-    return Settings()
+    runtime_file = runtime_configuration_file()
+    development_file = Path(__file__).parent.parent / ".env"
+    if runtime_file.exists():
+        values = dotenv_values(runtime_file, interpolate=False)
+        return Settings(
+            _env_file=None,
+            **{
+                key.lower(): value
+                for key, value in values.items()
+                if value is not None
+            },
+        )
+    return Settings(_env_file=development_file)
 
 
 settings = get_settings()
