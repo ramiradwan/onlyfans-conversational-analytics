@@ -17,10 +17,31 @@ from fastapi.staticfiles import StaticFiles
 from app.api.endpoints import frontend, history, insights, transport_ws
 from app.core.config import settings
 from app.core.broadcast import broadcast
+from app.persistence.auth import InstallationKeyReference, SQLiteAuthenticationStore
+from app.security.installation_key import (
+    InstallationKeyAuthority,
+    WindowsCNGInstallationKeyProvider,
+)
 from app.services import insights_service
 from app.transport import transport_manager
 
 logger = logging.getLogger(__name__)
+
+_installation_key_authority: InstallationKeyAuthority | None = None
+_installation_key_reference: InstallationKeyReference | None = None
+
+
+def initialize_installation_key() -> InstallationKeyReference:
+    """Require one usable TPM-backed installation key before runtime startup."""
+    global _installation_key_authority, _installation_key_reference
+    store = SQLiteAuthenticationStore(settings.auth_database_path)
+    authority = InstallationKeyAuthority(
+        store, WindowsCNGInstallationKeyProvider()
+    )
+    reference = authority.ensure_ready()
+    _installation_key_authority = authority
+    _installation_key_reference = reference
+    return reference
 
 # -------------------------------------------------
 # FastAPI application metadata from settings
@@ -74,6 +95,8 @@ app.include_router(insights.router)
 # -------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
+    if settings.websocket_auth_mode == "local_session":
+        initialize_installation_key()
     await broadcast.connect()
     await transport_manager.start()
     # Recover every canonical account's analytics projection in the
