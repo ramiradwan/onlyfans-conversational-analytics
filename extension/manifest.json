@@ -3,6 +3,7 @@
   "name": "OnlyFans Conversational Analytics Agent",
   "description": "Captures and streams OnlyFans chat events locally for analysis via a real-time dashboard.",
   "version": "2.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqhNtBO+9pyBjjZ44ipTp9cmoXUAenjBOCUzSxvYhzcR2TNIHGv+mOFrnNqgPZrYxHjaYR3eTpTY4f+mF0SNy7u4XoZaRvuYuS14dcksGrVezVM8d8XXY+oDgwRbocfyAti5/59COM2ifeDb3yUx4dYC9jXHePCIpzoXlJrg0e18jQ4gMhKyo8pDjCwiYag1w5/1oe1O9fpRkyUooQE6Sr0+dC3zQYh3TQz1TawBWZthFbvDEvwA4BD9AgEdkbRwyUGuwi52veEIH7VEPJ0CToGZLdAwB5/QAfEa410QsCPz8GUF/pZv2A+q0siezZGCnsOJXSlj66MBrsR9imV/a0wIDAQAB",
   "minimum_chrome_version": "116",
   "permissions": [
     "alarms",
