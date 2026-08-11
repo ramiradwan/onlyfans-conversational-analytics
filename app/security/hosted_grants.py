@@ -38,6 +38,7 @@ PRODUCTION_TRUST_SET = "production/grant-profile-v1/trust-set.json"
 
 _PROOF_DOMAIN = b"BRIDGE-CLEAN-INSTALLATION-PROOF-V1\x00"
 _MAX_RESPONSE_BYTES = 65_536
+_EXPECTED_MEDIA_TYPE = "application/json"
 _UUIDV7_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
@@ -112,6 +113,7 @@ class _TransportFailure(RuntimeError):
 class TransportResponse:
     status_code: int
     body: bytes
+    content_type: str
 
 
 class HostedTransport(Protocol):
@@ -141,8 +143,8 @@ class HTTPXHostedTransport:
         if (
             url.scheme != "https"
             or not url.host
-            or url.username is not None
-            or url.password is not None
+            or url.username
+            or url.password
             or url.query
             or url.fragment
             or url.path not in {"", "/"}
@@ -164,7 +166,11 @@ class HTTPXHostedTransport:
     ) -> TransportResponse:
         try:
             response = self._client.request(method, path, json=json_body)
-            return TransportResponse(response.status_code, response.content)
+            return TransportResponse(
+                response.status_code,
+                response.content,
+                response.headers.get("content-type", ""),
+            )
         except Exception:
             raise _TransportFailure("Hosted request failed") from None
 
@@ -415,6 +421,8 @@ class HostedGrantClient:
             or not 100 <= response.status_code <= 599
             or not isinstance(response.body, bytes)
             or len(response.body) > _MAX_RESPONSE_BYTES
+            or not isinstance(response.content_type, str)
+            or _media_type(response.content_type) != _EXPECTED_MEDIA_TYPE
         ):
             raise HostedGrantUnavailable("Hosted response is unavailable")
         return response
@@ -748,6 +756,11 @@ class HostedGrantClient:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Grant verification clock must be timezone-aware")
         return value.astimezone(timezone.utc)
+
+
+def _media_type(content_type: str) -> str:
+    """Return the lowercased media type without parameters."""
+    return content_type.split(";", 1)[0].strip().lower()
 
 
 def _response_object(response: TransportResponse) -> dict[str, object]:

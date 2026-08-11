@@ -25,6 +25,7 @@ from app.security.hosted_grants import (
     GrantVerificationRefused,
     HostedGrantClient,
     HostedGrantUnavailable,
+    HTTPXHostedTransport,
     InstallationClaim,
     InstallationClaimReplay,
     TransportResponse,
@@ -120,7 +121,7 @@ class StoredClaimTransport:
             if self.refresh_mode == "server_error":
                 return _json_response(503, {"detail": self.claim.claim_secret})
             if self.refresh_mode == "malformed":
-                return TransportResponse(201, b"{")
+                return TransportResponse(201, b"{", "application/json")
             if self.refresh_mode == "unsigned_denial":
                 return _json_response(403, {"denial_jws": "not-a-signed-denial"})
             purpose = json_body["purpose"]
@@ -137,6 +138,10 @@ class StoredClaimTransport:
                 },
             )
         if path == "/v1/grants/membership:refresh":
+            content_type = {
+                "wrong_content_type": "text/html",
+                "json_charset": "application/json; charset=utf-8",
+            }.get(self.refresh_mode, "application/json")
             return _json_response(
                 200,
                 {
@@ -148,6 +153,7 @@ class StoredClaimTransport:
                     "server_time": "2026-07-18T00:01:00.000Z",
                     "refresh_after": "2026-07-18T06:01:00.000Z",
                 },
+                content_type,
             )
         raise AssertionError(f"unexpected request path: {path}")
 
@@ -376,7 +382,14 @@ def test_audience_and_subject_have_separate_verifier_results(
 
 @pytest.mark.parametrize(
     "refresh_mode",
-    ["unreachable", "timeout", "server_error", "malformed", "unsigned_denial"],
+    [
+        "unreachable",
+        "timeout",
+        "server_error",
+        "malformed",
+        "unsigned_denial",
+        "wrong_content_type",
+    ],
 )
 def test_transient_refresh_failure_keeps_the_current_policy_usable(
     tmp_path: Path,
@@ -409,7 +422,12 @@ def test_transient_refresh_failure_keeps_the_current_policy_usable(
             "SELECT revoked_at FROM verified_grant_references WHERE reference_id = ?",
             (membership_reference,),
         ).fetchone()
+        stored = connection.execute(
+            "SELECT COUNT(*) AS count FROM verified_grant_references"
+        ).fetchone()["count"]
     assert row["revoked_at"] is None
+    assert stored == 3
+    assert refreshed.grant_reference_ids == consumed.grant_reference_ids
     assert claim.claim_secret not in str(refreshed)
     assert transport.refresh_mode == refresh_mode
 
@@ -468,18 +486,20 @@ def test_transport_exception_does_not_expose_the_claim_secret(
     assert claim.claim_secret not in str(caught.value)
 
 
+@pytest.mark.parametrize("refresh_mode", ["success", "json_charset"])
 def test_verified_refresh_replaces_the_reference_and_policy(
     tmp_path: Path,
     bundle: SignedBundle,
     claim: InstallationClaim,
     identity: AuthContext,
     device: DeviceMetadata,
+    refresh_mode: str,
 ) -> None:
     client, store, transport, authority = _client(tmp_path, bundle, claim)
     consumed = client.consume_claim(claim, device, identity=identity)
     assert consumed.policy is not None
     previous_reference = consumed.grant_reference_ids[1]
-    transport.refresh_mode = "success"
+    transport.refresh_mode = refresh_mode
 
     refreshed = client.refresh_grant(
         identity,
@@ -502,10 +522,61 @@ def test_verified_refresh_replaces_the_reference_and_policy(
     assert claim.claim_secret.encode("ascii") not in authority.signed_values[0]
 
 
-def _json_response(status_code: int, value: dict[str, object]) -> TransportResponse:
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://control.example",
+        "https://control.example/",
+        "https://control.example:8443",
+    ],
+)
+def test_concrete_transport_is_constructed_against_an_https_origin(
+    base_url: str,
+) -> None:
+    transport = HTTPXHostedTransport(base_url)
+    try:
+        client_base_url = transport._client.base_url
+    finally:
+        transport.close()
+
+    assert client_base_url.scheme == "https"
+    assert client_base_url.host == "control.example"
+    assert client_base_url.path == "/"
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://control.example",
+        "https://operator@control.example",
+        "https://operator:opaque-value@control.example",
+        "https://:opaque-value@control.example",
+        "https://control.example/v1",
+        "https://control.example/?query=1",
+        "https://control.example/#fragment",
+        "https://",
+        "control.example",
+        "not a base url",
+    ],
+)
+def test_concrete_transport_refuses_a_base_url_that_is_not_a_bare_origin(
+    base_url: str,
+) -> None:
+    with pytest.raises(ValueError) as caught:
+        HTTPXHostedTransport(base_url)
+
+    assert "opaque-value" not in str(caught.value)
+
+
+def _json_response(
+    status_code: int,
+    value: dict[str, object],
+    content_type: str = "application/json",
+) -> TransportResponse:
     return TransportResponse(
         status_code,
         json.dumps(value, separators=(",", ":")).encode("utf-8"),
+        content_type,
     )
 
 
