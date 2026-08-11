@@ -4,7 +4,11 @@ import base64
 import ctypes
 import hashlib
 import json
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import NoReturn
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -30,6 +34,12 @@ from app.security.installation_key import (
     WindowsCNGInstallationKeyProvider,
     verify_installation_proof,
 )
+
+
+_REQUIRE_TPM_HARDWARE_TESTS = "REQUIRE_TPM_HARDWARE_TESTS"
+_BCRYPT_ECCPRIVATE_BLOB = "ECCPRIVATEBLOB"
+_NCRYPT_SILENT_FLAG = 0x00000040
+_P256_PRIVATE_BLOB_SIZE = 8 + (3 * 32)
 
 
 class EmulatedPlatformProvider:
@@ -82,6 +92,43 @@ class EmulatedPlatformProvider:
 @pytest.fixture
 def store(tmp_path: Path) -> SQLiteAuthenticationStore:
     return SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
+
+
+def _skip_or_fail_unavailable_hardware_provider(
+    error: InstallationKeyUnavailable | InstallationKeyPolicyError,
+) -> NoReturn:
+    message = f"{PLATFORM_CRYPTO_PROVIDER} unavailable: {error}"
+    if os.environ.get(_REQUIRE_TPM_HARDWARE_TESTS) == "1":
+        pytest.fail(message, pytrace=False)
+    pytest.skip(message)
+
+
+@contextmanager
+def _windows_tpm_key() -> Iterator[
+    tuple[WindowsCNGInstallationKeyProvider, str, ProviderKeyInfo]
+]:
+    provider_key_name = f"bridge-clean.hardware-test.{uuid4()}"
+    try:
+        provider = WindowsCNGInstallationKeyProvider()
+        info = provider.create_non_exportable_key(provider_key_name)
+    except (InstallationKeyUnavailable, InstallationKeyPolicyError) as error:
+        _skip_or_fail_unavailable_hardware_provider(error)
+
+    try:
+        yield provider, provider_key_name, info
+    finally:
+        with provider._provider_handle() as provider_handle:
+            key = ctypes.c_size_t()
+            status = provider._api.open_key(
+                provider_handle,
+                ctypes.byref(key),
+                provider_key_name,
+                0,
+                _NCRYPT_SILENT_FLAG,
+            )
+            if int(status) & 0xFFFFFFFF == 0:
+                delete_status = provider._api.delete_key(key.value, 0)
+                assert int(delete_status) & 0xFFFFFFFF == 0
 
 
 def test_second_run_reuses_one_persisted_provider_key_and_public_binding(
@@ -228,31 +275,68 @@ async def test_runtime_startup_refuses_an_exportable_installation_key(
     assert store.installation_key_reference() is None
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        InstallationKeyUnavailable("provider probe failed"),
+        InstallationKeyPolicyError("provider is not hardware-backed"),
+    ],
+)
+def test_hardware_requirement_controls_unavailable_provider_result(
+    monkeypatch: pytest.MonkeyPatch,
+    error: InstallationKeyUnavailable | InstallationKeyPolicyError,
+) -> None:
+    monkeypatch.delenv(_REQUIRE_TPM_HARDWARE_TESTS, raising=False)
+    with pytest.raises(pytest.skip.Exception, match=PLATFORM_CRYPTO_PROVIDER):
+        _skip_or_fail_unavailable_hardware_provider(error)
+
+    monkeypatch.setenv(_REQUIRE_TPM_HARDWARE_TESTS, "1")
+    with pytest.raises(pytest.fail.Exception, match=PLATFORM_CRYPTO_PROVIDER):
+        _skip_or_fail_unavailable_hardware_provider(error)
+
+
 @pytest.mark.slow
 def test_windows_tpm_provider_creates_non_exportable_signing_key() -> None:
-    provider_key_name = f"bridge-clean.hardware-test.{uuid4()}"
-    try:
-        provider = WindowsCNGInstallationKeyProvider()
-        info = provider.create_non_exportable_key(provider_key_name)
-    except InstallationKeyUnavailable as error:
-        pytest.skip(f"TPM-backed CNG provider unavailable: {error}")
-
-    try:
+    with _windows_tpm_key() as (provider, provider_key_name, info):
         assert info.provider_name == PLATFORM_CRYPTO_PROVIDER
         assert info.hardware_backed is True
         assert info.export_policy == 0
         digest = hashlib.sha256(b"hardware-proof-challenge").digest()
         assert len(provider.sign_digest(provider_key_name, digest)) == 64
-    finally:
+
+
+@pytest.mark.slow
+def test_windows_tpm_provider_refuses_private_key_export() -> None:
+    with _windows_tpm_key() as (provider, provider_key_name, _):
         with provider._provider_handle() as provider_handle:
             key = ctypes.c_size_t()
-            status = provider._api.open_key(
+            open_status = provider._api.open_key(
                 provider_handle,
                 ctypes.byref(key),
                 provider_key_name,
                 0,
-                0x00000040,
+                _NCRYPT_SILENT_FLAG,
             )
-            if int(status) & 0xFFFFFFFF == 0:
-                delete_status = provider._api.delete_key(key.value, 0)
-                assert int(delete_status) & 0xFFFFFFFF == 0
+            assert int(open_status) & 0xFFFFFFFF == 0
+            try:
+                sentinel = b"\xA5" * _P256_PRIVATE_BLOB_SIZE
+                private_material = ctypes.create_string_buffer(
+                    sentinel, _P256_PRIVATE_BLOB_SIZE
+                )
+                returned_size = ctypes.c_ulong()
+
+                export_status = provider._api.export_key(
+                    key.value,
+                    0,
+                    _BCRYPT_ECCPRIVATE_BLOB,
+                    None,
+                    private_material,
+                    len(private_material),
+                    ctypes.byref(returned_size),
+                    _NCRYPT_SILENT_FLAG,
+                )
+
+                assert int(export_status) & 0xFFFFFFFF != 0
+                assert private_material.raw == sentinel
+            finally:
+                provider._api.free_object(key.value)
