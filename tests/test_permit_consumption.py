@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from itertools import product
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,23 @@ EXPECTED_INPUT_KEYS = {
     "requested_job_id",
     "reserved_job_id",
 }
+REPRESENTATIVE_JOB_ID_PAIRS = (
+    ("job-fixture-001", None),
+    ("job-fixture-001", "job-fixture-001"),
+    ("job-fixture-002", "job-fixture-001"),
+    (None, None),
+)
+REPRESENTATIVE_INPUT_VALUES = {
+    "durable_output_committed": (False, True, None),
+    "event": ("reserve", "terminal_failure", "unrecognized"),
+    "installation_matches": (True, False, None),
+    "permit_state": ("available", "reserved", "spent", "unrecognized"),
+}
+
+
+class _UnsupportedValue:
+    def __eq__(self, other: object) -> bool:
+        raise AssertionError("unsupported value equality was evaluated")
 
 
 def _cases() -> list[Path]:
@@ -26,6 +44,24 @@ def _cases() -> list[Path]:
         for path in VECTORS.glob("*.json")
         if not path.name.endswith(".expected.json") and path.name != "policy.json"
     )
+
+
+def _input_tuple(case: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(case[key] for key in sorted(EXPECTED_INPUT_KEYS))
+
+
+def _representative_cases() -> list[dict[str, Any]]:
+    cases: list[dict[str, Any]] = []
+    for values in product(*REPRESENTATIVE_INPUT_VALUES.values()):
+        for requested_job_id, reserved_job_id in REPRESENTATIVE_JOB_ID_PAIRS:
+            cases.append(
+                {
+                    **dict(zip(REPRESENTATIVE_INPUT_VALUES, values, strict=True)),
+                    "requested_job_id": requested_job_id,
+                    "reserved_job_id": reserved_job_id,
+                }
+            )
+    return cases
 
 
 @pytest.mark.contract_integrity
@@ -171,3 +207,56 @@ def test_uncovered_combinations_fail_closed(
     case: dict[str, Any], expected: dict[str, Any]
 ) -> None:
     assert decide_permit_consumption(**case) == expected
+
+
+def test_unsupported_parameter_shapes_fail_closed() -> None:
+    unsupported_value = _UnsupportedValue()
+
+    assert decide_permit_consumption(
+        unsupported_value,
+        unsupported_value,
+        True,
+        unsupported_value,
+        unsupported_value,
+        unsupported_value,
+    ) == {"result": "permit_not_available", "valid": False}
+
+
+@pytest.mark.contract_integrity
+def test_uncovered_representative_combinations_fail_closed() -> None:
+    vector_cases = [
+        json.loads(case_path.read_text(encoding="utf-8")) for case_path in _cases()
+    ]
+    vector_tuples = {_input_tuple(case) for case in vector_cases}
+    representative_cases = _representative_cases()
+    uncovered_cases = [
+        case for case in representative_cases if _input_tuple(case) not in vector_tuples
+    ]
+    unexpected_permissive = [
+        case
+        for case in uncovered_cases
+        if decide_permit_consumption(**case)["valid"] is True
+    ]
+
+    print(
+        "VECTOR_TUPLES="
+        f"{len(vector_tuples)} "
+        "REPRESENTATIVE_COMBINATIONS="
+        f"{len(representative_cases)} "
+        f"COVERED={len(representative_cases) - len(uncovered_cases)} "
+        f"UNCOVERED={len(uncovered_cases)} "
+        "UNEXPECTED_PERMISSIVE_UNCOVERED="
+        f"{len(unexpected_permissive)}"
+    )
+
+    assert len(vector_tuples) == 6
+    assert len(representative_cases) == 432
+    assert len(uncovered_cases) == 426
+    assert unexpected_permissive == [], [
+        (
+            case["event"],
+            case["requested_job_id"],
+            case["reserved_job_id"],
+        )
+        for case in unexpected_permissive
+    ]
