@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     security_signing_secret: SecretStr = SecretStr(
         "onlyfans-local-development-signing-secret"
     )
+    webauthn_challenge_ttl_seconds: int = Field(default=300, gt=0, le=600)
     csrf_token_ttl_seconds: int = Field(default=8 * 60 * 60, gt=0, le=24 * 60 * 60)
     bridge_session_ttl_seconds: int = Field(default=8 * 60 * 60, gt=0, le=24 * 60 * 60)
     bridge_ticket_ttl_seconds: int = Field(default=8 * 60 * 60, gt=0, le=24 * 60 * 60)

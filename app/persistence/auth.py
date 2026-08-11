@@ -243,6 +243,19 @@ class AuthenticationStore(Protocol):
 
     def register_webauthn_credential(self, credential: WebAuthnCredential) -> None: ...
 
+    def webauthn_credential(
+        self, credential_id: str, *, principal_id: str
+    ) -> WebAuthnCredential | None: ...
+
+    def advance_webauthn_signature_count(
+        self,
+        credential_id: str,
+        *,
+        principal_id: str,
+        expected_count: int,
+        asserted_count: int,
+    ) -> bool: ...
+
     def record_verified_grant(self, grant: VerifiedGrantReference) -> None: ...
 
     def register_agent_pairing(self, pairing: AgentPairing) -> None: ...
@@ -444,6 +457,66 @@ class SQLiteAuthenticationStore:
                     credential.credential_id,
                 ),
             )
+
+    def webauthn_credential(
+        self, credential_id: str, *, principal_id: str
+    ) -> WebAuthnCredential | None:
+        with self.database.read() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM webauthn_credentials
+                WHERE credential_id = ? AND principal_id = ? AND revoked_at IS NULL
+                """,
+                (credential_id, principal_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return WebAuthnCredential(
+            credential_id=row["credential_id"],
+            principal_id=row["principal_id"],
+            external_issuer=row["external_issuer"],
+            external_subject=row["external_subject"],
+            installation_id=row["installation_id"],
+            public_key=bytes(row["public_key"]),
+            signature_count=row["signature_count"],
+            enrolled_at=_parse_time(row["enrolled_at"]),
+        )
+
+    def advance_webauthn_signature_count(
+        self,
+        credential_id: str,
+        *,
+        principal_id: str,
+        expected_count: int,
+        asserted_count: int,
+    ) -> bool:
+        if expected_count < 0 or asserted_count < 0:
+            raise ValueError("signature counts must be non-negative")
+        if asserted_count == 0:
+            if expected_count != 0:
+                return False
+            with self.database.read() as connection:
+                row = connection.execute(
+                    """
+                    SELECT 1 FROM webauthn_credentials
+                    WHERE credential_id = ? AND principal_id = ?
+                      AND signature_count = 0 AND revoked_at IS NULL
+                    """,
+                    (credential_id, principal_id),
+                ).fetchone()
+            return row is not None
+        if asserted_count <= expected_count:
+            return False
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE webauthn_credentials SET signature_count = ?
+                WHERE credential_id = ? AND principal_id = ?
+                  AND signature_count = ? AND revoked_at IS NULL
+                """,
+                (asserted_count, credential_id, principal_id, expected_count),
+            )
+        return cursor.rowcount == 1
 
     def record_verified_grant(self, grant: VerifiedGrantReference) -> None:
         _require_interval(grant.valid_from, grant.expires_at)
