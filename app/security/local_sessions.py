@@ -7,8 +7,10 @@ import hashlib
 import hmac
 import json
 import time
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from app.core.config import settings
 from app.persistence.auth import SQLiteAuthenticationStore
@@ -119,6 +121,34 @@ def build_runtime_policy(
         identity,
         signed_object_digests=signed_object_digests,
     )
+
+
+def sign_local_document(document: Mapping[str, Any]) -> str:
+    """Return one signed token carrying a local document."""
+
+    payload = json.dumps(document, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    signature = hmac.new(_signing_secret(), payload, hashlib.sha256).digest()
+    return f"{_base64(payload)}.{_base64(signature)}"
+
+
+def open_local_document(token: str | None) -> dict[str, Any]:
+    """Return the document carried by one signed local token."""
+
+    if not isinstance(token, str):
+        raise LocalSessionError("Signed document is required")
+    try:
+        encoded_payload, encoded_signature = token.split(".", 1)
+        payload = _decode_base64(encoded_payload)
+        signature = _decode_base64(encoded_signature)
+        expected = hmac.new(_signing_secret(), payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError("signature")
+        document = json.loads(payload)
+        if not isinstance(document, dict):
+            raise ValueError("document")
+    except (ValueError, KeyError, TypeError, UnicodeError, json.JSONDecodeError) as error:
+        raise LocalSessionError("Signed document is invalid") from error
+    return document
 
 
 def issue_csrf_token(policy: RuntimePolicy, *, issued_at: int | None = None) -> str:

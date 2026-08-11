@@ -7,6 +7,12 @@ from urllib.parse import urlsplit
 from fastapi import HTTPException, Request
 
 from app.core.config import settings
+from app.security.admission_confirmation import (
+    AdmissionConfirmation,
+    AdmissionConfirmationError,
+    ConfirmationSubject,
+    issue_admission_confirmation,
+)
 from app.security.local_sessions import (
     LocalSessionError,
     build_runtime_policy,
@@ -90,4 +96,21 @@ def verify_csrf_token(policy: RuntimePolicy, token: str | None) -> None:
     try:
         verify_csrf_document(policy, token)
     except LocalSessionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+
+
+def confirm_admission(
+    request: Request,
+    csrf: str | None,
+    subject: ConfirmationSubject,
+) -> tuple[AdmissionConfirmation, str]:
+    """Mint one confirmation for a same-origin, CSRF-checked session request."""
+
+    policy = get_runtime_policy(request)
+    require_creator(policy)
+    verify_same_origin(request)
+    verify_csrf_token(policy, csrf)
+    try:
+        return issue_admission_confirmation(policy, subject)
+    except AdmissionConfirmationError as error:
         raise HTTPException(status_code=403, detail=str(error)) from error
