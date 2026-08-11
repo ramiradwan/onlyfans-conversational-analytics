@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
 from app.security.capability_permit_verifier import (
     CapabilityPermitVerificationContext,
+    _verify_signature,
     load_pinned_trust_set,
     verify_capability_permit,
 )
@@ -199,8 +200,15 @@ def test_key_purpose_precedes_signature_verification(
 ) -> None:
     private_key, trust_set = signing_material
     license_trust_set = {"keys": [{**trust_set["keys"][0], "purpose": "license"}]}
+    token = _token(valid_payload, private_key, license_trust_set)
+    _, _, signature_segment = token.split(".")
+    signature = _b64u_decode(signature_segment)
+    r = int.from_bytes(signature[:32], "big")
+    s = int.from_bytes(signature[32:], "big")
+    assert s <= _P256_ORDER // 2
+    high_s_signature = r.to_bytes(32, "big") + (_P256_ORDER - s).to_bytes(32, "big")
 
-    assert _result(_token(valid_payload, private_key, license_trust_set, signature=b"\0" * 64), valid_context, license_trust_set) == "wrong_key_purpose"
+    assert _result(_token(valid_payload, private_key, license_trust_set, signature=high_s_signature), valid_context, license_trust_set) == "wrong_key_purpose"
 
 
 def test_schema_invalid_result(
@@ -247,6 +255,40 @@ def test_malformed_signature_length_is_rejected(
     malformed_token = f"{header_segment}.{payload_segment}.{_b64u(signature[:-1])}"
 
     assert _result(malformed_token, valid_context, trust_set) == "invalid_signature"
+
+
+def test_signature_helper_rejects_malformed_signature_length(
+    signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, _ = signing_material
+
+    assert not _verify_signature(private_key.public_key(), b"signing input", b"\0" * 63)
+
+
+def test_subject_precedes_organization_binding(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    payload = {
+        **valid_payload,
+        "sub": "organization:other-organization:installation:other-installation:capability:analysis-run",
+        "organization_id": "other-organization",
+    }
+
+    assert _result(_token(payload, private_key, trust_set), valid_context, trust_set) == "subject_mismatch"
+
+
+def test_organization_precedes_installation_binding(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    payload = {
+        **valid_payload,
+        "organization_id": "other-organization",
+        "installation_id": "other-installation",
+    }
+
+    assert _result(_token(payload, private_key, trust_set), valid_context, trust_set) == "organization_mismatch"
 
 
 def test_catalog_version_is_not_a_local_binding(
