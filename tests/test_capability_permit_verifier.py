@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
+from app.security import capability_permit_verifier as permit_verifier
 from app.security.capability_permit_verifier import (
     CapabilityPermitVerificationContext,
     _verify_signature,
@@ -155,6 +156,20 @@ def test_noncanonical_json_result(
     assert _result(_token(valid_payload, private_key, trust_set, header_bytes=header_bytes), valid_context, trust_set) == "noncanonical_json"
 
 
+def test_canonical_json_precedes_header_validation(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    header = {
+        "alg": "none",
+        "kid": trust_set["keys"][0]["jwk"]["kid"],
+        "typ": "urn:bridge-clean:capability-permit:v1",
+    }
+    header_bytes = json.dumps(header).encode("utf-8")
+
+    assert _result(_token(valid_payload, private_key, trust_set, header_bytes=header_bytes), valid_context, trust_set) == "noncanonical_json"
+
+
 def test_invalid_header_result(
     valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
 ) -> None:
@@ -163,6 +178,19 @@ def test_invalid_header_result(
         "alg": "none",
         "kid": trust_set["keys"][0]["jwk"]["kid"],
         "typ": "urn:bridge-clean:capability-permit:v1",
+    }
+
+    assert _result(_token(valid_payload, private_key, trust_set, header=header), valid_context, trust_set) == "invalid_header"
+
+
+def test_header_validation_precedes_typ_binding(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    header = {
+        "alg": "none",
+        "kid": trust_set["keys"][0]["jwk"]["kid"],
+        "typ": "urn:bridge-clean:other",
     }
 
     assert _result(_token(valid_payload, private_key, trust_set, header=header), valid_context, trust_set) == "invalid_header"
@@ -180,6 +208,20 @@ def test_typ_and_audience_precede_signature_verification(
     }
 
     assert _result(_token(payload, private_key, trust_set, header=header, signature=b"\0" * 64), valid_context, trust_set) == "typ_mismatch"
+
+
+def test_audience_precedes_key_lookup(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    payload = {**valid_payload, "aud": "urn:bridge-clean:other"}
+    header = {
+        "alg": "ES256",
+        "kid": "unlisted-key",
+        "typ": "urn:bridge-clean:capability-permit:v1",
+    }
+
+    assert _result(_token(payload, private_key, trust_set, header=header), valid_context, trust_set) == "audience_mismatch"
 
 
 def test_unknown_kid_result(
@@ -216,6 +258,28 @@ def test_schema_invalid_result(
 ) -> None:
     private_key, trust_set = signing_material
     payload = {**valid_payload, "extra": True}
+
+    assert _result(_token(payload, private_key, trust_set), valid_context, trust_set) == "schema_invalid"
+
+
+def test_signature_crypto_precedes_schema_validation(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    payload = {**valid_payload, "extra": True}
+
+    assert _result(_token(payload, private_key, trust_set, signature=b"\0" * 64), valid_context, trust_set) == "invalid_signature"
+
+
+def test_schema_validation_precedes_subject_binding(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    payload = {
+        **valid_payload,
+        "extra": True,
+        "sub": "organization:other-organization:installation:other-installation:capability:analysis-run",
+    }
 
     assert _result(_token(payload, private_key, trust_set), valid_context, trust_set) == "schema_invalid"
 
@@ -257,6 +321,26 @@ def test_malformed_signature_length_is_rejected(
     assert _result(malformed_token, valid_context, trust_set) == "invalid_signature"
 
 
+def test_signature_shape_precedes_signature_crypto(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    private_key, trust_set = signing_material
+    calls = 0
+    verify_signature = permit_verifier._verify_signature
+
+    def counted_verify_signature(
+        public_key: ec.EllipticCurvePublicKey, signing_input: bytes, signature: bytes
+    ) -> bool:
+        nonlocal calls
+        calls += 1
+        return verify_signature(public_key, signing_input, signature)
+
+    monkeypatch.setattr(permit_verifier, "_verify_signature", counted_verify_signature)
+
+    assert _result(_token(valid_payload, private_key, trust_set, signature=b"\0" * 63), valid_context, trust_set) == "invalid_signature"
+    assert calls == 0
+
+
 def test_signature_helper_rejects_malformed_signature_length(
     signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
 ) -> None:
@@ -289,6 +373,29 @@ def test_organization_precedes_installation_binding(
     }
 
     assert _result(_token(payload, private_key, trust_set), valid_context, trust_set) == "organization_mismatch"
+
+
+def test_installation_precedes_capability_binding(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    payload = {**valid_payload, "installation_id": "other-installation"}
+    context = replace(valid_context, expected_capability="other-capability")
+
+    assert _result(_token(payload, private_key, trust_set), context, trust_set) == "installation_mismatch"
+
+
+def test_capability_precedes_installation_key_binding(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    context = replace(
+        valid_context,
+        expected_capability="other-capability",
+        expected_installation_key_jkt="B" * 43,
+    )
+
+    assert _result(_token(valid_payload, private_key, trust_set), context, trust_set) == "capability_mismatch"
 
 
 def test_catalog_version_is_not_a_local_binding(
