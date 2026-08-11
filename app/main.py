@@ -18,8 +18,13 @@ from app.api.endpoints import frontend, history, insights, transport_ws
 from app.core.config import settings
 from app.core.broadcast import broadcast
 from app.persistence.auth import InstallationKeyReference, SQLiteAuthenticationStore
+from app.security.activation_gate import (
+    evaluate_runtime_activation,
+    record_activation,
+)
 from app.security.installation_key import (
     InstallationKeyAuthority,
+    InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
 )
 from app.services import insights_service
@@ -32,7 +37,7 @@ _installation_key_reference: InstallationKeyReference | None = None
 
 
 def initialize_installation_key() -> InstallationKeyReference:
-    """Require one usable TPM-backed installation key before runtime startup."""
+    """Ready the TPM-backed installation key for this installation."""
     global _installation_key_authority, _installation_key_reference
     store = SQLiteAuthenticationStore(settings.auth_database_path)
     authority = InstallationKeyAuthority(
@@ -42,6 +47,28 @@ def initialize_installation_key() -> InstallationKeyReference:
     _installation_key_authority = authority
     _installation_key_reference = reference
     return reference
+
+
+def activate_runtime() -> None:
+    """Ready the installation key, then evaluate the activation conditions.
+
+    An installation whose key provider is unavailable still starts and serves
+    the bounded loopback provisioning surface without activating. An
+    installation-key policy refusal stops startup.
+    """
+    if settings.websocket_auth_mode == "local_session":
+        try:
+            initialize_installation_key()
+        except InstallationKeyUnavailable:
+            logger.warning(
+                "activation_event reason_code=installation_key_unavailable"
+            )
+    decision = record_activation(evaluate_runtime_activation())
+    if decision.production and not decision.activated:
+        logger.warning(
+            "activation_event reason_code=runtime_activation_refused conditions=%s",
+            ",".join(decision.refused_conditions),
+        )
 
 # -------------------------------------------------
 # FastAPI application metadata from settings
@@ -95,8 +122,7 @@ app.include_router(insights.router)
 # -------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
-    if settings.websocket_auth_mode == "local_session":
-        initialize_installation_key()
+    activate_runtime()
     await broadcast.connect()
     await transport_manager.start()
     # Recover every canonical account's analytics projection in the

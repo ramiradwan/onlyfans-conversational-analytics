@@ -12,6 +12,7 @@ from app.analytics.errors import (
     InvalidAnalyticsRequest,
     ProjectionUnavailable,
 )
+from app.api.activation import require_activated_runtime
 from app.api.dependencies import (
     account_bound_to_session,
     get_authenticated_account_session,
@@ -28,7 +29,11 @@ from app.models.insights import (
 from app.services import insights_service
 
 
-router = APIRouter(prefix="/api/v1/insights", tags=["Insights"])
+router = APIRouter(
+    prefix="/api/v1/insights",
+    tags=["Insights"],
+    dependencies=[Depends(require_activated_runtime)],
+)
 
 PROTECTED_ERROR_RESPONSES = {
     status: {"model": AnalyticsErrorResponse}

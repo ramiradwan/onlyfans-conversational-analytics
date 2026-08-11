@@ -310,6 +310,8 @@ class AuthenticationStore(Protocol):
         self, reference_id: str
     ) -> VerifiedGrantReference | None: ...
 
+    def verified_grants(self) -> tuple[VerifiedGrantReference, ...]: ...
+
     def register_agent_pairing(self, pairing: AgentPairing) -> None: ...
 
     def activate_agent_pairing(
@@ -676,6 +678,19 @@ class SQLiteAuthenticationStore:
                 (reference_id,),
             ).fetchone()
         return None if row is None else _verified_grant_reference(row)
+
+    def verified_grants(self) -> tuple[VerifiedGrantReference, ...]:
+        """Return every verified grant reference that is not revoked."""
+
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM verified_grant_references
+                WHERE revoked_at IS NULL
+                ORDER BY verified_at, reference_id
+                """
+            ).fetchall()
+        return tuple(_verified_grant_reference(row) for row in rows)
 
     @staticmethod
     def _validate_verified_grant(grant: VerifiedGrantReference) -> None:

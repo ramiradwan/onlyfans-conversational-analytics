@@ -33,6 +33,7 @@ from app.services.command_execution import (
 )
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 from app.persistence.history import IngestResult, InvariantViolation, StreamKey
+from app.security.activation_gate import runtime_is_activated
 from app.utils.logger import logger
 
 
@@ -158,6 +159,11 @@ class InMemoryTransportManager:
             "localhost",
             "::1",
         }
+
+    @staticmethod
+    def _require_activated_runtime() -> None:
+        if not runtime_is_activated():
+            raise AuthenticationError("The local runtime is not activated")
 
     def validate_auth_configuration(self) -> None:
         if not self._local_runtime_allowed():
@@ -455,6 +461,7 @@ class InMemoryTransportManager:
         out an installation. Purpose/account/installation/lifetime remain
         immutable, and pairing tickets themselves are still single-use.
         """
+        self._require_activated_runtime()
         authenticated_at = now or utc_now()
         self._expire_auth_grants(authenticated_at)
         if (
@@ -510,6 +517,7 @@ class InMemoryTransportManager:
         bridge_session_id: UUID | None = None,
         now: datetime | None = None,
     ) -> tuple[str, str]:
+        self._require_activated_runtime()
         expected_ticket = (
             DEV_AGENT_AUTH_TICKET if role == "agent" else DEV_BRIDGE_AUTH_TICKET
         )
@@ -550,6 +558,7 @@ class InMemoryTransportManager:
         *,
         now: datetime | None = None,
     ) -> tuple[str, str]:
+        self._require_activated_runtime()
         if (
             self._development_stub_allowed()
             and auth_ticket == DEV_AGENT_AUTH_TICKET

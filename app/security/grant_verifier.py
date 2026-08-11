@@ -119,6 +119,15 @@ def load_pinned_trust_set(
     return load_trust_set(path, environment=environment)
 
 
+def trusted_signing_keys(trust_set: Mapping[str, Any]) -> dict[str, str]:
+    """Return the purpose of every usable key in a trust set, keyed by identifier.
+
+    Raises ValueError when the trust set does not provide usable signing keys.
+    """
+
+    return {kid: purpose for kid, (purpose, _) in _trusted_keys(trust_set).items()}
+
+
 def _outcome(valid: bool, result: str, time_state: str = "invalid") -> GrantVerification:
     return GrantVerification(valid=valid, result=result, time_state=time_state)
 

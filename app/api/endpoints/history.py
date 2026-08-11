@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 
+from app.api.activation import require_activated_runtime
 from app.api.security import (
     get_runtime_policy,
     require_creator,
@@ -31,7 +32,11 @@ from app.services.paging_cursor import (
 from app.transport.manager import transport_manager
 
 
-router = APIRouter(prefix="/api/v1", tags=["History"])
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["History"],
+    dependencies=[Depends(require_activated_runtime)],
+)
 cursor_codec = MessageCursorCodec(settings.security_signing_secret.get_secret_value())
 
 
