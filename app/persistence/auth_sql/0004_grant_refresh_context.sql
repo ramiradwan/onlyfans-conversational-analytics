@@ -1,0 +1,9 @@
+ALTER TABLE verified_grant_references ADD COLUMN organization_id TEXT;
+ALTER TABLE verified_grant_references ADD COLUMN installation_key_id TEXT;
+ALTER TABLE verified_grant_references ADD COLUMN installation_key_jkt TEXT;
+ALTER TABLE verified_grant_references ADD COLUMN membership_id TEXT;
+ALTER TABLE verified_grant_references ADD COLUMN approval_id TEXT;
+ALTER TABLE verified_grant_references ADD COLUMN approval_revision INTEGER;
+ALTER TABLE verified_grant_references ADD COLUMN entitlement_id TEXT;
+ALTER TABLE verified_grant_references ADD COLUMN product_id TEXT;
+ALTER TABLE verified_grant_references ADD COLUMN allowed_creator_account_ids TEXT;

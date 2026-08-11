@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import sqlite3
 from dataclasses import dataclass
@@ -62,6 +63,15 @@ class VerifiedGrantReference:
     valid_from: datetime
     expires_at: datetime
     verified_at: datetime
+    organization_id: str | None = None
+    installation_key_id: str | None = None
+    installation_key_jkt: str | None = None
+    membership_id: str | None = None
+    approval_id: str | None = None
+    approval_revision: int | None = None
+    entitlement_id: str | None = None
+    product_id: str | None = None
+    allowed_creator_account_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,6 +298,18 @@ class AuthenticationStore(Protocol):
 
     def record_verified_grant(self, grant: VerifiedGrantReference) -> None: ...
 
+    def record_verified_grants(
+        self, grants: tuple[VerifiedGrantReference, ...]
+    ) -> None: ...
+
+    def replace_verified_grant(
+        self, previous_reference_id: str, grant: VerifiedGrantReference
+    ) -> None: ...
+
+    def verified_grant(
+        self, reference_id: str
+    ) -> VerifiedGrantReference | None: ...
+
     def register_agent_pairing(self, pairing: AgentPairing) -> None: ...
 
     def activate_agent_pairing(
@@ -327,6 +349,12 @@ class AuthenticationStore(Protocol):
         identity: AuthContext,
         *,
         signed_object_digests: tuple[str, ...] = (),
+    ) -> RuntimePolicy: ...
+
+    def build_runtime_policy_from_grants(
+        self,
+        identity: AuthContext,
+        grant_reference_ids: tuple[str, ...],
     ) -> RuntimePolicy: ...
 
     def runtime_policy_is_current(self, policy: RuntimePolicy) -> bool: ...
@@ -592,6 +620,65 @@ class SQLiteAuthenticationStore:
         return cursor.rowcount == 1
 
     def record_verified_grant(self, grant: VerifiedGrantReference) -> None:
+        self.record_verified_grants((grant,))
+
+    def record_verified_grants(
+        self, grants: tuple[VerifiedGrantReference, ...]
+    ) -> None:
+        if not grants:
+            raise ValueError("verified grant collection must not be empty")
+        for grant in grants:
+            self._validate_verified_grant(grant)
+        with self.database.transaction() as connection:
+            for grant in grants:
+                self._insert_verified_grant(connection, grant)
+            self._increment_authorization_epoch(connection)
+
+    def replace_verified_grant(
+        self, previous_reference_id: str, grant: VerifiedGrantReference
+    ) -> None:
+        self._validate_verified_grant(grant)
+        if previous_reference_id == grant.reference_id:
+            raise ValueError("replacement grant must have a new reference")
+        with self.database.transaction() as connection:
+            previous = connection.execute(
+                """
+                SELECT grant_type, revoked_at FROM verified_grant_references
+                WHERE reference_id = ?
+                """,
+                (previous_reference_id,),
+            ).fetchone()
+            if (
+                previous is None
+                or previous["revoked_at"] is not None
+                or previous["grant_type"] != grant.grant_type
+            ):
+                raise AuthenticationStateError(
+                    "Verified grant replacement does not match an active reference"
+                )
+            self._insert_verified_grant(connection, grant)
+            self._revoke_in_transaction(
+                connection,
+                RevocationKey(
+                    RevocationScopeType.VERIFIED_GRANT,
+                    previous_reference_id,
+                ),
+                reason="replaced",
+            )
+            self._increment_authorization_epoch(connection)
+
+    def verified_grant(
+        self, reference_id: str
+    ) -> VerifiedGrantReference | None:
+        with self.database.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM verified_grant_references WHERE reference_id = ?",
+                (reference_id,),
+            ).fetchone()
+        return None if row is None else _verified_grant_reference(row)
+
+    @staticmethod
+    def _validate_verified_grant(grant: VerifiedGrantReference) -> None:
         _require_interval(grant.valid_from, grant.expires_at)
         if (
             grant.grant_type == "creator_account_binding"
@@ -600,34 +687,60 @@ class SQLiteAuthenticationStore:
             raise ValueError(
                 "creator_account_binding requires an exact creator account"
             )
-        with self.database.transaction() as connection:
-            connection.execute(
-                """
-                INSERT INTO verified_grant_references (
-                    reference_id, grant_identifier, grant_type, grant_digest,
-                    issuer, subject, installation_id, creator_account_id,
-                    valid_from, expires_at, verified_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    grant.reference_id,
-                    grant.grant_identifier,
-                    grant.grant_type,
-                    grant.grant_digest,
-                    grant.issuer,
-                    grant.subject,
-                    grant.installation_id,
-                    grant.creator_account_id,
-                    _time_text(grant.valid_from),
-                    _time_text(grant.expires_at),
-                    _time_text(grant.verified_at),
-                ),
+        if grant.approval_revision is not None and grant.approval_revision <= 0:
+            raise ValueError("approval revision must be positive")
+
+    @staticmethod
+    def _insert_verified_grant(
+        connection: sqlite3.Connection, grant: VerifiedGrantReference
+    ) -> None:
+        allowed_accounts = (
+            None
+            if grant.allowed_creator_account_ids is None
+            else json.dumps(
+                list(grant.allowed_creator_account_ids),
+                ensure_ascii=False,
+                separators=(",", ":"),
             )
-            self._ensure_scope(
-                connection,
-                RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id),
-            )
-            self._increment_authorization_epoch(connection)
+        )
+        connection.execute(
+            """
+            INSERT INTO verified_grant_references (
+                reference_id, grant_identifier, grant_type, grant_digest,
+                issuer, subject, installation_id, creator_account_id,
+                valid_from, expires_at, verified_at, organization_id,
+                installation_key_id, installation_key_jkt, membership_id,
+                approval_id, approval_revision, entitlement_id, product_id,
+                allowed_creator_account_ids
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                grant.reference_id,
+                grant.grant_identifier,
+                grant.grant_type,
+                grant.grant_digest,
+                grant.issuer,
+                grant.subject,
+                grant.installation_id,
+                grant.creator_account_id,
+                _time_text(grant.valid_from),
+                _time_text(grant.expires_at),
+                _time_text(grant.verified_at),
+                grant.organization_id,
+                grant.installation_key_id,
+                grant.installation_key_jkt,
+                grant.membership_id,
+                grant.approval_id,
+                grant.approval_revision,
+                grant.entitlement_id,
+                grant.product_id,
+                allowed_accounts,
+            ),
+        )
+        SQLiteAuthenticationStore._ensure_scope(
+            connection,
+            RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id),
+        )
 
     def register_agent_pairing(self, pairing: AgentPairing) -> None:
         grants = _unique(pairing.grant_reference_ids)
@@ -1128,75 +1241,155 @@ class SQLiteAuthenticationStore:
         with self.database.read() as connection:
             return self._policy_is_current(connection, policy, self._now())
 
+    def build_runtime_policy_from_grants(
+        self,
+        identity: AuthContext,
+        grant_reference_ids: tuple[str, ...],
+    ) -> RuntimePolicy:
+        references = _unique(grant_reference_ids)
+        if not references:
+            raise ValueError("runtime policy requires verified grant references")
+        with self.database.read() as connection:
+            now = self._now()
+            rows = [
+                connection.execute(
+                    """
+                    SELECT reference_id, grant_type, creator_account_id,
+                           allowed_creator_account_ids, expires_at
+                    FROM verified_grant_references
+                    WHERE reference_id = ?
+                    """,
+                    (reference_id,),
+                ).fetchone()
+                for reference_id in references
+            ]
+            if any(row is None for row in rows) or not self._grants_are_current(
+                connection, references, now
+            ):
+                raise AuthenticationStateError(
+                    "Runtime policy verified grants are not current"
+                )
+            for row in rows:
+                if row is None:
+                    raise AuthenticationStateError(
+                        "Runtime policy verified grant is unavailable"
+                    )
+                scoped_account = row["creator_account_id"]
+                if (
+                    scoped_account is not None
+                    and scoped_account != identity.creator_account_id
+                ):
+                    raise AuthenticationStateError(
+                        "Runtime policy verified grant has a different account scope"
+                    )
+                allowed = row["allowed_creator_account_ids"]
+                if allowed is not None:
+                    values = json.loads(allowed)
+                    if identity.creator_account_id not in values:
+                        raise AuthenticationStateError(
+                            "Runtime policy membership does not allow the account"
+                        )
+            expiry = min(_parse_time(row["expires_at"]) for row in rows if row)
+            revocations = tuple(
+                RevocationObservation(
+                    scope_type=RevocationScopeType.VERIFIED_GRANT.value,
+                    scope_id=reference_id,
+                    version=self._revocation_version(connection, key),
+                )
+                for reference_id in references
+                for key in (
+                    RevocationKey(
+                        RevocationScopeType.VERIFIED_GRANT,
+                        reference_id,
+                    ),
+                )
+            )
+            return self._runtime_policy(
+                connection,
+                identity=identity,
+                expires_at=expiry,
+                revocations=revocations,
+                grant_reference_ids=references,
+            )
+
     def revoke(self, key: RevocationKey, *, reason: str | None = None) -> int:
         with self.database.transaction() as connection:
-            timestamp = _time_text(self._now())
-            connection.execute(
-                """
-                INSERT INTO auth_revocation_state (
-                    scope_type, scope_id, version, revoked_at, reason
-                ) VALUES (?, ?, 1, ?, ?)
-                ON CONFLICT(scope_type, scope_id) DO UPDATE SET
-                    version = auth_revocation_state.version + 1,
-                    revoked_at = excluded.revoked_at,
-                    reason = excluded.reason
-                """,
-                (key.scope_type.value, key.scope_id, timestamp, reason),
-            )
-            for table, object_type, id_column, invalidated_column in (
-                ("bridge_sessions", "bridge_session", "session_id", "revoked_at"),
-                ("auth_challenges", "challenge", "challenge_id", "invalidated_at"),
-                ("runtime_tickets", "ticket", "ticket_id", "invalidated_at"),
-            ):
-                connection.execute(
-                    f"""
-                    UPDATE {table} SET {invalidated_column} = COALESCE({invalidated_column}, ?)
-                    WHERE {id_column} IN (
-                        SELECT object_id FROM auth_revocation_bindings
-                        WHERE object_type = ? AND scope_type = ? AND scope_id = ?
-                    )
-                    """,
-                    (timestamp, object_type, key.scope_type.value, key.scope_id),
-                )
-            direct_table = {
-                RevocationScopeType.WEBAUTHN_CREDENTIAL: (
-                    "webauthn_credentials",
-                    "credential_id",
-                ),
-                RevocationScopeType.AGENT_PAIRING: ("agent_pairings", "pairing_id"),
-                RevocationScopeType.BRIDGE_SESSION: ("bridge_sessions", "session_id"),
-                RevocationScopeType.VERIFIED_GRANT: (
-                    "verified_grant_references",
-                    "reference_id",
-                ),
-            }.get(key.scope_type)
-            if direct_table is not None:
-                table, id_column = direct_table
-                connection.execute(
-                    f"UPDATE {table} SET revoked_at = COALESCE(revoked_at, ?) "
-                    f"WHERE {id_column} = ?",
-                    (timestamp, key.scope_id),
-                )
-            row = connection.execute(
-                """
-                SELECT version FROM auth_revocation_state
-                WHERE scope_type = ? AND scope_id = ?
-                """,
-                (key.scope_type.value, key.scope_id),
-            ).fetchone()
+            version = self._revoke_in_transaction(connection, key, reason=reason)
             self._increment_authorization_epoch(connection)
-            return int(row["version"])
+            return version
+
+    def _revoke_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        key: RevocationKey,
+        *,
+        reason: str | None,
+    ) -> int:
+        timestamp = _time_text(self._now())
+        connection.execute(
+            """
+            INSERT INTO auth_revocation_state (
+                scope_type, scope_id, version, revoked_at, reason
+            ) VALUES (?, ?, 1, ?, ?)
+            ON CONFLICT(scope_type, scope_id) DO UPDATE SET
+                version = auth_revocation_state.version + 1,
+                revoked_at = excluded.revoked_at,
+                reason = excluded.reason
+            """,
+            (key.scope_type.value, key.scope_id, timestamp, reason),
+        )
+        for table, object_type, id_column, invalidated_column in (
+            ("bridge_sessions", "bridge_session", "session_id", "revoked_at"),
+            ("auth_challenges", "challenge", "challenge_id", "invalidated_at"),
+            ("runtime_tickets", "ticket", "ticket_id", "invalidated_at"),
+        ):
+            connection.execute(
+                f"""
+                UPDATE {table} SET {invalidated_column} = COALESCE({invalidated_column}, ?)
+                WHERE {id_column} IN (
+                    SELECT object_id FROM auth_revocation_bindings
+                    WHERE object_type = ? AND scope_type = ? AND scope_id = ?
+                )
+                """,
+                (timestamp, object_type, key.scope_type.value, key.scope_id),
+            )
+        direct_table = {
+            RevocationScopeType.WEBAUTHN_CREDENTIAL: (
+                "webauthn_credentials",
+                "credential_id",
+            ),
+            RevocationScopeType.AGENT_PAIRING: ("agent_pairings", "pairing_id"),
+            RevocationScopeType.BRIDGE_SESSION: ("bridge_sessions", "session_id"),
+            RevocationScopeType.VERIFIED_GRANT: (
+                "verified_grant_references",
+                "reference_id",
+            ),
+        }.get(key.scope_type)
+        if direct_table is not None:
+            table, id_column = direct_table
+            connection.execute(
+                f"UPDATE {table} SET revoked_at = COALESCE(revoked_at, ?) "
+                f"WHERE {id_column} = ?",
+                (timestamp, key.scope_id),
+            )
+        return self._revocation_version(connection, key)
 
     def revocation_version(self, key: RevocationKey) -> int:
         with self.database.read() as connection:
-            row = connection.execute(
-                """
-                SELECT version FROM auth_revocation_state
-                WHERE scope_type = ? AND scope_id = ?
-                """,
-                (key.scope_type.value, key.scope_id),
-            ).fetchone()
-            return 0 if row is None else int(row["version"])
+            return self._revocation_version(connection, key)
+
+    @staticmethod
+    def _revocation_version(
+        connection: sqlite3.Connection, key: RevocationKey
+    ) -> int:
+        row = connection.execute(
+            """
+            SELECT version FROM auth_revocation_state
+            WHERE scope_type = ? AND scope_id = ?
+            """,
+            (key.scope_type.value, key.scope_id),
+        ).fetchone()
+        return 0 if row is None else int(row["version"])
 
     def _consume_challenge(
         self,
@@ -1796,6 +1989,68 @@ def _installation_key_reference(row: sqlite3.Row) -> InstallationKeyReference:
         public_key_jwk=str(row["public_key_jwk"]),
         created_at=_parse_time(str(row["created_at"])),
         activated_at=_parse_time(str(row["activated_at"])),
+    )
+
+
+def _verified_grant_reference(row: sqlite3.Row) -> VerifiedGrantReference:
+    allowed_value = row["allowed_creator_account_ids"]
+    allowed_accounts: tuple[str, ...] | None = None
+    if allowed_value is not None:
+        parsed = json.loads(str(allowed_value))
+        if not isinstance(parsed, list) or not all(
+            isinstance(value, str) for value in parsed
+        ):
+            raise AuthenticationStateError(
+                "Verified grant account scope is invalid"
+            )
+        allowed_accounts = tuple(parsed)
+    return VerifiedGrantReference(
+        reference_id=str(row["reference_id"]),
+        grant_identifier=str(row["grant_identifier"]),
+        grant_type=str(row["grant_type"]),
+        grant_digest=str(row["grant_digest"]),
+        issuer=str(row["issuer"]),
+        subject=str(row["subject"]),
+        installation_id=str(row["installation_id"]),
+        creator_account_id=(
+            None
+            if row["creator_account_id"] is None
+            else str(row["creator_account_id"])
+        ),
+        valid_from=_parse_time(str(row["valid_from"])),
+        expires_at=_parse_time(str(row["expires_at"])),
+        verified_at=_parse_time(str(row["verified_at"])),
+        organization_id=(
+            None if row["organization_id"] is None else str(row["organization_id"])
+        ),
+        installation_key_id=(
+            None
+            if row["installation_key_id"] is None
+            else str(row["installation_key_id"])
+        ),
+        installation_key_jkt=(
+            None
+            if row["installation_key_jkt"] is None
+            else str(row["installation_key_jkt"])
+        ),
+        membership_id=(
+            None if row["membership_id"] is None else str(row["membership_id"])
+        ),
+        approval_id=(
+            None if row["approval_id"] is None else str(row["approval_id"])
+        ),
+        approval_revision=(
+            None
+            if row["approval_revision"] is None
+            else int(row["approval_revision"])
+        ),
+        entitlement_id=(
+            None if row["entitlement_id"] is None else str(row["entitlement_id"])
+        ),
+        product_id=(
+            None if row["product_id"] is None else str(row["product_id"])
+        ),
+        allowed_creator_account_ids=allowed_accounts,
     )
 
 
