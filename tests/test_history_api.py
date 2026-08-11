@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -58,6 +59,11 @@ def snapshot_identity(snapshot_id: UUID) -> dict:
         "agent_stream_id": str(STREAM_ID),
         "snapshot_id": str(snapshot_id),
     }
+
+
+def disable_installation_key_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    main_module = importlib.import_module("app.main")
+    monkeypatch.setattr(main_module, "initialize_installation_key", lambda: None)
 
 
 def seed_projection() -> None:
@@ -430,6 +436,7 @@ def test_unavailable_projection_metrics_are_null_and_legacy_sample_routes_are_ab
 def test_local_session_bootstrap_uses_header_once_and_sets_exact_secure_cookie(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    disable_installation_key_startup(monkeypatch)
     bootstrap = "bootstrap-" + uuid4().hex
     monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
     monkeypatch.setattr(settings, "local_session_bootstrap_token", SecretStr(bootstrap))
@@ -477,6 +484,172 @@ def test_local_session_bootstrap_uses_header_once_and_sets_exact_secure_cookie(
             follow_redirects=False,
         )
         assert replay.status_code == 401
+
+
+def test_launcher_handoff_keeps_launcher_cookie_jar_empty_and_redeems_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    disable_installation_key_startup(monkeypatch)
+    bootstrap = "handoff-bootstrap-" + uuid4().hex
+    monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
+    monkeypatch.setattr(settings, "local_session_bootstrap_token", SecretStr(bootstrap))
+    monkeypatch.setattr(settings, "local_principal_id", "principal-handoff")
+    monkeypatch.setattr(settings, "local_creator_account_id", "account-handoff")
+    monkeypatch.setattr(settings, "local_platform_creator_id", "platform-handoff")
+    monkeypatch.setattr(settings, "local_bridge_role", "creator")
+
+    with TestClient(app, base_url="http://bridge.localhost:17871") as launcher:
+        issued = launcher.post(
+            "/api/v1/session/handoff",
+            headers={"Authorization": f"Bootstrap {bootstrap}"},
+        )
+        assert issued.status_code == 200
+        assert issued.headers["cache-control"] == "no-store"
+        assert "set-cookie" not in issued.headers
+        assert len(launcher.cookies) == 0
+        code = issued.json()["handoff_code"]
+        assert bootstrap not in code
+        second_handoff = launcher.post(
+            "/api/v1/session/handoff",
+            headers={"Authorization": f"Bootstrap {bootstrap}"},
+        )
+        assert second_handoff.status_code == 409
+        assert second_handoff.json() == {
+            "detail": "launcher_bootstrap_already_consumed"
+        }
+        direct_bootstrap = launcher.post(
+            "/api/v1/session/bootstrap",
+            headers={"Authorization": f"Bootstrap {bootstrap}"},
+            follow_redirects=False,
+        )
+        assert direct_bootstrap.status_code == 401
+        assert len(launcher.cookies) == 0
+
+    with TestClient(app, base_url="http://bridge.localhost:17871") as browser:
+        redeemed = browser.get(
+            "/api/v1/session/handoff",
+            params={"code": code},
+            follow_redirects=False,
+        )
+        assert redeemed.status_code == 303
+        assert redeemed.headers["location"] == "/"
+        assert redeemed.headers["cache-control"] == "no-store"
+        assert redeemed.headers["referrer-policy"] == "no-referrer"
+        cookie_header = redeemed.headers["set-cookie"]
+        assert settings.bridge_session_cookie_name in cookie_header
+        assert "HttpOnly" in cookie_header
+        assert "Secure" in cookie_header
+        assert "SameSite=strict" in cookie_header
+
+        replay = browser.get(
+            "/api/v1/session/handoff",
+            params={"code": code},
+            follow_redirects=False,
+        )
+        assert replay.status_code == 401
+        assert replay.json() == {"detail": "Handoff code is invalid or unavailable"}
+
+
+def test_handoff_unknown_expired_and_redeemed_codes_are_indistinguishable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    disable_installation_key_startup(monkeypatch)
+    import app.transport.manager as manager_module
+
+    current = {"value": datetime.fromtimestamp(1_000_000, tz=timezone.utc)}
+    monkeypatch.setattr(manager_module, "utc_now", lambda: current["value"])
+    monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
+    monkeypatch.setattr(settings, "local_principal_id", "principal-code-state")
+    monkeypatch.setattr(settings, "local_creator_account_id", "account-code-state")
+    monkeypatch.setattr(settings, "local_platform_creator_id", "platform-code-state")
+    first_bootstrap = "expired-bootstrap-" + uuid4().hex
+    monkeypatch.setattr(
+        settings, "local_session_bootstrap_token", SecretStr(first_bootstrap)
+    )
+
+    with TestClient(app, base_url="http://bridge.localhost:17871") as client:
+        issued_expired = client.post(
+            "/api/v1/session/handoff",
+            headers={"Authorization": f"Bootstrap {first_bootstrap}"},
+        )
+        expired_code = issued_expired.json()["handoff_code"]
+        current["value"] += timedelta(
+            seconds=settings.launcher_handoff_ttl_seconds + 1
+        )
+        expired = client.get(
+            "/api/v1/session/handoff",
+            params={"code": expired_code},
+            follow_redirects=False,
+        )
+        unknown = client.get(
+            "/api/v1/session/handoff",
+            params={"code": "unknown_" + "x" * 36},
+            follow_redirects=False,
+        )
+
+        second_bootstrap = "redeemed-bootstrap-" + uuid4().hex
+        monkeypatch.setattr(
+            settings, "local_session_bootstrap_token", SecretStr(second_bootstrap)
+        )
+        issued_fresh = client.post(
+            "/api/v1/session/handoff",
+            headers={"Authorization": f"Bootstrap {second_bootstrap}"},
+        )
+        fresh_code = issued_fresh.json()["handoff_code"]
+        assert client.get(
+            "/api/v1/session/handoff",
+            params={"code": fresh_code},
+            follow_redirects=False,
+        ).status_code == 303
+        redeemed = client.get(
+            "/api/v1/session/handoff",
+            params={"code": fresh_code},
+            follow_redirects=False,
+        )
+
+    responses = (unknown, expired, redeemed)
+    assert [response.status_code for response in responses] == [401, 401, 401]
+    assert [response.headers["cache-control"] for response in responses] == [
+        "no-store",
+        "no-store",
+        "no-store",
+    ]
+    assert [response.headers["referrer-policy"] for response in responses] == [
+        "no-referrer",
+        "no-referrer",
+        "no-referrer",
+    ]
+    assert [response.json() for response in responses] == [
+        {"detail": "Handoff code is invalid or unavailable"},
+        {"detail": "Handoff code is invalid or unavailable"},
+        {"detail": "Handoff code is invalid or unavailable"},
+    ]
+
+
+def test_handoff_routes_require_local_session_mode_and_exact_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    disable_installation_key_startup(monkeypatch)
+    bootstrap = "host-bootstrap-" + uuid4().hex
+    monkeypatch.setattr(settings, "websocket_auth_mode", "development_stub")
+    with TestClient(app, base_url="http://bridge.localhost:17871") as client:
+        assert client.post("/api/v1/session/handoff").status_code == 404
+        assert client.get("/api/v1/session/handoff?code=" + "x" * 40).status_code == 404
+
+    monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
+    monkeypatch.setattr(settings, "local_session_bootstrap_token", SecretStr(bootstrap))
+    with TestClient(app, base_url="http://localhost:17871") as client:
+        issued = client.post(
+            "/api/v1/session/handoff",
+            headers={"Authorization": f"Bootstrap {bootstrap}"},
+        )
+        redeemed = client.get(
+            "/api/v1/session/handoff",
+            params={"code": "x" * 40},
+            follow_redirects=False,
+        )
+    assert issued.status_code == 400
+    assert redeemed.status_code == 400
 
 
 def test_hmac_cursor_pages_ties_and_old_generation_returns_409() -> None:

@@ -22,6 +22,8 @@ Message and settings responses are `no-store`. Local page exhaustion is distinct
 ## `frontend.py`
 
 - `POST /api/v1/session/bootstrap` consumes a launcher secret from the Authorization header once, establishes the exact local account/role/platform binding, and redirects without placing credentials in a URL.
+- `POST /api/v1/session/handoff` consumes the same launcher secret and returns one short-lived code without setting a cookie.
+- `GET /api/v1/session/handoff` consumes one valid code, sets the sealed local session cookie, and redirects to the authenticated frontend.
 - `GET /` serves the compiled Bridge assets and injects only the account-scoped runtime values needed by the frontend.
 
 ## Responsibilities

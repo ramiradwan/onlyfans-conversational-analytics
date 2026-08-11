@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Dict, Any
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.utils.logger import logger
@@ -92,6 +92,93 @@ async def bootstrap_local_session(
         creator_account_id=context.creator_account_id,
     ):
         raise HTTPException(status_code=401, detail="Bootstrap ticket is invalid or used")
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        key=settings.bridge_session_cookie_name,
+        value=sealed_session,
+        secure=True,
+        httponly=True,
+        samesite="strict",
+        path="/",
+        max_age=settings.bridge_session_ttl_seconds,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@router.post(
+    "/api/v1/session/handoff",
+    include_in_schema=False,
+    response_class=JSONResponse,
+)
+async def issue_local_session_handoff(
+    request: Request,
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> JSONResponse:
+    """Exchange the launcher credential for one bounded browser handoff code."""
+    if settings.websocket_auth_mode != "local_session":
+        raise HTTPException(status_code=404, detail="Not found")
+    expected_host = urlsplit(settings.bridge_origin).netloc.lower()
+    if request.headers.get("host", "").lower() != expected_host:
+        raise HTTPException(status_code=400, detail="Unexpected local Bridge origin")
+    if authorization is None:
+        raise HTTPException(status_code=401, detail="Launcher authorization is required")
+    scheme, separator, ticket = authorization.partition(" ")
+    if not separator or scheme.lower() != "bootstrap" or len(ticket) < 32:
+        raise HTTPException(status_code=401, detail="Launcher authorization is invalid")
+    expected = settings.local_session_bootstrap_token.get_secret_value()
+    if not hmac.compare_digest(ticket, expected):
+        raise HTTPException(status_code=401, detail="Launcher authorization is invalid")
+    code = transport_manager.issue_launcher_handoff(
+        ticket,
+        principal_id=settings.local_principal_id,
+        creator_account_id=settings.local_creator_account_id,
+        ttl_seconds=settings.launcher_handoff_ttl_seconds,
+    )
+    if code is None:
+        raise HTTPException(status_code=409, detail="launcher_bootstrap_already_consumed")
+    response = JSONResponse({"handoff_code": code})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.get(
+    "/api/v1/session/handoff",
+    include_in_schema=False,
+    response_class=RedirectResponse,
+)
+async def redeem_local_session_handoff(
+    request: Request,
+) -> Response:
+    """Redeem one browser handoff code into the sealed local session."""
+    if settings.websocket_auth_mode != "local_session":
+        raise HTTPException(status_code=404, detail="Not found")
+    expected_host = urlsplit(settings.bridge_origin).netloc.lower()
+    if request.headers.get("host", "").lower() != expected_host:
+        raise HTTPException(status_code=400, detail="Unexpected local Bridge origin")
+    code = request.query_params.get("code", "")
+    context = AuthContext(
+        principal_id=settings.local_principal_id,
+        creator_account_id=settings.local_creator_account_id,
+        role=settings.local_bridge_role,
+        platform_creator_id=settings.local_platform_creator_id,
+        session_id=secrets.token_urlsafe(24),
+    )
+    sealed_session = local_session_token(context)
+    if len(code) < 32 or not transport_manager.redeem_launcher_handoff(
+        code,
+        principal_id=context.principal_id,
+        creator_account_id=context.creator_account_id,
+    ):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Handoff code is invalid or unavailable"},
+            headers={
+                "Cache-Control": "no-store",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie(
         key=settings.bridge_session_cookie_name,

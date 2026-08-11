@@ -194,6 +194,78 @@ class InMemoryTransportManager:
             )
             return inserted.rowcount == 1
 
+    def issue_launcher_handoff(
+        self,
+        ticket: str,
+        *,
+        principal_id: str,
+        creator_account_id: str,
+        ttl_seconds: int,
+        now: datetime | None = None,
+    ) -> str | None:
+        """Consume a launcher credential and create one bounded handoff code."""
+        if ttl_seconds <= 0:
+            raise ValueError("launcher handoff TTL must be positive")
+        issued_at = now or utc_now()
+        expires_at = issued_at + timedelta(seconds=ttl_seconds)
+        ticket_hash = hashlib.sha256(ticket.encode("utf-8")).hexdigest()
+        handoff_code = secrets.token_urlsafe(32)
+        code_hash = hashlib.sha256(handoff_code.encode("utf-8")).hexdigest()
+        with self.canonical_database.transaction() as connection:
+            inserted = connection.execute(
+                """INSERT OR IGNORE INTO launcher_bootstrap_consumptions(
+                       ticket_hash,principal_id,creator_account_id,consumed_at
+                   ) VALUES (?,?,?,?)""",
+                (
+                    ticket_hash,
+                    principal_id,
+                    creator_account_id,
+                    issued_at.isoformat(),
+                ),
+            )
+            if inserted.rowcount != 1:
+                return None
+            connection.execute(
+                """INSERT INTO launcher_session_handoffs(
+                       code_hash,principal_id,creator_account_id,issued_at,expires_at
+                   ) VALUES (?,?,?,?,?)""",
+                (
+                    code_hash,
+                    principal_id,
+                    creator_account_id,
+                    issued_at.isoformat(),
+                    expires_at.isoformat(),
+                ),
+            )
+        return handoff_code
+
+    def redeem_launcher_handoff(
+        self,
+        code: str,
+        *,
+        principal_id: str,
+        creator_account_id: str,
+        now: datetime | None = None,
+    ) -> bool:
+        """Atomically consume one unexpired handoff code."""
+        code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        redeemed_at = (now or utc_now()).isoformat()
+        with self.canonical_database.transaction() as connection:
+            consumed = connection.execute(
+                """DELETE FROM launcher_session_handoffs
+                   WHERE code_hash=?
+                     AND principal_id=?
+                     AND creator_account_id=?
+                     AND expires_at>?""",
+                (
+                    code_hash,
+                    principal_id,
+                    creator_account_id,
+                    redeemed_at,
+                ),
+            )
+            return consumed.rowcount == 1
+
     @staticmethod
     def _ticket_key(ticket: str) -> str:
         return hashlib.sha256(ticket.encode("utf-8")).hexdigest()

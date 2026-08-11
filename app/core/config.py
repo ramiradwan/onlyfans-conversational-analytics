@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     webauthn_challenge_ttl_seconds: int = Field(default=300, gt=0, le=600)
     csrf_token_ttl_seconds: int = Field(default=8 * 60 * 60, gt=0, le=24 * 60 * 60)
     bridge_session_ttl_seconds: int = Field(default=8 * 60 * 60, gt=0, le=24 * 60 * 60)
+    launcher_handoff_ttl_seconds: int = Field(default=30, gt=0, le=120)
     bridge_ticket_ttl_seconds: int = Field(default=8 * 60 * 60, gt=0, le=24 * 60 * 60)
     agent_pairing_ticket_ttl_seconds: int = Field(default=120, gt=0, le=600)
     agent_reconnect_ticket_ttl_seconds: int = Field(default=30 * 24 * 60 * 60, gt=0)

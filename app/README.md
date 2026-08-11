@@ -22,9 +22,9 @@ extension ID change fail closed and require an explicit reprovisioning workflow.
 At startup, `app.core.config` reads this file; a source checkout may instead use
 the explicitly development-only `app/.env.example` as `app/.env`.
 
-## Local session bootstrap
+## Local session bootstrap and browser handoff
 
-The launcher sends:
+The direct user-agent bootstrap surface accepts:
 
 ```http
 POST /api/v1/session/bootstrap
@@ -37,6 +37,41 @@ hash as consumed in durable SQLite state, sets the signed
 `__Host-bridge_session` HttpOnly/Secure/SameSite=Strict cookie, and redirects to
 `/`. Reuse remains rejected after process restart. Authenticated HTML and bootstrap
 responses use `Cache-Control: no-store`.
+
+The launcher uses the browser handoff surface:
+
+```http
+POST /api/v1/session/handoff
+Host: bridge.localhost:17871
+Authorization: Bootstrap <launcher-secret>
+```
+
+The response contains one random handoff code with a 30-second default TTL and no
+cookie. The system browser redeems that code once at
+`GET /api/v1/session/handoff?code=...`. A successful redemption sets the sealed
+session cookie and redirects to `/` with status 303. Unknown, expired, and consumed
+codes have the same response. Handoff responses disable caching and referrer
+transmission.
+
+Before sending the handoff request, the Windows launcher identifies the kernel TCP
+listener for port 17871 and requires the configured loopback address, Brain image
+path, and current-user process SID. A matching listener is reused. An empty port
+starts Brain without a console window and is inspected again before the request.
+The launcher does not terminate an unrecognized owner or select another port.
+
+| Failure code | Result |
+| --- | --- |
+| `configuration_unavailable` | No request is sent and the browser remains closed. |
+| `port_inspection_failed` | The listener is not trusted and the browser remains closed. |
+| `port_conflict` | The owner remains running; the launcher reports that port 17871 must be released. |
+| `brain_start_failed` | The browser remains closed. |
+| `brain_start_timeout` | The browser remains closed after the bounded ownership poll. |
+| `handoff_failed` | The browser remains closed. |
+| `browser_open_failed` | The launcher reports that the system browser could not be opened. |
+
+When the durable bootstrap credential is already consumed, the verified launcher
+opens `http://bridge.localhost:17871` directly so the browser can present its
+existing sealed cookie. Other handoff failures remain closed.
 
 Development and tests explicitly select `development_stub`; non-development
 configuration never falls back to the development account.
