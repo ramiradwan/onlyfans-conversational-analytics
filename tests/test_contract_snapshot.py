@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1] / "contracts"
 @pytest.mark.contract_integrity
 def test_selected_snapshot_matches_its_independent_consumer_pin() -> None:
     manifest = verify_snapshot_integrity(ROOT)
-    assert len(manifest["files"]) == 427
+    assert len(manifest["files"]) == 428
     assert manifest["profiles"] == [
         "urn:bridge-clean:grant-profile:v1",
         "urn:bridge-clean:capability-permit-v1",
@@ -34,6 +34,7 @@ def test_selected_snapshot_matches_its_independent_consumer_pin() -> None:
         "grant-profile-v1",
         "capability-permit-v1",
         "permit-consumption",
+        "production",
         "schemas",
     ]
 
@@ -48,6 +49,18 @@ def test_fixture_trust_set_is_fail_closed_outside_development() -> None:
 def test_fixture_trust_set_can_be_loaded_only_in_development() -> None:
     trust_set = load_trust_set("grant-profile-v1/keys/trust-set.json", environment="development")
     assert trust_set["production_usable"] is False
+
+
+@pytest.mark.contract_integrity
+def test_production_grant_trust_set_is_manifest_pinned() -> None:
+    trust_set = load_trust_set("production/grant-profile-v1/trust-set.json")
+
+    assert trust_set["production_usable"] is True
+    assert {entry["purpose"] for entry in trust_set["keys"]} == {
+        "installation-binding",
+        "membership",
+        "license",
+    }
 
 
 @pytest.mark.contract_integrity

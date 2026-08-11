@@ -18,6 +18,7 @@ EXPORT_SET = [
     "grant-profile-v1",
     "capability-permit-v1",
     "permit-consumption",
+    "production",
     "schemas",
 ]
 EXPORT_SOURCES = {
@@ -29,7 +30,7 @@ SCHEMA_EXPORT = "schemas"
 SCHEMA_ROOT = Path("schemas")
 SCHEMA_ENTRYPOINT = Path("commercial/v1/capability-permit.schema.json")
 EXPECTED_SCHEMA_CLOSURE_SIZE = 2
-EXPECTED_FILE_COUNT = 427
+EXPECTED_FILE_COUNT = 428
 VECTOR_MANIFESTS = {
     "grant-profile-v1": "grant-profile-v1/manifest.json",
     "capability-permit-v1": "capability-permit-v1/manifest.json",

@@ -1,9 +1,10 @@
 {
-  "content_digest": "4e26a059ac76b74beac49bf7621fc4ca754377022cd6e5e87d9c5141eb955c8d",
+  "content_digest": "f4901331a38a6a3b5c0c44e44e68a8cf55ba2a82194eab1fa1ce619dd28c849e",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
     "permit-consumption",
+    "production",
     "schemas"
   ],
   "files": [
@@ -2131,6 +2132,11 @@
       "path": "permit-consumption/wrong-installation.json",
       "sha256": "f541fefffda0f2f9c8556841f43d7394fe67bafd78664eb2b4e2cf4392cbad73",
       "size": 194
+    },
+    {
+      "path": "production/grant-profile-v1/trust-set.json",
+      "sha256": "332bfde9dbc40e3c20f07e1b8bf8f386e571a4f7bc662b9a40c3c991ab079fef",
+      "size": 1289
     },
     {
       "path": "schemas/commercial/v1/capability-permit.schema.json",

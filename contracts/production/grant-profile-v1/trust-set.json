@@ -1,0 +1,44 @@
+{
+  "environment": "production",
+  "keys": [
+    {
+      "fixture_only": false,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.ib.tJ_g3zCi3mfUDUjZUQE8pw",
+        "kty": "EC",
+        "x": "itPl-icEjLTRbhlpuyfJ0NhchiusuFpRQgQBGBMrIUU",
+        "y": "qrvbreK3Q2OeLcuEW_DC7IC_NPmyKLOikaOrje7b5DU"
+      },
+      "purpose": "installation-binding",
+      "thumbprint": "tJ_g3zCi3mfUDUjZUQE8p2ONl4CGJKG7tAc-N6OqLJo"
+    },
+    {
+      "fixture_only": false,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.ms.6-xnCCeJoq1JTHiQX7_WEg",
+        "kty": "EC",
+        "x": "fq9ZW2LAunguhEBqflG2XMIz_934lG1JH8ItVptRv10",
+        "y": "GEfe4hrDolb79cpXTttgZrNotQzLSb1ar0-eCSOf6ZA"
+      },
+      "purpose": "membership",
+      "thumbprint": "6-xnCCeJoq1JTHiQX7_WEqGPyUaIDaghsMNe1esYPbo"
+    },
+    {
+      "fixture_only": false,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.le.bWMzh8-SEpQPgkcxmYdMGA",
+        "kty": "EC",
+        "x": "e7Vncw_x3Tqm05g2uUx7M19sJkbZeFvj41qYJuu43yI",
+        "y": "EUF7BLykb1YH06UXcI4enYNQ35Qv1MnQ8jk3uIlBBn0"
+      },
+      "purpose": "license",
+      "thumbprint": "bWMzh8-SEpQPgkcxmYdMGD2LU-UurXumgDNkg-iRHso"
+    }
+  ],
+  "production_usable": true,
+  "profile": "urn:bridge-clean:grant-profile:v1",
+  "transition_sequence": 1
+}

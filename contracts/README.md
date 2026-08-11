@@ -10,6 +10,8 @@ before a trust set can be loaded.
 Fixture trust sets are test-only and cannot authorize production work: loading
 one outside `development` is refused.
 
+The `production/` tree contains the manifest-covered grant verification trust set.
+
 ## Approved updates
 
 Regenerate only from a clean, approved source checkout through the one

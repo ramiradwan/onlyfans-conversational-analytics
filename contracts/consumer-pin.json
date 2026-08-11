@@ -1,12 +1,13 @@
 {
-  "aggregate_bundle_sha256": "4e26a059ac76b74beac49bf7621fc4ca754377022cd6e5e87d9c5141eb955c8d",
+  "aggregate_bundle_sha256": "f4901331a38a6a3b5c0c44e44e68a8cf55ba2a82194eab1fa1ce619dd28c849e",
   "consumer_pin_version": 2,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "f0e87b5b94f0a6d98f62d713b0f0dc5ee27458c3b9a68240ffe89e3bcc954e01",
+  "contract_manifest_sha256": "0a2c6cdcc5bf62fea690ac912be79952e97261db860d8086ce22bf112c05041c",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
     "permit-consumption",
+    "production",
     "schemas"
   ],
   "generator_versions": [
