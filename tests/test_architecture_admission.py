@@ -1,10 +1,12 @@
-"""Guards production Brain modules from capability-admission references."""
+"""Guards grant and licence authorization modules from permit admission references."""
 
 from __future__ import annotations
 
 import ast
 import re
 from pathlib import Path
+
+import pytest
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
 BRAIN_ROOT = PRODUCT_ROOT / "app"
@@ -47,6 +49,11 @@ def _normalized_identifier(value: str) -> str:
     return snake_case.replace("-", "_").lower()
 
 
+def _is_grant_or_licence_authorization_path(path: Path) -> bool:
+    normalized = path.as_posix().replace("-", "_").lower()
+    return "grant" in normalized or "licence" in normalized or "license" in normalized
+
+
 def _module_references(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     identifiers: set[str] = set()
@@ -81,17 +88,37 @@ def _module_references(path: Path) -> list[str]:
     return sorted(hits)
 
 
-def test_no_module_resolves_admission_into_authorization_decision() -> None:
+def _grant_or_licence_admission_violations(brain_root: Path) -> list[str]:
     violations: list[str] = []
 
-    for path in sorted(BRAIN_ROOT.rglob("*.py")):
+    for path in sorted(brain_root.rglob("*.py")):
+        relative = path.relative_to(brain_root)
+        if not _is_grant_or_licence_authorization_path(relative):
+            continue
         references = _module_references(path)
         if references:
-            relative = path.relative_to(PRODUCT_ROOT).as_posix()
-            violations.append(f"{relative}: reserved admission references={references}")
+            violations.append(f"{relative.as_posix()}: reserved admission references={references}")
+    return violations
+
+
+def test_no_grant_or_licence_authorization_module_resolves_permit_admission() -> None:
+    violations = _grant_or_licence_admission_violations(BRAIN_ROOT)
 
     assert not violations, (
-        "Production Brain code references the reserved capability-admission contract "
+        "Grant or licence authorization code references the reserved permit-admission contract "
         "surface:\n"
         + "\n".join(violations)
     )
+
+
+@pytest.mark.parametrize("module_name", ["capability_licence.py", "grant_verifier.py"])
+def test_guard_rejects_permit_identifier_in_grant_or_licence_path(
+    tmp_path: Path, module_name: str
+) -> None:
+    path = tmp_path / "app" / "security" / module_name
+    path.parent.mkdir(parents=True)
+    path.write_text("execution_limit = 1\n", encoding="utf-8")
+
+    assert _grant_or_licence_admission_violations(tmp_path / "app") == [
+        f"security/{module_name}: reserved admission references=['execution_limit']"
+    ]

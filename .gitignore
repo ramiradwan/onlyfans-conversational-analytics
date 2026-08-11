@@ -92,7 +92,3 @@ frontend/src/theme/generated/*
 # Cryptographic key material
 *.pem
 
-# Snapshot material pending governance, or outside the selected grant export.
-/contracts/capability-permit-v1/
-/contracts/permit-consumption/
-/contracts/schemas/

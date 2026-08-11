@@ -1,9 +1,247 @@
 {
-  "content_digest": "e87f17e983ab1ae5be03003882c1da6c875828f23e5cad316531b9393d8f141c",
+  "content_digest": "4e26a059ac76b74beac49bf7621fc4ca754377022cd6e5e87d9c5141eb955c8d",
   "export_set": [
-    "grant-profile-v1"
+    "grant-profile-v1",
+    "capability-permit-v1",
+    "permit-consumption",
+    "schemas"
   ],
   "files": [
+    {
+      "path": "capability-permit-v1/cross-type-substitution/expected.json",
+      "sha256": "0fe37be90f91d69a5ac6dda2f1a15bd866aefb5e4c94060c37529dcd7632bd58",
+      "size": 49
+    },
+    {
+      "path": "capability-permit-v1/cross-type-substitution/payload.json",
+      "sha256": "ecf49df9e99c45237da213494e0e26843cb5ca5a0ade05491599bcf7e5cf653a",
+      "size": 843
+    },
+    {
+      "path": "capability-permit-v1/cross-type-substitution/protected.json",
+      "sha256": "936b6966b64e7b474fbae302d7a380d94bed6aa15f49ee7fe676b85741d5e57e",
+      "size": 109
+    },
+    {
+      "path": "capability-permit-v1/cross-type-substitution/token.jws",
+      "sha256": "a9e0f387cecc06628a04c66936bfb8a78d3aa810ac876f439fb46e572e9ad742",
+      "size": 1252
+    },
+    {
+      "path": "capability-permit-v1/cross-type-substitution/verification-context.json",
+      "sha256": "47c2b6cea901ce36316f7917526b59188dffff0ae20f21df0e4958df1c1ca081",
+      "size": 479
+    },
+    {
+      "path": "capability-permit-v1/manifest.json",
+      "sha256": "76eb46e8d47b1a35b4c800a1200ffc8a6861bed3ea0105b1ebea009e655f34d0",
+      "size": 7712
+    },
+    {
+      "path": "capability-permit-v1/tampered-payload/expected.json",
+      "sha256": "a378115c1e439285e4dfe2becb3ff8d1d172cc73ecdf9ca8c5845894958eece1",
+      "size": 54
+    },
+    {
+      "path": "capability-permit-v1/tampered-payload/payload.json",
+      "sha256": "8a428cbdf057cbf7f23813884476f75c2555f8f687fbd1d96dffe3c723cca774",
+      "size": 845
+    },
+    {
+      "path": "capability-permit-v1/tampered-payload/protected.json",
+      "sha256": "1210a17766441f474282581dbcd09fab5a5a335698404305eb15643373f09f0a",
+      "size": 113
+    },
+    {
+      "path": "capability-permit-v1/tampered-payload/token.jws",
+      "sha256": "6851d219b29cf1daf2ae774b72f9bac3b184533c084c7548d373201475115b68",
+      "size": 1260
+    },
+    {
+      "path": "capability-permit-v1/tampered-payload/verification-context.json",
+      "sha256": "47c2b6cea901ce36316f7917526b59188dffff0ae20f21df0e4958df1c1ca081",
+      "size": 479
+    },
+    {
+      "path": "capability-permit-v1/trust-set.json",
+      "sha256": "ee6f8dda0659a4d5988db3f1cb22a356680ee6945dc3cb1f29b6096f38f2504d",
+      "size": 797
+    },
+    {
+      "path": "capability-permit-v1/valid/expected.json",
+      "sha256": "dfd9af3bf11a1bf83d5ebb81873a8fb2aa1328e5471884ad4ffd07a3779b0686",
+      "size": 44
+    },
+    {
+      "path": "capability-permit-v1/valid/payload.json",
+      "sha256": "ecf49df9e99c45237da213494e0e26843cb5ca5a0ade05491599bcf7e5cf653a",
+      "size": 843
+    },
+    {
+      "path": "capability-permit-v1/valid/protected.json",
+      "sha256": "1210a17766441f474282581dbcd09fab5a5a335698404305eb15643373f09f0a",
+      "size": 113
+    },
+    {
+      "path": "capability-permit-v1/valid/token.jws",
+      "sha256": "07febb278c6c8829d8db85fe66ddda21b830e62f8dd2cefbe8352bfd211c3876",
+      "size": 1257
+    },
+    {
+      "path": "capability-permit-v1/valid/verification-context.json",
+      "sha256": "47c2b6cea901ce36316f7917526b59188dffff0ae20f21df0e4958df1c1ca081",
+      "size": 479
+    },
+    {
+      "path": "capability-permit-v1/wrong-audience/expected.json",
+      "sha256": "09df9ccad724ea2601ebeff1f399ae6d28aab560584d530ed2737048c9dfac8c",
+      "size": 54
+    },
+    {
+      "path": "capability-permit-v1/wrong-audience/payload.json",
+      "sha256": "6703eb0e32fd114e7812d2c7795c3a7110cf3a56db40325f7dc63bf97092ee0d",
+      "size": 833
+    },
+    {
+      "path": "capability-permit-v1/wrong-audience/protected.json",
+      "sha256": "1210a17766441f474282581dbcd09fab5a5a335698404305eb15643373f09f0a",
+      "size": 113
+    },
+    {
+      "path": "capability-permit-v1/wrong-audience/token.jws",
+      "sha256": "38385f552a41ec40a10bc7b264e6c303f5dbf35d0b0f92b1ed62ea19c02038e5",
+      "size": 1244
+    },
+    {
+      "path": "capability-permit-v1/wrong-audience/verification-context.json",
+      "sha256": "47c2b6cea901ce36316f7917526b59188dffff0ae20f21df0e4958df1c1ca081",
+      "size": 479
+    },
+    {
+      "path": "capability-permit-v1/wrong-capability/expected.json",
+      "sha256": "eb41c706c8bc8819a11e36ed73f606e7d04103775f5ebe64ed3d69d3905cfda2",
+      "size": 56
+    },
+    {
+      "path": "capability-permit-v1/wrong-capability/payload.json",
+      "sha256": "ecf49df9e99c45237da213494e0e26843cb5ca5a0ade05491599bcf7e5cf653a",
+      "size": 843
+    },
+    {
+      "path": "capability-permit-v1/wrong-capability/protected.json",
+      "sha256": "1210a17766441f474282581dbcd09fab5a5a335698404305eb15643373f09f0a",
+      "size": 113
+    },
+    {
+      "path": "capability-permit-v1/wrong-capability/token.jws",
+      "sha256": "07febb278c6c8829d8db85fe66ddda21b830e62f8dd2cefbe8352bfd211c3876",
+      "size": 1257
+    },
+    {
+      "path": "capability-permit-v1/wrong-capability/verification-context.json",
+      "sha256": "23a450fbd6982b097fa379dd63843e0e13000d1b3a360e1196c9ef8121667e80",
+      "size": 487
+    },
+    {
+      "path": "capability-permit-v1/wrong-installation/expected.json",
+      "sha256": "da8c604eb15cf97d847b04ba0d2a5996aa13c1774c150523fc4a6e089a15df49",
+      "size": 58
+    },
+    {
+      "path": "capability-permit-v1/wrong-installation/payload.json",
+      "sha256": "9c1aab84ad7be395b99598fa85406e9680d25acb680eda14b4dcc86e1b9032f4",
+      "size": 825
+    },
+    {
+      "path": "capability-permit-v1/wrong-installation/protected.json",
+      "sha256": "1210a17766441f474282581dbcd09fab5a5a335698404305eb15643373f09f0a",
+      "size": 113
+    },
+    {
+      "path": "capability-permit-v1/wrong-installation/token.jws",
+      "sha256": "4431005e649b63389874977f04536ec1c8a60e7e71a250aa920e21554dc091ff",
+      "size": 1233
+    },
+    {
+      "path": "capability-permit-v1/wrong-installation/verification-context.json",
+      "sha256": "47c2b6cea901ce36316f7917526b59188dffff0ae20f21df0e4958df1c1ca081",
+      "size": 479
+    },
+    {
+      "path": "capability-permit-v1/wrong-organization/expected.json",
+      "sha256": "145ab4d4dca1bae093e2e26a4c56ff8a04b2181426a88071f5827bfa127c6aba",
+      "size": 58
+    },
+    {
+      "path": "capability-permit-v1/wrong-organization/payload.json",
+      "sha256": "2a5e5a6b117d063b909746a60772c96f0c9ed3b8012c4b7d4166439f92387d2e",
+      "size": 825
+    },
+    {
+      "path": "capability-permit-v1/wrong-organization/protected.json",
+      "sha256": "1210a17766441f474282581dbcd09fab5a5a335698404305eb15643373f09f0a",
+      "size": 113
+    },
+    {
+      "path": "capability-permit-v1/wrong-organization/token.jws",
+      "sha256": "f81b83adaa5e9ce2fa5b6f7718af77f3e076cf137d64884a7ace45eb75952c9d",
+      "size": 1233
+    },
+    {
+      "path": "capability-permit-v1/wrong-organization/verification-context.json",
+      "sha256": "47c2b6cea901ce36316f7917526b59188dffff0ae20f21df0e4958df1c1ca081",
+      "size": 479
+    },
+    {
+      "path": "capability-permit-v1/wrong-purpose-key/expected.json",
+      "sha256": "843524b3c43b446c16607b34e7cef7350616081030bf61c2212510e41cb1f850",
+      "size": 54
+    },
+    {
+      "path": "capability-permit-v1/wrong-purpose-key/payload.json",
+      "sha256": "ecf49df9e99c45237da213494e0e26843cb5ca5a0ade05491599bcf7e5cf653a",
+      "size": 843
+    },
+    {
+      "path": "capability-permit-v1/wrong-purpose-key/protected.json",
+      "sha256": "b4d3134738747e401085d375a4a0ef36ae9ace8924e37c28a4b6fe477c83b370",
+      "size": 113
+    },
+    {
+      "path": "capability-permit-v1/wrong-purpose-key/token.jws",
+      "sha256": "0b074f4930ff3b1aa06caaedc2106e0e28a15b940502a7cd595943e6aec6e0ce",
+      "size": 1257
+    },
+    {
+      "path": "capability-permit-v1/wrong-purpose-key/verification-context.json",
+      "sha256": "47c2b6cea901ce36316f7917526b59188dffff0ae20f21df0e4958df1c1ca081",
+      "size": 479
+    },
+    {
+      "path": "capability-permit-v1/wrong-subject/expected.json",
+      "sha256": "73a825353260db0265a9bbfaa0bb71629e96ad542a90567c2671bff29bf7d00e",
+      "size": 53
+    },
+    {
+      "path": "capability-permit-v1/wrong-subject/payload.json",
+      "sha256": "36bafa11a4e3752fd4df49228871ef521b09ee2cfae7baecd0c6713a1c2bf1bc",
+      "size": 825
+    },
+    {
+      "path": "capability-permit-v1/wrong-subject/protected.json",
+      "sha256": "1210a17766441f474282581dbcd09fab5a5a335698404305eb15643373f09f0a",
+      "size": 113
+    },
+    {
+      "path": "capability-permit-v1/wrong-subject/token.jws",
+      "sha256": "fae0dbcd71d96ba70b5c45b46e98a3d1037bd7d24c93807269f1d20d0de962d5",
+      "size": 1233
+    },
+    {
+      "path": "capability-permit-v1/wrong-subject/verification-context.json",
+      "sha256": "47c2b6cea901ce36316f7917526b59188dffff0ae20f21df0e4958df1c1ca081",
+      "size": 479
+    },
     {
       "path": "grant-profile-v1/creator_account_binding/at-grace-end/expected.json",
       "sha256": "0dd07e9cb60fb62f963879ed0d8683787b7e36a28949845d9616c66257ee7df2",
@@ -1828,10 +2066,87 @@
       "path": "grant-profile-v1/membership_snapshot/wrong-typ/verification-context.json",
       "sha256": "6d34023f8c3445b8cfac6f7db597fdcad5941bf063a4d9d8ebbf8c7dcb2e579b",
       "size": 807
+    },
+    {
+      "path": "permit-consumption/duplicate-reservation.expected.json",
+      "sha256": "7cc7c39edac555880c754e113d3233d276932b8b78a79c4266a5c8224ba92e66",
+      "size": 57
+    },
+    {
+      "path": "permit-consumption/duplicate-reservation.json",
+      "sha256": "b61bb5350954f68167991c883404b9d76a474f365901eeccc89f6ac9b3d1c5bb",
+      "size": 205
+    },
+    {
+      "path": "permit-consumption/failed-job-release.expected.json",
+      "sha256": "fe15f9397ef14bd087f864ac126fec7911823d861c557f3c2d192298a0964212",
+      "size": 57
+    },
+    {
+      "path": "permit-consumption/failed-job-release.json",
+      "sha256": "b5a1d9787365bc120b9c4d56f7763509edae2b2a3fd28259638e3b1c259e69b8",
+      "size": 214
+    },
+    {
+      "path": "permit-consumption/policy.json",
+      "sha256": "ea214b0092054f5f81294852bce64b03a7b73ce717474bc1e77dea8f57c46209",
+      "size": 239
+    },
+    {
+      "path": "permit-consumption/reserve-available.expected.json",
+      "sha256": "1485a0189979a7ce51c75d5c4d526f795781af574f42a46459d260e5cc34434b",
+      "size": 44
+    },
+    {
+      "path": "permit-consumption/reserve-available.json",
+      "sha256": "535bf74e9e15d1720b34513dadca2cb2030807dc7ca0f9e460c67fceb4dc4275",
+      "size": 193
+    },
+    {
+      "path": "permit-consumption/resume-same-job.expected.json",
+      "sha256": "5d40e524ff2bd4799bff705e5d3a0c8026b570ea07023fd95bcd009be4dae812",
+      "size": 55
+    },
+    {
+      "path": "permit-consumption/resume-same-job.json",
+      "sha256": "35bc90e332f0e84b54f23359cb8d2594b9b9ef172a3ae1ebaa24b7b3add54e31",
+      "size": 205
+    },
+    {
+      "path": "permit-consumption/spent-replay.expected.json",
+      "sha256": "f8e796ca28e1e3f13c62056e52a7f0c4c1b4bb59bd3a399c25399ca395600a79",
+      "size": 49
+    },
+    {
+      "path": "permit-consumption/spent-replay.json",
+      "sha256": "55a1c56cdbf9d3230d0578957022bcfcf90afbbdda357ad170609eb0809ce621",
+      "size": 201
+    },
+    {
+      "path": "permit-consumption/wrong-installation.expected.json",
+      "sha256": "da8c604eb15cf97d847b04ba0d2a5996aa13c1774c150523fc4a6e089a15df49",
+      "size": 58
+    },
+    {
+      "path": "permit-consumption/wrong-installation.json",
+      "sha256": "f541fefffda0f2f9c8556841f43d7394fe67bafd78664eb2b4e2cf4392cbad73",
+      "size": 194
+    },
+    {
+      "path": "schemas/commercial/v1/capability-permit.schema.json",
+      "sha256": "9b0bfee05eb11ed87876a43b6ee88035f67a6f3067254fcc79e23dd5c42b1aa8",
+      "size": 1943
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa",
+      "size": 2321
     }
   ],
   "manifest_version": 2,
   "profiles": [
-    "urn:bridge-clean:grant-profile:v1"
+    "urn:bridge-clean:grant-profile:v1",
+    "urn:bridge-clean:capability-permit-v1",
+    "urn:bridge-clean:capability-permit-consumption-policy:v1"
   ]
 }

@@ -1,0 +1,8 @@
+{
+  "expected_capability": "different-capability",
+  "expected_installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+  "expected_installation_key_id": "ik1.AAAAAAAAAAAAAAAAAAAAAA",
+  "expected_installation_key_jkt": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "expected_organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+  "expected_subject": "organization:0198a1b2-c3d4-7000-8000-000000000001:installation:0198a1b2-c3d4-7000-8000-000000000002:capability:analysis-run"
+}

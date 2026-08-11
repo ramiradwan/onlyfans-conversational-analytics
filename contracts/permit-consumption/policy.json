@@ -1,0 +1,11 @@
+{
+  "commercial_expiry": false,
+  "default_bundle_size": 1,
+  "hosted_consumption_reporting": false,
+  "profile": "urn:bridge-clean:capability-permit-consumption-policy:v1",
+  "states": [
+    "available",
+    "reserved",
+    "spent"
+  ]
+}

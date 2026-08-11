@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json",
+  "title": "Cross-plane common definitions v1",
+  "$defs": {
+    "crossPlaneId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    },
+    "uuidV7": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 24,
+      "maxLength": 24,
+      "pattern": "^(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+    },
+    "base64url32": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "base64url64": {
+      "type": "string",
+      "minLength": 86,
+      "maxLength": 86,
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "sha256Hex": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "installationKeyId": {
+      "type": "string",
+      "minLength": 26,
+      "maxLength": 26,
+      "pattern": "^ik1\\.[A-Za-z0-9_-]{22}$"
+    },
+    "compactJws": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 16384,
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["challenge", "key_id", "signature"],
+      "properties": {
+        "challenge": {"$ref": "#/$defs/base64url32"},
+        "key_id": {"$ref": "#/$defs/installationKeyId"},
+        "signature": {"$ref": "#/$defs/base64url64"}
+      }
+    },
+    "publicP256Jwk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crv", "kty", "x", "y"],
+      "properties": {
+        "crv": {"const": "P-256"},
+        "kty": {"const": "EC"},
+        "x": {"$ref": "#/$defs/base64url32"},
+        "y": {"$ref": "#/$defs/base64url32"}
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-permit.schema.json",
+  "title": "Capability permit signed payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "permit_type",
+    "iss",
+    "aud",
+    "sub",
+    "permit_id",
+    "issuance_id",
+    "iat",
+    "organization_id",
+    "installation_id",
+    "installation_key_id",
+    "installation_key_jkt",
+    "capability",
+    "catalog_version",
+    "credit_cost",
+    "execution_limit"
+  ],
+  "properties": {
+    "profile": {"const": "urn:bridge-clean:capability-permit:v1"},
+    "permit_type": {"const": "capability_permit"},
+    "iss": {"const": "urn:bridge-clean:commercial-control-plane"},
+    "aud": {"const": "urn:bridge-clean:local-brain:capability-permit"},
+    "sub": {"type": "string", "minLength": 1, "maxLength": 384, "pattern": "^organization:[A-Za-z0-9._~-]+:installation:[A-Za-z0-9._~-]+:capability:[a-z][a-z0-9-]{0,63}$"},
+    "permit_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"},
+    "issuance_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"},
+    "iat": {"type": "integer", "minimum": 0, "maximum": 4102444800},
+    "organization_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "installation_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "installation_key_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"},
+    "installation_key_jkt": {"$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"},
+    "capability": {"enum": ["analysis-run"]},
+    "catalog_version": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._~-]+$"},
+    "credit_cost": {"type": "integer", "minimum": 1, "maximum": 1000000},
+    "execution_limit": {"const": 1}
+  }
+}

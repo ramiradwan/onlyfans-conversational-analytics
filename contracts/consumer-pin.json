@@ -1,17 +1,51 @@
 {
-  "aggregate_bundle_sha256": "e87f17e983ab1ae5be03003882c1da6c875828f23e5cad316531b9393d8f141c",
-  "consumer_pin_version": 1,
+  "aggregate_bundle_sha256": "4e26a059ac76b74beac49bf7621fc4ca754377022cd6e5e87d9c5141eb955c8d",
+  "consumer_pin_version": 2,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "41a72d224b30b81b8279e35da8a6dbaf2854fb7c5e5160f0051a18ff986f247c",
+  "contract_manifest_sha256": "f0e87b5b94f0a6d98f62d713b0f0dc5ee27458c3b9a68240ffe89e3bcc954e01",
   "export_set": [
-    "grant-profile-v1"
+    "grant-profile-v1",
+    "capability-permit-v1",
+    "permit-consumption",
+    "schemas"
   ],
-  "generator_version": "1.0.0",
+  "generator_versions": [
+    {
+      "export": "grant-profile-v1",
+      "version": "1.0.0"
+    },
+    {
+      "export": "capability-permit-v1",
+      "version": "1.1.0"
+    }
+  ],
   "supported_profiles": [
-    "urn:bridge-clean:grant-profile:v1"
+    "urn:bridge-clean:grant-profile:v1",
+    "urn:bridge-clean:capability-permit-v1",
+    "urn:bridge-clean:capability-permit-consumption-policy:v1"
   ],
-  "trust_set_path": "grant-profile-v1/keys/trust-set.json",
-  "trust_set_sha256": "78bbff6a37b5c5ac12ad508cdefb16c22cf4fb6b90a2ec88639572c8839c2b75",
-  "vector_manifest_path": "grant-profile-v1/manifest.json",
-  "vector_manifest_sha256": "040eb98f4f3ed6f3d36de2bb833803f719ff4e7cd8c91a83abad945f10b3516c"
+  "trust_sets": [
+    {
+      "export": "grant-profile-v1",
+      "path": "grant-profile-v1/keys/trust-set.json",
+      "sha256": "78bbff6a37b5c5ac12ad508cdefb16c22cf4fb6b90a2ec88639572c8839c2b75"
+    },
+    {
+      "export": "capability-permit-v1",
+      "path": "capability-permit-v1/trust-set.json",
+      "sha256": "ee6f8dda0659a4d5988db3f1cb22a356680ee6945dc3cb1f29b6096f38f2504d"
+    }
+  ],
+  "vector_manifests": [
+    {
+      "export": "grant-profile-v1",
+      "path": "grant-profile-v1/manifest.json",
+      "sha256": "040eb98f4f3ed6f3d36de2bb833803f719ff4e7cd8c91a83abad945f10b3516c"
+    },
+    {
+      "export": "capability-permit-v1",
+      "path": "capability-permit-v1/manifest.json",
+      "sha256": "76eb46e8d47b1a35b4c800a1200ffc8a6861bed3ea0105b1ebea009e655f34d0"
+    }
+  ]
 }

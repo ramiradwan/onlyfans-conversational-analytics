@@ -29,12 +29,10 @@ _PIN_KEYS = {
     "contract_manifest_path",
     "contract_manifest_sha256",
     "export_set",
-    "generator_version",
+    "generator_versions",
     "supported_profiles",
-    "trust_set_path",
-    "trust_set_sha256",
-    "vector_manifest_path",
-    "vector_manifest_sha256",
+    "trust_sets",
+    "vector_manifests",
 }
 
 
@@ -165,7 +163,7 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
     contract_root = _contracts_root(root)
     manifest = verify_manifest(contract_root)
     pin = _read_json(contract_root / _PIN)
-    if set(pin) != _PIN_KEYS or pin.get("consumer_pin_version") != 1:
+    if set(pin) != _PIN_KEYS or pin.get("consumer_pin_version") != 2:
         raise ContractsIntegrityError("consumer pin has an invalid envelope")
     manifest_path = contract_root / _MANIFEST
     if pin["contract_manifest_path"] != _MANIFEST or pin["contract_manifest_sha256"] != _sha256(manifest_path):
@@ -176,23 +174,63 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
         raise ContractsIntegrityError("consumer pin does not match export set")
     if pin["aggregate_bundle_sha256"] != manifest["content_digest"]:
         raise ContractsIntegrityError("consumer pin does not match aggregate bundle")
-    vector_path = pin["vector_manifest_path"]
-    trust_path = pin["trust_set_path"]
-    if not isinstance(vector_path, str) or not isinstance(trust_path, str):
-        raise ContractsIntegrityError("consumer pin has an invalid artifact path")
     listed = {entry["path"]: entry for entry in manifest["files"]}
-    for path, digest, label in (
-        (vector_path, pin["vector_manifest_sha256"], "vector manifest"),
-        (trust_path, pin["trust_set_sha256"], "trust set"),
-    ):
-        entry = listed.get(path)
-        if entry is None or digest != entry["sha256"] or digest != _sha256(contract_root / path):
-            raise ContractsIntegrityError(f"consumer pin does not match {label}")
-    vector_manifest = _read_json(contract_root / vector_path)
-    if vector_manifest.get("profile") not in manifest["profiles"]:
-        raise ContractsIntegrityError("vector manifest profile is not supported")
-    if pin["generator_version"] != vector_manifest.get("generator_version"):
-        raise ContractsIntegrityError("consumer pin does not match generator version")
+    exports = set(manifest["export_set"])
+
+    def verify_artifact_collection(value: Any, label: str) -> dict[str, dict[str, str]]:
+        if not isinstance(value, list):
+            raise ContractsIntegrityError(f"consumer pin has invalid {label} collection")
+        records: dict[str, dict[str, str]] = {}
+        for item in value:
+            if (
+                not isinstance(item, dict)
+                or set(item) != {"export", "path", "sha256"}
+                or not all(isinstance(item.get(key), str) for key in item)
+                or item["export"] not in exports
+                or item["export"] in records
+                or not _valid_relative_path(item["path"])
+                or len(item["sha256"]) != 64
+                or any(char not in "0123456789abcdef" for char in item["sha256"])
+            ):
+                raise ContractsIntegrityError(f"consumer pin has invalid {label} collection")
+            entry = listed.get(item["path"])
+            if (
+                entry is None
+                or not item["path"].startswith(f"{item['export']}/")
+                or item["sha256"] != entry["sha256"]
+                or item["sha256"] != _sha256(contract_root / item["path"])
+            ):
+                raise ContractsIntegrityError(f"consumer pin does not match {label}")
+            records[item["export"]] = item
+        return records
+
+    vector_manifests = verify_artifact_collection(pin.get("vector_manifests"), "vector manifests")
+    trust_sets = verify_artifact_collection(pin.get("trust_sets"), "trust sets")
+    if set(vector_manifests) != set(trust_sets):
+        raise ContractsIntegrityError("consumer pin artifact exports do not match")
+    generator_versions = pin.get("generator_versions")
+    if not isinstance(generator_versions, list):
+        raise ContractsIntegrityError("consumer pin has invalid generator versions")
+    versions: dict[str, str] = {}
+    for item in generator_versions:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"export", "version"}
+            or not isinstance(item.get("export"), str)
+            or not isinstance(item.get("version"), str)
+            or item["export"] not in vector_manifests
+            or item["export"] in versions
+        ):
+            raise ContractsIntegrityError("consumer pin has invalid generator versions")
+        versions[item["export"]] = item["version"]
+    if set(versions) != set(vector_manifests):
+        raise ContractsIntegrityError("consumer pin generator exports do not match")
+    for export, item in vector_manifests.items():
+        vector_manifest = _read_json(contract_root / item["path"])
+        if vector_manifest.get("profile") not in manifest["profiles"]:
+            raise ContractsIntegrityError("vector manifest profile is not supported")
+        if versions[export] != vector_manifest.get("generator_version"):
+            raise ContractsIntegrityError("consumer pin does not match generator version")
     return manifest
 
 

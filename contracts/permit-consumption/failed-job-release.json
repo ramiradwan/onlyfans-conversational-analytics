@@ -1,0 +1,8 @@
+{
+  "durable_output_committed": false,
+  "event": "terminal_failure",
+  "installation_matches": true,
+  "permit_state": "reserved",
+  "requested_job_id": "job-fixture-001",
+  "reserved_job_id": "job-fixture-001"
+}

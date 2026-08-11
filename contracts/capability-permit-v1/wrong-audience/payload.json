@@ -1,0 +1,18 @@
+{
+  "aud": "urn:bridge-clean:local-brain:license",
+  "capability": "analysis-run",
+  "catalog_version": "starter-2026-07",
+  "credit_cost": 1,
+  "execution_limit": 1,
+  "iat": 1784419200,
+  "installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+  "installation_key_id": "ik1.AAAAAAAAAAAAAAAAAAAAAA",
+  "installation_key_jkt": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "iss": "urn:bridge-clean:commercial-control-plane",
+  "issuance_id": "0198a1b2-c3d4-7500-8000-000000000002",
+  "organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+  "permit_id": "0198a1b2-c3d4-7500-8000-000000000001",
+  "permit_type": "capability_permit",
+  "profile": "urn:bridge-clean:capability-permit:v1",
+  "sub": "organization:0198a1b2-c3d4-7000-8000-000000000001:installation:0198a1b2-c3d4-7000-8000-000000000002:capability:analysis-run"
+}
