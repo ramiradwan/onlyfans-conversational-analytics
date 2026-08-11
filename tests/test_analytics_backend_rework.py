@@ -78,7 +78,6 @@ from app.models.analytics import (
     MessageDirection,
     WindowScope,
 )
-from app.models.auth import AuthenticatedAccountSession
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 from app.persistence.history import HistoryRepository, StreamKey
 from app.persistence.migrations import load_migration_catalog
@@ -88,6 +87,7 @@ from app.protocol.payloads import (
     IngestSnapshotCommitPayload,
     SnapshotRecordCounts,
 )
+from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from app.services import insights_service
 from app.transport.manager import DEV_AGENT_AUTH_TICKET
 from app.transport import transport_manager
@@ -305,9 +305,13 @@ async def seed_default(name: str) -> FixtureSnapshot:
 
 def bind_session(account_id: str) -> None:
     app.dependency_overrides[get_authenticated_account_session] = lambda: (
-        AuthenticatedAccountSession(
-            principal_id="synthetic-principal",
-            creator_account_id=account_id,
+        RuntimePolicy(
+            identity=AuthContext(
+                principal_id="synthetic-principal",
+                creator_account_id=account_id,
+                role="creator",
+            ),
+            authorization_epoch=AuthorizationEpoch(0),
         )
     )
 

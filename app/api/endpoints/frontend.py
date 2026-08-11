@@ -21,9 +21,10 @@ from app.core.config import settings
 from app.api.security import (
     AuthContext,
     csrf_token,
-    get_auth_context,
+    get_runtime_policy,
     local_session_token,
 )
+from app.security.runtime_policy import RuntimePolicy
 from app.transport import transport_manager
 
 router = APIRouter(tags=["Frontend"])
@@ -201,7 +202,7 @@ async def redeem_local_session_handoff(
 )
 async def serve_frontend(
     request: Request,
-    context: AuthContext = Depends(get_auth_context),
+    policy: RuntimePolicy = Depends(get_runtime_policy),
 ):
     manifest = _manifest
 
@@ -228,20 +229,20 @@ async def serve_frontend(
         "FASTAPI_WS_URL": ws_url,
         "API_BASE_URL": api_base_url,
         "VERSION": settings.version,
-        "CREATOR_ID": context.creator_account_id,
-        "BRIDGE_ROLE": context.role,
+        "CREATOR_ID": policy.identity.creator_account_id,
+        "BRIDGE_ROLE": policy.identity.role,
         "BRIDGE_AUTH_TICKET": transport_manager.issue_bridge_ticket(
-            principal_id=context.principal_id,
-            creator_account_id=context.creator_account_id,
-            role=context.role,
+            principal_id=policy.identity.principal_id,
+            creator_account_id=policy.identity.creator_account_id,
+            role=policy.identity.role,
             ttl_seconds=(
                 settings.bridge_ticket_ttl_seconds
-                if context.session_expires_at is None
+                if policy.identity.session_expires_at is None
                 else max(
                     1,
                     min(
                         settings.bridge_ticket_ttl_seconds,
-                        context.session_expires_at - int(time.time()),
+                        policy.identity.session_expires_at - int(time.time()),
                     ),
                 )
             ),
@@ -261,7 +262,7 @@ async def serve_frontend(
             "app_script": f"/static/dist/{app_script}" if app_script else None,
             "css_files": [f"/static/dist/{c}" for c in css_files],
             "config": config,
-            "csrf_token": csrf_token(context),
+            "csrf_token": csrf_token(policy),
         },
     )
     response.headers["Cache-Control"] = "no-store"
@@ -273,10 +274,10 @@ async def serve_frontend(
 async def serve_frontend_route(
     request: Request,
     frontend_path: str,
-    context: AuthContext = Depends(get_auth_context),
+    policy: RuntimePolicy = Depends(get_runtime_policy),
 ):
     """Serve BrowserRouter refreshes without swallowing API or transport namespaces."""
     first_segment = frontend_path.split("/", 1)[0]
     if first_segment in {"api", "ws", "static"}:
         raise HTTPException(status_code=404, detail="Not found")
-    return await serve_frontend(request, context)
+    return await serve_frontend(request, policy)

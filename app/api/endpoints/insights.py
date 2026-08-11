@@ -17,7 +17,7 @@ from app.api.dependencies import (
     get_authenticated_account_session,
 )
 from app.models.analytics import AnalyticsProjection
-from app.models.auth import AuthenticatedAccountSession
+from app.security.runtime_policy import RuntimePolicy
 from app.models.insights import (
     AnalyticsErrorResponse,
     AnalyticsUpdate,
@@ -78,12 +78,12 @@ def _analytics_http_error(error: AnalyticsError) -> HTTPException:
 
 
 def _request_context(
-    session: AuthenticatedAccountSession,
+    policy: RuntimePolicy,
     creator_account_id: str | None,
     start_date: str | None,
     end_date: str | None,
 ) -> tuple[str, datetime | None, datetime | None]:
-    account_id = account_bound_to_session(session, creator_account_id)
+    account_id = account_bound_to_session(policy, creator_account_id)
     return account_id, _timestamp(start_date), _timestamp(end_date)
 
 
@@ -97,13 +97,13 @@ async def get_topic_metrics(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     creator_account_id: str | None = Query(None),
-    session: AuthenticatedAccountSession = Depends(
+    policy: RuntimePolicy = Depends(
         get_authenticated_account_session
     ),
 ) -> TopicMetricsCollection:
     try:
         account_id, start, end = _request_context(
-            session, creator_account_id, start_date, end_date
+            policy, creator_account_id, start_date, end_date
         )
         return await insights_service.fetch_topic_metrics(start, end, account_id)
     except AnalyticsError as error:
@@ -120,13 +120,13 @@ async def get_sentiment_trend(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     creator_account_id: str | None = Query(None),
-    session: AuthenticatedAccountSession = Depends(
+    policy: RuntimePolicy = Depends(
         get_authenticated_account_session
     ),
 ) -> SentimentTrendResponse:
     try:
         account_id, start, end = _request_context(
-            session, creator_account_id, start_date, end_date
+            policy, creator_account_id, start_date, end_date
         )
         return await insights_service.fetch_sentiment_trend(start, end, account_id)
     except AnalyticsError as error:
@@ -143,13 +143,13 @@ async def get_response_time_metrics(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     creator_account_id: str | None = Query(None),
-    session: AuthenticatedAccountSession = Depends(
+    policy: RuntimePolicy = Depends(
         get_authenticated_account_session
     ),
 ) -> ResponseTimeMetricsResponse:
     try:
         account_id, start, end = _request_context(
-            session, creator_account_id, start_date, end_date
+            policy, creator_account_id, start_date, end_date
         )
         return await insights_service.fetch_response_time_metrics(
             start, end, account_id
@@ -168,13 +168,13 @@ async def get_full_analytics(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     creator_account_id: str | None = Query(None),
-    session: AuthenticatedAccountSession = Depends(
+    policy: RuntimePolicy = Depends(
         get_authenticated_account_session
     ),
 ) -> AnalyticsUpdate:
     try:
         account_id, start, end = _request_context(
-            session, creator_account_id, start_date, end_date
+            policy, creator_account_id, start_date, end_date
         )
         return await insights_service.build_analytics_update(
             account_id, start, end
@@ -191,11 +191,11 @@ async def get_full_analytics(
 )
 async def get_projection(
     creator_account_id: str | None = Query(None),
-    session: AuthenticatedAccountSession = Depends(
+    policy: RuntimePolicy = Depends(
         get_authenticated_account_session
     ),
 ) -> AnalyticsProjection:
-    account_id = account_bound_to_session(session, creator_account_id)
+    account_id = account_bound_to_session(policy, creator_account_id)
     try:
         return await insights_service.active_projection(account_id)
     except AnalyticsError as error:

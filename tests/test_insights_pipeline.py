@@ -9,9 +9,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_authenticated_account_session
+from app.api.security import AuthContext
 from app.analytics.opaque_refs import account_ref
 from app.main import app
-from app.models.auth import AuthenticatedAccountSession
 from app.persistence.history import HistoryRepository, StreamKey
 from app.protocol.payloads import (
     IngestSnapshotBeginPayload,
@@ -20,6 +20,7 @@ from app.protocol.payloads import (
     SnapshotRecordCounts,
 )
 from app.services import insights_service
+from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from app.transport import transport_manager
 
 
@@ -162,9 +163,13 @@ async def seed_default_runtime() -> FixtureSnapshot:
 
 def bind_session(account_id: str) -> None:
     app.dependency_overrides[get_authenticated_account_session] = lambda: (
-        AuthenticatedAccountSession(
-            principal_id="synthetic-principal",
-            creator_account_id=account_id,
+        RuntimePolicy(
+            identity=AuthContext(
+                principal_id="synthetic-principal",
+                creator_account_id=account_id,
+                role="creator",
+            ),
+            authorization_epoch=AuthorizationEpoch(0),
         )
     )
 

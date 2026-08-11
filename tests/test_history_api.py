@@ -10,11 +10,12 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from app.api.security import AuthContext, csrf_token, get_auth_context
+from app.api.security import AuthContext, csrf_token, get_runtime_policy
 from app.core.config import settings
 from app.main import app
 from app.persistence.history import StreamKey
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
+from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
     DEV_AGENT_AUTH_TICKET,
@@ -161,12 +162,15 @@ def agent_hello(ticket: str) -> dict:
 
 def creator_csrf() -> str:
     return csrf_token(
-        AuthContext(
-            DEV_PRINCIPAL_ID,
-            DEV_ACCOUNT_ID,
-            "creator",
-            "dev-platform-creator",
-            "development-session",
+        RuntimePolicy(
+            identity=AuthContext(
+                DEV_PRINCIPAL_ID,
+                DEV_ACCOUNT_ID,
+                "creator",
+                "dev-platform-creator",
+                "development-session",
+            ),
+            authorization_epoch=AuthorizationEpoch(0),
         )
     )
 
@@ -313,17 +317,17 @@ def test_settings_are_csrf_cas_and_matching_config_revision_bound() -> None:
         assert revoked.status_code == 200
         assert revoked.json()["desired_state"] == "revoked"
 
-        app.dependency_overrides[get_auth_context] = lambda: AuthContext(
-            "operator-1", DEV_ACCOUNT_ID, "operator"
+        operator_policy = RuntimePolicy(
+            identity=AuthContext("operator-1", DEV_ACCOUNT_ID, "operator"),
+            authorization_epoch=AuthorizationEpoch(0),
         )
+        app.dependency_overrides[get_runtime_policy] = lambda: operator_policy
         assert client.get("/api/v1/settings/history").status_code == 200
         denied = client.put(
             "/api/v1/settings/history",
             headers={
                 "If-Match": "1",
-                "X-CSRF-Token": csrf_token(
-                    AuthContext("operator-1", DEV_ACCOUNT_ID, "operator")
-                ),
+                "X-CSRF-Token": csrf_token(operator_policy),
             },
             json={**request, "desired_state": "paused", "accept_consent": False, "consent_policy_version": None},
         )

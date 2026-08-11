@@ -1,17 +1,19 @@
 """Replaceable account-session dependencies for the analytics HTTP endpoints.
 
-Account authority for analytics reads comes from the same signer-v2
-same-origin bridge session cookie that ``app.api.endpoints.history`` already
-authenticates against (see ``app.api.security.get_auth_context``). There is
-no analytics-specific ticket, header, or query-string account seam.
+Account authority for analytics reads comes from the same runtime policy used
+by the other HTTP surfaces.
 """
 
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException
 
-from app.api.security import AuthContext, get_auth_context
-from app.models.auth import AuthenticatedAccountSession
+from app.api.security import get_runtime_policy
+from app.security.runtime_policy import (
+    RuntimeAuthorizationDenied,
+    RuntimePolicy,
+    authorized_account,
+)
 
 
 def _detail(code: str, message: str) -> dict[str, str]:
@@ -19,31 +21,26 @@ def _detail(code: str, message: str) -> dict[str, str]:
 
 
 def get_authenticated_account_session(
-    context: AuthContext = Depends(get_auth_context),
-) -> AuthenticatedAccountSession:
-    """Authenticate the analytics HTTP surface from the bridge session cookie."""
+    policy: RuntimePolicy = Depends(get_runtime_policy),
+) -> RuntimePolicy:
+    """Authenticate the analytics HTTP surface with one runtime policy."""
 
-    return AuthenticatedAccountSession(
-        principal_id=context.principal_id,
-        creator_account_id=context.creator_account_id,
-    )
+    return policy
 
 
 def account_bound_to_session(
-    session: AuthenticatedAccountSession,
+    policy: RuntimePolicy,
     requested_account_id: str | None,
 ) -> str:
-    """Use session authority and reject every mismatched request partition."""
+    """Resolve one account partition from a complete runtime policy."""
 
-    if (
-        requested_account_id is not None
-        and requested_account_id != session.creator_account_id
-    ):
+    try:
+        return authorized_account(policy, requested_account_id)
+    except RuntimeAuthorizationDenied as error:
         raise HTTPException(
             status_code=403,
             detail=_detail(
                 "account_binding_mismatch",
                 "The authenticated session cannot access that account.",
             ),
-        )
-    return session.creator_account_id
+        ) from error

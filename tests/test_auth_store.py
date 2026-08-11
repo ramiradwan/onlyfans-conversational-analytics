@@ -26,6 +26,11 @@ from app.persistence.auth import (
     WebAuthnChallengeBinding,
     WebAuthnCredential,
 )
+from app.security.runtime_policy import (
+    AuthContext,
+    RuntimePolicy,
+    StaleRuntimePolicyError,
+)
 
 
 @dataclass
@@ -190,7 +195,10 @@ def register_pairing(
     )
     store.register_agent_pairing(pairing)
     if activated:
-        assert store.activate_agent_pairing(pairing.pairing_id) is True
+        policy = store.build_runtime_policy(
+            AuthContext(pairing.principal_id, pairing.creator_account_id, "agent")
+        )
+        assert store.activate_agent_pairing(policy, pairing.pairing_id) is True
     return pairing
 
 
@@ -531,10 +539,13 @@ def test_pairing_activation_revalidates_grant_expiry(
     clock: MutableClock,
 ) -> None:
     pairing = register_pairing(store, instant, activated=False)
+    policy = store.build_runtime_policy(
+        AuthContext(pairing.principal_id, pairing.creator_account_id, "agent")
+    )
     clock.value = instant + timedelta(hours=2)
 
     with pytest.raises(AuthenticationStateError, match="not current"):
-        store.activate_agent_pairing(pairing.pairing_id)
+        store.activate_agent_pairing(policy, pairing.pairing_id)
     with store.database.read() as connection:
         row = connection.execute(
             "SELECT activated_at FROM agent_pairings WHERE pairing_id = ?",
@@ -603,9 +614,12 @@ def test_pairing_activation_rejects_a_revoked_authority_scope(
         RevocationKey(RevocationScopeType.PRINCIPAL, pairing.principal_id),
         reason="local principal revoked",
     )
+    policy = store.build_runtime_policy(
+        AuthContext(pairing.principal_id, pairing.creator_account_id, "agent")
+    )
 
     with pytest.raises(AuthenticationStateError, match="scope is revoked"):
-        store.activate_agent_pairing(pairing.pairing_id)
+        store.activate_agent_pairing(policy, pairing.pairing_id)
     with store.database.read() as connection:
         row = connection.execute(
             "SELECT activated_at FROM agent_pairings WHERE pairing_id = ?",
@@ -670,11 +684,34 @@ def test_revocation_wins_over_a_contending_consume_and_cached_authority(
         assert revoke_future.result() == 1
 
     if consumed is not None:
-        assert store.authorization_is_current(consumed.authorization) is False
+        assert store.runtime_policy_is_current(consumed.policy) is False
     assert store.read_bridge_session(session.session_value) is None
     reopened = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3", clock=clock)
     assert reopened.revocation_version(key) == 1
-    assert reopened.authorization_is_current(session.authorization) is False
+    assert reopened.runtime_policy_is_current(session.policy) is False
+
+
+def test_authorization_input_change_rejects_stale_policy_at_transition(
+    store: SQLiteAuthenticationStore,
+    instant: datetime,
+) -> None:
+    pairing = register_pairing(store, instant, activated=False)
+    policy: RuntimePolicy = store.build_runtime_policy(
+        AuthContext(pairing.principal_id, pairing.creator_account_id, "agent")
+    )
+    previous_epoch = policy.authorization_epoch
+
+    record_grant(store, instant, reference_id="independent-grant-change")
+
+    with pytest.raises(StaleRuntimePolicyError, match="epoch"):
+        store.activate_agent_pairing(policy, pairing.pairing_id)
+    assert store.build_runtime_policy(policy.identity).authorization_epoch > previous_epoch
+    with store.database.read() as connection:
+        row = connection.execute(
+            "SELECT activated_at FROM agent_pairings WHERE pairing_id = ?",
+            (pairing.pairing_id,),
+        ).fetchone()
+    assert row["activated_at"] is None
 
 
 @pytest.mark.parametrize("one_time_object", ["challenge", "ticket"])

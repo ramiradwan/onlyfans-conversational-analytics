@@ -14,6 +14,13 @@ from uuid import uuid4
 
 from app.persistence.database import AuthSQLite
 from app.persistence.migrations import MigrationRunner
+from app.security.runtime_policy import (
+    AuthContext,
+    AuthorizationEpoch,
+    RevocationObservation,
+    RuntimePolicy,
+    StaleRuntimePolicyError,
+)
 
 
 class TicketPurpose(str, Enum):
@@ -40,19 +47,6 @@ class RevocationKey:
     def __post_init__(self) -> None:
         if not self.scope_id:
             raise ValueError("revocation scope_id must not be empty")
-
-
-@dataclass(frozen=True, slots=True)
-class RevocationSnapshot:
-    key: RevocationKey
-    version: int
-
-
-@dataclass(frozen=True, slots=True)
-class AuthorizationSnapshot:
-    expires_at: datetime
-    revocations: tuple[RevocationSnapshot, ...]
-    grant_reference_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,7 +144,6 @@ class IssuedChallenge:
 @dataclass(frozen=True, slots=True)
 class ConsumedChallenge:
     challenge_id: str
-    authorization: AuthorizationSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,21 +161,49 @@ class IssuedBridgeSession:
     session_id: str
     session_value: str
     csrf_value: str
-    principal_id: str
-    creator_account_id: str
-    role: str
-    expires_at: datetime
-    authorization: AuthorizationSnapshot
+    policy: RuntimePolicy
+
+    @property
+    def principal_id(self) -> str:
+        return self.policy.identity.principal_id
+
+    @property
+    def creator_account_id(self) -> str:
+        return self.policy.identity.creator_account_id
+
+    @property
+    def role(self) -> str:
+        return self.policy.identity.role
+
+    @property
+    def expires_at(self) -> datetime:
+        if self.policy.expires_at is None:
+            raise RuntimeError("issued Bridge session policy requires an expiry")
+        return self.policy.expires_at
 
 
 @dataclass(frozen=True, slots=True)
 class ActiveBridgeSession:
     session_id: str
-    principal_id: str
-    creator_account_id: str
-    role: str
-    expires_at: datetime
-    authorization: AuthorizationSnapshot
+    policy: RuntimePolicy
+
+    @property
+    def principal_id(self) -> str:
+        return self.policy.identity.principal_id
+
+    @property
+    def creator_account_id(self) -> str:
+        return self.policy.identity.creator_account_id
+
+    @property
+    def role(self) -> str:
+        return self.policy.identity.role
+
+    @property
+    def expires_at(self) -> datetime:
+        if self.policy.expires_at is None:
+            raise RuntimeError("active Bridge session policy requires an expiry")
+        return self.policy.expires_at
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,12 +239,21 @@ class IssuedTicket:
 class ConsumedTicket:
     ticket_id: str
     purpose: TicketPurpose
-    principal_id: str
-    role: str
-    creator_account_id: str
     parent_session_id: str | None
     parent_pairing_id: str | None
-    authorization: AuthorizationSnapshot
+    policy: RuntimePolicy
+
+    @property
+    def principal_id(self) -> str:
+        return self.policy.identity.principal_id
+
+    @property
+    def role(self) -> str:
+        return self.policy.identity.role
+
+    @property
+    def creator_account_id(self) -> str:
+        return self.policy.identity.creator_account_id
 
 
 class AuthenticationStore(Protocol):
@@ -261,7 +291,7 @@ class AuthenticationStore(Protocol):
     def register_agent_pairing(self, pairing: AgentPairing) -> None: ...
 
     def activate_agent_pairing(
-        self, pairing_id: str
+        self, policy: RuntimePolicy, pairing_id: str
     ) -> bool: ...
 
     def issue_webauthn_challenge(
@@ -292,7 +322,14 @@ class AuthenticationStore(Protocol):
         self, value: str, binding: TicketBinding
     ) -> ConsumedTicket | None: ...
 
-    def authorization_is_current(self, snapshot: AuthorizationSnapshot) -> bool: ...
+    def build_runtime_policy(
+        self,
+        identity: AuthContext,
+        *,
+        signed_object_digests: tuple[str, ...] = (),
+    ) -> RuntimePolicy: ...
+
+    def runtime_policy_is_current(self, policy: RuntimePolicy) -> bool: ...
 
     def revoke(self, key: RevocationKey, *, reason: str | None = None) -> int: ...
 
@@ -334,12 +371,42 @@ class SQLiteAuthenticationStore:
         ).run()
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
+    def build_runtime_policy(
+        self,
+        identity: AuthContext,
+        *,
+        signed_object_digests: tuple[str, ...] = (),
+    ) -> RuntimePolicy:
+        with self.database.read() as connection:
+            return RuntimePolicy(
+                identity=identity,
+                authorization_epoch=self._authorization_epoch(connection),
+                signed_object_digests=_unique(signed_object_digests),
+            )
+
+    @staticmethod
+    def _authorization_epoch(connection: sqlite3.Connection) -> AuthorizationEpoch:
+        row = connection.execute(
+            "SELECT value FROM authorization_epoch WHERE singleton = 1"
+        ).fetchone()
+        if row is None:
+            raise AuthenticationStateError("Authorization epoch is unavailable")
+        return AuthorizationEpoch(int(row["value"]))
+
+    @staticmethod
+    def _increment_authorization_epoch(connection: sqlite3.Connection) -> None:
+        cursor = connection.execute(
+            "UPDATE authorization_epoch SET value = value + 1 WHERE singleton = 1"
+        )
+        if cursor.rowcount != 1:
+            raise AuthenticationStateError("Authorization epoch update failed")
+
     def reserve_installation_key(
         self, reservation: InstallationKeyReservation
     ) -> InstallationKeyReservation:
         _require_installation_key_reservation(reservation)
         with self.database.transaction() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 INSERT OR IGNORE INTO installation_key_reference (
                     singleton, provider_name, provider_key_name, algorithm, created_at
@@ -352,6 +419,8 @@ class SQLiteAuthenticationStore:
                     _time_text(reservation.created_at),
                 ),
             )
+            if cursor.rowcount == 1:
+                self._increment_authorization_epoch(connection)
             row = connection.execute(
                 "SELECT * FROM installation_key_reference WHERE singleton = 1"
             ).fetchone()
@@ -417,6 +486,7 @@ class SQLiteAuthenticationStore:
             )
             if cursor.rowcount != 1:
                 raise AuthenticationStateError("Installation key activation failed")
+            self._increment_authorization_epoch(connection)
 
     def installation_key_reference(self) -> InstallationKeyReference | None:
         with self.database.read() as connection:
@@ -457,6 +527,7 @@ class SQLiteAuthenticationStore:
                     credential.credential_id,
                 ),
             )
+            self._increment_authorization_epoch(connection)
 
     def webauthn_credential(
         self, credential_id: str, *, principal_id: str
@@ -516,6 +587,8 @@ class SQLiteAuthenticationStore:
                 """,
                 (asserted_count, credential_id, principal_id, expected_count),
             )
+            if cursor.rowcount == 1:
+                self._increment_authorization_epoch(connection)
         return cursor.rowcount == 1
 
     def record_verified_grant(self, grant: VerifiedGrantReference) -> None:
@@ -554,6 +627,7 @@ class SQLiteAuthenticationStore:
                 connection,
                 RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id),
             )
+            self._increment_authorization_epoch(connection)
 
     def register_agent_pairing(self, pairing: AgentPairing) -> None:
         grants = _unique(pairing.grant_reference_ids)
@@ -593,10 +667,17 @@ class SQLiteAuthenticationStore:
                 connection,
                 RevocationKey(RevocationScopeType.AGENT_PAIRING, pairing.pairing_id),
             )
+            self._increment_authorization_epoch(connection)
 
-    def activate_agent_pairing(self, pairing_id: str) -> bool:
+    def activate_agent_pairing(
+        self, policy: RuntimePolicy, pairing_id: str
+    ) -> bool:
         with self.database.transaction() as connection:
             instant = self._now()
+            if not self._policy_is_current(connection, policy, instant):
+                raise StaleRuntimePolicyError(
+                    "Runtime policy authorization epoch is stale"
+                )
             pairing = connection.execute(
                 """
                 SELECT * FROM agent_pairings
@@ -619,6 +700,8 @@ class SQLiteAuthenticationStore:
                 """,
                 (_time_text(instant), pairing_id, _time_text(instant)),
             )
+            if cursor.rowcount == 1:
+                self._increment_authorization_epoch(connection)
             return cursor.rowcount == 1
 
     def issue_webauthn_challenge(
@@ -671,6 +754,7 @@ class SQLiteAuthenticationStore:
                 ),
             )
             self._insert_bindings(connection, "challenge", challenge_id, snapshots)
+            self._increment_authorization_epoch(connection)
         return IssuedChallenge(challenge_id, value, expires_at)
 
     def issue_agent_challenge(
@@ -728,6 +812,7 @@ class SQLiteAuthenticationStore:
                 ),
             )
             self._insert_bindings(connection, "challenge", challenge_id, snapshots)
+            self._increment_authorization_epoch(connection)
         return IssuedChallenge(challenge_id, value, expires_at)
 
     def consume_webauthn_challenge(
@@ -832,18 +917,25 @@ class SQLiteAuthenticationStore:
                 connection, "bridge_session_grants", "session_id", session_id, grants
             )
             self._insert_bindings(connection, "bridge_session", session_id, snapshots)
-            authorization = AuthorizationSnapshot(
-                issue.expires_at, snapshots, grants
+            self._increment_authorization_epoch(connection)
+            policy = self._runtime_policy(
+                connection,
+                identity=AuthContext(
+                    principal_id=issue.principal_id,
+                    creator_account_id=issue.creator_account_id,
+                    role=issue.role,  # type: ignore[arg-type]
+                    session_id=session_id,
+                    session_expires_at=int(issue.expires_at.timestamp()),
+                ),
+                expires_at=issue.expires_at,
+                revocations=snapshots,
+                grant_reference_ids=grants,
             )
         return IssuedBridgeSession(
             session_id,
             session_value,
             csrf_value,
-            issue.principal_id,
-            issue.creator_account_id,
-            issue.role,
-            issue.expires_at,
-            authorization,
+            policy,
         )
 
     def read_bridge_session(
@@ -861,23 +953,26 @@ class SQLiteAuthenticationStore:
                 return None
             if csrf_value is not None and row["csrf_digest"] != _secret_digest(csrf_value):
                 return None
-            snapshot = self._authorization_snapshot(
+            policy = self._runtime_policy(
                 connection,
-                "bridge_session",
-                row["session_id"],
-                _parse_time(row["expires_at"]),
-                self._session_grants(connection, row["session_id"]),
+                identity=AuthContext(
+                    principal_id=row["principal_id"],
+                    creator_account_id=row["creator_account_id"],
+                    role=row["role"],
+                    session_id=row["session_id"],
+                    session_expires_at=int(_parse_time(row["expires_at"]).timestamp()),
+                ),
+                expires_at=_parse_time(row["expires_at"]),
+                revocations=self._object_revocations(
+                    connection, "bridge_session", row["session_id"]
+                ),
+                grant_reference_ids=self._session_grants(
+                    connection, row["session_id"]
+                ),
             )
-            if not self._snapshot_is_current(connection, snapshot, now):
+            if not self._policy_is_current(connection, policy, now):
                 return None
-            return ActiveBridgeSession(
-                row["session_id"],
-                row["principal_id"],
-                row["creator_account_id"],
-                row["role"],
-                _parse_time(row["expires_at"]),
-                snapshot,
-            )
+            return ActiveBridgeSession(row["session_id"], policy)
 
     def issue_ticket(self, issue: TicketIssue) -> IssuedTicket:
         self._validate_ticket_issue(issue)
@@ -955,6 +1050,7 @@ class SQLiteAuthenticationStore:
                 connection, "runtime_ticket_grants", "ticket_id", ticket_id, grants
             )
             self._insert_bindings(connection, "ticket", ticket_id, snapshots)
+            self._increment_authorization_epoch(connection)
         return IssuedTicket(ticket_id, value, issue.expires_at)
 
     def consume_ticket(
@@ -983,18 +1079,24 @@ class SQLiteAuthenticationStore:
                 row["expected_agent_installation_id"],
             )
             grants = self._ticket_grants(connection, row["ticket_id"])
-            snapshot = self._authorization_snapshot(
+            policy = self._runtime_policy(
                 connection,
-                "ticket",
-                row["ticket_id"],
-                _parse_time(row["expires_at"]),
-                grants,
+                identity=AuthContext(
+                    principal_id=row["principal_id"],
+                    creator_account_id=row["creator_account_id"],
+                    role=row["role"],
+                ),
+                expires_at=_parse_time(row["expires_at"]),
+                revocations=self._object_revocations(
+                    connection, "ticket", row["ticket_id"]
+                ),
+                grant_reference_ids=grants,
             )
             if (
                 expected != actual
                 or row["consumed_at"] is not None
                 or row["invalidated_at"] is not None
-                or not self._snapshot_is_current(connection, snapshot, now)
+                or not self._policy_is_current(connection, policy, now)
             ):
                 return None
             cursor = connection.execute(
@@ -1006,20 +1108,25 @@ class SQLiteAuthenticationStore:
             )
             if cursor.rowcount != 1:
                 return None
+            self._increment_authorization_epoch(connection)
+            policy = self._runtime_policy(
+                connection,
+                identity=policy.identity,
+                expires_at=policy.expires_at,
+                revocations=policy.revocations,
+                grant_reference_ids=policy.signed_object_reference_ids,
+            )
             return ConsumedTicket(
                 row["ticket_id"],
                 TicketPurpose(row["purpose"]),
-                row["principal_id"],
-                row["role"],
-                row["creator_account_id"],
                 row["parent_session_id"],
                 row["parent_pairing_id"],
-                snapshot,
+                policy,
             )
 
-    def authorization_is_current(self, snapshot: AuthorizationSnapshot) -> bool:
+    def runtime_policy_is_current(self, policy: RuntimePolicy) -> bool:
         with self.database.read() as connection:
-            return self._snapshot_is_current(connection, snapshot, self._now())
+            return self._policy_is_current(connection, policy, self._now())
 
     def revoke(self, key: RevocationKey, *, reason: str | None = None) -> int:
         with self.database.transaction() as connection:
@@ -1077,6 +1184,7 @@ class SQLiteAuthenticationStore:
                 """,
                 (key.scope_type.value, key.scope_id),
             ).fetchone()
+            self._increment_authorization_epoch(connection)
             return int(row["version"])
 
     def revocation_version(self, key: RevocationKey) -> int:
@@ -1104,17 +1212,19 @@ class SQLiteAuthenticationStore:
             ).fetchone()
             if row is None or any(row[key] != value for key, value in expected.items()):
                 return None
-            snapshot = self._authorization_snapshot(
-                connection,
-                "challenge",
-                row["challenge_id"],
-                _parse_time(row["expires_at"]),
-                grants,
+            revocations = self._object_revocations(
+                connection, "challenge", row["challenge_id"]
             )
             if (
                 row["consumed_at"] is not None
                 or row["invalidated_at"] is not None
-                or not self._snapshot_is_current(connection, snapshot, now)
+                or not self._authorization_inputs_are_current(
+                    connection,
+                    expires_at=_parse_time(row["expires_at"]),
+                    grant_reference_ids=grants,
+                    revocations=revocations,
+                    now=now,
+                )
             ):
                 return None
             cursor = connection.execute(
@@ -1126,7 +1236,8 @@ class SQLiteAuthenticationStore:
             )
             if cursor.rowcount != 1:
                 return None
-            return ConsumedChallenge(row["challenge_id"], snapshot)
+            self._increment_authorization_epoch(connection)
+            return ConsumedChallenge(row["challenge_id"])
 
     def _require_session_current(
         self, connection: sqlite3.Connection, session_id: str, now: datetime
@@ -1136,14 +1247,22 @@ class SQLiteAuthenticationStore:
         ).fetchone()
         if row is None or row["revoked_at"] is not None:
             raise AuthenticationStateError("Bridge session is not active")
-        snapshot = self._authorization_snapshot(
+        policy = self._runtime_policy(
             connection,
-            "bridge_session",
-            session_id,
-            _parse_time(row["expires_at"]),
-            self._session_grants(connection, session_id),
+            identity=AuthContext(
+                principal_id=row["principal_id"],
+                creator_account_id=row["creator_account_id"],
+                role=row["role"],
+                session_id=session_id,
+                session_expires_at=int(_parse_time(row["expires_at"]).timestamp()),
+            ),
+            expires_at=_parse_time(row["expires_at"]),
+            revocations=self._object_revocations(
+                connection, "bridge_session", session_id
+            ),
+            grant_reference_ids=self._session_grants(connection, session_id),
         )
-        if not self._snapshot_is_current(connection, snapshot, now):
+        if not self._policy_is_current(connection, policy, now):
             raise AuthenticationStateError("Bridge session is not active")
         return row
 
@@ -1170,8 +1289,8 @@ class SQLiteAuthenticationStore:
 
     def _snapshot_revocations(
         self, connection: sqlite3.Connection, keys: Iterable[RevocationKey]
-    ) -> tuple[RevocationSnapshot, ...]:
-        snapshots: list[RevocationSnapshot] = []
+    ) -> tuple[RevocationObservation, ...]:
+        snapshots: list[RevocationObservation] = []
         for key in _unique_keys(keys):
             self._ensure_scope(connection, key)
             row = connection.execute(
@@ -1183,7 +1302,13 @@ class SQLiteAuthenticationStore:
             ).fetchone()
             if row["revoked_at"] is not None:
                 raise AuthenticationStateError("Authentication scope is revoked")
-            snapshots.append(RevocationSnapshot(key, int(row["version"])))
+            snapshots.append(
+                RevocationObservation(
+                    key.scope_type.value,
+                    key.scope_id,
+                    int(row["version"]),
+                )
+            )
         return tuple(snapshots)
 
     @staticmethod
@@ -1201,7 +1326,7 @@ class SQLiteAuthenticationStore:
         connection: sqlite3.Connection,
         object_type: str,
         object_id: str,
-        snapshots: tuple[RevocationSnapshot, ...],
+        snapshots: tuple[RevocationObservation, ...],
     ) -> None:
         connection.executemany(
             """
@@ -1213,8 +1338,8 @@ class SQLiteAuthenticationStore:
                 (
                     object_type,
                     object_id,
-                    snapshot.key.scope_type.value,
-                    snapshot.key.scope_id,
+                    snapshot.scope_type,
+                    snapshot.scope_id,
                     snapshot.version,
                 )
                 for snapshot in snapshots
@@ -1380,14 +1505,12 @@ class SQLiteAuthenticationStore:
                 return False
         return True
 
-    def _authorization_snapshot(
-        self,
+    @staticmethod
+    def _object_revocations(
         connection: sqlite3.Connection,
         object_type: str,
         object_id: str,
-        expires_at: datetime,
-        grants: tuple[str, ...],
-    ) -> AuthorizationSnapshot:
+    ) -> tuple[RevocationObservation, ...]:
         rows = connection.execute(
             """
             SELECT scope_type, scope_id, observed_version
@@ -1397,34 +1520,85 @@ class SQLiteAuthenticationStore:
             """,
             (object_type, object_id),
         ).fetchall()
-        snapshots = tuple(
-            RevocationSnapshot(
-                RevocationKey(RevocationScopeType(row["scope_type"]), row["scope_id"]),
-                int(row["observed_version"]),
+        return tuple(
+            RevocationObservation(
+                scope_type=row["scope_type"],
+                scope_id=row["scope_id"],
+                version=int(row["observed_version"]),
             )
             for row in rows
         )
-        return AuthorizationSnapshot(expires_at, snapshots, grants)
 
-    def _snapshot_is_current(
+    def _runtime_policy(
         self,
         connection: sqlite3.Connection,
-        snapshot: AuthorizationSnapshot,
+        *,
+        identity: AuthContext,
+        expires_at: datetime | None = None,
+        revocations: tuple[RevocationObservation, ...] = (),
+        grant_reference_ids: tuple[str, ...] = (),
+        signed_object_digests: tuple[str, ...] = (),
+    ) -> RuntimePolicy:
+        references = _unique(grant_reference_ids)
+        grant_digests: list[str] = []
+        for reference_id in references:
+            row = connection.execute(
+                """
+                SELECT grant_digest FROM verified_grant_references
+                WHERE reference_id = ?
+                """,
+                (reference_id,),
+            ).fetchone()
+            if row is None:
+                raise AuthenticationStateError(
+                    "Runtime policy signed-object reference is unavailable"
+                )
+            grant_digests.append(row["grant_digest"])
+        return RuntimePolicy(
+            identity=identity,
+            authorization_epoch=self._authorization_epoch(connection),
+            signed_object_digests=_unique((*signed_object_digests, *grant_digests)),
+            signed_object_reference_ids=references,
+            expires_at=expires_at,
+            revocations=revocations,
+        )
+
+    def _policy_is_current(
+        self,
+        connection: sqlite3.Connection,
+        policy: RuntimePolicy,
         now: datetime,
     ) -> bool:
-        if now >= snapshot.expires_at:
+        if policy.authorization_epoch != self._authorization_epoch(connection):
             return False
-        if not self._grants_are_current(
-            connection, snapshot.grant_reference_ids, now
-        ):
+        return self._authorization_inputs_are_current(
+            connection,
+            expires_at=policy.expires_at,
+            grant_reference_ids=policy.signed_object_reference_ids,
+            revocations=policy.revocations,
+            now=now,
+        )
+
+    def _authorization_inputs_are_current(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        expires_at: datetime | None,
+        grant_reference_ids: tuple[str, ...],
+        revocations: tuple[RevocationObservation, ...],
+        now: datetime,
+    ) -> bool:
+        if expires_at is not None and now >= expires_at:
             return False
-        for observed in snapshot.revocations:
+        if not self._grants_are_current(connection, grant_reference_ids, now):
+            return False
+        for observed in revocations:
             row = connection.execute(
                 """
                 SELECT version, revoked_at FROM auth_revocation_state
                 WHERE scope_type = ? AND scope_id = ?
                 """,
-                (observed.key.scope_type.value, observed.key.scope_id),
+                (observed.scope_type, observed.scope_id),
             ).fetchone()
             if (
                 row is None
