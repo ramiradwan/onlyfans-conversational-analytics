@@ -68,6 +68,17 @@ def webauthn_session_token(identity: AuthContext, session_value: str) -> str:
     return issue_local_session_token(envelope)
 
 
+def _allows_anonymous_reauthentication(request: Request) -> bool:
+    path = request.url.path
+    return path == "/" or path.startswith("/api/v1/webauthn/")
+
+
+def _invalid_session_policy(request: Request, detail: str) -> RuntimePolicy:
+    if _allows_anonymous_reauthentication(request):
+        return build_runtime_policy()
+    raise HTTPException(status_code=401, detail=detail)
+
+
 def get_runtime_policy(request: Request) -> RuntimePolicy:
     """Build one policy from current durable state and an optional session identity."""
 
@@ -87,7 +98,7 @@ def get_runtime_policy(request: Request) -> RuntimePolicy:
     try:
         identity, digest = verify_local_session_token(token)
     except LocalSessionError as error:
-        raise HTTPException(status_code=401, detail=str(error)) from error
+        return _invalid_session_policy(request, str(error))
     session_reference = identity.session_id
     if session_reference is not None and session_reference.startswith(
         _DURABLE_WEBAUTHN_SESSION_PREFIX
@@ -99,7 +110,7 @@ def get_runtime_policy(request: Request) -> RuntimePolicy:
             settings.auth_database_path
         ).read_bridge_session(session_value)
         if active is None or active.policy.identity is None:
-            raise HTTPException(status_code=401, detail="Authenticated session is invalid")
+            return _invalid_session_policy(request, "Authenticated session is invalid")
         durable_identity = active.policy.identity
         if (
             identity.principal_id,
@@ -110,7 +121,7 @@ def get_runtime_policy(request: Request) -> RuntimePolicy:
             durable_identity.creator_account_id,
             durable_identity.role,
         ):
-            raise HTTPException(status_code=401, detail="Authenticated session is invalid")
+            return _invalid_session_policy(request, "Authenticated session is invalid")
         return active.policy
     return build_runtime_policy(identity, signed_object_digests=(digest,))
 

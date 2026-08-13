@@ -458,7 +458,7 @@ def test_unavailable_projection_metrics_are_null_and_legacy_sample_routes_are_ab
         assert client.get("/api/v1/schemas/wss").status_code == 404
 
 
-def test_local_session_bootstrap_uses_header_once_and_sets_exact_secure_cookie(
+def test_launcher_bootstrap_proves_local_launch_without_authenticating_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     disable_installation_key_startup(monkeypatch)
@@ -484,23 +484,30 @@ def test_local_session_bootstrap_uses_header_once_and_sets_exact_secure_cookie(
         )
         assert established.status_code == 303
         assert established.headers["cache-control"] == "no-store"
-        cookie_header = established.headers["set-cookie"]
-        assert settings.bridge_session_cookie_name in cookie_header
-        assert "HttpOnly" in cookie_header
-        assert "Secure" in cookie_header
-        assert "SameSite=strict" in cookie_header
-        session_cookie = established.cookies[settings.bridge_session_cookie_name]
-
-        page = client.get(
-            "/",
-            headers={
-                "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}",
-            },
+        session_cookie = established.cookies.get(settings.bridge_session_cookie_name)
+        protected = client.get(
+            "/api/v1/settings/history",
+            headers=(
+                {}
+                if session_cookie is None
+                else {
+                    "Cookie": (
+                        f"{settings.bridge_session_cookie_name}={session_cookie}"
+                    )
+                }
+            ),
         )
+        assert protected.status_code == 401
+        assert protected.json() == {"detail": "Authenticated session is required"}
+
+        assert "set-cookie" not in established.headers
+        assert settings.bridge_session_cookie_name not in client.cookies
+
+        page = client.get("/")
         assert page.status_code == 200
         assert page.headers["cache-control"] == "no-store"
-        assert '"CREATOR_ID": "account-bootstrap"' in page.text
-        assert '"BRIDGE_ROLE": "operator"' in page.text
+        assert '"CREATOR_ID": null' in page.text
+        assert '"BRIDGE_ROLE": null' in page.text
         assert "platform-bootstrap" not in page.text
 
         replay = client.post(
@@ -560,11 +567,9 @@ def test_launcher_handoff_keeps_launcher_cookie_jar_empty_and_redeems_once(
         assert redeemed.headers["location"] == "/"
         assert redeemed.headers["cache-control"] == "no-store"
         assert redeemed.headers["referrer-policy"] == "no-referrer"
-        cookie_header = redeemed.headers["set-cookie"]
-        assert settings.bridge_session_cookie_name in cookie_header
-        assert "HttpOnly" in cookie_header
-        assert "Secure" in cookie_header
-        assert "SameSite=strict" in cookie_header
+        assert "set-cookie" not in redeemed.headers
+        assert settings.bridge_session_cookie_name not in browser.cookies
+        assert browser.get("/").status_code == 200
 
         replay = browser.get(
             "/api/v1/session/handoff",

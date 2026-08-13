@@ -182,8 +182,6 @@ def test_launcher_bootstrap_consumption_survives_manager_recreation(
     ticket = "launcher-bootstrap-ticket-value-1234567890"
     assert first.consume_launcher_bootstrap(
         ticket,
-        principal_id=PRINCIPAL,
-        creator_account_id=ACCOUNT,
     )
     recreated = InMemoryTransportManager(
         create_canonical_repositories(
@@ -194,12 +192,10 @@ def test_launcher_bootstrap_consumption_survives_manager_recreation(
     )
     assert not recreated.consume_launcher_bootstrap(
         ticket,
-        principal_id=PRINCIPAL,
-        creator_account_id=ACCOUNT,
     )
     with recreated.canonical_database.read() as connection:
         stored = connection.execute(
             "SELECT ticket_hash,principal_id,creator_account_id FROM launcher_bootstrap_consumptions"
         ).fetchone()
     assert ticket not in stored[0]
-    assert tuple(stored[1:]) == (PRINCIPAL, ACCOUNT)
+    assert tuple(stored[1:]) == ("", "")

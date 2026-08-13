@@ -6,7 +6,6 @@ injecting runtime configuration for the browser extension and WebSocket bridge.
 
 import hmac
 import json
-import secrets
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -19,10 +18,8 @@ from fastapi.templating import Jinja2Templates
 from app.utils.logger import logger
 from app.core.config import settings
 from app.api.security import (
-    AuthContext,
     csrf_token,
-    get_authenticated_runtime_policy,
-    local_session_token,
+    get_runtime_policy,
 )
 from app.security.runtime_policy import RuntimePolicy
 from app.transport import transport_manager
@@ -65,7 +62,7 @@ async def bootstrap_local_session(
     request: Request,
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> RedirectResponse:
-    """Consume the launcher secret once and establish the exact local session."""
+    """Consume the launcher secret once and confirm a local browser launch."""
     if settings.websocket_auth_mode != "local_session":
         raise HTTPException(status_code=404, detail="Not found")
     expected_host = urlsplit(settings.bridge_origin).netloc.lower()
@@ -79,30 +76,9 @@ async def bootstrap_local_session(
     expected = settings.local_session_bootstrap_token.get_secret_value()
     if not hmac.compare_digest(ticket, expected):
         raise HTTPException(status_code=401, detail="Bootstrap ticket is invalid or used")
-    context = AuthContext(
-        principal_id=settings.local_principal_id,
-        creator_account_id=settings.local_creator_account_id,
-        role=settings.local_bridge_role,
-        platform_creator_id=settings.local_platform_creator_id,
-        session_id=secrets.token_urlsafe(24),
-    )
-    sealed_session = local_session_token(context)
-    if not transport_manager.consume_launcher_bootstrap(
-        ticket,
-        principal_id=context.principal_id,
-        creator_account_id=context.creator_account_id,
-    ):
+    if not transport_manager.consume_launcher_bootstrap(ticket):
         raise HTTPException(status_code=401, detail="Bootstrap ticket is invalid or used")
     response = RedirectResponse(url="/", status_code=303)
-    response.set_cookie(
-        key=settings.bridge_session_cookie_name,
-        value=sealed_session,
-        secure=True,
-        httponly=True,
-        samesite="strict",
-        path="/",
-        max_age=settings.bridge_session_ttl_seconds,
-    )
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
@@ -132,10 +108,7 @@ async def issue_local_session_handoff(
     if not hmac.compare_digest(ticket, expected):
         raise HTTPException(status_code=401, detail="Launcher authorization is invalid")
     code = transport_manager.issue_launcher_handoff(
-        ticket,
-        principal_id=settings.local_principal_id,
-        creator_account_id=settings.local_creator_account_id,
-        ttl_seconds=settings.launcher_handoff_ttl_seconds,
+        ticket, ttl_seconds=settings.launcher_handoff_ttl_seconds
     )
     if code is None:
         raise HTTPException(status_code=409, detail="launcher_bootstrap_already_consumed")
@@ -152,26 +125,14 @@ async def issue_local_session_handoff(
 async def redeem_local_session_handoff(
     request: Request,
 ) -> Response:
-    """Redeem one browser handoff code into the sealed local session."""
+    """Redeem one browser handoff code as proof of a local browser launch."""
     if settings.websocket_auth_mode != "local_session":
         raise HTTPException(status_code=404, detail="Not found")
     expected_host = urlsplit(settings.bridge_origin).netloc.lower()
     if request.headers.get("host", "").lower() != expected_host:
         raise HTTPException(status_code=400, detail="Unexpected local Bridge origin")
     code = request.query_params.get("code", "")
-    context = AuthContext(
-        principal_id=settings.local_principal_id,
-        creator_account_id=settings.local_creator_account_id,
-        role=settings.local_bridge_role,
-        platform_creator_id=settings.local_platform_creator_id,
-        session_id=secrets.token_urlsafe(24),
-    )
-    sealed_session = local_session_token(context)
-    if len(code) < 32 or not transport_manager.redeem_launcher_handoff(
-        code,
-        principal_id=context.principal_id,
-        creator_account_id=context.creator_account_id,
-    ):
+    if len(code) < 32 or not transport_manager.redeem_launcher_handoff(code):
         return JSONResponse(
             status_code=401,
             content={"detail": "Handoff code is invalid or unavailable"},
@@ -181,15 +142,6 @@ async def redeem_local_session_handoff(
             },
         )
     response = RedirectResponse(url="/", status_code=303)
-    response.set_cookie(
-        key=settings.bridge_session_cookie_name,
-        value=sealed_session,
-        secure=True,
-        httponly=True,
-        samesite="strict",
-        path="/",
-        max_age=settings.bridge_session_ttl_seconds,
-    )
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
@@ -202,7 +154,7 @@ async def redeem_local_session_handoff(
 )
 async def serve_frontend(
     request: Request,
-    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
+    policy: RuntimePolicy = Depends(get_runtime_policy),
 ):
     manifest = _manifest
 
@@ -224,28 +176,33 @@ async def serve_frontend(
     )
     ws_url = f"{base_ws_url}/ws/bridge"
 
+    identity = policy.identity
     config = {
         "EXTENSION_ID": settings.extension_id,
         "FASTAPI_WS_URL": ws_url,
         "API_BASE_URL": api_base_url,
         "VERSION": settings.version,
-        "CREATOR_ID": policy.identity.creator_account_id,
-        "BRIDGE_ROLE": policy.identity.role,
-        "BRIDGE_AUTH_TICKET": transport_manager.issue_bridge_ticket(
-            principal_id=policy.identity.principal_id,
-            creator_account_id=policy.identity.creator_account_id,
-            role=policy.identity.role,
-            ttl_seconds=(
-                settings.bridge_ticket_ttl_seconds
-                if policy.identity.session_expires_at is None
-                else max(
-                    1,
-                    min(
-                        settings.bridge_ticket_ttl_seconds,
-                        policy.identity.session_expires_at - int(time.time()),
-                    ),
-                )
-            ),
+        "CREATOR_ID": None if identity is None else identity.creator_account_id,
+        "BRIDGE_ROLE": None if identity is None else identity.role,
+        "BRIDGE_AUTH_TICKET": (
+            None
+            if identity is None
+            else transport_manager.issue_bridge_ticket(
+                principal_id=identity.principal_id,
+                creator_account_id=identity.creator_account_id,
+                role=identity.role,
+                ttl_seconds=(
+                    settings.bridge_ticket_ttl_seconds
+                    if identity.session_expires_at is None
+                    else max(
+                        1,
+                        min(
+                            settings.bridge_ticket_ttl_seconds,
+                            identity.session_expires_at - int(time.time()),
+                        ),
+                    )
+                ),
+            )
         ),
     }
 
@@ -262,7 +219,7 @@ async def serve_frontend(
             "app_script": f"/static/dist/{app_script}" if app_script else None,
             "css_files": [f"/static/dist/{c}" for c in css_files],
             "config": config,
-            "csrf_token": csrf_token(policy),
+            "csrf_token": None if identity is None else csrf_token(policy),
         },
     )
     response.headers["Cache-Control"] = "no-store"
@@ -274,7 +231,7 @@ async def serve_frontend(
 async def serve_frontend_route(
     request: Request,
     frontend_path: str,
-    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
+    policy: RuntimePolicy = Depends(get_runtime_policy),
 ):
     """Serve BrowserRouter refreshes without swallowing API or transport namespaces."""
     first_segment = frontend_path.split("/", 1)[0]

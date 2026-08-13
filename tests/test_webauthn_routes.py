@@ -243,6 +243,29 @@ def test_login_begin_succeeds_without_a_bridge_session_cookie_with_real_authorit
     assert response.json()["challenge"]
 
 
+def test_registration_begin_succeeds_without_a_bridge_session_cookie(
+    monkeypatch: pytest.MonkeyPatch,
+    store: SQLiteAuthenticationStore,
+) -> None:
+    monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
+    monkeypatch.setattr(settings, "auth_database_path", store.database.path)
+    monkeypatch.setattr(api_security, "build_runtime_policy", store.build_runtime_policy)
+    application = _application(
+        authority_port=WebAuthnAuthorityPort(store, clock=lambda: INSTANT),
+        service=_service(store),
+    )
+
+    with TestClient(application, base_url=ORIGIN) as client:
+        assert settings.bridge_session_cookie_name not in client.cookies
+        response = client.post(
+            "/api/v1/webauthn/registration/begin",
+            headers={"Origin": ORIGIN},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["challenge"]
+
+
 def test_login_finish_without_a_prior_session_mints_grant_authority_session(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -311,19 +334,28 @@ def test_login_finish_without_a_prior_session_mints_grant_authority_session(
                 "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}"
             },
         )
+        recovery = client.post(
+            "/api/v1/webauthn/login/begin",
+            headers={
+                "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}",
+                "Origin": ORIGIN,
+            },
+        )
 
     assert begun.status_code == 200
     assert finished.status_code == 200
     assert authenticated.status_code == 200
+    assert revoked.status_code == 401
+    assert revoked.json() == {"detail": "Authenticated session is invalid"}
+    assert recovery.status_code == 200
+    assert recovery.json()["challenge"]
+    assert reauthentication.status_code == 200
     assert authenticated.json() == {
         "principal_id": PRINCIPAL_ID,
         "creator_account_id": ACCOUNT_ID,
         "role": "creator",
         "platform_creator_id": None,
     }
-    assert reauthentication.status_code == 200
-    assert revoked.status_code == 401
-    assert revoked.json() == {"detail": "Authenticated session is invalid"}
 
 
 def test_identity_carrying_webauthn_request_rejects_wrong_csrf_value(

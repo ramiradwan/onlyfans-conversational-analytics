@@ -180,11 +180,8 @@ class InMemoryTransportManager:
     def consume_launcher_bootstrap(
         self,
         ticket: str,
-        *,
-        principal_id: str,
-        creator_account_id: str,
     ) -> bool:
-        """Atomically consume a launcher credential by hash in durable local state."""
+        """Atomically consume a local-launch credential by hash."""
         ticket_hash = hashlib.sha256(ticket.encode("utf-8")).hexdigest()
         with self.canonical_database.transaction() as connection:
             inserted = connection.execute(
@@ -193,8 +190,8 @@ class InMemoryTransportManager:
                    ) VALUES (?,?,?,?)""",
                 (
                     ticket_hash,
-                    principal_id,
-                    creator_account_id,
+                    "",
+                    "",
                     utc_now().isoformat(),
                 ),
             )
@@ -204,8 +201,6 @@ class InMemoryTransportManager:
         self,
         ticket: str,
         *,
-        principal_id: str,
-        creator_account_id: str,
         ttl_seconds: int,
         now: datetime | None = None,
     ) -> str | None:
@@ -224,8 +219,8 @@ class InMemoryTransportManager:
                    ) VALUES (?,?,?,?)""",
                 (
                     ticket_hash,
-                    principal_id,
-                    creator_account_id,
+                    "",
+                    "",
                     issued_at.isoformat(),
                 ),
             )
@@ -237,8 +232,8 @@ class InMemoryTransportManager:
                    ) VALUES (?,?,?,?,?)""",
                 (
                     code_hash,
-                    principal_id,
-                    creator_account_id,
+                    "",
+                    "",
                     issued_at.isoformat(),
                     expires_at.isoformat(),
                 ),
@@ -249,8 +244,6 @@ class InMemoryTransportManager:
         self,
         code: str,
         *,
-        principal_id: str,
-        creator_account_id: str,
         now: datetime | None = None,
     ) -> bool:
         """Atomically consume one unexpired handoff code."""
@@ -260,13 +253,9 @@ class InMemoryTransportManager:
             consumed = connection.execute(
                 """DELETE FROM launcher_session_handoffs
                    WHERE code_hash=?
-                     AND principal_id=?
-                     AND creator_account_id=?
-                     AND expires_at>?""",
+                      AND expires_at>?""",
                 (
                     code_hash,
-                    principal_id,
-                    creator_account_id,
                     redeemed_at,
                 ),
             )
