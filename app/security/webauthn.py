@@ -80,6 +80,8 @@ class WebAuthnAuthorityResult(str, Enum):
     INSTALLATION_KEY_MISMATCH = "installation_key_mismatch"
     EXTERNAL_PRINCIPAL_MISMATCH = "external_principal_mismatch"
     AUTHORITY_REVOKED = "authority_revoked"
+    MEMBERSHIP_ROLES_UNAVAILABLE = "membership_roles_unavailable"
+    MEMBERSHIP_ROLES_MALFORMED = "membership_roles_malformed"
     ROLE_NOT_AUTHORIZED = "role_not_authorized"
     CREDENTIAL_MISSING = "credential_missing"
     CREDENTIAL_REVOKED = "credential_revoked"
@@ -171,7 +173,7 @@ class WebAuthnAuthorityPort:
                 return _authority_refusal(WebAuthnAuthorityResult.MEMBERSHIP_ACCOUNT_MISMATCH)
             role = _membership_role(membership)
             if role is None:
-                return _authority_refusal(WebAuthnAuthorityResult.ROLE_NOT_AUTHORIZED)
+                return _authority_refusal(_membership_role_refusal(membership))
             allowed_accounts = _allowed_accounts(membership)
             if allowed_accounts is None or account_id not in allowed_accounts:
                 return _authority_refusal(
@@ -240,10 +242,17 @@ class WebAuthnAuthorityPort:
                 if identity is not None
                 else (credential_principal_id if session else external_subject)
             )
+            principal_ids = {external_subject}
+            if identity is not None:
+                principal_ids.add(identity.principal_id)
+            if credential_principal_id is not None:
+                principal_ids.add(credential_principal_id)
             if any(
+                _webauthn_scope_is_revoked(connection, "principal", candidate)
+                for candidate in principal_ids
+            ) or any(
                 _webauthn_scope_is_revoked(connection, scope_type, scope_id)
                 for scope_type, scope_id in (
-                    ("principal", principal_id),
                     ("creator_account", account_id),
                     ("installation", installation_id),
                 )
@@ -683,6 +692,21 @@ def _membership_role(row: sqlite3.Row) -> Literal["creator", "operator"] | None:
     if {"administrator", "creator_operator"} & set(roles):
         return "operator"
     return None
+
+
+def _membership_role_refusal(row: sqlite3.Row) -> WebAuthnAuthorityResult:
+    """Name why a membership role set could not produce a local role."""
+
+    value = row["membership_roles"]
+    if value is None:
+        return WebAuthnAuthorityResult.MEMBERSHIP_ROLES_UNAVAILABLE
+    try:
+        roles = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return WebAuthnAuthorityResult.MEMBERSHIP_ROLES_MALFORMED
+    if not isinstance(roles, list) or not all(isinstance(role, str) for role in roles):
+        return WebAuthnAuthorityResult.MEMBERSHIP_ROLES_MALFORMED
+    return WebAuthnAuthorityResult.ROLE_NOT_AUTHORIZED
 
 
 def _select_webauthn_credential(

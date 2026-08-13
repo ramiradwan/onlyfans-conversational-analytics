@@ -176,6 +176,25 @@ def test_port_refuses_identity_account_that_differs_from_binding_grant(
     assert decision.authority is None
 
 
+def test_port_refuses_identity_account_that_differs_from_a_permitted_binding_grant(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+    identity: AuthContext,
+) -> None:
+    record_required_grants(
+        store,
+        allowed_creator_account_ids=(ACCOUNT_ID, "other-account"),
+    )
+    policy = store.build_runtime_policy(
+        replace(identity, creator_account_id="other-account")
+    )
+
+    decision = WebAuthnAuthorityPort(store, clock=clock).registration_authority(policy)
+
+    assert decision.result is WebAuthnAuthorityResult.IDENTITY_GRANT_MISMATCH
+    assert decision.authority is None
+
+
 def test_port_refuses_ambiguous_current_bindings_without_identity(
     store: SQLiteAuthenticationStore,
     clock: MutableClock,
@@ -360,11 +379,145 @@ def test_port_refuses_revoked_principal_authority(
     assert decision.authority is None
 
 
+def test_port_refuses_revoked_external_subject_authority(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+    identity: AuthContext,
+) -> None:
+    record_required_grants(store)
+    store.revoke(
+        RevocationKey(RevocationScopeType.PRINCIPAL, SUBJECT),
+        reason="external principal disabled",
+    )
+
+    decision = WebAuthnAuthorityPort(store, clock=clock).registration_authority(
+        store.build_runtime_policy(identity)
+    )
+
+    assert decision.result is WebAuthnAuthorityResult.AUTHORITY_REVOKED
+    assert decision.authority is None
+
+
+def test_port_refuses_identityless_session_with_revoked_credential_principal(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+) -> None:
+    record_required_grants(store)
+    store.register_webauthn_credential(
+        WebAuthnCredential(
+            credential_id=CREDENTIAL_ID,
+            principal_id=PRINCIPAL_ID,
+            external_issuer=ISSUER,
+            external_subject=SUBJECT,
+            installation_id=INSTALLATION_ID,
+            public_key=b"public-key-material",
+            signature_count=0,
+            enrolled_at=INSTANT - timedelta(minutes=1),
+        )
+    )
+    store.revoke(
+        RevocationKey(RevocationScopeType.PRINCIPAL, PRINCIPAL_ID),
+        reason="local principal disabled",
+    )
+
+    decision = WebAuthnAuthorityPort(store, clock=clock).session_authority(
+        store.build_runtime_policy()
+    )
+
+    assert decision.result is WebAuthnAuthorityResult.AUTHORITY_REVOKED
+    assert decision.authority is None
+
+
+@pytest.mark.parametrize(
+    "membership_roles", [("administrator",), ("creator_operator",)]
+)
+def test_port_derives_operator_role_from_privileged_membership(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+    membership_roles: tuple[str, ...],
+) -> None:
+    references = record_required_grants(store, membership_roles=membership_roles)
+    store.register_webauthn_credential(
+        WebAuthnCredential(
+            credential_id=CREDENTIAL_ID,
+            principal_id=PRINCIPAL_ID,
+            external_issuer=ISSUER,
+            external_subject=SUBJECT,
+            installation_id=INSTALLATION_ID,
+            public_key=b"public-key-material",
+            signature_count=0,
+            enrolled_at=INSTANT - timedelta(minutes=1),
+        )
+    )
+
+    decision = WebAuthnAuthorityPort(store, clock=clock).session_authority(
+        store.build_runtime_policy()
+    )
+
+    assert decision.result is WebAuthnAuthorityResult.AUTHORIZED
+    assert decision.authority == SessionAuthority(
+        principal_id=PRINCIPAL_ID,
+        credential_id=CREDENTIAL_ID,
+        creator_account_id=ACCOUNT_ID,
+        role="operator",
+        grant_reference_ids=references,
+    )
+
+
+@pytest.mark.parametrize(
+    ("membership_roles", "expected"),
+    [
+        (None, WebAuthnAuthorityResult.MEMBERSHIP_ROLES_UNAVAILABLE),
+        (("viewer",), WebAuthnAuthorityResult.ROLE_NOT_AUTHORIZED),
+    ],
+)
+def test_port_distinguishes_unavailable_and_unrecognized_membership_roles(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+    identity: AuthContext,
+    membership_roles: tuple[str, ...] | None,
+    expected: WebAuthnAuthorityResult,
+) -> None:
+    record_required_grants(store, membership_roles=membership_roles)
+
+    decision = WebAuthnAuthorityPort(store, clock=clock).registration_authority(
+        store.build_runtime_policy(identity)
+    )
+
+    assert decision.result is expected
+    assert decision.authority is None
+
+
+def test_port_refuses_malformed_membership_roles_distinctly(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+    identity: AuthContext,
+) -> None:
+    references = record_required_grants(store)
+    with store.database.transaction() as connection:
+        connection.execute(
+            (
+                "UPDATE verified_grant_references "
+                "SET membership_roles = ? WHERE reference_id = ?"
+            ),
+            ("not-json", references[1]),
+        )
+
+    decision = WebAuthnAuthorityPort(store, clock=clock).registration_authority(
+        store.build_runtime_policy(identity)
+    )
+
+    assert decision.result is WebAuthnAuthorityResult.MEMBERSHIP_ROLES_MALFORMED
+    assert decision.authority is None
+
+
 def record_required_grants(
     store: SQLiteAuthenticationStore,
     *,
     omitted: str | None = None,
     expired: str | None = None,
+    allowed_creator_account_ids: tuple[str, ...] = (ACCOUNT_ID,),
+    membership_roles: tuple[str, ...] | None = ("owner",),
 ) -> tuple[str, ...]:
     references: list[str] = []
     for grant_type in (
@@ -374,7 +527,12 @@ def record_required_grants(
     ):
         if grant_type == omitted:
             continue
-        grant = required_grant(grant_type, expired=grant_type == expired)
+        grant = required_grant(
+            grant_type,
+            expired=grant_type == expired,
+            allowed_creator_account_ids=allowed_creator_account_ids,
+            membership_roles=membership_roles,
+        )
         store.record_verified_grant(grant)
         references.append(grant.reference_id)
     return tuple(references)
@@ -385,6 +543,8 @@ def required_grant(
     *,
     expired: bool = False,
     reference_suffix: str = "current",
+    allowed_creator_account_ids: tuple[str, ...] = (ACCOUNT_ID,),
+    membership_roles: tuple[str, ...] | None = ("owner",),
 ) -> VerifiedGrantReference:
     reference_id = f"{grant_type}-{reference_suffix}"
     return VerifiedGrantReference(
@@ -408,9 +568,11 @@ def required_grant(
         installation_key_jkt=INSTALLATION_KEY_JKT,
         membership_id=("membership-1" if grant_type == "membership_snapshot" else None),
         allowed_creator_account_ids=(
-            (ACCOUNT_ID,) if grant_type == "membership_snapshot" else None
+            allowed_creator_account_ids
+            if grant_type == "membership_snapshot"
+            else None
         ),
         membership_roles=(
-            ("owner",) if grant_type == "membership_snapshot" else None
+            membership_roles if grant_type == "membership_snapshot" else None
         ),
     )
