@@ -25,14 +25,14 @@ Choose **a purpose-separated `SingleExecutionPermit` with durable `available -> 
 
 ### Purpose-separated signed object
 
-`SingleExecutionPermit` is a protected type used only by this profile. Its contract defines a single-execution audience, a single-execution subject form, a closed payload schema, and a `single-execution-permit` signing purpose. None is reused by the ADR 0015 `CapabilityLicence`, an ADR 0008 grant, or another signed-object category.
+`SingleExecutionPermit` names the existing, immutable `capability-permit-v1` contract: protected-header `typ` and payload `profile` equal to `urn:bridge-clean:capability-permit:v1`, audience `urn:bridge-clean:local-brain:capability-permit`, a closed payload schema, and signing purpose `capability-permit`. None of these is reused by the ADR 0015 `CapabilityLicense` profile (signing purpose `capability-license`), an ADR 0008 grant, or another signed-object category.
 
-The subject is the canonical tuple of permit identity, organization, installation, and capability. Subject components are encoded in the contract-defined order and form and equal the corresponding closed-schema fields byte for byte.
+The subject is the canonical tuple of organization, installation, and capability. Subject components are encoded in the contract-defined order and form and equal the corresponding closed-schema fields byte for byte.
 
 > [!NOTE]
 > *Canonical* here is the encoding sense defined in ADR 0014, not the storage sense.
 
-The closed schema contains immutable `permit_id`, `organization_id`, `installation_id`, `installation_key_id`, installation-key thumbprint, capability identifier, compatible algorithm-artifact family, and `execution_limit = 1`, together with contract-designated opaque display metadata. Unknown fields fail schema validation.
+The closed schema contains immutable `permit_id`, `issuance_id`, `organization_id`, `installation_id`, `installation_key_id`, installation-key thumbprint, capability identifier, `catalog_version`, `credit_cost`, and `execution_limit = 1`. Unknown fields fail schema validation.
 
 The permit has no expiry, not-before boundary, or other validity window. An issuance field may be retained as signed provenance, but verification does not compare it with the local clock.
 
@@ -43,7 +43,7 @@ A verified permit contributes `SingleExecutionAdmission` to `RuntimePolicy` only
 - signature, protected type, profile, purpose, closed schema, issuer, audience, and subject validate;
 - `organization_id` exactly equals the organization in every independently verified signed object and local binding used by the decision and in `RuntimePolicy.identity`;
 - installation identifier, installation key identifier, and installation-key thumbprint exactly match the enrolled installation;
-- capability and algorithm-artifact family match the requested execution; and
+- capability matches the requested execution; and
 - `execution_limit` is exactly one and local admission state permits the requested event.
 
 The permit supplies no principal, role, account membership, or account binding. It cannot substitute for an ADR 0008 grant or widen identity, organization, or account scope. The creator account comes from the independently authorized identity subset of `RuntimePolicy`; neither import nor admission selects an account.
