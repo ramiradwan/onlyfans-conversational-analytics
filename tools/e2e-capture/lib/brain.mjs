@@ -38,7 +38,8 @@ async function waitForExit(child, timeoutMs) {
 }
 
 export class BrainProcess {
-  constructor({ canonicalDatabasePath, extensionId, projectionDatabasePath }) {
+  constructor({ authDatabasePath, canonicalDatabasePath, extensionId, projectionDatabasePath }) {
+    this.authDatabasePath = authDatabasePath;
     this.canonicalDatabasePath = canonicalDatabasePath;
     this.extensionId = extensionId;
     this.localSessionBootstrapToken = randomBytes(32).toString('base64url');
@@ -78,6 +79,7 @@ export class BrainProcess {
           ...process.env,
           PYTHONUNBUFFERED: '1',
           BROADCAST_URL: 'memory://',
+          AUTH_DATABASE_PATH: this.authDatabasePath,
           BRIDGE_ORIGIN: BRAIN_ORIGIN,
           CANONICAL_PERSISTENCE_BACKEND: 'sqlite',
           CANONICAL_DATABASE_PATH: this.canonicalDatabasePath,

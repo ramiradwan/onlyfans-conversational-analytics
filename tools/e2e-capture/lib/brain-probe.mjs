@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { BRAIN_ORIGIN, BRAIN_PORT } from './brain.mjs';
+import { pythonExecutable } from './paths.mjs';
 
 const CONFIG_PATTERN = /<script[^>]*id=["']fastapi-config["'][^>]*>([\s\S]*?)<\/script>/i;
 const CSRF_PATTERN = /<meta[^>]*name=["']csrf-token["'][^>]*content=["']([^"']+)["'][^>]*>/i;
@@ -30,6 +34,9 @@ function requestBrain(pathname, { headers = {}, method = 'GET' } = {}) {
   });
 }
 
+const E2E_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const GRANT_SEEDER = path.join(E2E_ROOT, 'helpers', 'seed_webauthn_grants.py');
+
 async function browserSessionCookieHeader(context) {
   const cookies = await context.cookies(BRAIN_ORIGIN);
   const header = cookies.map(({ name, value }) => `${name}=${value}`).join('; ');
@@ -37,17 +44,153 @@ async function browserSessionCookieHeader(context) {
   return header;
 }
 
-export async function bootstrapBrowserLocalSession(page, bootstrapToken) {
-  const status = await page.evaluate(async (token) => {
-    const response = await fetch('/api/v1/session/bootstrap', {
-      method: 'POST',
-      headers: { Authorization: `Bootstrap ${token}` },
+function runGrantSeeder(authDatabasePath, { extraCurrentBinding = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const argumentsList = [
+      GRANT_SEEDER,
+      '--auth-database', authDatabasePath,
+      ...(extraCurrentBinding ? ['--extra-current-binding'] : []),
+    ];
+    const child = spawn(pythonExecutable(), argumentsList, {
+      env: {
+        ...process.env,
+        AUTH_DATABASE_PATH: authDatabasePath,
+        LOCAL_SESSION_BOOTSTRAP_TOKEN: 'e2e-grant-seeder-bootstrap-token-000000',
+        LOCAL_PRINCIPAL_ID: 'e2e-local-principal',
+        LOCAL_CREATOR_ACCOUNT_ID: 'dev-creator-account',
+        LOCAL_PLATFORM_CREATOR_ID: 'e2e-local-platform-creator',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
-    return response.status;
-  }, bootstrapToken);
-  if (status !== 200) {
-    throw new Error(`Local session bootstrap failed (${status}).`);
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on('data', (chunk) => stdout.push(String(chunk)));
+    child.stderr.on('data', (chunk) => stderr.push(String(chunk)));
+    child.once('error', reject);
+    child.once('exit', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Verified-grant seeding failed (${code}): ${stderr.join('').trim()}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout.join('')));
+      } catch {
+        reject(new Error('Verified-grant seeding returned malformed output.'));
+      }
+    });
+  });
+}
+
+async function waitForAuthentication(page) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const cookie = await page.context().cookies(BRAIN_ORIGIN);
+    if (cookie.length > 0) return;
+    const error = page.getByRole('alert');
+    if (await error.count()) {
+      throw new Error(`WebAuthn authentication failed: ${await error.textContent()}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  throw new Error('WebAuthn authentication did not issue a Bridge session cookie.');
+}
+
+export async function establishBrowserWebAuthnSession(page, authDatabasePath) {
+  const extraCurrentBinding = process.env.OFCA_E2E_FALSIFY_AMBIGUOUS_BINDING === '1';
+  const seeded = await runGrantSeeder(authDatabasePath, { extraCurrentBinding });
+  if (seeded.grant_reference_ids?.length !== (extraCurrentBinding ? 4 : 3)) {
+    throw new Error('Verified-grant seeding returned an unexpected authority reference count.');
+  }
+  const session = await page.context().newCDPSession(page);
+  await session.send('WebAuthn.enable');
+  await session.send('WebAuthn.addVirtualAuthenticator', {
+    options: {
+      protocol: 'ctap2',
+      transport: 'internal',
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  await page.goto(`${BRAIN_ORIGIN}/`, { waitUntil: 'domcontentloaded' });
+  await page.bringToFront();
+  await page.locator('body').focus();
+  const result = await page.evaluate(async () => {
+    const decode = (value) => {
+      const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+      const binary = atob(padded);
+      return Uint8Array.from(binary, (character) => character.charCodeAt(0)).buffer;
+    };
+    const encode = (value) => {
+      let binary = '';
+      new Uint8Array(value).forEach((byte) => { binary += String.fromCharCode(byte); });
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    };
+    const post = async (path, body) => {
+      const response = await fetch(`/api/v1/webauthn${path}`, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        method: 'POST',
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      if (!response.ok) return { body: null, status: response.status };
+      return { body: await response.json(), status: response.status };
+    };
+    const registration = await post('/registration/begin');
+    if (registration.status !== 200) return { stage: 'registration_begin', status: registration.status };
+    const registrationCredential = await navigator.credentials.create({
+      publicKey: {
+        ...registration.body,
+        challenge: decode(registration.body.challenge),
+        user: { ...registration.body.user, id: decode(registration.body.user.id) },
+      },
+    });
+    if (registrationCredential === null) return { stage: 'registration_credential', status: 0 };
+    const registrationResponse = registrationCredential.response;
+    const registrationFinish = await post('/registration/finish', {
+      id: registrationCredential.id,
+      rawId: encode(registrationCredential.rawId),
+      type: 'public-key',
+      response: {
+        clientDataJSON: encode(registrationResponse.clientDataJSON),
+        attestationObject: encode(registrationResponse.attestationObject),
+      },
+    });
+    if (registrationFinish.status !== 200) return { stage: 'registration_finish', status: registrationFinish.status };
+    const login = await post('/login/begin');
+    if (login.status !== 200) return { stage: 'login_begin', status: login.status };
+    const loginCredential = await navigator.credentials.get({
+      publicKey: {
+        ...login.body,
+        challenge: decode(login.body.challenge),
+        allowCredentials: login.body.allowCredentials.map((allowed) => ({
+          ...allowed,
+          id: decode(allowed.id),
+        })),
+      },
+    });
+    if (loginCredential === null) return { stage: 'login_credential', status: 0 };
+    const loginResponse = loginCredential.response;
+    const loginFinish = await post('/login/finish', {
+      id: loginCredential.id,
+      rawId: encode(loginCredential.rawId),
+      type: 'public-key',
+      response: {
+        clientDataJSON: encode(loginResponse.clientDataJSON),
+        authenticatorData: encode(loginResponse.authenticatorData),
+        signature: encode(loginResponse.signature),
+        userHandle: loginResponse.userHandle === null ? null : encode(loginResponse.userHandle),
+      },
+    });
+    return { stage: 'login_finish', status: loginFinish.status };
+  });
+  if (result.status !== 200) {
+    throw new Error(`WebAuthn authentication failed at ${result.stage} (${result.status}).`);
+  }
+  await waitForAuthentication(page);
   await browserSessionCookieHeader(page.context());
 }
 

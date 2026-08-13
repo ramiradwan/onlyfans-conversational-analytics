@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
 import { BRAIN_ORIGIN, BrainProcess } from '../lib/brain.mjs';
 import {
-  bootstrapBrowserLocalSession,
+  establishBrowserWebAuthnSession,
   readBrainSummary,
   requestAgentPairingTicket,
 } from '../lib/brain-probe.mjs';
@@ -125,6 +125,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'ofca-e2e-capture-'));
   const browserProfile = path.join(temporaryRoot, 'chromium-profile');
   const canonicalDatabasePath = path.join(temporaryRoot, 'canonical.sqlite3');
+  const authDatabasePath = path.join(temporaryRoot, 'auth.sqlite3');
   const projectionDatabasePath = path.join(temporaryRoot, 'projections.sqlite3');
   const databasePaths = { canonicalDatabasePath, projectionDatabasePath };
   let brain = null;
@@ -137,14 +138,14 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       worker = await extensionWorker(context);
       const actualExtensionId = extensionId(worker);
       brain = new BrainProcess({
+        authDatabasePath,
         ...databasePaths,
         extensionId: actualExtensionId,
       });
       await brain.start();
 
       const bindingPage = context.pages()[0] ?? await context.newPage();
-      await bindingPage.goto(`${BRAIN_ORIGIN}/health`, { waitUntil: 'domcontentloaded' });
-      await bootstrapBrowserLocalSession(bindingPage, brain.localSessionBootstrapToken);
+      await establishBrowserWebAuthnSession(bindingPage, authDatabasePath);
       const pairing = await requestAgentPairingTicket(context);
       expect(pairing.creatorAccountId).toBe('dev-creator-account');
       expect(pairing.extensionId).toBe(actualExtensionId);
