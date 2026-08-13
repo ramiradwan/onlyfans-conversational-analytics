@@ -72,6 +72,7 @@ class VerifiedGrantReference:
     entitlement_id: str | None = None
     product_id: str | None = None
     allowed_creator_account_ids: tuple[str, ...] | None = None
+    membership_roles: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -348,7 +349,7 @@ class AuthenticationStore(Protocol):
 
     def build_runtime_policy(
         self,
-        identity: AuthContext,
+        identity: AuthContext | None = None,
         *,
         signed_object_digests: tuple[str, ...] = (),
     ) -> RuntimePolicy: ...
@@ -403,7 +404,7 @@ class SQLiteAuthenticationStore:
 
     def build_runtime_policy(
         self,
-        identity: AuthContext,
+        identity: AuthContext | None = None,
         *,
         signed_object_digests: tuple[str, ...] = (),
     ) -> RuntimePolicy:
@@ -718,6 +719,15 @@ class SQLiteAuthenticationStore:
                 separators=(",", ":"),
             )
         )
+        membership_roles = (
+            None
+            if grant.membership_roles is None
+            else json.dumps(
+                list(grant.membership_roles),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
         connection.execute(
             """
             INSERT INTO verified_grant_references (
@@ -726,8 +736,8 @@ class SQLiteAuthenticationStore:
                 valid_from, expires_at, verified_at, organization_id,
                 installation_key_id, installation_key_jkt, membership_id,
                 approval_id, approval_revision, entitlement_id, product_id,
-                allowed_creator_account_ids
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                allowed_creator_account_ids, membership_roles
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 grant.reference_id,
@@ -750,6 +760,7 @@ class SQLiteAuthenticationStore:
                 grant.entitlement_id,
                 grant.product_id,
                 allowed_accounts,
+                membership_roles,
             ),
         )
         SQLiteAuthenticationStore._ensure_scope(
@@ -2019,6 +2030,15 @@ def _verified_grant_reference(row: sqlite3.Row) -> VerifiedGrantReference:
                 "Verified grant account scope is invalid"
             )
         allowed_accounts = tuple(parsed)
+    roles_value = row["membership_roles"]
+    membership_roles: tuple[str, ...] | None = None
+    if roles_value is not None:
+        parsed = json.loads(str(roles_value))
+        if not isinstance(parsed, list) or not all(
+            isinstance(value, str) for value in parsed
+        ):
+            raise AuthenticationStateError("Verified grant membership roles are invalid")
+        membership_roles = tuple(parsed)
     return VerifiedGrantReference(
         reference_id=str(row["reference_id"]),
         grant_identifier=str(row["grant_identifier"]),
@@ -2066,6 +2086,7 @@ def _verified_grant_reference(row: sqlite3.Row) -> VerifiedGrantReference:
             None if row["product_id"] is None else str(row["product_id"])
         ),
         allowed_creator_account_ids=allowed_accounts,
+        membership_roles=membership_roles,
     )
 
 

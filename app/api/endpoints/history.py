@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, R
 
 from app.api.activation import require_activated_runtime
 from app.api.security import (
-    get_runtime_policy,
+    get_authenticated_runtime_policy,
     require_creator,
     verify_same_origin,
     verify_csrf_token,
@@ -75,7 +75,7 @@ def _expected_revision(if_match: str | None) -> int:
 def create_agent_pairing(
     request: Request,
     response: Response,
-    policy: RuntimePolicy = Depends(get_runtime_policy),
+    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
     csrf: str | None = Header(None, alias="X-CSRF-Token"),
 ) -> AgentPairingResponse:
     """Issue one short-lived, exact-account ticket consumed by one Agent handshake."""
@@ -99,7 +99,7 @@ def get_message_page(
     response: Response,
     before: str | None = Query(None),
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    policy: RuntimePolicy = Depends(get_runtime_policy),
+    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
 ) -> MessagePageResponse:
     response.headers["Cache-Control"] = "no-store"
     if not transport_manager.projection.conversation_exists(
@@ -173,7 +173,7 @@ def get_message_page(
 @router.get("/settings/history", response_model=HistorySettingsResponse)
 def get_history_settings(
     response: Response,
-    policy: RuntimePolicy = Depends(get_runtime_policy),
+    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
 ) -> HistorySettingsResponse:
     return _settings_response(
         transport_manager.history.history_settings(policy.identity.creator_account_id),
@@ -185,7 +185,7 @@ async def update_history_settings(
     request: Request,
     settings_request: UpdateHistorySettingsRequest,
     response: Response,
-    policy: RuntimePolicy = Depends(get_runtime_policy),
+    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
     if_match: str | None = Header(None, alias="If-Match"),
     csrf: str | None = Header(None, alias="X-CSRF-Token"),
 ) -> HistorySettingsResponse:
@@ -246,7 +246,7 @@ async def update_history_settings(
 async def revoke_history_settings(
     request: Request,
     response: Response,
-    policy: RuntimePolicy = Depends(get_runtime_policy),
+    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
     if_match: str | None = Header(None, alias="If-Match"),
     csrf: str | None = Header(None, alias="X-CSRF-Token"),
 ) -> HistorySettingsResponse:

@@ -113,7 +113,7 @@ def _store(path: str) -> SQLiteAuthenticationStore:
 
 
 def build_runtime_policy(
-    identity: AuthContext,
+    identity: AuthContext | None = None,
     *,
     signed_object_digests: tuple[str, ...] = (),
 ) -> RuntimePolicy:

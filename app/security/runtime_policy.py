@@ -42,7 +42,7 @@ class RevocationObservation:
 class RuntimePolicy:
     """One immutable snapshot for a local authorization decision."""
 
-    identity: AuthContext
+    identity: AuthContext | None
     authorization_epoch: AuthorizationEpoch
     signed_object_digests: tuple[str, ...] = ()
     signed_object_reference_ids: tuple[str, ...] = ()
@@ -67,15 +67,23 @@ class StaleRuntimePolicyError(RuntimeAuthorizationDenied):
     """Raised when durable authorization state supersedes a policy."""
 
 
+def require_identity(policy: RuntimePolicy) -> AuthContext:
+    """Return the verified identity subset required by account-scoped work."""
+
+    if policy.identity is None:
+        raise RuntimeAuthorizationDenied("Authenticated session is required")
+    return policy.identity
+
+
 def require_role(policy: RuntimePolicy, role: RuntimeRole) -> None:
-    if policy.identity.role != role:
+    if require_identity(policy).role != role:
         raise RuntimeAuthorizationDenied(f"{role.capitalize()} authority is required")
 
 
 def authorized_account(
     policy: RuntimePolicy, requested_account_id: str | None
 ) -> str:
-    account_id = policy.identity.creator_account_id
+    account_id = require_identity(policy).creator_account_id
     if requested_account_id is not None and requested_account_id != account_id:
         raise RuntimeAuthorizationDenied(
             "The runtime policy cannot access the requested account"

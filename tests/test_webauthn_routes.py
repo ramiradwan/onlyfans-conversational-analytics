@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.activation import require_activated_runtime
+from app.api import security as api_security
 from app.api.endpoints import webauthn as webauthn_endpoints
 from app.api.security import csrf_token, get_runtime_policy
 from app.core.config import settings
@@ -26,6 +27,7 @@ from app.persistence.auth import (
 )
 from app.security.runtime_policy import AuthContext, RuntimePolicy
 from app.security.webauthn import (
+    RegistrationAuthority,
     WebAuthnAuthorityDecision,
     WebAuthnAuthorityPort,
     WebAuthnAuthorityResult,
@@ -101,6 +103,9 @@ def store(tmp_path: Path) -> SQLiteAuthenticationStore:
                 allowed_creator_account_ids=(
                     (ACCOUNT_ID,) if grant_type == "membership_snapshot" else None
                 ),
+                membership_roles=(
+                    ("owner",) if grant_type == "membership_snapshot" else None
+                ),
             )
         )
     return authentication_store
@@ -167,6 +172,24 @@ class _RefusingPort:
         return self._decision
 
 
+class _AuthorizedRegistrationPort:
+    def registration_authority(
+        self, policy: RuntimePolicy
+    ) -> WebAuthnAuthorityDecision:
+        return WebAuthnAuthorityDecision(
+            WebAuthnAuthorityResult.AUTHORIZED,
+            RegistrationAuthority(
+                principal_id=PRINCIPAL_ID,
+                external_issuer=ISSUER,
+                external_subject=SUBJECT,
+                installation_id=INSTALLATION_ID,
+            ),
+        )
+
+    def session_authority(self, policy: RuntimePolicy) -> WebAuthnAuthorityDecision:
+        return WebAuthnAuthorityDecision(WebAuthnAuthorityResult.CREDENTIAL_MISSING)
+
+
 def _finish_body(*, login: bool) -> dict[str, object]:
     response = (
         {
@@ -189,26 +212,78 @@ def _finish_body(*, login: bool) -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize(
-    ("path", "body"),
-    [
-        ("/api/v1/webauthn/registration/begin", None),
-        ("/api/v1/webauthn/registration/finish", _finish_body(login=False)),
-        ("/api/v1/webauthn/login/begin", None),
-        ("/api/v1/webauthn/login/finish", _finish_body(login=True)),
-    ],
-)
-def test_each_route_refuses_without_an_authenticated_policy(
+def test_login_begin_succeeds_without_a_bridge_session_cookie_with_real_authority_port(
     monkeypatch: pytest.MonkeyPatch,
-    path: str,
-    body: dict[str, object] | None,
+    store: SQLiteAuthenticationStore,
 ) -> None:
     monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
-    with TestClient(_application(), base_url=ORIGIN) as client:
-        response = client.post(path, json=body, headers={"X-CSRF-Token": "missing"})
+    monkeypatch.setattr(api_security, "build_runtime_policy", store.build_runtime_policy)
+    _register_public_key(store, ec.generate_private_key(ec.SECP256R1()))
+    with TestClient(
+        _application(
+            authority_port=WebAuthnAuthorityPort(store, clock=lambda: INSTANT),
+            service=_service(store),
+        ),
+        base_url=ORIGIN,
+    ) as client:
+        response = client.post(
+            "/api/v1/webauthn/login/begin",
+            headers={"Origin": ORIGIN},
+        )
 
-    assert response.status_code == 401
-    assert response.json() == {"detail": "Authenticated session is required"}
+    assert response.status_code == 200
+    assert response.json()["challenge"]
+
+
+def test_login_finish_without_a_prior_session_uses_binding_grant_account(
+    monkeypatch: pytest.MonkeyPatch,
+    store: SQLiteAuthenticationStore,
+) -> None:
+    monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
+    monkeypatch.setattr(api_security, "build_runtime_policy", store.build_runtime_policy)
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    _register_public_key(store, private_key)
+    application = _application(
+        authority_port=WebAuthnAuthorityPort(store, clock=lambda: INSTANT),
+        service=_service(store),
+    )
+
+    with TestClient(application, base_url=ORIGIN) as client:
+        begun = client.post(
+            "/api/v1/webauthn/login/begin", headers={"Origin": ORIGIN}
+        )
+        finished = client.post(
+            "/api/v1/webauthn/login/finish",
+            json=_authentication_payload(private_key, begun.json()["challenge"]),
+            headers={"Origin": ORIGIN},
+        )
+
+    with store.database.read() as connection:
+        session = connection.execute(
+            "SELECT creator_account_id FROM bridge_sessions"
+        ).fetchone()
+    assert begun.status_code == 200
+    assert finished.status_code == 200
+    assert session["creator_account_id"] == ACCOUNT_ID
+
+
+def test_identity_carrying_webauthn_request_rejects_wrong_csrf_value(
+    store: SQLiteAuthenticationStore,
+) -> None:
+    application = _application(
+        policy=_policy(store),
+        authority_port=_AuthorizedRegistrationPort(),
+        service=_service(store),
+    )
+
+    with TestClient(application, base_url=ORIGIN) as client:
+        response = client.post(
+            "/api/v1/webauthn/registration/begin",
+            headers={"Origin": ORIGIN, "X-CSRF-Token": "wrong"},
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "CSRF token is invalid"}
 
 
 def test_port_refusal_is_non_successful_and_issues_no_session(

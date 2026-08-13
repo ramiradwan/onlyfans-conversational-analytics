@@ -121,11 +121,8 @@ def webauthn_authority_port(
 
 def _prepare_request(
     request: Request,
-    policy: RuntimePolicy,
-    csrf: str | None,
 ) -> None:
     verify_same_origin(request)
-    verify_csrf_token(policy, csrf)
 
 
 def _authority_or_refuse(
@@ -178,7 +175,9 @@ def begin_registration(
     authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
     service: WebAuthnService = Depends(webauthn_service),
 ) -> dict[str, object]:
-    _prepare_request(request, policy, csrf)
+    _prepare_request(request)
+    if policy.identity is not None:
+        verify_csrf_token(policy, csrf)
     authority = _authority_or_refuse(
         authority_port.registration_authority(policy),
         operation="registration_begin",
@@ -198,7 +197,9 @@ async def finish_registration(
     authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
     service: WebAuthnService = Depends(webauthn_service),
 ) -> dict[str, str]:
-    _prepare_request(request, policy, csrf)
+    _prepare_request(request)
+    if policy.identity is not None:
+        verify_csrf_token(policy, csrf)
     body = await _validated_finish_body(request, RegistrationFinishRequest)
     authority = _authority_or_refuse(
         authority_port.registration_authority(policy),
@@ -232,7 +233,9 @@ def begin_login(
     authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
     service: WebAuthnService = Depends(webauthn_service),
 ) -> dict[str, object]:
-    _prepare_request(request, policy, csrf)
+    _prepare_request(request)
+    if policy.identity is not None:
+        verify_csrf_token(policy, csrf)
     authority = _authority_or_refuse(
         authority_port.session_authority(policy),
         operation="login_begin",
@@ -252,7 +255,9 @@ async def finish_login(
     authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port),
     service: WebAuthnService = Depends(webauthn_service),
 ) -> dict[str, str]:
-    _prepare_request(request, policy, csrf)
+    _prepare_request(request)
+    if policy.identity is not None:
+        verify_csrf_token(policy, csrf)
     body = await _validated_finish_body(request, LoginFinishRequest)
     authority = _authority_or_refuse(
         authority_port.session_authority(policy),

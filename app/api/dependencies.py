@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import Depends, HTTPException
 
-from app.api.security import get_runtime_policy
+from app.api.security import get_authenticated_runtime_policy
 from app.security.runtime_policy import (
     RuntimeAuthorizationDenied,
     RuntimePolicy,
@@ -21,7 +21,7 @@ def _detail(code: str, message: str) -> dict[str, str]:
 
 
 def get_authenticated_account_session(
-    policy: RuntimePolicy = Depends(get_runtime_policy),
+    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
 ) -> RuntimePolicy:
     """Authenticate the analytics HTTP surface with one runtime policy."""
 

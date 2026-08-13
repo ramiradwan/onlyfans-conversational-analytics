@@ -334,6 +334,27 @@ def test_settings_are_csrf_cas_and_matching_config_revision_bound() -> None:
         assert denied.status_code == 403
 
 
+def test_non_ceremony_state_changing_route_requires_csrf() -> None:
+    with TestClient(app) as client:
+        response = client.post("/api/v1/agent/pairing")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "CSRF token is required"}
+
+
+def test_account_scoped_route_refuses_a_policy_without_identity_subset() -> None:
+    app.dependency_overrides[get_runtime_policy] = lambda: RuntimePolicy(
+        identity=None,
+        authorization_epoch=AuthorizationEpoch(0),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/settings/history")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Authenticated session is required"}
+
+
 def test_history_config_ack_is_reconciled_after_bind_and_on_heartbeat(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

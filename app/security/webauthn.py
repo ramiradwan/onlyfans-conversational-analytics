@@ -73,6 +73,8 @@ class WebAuthnAuthorityResult(str, Enum):
     REQUIRED_GRANT_NOT_CURRENT = "required_grant_not_current"
     REQUIRED_GRANT_REVOKED = "required_grant_revoked"
     MEMBERSHIP_ACCOUNT_MISMATCH = "membership_account_mismatch"
+    IDENTITY_GRANT_MISMATCH = "identity_grant_mismatch"
+    ACCOUNT_BINDING_AMBIGUOUS = "account_binding_ambiguous"
     ORGANIZATION_MISMATCH = "organization_mismatch"
     INSTALLATION_KEY_MISSING = "installation_key_missing"
     INSTALLATION_KEY_MISMATCH = "installation_key_mismatch"
@@ -138,14 +140,12 @@ class WebAuthnAuthorityPort:
         self, policy: RuntimePolicy, *, session: bool
     ) -> WebAuthnAuthorityDecision:
         now = self._now()
+        identity = policy.identity
         # BEGIN IMMEDIATE is the auth store's installation-scoped writer fence.
         # It prevents authority inputs changing between validation and return.
         with self._store.database.transaction() as connection:
             if not _webauthn_policy_is_current(connection, policy, now):
                 return _authority_refusal(WebAuthnAuthorityResult.POLICY_NOT_CURRENT)
-            if policy.identity.role not in {"creator", "operator"}:
-                return _authority_refusal(WebAuthnAuthorityResult.ROLE_NOT_AUTHORIZED)
-
             selected: dict[str, sqlite3.Row] = {}
             for grant_type in _WEBAUTHN_REQUIRED_GRANT_TYPES:
                 result, row = _select_webauthn_grant(
@@ -153,6 +153,10 @@ class WebAuthnAuthorityPort:
                     grant_type=grant_type,
                     policy_reference_ids=policy.signed_object_reference_ids,
                     now=now,
+                    require_unique_current=(
+                        identity is None
+                        and grant_type == "creator_account_binding"
+                    ),
                 )
                 if result is not WebAuthnAuthorityResult.AUTHORIZED:
                     return _authority_refusal(result)
@@ -160,17 +164,24 @@ class WebAuthnAuthorityPort:
                     raise RuntimeError("authorized grant selection returned no row")
                 selected[grant_type] = row
 
-            account_id = policy.identity.creator_account_id
             membership = selected["membership_snapshot"]
             binding = selected["creator_account_binding"]
-            if binding["creator_account_id"] != account_id:
-                return _authority_refusal(
-                    WebAuthnAuthorityResult.MEMBERSHIP_ACCOUNT_MISMATCH
-                )
+            account_id = binding["creator_account_id"]
+            if not isinstance(account_id, str) or not account_id:
+                return _authority_refusal(WebAuthnAuthorityResult.MEMBERSHIP_ACCOUNT_MISMATCH)
+            role = _membership_role(membership)
+            if role is None:
+                return _authority_refusal(WebAuthnAuthorityResult.ROLE_NOT_AUTHORIZED)
             allowed_accounts = _allowed_accounts(membership)
             if allowed_accounts is None or account_id not in allowed_accounts:
                 return _authority_refusal(
                     WebAuthnAuthorityResult.MEMBERSHIP_ACCOUNT_MISMATCH
+                )
+            if identity is not None and (
+                identity.creator_account_id != account_id or identity.role != role
+            ):
+                return _authority_refusal(
+                    WebAuthnAuthorityResult.IDENTITY_GRANT_MISMATCH
                 )
 
             organizations = {row["organization_id"] for row in selected.values()}
@@ -206,10 +217,33 @@ class WebAuthnAuthorityPort:
                 )
             external_issuer, external_subject = next(iter(principals))
             installation_id = next(iter(installations))
+            credential_id: str | None = None
+            credential_principal_id: str | None = None
+            if session:
+                credential_result, credential_principal_id, credential_id = (
+                    _select_webauthn_credential(
+                        connection,
+                        principal_id=(
+                            None if identity is None else identity.principal_id
+                        ),
+                        external_issuer=external_issuer,
+                        external_subject=external_subject,
+                        installation_id=installation_id,
+                    )
+                )
+                if credential_result is not WebAuthnAuthorityResult.AUTHORIZED:
+                    return _authority_refusal(credential_result)
+                if credential_id is None or credential_principal_id is None:
+                    raise RuntimeError("authorized credential selection returned no credential")
+            principal_id = (
+                identity.principal_id
+                if identity is not None
+                else (credential_principal_id if session else external_subject)
+            )
             if any(
                 _webauthn_scope_is_revoked(connection, scope_type, scope_id)
                 for scope_type, scope_id in (
-                    ("principal", policy.identity.principal_id),
+                    ("principal", principal_id),
                     ("creator_account", account_id),
                     ("installation", installation_id),
                 )
@@ -224,24 +258,15 @@ class WebAuthnAuthorityPort:
                 return WebAuthnAuthorityDecision(
                     WebAuthnAuthorityResult.AUTHORIZED,
                     RegistrationAuthority(
-                        principal_id=policy.identity.principal_id,
+                        principal_id=principal_id,
                         external_issuer=external_issuer,
                         external_subject=external_subject,
                         installation_id=installation_id,
                     ),
                 )
 
-            credential_result, credential_id = _select_webauthn_credential(
-                connection,
-                principal_id=policy.identity.principal_id,
-                external_issuer=external_issuer,
-                external_subject=external_subject,
-                installation_id=installation_id,
-            )
-            if credential_result is not WebAuthnAuthorityResult.AUTHORIZED:
-                return _authority_refusal(credential_result)
-            if credential_id is None:  # pragma: no cover - guarded by result
-                raise RuntimeError("authorized credential selection returned no id")
+            if credential_id is None:  # pragma: no cover - guarded above
+                raise RuntimeError("session authority is missing its credential")
             if _webauthn_scope_is_revoked(
                 connection, "webauthn_credential", credential_id
             ):
@@ -249,10 +274,10 @@ class WebAuthnAuthorityPort:
             return WebAuthnAuthorityDecision(
                 WebAuthnAuthorityResult.AUTHORIZED,
                 SessionAuthority(
-                    principal_id=policy.identity.principal_id,
+                    principal_id=principal_id,
                     credential_id=credential_id,
                     creator_account_id=account_id,
-                    role=policy.identity.role,
+                    role=role,
                     grant_reference_ids=references,
                 ),
             )
@@ -548,7 +573,9 @@ def _webauthn_policy_is_current(
         return False
     if policy.expires_at is not None and now >= policy.expires_at:
         return False
-    session_expiry = policy.identity.session_expires_at
+    session_expiry = (
+        None if policy.identity is None else policy.identity.session_expires_at
+    )
     if session_expiry is not None and now.timestamp() >= session_expiry:
         return False
     timestamp = _authority_time_text(now)
@@ -586,6 +613,7 @@ def _select_webauthn_grant(
     grant_type: str,
     policy_reference_ids: tuple[str, ...],
     now: datetime,
+    require_unique_current: bool = False,
 ) -> tuple[WebAuthnAuthorityResult, sqlite3.Row | None]:
     rows = connection.execute(
         """
@@ -613,6 +641,8 @@ def _select_webauthn_grant(
         if all(row["expires_at"] <= timestamp for row in active):
             return WebAuthnAuthorityResult.REQUIRED_GRANT_EXPIRED, None
         return WebAuthnAuthorityResult.REQUIRED_GRANT_NOT_CURRENT, None
+    if require_unique_current and len(current) > 1:
+        return WebAuthnAuthorityResult.ACCOUNT_BINDING_AMBIGUOUS, None
     selected = current[0]
     if _webauthn_scope_is_revoked(
         connection, "verified_grant", selected["reference_id"]
@@ -636,41 +666,63 @@ def _allowed_accounts(row: sqlite3.Row) -> tuple[str, ...] | None:
     return tuple(parsed)
 
 
+def _membership_role(row: sqlite3.Row) -> Literal["creator", "operator"] | None:
+    """Map the verified membership role set to one local Bridge role."""
+
+    value = row["membership_roles"]
+    if value is None:
+        return None
+    try:
+        roles = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(roles, list) or not all(isinstance(role, str) for role in roles):
+        return None
+    if "owner" in roles:
+        return "creator"
+    if {"administrator", "creator_operator"} & set(roles):
+        return "operator"
+    return None
+
+
 def _select_webauthn_credential(
     connection: sqlite3.Connection,
     *,
-    principal_id: str,
+    principal_id: str | None,
     external_issuer: str,
     external_subject: str,
     installation_id: str,
-) -> tuple[WebAuthnAuthorityResult, str | None]:
+) -> tuple[WebAuthnAuthorityResult, str | None, str | None]:
+    clauses = [
+        "external_issuer = ?",
+        "external_subject = ?",
+        "installation_id = ?",
+    ]
+    parameters: list[str] = [external_issuer, external_subject, installation_id]
+    if principal_id is not None:
+        clauses.append("principal_id = ?")
+        parameters.append(principal_id)
     rows = connection.execute(
-        """
-        SELECT credential_id, external_issuer, external_subject,
-               installation_id, revoked_at
+        f"""
+        SELECT credential_id, principal_id, revoked_at
         FROM webauthn_credentials
-        WHERE principal_id = ?
+        WHERE {' AND '.join(clauses)}
         ORDER BY enrolled_at DESC, credential_id DESC
         """,
-        (principal_id,),
+        parameters,
     ).fetchall()
     if not rows:
-        return WebAuthnAuthorityResult.CREDENTIAL_MISSING, None
+        return WebAuthnAuthorityResult.CREDENTIAL_MISSING, None, None
     active = [row for row in rows if row["revoked_at"] is None]
     if not active:
-        return WebAuthnAuthorityResult.CREDENTIAL_REVOKED, None
-    matching = [
-        row
-        for row in active
-        if row["external_issuer"] == external_issuer
-        and row["external_subject"] == external_subject
-        and row["installation_id"] == installation_id
-    ]
-    if not matching:
-        return WebAuthnAuthorityResult.EXTERNAL_PRINCIPAL_MISMATCH, None
-    if len(matching) != 1:
-        return WebAuthnAuthorityResult.CREDENTIAL_AMBIGUOUS, None
-    return WebAuthnAuthorityResult.AUTHORIZED, str(matching[0]["credential_id"])
+        return WebAuthnAuthorityResult.CREDENTIAL_REVOKED, None, None
+    if len(active) != 1:
+        return WebAuthnAuthorityResult.CREDENTIAL_AMBIGUOUS, None, None
+    return (
+        WebAuthnAuthorityResult.AUTHORIZED,
+        str(active[0]["principal_id"]),
+        str(active[0]["credential_id"]),
+    )
 
 
 def _webauthn_scope_is_revoked(

@@ -128,6 +128,74 @@ def test_port_derives_registration_and_session_authority_from_verified_state(
     )
 
 
+def test_port_derives_login_account_and_role_from_verified_grants_without_identity(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+) -> None:
+    references = record_required_grants(store)
+    store.register_webauthn_credential(
+        WebAuthnCredential(
+            credential_id=CREDENTIAL_ID,
+            principal_id=PRINCIPAL_ID,
+            external_issuer=ISSUER,
+            external_subject=SUBJECT,
+            installation_id=INSTALLATION_ID,
+            public_key=b"public-key-material",
+            signature_count=0,
+            enrolled_at=INSTANT - timedelta(minutes=1),
+        )
+    )
+
+    decision = WebAuthnAuthorityPort(store, clock=clock).session_authority(
+        store.build_runtime_policy()
+    )
+
+    assert decision.result is WebAuthnAuthorityResult.AUTHORIZED
+    assert decision.authority == SessionAuthority(
+        principal_id=PRINCIPAL_ID,
+        credential_id=CREDENTIAL_ID,
+        creator_account_id=ACCOUNT_ID,
+        role="creator",
+        grant_reference_ids=references,
+    )
+
+
+def test_port_refuses_identity_account_that_differs_from_binding_grant(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+    identity: AuthContext,
+) -> None:
+    record_required_grants(store)
+    mismatched_identity = replace(identity, creator_account_id="other-account")
+
+    decision = WebAuthnAuthorityPort(store, clock=clock).registration_authority(
+        store.build_runtime_policy(mismatched_identity)
+    )
+
+    assert decision.result is WebAuthnAuthorityResult.IDENTITY_GRANT_MISMATCH
+    assert decision.authority is None
+
+
+def test_port_refuses_ambiguous_current_bindings_without_identity(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+) -> None:
+    record_required_grants(store)
+    store.record_verified_grant(
+        replace(
+            required_grant("creator_account_binding", reference_suffix="other"),
+            creator_account_id="other-account",
+        )
+    )
+
+    decision = WebAuthnAuthorityPort(store, clock=clock).registration_authority(
+        store.build_runtime_policy()
+    )
+
+    assert decision.result is WebAuthnAuthorityResult.ACCOUNT_BINDING_AMBIGUOUS
+    assert decision.authority is None
+
+
 def test_port_refuses_with_required_grant_missing(
     store: SQLiteAuthenticationStore,
     clock: MutableClock,
@@ -341,5 +409,8 @@ def required_grant(
         membership_id=("membership-1" if grant_type == "membership_snapshot" else None),
         allowed_creator_account_ids=(
             (ACCOUNT_ID,) if grant_type == "membership_snapshot" else None
+        ),
+        membership_roles=(
+            ("owner",) if grant_type == "membership_snapshot" else None
         ),
     )

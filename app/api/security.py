@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 from app.core.config import settings
 from app.security.admission_confirmation import (
@@ -25,6 +25,7 @@ from app.security.runtime_policy import (
     AuthContext,
     RuntimeAuthorizationDenied,
     RuntimePolicy,
+    require_identity,
     require_role,
 )
 from app.transport.manager import DEV_ACCOUNT_ID, DEV_PRINCIPAL_ID
@@ -47,7 +48,7 @@ def local_session_token(
 
 
 def get_runtime_policy(request: Request) -> RuntimePolicy:
-    """Build one policy from verified session identity and current local state."""
+    """Build one policy from current durable state and an optional session identity."""
 
     token = request.cookies.get(settings.bridge_session_cookie_name)
     if token is None:
@@ -61,12 +62,24 @@ def get_runtime_policy(request: Request) -> RuntimePolicy:
                     "development-session",
                 )
             )
-        raise HTTPException(status_code=401, detail="Authenticated session is required")
+        return build_runtime_policy()
     try:
         identity, digest = verify_local_session_token(token)
     except LocalSessionError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
     return build_runtime_policy(identity, signed_object_digests=(digest,))
+
+
+def get_authenticated_runtime_policy(
+    policy: RuntimePolicy = Depends(get_runtime_policy),
+) -> RuntimePolicy:
+    """Require the identity subset before account-scoped authorization."""
+
+    try:
+        require_identity(policy)
+    except RuntimeAuthorizationDenied as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    return policy
 
 
 def require_creator(policy: RuntimePolicy) -> None:
@@ -93,6 +106,8 @@ def csrf_token(policy: RuntimePolicy, *, issued_at: int | None = None) -> str:
 
 
 def verify_csrf_token(policy: RuntimePolicy, token: str | None) -> None:
+    if policy.identity is None:
+        raise HTTPException(status_code=403, detail="CSRF token does not match the session")
     try:
         verify_csrf_document(policy, token)
     except LocalSessionError as error:
@@ -106,7 +121,7 @@ def confirm_admission(
 ) -> tuple[AdmissionConfirmation, str]:
     """Mint one confirmation for a same-origin, CSRF-checked session request."""
 
-    policy = get_runtime_policy(request)
+    policy = get_authenticated_runtime_policy(get_runtime_policy(request))
     require_creator(policy)
     verify_same_origin(request)
     verify_csrf_token(policy, csrf)

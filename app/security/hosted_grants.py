@@ -604,6 +604,11 @@ class HostedGrantClient:
             if grant_type == "membership_snapshot"
             else None
         )
+        membership_roles = (
+            _required_string_tuple(payload, "roles")
+            if grant_type == "membership_snapshot"
+            else None
+        )
         return VerifiedGrantReference(
             reference_id=f"vg1.{_b64url(digest[:16])}",
             grant_identifier=_required_string(payload, "jti"),
@@ -646,6 +651,7 @@ class HostedGrantClient:
                 else None
             ),
             allowed_creator_account_ids=allowed_accounts,
+            membership_roles=membership_roles,
         )
 
     @staticmethod

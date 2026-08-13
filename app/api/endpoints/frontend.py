@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.api.security import (
     AuthContext,
     csrf_token,
-    get_runtime_policy,
+    get_authenticated_runtime_policy,
     local_session_token,
 )
 from app.security.runtime_policy import RuntimePolicy
@@ -202,7 +202,7 @@ async def redeem_local_session_handoff(
 )
 async def serve_frontend(
     request: Request,
-    policy: RuntimePolicy = Depends(get_runtime_policy),
+    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
 ):
     manifest = _manifest
 
@@ -274,7 +274,7 @@ async def serve_frontend(
 async def serve_frontend_route(
     request: Request,
     frontend_path: str,
-    policy: RuntimePolicy = Depends(get_runtime_policy),
+    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
 ):
     """Serve BrowserRouter refreshes without swallowing API or transport namespaces."""
     first_segment = frontend_path.split("/", 1)[0]
