@@ -217,6 +217,97 @@ def agent_challenge_binding(pairing: AgentPairing) -> AgentChallengeBinding:
     )
 
 
+def test_advance_signature_count_rejects_a_reset_to_zero_from_the_callers_expected_count(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    """A caller-supplied non-zero `expected_count` paired with a zero assertion is
+    rejected from the arguments alone, before the database is consulted, because a
+    positive-counter authenticator presenting a zero counter is a possible clone or
+    reset signal (app/persistence/auth.py:597).
+
+    The credential is enrolled with `signature_count=0` in the database -- the same
+    state the sibling test below uses to make the zero-path query's live re-check
+    (`signature_count = 0`, app/persistence/auth.py:604) return True. Passing a
+    mismatched, non-zero `expected_count` here means only the `if expected_count !=
+    0` branch can produce the False this test asserts: if that branch were removed
+    or inverted, execution would fall through to the same query used by the sibling
+    test, find the row (the database really is at zero), and return True instead.
+    """
+    credential = WebAuthnCredential(
+        credential_id="credential-stale-expectation",
+        principal_id="principal-1",
+        external_issuer="issuer.example",
+        external_subject="customer-subject",
+        installation_id="brain-installation-1",
+        public_key=b"public-key-material",
+        signature_count=0,
+        enrolled_at=instant - timedelta(days=1),
+    )
+    store.register_webauthn_credential(credential)
+
+    advanced = store.advance_webauthn_signature_count(
+        credential.credential_id,
+        principal_id=credential.principal_id,
+        expected_count=4,
+        asserted_count=0,
+    )
+
+    assert advanced is False
+    stored = store.webauthn_credential(
+        credential.credential_id, principal_id=credential.principal_id
+    )
+    assert stored is not None and stored.signature_count == 0
+
+
+def test_advance_signature_count_rechecks_the_live_row_before_accepting_repeated_zero(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    """A repeated-zero assertion (`expected_count=0, asserted_count=0`) is only
+    accepted if the credential's *current* stored `signature_count` is genuinely
+    still zero; the zero-path query filters on `signature_count = 0` at read time
+    (app/persistence/auth.py:604) instead of trusting the caller's `expected_count`
+    argument. This guards against a stale `expected_count=0` presented after the
+    counter has legitimately advanced elsewhere.
+
+    The credential starts at zero, is advanced to a positive count out from under a
+    caller that still believes it is zero, and the stale zero replay must then be
+    rejected by the live re-check rather than by the `expected_count != 0` branch
+    covered above (which does not fire here, since `expected_count` is 0).
+    """
+    credential = WebAuthnCredential(
+        credential_id="credential-zero-start",
+        principal_id="principal-1",
+        external_issuer="issuer.example",
+        external_subject="customer-subject",
+        installation_id="brain-installation-1",
+        public_key=b"public-key-material",
+        signature_count=0,
+        enrolled_at=instant - timedelta(days=1),
+    )
+    store.register_webauthn_credential(credential)
+
+    advanced_positive = store.advance_webauthn_signature_count(
+        credential.credential_id,
+        principal_id=credential.principal_id,
+        expected_count=0,
+        asserted_count=7,
+    )
+    assert advanced_positive is True
+
+    stale_zero_replay = store.advance_webauthn_signature_count(
+        credential.credential_id,
+        principal_id=credential.principal_id,
+        expected_count=0,
+        asserted_count=0,
+    )
+
+    assert stale_zero_replay is False
+    stored = store.webauthn_credential(
+        credential.credential_id, principal_id=credential.principal_id
+    )
+    assert stored is not None and stored.signature_count == 7
+
+
 def test_schema_is_durable_and_opaque_secrets_are_never_stored(
     store: SQLiteAuthenticationStore,
     instant: datetime,

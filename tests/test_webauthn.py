@@ -156,6 +156,39 @@ def test_registration_rejects_wrong_client_and_authenticator_bindings(
         )
 
 
+def test_registration_rejects_cbor_nesting_beyond_the_decoders_depth_bound(
+    service: WebAuthnService,
+    registration_authority: RegistrationAuthority,
+) -> None:
+    """The local CBOR decoder used to parse the attestation object caps map/array
+    nesting at depth 8 (`_CborDecoder.decode`, `depth > 8`). A value nested one
+    level past the bound is rejected during the decode itself ("CBOR data is
+    invalid"), before any structural check of the decoded value ever runs. A value
+    nested exactly at the bound decodes successfully and is instead rejected by the
+    downstream structural check that `attStmt` must equal `{}` ("attestation is
+    invalid"), proving the first rejection is specifically the depth guard and not
+    some other validation path."""
+    private_key = ec.generate_private_key(ec.SECP256R1())
+
+    over_bound_options = service.begin_registration(registration_authority)
+    over_bound = registration_response_with_attestation_statement(
+        private_key,
+        str(over_bound_options["challenge"]),
+        att_stmt=_nested_cbor_map(8),
+    )
+    with pytest.raises(WebAuthnVerificationError, match="CBOR data is invalid"):
+        service.complete_registration(registration_authority, over_bound)
+
+    at_bound_options = service.begin_registration(registration_authority)
+    at_bound = registration_response_with_attestation_statement(
+        private_key,
+        str(at_bound_options["challenge"]),
+        att_stmt=_nested_cbor_map(7),
+    )
+    with pytest.raises(WebAuthnVerificationError, match="attestation is invalid"):
+        service.complete_registration(registration_authority, at_bound)
+
+
 def test_authentication_verifies_signature_and_mints_opaque_durable_session(
     service: WebAuthnService,
     store: SQLiteAuthenticationStore,
@@ -428,6 +461,56 @@ def registration_response(
         client_data_json=client_data("webauthn.create", challenge, origin=origin),
         attestation_object=_encode(attestation),
     )
+
+
+def registration_response_with_attestation_statement(
+    private_key: ec.EllipticCurvePrivateKey,
+    challenge: str,
+    *,
+    att_stmt: object,
+) -> RegistrationCredential:
+    """Build a registration response like `registration_response`, but with a
+    caller-supplied `attStmt` CBOR value instead of the fixed empty map, so a test
+    can probe the local CBOR decoder's nesting-depth bound independently of every
+    other registration check."""
+    numbers = private_key.public_key().public_numbers()
+    cose_key = {
+        1: 2,
+        3: -7,
+        -1: 1,
+        -2: numbers.x.to_bytes(32, "big"),
+        -3: numbers.y.to_bytes(32, "big"),
+    }
+    authenticator_data = b"".join(
+        (
+            hashlib.sha256(RP_ID.encode()).digest(),
+            bytes([0x45]),
+            (0).to_bytes(4, "big"),
+            bytes(16),
+            len(CREDENTIAL_ID_BYTES).to_bytes(2, "big"),
+            CREDENTIAL_ID_BYTES,
+            cbor(cose_key),
+        )
+    )
+    attestation = cbor(
+        {"fmt": "none", "authData": authenticator_data, "attStmt": att_stmt}
+    )
+    return RegistrationCredential(
+        credential_id=CREDENTIAL_ID,
+        raw_id=CREDENTIAL_ID,
+        credential_type="public-key",
+        client_data_json=client_data("webauthn.create", challenge),
+        attestation_object=_encode(attestation),
+    )
+
+
+def _nested_cbor_map(depth: int) -> object:
+    """A CBOR map value nested `depth` single-entry maps deep, terminating in an
+    empty map. Used to probe `_CborDecoder`'s recursion-depth bound."""
+    value: object = {}
+    for _ in range(depth):
+        value = {"n": value}
+    return value
 
 
 def invalid_registration_response(
