@@ -341,18 +341,6 @@ def session_cookie(
 # protocol-v2 (chunked snapshot ingestion has no single-message payload), so
 # it was deleted rather than re-pointed at a v2 hash.
 
-
-# NOTE: test_authoritative_wss_endpoint_schema_accepts_every_shared_fixture
-# previously lived here. It asserted a "/api/v1/schemas/wss" endpoint returns
-# an authoritative protocol-v2 schema; that endpoint doesn't exist on this
-# branch (only the retired, unmounted app/api/endpoints/schema.py, whose
-# legacy OutgoingWssMessage shape tests/test_history_api.py already asserts
-# is absent with a 404). Building a new authoritative schema endpoint is
-# unrelated to Stage 5b (the analytics auth/HTTP port) and would either
-# duplicate or contradict that currently-green 404 assertion, so the test
-# was deleted rather than guessed at. Flagged for a follow-up stage.
-
-
 def test_protected_analytics_openapi_requires_auth_and_structured_errors() -> None:
     with TestClient(app) as client:
         schema = client.get("/openapi.json").json()

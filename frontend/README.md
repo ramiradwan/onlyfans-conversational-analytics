@@ -22,7 +22,7 @@ Implements:
 | **Served by** | FastAPI — Jinja injects `FASTAPI_CONFIG` into `index.html` |  
 | **Data Sources** | **WebSocket** — Event-driven updates from backend<br>**REST** — Bootstrap snapshot (dev mode) & analytics endpoints |  
 | **State Management** | Multiple [Zustand](https://github.com/pmndrs/zustand) domain stores: `chatStore`, `analyticsStore`, `enrichmentStore`, `systemStore`, `userStore` |  
-| **Type Safety** | Auto-generated WS types (`backend-wss.ts`) from `/api/v1/schemas/wss`<br>Auto-generated REST types (`backend.ts`) from backend OpenAPI spec<br>Theme augmentation via `mui.d.ts` for token-aware MUI typing |  
+| **Type Safety** | Generated WS types (`backend-wss.ts`) from backend WebSocket schemas<br>Auto-generated REST types (`backend.ts`) from backend OpenAPI spec<br>Theme augmentation via `mui.d.ts` for token-aware MUI typing |
 | **Roles** | `"creator-ceo"` → Dashboard-first<br>`"operator"` → Inbox-first |  
   
 ---  
@@ -172,15 +172,13 @@ npm run watch:tokens     # Rebuild theme on token changes
   
 ## 📐 Type System  
   
-- **WS Types:** Generated from backend JSON Schemas (`backend-wss.ts`)  
+- **WS Types:** Generated from backend WebSocket schemas (`backend-wss.ts`)
 - **REST Types:** Generated from OpenAPI (`backend.ts`)  
 - **Theme Augmentation:** `mui.d.ts` adds `brandPalette`, `effects`, `layout` to `Theme`  
 - **Path Aliases:** From `tsconfig.json` — e.g. `@components/...`, `@views/...`  
   
 ```bash  
-npm run sync:wss   # WS types  
 npm run sync:rest  # REST types  
-npm run sync:all   # both + postprocess  
 ```  
   
 > ⚠️ Never edit generated type files manually.  
@@ -198,9 +196,7 @@ From `package.json`:
 | `preview` | Preview production build locally |  
 | `generate:theme` | Build theme from `tokens.json` |  
 | `watch:tokens` | Watch tokens.json & rebuild theme |  
-| `sync:wss` | Generate WS types from backend |  
 | `sync:rest` | Generate REST types from backend |  
-| `sync:all` | Sync WS + REST + postprocess |  
 | `typecheck` | Run TypeScript compiler (no emit) |  
 | `lint` | ESLint with max-warnings=0 |  
   
@@ -230,4 +226,4 @@ npm run build
 - Ignore `keepalive` WS messages  
 - Maintain snapshot–delta ordering  
 - Follow `background.default` vs `background.paper` surface convention  
-- RBAC enforced at routing layer  
+- RBAC enforced at routing layer

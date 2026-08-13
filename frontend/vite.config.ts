@@ -46,7 +46,6 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:8000', changeOrigin: true },
       '/openapi.json': { target: 'http://localhost:8000', changeOrigin: true },
-      '/api/v1/schemas/wss': { target: 'http://localhost:8000', changeOrigin: true },
       '/ws': { target: 'ws://localhost:8000', ws: true, changeOrigin: true }
     }
   },

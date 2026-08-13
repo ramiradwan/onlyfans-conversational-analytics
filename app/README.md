@@ -6,13 +6,12 @@ rebuildable read models in a separate projections SQLite database.
 
 ## First-run production configuration
 
-The shipped runtime uses `WEBSOCKET_AUTH_MODE=local_session`. Before importing
-`app.main`, the launcher calls
-`app.core.first_run.initialize_production_configuration` with
-`VerifiedGrantBindings` emitted by its grant-verification step and the packaged
-Chrome extension ID. The initializer generates the bootstrap token and signing
-secret with the operating system cryptographic random source. It stores them,
-the verified bindings, their bundle digest, and absolute SQLite paths in
+The shipped runtime uses `WEBSOCKET_AUTH_MODE=local_session`.
+`app.core.first_run.initialize_production_configuration` provisions the
+production runtime configuration. It requires `VerifiedGrantBindings` and the
+packaged Chrome extension ID. The initializer generates the bootstrap token and
+signing secret with the operating system cryptographic random source. It stores
+them, the verified bindings, their bundle digest, and absolute SQLite paths in
 `runtime.env` below the platform-standard per-user application-data directory.
 Neither secret is returned or logged.
 

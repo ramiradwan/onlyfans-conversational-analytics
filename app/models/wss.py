@@ -2,7 +2,7 @@
 WebSocket message models with Pydantic discriminated unions.  
   
 This file is the single source-of-truth schema for all WS payloads,  
-enabling auto-generation of frontend TypeScript types via /api/v1/schemas/wss.  
+enabling generation of frontend TypeScript types.
   
 Spec compliance:  
 - IncomingWssMessage: Agent ➔ Brain  
@@ -159,4 +159,4 @@ OutgoingWssMessage = Annotated[
         OutgoingOnlineUsersUpdateMsg,  # presence update  
     ],  
     Field(discriminator="type")  
-]  
+]

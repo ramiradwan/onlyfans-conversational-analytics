@@ -34,21 +34,6 @@ export interface paths {
      */
     get: operations["getFullAnalytics"];
   };
-  "/api/v1/schemas/wss": {
-    /**
-     * Get Wss Schema
-     * @description Returns the JSON schema for OutgoingWssMessage.
-     *
-     * Frontend tooling uses this to auto-generate TypeScript WS types.
-     * This ensures strict type safety between backend WS payloads
-     * and frontend consumers.
-     *
-     * Example usage in frontend:
-     *     $ curl http://localhost:8000/api/v1/schemas/wss > wss-schema.json
-     *     $ json-schema-to-typescript wss-schema.json > ws-types.ts
-     */
-    get: operations["getWssSchema"];
-  };
   "/": {
     /** Serve Frontend */
     get: operations["serveFrontend"];
@@ -645,30 +630,6 @@ export interface operations {
       422: {
         content: {
           "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  /**
-   * Get Wss Schema
-   * @description Returns the JSON schema for OutgoingWssMessage.
-   *
-   * Frontend tooling uses this to auto-generate TypeScript WS types.
-   * This ensures strict type safety between backend WS payloads
-   * and frontend consumers.
-   *
-   * Example usage in frontend:
-   *     $ curl http://localhost:8000/api/v1/schemas/wss > wss-schema.json
-   *     $ json-schema-to-typescript wss-schema.json > ws-types.ts
-   */
-  getWssSchema: {
-    responses: {
-      /** @description Successful Response */
-      200: {
-        content: {
-          "application/json": {
-            [key: string]: unknown;
-          };
         };
       };
     };
