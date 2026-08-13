@@ -13,6 +13,7 @@ import { useUserStore } from '@store/userStore';
 
 import { AppRouter } from './routing/AppRouter';
 import { theme } from './theme';
+import { WebAuthnAccessView } from './views/WebAuthnAccessView';
 
 const globalStyles = (
   <GlobalStyles
@@ -35,19 +36,23 @@ const globalStyles = (
 );
 
 export function App() {
+  const config = getConfig();
+  const userRole = config.BRIDGE_ROLE === 'creator'
+    ? 'creator-ceo'
+    : config.BRIDGE_ROLE === 'operator'
+      ? 'operator'
+      : null;
+  const hasSessionIdentity = Boolean(
+    config.CREATOR_ID && config.BRIDGE_AUTH_TICKET && userRole !== null,
+  );
+
   useEffect(() => {
     const {
       BRIDGE_AUTH_TICKET,
       CREATOR_ID,
       EXTENSION_ID,
       FASTAPI_WS_URL,
-      BRIDGE_ROLE,
-    } = getConfig();
-    const userRole = BRIDGE_ROLE === 'creator'
-      ? 'creator-ceo'
-      : BRIDGE_ROLE === 'operator'
-        ? 'operator'
-        : null;
+    } = config;
     useUserStore.getState().actions.setUserRole(userRole);
     if (!FASTAPI_WS_URL || !CREATOR_ID || !BRIDGE_AUTH_TICKET || userRole === null) {
       console.error('[App] Missing required Brain URL, account, role, or Bridge binding');
@@ -89,9 +94,11 @@ export function App() {
       <ThemeProvider theme={theme} defaultMode="light" disableTransitionOnChange>
         <CssBaseline />
         {globalStyles}
-        <BrowserRouter>
-          <AppRouter />
-        </BrowserRouter>
+        {hasSessionIdentity ? (
+          <BrowserRouter>
+            <AppRouter />
+          </BrowserRouter>
+        ) : <WebAuthnAccessView />}
       </ThemeProvider>
     </>
   );

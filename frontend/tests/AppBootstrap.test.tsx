@@ -33,6 +33,22 @@ function injectConfig(role: unknown) {
   document.body.append(element);
 }
 
+function injectUnauthenticatedConfig() {
+  const element = document.createElement('script');
+  element.id = 'fastapi-config';
+  element.type = 'application/json';
+  element.textContent = JSON.stringify({
+    EXTENSION_ID: 'dev-extension-id',
+    FASTAPI_WS_URL: 'ws://bridge.localhost:17871/ws/bridge',
+    API_BASE_URL: 'http://bridge.localhost:17871',
+    VERSION: '0.7.5',
+    BRIDGE_ROLE: null,
+    CREATOR_ID: null,
+    BRIDGE_AUTH_TICKET: null,
+  });
+  document.body.append(element);
+}
+
 afterEach(() => {
   cleanup();
   document.getElementById('fastapi-config')?.remove();
@@ -64,6 +80,17 @@ describe('signed Bridge role bootstrap', () => {
     render(<App />);
 
     await waitFor(() => expect(useUserStore.getState().role).toBeNull());
+    expect(transport.connect).not.toHaveBeenCalled();
+  });
+
+  it('shows passkey access instead of Bridge routes without a session identity', async () => {
+    injectUnauthenticatedConfig();
+
+    render(<App />);
+
+    await waitFor(() => expect(useUserStore.getState().role).toBeNull());
+    expect(document.querySelector('h1')?.textContent).toBe('Secure your Bridge');
+    expect(document.body.textContent).not.toContain('Application routes');
     expect(transport.connect).not.toHaveBeenCalled();
   });
 });
