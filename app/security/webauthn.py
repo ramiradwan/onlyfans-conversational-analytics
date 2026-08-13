@@ -7,8 +7,10 @@ import binascii
 import hashlib
 import hmac
 import json
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from typing import Any, Callable, Literal
 from urllib.parse import urlsplit
 
@@ -22,9 +24,11 @@ from app.persistence.auth import (
     AuthenticationStore,
     BridgeSessionIssue,
     IssuedBridgeSession,
+    SQLiteAuthenticationStore,
     WebAuthnChallengeBinding,
     WebAuthnCredential,
 )
+from app.security.runtime_policy import RuntimePolicy
 
 
 _CLIENT_DATA_LIMIT = 65_536
@@ -57,6 +61,207 @@ class SessionAuthority:
     creator_account_id: str
     role: Literal["creator", "operator"]
     grant_reference_ids: tuple[str, ...]
+
+
+class WebAuthnAuthorityResult(str, Enum):
+    """Stable outcomes returned by the WebAuthn authority application port."""
+
+    AUTHORIZED = "authorized"
+    POLICY_NOT_CURRENT = "policy_not_current"
+    REQUIRED_GRANT_MISSING = "required_grant_missing"
+    REQUIRED_GRANT_EXPIRED = "required_grant_expired"
+    REQUIRED_GRANT_NOT_CURRENT = "required_grant_not_current"
+    REQUIRED_GRANT_REVOKED = "required_grant_revoked"
+    MEMBERSHIP_ACCOUNT_MISMATCH = "membership_account_mismatch"
+    ORGANIZATION_MISMATCH = "organization_mismatch"
+    INSTALLATION_KEY_MISSING = "installation_key_missing"
+    INSTALLATION_KEY_MISMATCH = "installation_key_mismatch"
+    EXTERNAL_PRINCIPAL_MISMATCH = "external_principal_mismatch"
+    AUTHORITY_REVOKED = "authority_revoked"
+    ROLE_NOT_AUTHORIZED = "role_not_authorized"
+    CREDENTIAL_MISSING = "credential_missing"
+    CREDENTIAL_REVOKED = "credential_revoked"
+    CREDENTIAL_AMBIGUOUS = "credential_ambiguous"
+
+
+@dataclass(frozen=True, slots=True)
+class WebAuthnAuthorityDecision:
+    """One named result containing at most one fully validated authority."""
+
+    result: WebAuthnAuthorityResult
+    authority: RegistrationAuthority | SessionAuthority | None = None
+
+    def __post_init__(self) -> None:
+        authorized = self.result is WebAuthnAuthorityResult.AUTHORIZED
+        if authorized != (self.authority is not None):
+            raise ValueError("Only an authorized decision may contain authority")
+
+
+_WEBAUTHN_REQUIRED_GRANT_TYPES = (
+    "installation_grant",
+    "membership_snapshot",
+    "creator_account_binding",
+)
+
+
+class WebAuthnAuthorityPort:
+    """Derive WebAuthn authority from one policy and current verified state.
+
+    The port owns grant selection and validation. Transport callers supply only
+    the authenticated runtime policy and cannot contribute any authority field.
+    """
+
+    def __init__(
+        self,
+        store: SQLiteAuthenticationStore,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._store = store
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def registration_authority(
+        self, policy: RuntimePolicy
+    ) -> WebAuthnAuthorityDecision:
+        """Return one registration authority derived from durable grant state."""
+
+        return self._resolve(policy, session=False)
+
+    def session_authority(
+        self, policy: RuntimePolicy
+    ) -> WebAuthnAuthorityDecision:
+        """Return one session authority derived from durable grant state."""
+
+        return self._resolve(policy, session=True)
+
+    def _resolve(
+        self, policy: RuntimePolicy, *, session: bool
+    ) -> WebAuthnAuthorityDecision:
+        now = self._now()
+        # BEGIN IMMEDIATE is the auth store's installation-scoped writer fence.
+        # It prevents authority inputs changing between validation and return.
+        with self._store.database.transaction() as connection:
+            if not _webauthn_policy_is_current(connection, policy, now):
+                return _authority_refusal(WebAuthnAuthorityResult.POLICY_NOT_CURRENT)
+            if policy.identity.role not in {"creator", "operator"}:
+                return _authority_refusal(WebAuthnAuthorityResult.ROLE_NOT_AUTHORIZED)
+
+            selected: dict[str, sqlite3.Row] = {}
+            for grant_type in _WEBAUTHN_REQUIRED_GRANT_TYPES:
+                result, row = _select_webauthn_grant(
+                    connection,
+                    grant_type=grant_type,
+                    policy_reference_ids=policy.signed_object_reference_ids,
+                    now=now,
+                )
+                if result is not WebAuthnAuthorityResult.AUTHORIZED:
+                    return _authority_refusal(result)
+                if row is None:  # pragma: no cover - guarded by the named result
+                    raise RuntimeError("authorized grant selection returned no row")
+                selected[grant_type] = row
+
+            account_id = policy.identity.creator_account_id
+            membership = selected["membership_snapshot"]
+            binding = selected["creator_account_binding"]
+            if binding["creator_account_id"] != account_id:
+                return _authority_refusal(
+                    WebAuthnAuthorityResult.MEMBERSHIP_ACCOUNT_MISMATCH
+                )
+            allowed_accounts = _allowed_accounts(membership)
+            if allowed_accounts is None or account_id not in allowed_accounts:
+                return _authority_refusal(
+                    WebAuthnAuthorityResult.MEMBERSHIP_ACCOUNT_MISMATCH
+                )
+
+            organizations = {row["organization_id"] for row in selected.values()}
+            if None in organizations or "" in organizations or len(organizations) != 1:
+                return _authority_refusal(WebAuthnAuthorityResult.ORGANIZATION_MISMATCH)
+
+            key = connection.execute(
+                """
+                SELECT installation_key_id, installation_key_jkt
+                FROM installation_key_reference
+                WHERE singleton = 1 AND activated_at IS NOT NULL
+                """
+            ).fetchone()
+            if key is None:
+                return _authority_refusal(
+                    WebAuthnAuthorityResult.INSTALLATION_KEY_MISSING
+                )
+            installations = {row["installation_id"] for row in selected.values()}
+            key_bindings = {
+                (row["installation_key_id"], row["installation_key_jkt"])
+                for row in selected.values()
+            }
+            expected_key = (key["installation_key_id"], key["installation_key_jkt"])
+            if len(installations) != 1 or key_bindings != {expected_key}:
+                return _authority_refusal(
+                    WebAuthnAuthorityResult.INSTALLATION_KEY_MISMATCH
+                )
+
+            principals = {(row["issuer"], row["subject"]) for row in selected.values()}
+            if len(principals) != 1:
+                return _authority_refusal(
+                    WebAuthnAuthorityResult.EXTERNAL_PRINCIPAL_MISMATCH
+                )
+            external_issuer, external_subject = next(iter(principals))
+            installation_id = next(iter(installations))
+            if any(
+                _webauthn_scope_is_revoked(connection, scope_type, scope_id)
+                for scope_type, scope_id in (
+                    ("principal", policy.identity.principal_id),
+                    ("creator_account", account_id),
+                    ("installation", installation_id),
+                )
+            ):
+                return _authority_refusal(WebAuthnAuthorityResult.AUTHORITY_REVOKED)
+
+            references = tuple(
+                selected[grant_type]["reference_id"]
+                for grant_type in _WEBAUTHN_REQUIRED_GRANT_TYPES
+            )
+            if not session:
+                return WebAuthnAuthorityDecision(
+                    WebAuthnAuthorityResult.AUTHORIZED,
+                    RegistrationAuthority(
+                        principal_id=policy.identity.principal_id,
+                        external_issuer=external_issuer,
+                        external_subject=external_subject,
+                        installation_id=installation_id,
+                    ),
+                )
+
+            credential_result, credential_id = _select_webauthn_credential(
+                connection,
+                principal_id=policy.identity.principal_id,
+                external_issuer=external_issuer,
+                external_subject=external_subject,
+                installation_id=installation_id,
+            )
+            if credential_result is not WebAuthnAuthorityResult.AUTHORIZED:
+                return _authority_refusal(credential_result)
+            if credential_id is None:  # pragma: no cover - guarded by result
+                raise RuntimeError("authorized credential selection returned no id")
+            if _webauthn_scope_is_revoked(
+                connection, "webauthn_credential", credential_id
+            ):
+                return _authority_refusal(WebAuthnAuthorityResult.CREDENTIAL_REVOKED)
+            return WebAuthnAuthorityDecision(
+                WebAuthnAuthorityResult.AUTHORIZED,
+                SessionAuthority(
+                    principal_id=policy.identity.principal_id,
+                    credential_id=credential_id,
+                    creator_account_id=account_id,
+                    role=policy.identity.role,
+                    grant_reference_ids=references,
+                ),
+            )
+
+    def _now(self) -> datetime:
+        instant = self._clock()
+        if instant.tzinfo is None or instant.utcoffset() is None:
+            raise ValueError("WebAuthn authority clock must return an aware datetime")
+        return instant.astimezone(timezone.utc)
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,6 +516,182 @@ def configured_webauthn_service(
         session_ttl_seconds=configuration.bridge_session_ttl_seconds,
         clock=clock,
     )
+
+
+def configured_webauthn_authority_port(
+    store: SQLiteAuthenticationStore,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> WebAuthnAuthorityPort:
+    """Build the security-kernel authority port for the configured auth store."""
+
+    return WebAuthnAuthorityPort(store, clock=clock)
+
+
+def _authority_refusal(
+    result: WebAuthnAuthorityResult,
+) -> WebAuthnAuthorityDecision:
+    if result is WebAuthnAuthorityResult.AUTHORIZED:
+        raise ValueError("An authorized authority result requires authority")
+    return WebAuthnAuthorityDecision(result)
+
+
+def _webauthn_policy_is_current(
+    connection: sqlite3.Connection,
+    policy: RuntimePolicy,
+    now: datetime,
+) -> bool:
+    epoch = connection.execute(
+        "SELECT value FROM authorization_epoch WHERE singleton = 1"
+    ).fetchone()
+    if epoch is None or int(epoch["value"]) != policy.authorization_epoch.value:
+        return False
+    if policy.expires_at is not None and now >= policy.expires_at:
+        return False
+    session_expiry = policy.identity.session_expires_at
+    if session_expiry is not None and now.timestamp() >= session_expiry:
+        return False
+    timestamp = _authority_time_text(now)
+    for reference_id in policy.signed_object_reference_ids:
+        row = connection.execute(
+            """
+            SELECT 1 FROM verified_grant_references
+            WHERE reference_id = ? AND revoked_at IS NULL
+              AND valid_from <= ? AND expires_at > ?
+            """,
+            (reference_id, timestamp, timestamp),
+        ).fetchone()
+        if row is None:
+            return False
+    for observed in policy.revocations:
+        row = connection.execute(
+            """
+            SELECT version, revoked_at FROM auth_revocation_state
+            WHERE scope_type = ? AND scope_id = ?
+            """,
+            (observed.scope_type, observed.scope_id),
+        ).fetchone()
+        if (
+            row is None
+            or row["revoked_at"] is not None
+            or int(row["version"]) != observed.version
+        ):
+            return False
+    return True
+
+
+def _select_webauthn_grant(
+    connection: sqlite3.Connection,
+    *,
+    grant_type: str,
+    policy_reference_ids: tuple[str, ...],
+    now: datetime,
+) -> tuple[WebAuthnAuthorityResult, sqlite3.Row | None]:
+    rows = connection.execute(
+        """
+        SELECT * FROM verified_grant_references
+        WHERE grant_type = ?
+        ORDER BY verified_at DESC, reference_id DESC
+        """,
+        (grant_type,),
+    ).fetchall()
+    if policy_reference_ids:
+        allowed = set(policy_reference_ids)
+        rows = [row for row in rows if row["reference_id"] in allowed]
+    if not rows:
+        return WebAuthnAuthorityResult.REQUIRED_GRANT_MISSING, None
+    active = [row for row in rows if row["revoked_at"] is None]
+    if not active:
+        return WebAuthnAuthorityResult.REQUIRED_GRANT_REVOKED, None
+    timestamp = _authority_time_text(now)
+    current = [
+        row
+        for row in active
+        if row["valid_from"] <= timestamp < row["expires_at"]
+    ]
+    if not current:
+        if all(row["expires_at"] <= timestamp for row in active):
+            return WebAuthnAuthorityResult.REQUIRED_GRANT_EXPIRED, None
+        return WebAuthnAuthorityResult.REQUIRED_GRANT_NOT_CURRENT, None
+    selected = current[0]
+    if _webauthn_scope_is_revoked(
+        connection, "verified_grant", selected["reference_id"]
+    ):
+        return WebAuthnAuthorityResult.REQUIRED_GRANT_REVOKED, None
+    return WebAuthnAuthorityResult.AUTHORIZED, selected
+
+
+def _allowed_accounts(row: sqlite3.Row) -> tuple[str, ...] | None:
+    value = row["allowed_creator_account_ids"]
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(parsed, list) or not all(
+        isinstance(item, str) for item in parsed
+    ):
+        return None
+    return tuple(parsed)
+
+
+def _select_webauthn_credential(
+    connection: sqlite3.Connection,
+    *,
+    principal_id: str,
+    external_issuer: str,
+    external_subject: str,
+    installation_id: str,
+) -> tuple[WebAuthnAuthorityResult, str | None]:
+    rows = connection.execute(
+        """
+        SELECT credential_id, external_issuer, external_subject,
+               installation_id, revoked_at
+        FROM webauthn_credentials
+        WHERE principal_id = ?
+        ORDER BY enrolled_at DESC, credential_id DESC
+        """,
+        (principal_id,),
+    ).fetchall()
+    if not rows:
+        return WebAuthnAuthorityResult.CREDENTIAL_MISSING, None
+    active = [row for row in rows if row["revoked_at"] is None]
+    if not active:
+        return WebAuthnAuthorityResult.CREDENTIAL_REVOKED, None
+    matching = [
+        row
+        for row in active
+        if row["external_issuer"] == external_issuer
+        and row["external_subject"] == external_subject
+        and row["installation_id"] == installation_id
+    ]
+    if not matching:
+        return WebAuthnAuthorityResult.EXTERNAL_PRINCIPAL_MISMATCH, None
+    if len(matching) != 1:
+        return WebAuthnAuthorityResult.CREDENTIAL_AMBIGUOUS, None
+    return WebAuthnAuthorityResult.AUTHORIZED, str(matching[0]["credential_id"])
+
+
+def _webauthn_scope_is_revoked(
+    connection: sqlite3.Connection,
+    scope_type: str,
+    scope_id: str,
+) -> bool:
+    row = connection.execute(
+        """
+        SELECT revoked_at FROM auth_revocation_state
+        WHERE scope_type = ? AND scope_id = ?
+        """,
+        (scope_type, scope_id),
+    ).fetchone()
+    return row is not None and row["revoked_at"] is not None
+
+
+def _authority_time_text(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("WebAuthn authority timestamps must be timezone-aware")
+    return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
 
 
 @dataclass(frozen=True, slots=True)
