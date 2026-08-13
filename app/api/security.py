@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from fastapi import Depends, HTTPException, Request
 
 from app.core.config import settings
+from app.persistence.auth import SQLiteAuthenticationStore
 from app.security.admission_confirmation import (
     AdmissionConfirmation,
     AdmissionConfirmationError,
@@ -31,6 +32,9 @@ from app.security.runtime_policy import (
 from app.transport.manager import DEV_ACCOUNT_ID, DEV_PRINCIPAL_ID
 
 
+_DURABLE_WEBAUTHN_SESSION_PREFIX = "webauthn-session:"
+
+
 def _development_context_allowed() -> bool:
     return (
         settings.websocket_auth_mode == "development_stub"
@@ -45,6 +49,23 @@ def local_session_token(
     issued_at: int | None = None,
 ) -> str:
     return issue_local_session_token(identity, issued_at=issued_at)
+
+
+def webauthn_session_token(identity: AuthContext, session_value: str) -> str:
+    """Seal a durable WebAuthn session without granting a platform identity."""
+
+    if not session_value:
+        raise ValueError("durable WebAuthn sessions require a session value")
+    envelope = AuthContext(
+        principal_id=identity.principal_id,
+        creator_account_id=identity.creator_account_id,
+        role=identity.role,
+        # The legacy sealed envelope requires this claim. It is never returned
+        # as WebAuthn authority; the durable policy intentionally leaves it unbound.
+        platform_creator_id=identity.creator_account_id,
+        session_id=f"{_DURABLE_WEBAUTHN_SESSION_PREFIX}{session_value}",
+    )
+    return issue_local_session_token(envelope)
 
 
 def get_runtime_policy(request: Request) -> RuntimePolicy:
@@ -67,6 +88,30 @@ def get_runtime_policy(request: Request) -> RuntimePolicy:
         identity, digest = verify_local_session_token(token)
     except LocalSessionError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
+    session_reference = identity.session_id
+    if session_reference is not None and session_reference.startswith(
+        _DURABLE_WEBAUTHN_SESSION_PREFIX
+    ):
+        session_value = session_reference.removeprefix(
+            _DURABLE_WEBAUTHN_SESSION_PREFIX
+        )
+        active = SQLiteAuthenticationStore(
+            settings.auth_database_path
+        ).read_bridge_session(session_value)
+        if active is None or active.policy.identity is None:
+            raise HTTPException(status_code=401, detail="Authenticated session is invalid")
+        durable_identity = active.policy.identity
+        if (
+            identity.principal_id,
+            identity.creator_account_id,
+            identity.role,
+        ) != (
+            durable_identity.principal_id,
+            durable_identity.creator_account_id,
+            durable_identity.role,
+        ):
+            raise HTTPException(status_code=401, detail="Authenticated session is invalid")
+        return active.policy
     return build_runtime_policy(identity, signed_object_digests=(digest,))
 
 

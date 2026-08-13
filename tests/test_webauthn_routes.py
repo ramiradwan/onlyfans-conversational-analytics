@@ -10,17 +10,23 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.activation import require_activated_runtime
 from app.api import security as api_security
 from app.api.endpoints import webauthn as webauthn_endpoints
-from app.api.security import csrf_token, get_runtime_policy
+from app.api.security import (
+    csrf_token,
+    get_authenticated_runtime_policy,
+    get_runtime_policy,
+)
 from app.core.config import settings
 from app.persistence.auth import (
     InstallationKeyReference,
     InstallationKeyReservation,
+    RevocationKey,
+    RevocationScopeType,
     SQLiteAuthenticationStore,
     VerifiedGrantReference,
     WebAuthnCredential,
@@ -51,15 +57,17 @@ CREDENTIAL_ID = base64.urlsafe_b64encode(CREDENTIAL_BYTES).rstrip(b"=").decode()
 
 @pytest.fixture
 def store(tmp_path: Path) -> SQLiteAuthenticationStore:
-    authentication_store = SQLiteAuthenticationStore(
-        tmp_path / "auth.sqlite3", clock=lambda: INSTANT
-    )
+    return _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+
+
+def _seeded_store(path: Path, instant: datetime) -> SQLiteAuthenticationStore:
+    authentication_store = SQLiteAuthenticationStore(path, clock=lambda: instant)
     authentication_store.reserve_installation_key(
         InstallationKeyReservation(
             provider_name="test-provider",
             provider_key_name="test-key",
             algorithm="ES256",
-            created_at=INSTANT - timedelta(minutes=10),
+            created_at=instant - timedelta(minutes=10),
         )
     )
     authentication_store.activate_installation_key(
@@ -70,8 +78,8 @@ def store(tmp_path: Path) -> SQLiteAuthenticationStore:
             installation_key_id=INSTALLATION_KEY_ID,
             installation_key_jkt=INSTALLATION_KEY_JKT,
             public_key_jwk='{"kty":"EC"}',
-            created_at=INSTANT - timedelta(minutes=10),
-            activated_at=INSTANT - timedelta(minutes=9),
+            created_at=instant - timedelta(minutes=10),
+            activated_at=instant - timedelta(minutes=9),
         )
     )
     for grant_type in (
@@ -91,9 +99,9 @@ def store(tmp_path: Path) -> SQLiteAuthenticationStore:
                 creator_account_id=(
                     ACCOUNT_ID if grant_type == "creator_account_binding" else None
                 ),
-                valid_from=INSTANT - timedelta(hours=1),
-                expires_at=INSTANT + timedelta(hours=1),
-                verified_at=INSTANT - timedelta(minutes=5),
+                valid_from=instant - timedelta(hours=1),
+                expires_at=instant + timedelta(hours=1),
+                verified_at=instant - timedelta(minutes=5),
                 organization_id="organization-http",
                 installation_key_id=INSTALLATION_KEY_ID,
                 installation_key_jkt=INSTALLATION_KEY_JKT,
@@ -235,20 +243,37 @@ def test_login_begin_succeeds_without_a_bridge_session_cookie_with_real_authorit
     assert response.json()["challenge"]
 
 
-def test_login_finish_without_a_prior_session_uses_binding_grant_account(
+def test_login_finish_without_a_prior_session_mints_grant_authority_session(
     monkeypatch: pytest.MonkeyPatch,
-    store: SQLiteAuthenticationStore,
+    tmp_path: Path,
 ) -> None:
+    instant = datetime.now(timezone.utc)
+    store = _seeded_store(tmp_path / "webauthn-login.sqlite3", instant)
     monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
+    monkeypatch.setattr(settings, "auth_database_path", store.database.path)
+    monkeypatch.setattr(settings, "local_principal_id", "configured-principal")
+    monkeypatch.setattr(settings, "local_creator_account_id", "configured-account")
+    monkeypatch.setattr(settings, "local_bridge_role", "operator")
+    monkeypatch.setattr(settings, "local_platform_creator_id", "configured-platform")
     monkeypatch.setattr(api_security, "build_runtime_policy", store.build_runtime_policy)
     private_key = ec.generate_private_key(ec.SECP256R1())
     _register_public_key(store, private_key)
-    application = _application(
-        authority_port=WebAuthnAuthorityPort(store, clock=lambda: INSTANT),
-        service=_service(store),
-    )
+    application = _application()
+
+    @application.get("/test/session-identity")
+    def session_identity(
+        policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
+    ) -> dict[str, str | None]:
+        assert policy.identity is not None
+        return {
+            "principal_id": policy.identity.principal_id,
+            "creator_account_id": policy.identity.creator_account_id,
+            "role": policy.identity.role,
+            "platform_creator_id": policy.identity.platform_creator_id,
+        }
 
     with TestClient(application, base_url=ORIGIN) as client:
+        assert settings.bridge_session_cookie_name not in client.cookies
         begun = client.post(
             "/api/v1/webauthn/login/begin", headers={"Origin": ORIGIN}
         )
@@ -257,14 +282,48 @@ def test_login_finish_without_a_prior_session_uses_binding_grant_account(
             json=_authentication_payload(private_key, begun.json()["challenge"]),
             headers={"Origin": ORIGIN},
         )
+        session_cookie = finished.cookies[settings.bridge_session_cookie_name]
+        authenticated = client.get(
+            "/test/session-identity",
+            headers={
+                "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}"
+            },
+        )
+        reauthentication = client.post(
+            "/api/v1/webauthn/login/begin",
+            headers={
+                "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}",
+                "Origin": ORIGIN,
+                "X-CSRF-Token": finished.json()["csrf_token"],
+            },
+        )
+        with store.database.read() as connection:
+            session_id = connection.execute(
+                "SELECT session_id FROM bridge_sessions"
+            ).fetchone()["session_id"]
+        store.revoke(
+            RevocationKey(RevocationScopeType.BRIDGE_SESSION, session_id),
+            reason="test revocation",
+        )
+        revoked = client.get(
+            "/test/session-identity",
+            headers={
+                "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}"
+            },
+        )
 
-    with store.database.read() as connection:
-        session = connection.execute(
-            "SELECT creator_account_id FROM bridge_sessions"
-        ).fetchone()
     assert begun.status_code == 200
     assert finished.status_code == 200
-    assert session["creator_account_id"] == ACCOUNT_ID
+    assert authenticated.status_code == 200
+    assert authenticated.json() == {
+        "principal_id": PRINCIPAL_ID,
+        "creator_account_id": ACCOUNT_ID,
+        "role": "creator",
+        "platform_creator_id": None,
+    }
+    assert reauthentication.status_code == 200
+    assert revoked.status_code == 401
+    assert revoked.json() == {"detail": "Authenticated session is invalid"}
 
 
 def test_identity_carrying_webauthn_request_rejects_wrong_csrf_value(

@@ -11,13 +11,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.api.activation import require_activated_runtime
 from app.api.security import (
+    csrf_token,
     get_runtime_policy,
     verify_csrf_token,
     verify_same_origin,
+    webauthn_session_token,
 )
 from app.core.config import settings
 from app.persistence.auth import SQLiteAuthenticationStore
-from app.security.runtime_policy import RuntimePolicy
+from app.security.runtime_policy import AuthContext, RuntimePolicy
 from app.security.webauthn import (
     AuthenticationCredential,
     RegistrationAuthority,
@@ -280,9 +282,16 @@ async def finish_login(
         )
     except WebAuthnVerificationError as error:
         _verification_refusal(error, operation="login_finish")
+    session_identity = AuthContext(
+        principal_id=authority.principal_id,
+        creator_account_id=authority.creator_account_id,
+        role=authority.role,
+        session_id=issued.session_id,
+    )
+    sealed_session = webauthn_session_token(session_identity, issued.session_value)
     response.set_cookie(
         key=settings.bridge_session_cookie_name,
-        value=issued.session_value,
+        value=sealed_session,
         secure=True,
         httponly=True,
         samesite="strict",
@@ -290,4 +299,4 @@ async def finish_login(
         max_age=settings.bridge_session_ttl_seconds,
     )
     _no_store(response)
-    return {"csrf_token": issued.csrf_value}
+    return {"csrf_token": csrf_token(issued.policy)}
