@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import os
 import re
+import secrets
 import socket
 import struct
 import subprocess
@@ -25,12 +26,17 @@ from app.core.runtime_paths import (
     runtime_configuration_file,
     runtime_data_directory,
 )
+from app.packaged_entry import PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE
+from app.provisioning.app import PROVISIONING_HANDOFF_PATH, PROVISIONING_REDEEM_PATH
 
 
 BRIDGE_ORIGIN = "http://bridge.localhost:17871"
 BRIDGE_PORT = 17871
 BRIDGE_BIND_ADDRESS = "127.0.0.1"
 HANDOFF_PATH = "/api/v1/session/handoff"
+PROVISIONING_COMPLETE_EXIT_CODE = 75
+PROVISIONING_HANDOFF_PATH = PROVISIONING_HANDOFF_PATH
+PROVISIONING_REDEEM_PATH = PROVISIONING_REDEEM_PATH
 SESSION_COOKIE_NAME = "__Host-bridge_session"
 _HANDOFF_CODE = re.compile(r"[A-Za-z0-9_-]{32,}")
 
@@ -66,6 +72,7 @@ class LauncherConfiguration:
     working_directory: Path
     data_directory: Path
     startup_timeout_seconds: float = 15.0
+    provisioning_handoff_token: str | None = None
 
     def __post_init__(self) -> None:
         if not self.brain_command:
@@ -78,6 +85,11 @@ class LauncherConfiguration:
             raise ValueError("runtime data directory must be absolute")
         if self.startup_timeout_seconds <= 0:
             raise ValueError("startup timeout must be positive")
+        if (
+            self.provisioning_handoff_token is not None
+            and len(self.provisioning_handoff_token) < 32
+        ):
+            raise ValueError("provisioning handoff token is invalid")
 
 
 class LaunchFailure(RuntimeError):
@@ -98,6 +110,8 @@ FAILURE_MESSAGES = {
     "brain_start_failed": "Brain could not be started.",
     "brain_start_timeout": "Brain did not acquire port 17871 in time.",
     "handoff_failed": "The local browser handoff failed.",
+    "provisioning_handoff_failed": "The local provisioning browser handoff failed.",
+    "provisioning_exit_failed": "Provisioning stopped before completing.",
     "browser_open_failed": "The system browser could not be opened.",
 }
 
@@ -114,6 +128,7 @@ class Launcher:
         client_factory: Callable[[], Any] | None = None,
         browser_open: Callable[[str], bool] | None = None,
         credential_loader: Callable[[Path], str] | None = None,
+        provisioning_token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(32),
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -123,17 +138,18 @@ class Launcher:
         self.client_factory = client_factory or _http_client
         self.browser_open = browser_open or webbrowser.open
         self.credential_loader = credential_loader or _load_launcher_credential
+        self.provisioning_token_factory = provisioning_token_factory
         self.monotonic = monotonic
         self.sleep = sleep
 
     def launch(self) -> str:
         """Open one authenticated handoff URL or the reusable fixed origin."""
+        credential_path = runtime_configuration_file(self.configuration.data_directory)
+        if not credential_path.exists():
+            return self._launch_provisioning()
         owner = self._verified_listener()
         if owner is None:
             owner = self._start_and_wait()
-        credential_path = runtime_configuration_file(
-            self.configuration.data_directory
-        )
         try:
             credential = self.credential_loader(credential_path)
         except Exception as error:
@@ -154,9 +170,52 @@ class Launcher:
             )
         return target
 
-    def _start_and_wait(self) -> ListenerOwner:
+    def _launch_provisioning(self) -> str:
+        token = self.provisioning_token_factory()
+        if len(token) < 32:
+            raise LaunchFailure(
+                "provisioning_handoff_failed",
+                FAILURE_MESSAGES["provisioning_handoff_failed"],
+            )
+        configuration = LauncherConfiguration(
+            brain_command=self.configuration.brain_command,
+            brain_image_path=self.configuration.brain_image_path,
+            working_directory=self.configuration.working_directory,
+            data_directory=self.configuration.data_directory,
+            startup_timeout_seconds=self.configuration.startup_timeout_seconds,
+            provisioning_handoff_token=token,
+        )
+        owner = self._verified_listener()
+        if owner is None:
+            process = self._start_and_wait_process(configuration)
+        else:
+            process = None
+        target = self._request_provisioning_browser_target(token)
         try:
-            process = self.process_starter(self.configuration)
+            opened = self.browser_open(target)
+        except Exception as error:
+            raise LaunchFailure(
+                "browser_open_failed", FAILURE_MESSAGES["browser_open_failed"]
+            ) from error
+        if not opened:
+            raise LaunchFailure(
+                "browser_open_failed", FAILURE_MESSAGES["browser_open_failed"]
+            )
+        if process is None:
+            return target
+        return self._supervise_provisioning(process)
+
+    def _start_and_wait(
+        self, configuration: LauncherConfiguration | None = None
+    ) -> ProcessHandle:
+        return self._start_and_wait_process(configuration)
+
+    def _start_and_wait_process(
+        self, configuration: LauncherConfiguration | None = None
+    ) -> ProcessHandle:
+        active_configuration = configuration or self.configuration
+        try:
+            process = self.process_starter(active_configuration)
         except Exception as error:
             raise LaunchFailure(
                 "brain_start_failed", FAILURE_MESSAGES["brain_start_failed"]
@@ -165,7 +224,7 @@ class Launcher:
         while True:
             owner = self._verified_listener()
             if owner is not None:
-                return owner
+                return process
             if process.poll() is not None:
                 raise LaunchFailure(
                     "brain_start_failed", FAILURE_MESSAGES["brain_start_failed"]
@@ -175,6 +234,23 @@ class Launcher:
                     "brain_start_timeout", FAILURE_MESSAGES["brain_start_timeout"]
                 )
             self.sleep(0.05)
+
+    def _supervise_provisioning(self, process: ProcessHandle) -> str:
+        """Wait for the bounded app's controlled restart into runtime mode."""
+        while True:
+            exit_code = process.poll()
+            if exit_code is not None:
+                break
+            self.sleep(0.1)
+        if exit_code != PROVISIONING_COMPLETE_EXIT_CODE:
+            raise LaunchFailure(
+                "provisioning_exit_failed", FAILURE_MESSAGES["provisioning_exit_failed"]
+            )
+        if not runtime_configuration_file(self.configuration.data_directory).exists():
+            raise LaunchFailure(
+                "configuration_unavailable", FAILURE_MESSAGES["configuration_unavailable"]
+            )
+        return self.launch()
 
     def _verified_listener(self) -> ListenerOwner | None:
         try:
@@ -201,6 +277,34 @@ class Launcher:
         ):
             raise LaunchFailure("port_conflict", FAILURE_MESSAGES["port_conflict"])
         return owner
+
+    def _request_provisioning_browser_target(self, token: str) -> str:
+        try:
+            with self.client_factory() as client:
+                response = client.post(
+                    PROVISIONING_HANDOFF_PATH,
+                    headers={"Authorization": f"Provisioning {token}"},
+                )
+                if _client_has_cookies(client, response) or response.status_code != 200:
+                    raise LaunchFailure(
+                        "provisioning_handoff_failed",
+                        FAILURE_MESSAGES["provisioning_handoff_failed"],
+                    )
+                payload = response.json()
+        except LaunchFailure:
+            raise
+        except Exception as error:
+            raise LaunchFailure(
+                "provisioning_handoff_failed",
+                FAILURE_MESSAGES["provisioning_handoff_failed"],
+            ) from error
+        code = payload.get("handoff_code") if isinstance(payload, dict) else None
+        if not isinstance(code, str) or _HANDOFF_CODE.fullmatch(code) is None:
+            raise LaunchFailure(
+                "provisioning_handoff_failed",
+                FAILURE_MESSAGES["provisioning_handoff_failed"],
+            )
+        return f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?{urlencode({'code': code})}"
 
     def _request_browser_target(self, credential: str) -> str:
         try:
@@ -243,15 +347,8 @@ def default_launcher_configuration() -> LauncherConfiguration:
         brain_command=(
             str(executable),
             "-m",
-            "uvicorn",
-            "app.main:app",
-            "--host",
-            BRIDGE_BIND_ADDRESS,
-            "--port",
-            str(BRIDGE_PORT),
-            "--workers",
-            "1",
-            "--no-access-log",
+            "app.packaged_entry",
+            "--brain",
         ),
         brain_image_path=process_image,
         working_directory=product_root,
@@ -303,6 +400,10 @@ def _start_brain(configuration: LauncherConfiguration) -> subprocess.Popen[bytes
     environment[DATA_DIRECTORY_ENVIRONMENT_VARIABLE] = str(
         configuration.data_directory
     )
+    if configuration.provisioning_handoff_token is not None:
+        environment[PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE] = (
+            configuration.provisioning_handoff_token
+        )
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     return subprocess.Popen(
         configuration.brain_command,

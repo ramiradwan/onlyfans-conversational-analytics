@@ -16,8 +16,12 @@ from app.launcher import (
     Launcher,
     LauncherConfiguration,
     ListenerOwner,
+    PROVISIONING_COMPLETE_EXIT_CODE,
+    PROVISIONING_HANDOFF_PATH,
+    PROVISIONING_REDEEM_PATH,
     WindowsPortOwnership,
 )
+from app.core.runtime_paths import runtime_configuration_file
 
 
 @dataclass
@@ -84,14 +88,33 @@ class FakeProcess:
         return None
 
 
+class CompletedProvisioningProcess:
+    pid = 8124
+
+    def __init__(self, configuration: LauncherConfiguration) -> None:
+        self.configuration = configuration
+        self.completed = False
+
+    def poll(self) -> int:
+        if not self.completed:
+            configuration_file = runtime_configuration_file(self.configuration.data_directory)
+            configuration_file.parent.mkdir(parents=True)
+            configuration_file.touch()
+            self.completed = True
+        return PROVISIONING_COMPLETE_EXIT_CODE
+
+
 def configuration(tmp_path: Path) -> LauncherConfiguration:
-    return LauncherConfiguration(
+    result = LauncherConfiguration(
         brain_command=(str((tmp_path / "Brain.exe").resolve()), "--serve"),
         brain_image_path=(tmp_path / "Brain.exe").resolve(),
         working_directory=tmp_path.resolve(),
         data_directory=(tmp_path / "data").resolve(),
         startup_timeout_seconds=1,
     )
+    runtime_configuration_file(result.data_directory).parent.mkdir(parents=True)
+    runtime_configuration_file(result.data_directory).touch()
+    return result
 
 
 def trusted_owner(config: LauncherConfiguration) -> ListenerOwner:
@@ -258,6 +281,51 @@ def test_absent_listener_starts_brain_then_verifies_owner_before_handoff(
     assert events == ["ownership", "ownership", "sid", "post"]
     assert len(requests) == 1
     assert len(browsers) == 1
+
+
+def test_provisioning_completion_restarts_the_same_brain_in_runtime_mode(
+    tmp_path: Path,
+) -> None:
+    config = LauncherConfiguration(
+        brain_command=(str((tmp_path / "Brain.exe").resolve()), "--serve"),
+        brain_image_path=(tmp_path / "Brain.exe").resolve(),
+        working_directory=tmp_path.resolve(),
+        data_directory=(tmp_path / "data").resolve(),
+        startup_timeout_seconds=1,
+    )
+    owner = trusted_owner(config)
+    requests: list[tuple[str, dict[str, str]]] = []
+    browsers: list[str] = []
+    starts: list[LauncherConfiguration] = []
+    client = FakeClient(
+        FakeResponse(200, {"handoff_code": "p" * 43}, {}), requests, []
+    )
+    launcher = Launcher(
+        config,
+        ownership=FakeOwnership([[], [owner]], []),
+        process_starter=lambda item: starts.append(item)
+        is None
+        and CompletedProvisioningProcess(item),
+        client_factory=lambda: client,
+        browser_open=lambda url: browsers.append(url) is None or True,
+        credential_loader=lambda _: "b" * 40,
+        provisioning_token_factory=lambda: "t" * 32,
+        monotonic=lambda: 0,
+        sleep=lambda _: None,
+    )
+
+    target = launcher.launch()
+
+    assert target == f"{BRIDGE_ORIGIN}{HANDOFF_PATH}?code={'p' * 43}"
+    assert starts[0].provisioning_handoff_token == "t" * 32
+    assert requests == [
+        (PROVISIONING_HANDOFF_PATH, {"Authorization": "Provisioning " + "t" * 32}),
+        (HANDOFF_PATH, {"Authorization": "Bootstrap " + "b" * 40}),
+    ]
+    assert browsers == [
+        f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?code={'p' * 43}",
+        target,
+    ]
 
 
 @pytest.mark.parametrize(
