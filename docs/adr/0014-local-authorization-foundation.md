@@ -68,7 +68,7 @@ A capability object is a verified signed object that contributes typed capabilit
 
 The foundation has two profiles:
 
-- ADR 0015 `CapabilityLicence`, which authorizes repeated and incremental execution without a per-execution authorization-state transition; and
+- ADR 0015 `CapabilityLicense`, which authorizes repeated and incremental execution without a per-execution authorization-state transition; and
 - ADR 0016 `SingleExecutionPermit`, which authorizes one execution through an `available -> reserved -> spent` lifecycle.
 
 The profiles do not reuse a protected type, audience, subject form, schema, signing purpose, or object-identifier namespace. Adding another profile requires another purpose-separated signed-object definition and an explicit execution-state model; this foundation does not infer consumption semantics.

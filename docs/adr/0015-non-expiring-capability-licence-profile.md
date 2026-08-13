@@ -19,11 +19,11 @@ The profile must remain distinct from the single-execution permit in ADR 0016. I
 
 ## Decision outcome
 
-Choose **a non-expiring `CapabilityLicence` signed-object profile as the default capability profile**.
+Choose **a non-expiring `CapabilityLicense` signed-object profile as the default capability profile**.
 
 ### Purpose-separated signed object
 
-`CapabilityLicence` is a distinct protected type. Its contract defines a licence-verification audience, a licence subject form, a closed payload schema, and a `capability-licence` signing purpose used by no ADR 0008 grant, no `SingleExecutionPermit`, and no other capability profile. The exact wire identifiers are fixed by the cross-plane contract catalog; the kernel requires exact matches and never aliases them.
+`CapabilityLicense` is a distinct protected type. Its contract defines a licence-verification audience, a licence subject form, a closed payload schema, and a `capability-license` signing purpose used by no ADR 0008 grant, no `SingleExecutionPermit`, and no other capability profile. The exact wire identifiers are fixed by the cross-plane contract catalog; the kernel requires exact matches and never aliases them.
 
 The subject is the canonical tuple of object identity, organization, installation, seat, capability or module, and licensed major version. Subject components are encoded in the contract-defined order and form and must equal the corresponding closed-schema fields byte for byte.
 
@@ -32,7 +32,7 @@ The subject is the canonical tuple of object identity, organization, installatio
 
 The closed schema rejects unknown fields and contains:
 
-- immutable `licence_id`;
+- immutable `license_id`;
 - `organization_id`;
 - `installation_id`, `installation_key_id`, and installation-key thumbprint;
 - `seat_id` and closed `seat_scope`;
@@ -46,7 +46,7 @@ The object has no expiry, not-before boundary, or other validity window. Verific
 
 ### Identity, installation, and seat scope
 
-The licence identity is the tuple of `licence_id`, capability or module identifier, licensed major version, organization identifier, installation identifier, installation key identifier, installation-key thumbprint, seat identifier, and seat scope.
+The licence identity is the tuple of `license_id`, capability or module identifier, licensed major version, organization identifier, installation identifier, installation key identifier, installation-key thumbprint, seat identifier, and seat scope.
 
 The runtime/security kernel accepts the object into `RuntimePolicy` only when its organization and installation fields exactly match the independently authorized identity and locally enrolled installation under ADR 0014. It also requires an exact local seat binding within the signed `seat_scope`. A seat identifier does not supply a principal, role, account, or account binding.
 
@@ -62,7 +62,7 @@ Neither right is inferred from semantic version ordering, local availability, a 
 
 ### Repeated and incremental execution
 
-A verified `CapabilityLicence` authorizes repeated execution of its named capability over locally available data while the complete `RuntimePolicy` predicate holds. It also authorizes incremental execution over a later canonical revision when the signed capability and algorithm-artifact constraints support that input.
+A verified `CapabilityLicense` authorizes repeated execution of its named capability over locally available data while the complete `RuntimePolicy` predicate holds. It also authorizes incremental execution over a later canonical revision when the signed capability and algorithm-artifact constraints support that input.
 
 Ordinary execution under this profile has no `available -> reserved -> spent` transition and no per-execution authorization-state change of any kind. Starting, retrying, completing, or deleting a job does not mutate the licence object, decrement a counter, create a reservation, or change local licence state.
 
@@ -74,11 +74,11 @@ Each execution still creates or resumes a durable job. Job identity, account sco
 
 Local activation is the durable association of one verified licence-object digest with its exact enrolled installation and seat binding. Activation succeeds only when signature, protected type, purpose, audience, subject, closed schema, organization, installation key, seat scope, capability identity, and algorithm-artifact rules validate through a newly built `RuntimePolicy`.
 
-Import and activation do not execute the capability. Reimporting byte-identical bytes returns the same object reference and activation state. Reusing `licence_id` with different bytes fails closed and does not replace the active reference.
+Import and activation do not execute the capability. Reimporting byte-identical bytes returns the same object reference and activation state. Reusing `license_id` with different bytes fails closed and does not replace the active reference.
 
 ### Transfer
 
-The bytes bound to one installation and seat do not authorize another installation or seat. Transfer requires a separately signed `CapabilityLicence` object whose organization, target installation identifier, target installation key identifier and thumbprint, seat identifier, and seat scope match the target bindings.
+The bytes bound to one installation and seat do not authorize another installation or seat. Transfer requires a separately signed `CapabilityLicense` object whose organization, target installation identifier, target installation key identifier and thumbprint, seat identifier, and seat scope match the target bindings.
 
 The kernel verifies the new object independently against the pinned trust set. It does not derive target authority from the source object, copy an activation flag, or infer transfer from possession of source bytes.
 
