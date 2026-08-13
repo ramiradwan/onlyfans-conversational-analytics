@@ -5,6 +5,12 @@ contracts/** text eol=lf
 contracts/**/*.jws -text !eol
 contracts/**/*.jwk -text !eol
 
+# Migration checksums are calculated from raw catalog bytes.
+app/persistence/sql/** text eol=lf
+app/persistence/auth_sql/** text eol=lf
+app/persistence/projection_sql/** text eol=lf
+app/analytics/sql/** text eol=lf
+
 # Fixture cases are generated review noise; manifests, pins, schemas, docs, and
 # loaders remain visible because they define the reviewable contract boundary.
 contracts/grant-profile-v1/*/*/** linguist-generated=true

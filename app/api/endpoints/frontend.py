@@ -7,6 +7,7 @@ injecting runtime configuration for the browser extension and WebSocket bridge.
 import hmac
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any
 from urllib.parse import urlsplit
@@ -33,7 +34,20 @@ DIST_DIR = Path("app/static/dist")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
-def _load_manifest() -> Dict[str, Any]:
+DEVELOPMENT_SCRIPT_URL = "http://localhost:5173/src/main.tsx"
+
+
+@dataclass(frozen=True)
+class ManifestLoad:
+    manifest: Dict[str, Any]
+    error: str | None = None
+
+
+def _is_production_environment() -> bool:
+    return settings.environment.lower() not in {"development", "dev", "local", "test"}
+
+
+def _load_manifest() -> ManifestLoad:
     """Read Vite's manifest.json from dist."""
     manifest_paths = [
         DIST_DIR / "manifest.json",
@@ -44,15 +58,37 @@ def _load_manifest() -> Dict[str, Any]:
             logger.info(f"[FRONTEND] Reading manifest from {path}")
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
+                    manifest = json.load(f)
+            except (OSError, json.JSONDecodeError) as e:
                 logger.exception(f"[FRONTEND] Failed to read manifest: {e}")
-                return {}
+                return ManifestLoad(
+                    {}, f"could not read Vite manifest at {path}: {e}"
+                )
+            if not isinstance(manifest, dict):
+                return ManifestLoad(
+                    {}, f"Vite manifest at {path} must contain a JSON object"
+                )
+            return ManifestLoad(manifest)
     logger.warning("[FRONTEND] No manifest.json found in dist directory")
-    return {}
+    return ManifestLoad({}, "Vite manifest is absent from the compiled frontend package")
 
 
-_manifest = _load_manifest()
+def _manifest_entry(manifest: Dict[str, Any]) -> tuple[str | None, Dict[str, Any]]:
+    entry_key = next(
+        (
+            key
+            for key, value in manifest.items()
+            if isinstance(value, dict) and value.get("isEntry")
+        ),
+        None,
+    )
+    if entry_key is None:
+        return None, {}
+    entry = manifest[entry_key]
+    return entry_key, entry
+
+
+_manifest_load = _load_manifest()
 @router.post(
     "/api/v1/session/bootstrap",
     include_in_schema=False,
@@ -156,15 +192,29 @@ async def serve_frontend(
     request: Request,
     policy: RuntimePolicy = Depends(get_runtime_policy),
 ):
-    manifest = _manifest
+    manifest = _manifest_load.manifest
 
-    # Find entry file by isEntry flag
-    entry_key = next((k for k, v in manifest.items() if v.get("isEntry")), None)
-    if not entry_key and manifest:
-        entry_key = next(iter(manifest.keys()), None)
+    entry_key, entry = _manifest_entry(manifest)
+    if _is_production_environment() and _manifest_load.error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Production frontend packaging error: {_manifest_load.error}",
+        )
+    if _is_production_environment() and (
+        not entry_key or not isinstance(entry.get("file"), str) or not entry["file"]
+    ):
+        raise HTTPException(
+            status_code=500,
+            detail="Production frontend packaging error: Vite manifest has no entry",
+        )
 
-    app_script = manifest.get(entry_key, {}).get("file") if entry_key else None
-    css_files = manifest.get(entry_key, {}).get("css", []) if entry_key else []
+    app_script = entry.get("file") if entry_key else None
+    css_files = entry.get("css", []) if entry_key else []
+    development_script = (
+        DEVELOPMENT_SCRIPT_URL
+        if not _is_production_environment() and not app_script
+        else None
+    )
 
     api_base_url = (
         str(request.base_url).rstrip("/")
@@ -207,7 +257,7 @@ async def serve_frontend(
     }
 
     logger.info(
-        f"[FRONTEND] Serving development Bridge with script={app_script}, "
+        f"[FRONTEND] Serving frontend with script={app_script}, "
         f"CSS={css_files}, WS_URL={ws_url}"
     )
 
@@ -217,6 +267,7 @@ async def serve_frontend(
         context={
             "request": request,
             "app_script": f"/static/dist/{app_script}" if app_script else None,
+            "development_script": development_script,
             "css_files": [f"/static/dist/{c}" for c in css_files],
             "config": config,
             "csrf_token": None if identity is None else csrf_token(policy),
