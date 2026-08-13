@@ -13,6 +13,7 @@ from typing import Any
 from app.security.admission_confirmation import (
     AdmissionConfirmation,
     AdmissionConfirmationError,
+    carried_cost,
     open_admission_confirmation,
 )
 from app.security.permit_consumption import decide_permit_consumption
@@ -24,7 +25,8 @@ class ReserveRequest:
     """Reserve-time facts compared with the confirmation before admission.
 
     ``permit_credit_cost`` is the value carried by the signed permit at reserve
-    time. It is compared and never interpreted.
+    time. It accepts the wire value, is normalized to ``CarriedCost``, and is
+    compared but never interpreted.
     """
 
     permit_id: str
@@ -39,6 +41,11 @@ class ReserveRequest:
     permit_state: Any
     reserved_job_id: Any
     durable_output_committed: Any
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "permit_credit_cost", carried_cost(self.permit_credit_cost)
+        )
 
 
 @dataclass(frozen=True, slots=True)

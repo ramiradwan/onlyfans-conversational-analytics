@@ -1,11 +1,13 @@
 """Confirmation records that bind one reserve request to the cost that was shown.
 
 ``credit_cost`` is a contract wire field. It is carried, displayed, and bound
-verbatim; this module attaches no local meaning to its value.
+verbatim; this module attaches no local meaning to its value. The value is
+carried as :class:`CarriedCost`, which refuses interpretation at runtime.
 """
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -64,9 +66,69 @@ class AdmissionConfirmationError(LocalSessionError):
     """Raised when a confirmation document is absent, invalid, or unbound."""
 
 
+class CarriedCost:
+    """One contract wire cost, carried for equality and verbatim display.
+
+    The type defines no arithmetic, no ordered comparison, and no numeric
+    coercion beyond ``object``, so any local computation on the value raises
+    ``TypeError`` however the value is bound, stored, or passed. Equality is
+    exact in the wire type as well as the wire value.
+    """
+
+    __slots__ = ("_wire_value",)
+
+    def __init__(self, wire_value: Any) -> None:
+        object.__setattr__(self, "_wire_value", wire_value)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("Carried cost is immutable")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError("Carried cost is immutable")
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CarriedCost):
+            return NotImplemented
+        carried = self._wire_value
+        presented = other._wire_value
+        return type(carried) is type(presented) and carried == presented
+
+    def __hash__(self) -> int:
+        return hash((type(self._wire_value).__name__, self._wire_value))
+
+    def __str__(self) -> str:
+        """Return the wire value rendered exactly as it was carried."""
+
+        value = self._wire_value
+        return value if type(value) is str else json.dumps(value)
+
+    def __format__(self, format_spec: str) -> str:
+        if format_spec:
+            raise TypeError("Carried cost does not accept a format specification")
+        return str(self)
+
+    def __repr__(self) -> str:
+        return f"CarriedCost({self._wire_value!r})"
+
+
+def carried_cost(value: Any) -> CarriedCost:
+    """Return one carried cost for a wire value, idempotently."""
+
+    return value if isinstance(value, CarriedCost) else CarriedCost(value)
+
+
+def _wire_value_of(cost: CarriedCost) -> Any:
+    """Return the wire value inside one carried cost, for serialization."""
+
+    return cost._wire_value
+
+
 @dataclass(frozen=True, slots=True)
 class ConfirmationSubject:
-    """The capability, input, and cost presented for one reserve request."""
+    """The capability, input, and cost presented for one reserve request.
+
+    ``credit_cost`` accepts the wire value and is normalized to ``CarriedCost``.
+    """
 
     organization_id: str
     installation_id: str
@@ -79,6 +141,9 @@ class ConfirmationSubject:
     input_revision: int
     input_selection_digest: str
     credit_cost: Any
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "credit_cost", carried_cost(self.credit_cost))
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,8 +163,8 @@ class AdmissionConfirmation:
         return _document(self)
 
 
-def displayed_credit_cost(subject: ConfirmationSubject) -> Any:
-    """Return the carried cost value for display."""
+def displayed_credit_cost(subject: ConfirmationSubject) -> CarriedCost:
+    """Return the carried cost for verbatim display."""
 
     return subject.credit_cost
 
@@ -173,7 +238,7 @@ def _document(confirmation: AdmissionConfirmation) -> dict[str, Any]:
         "account": confirmation.creator_account_id,
         "capability": subject.capability,
         "confirmed_at": confirmation.confirmed_at,
-        "credit_cost": subject.credit_cost,
+        "credit_cost": _wire_value_of(subject.credit_cost),
         "input_revision": subject.input_revision,
         "input_selection": subject.input_selection_digest,
         "installation": subject.installation_id,

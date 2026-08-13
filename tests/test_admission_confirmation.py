@@ -169,7 +169,8 @@ def test_carried_cost_is_displayed_and_recorded_verbatim() -> None:
     )
 
     assert displayed_credit_cost(subject) is subject.credit_cost
-    assert confirmation.durable_record()["credit_cost"] is subject.credit_cost
+    assert confirmation.durable_record()["credit_cost"] is CARRIED_COST
+    assert str(displayed_credit_cost(subject)) == "250000"
 
 
 def test_confirmed_cost_admits_the_reservation() -> None:

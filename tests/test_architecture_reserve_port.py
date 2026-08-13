@@ -1,4 +1,14 @@
-"""Guards the reserve port from background callers and the carried cost from use."""
+"""Guards the reserve port from background callers, plus a partial cost check.
+
+The carried-cost check here is syntactic and single-expression: it reads one
+expression at a time and has no dataflow, so it sees interpretation only where
+the value is named in the interpreting expression itself. Interpretation after
+any hop -- a local, a chain of locals, a container bound to a local, or a
+function parameter -- is invisible to it and is documented as such at
+``test_guard_does_not_see_interpretation_after_a_hop``. The runtime boundary is
+``CarriedCost``, covered by ``tests/test_carried_cost_value.py``; this check is
+defence in depth over the two modules that own the value.
+"""
 
 from __future__ import annotations
 
@@ -126,6 +136,12 @@ def _mentions_carried_cost(node: ast.AST) -> bool:
 
 
 def _carried_cost_violations(path: Path) -> list[str]:
+    """Return single-expression interpretations of the carried cost in one file.
+
+    Detection is limited to expressions that name the value directly. It has no
+    dataflow and therefore no claim to completeness.
+    """
+
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     violations: set[str] = set()
 
@@ -191,12 +207,48 @@ def test_reserve_entry_point_requires_a_confirmation_token() -> None:
 
 
 @pytest.mark.parametrize("module", _CARRIED_COST_MODULES)
-def test_carried_cost_is_never_interpreted(module: str) -> None:
+def test_carried_cost_is_not_interpreted_in_a_single_expression(module: str) -> None:
     violations = _carried_cost_violations(BRAIN_ROOT / module)
 
     assert not violations, (
-        f"{module} attaches local meaning to the carried cost:\n" + "\n".join(violations)
+        f"{module} attaches local meaning to the carried cost in a single "
+        "expression:\n" + "\n".join(violations)
     )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            "    cost = subject.credit_cost\n    return cost + 1\n",
+            id="one_local",
+        ),
+        pytest.param(
+            "    cost = subject.credit_cost\n"
+            "    carried = cost\n"
+            "    return carried + 1\n",
+            id="two_locals",
+        ),
+        pytest.param(
+            '    row = {"cost": subject.credit_cost}\n    return row["cost"] + 1\n',
+            id="container_local",
+        ),
+        pytest.param(
+            "    def relay(value):\n        return value + 1\n\n"
+            "    return relay(subject.credit_cost)\n",
+            id="function_parameter",
+        ),
+    ],
+)
+def test_guard_does_not_see_interpretation_after_a_hop(
+    tmp_path: Path, body: str
+) -> None:
+    """Records the guard's blind spots; ``CarriedCost`` is what refuses these."""
+
+    path = tmp_path / "module.py"
+    path.write_text(f"def carried(subject):\n{body}", encoding="utf-8")
+
+    assert _carried_cost_violations(path) == []
 
 
 @pytest.mark.parametrize(
