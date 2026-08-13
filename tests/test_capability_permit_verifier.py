@@ -170,6 +170,75 @@ def test_canonical_json_precedes_header_validation(
     assert _result(_token(valid_payload, private_key, trust_set, header_bytes=header_bytes), valid_context, trust_set) == "noncanonical_json"
 
 
+def test_padded_base64url_segment_is_invalid_compact_jws(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    header_segment, payload_segment, signature_segment = _token(valid_payload, private_key, trust_set).split(".")
+    padded_token = f"{header_segment}=.{payload_segment}.{signature_segment}"
+
+    assert _result(padded_token, valid_context, trust_set) == "invalid_compact_jws"
+
+
+def test_non_minimal_base64url_segment_is_invalid_compact_jws(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    header_segment, payload_segment, signature_segment = _token(valid_payload, private_key, trust_set).split(".")
+    # One extra base64url character makes the segment an impossible base64url
+    # quantum length (non-minimal / wrong-length encoding), not merely a
+    # noncanonical-but-decodable one.
+    wrong_length_token = f"{header_segment}A.{payload_segment}.{signature_segment}"
+
+    assert _result(wrong_length_token, valid_context, trust_set) == "invalid_compact_jws"
+
+
+def test_non_json_segment_is_invalid_compact_jws(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    _, payload_segment, signature_segment = _token(valid_payload, private_key, trust_set).split(".")
+    not_json_segment = _b64u(b"not-json-bytes-but-valid-base64url")
+    token = f"{not_json_segment}.{payload_segment}.{signature_segment}"
+
+    assert _result(token, valid_context, trust_set) == "invalid_compact_jws"
+
+
+@pytest.mark.parametrize(
+    "malformed_token",
+    ["no-separators-at-all", "a.b.c.d"],
+    ids=["zero_dots", "four_segments"],
+)
+def test_wrong_separator_count_is_invalid_compact_jws(
+    malformed_token: str, valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    _, trust_set = signing_material
+
+    assert _result(malformed_token, valid_context, trust_set) == "invalid_compact_jws"
+
+
+def test_noncanonical_payload_json_result(
+    valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
+) -> None:
+    private_key, trust_set = signing_material
+    header = {
+        "alg": "ES256",
+        "kid": trust_set["keys"][0]["jwk"]["kid"],
+        "typ": "urn:bridge-clean:capability-permit:v1",
+    }
+    payload_bytes = json.dumps(valid_payload, sort_keys=True, separators=(", ", ": ")).encode("utf-8")
+    header_segment = _b64u(_json(header))
+    payload_segment = _b64u(payload_bytes)
+    signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
+    r, s = decode_dss_signature(private_key.sign(signing_input, ec.ECDSA(hashes.SHA256())))
+    if s > _P256_ORDER // 2:
+        s = _P256_ORDER - s
+    signature = r.to_bytes(32, "big") + s.to_bytes(32, "big")
+    token = f"{header_segment}.{payload_segment}.{_b64u(signature)}"
+
+    assert _result(token, valid_context, trust_set) == "noncanonical_json"
+
+
 def test_invalid_header_result(
     valid_payload: dict[str, Any], valid_context: CapabilityPermitVerificationContext, signing_material: tuple[ec.EllipticCurvePrivateKey, dict[str, Any]]
 ) -> None:
