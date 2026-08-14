@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal, Mapping
@@ -33,6 +34,8 @@ REQUIRED_GRANT_TYPES = (
 
 _CREATOR_ROLES = frozenset({"owner"})
 _OPERATOR_ROLES = frozenset({"administrator", "creator_operator"})
+_RESERVED_PREFIX = "replace-with-"
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 FinalizationRefusal = Literal[
     "account_approval_missing",
@@ -76,10 +79,33 @@ class FinalizationRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class VerifiedAccountBinding:
+    """One verified creator account and the grant bundle it was derived from.
+
+    The account is carried out of finalization for a durable authorized-account
+    record. It is never written into installation configuration.
+    """
+
+    creator_account_id: str
+    platform_creator_id: str
+    grant_bundle_sha256: str
+
+    def __post_init__(self) -> None:
+        accounts = (self.creator_account_id, self.platform_creator_id)
+        if not all(accounts) or any(
+            value.startswith(_RESERVED_PREFIX) for value in accounts
+        ):
+            raise ValueError("a verified account binding must be exact non-placeholder values")
+        if _SHA256_PATTERN.fullmatch(self.grant_bundle_sha256) is None:
+            raise ValueError("verified grant bundle digest must be lowercase SHA-256")
+
+
+@dataclass(frozen=True, slots=True)
 class FinalizedProvisioning:
-    """The bindings that were written and the tuple they were derived from."""
+    """The installation identity written, the account verified, and their tuple."""
 
     bindings: VerifiedGrantBindings
+    account: VerifiedAccountBinding
     grant_reference_ids: tuple[str, ...]
     configuration: FirstRunResult
 
@@ -116,7 +142,7 @@ def finalize_provisioning(
     different binding or extension ID never overwrites existing configuration.
     """
 
-    bindings, references = verified_grant_bindings(
+    bindings, account, references = verified_grant_bindings(
         store=store, request=request, bundle_digest=bundle_digest
     )
     configuration = initialize_production_configuration(
@@ -124,7 +150,7 @@ def finalize_provisioning(
         extension_id=extension_id,
         data_directory=data_directory,
     )
-    return FinalizedProvisioning(bindings, references, configuration)
+    return FinalizedProvisioning(bindings, account, references, configuration)
 
 
 def verified_grant_bindings(
@@ -132,8 +158,8 @@ def verified_grant_bindings(
     store: AuthenticationStore,
     request: FinalizationRequest,
     bundle_digest: GrantBundleDigest = grant_bundle_digest,
-) -> tuple[VerifiedGrantBindings, tuple[str, ...]]:
-    """Build the bindings from exactly one verified four-grant tuple.
+) -> tuple[VerifiedGrantBindings, VerifiedAccountBinding, tuple[str, ...]]:
+    """Build installation identity and the account from one verified tuple.
 
     Every identity value is read from a signed, locally verified grant. The
     request supplies lookup and comparison values only.
@@ -171,14 +197,16 @@ def verified_grant_bindings(
 
     bindings = VerifiedGrantBindings(
         principal_id=membership.subject,
+        bridge_role=bridge_role,
+    )
+    account = VerifiedAccountBinding(
         creator_account_id=creator_account_id,
         platform_creator_id=creator_account_id,
-        bridge_role=bridge_role,
         grant_bundle_sha256=bundle_digest(
             tuple(selected[grant_type] for grant_type in REQUIRED_GRANT_TYPES)
         ),
     )
-    return bindings, references
+    return bindings, account, references
 
 
 def _approved_candidate(

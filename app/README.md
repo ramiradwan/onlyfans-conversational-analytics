@@ -9,11 +9,14 @@ rebuildable read models in a separate projections SQLite database.
 The shipped runtime uses `WEBSOCKET_AUTH_MODE=local_session`.
 `app.core.first_run.initialize_production_configuration` provisions the
 production runtime configuration. It requires `VerifiedGrantBindings` and the
-packaged Chrome extension ID. The initializer generates the bootstrap token and
-signing secret with the operating system cryptographic random source. It stores
-them, the verified bindings, their bundle digest, and absolute SQLite paths in
-`runtime.env` below the platform-standard per-user application-data directory.
-Neither secret is returned or logged.
+packaged Chrome extension ID. `VerifiedGrantBindings` is installation identity:
+the verified principal and its local Bridge role. Authorized creator accounts
+are bound separately and are never written into installation configuration, so
+an installation is valid with no authorized account. The initializer generates
+the bootstrap token and signing secret with the operating system cryptographic
+random source. It stores them, the verified bindings, and absolute SQLite paths
+in `runtime.env` below the platform-standard per-user application-data
+directory. Neither secret is returned or logged.
 
 The initializer creates `runtime.env` once. A second call with identical inputs
 reuses it without regenerating secrets. Different verified bindings or an

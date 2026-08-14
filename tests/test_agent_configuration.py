@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import app
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.services.agent_configuration import (
@@ -177,6 +178,26 @@ def test_bootstrap_requires_dependency_closed_config_8() -> None:
         ("messages", "/api2/v2/chats/*/messages"),
         ("messages", "/ws3"),
     }
+
+
+def test_no_account_is_derived_from_installation_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Outside the development stub an account must be supplied, never derived."""
+
+    monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
+
+    authority = AgentConfigurationAuthority(InMemoryAgentConfigRepository())
+
+    assert authority.bootstrap_account_id is None
+    with pytest.raises(RuntimeError, match="No account is authorized"):
+        authority.bootstrap()
+    assert (
+        AgentConfigurationAuthority(
+            InMemoryAgentConfigRepository(), bootstrap_account_id=DEV_ACCOUNT_ID
+        ).bootstrap_account_id
+        == DEV_ACCOUNT_ID
+    )
 
 
 def test_publish_rejects_message_capture_without_chat_dependency() -> None:

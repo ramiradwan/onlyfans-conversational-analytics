@@ -9,11 +9,11 @@ from typing import Any
 
 import pytest
 
-from app.core.first_run import VerifiedGrantBindings
 from app.persistence.auth import VerifiedGrantReference
 from app.provisioning.finalize import (
     REQUIRED_GRANT_TYPES,
     FinalizationRefused,
+    VerifiedAccountBinding,
     finalize_provisioning,
     grant_bundle_digest,
     verified_grant_bindings,
@@ -189,15 +189,13 @@ def test_a_grant_outside_the_canonical_types_is_refused() -> None:
 def test_the_digest_is_accepted_as_a_verified_grant_bundle_binding() -> None:
     digest = grant_bundle_digest(vector())
 
-    bindings = VerifiedGrantBindings(
-        principal_id=SUBJECT,
+    account = VerifiedAccountBinding(
         creator_account_id=ACCOUNT_ID,
         platform_creator_id=ACCOUNT_ID,
-        bridge_role="creator",
         grant_bundle_sha256=digest,
     )
 
-    assert bindings.grant_bundle_sha256 == EXPECTED_BUNDLE_DIGEST
+    assert account.grant_bundle_sha256 == EXPECTED_BUNDLE_DIGEST
     assert len(digest) == 64
     assert digest == digest.lower()
 

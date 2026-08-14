@@ -1,7 +1,6 @@
 # app/core/config.py
 
 from functools import lru_cache
-import re
 from pathlib import Path
 from typing import Literal
 
@@ -54,11 +53,8 @@ class Settings(BaseSettings):
     bridge_origin: str = "http://bridge.localhost:17871"
     local_session_bootstrap_token: SecretStr = SecretStr("")
     local_principal_id: str = ""
-    local_creator_account_id: str = ""
-    local_platform_creator_id: str = ""
     local_bridge_role: Literal["creator", "operator"] = "creator"
     identity_binding_source: Literal["development", "verified_grants"] = "development"
-    verified_grant_bundle_sha256: str = ""
     development_platform_creator_id: str = "dev-platform-creator"
     broadcast_url: Literal["memory://"] = "memory://"
 
@@ -100,26 +96,14 @@ class Settings(BaseSettings):
                     "Local session mode requires a generated launcher bootstrap "
                     "token of at least 32 characters"
                 )
-            bindings = (
-                self.local_principal_id,
-                self.local_creator_account_id,
-                self.local_platform_creator_id,
-            )
-            if not all(bindings) or any(
-                value.startswith(RESERVED_CONFIGURATION_PREFIX)
-                for value in bindings
+            if not self.local_principal_id or self.local_principal_id.startswith(
+                RESERVED_CONFIGURATION_PREFIX
             ):
                 raise ValueError(
-                    "Local session mode requires exact non-placeholder principal, "
-                    "Brain account, and platform creator bindings"
+                    "Local session mode requires an exact non-placeholder principal "
+                    "binding"
                 )
-            if production_mode and (
-                self.identity_binding_source != "verified_grants"
-                or re.fullmatch(
-                    r"[0-9a-f]{64}", self.verified_grant_bundle_sha256
-                )
-                is None
-            ):
+            if production_mode and self.identity_binding_source != "verified_grants":
                 raise ValueError(
                     "Production identity bindings must come from a verified grant bundle"
                 )

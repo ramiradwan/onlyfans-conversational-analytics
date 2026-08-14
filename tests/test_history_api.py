@@ -466,8 +466,6 @@ def test_launcher_bootstrap_proves_local_launch_without_authenticating_configura
     monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
     monkeypatch.setattr(settings, "local_session_bootstrap_token", SecretStr(bootstrap))
     monkeypatch.setattr(settings, "local_principal_id", "principal-bootstrap")
-    monkeypatch.setattr(settings, "local_creator_account_id", "account-bootstrap")
-    monkeypatch.setattr(settings, "local_platform_creator_id", "platform-bootstrap")
     monkeypatch.setattr(settings, "local_bridge_role", "operator")
 
     with TestClient(app, base_url="http://bridge.localhost:17871") as client:
@@ -526,8 +524,6 @@ def test_launcher_handoff_keeps_launcher_cookie_jar_empty_and_redeems_once(
     monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
     monkeypatch.setattr(settings, "local_session_bootstrap_token", SecretStr(bootstrap))
     monkeypatch.setattr(settings, "local_principal_id", "principal-handoff")
-    monkeypatch.setattr(settings, "local_creator_account_id", "account-handoff")
-    monkeypatch.setattr(settings, "local_platform_creator_id", "platform-handoff")
     monkeypatch.setattr(settings, "local_bridge_role", "creator")
 
     with TestClient(app, base_url="http://bridge.localhost:17871") as launcher:
@@ -590,8 +586,6 @@ def test_handoff_unknown_expired_and_redeemed_codes_are_indistinguishable(
     monkeypatch.setattr(manager_module, "utc_now", lambda: current["value"])
     monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
     monkeypatch.setattr(settings, "local_principal_id", "principal-code-state")
-    monkeypatch.setattr(settings, "local_creator_account_id", "account-code-state")
-    monkeypatch.setattr(settings, "local_platform_creator_id", "platform-code-state")
     first_bootstrap = "expired-bootstrap-" + uuid4().hex
     monkeypatch.setattr(
         settings, "local_session_bootstrap_token", SecretStr(first_bootstrap)

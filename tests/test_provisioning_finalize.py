@@ -26,6 +26,7 @@ from app.provisioning.finalize import (
     REQUIRED_GRANT_TYPES,
     FinalizationRefused,
     FinalizationRequest,
+    VerifiedAccountBinding,
     finalize_provisioning,
 )
 
@@ -245,9 +246,11 @@ def test_finalization_writes_bindings_from_the_verified_four_grant_tuple(
 
     assert finalized.bindings == VerifiedGrantBindings(
         principal_id=SUBJECT,
+        bridge_role="creator",
+    )
+    assert finalized.account == VerifiedAccountBinding(
         creator_account_id=ACCOUNT_ID,
         platform_creator_id=ACCOUNT_ID,
-        bridge_role="creator",
         grant_bundle_sha256=BUNDLE_DIGEST,
     )
     assert finalized.grant_reference_ids == references
@@ -258,11 +261,13 @@ def test_finalization_writes_bindings_from_the_verified_four_grant_tuple(
     ] == [EXPECTED_GRANT_TYPES]
     values = dotenv_values(finalized.configuration.configuration_file, interpolate=False)
     assert values["LOCAL_PRINCIPAL_ID"] == SUBJECT
-    assert values["LOCAL_CREATOR_ACCOUNT_ID"] == ACCOUNT_ID
-    assert values["LOCAL_PLATFORM_CREATOR_ID"] == ACCOUNT_ID
     assert values["LOCAL_BRIDGE_ROLE"] == "creator"
-    assert values["VERIFIED_GRANT_BUNDLE_SHA256"] == BUNDLE_DIGEST
     assert values["IDENTITY_BINDING_SOURCE"] == "verified_grants"
+    # The verified account is carried out for a durable binding record and is
+    # never pinned into installation configuration.
+    assert ACCOUNT_ID not in (
+        finalized.configuration.configuration_file.read_text(encoding="utf-8")
+    )
 
 
 def test_reported_platform_identity_is_never_adopted_as_a_binding(
@@ -279,9 +284,7 @@ def test_reported_platform_identity_is_never_adopted_as_a_binding(
         body=request(reported_platform_creator_id=REPORTED_PLATFORM_ID),
     )
 
-    assert finalized.bindings.platform_creator_id == ACCOUNT_ID
-    values = dotenv_values(finalized.configuration.configuration_file, interpolate=False)
-    assert values["LOCAL_PLATFORM_CREATOR_ID"] == ACCOUNT_ID
+    assert finalized.account.platform_creator_id == ACCOUNT_ID
     assert REPORTED_PLATFORM_ID not in (
         finalized.configuration.configuration_file.read_text(encoding="utf-8")
     )
@@ -538,7 +541,7 @@ def test_matching_configuration_resumes_without_rewriting_it(
     assert second.configuration.configuration_file.read_bytes() == written
 
 
-def test_another_verified_account_never_overwrites_existing_configuration(
+def test_another_verified_account_leaves_installation_configuration_unchanged(
     store: SQLiteAuthenticationStore, data_directory: Path
 ) -> None:
     references = record_verified_tuple(
@@ -570,14 +573,21 @@ def test_another_verified_account_never_overwrites_existing_configuration(
         creator_account_id=OTHER_ACCOUNT_ID,
     )
 
-    with pytest.raises(FirstRunConflictError):
-        finalize(
-            store,
-            data_directory,
-            body=request(
-                association_request_id="association-2",
-                detected_creator_account_id=OTHER_ACCOUNT_ID,
-            ),
-        )
+    second = finalize(
+        store,
+        data_directory,
+        body=request(
+            association_request_id="association-2",
+            detected_creator_account_id=OTHER_ACCOUNT_ID,
+        ),
+    )
 
+    # Installation identity is unchanged, so the second account reuses the
+    # existing configuration and is carried out for a durable binding record.
+    assert second.configuration.created is False
+    assert second.account.creator_account_id == OTHER_ACCOUNT_ID
+    assert first.account.creator_account_id == ACCOUNT_ID
     assert first.configuration.configuration_file.read_bytes() == written
+    assert OTHER_ACCOUNT_ID not in (
+        first.configuration.configuration_file.read_text(encoding="utf-8")
+    )

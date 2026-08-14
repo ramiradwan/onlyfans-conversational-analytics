@@ -113,10 +113,7 @@ def test_candidate_defaults_require_explicit_exact_launcher_bindings(
         websocket_auth_mode="local_session",
         local_session_bootstrap_token="x" * 32,
         local_principal_id=PRINCIPAL,
-        local_creator_account_id=ACCOUNT,
-        local_platform_creator_id="platform-creator-99",
         identity_binding_source="verified_grants",
-        verified_grant_bundle_sha256="a" * 64,
         extension_id="abcdefghijklmnopabcdefghijklmnop",
     )
     assert configured.canonical_persistence_backend == "sqlite"
@@ -127,10 +124,7 @@ def test_candidate_defaults_require_explicit_exact_launcher_bindings(
             websocket_auth_mode="local_session",
             local_session_bootstrap_token="x" * 32,
             local_principal_id=PRINCIPAL,
-            local_creator_account_id=ACCOUNT,
-            local_platform_creator_id="platform-creator-99",
             identity_binding_source="verified_grants",
-            verified_grant_bundle_sha256="a" * 64,
             extension_id="abcdefghijklmnopabcdefghijklmnop",
         )
     with pytest.raises(ValueError, match="exact non-placeholder"):
@@ -140,10 +134,7 @@ def test_candidate_defaults_require_explicit_exact_launcher_bindings(
             websocket_auth_mode="local_session",
             local_session_bootstrap_token="x" * 32,
             local_principal_id="replace-with-provisioned-principal",
-            local_creator_account_id=ACCOUNT,
-            local_platform_creator_id="platform-creator-99",
             identity_binding_source="verified_grants",
-            verified_grant_bundle_sha256="a" * 64,
             extension_id="abcdefghijklmnopabcdefghijklmnop",
         )
     with pytest.raises(ValueError, match="Chrome extension ID"):
@@ -153,12 +144,16 @@ def test_candidate_defaults_require_explicit_exact_launcher_bindings(
             websocket_auth_mode="local_session",
             local_session_bootstrap_token="x" * 32,
             local_principal_id=PRINCIPAL,
-            local_creator_account_id=ACCOUNT,
-            local_platform_creator_id="platform-creator-99",
             identity_binding_source="verified_grants",
-            verified_grant_bundle_sha256="a" * 64,
         )
-    assert configured.local_creator_account_id != configured.local_platform_creator_id
+    # No account is addressable as installation configuration, so the bootstrap
+    # account can only arrive through the injected seam.
+    assert not {"local_creator_account_id", "local_platform_creator_id"} & set(
+        Settings.model_fields
+    )
+    assert AgentConfigurationAuthority(
+        InMemoryAgentConfigRepository()
+    ).bootstrap_account_id != ACCOUNT
     authority = AgentConfigurationAuthority(
         InMemoryAgentConfigRepository(), bootstrap_account_id=ACCOUNT
     )

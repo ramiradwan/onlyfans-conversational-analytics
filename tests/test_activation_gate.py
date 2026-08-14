@@ -6,7 +6,7 @@ import hashlib
 import json
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -25,7 +25,6 @@ from app.persistence.auth import (
 from app.security.activation_gate import (
     AUTHENTICATION_STORE,
     DEVELOPMENT_AUTHENTICATION,
-    DEVELOPMENT_CREATOR_ACCOUNT_ID,
     DEVELOPMENT_PRINCIPAL_ID,
     LOOPBACK_EXPOSURE,
     NON_EXPORTABLE_INSTALLATION_KEY,
@@ -39,6 +38,7 @@ from app.security.activation_gate import (
     evaluate_activation,
     record_activation,
     reset_activation,
+    runtime_configuration,
     runtime_is_activated,
 )
 from app.security.grant_verifier import (
@@ -400,9 +400,6 @@ def configuration() -> RuntimeConfiguration:
         bridge_origin="http://bridge.localhost:17871",
         identity_binding_source="verified_grants",
         principal_id="principal-fixture-001",
-        creator_account_id=ACCOUNT_ID,
-        platform_creator_id="platform-creator-fixture-001",
-        development_platform_creator_id="dev-platform-creator",
     )
 
 
@@ -538,11 +535,6 @@ def test_activation_refuses_a_fixture_trust_set(inputs: ActivationInputs) -> Non
         ({"environment": "development"}, "deployable runtime declares environment"),
         ({"identity_binding_source": "development"}, "identity binding source is"),
         ({"principal_id": DEVELOPMENT_PRINCIPAL_ID}, "fixed development mapping"),
-        (
-            {"creator_account_id": DEVELOPMENT_CREATOR_ACCOUNT_ID},
-            "fixed development mapping",
-        ),
-        ({"platform_creator_id": "dev-platform-creator"}, "fixed development mapping"),
     ],
 )
 def test_development_authentication_in_a_deployable_runtime_refuses(
@@ -558,7 +550,25 @@ def test_development_authentication_in_a_deployable_runtime_refuses(
 
 def test_the_gate_names_the_transport_development_identities() -> None:
     assert DEVELOPMENT_PRINCIPAL_ID == DEV_PRINCIPAL_ID
-    assert DEVELOPMENT_CREATOR_ACCOUNT_ID == DEV_ACCOUNT_ID
+
+
+def test_activation_reads_no_creator_account() -> None:
+    """Installation activation never depends on an authorized account."""
+
+    declared = {
+        "environment",
+        "deployable",
+        "websocket_auth_mode",
+        "websocket_bind_host",
+        "bridge_origin",
+        "identity_binding_source",
+        "principal_id",
+        "trust_set_path",
+    }
+    present = {field.name for field in fields(RuntimeConfiguration)}
+
+    assert present == declared
+    assert DEV_ACCOUNT_ID not in str(runtime_configuration())
 
 
 # --------------------------------------------------------------------------
@@ -744,14 +754,24 @@ def test_required_grants_refuse_a_mismatched_external_principal(
 
 
 @pytest.mark.contract_integrity
-def test_required_grants_refuse_another_creator_account(
+def test_required_grants_refuse_an_account_binding_outside_the_membership(
     inputs: ActivationInputs,
 ) -> None:
+    """The bound account is read from the grant, and membership must allow it."""
+
+    store = inputs.store
+    assert isinstance(store, SQLiteAuthenticationStore)
+
     decision = evaluate_activation(
         replace(
             inputs,
-            configuration=replace(
-                inputs.configuration, creator_account_id="creator-account-other"
+            store=_StaticStore(
+                store,
+                _replacing(
+                    store,
+                    "creator_account_binding",
+                    creator_account_id="creator-account-other",
+                ),
             ),
         )
     )
@@ -759,7 +779,7 @@ def test_required_grants_refuse_another_creator_account(
     assert not decision.activated
     assert (
         _refusal(decision, REQUIRED_GRANTS)
-        == "the account-binding grant names a different creator account"
+        == "the membership grant does not allow the bound creator account"
     )
 
 
@@ -787,7 +807,7 @@ def test_required_grants_refuse_a_membership_that_excludes_the_account(
     assert not decision.activated
     assert (
         _refusal(decision, REQUIRED_GRANTS)
-        == "the membership grant does not allow the runtime creator account"
+        == "the membership grant does not allow the bound creator account"
     )
 
 

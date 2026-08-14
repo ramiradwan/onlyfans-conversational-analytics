@@ -257,8 +257,19 @@ class InMemoryAgentConfigRepository(AgentConfigRepository):
         self._installations.clear()
 
 
+def _development_bootstrap_allowed() -> bool:
+    return (
+        settings.environment.lower() in {"development", "dev", "local", "test"}
+        and settings.websocket_auth_mode == "development_stub"
+    )
+
+
 class AgentConfigurationAuthority:
-    """Own immutable documents and required-versus-applied installation state."""
+    """Own immutable documents and required-versus-applied installation state.
+
+    `bootstrap_account_id` is `None` until an authorized account is supplied; an
+    installation with no authorized account holds no bootstrap configuration.
+    """
 
     def __init__(
         self,
@@ -268,24 +279,20 @@ class AgentConfigurationAuthority:
     ) -> None:
         self.repository = repository
         self._publish_lock = asyncio.Lock()
-        if bootstrap_account_id is not None:
-            self.bootstrap_account_id = bootstrap_account_id
-        elif settings.websocket_auth_mode == "local_session":
-            if not settings.local_creator_account_id:
-                raise RuntimeError("Local session account binding is not configured")
-            self.bootstrap_account_id = settings.local_creator_account_id
-        elif (
-            settings.environment.lower() in {"development", "dev", "local", "test"}
-            and settings.websocket_auth_mode == "development_stub"
-        ):
-            self.bootstrap_account_id = DEVELOPMENT_BOOTSTRAP_ACCOUNT_ID
-        else:
-            raise RuntimeError("No exact account is authorized for Agent configuration")
-        self.bootstrap()
+        # The authorized account is supplied by the caller. No account is derived
+        # from installation identity, and an installation may authorize none.
+        if bootstrap_account_id is None and _development_bootstrap_allowed():
+            bootstrap_account_id = DEVELOPMENT_BOOTSTRAP_ACCOUNT_ID
+        self.bootstrap_account_id = bootstrap_account_id
+        if self.bootstrap_account_id is not None:
+            self.bootstrap()
 
     def bootstrap(self) -> None:
+        account_id = self.bootstrap_account_id
+        if account_id is None:
+            raise RuntimeError("No account is authorized for Agent configuration")
         current = build_config_document(
-            creator_account_id=self.bootstrap_account_id,
+            creator_account_id=account_id,
             config_revision=BOOTSTRAP_CONFIG_REVISION,
             issued_at=BOOTSTRAP_ISSUED_AT,
             capture_policy=BOOTSTRAP_CAPTURE_POLICY,
@@ -294,7 +301,7 @@ class AgentConfigurationAuthority:
         )
 
         existing_current = self.repository.document(
-            self.bootstrap_account_id, BOOTSTRAP_CONFIG_REVISION
+            account_id, BOOTSTRAP_CONFIG_REVISION
         )
         if existing_current is None:
             publish_document = getattr(self.repository, "publish_document", None)
@@ -306,19 +313,18 @@ class AgentConfigurationAuthority:
             raise RuntimeError("Persisted bootstrap configuration content has changed")
 
         try:
-            required = self.repository.required_document(self.bootstrap_account_id)
+            required = self.repository.required_document(account_id)
         except LookupError:
             required = None
         if required is None or _config_revision_sequence(
             required.config_revision
         ) < _config_revision_sequence(BOOTSTRAP_CONFIG_REVISION):
-            self.repository.require_for_account(
-                self.bootstrap_account_id, BOOTSTRAP_CONFIG_REVISION
-            )
+            self.repository.require_for_account(account_id, BOOTSTRAP_CONFIG_REVISION)
 
     def reset(self) -> None:
         self.repository.reset()
-        self.bootstrap()
+        if self.bootstrap_account_id is not None:
+            self.bootstrap()
 
     def required_document(self, creator_account_id: str) -> AgentConfigDocumentResponse:
         return self.repository.required_document(creator_account_id)

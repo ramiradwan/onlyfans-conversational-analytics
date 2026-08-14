@@ -16,7 +16,6 @@ from app.core.runtime_paths import runtime_configuration_file, runtime_data_dire
 
 
 _RESERVED_PREFIX = "replace-with-"
-_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _EXTENSION_ID_PATTERN = re.compile(r"[a-p]{32}")
 _SECRET_BYTES = 32
 
@@ -27,26 +26,18 @@ class FirstRunConflictError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class VerifiedGrantBindings:
-    """Bindings emitted by the grant verifier after exact grant validation."""
+    """Installation identity emitted by the grant verifier.
+
+    Installation identity is the principal and its local Bridge role. Authorized
+    creator accounts are bound separately and are not part of this value.
+    """
 
     principal_id: str
-    creator_account_id: str
-    platform_creator_id: str
     bridge_role: Literal["creator", "operator"]
-    grant_bundle_sha256: str
 
     def __post_init__(self) -> None:
-        bindings = (
-            self.principal_id,
-            self.creator_account_id,
-            self.platform_creator_id,
-        )
-        if not all(bindings) or any(
-            value.startswith(_RESERVED_PREFIX) for value in bindings
-        ):
+        if not self.principal_id or self.principal_id.startswith(_RESERVED_PREFIX):
             raise ValueError("verified grant bindings must be exact non-placeholder values")
-        if _SHA256_PATTERN.fullmatch(self.grant_bundle_sha256) is None:
-            raise ValueError("verified grant bundle digest must be lowercase SHA-256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,10 +104,7 @@ def _nonsecret_configuration(
         "WEBSOCKET_AUTH_MODE": "local_session",
         "WEBSOCKET_BIND_HOST": "127.0.0.1",
         "IDENTITY_BINDING_SOURCE": "verified_grants",
-        "VERIFIED_GRANT_BUNDLE_SHA256": bindings.grant_bundle_sha256,
         "LOCAL_PRINCIPAL_ID": bindings.principal_id,
-        "LOCAL_CREATOR_ACCOUNT_ID": bindings.creator_account_id,
-        "LOCAL_PLATFORM_CREATOR_ID": bindings.platform_creator_id,
         "LOCAL_BRIDGE_ROLE": bindings.bridge_role,
         "CANONICAL_PERSISTENCE_BACKEND": "sqlite",
         "AUTH_DATABASE_PATH": str(data_directory / "auth.sqlite3"),

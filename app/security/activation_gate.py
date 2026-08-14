@@ -44,7 +44,6 @@ LOOPBACK_EXPOSURE = "loopback_exposure"
 PRODUCTION_TRUST_SET_PATH = "production/grant-profile-v1/trust-set.json"
 GRANT_PROFILE = "urn:bridge-clean:grant-profile:v1"
 DEVELOPMENT_PRINCIPAL_ID = "dev-principal"
-DEVELOPMENT_CREATOR_ACCOUNT_ID = "dev-creator-account"
 
 _DEVELOPMENT_ENVIRONMENTS = frozenset({"development", "dev", "local", "test"})
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
@@ -85,9 +84,6 @@ class RuntimeConfiguration:
     bridge_origin: str
     identity_binding_source: str
     principal_id: str
-    creator_account_id: str
-    platform_creator_id: str
-    development_platform_creator_id: str
     trust_set_path: str = PRODUCTION_TRUST_SET_PATH
 
     @property
@@ -142,19 +138,11 @@ def _development_authentication(inputs: ActivationInputs) -> str | None:
         return f"deployable runtime declares environment {configuration.environment}"
     if configuration.identity_binding_source != "verified_grants":
         return f"identity binding source is {configuration.identity_binding_source}"
-    fixed = {
-        DEVELOPMENT_PRINCIPAL_ID,
-        DEVELOPMENT_CREATOR_ACCOUNT_ID,
-        configuration.development_platform_creator_id,
-    }
-    bound = {
-        configuration.principal_id,
-        configuration.creator_account_id,
-        configuration.platform_creator_id,
-    }
-    shared = sorted(fixed & bound)
-    if shared:
-        return f"runtime identity uses the fixed development mapping {shared}"
+    if configuration.principal_id == DEVELOPMENT_PRINCIPAL_ID:
+        return (
+            "runtime identity uses the fixed development mapping "
+            f"['{DEVELOPMENT_PRINCIPAL_ID}']"
+        )
     return None
 
 
@@ -210,12 +198,14 @@ def _required_grants(inputs: ActivationInputs) -> str | None:
     principals = {(grant.issuer, grant.subject) for grant in selected.values()}
     if len(principals) != 1:
         return f"required grants name {len(principals)} external principals"
-    account_id = inputs.configuration.creator_account_id
-    if selected["creator_account_binding"].creator_account_id != account_id:
-        return "the account-binding grant names a different creator account"
+    # The account is read from the grant that carries it, never from
+    # installation configuration; this checks the grant set is self-coherent.
+    account_id = selected["creator_account_binding"].creator_account_id
+    if not account_id:
+        return "the account-binding grant names no creator account"
     allowed = selected["membership_snapshot"].allowed_creator_account_ids
     if allowed is None or account_id not in allowed:
-        return "the membership grant does not allow the runtime creator account"
+        return "the membership grant does not allow the bound creator account"
     return None
 
 
@@ -338,9 +328,6 @@ def runtime_configuration() -> RuntimeConfiguration:
         bridge_origin=settings.bridge_origin,
         identity_binding_source=settings.identity_binding_source,
         principal_id=settings.local_principal_id,
-        creator_account_id=settings.local_creator_account_id,
-        platform_creator_id=settings.local_platform_creator_id,
-        development_platform_creator_id=settings.development_platform_creator_id,
     )
 
 

@@ -3,10 +3,12 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from dotenv import dotenv_values
+from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.core.first_run import (
@@ -20,23 +22,19 @@ from app.core.runtime_paths import runtime_data_directory
 EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"
 BINDINGS = VerifiedGrantBindings(
     principal_id="principal:verified-customer-1",
-    creator_account_id="creator-account-1",
-    platform_creator_id="platform-creator-1",
     bridge_role="creator",
-    grant_bundle_sha256="a" * 64,
 )
-_SETTING_ENVIRONMENT_NAMES = {
+# Declared here independently of the initializer so that removing a written key
+# without updating this set fails `test_first_run_writes_exactly_the_declared_keys`.
+_EXPECTED_CONFIGURATION_KEYS = {
     "ENVIRONMENT",
     "WEBSOCKET_AUTH_MODE",
     "WEBSOCKET_BIND_HOST",
     "SECURITY_SIGNING_SECRET",
     "LOCAL_SESSION_BOOTSTRAP_TOKEN",
     "LOCAL_PRINCIPAL_ID",
-    "LOCAL_CREATOR_ACCOUNT_ID",
-    "LOCAL_PLATFORM_CREATOR_ID",
     "LOCAL_BRIDGE_ROLE",
     "IDENTITY_BINDING_SOURCE",
-    "VERIFIED_GRANT_BUNDLE_SHA256",
     "CANONICAL_PERSISTENCE_BACKEND",
     "AUTH_DATABASE_PATH",
     "CANONICAL_DATABASE_PATH",
@@ -45,6 +43,13 @@ _SETTING_ENVIRONMENT_NAMES = {
     "EXTENSION_ID",
     "BROADCAST_URL",
 }
+# Names that must never reach installation configuration or Settings.
+_ACCOUNT_ENVIRONMENT_NAMES = {
+    "LOCAL_CREATOR_ACCOUNT_ID",
+    "LOCAL_PLATFORM_CREATOR_ID",
+    "VERIFIED_GRANT_BUNDLE_SHA256",
+}
+_SETTING_ENVIRONMENT_NAMES = _EXPECTED_CONFIGURATION_KEYS | _ACCOUNT_ENVIRONMENT_NAMES
 
 
 def test_shipped_example_is_an_explicit_development_configuration(
@@ -121,19 +126,48 @@ def test_first_run_is_private_and_idempotent(tmp_path: Path) -> None:
     assert first.configuration_file.parent == data_directory
 
 
-def test_second_first_run_rejects_changed_verified_bindings(tmp_path: Path) -> None:
+def test_first_run_writes_exactly_the_declared_keys(tmp_path: Path) -> None:
+    """The written key set is compared with an independently declared set."""
+
+    result = initialize_production_configuration(
+        bindings=BINDINGS,
+        extension_id=EXTENSION_ID,
+        data_directory=tmp_path,
+    )
+
+    written = set(dotenv_values(result.configuration_file, interpolate=False))
+
+    assert written == _EXPECTED_CONFIGURATION_KEYS
+    assert not written & _ACCOUNT_ENVIRONMENT_NAMES
+
+
+def test_installation_identity_settings_carry_no_account() -> None:
+    """No account value is addressable as installation configuration."""
+
+    field_names = {name.upper() for name in Settings.model_fields}
+
+    assert not field_names & _ACCOUNT_ENVIRONMENT_NAMES
+    for name in _ACCOUNT_ENVIRONMENT_NAMES:
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            Settings(_env_file=None, **{name.lower(): "account-value"})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("principal_id", "principal:verified-customer-2"),
+        ("bridge_role", "operator"),
+    ],
+)
+def test_second_first_run_rejects_changed_verified_bindings(
+    tmp_path: Path, field: str, value: str
+) -> None:
     initialize_production_configuration(
         bindings=BINDINGS,
         extension_id=EXTENSION_ID,
         data_directory=tmp_path,
     )
-    changed = VerifiedGrantBindings(
-        principal_id=BINDINGS.principal_id,
-        creator_account_id="creator-account-2",
-        platform_creator_id=BINDINGS.platform_creator_id,
-        bridge_role=BINDINGS.bridge_role,
-        grant_bundle_sha256="b" * 64,
-    )
+    changed = replace(BINDINGS, **{field: value})
 
     with pytest.raises(FirstRunConflictError, match="does not match"):
         initialize_production_configuration(
