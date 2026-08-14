@@ -17,10 +17,14 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from app.persistence.auth import InstallationKeyReference, SQLiteAuthenticationStore
 from app.security.hosted_grants import (
     CLAIM_PROFILE,
+    CREATOR_ASSOCIATION_PROFILE,
     PROOF_AUDIENCE,
     PROOF_PROFILE,
     REFRESH_PROFILE,
     ClaimConsumption,
+    CreatorAssociationPending,
+    CreatorAssociationRefused,
+    CreatorAssociationRequest,
     DeviceMetadata,
     GrantVerificationRefused,
     HostedGrantClient,
@@ -41,6 +45,7 @@ _INSTANT = datetime.fromtimestamp(1_784_332_900, timezone.utc)
 _ORGANIZATION_ID = "0198a1b2-c3d4-7000-8000-000000000001"
 _INSTALLATION_ID = "0198a1b2-c3d4-7000-8000-000000000002"
 _ACCOUNT_ID = "creator-account-fixture-001"
+_SECOND_ACCOUNT_ID = "creator-account-fixture-002"
 _EXTERNAL_ISSUER = "https://identity.test.invalid/fixture-tenant"
 _EXTERNAL_SUBJECT = "fixture-customer-subject-001"
 
@@ -48,6 +53,7 @@ _EXTERNAL_SUBJECT = "fixture-customer-subject-001"
 @dataclass(frozen=True)
 class SignedBundle:
     tokens: dict[str, str]
+    creator_bindings: dict[str, str]
     replacement_membership: str
     trust_set: dict[str, object]
     installation_key: InstallationKeyReference
@@ -79,6 +85,9 @@ class StoredClaimTransport:
         self.claim_attempts = 0
         self.requests: list[tuple[str, dict[str, object]]] = []
         self.refresh_mode: str = "timeout"
+        self.association_request_mode = "success"
+        self.association_status_mode = "success"
+        self.association_accounts: dict[str, str] = {}
 
     def request(
         self,
@@ -114,6 +123,23 @@ class StoredClaimTransport:
                 },
             )
         if path.endswith("/proof-challenges"):
+            purpose = json_body["purpose"]
+            if purpose in {
+                "creator-association-request",
+                "creator-association-status",
+            }:
+                return _json_response(
+                    201,
+                    {
+                        "profile": PROOF_PROFILE,
+                        "purpose": purpose,
+                        "installation_id": self.claim.installation_id,
+                        "challenge": _b64url(b"a" * 32),
+                        "audience": PROOF_AUDIENCE,
+                        "issued_at": "2026-07-18T00:01:00.000Z",
+                        "expires_at": "2026-07-18T00:02:00.000Z",
+                    },
+                )
             if self.refresh_mode == "timeout":
                 raise TimeoutError(f"request failed: {self.claim.claim_secret}")
             if self.refresh_mode == "unreachable":
@@ -124,7 +150,6 @@ class StoredClaimTransport:
                 return TransportResponse(201, b"{", "application/json")
             if self.refresh_mode == "unsigned_denial":
                 return _json_response(403, {"denial_jws": "not-a-signed-denial"})
-            purpose = json_body["purpose"]
             return _json_response(
                 201,
                 {
@@ -154,6 +179,55 @@ class StoredClaimTransport:
                     "refresh_after": "2026-07-18T06:01:00.000Z",
                 },
                 content_type,
+            )
+        request_path = f"/v1/installations/{self.claim.installation_id}/creator-associations"
+        if path == request_path:
+            if self.association_request_mode == "refused":
+                return _json_response(401, {"detail": "creator_association_refused"})
+            if self.association_request_mode == "pending":
+                return _json_response(409, {"detail": "creator_association_pending"})
+            if self.association_request_mode == "unavailable":
+                return _json_response(503, {"detail": "installation_claim_unavailable"})
+            body = json_body["request"]
+            assert isinstance(body, dict)
+            request_id = body["association_request_id"]
+            account_id = body["creator_account_id"]
+            assert isinstance(request_id, str)
+            assert isinstance(account_id, str)
+            self.association_accounts[request_id] = account_id
+            return _json_response(
+                202,
+                {
+                    "profile": CREATOR_ASSOCIATION_PROFILE,
+                    "association_request_id": request_id,
+                    "organization_id": self.claim.organization_id,
+                    "installation_id": self.claim.installation_id,
+                    "creator_account_id": account_id,
+                    "status": "pending",
+                    "updated_at": "2026-07-18T00:01:00.000Z",
+                    "creator_account_binding": None,
+                },
+            )
+        status_prefix = f"{request_path}/"
+        if path.startswith(status_prefix):
+            if self.association_status_mode == "refused":
+                return _json_response(401, {"detail": "creator_association_refused"})
+            if self.association_status_mode == "unavailable":
+                return _json_response(503, {"detail": "installation_claim_unavailable"})
+            request_id = path.removeprefix(status_prefix)
+            account_id = self.association_accounts[request_id]
+            return _json_response(
+                200,
+                {
+                    "profile": CREATOR_ASSOCIATION_PROFILE,
+                    "association_request_id": request_id,
+                    "organization_id": self.claim.organization_id,
+                    "installation_id": self.claim.installation_id,
+                    "creator_account_id": account_id,
+                    "status": "approved",
+                    "updated_at": "2026-07-18T00:02:00.000Z",
+                    "creator_account_binding": self.bundle.creator_bindings[account_id],
+                },
             )
         raise AssertionError(f"unexpected request path: {path}")
 
@@ -195,7 +269,7 @@ def bundle() -> SignedBundle:
         "ciam_subject": _EXTERNAL_SUBJECT,
         "roles": ["creator_operator"],
         "scopes": ["runtime:existing-data", "runtime:licensed-processing"],
-        "allowed_creator_account_ids": [_ACCOUNT_ID],
+        "allowed_creator_account_ids": [_ACCOUNT_ID, _SECOND_ACCOUNT_ID],
         "sub": _membership_subject(),
     }
     tokens = {
@@ -252,7 +326,39 @@ def bundle() -> SignedBundle:
         trust_entries[1]["jwk"],
         purpose_keys["membership"],
     )
-    return SignedBundle(tokens, replacement_membership, trust_set, installation_key)
+    creator_bindings = {
+        account_id: _token(
+            {
+                **common,
+                "aud": "urn:bridge-clean:local-brain:creator-binding",
+                "approval_id": approval_id,
+                "approval_revision": 1,
+                "creator_account_id": account_id,
+                "exp": 1_784_937_600,
+                "grant_type": "creator_account_binding",
+                "jti": grant_id,
+                "sub": f"installation:{_INSTALLATION_ID}:creator:{account_id}",
+            },
+            "urn:bridge-clean:grant:creator-binding:v1",
+            trust_entries[0]["jwk"],
+            purpose_keys["installation-binding"],
+        )
+        for account_id, approval_id, grant_id in (
+            (
+                _ACCOUNT_ID,
+                "0198a1b2-c3d4-7600-8000-000000000001",
+                "0198a1b2-c3d4-7700-8000-000000000001",
+            ),
+            (
+                _SECOND_ACCOUNT_ID,
+                "0198a1b2-c3d4-7600-8000-000000000002",
+                "0198a1b2-c3d4-7700-8000-000000000002",
+            ),
+        )
+    }
+    return SignedBundle(
+        tokens, creator_bindings, replacement_membership, trust_set, installation_key
+    )
 
 
 @pytest.fixture
@@ -314,6 +420,7 @@ def test_tampered_grant_is_refused_before_any_reference_is_stored(
     )
     altered = SignedBundle(
         tampered,
+        bundle.creator_bindings,
         bundle.replacement_membership,
         bundle.trust_set,
         bundle.installation_key,
@@ -364,6 +471,7 @@ def test_audience_and_subject_have_separate_verifier_results(
     tokens["installation_grant"] = token
     altered = SignedBundle(
         tokens,
+        bundle.creator_bindings,
         bundle.replacement_membership,
         trust_set,
         bundle.installation_key,
@@ -520,6 +628,137 @@ def test_verified_refresh_replaces_the_reference_and_policy(
     assert old["revoked_at"] is not None
     assert len(authority.signed_values) == 2
     assert claim.claim_secret.encode("ascii") not in authority.signed_values[0]
+
+
+def _association(
+    *,
+    request_id: str,
+    account_id: str = _ACCOUNT_ID,
+) -> CreatorAssociationRequest:
+    return CreatorAssociationRequest(
+        association_request_id=request_id,
+        onboarding_transaction_id="0198a1b2-c3d4-7400-8000-000000000001",
+        organization_id=_ORGANIZATION_ID,
+        installation_id=_INSTALLATION_ID,
+        creator_account_id=account_id,
+    )
+
+
+def test_second_creator_binding_is_appended_without_disturbing_the_first(
+    tmp_path: Path,
+    bundle: SignedBundle,
+    claim: InstallationClaim,
+    identity: AuthContext,
+    device: DeviceMetadata,
+) -> None:
+    client, store, _, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device, identity=identity)
+    membership_reference_id = consumed.grant_reference_ids[1]
+    first_request = _association(
+        request_id="0198a1b2-c3d4-7800-8000-000000000001"
+    )
+    second_request = _association(
+        request_id="0198a1b2-c3d4-7800-8000-000000000002",
+        account_id=_SECOND_ACCOUNT_ID,
+    )
+
+    client.request_creator_association(first_request)
+    first = client.acquire_creator_account_binding(
+        first_request, membership_reference_id=membership_reference_id
+    )
+    client.request_creator_association(second_request)
+    second = client.acquire_creator_account_binding(
+        second_request, membership_reference_id=membership_reference_id
+    )
+
+    bindings = {
+        grant.creator_account_id: grant
+        for grant in store.verified_grants()
+        if grant.grant_type == "creator_account_binding"
+    }
+    assert set(bindings) == {_ACCOUNT_ID, _SECOND_ACCOUNT_ID}
+    assert bindings[_ACCOUNT_ID] == first
+    assert bindings[_SECOND_ACCOUNT_ID] == second
+    assert store.verified_grant(first.reference_id) == first
+
+
+def test_tampered_creator_binding_is_refused_before_it_is_stored(
+    tmp_path: Path,
+    bundle: SignedBundle,
+    claim: InstallationClaim,
+    identity: AuthContext,
+    device: DeviceMetadata,
+) -> None:
+    client, store, _, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device, identity=identity)
+    association = _association(
+        request_id="0198a1b2-c3d4-7800-8000-000000000005"
+    )
+    bundle.creator_bindings[_ACCOUNT_ID] = _tamper_signature(
+        bundle.creator_bindings[_ACCOUNT_ID]
+    )
+    client.request_creator_association(association)
+
+    with pytest.raises(GrantVerificationRefused) as caught:
+        client.acquire_creator_account_binding(
+            association, membership_reference_id=consumed.grant_reference_ids[1]
+        )
+
+    assert caught.value.result == "invalid_signature"
+    assert not any(
+        grant.grant_type == "creator_account_binding"
+        for grant in store.verified_grants()
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "error"),
+    [
+        ("refused", CreatorAssociationRefused),
+        ("pending", CreatorAssociationPending),
+        ("unavailable", HostedGrantUnavailable),
+    ],
+)
+def test_creator_association_request_refusal_paths_are_named(
+    tmp_path: Path,
+    bundle: SignedBundle,
+    claim: InstallationClaim,
+    mode: str,
+    error: type[Exception],
+) -> None:
+    client, _, transport, _ = _client(tmp_path, bundle, claim)
+    transport.association_request_mode = mode
+
+    with pytest.raises(error):
+        client.request_creator_association(
+            _association(request_id="0198a1b2-c3d4-7800-8000-000000000003")
+        )
+
+
+@pytest.mark.parametrize("mode", ["refused", "unavailable"])
+def test_creator_binding_status_refusal_paths_are_named(
+    tmp_path: Path,
+    bundle: SignedBundle,
+    claim: InstallationClaim,
+    identity: AuthContext,
+    device: DeviceMetadata,
+    mode: str,
+) -> None:
+    client, _, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device, identity=identity)
+    association = _association(
+        request_id="0198a1b2-c3d4-7800-8000-000000000004"
+    )
+    client.request_creator_association(association)
+    transport.association_status_mode = mode
+    expected = (
+        CreatorAssociationRefused if mode == "refused" else HostedGrantUnavailable
+    )
+
+    with pytest.raises(expected):
+        client.acquire_creator_account_binding(
+            association, membership_reference_id=consumed.grant_reference_ids[1]
+        )
 
 
 @pytest.mark.parametrize(

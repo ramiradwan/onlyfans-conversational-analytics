@@ -33,6 +33,7 @@ from app.security.runtime_policy import AuthContext, RuntimePolicy
 CLAIM_PROFILE = "urn:bridge-clean:installation-claim:v1"
 PROOF_PROFILE = "urn:bridge-clean:installation-key-proof:v1"
 REFRESH_PROFILE = "urn:bridge-clean:grant-refresh:v1"
+CREATOR_ASSOCIATION_PROFILE = "urn:bridge-clean:creator-association:v1"
 PROOF_AUDIENCE = "urn:bridge-clean:commercial-control-plane:provisioning"
 PRODUCTION_TRUST_SET = "production/grant-profile-v1/trust-set.json"
 
@@ -103,6 +104,14 @@ class GrantVerificationRefused(HostedGrantError):
     def __init__(self, result: str) -> None:
         super().__init__("Signed grant verification failed")
         self.result = result
+
+
+class CreatorAssociationRefused(HostedGrantError):
+    """The hosted creator association was refused."""
+
+
+class CreatorAssociationPending(CreatorAssociationRefused):
+    """A different creator association remains pending."""
 
 
 class _TransportFailure(RuntimeError):
@@ -200,6 +209,39 @@ class InstallationClaim:
             raise ValueError("Installation claim bindings are invalid")
         _decode_32(self.claim_secret)
         _decode_32(self.challenge)
+
+
+@dataclass(frozen=True, slots=True)
+class CreatorAssociationRequest:
+    """One locally detected creator account awaiting hosted approval."""
+
+    association_request_id: str
+    onboarding_transaction_id: str
+    organization_id: str
+    installation_id: str
+    creator_account_id: str
+
+    def __post_init__(self) -> None:
+        if (
+            not _UUIDV7_RE.fullmatch(self.association_request_id)
+            or not all(
+                _ID_RE.fullmatch(value)
+                for value in (
+                    self.onboarding_transaction_id,
+                    self.organization_id,
+                    self.installation_id,
+                    self.creator_account_id,
+                )
+            )
+        ):
+            raise ValueError("Creator association bindings are invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CreatorAssociationStatus:
+    """The hosted state for one creator association request."""
+
+    updated_at: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,6 +368,125 @@ class HostedGrantClient:
             identity, grant_reference_ids
         )
 
+    def request_creator_association(
+        self, association: CreatorAssociationRequest
+    ) -> CreatorAssociationStatus:
+        """Request hosted approval for one locally detected creator account."""
+
+        key = self._installation_key.ensure_ready()
+        request_body: dict[str, object] = {
+            "profile": CREATOR_ASSOCIATION_PROFILE,
+            "association_request_id": association.association_request_id,
+            "onboarding_transaction_id": association.onboarding_transaction_id,
+            "organization_id": association.organization_id,
+            "installation_id": association.installation_id,
+            "creator_account_id": association.creator_account_id,
+            "installation_key_id": key.installation_key_id,
+        }
+        path = (
+            f"/v1/installations/{association.installation_id}/creator-associations"
+        )
+        challenge = self._proof_challenge(
+            installation_id=association.installation_id,
+            purpose="creator-association-request",
+            account_id=association.creator_account_id,
+        )
+        response = self._request(
+            path,
+            {
+                "request": request_body,
+                "proof": self._proof(
+                    challenge=challenge,
+                    request_body=request_body,
+                    path=path,
+                    purpose="creator-association-request",
+                    installation_id=association.installation_id,
+                    account_id=association.creator_account_id,
+                    key=key,
+                ),
+            },
+        )
+        if response.status_code == 409:
+            raise CreatorAssociationPending(
+                "Creator association request is already pending"
+            )
+        if response.status_code in {408, 425, 429} or response.status_code >= 500:
+            raise HostedGrantUnavailable("Hosted creator association is unavailable")
+        if response.status_code != 202:
+            raise CreatorAssociationRefused("Creator association was refused")
+        return self._validated_association_response(
+            _response_object(response), association, status="pending", binding=False
+        )
+
+    def acquire_creator_account_binding(
+        self,
+        association: CreatorAssociationRequest,
+        *,
+        membership_reference_id: str,
+    ) -> VerifiedGrantReference:
+        """Verify and append an approved creator-account binding."""
+
+        key = self._installation_key.ensure_ready()
+        membership = self._association_membership(
+            association, membership_reference_id, key
+        )
+        path = (
+            f"/v1/installations/{association.installation_id}/creator-associations/"
+            f"{association.association_request_id}"
+        )
+        request_body: dict[str, object] = {
+            "profile": CREATOR_ASSOCIATION_PROFILE,
+            "association_request_id": association.association_request_id,
+            "installation_id": association.installation_id,
+        }
+        challenge = self._proof_challenge(
+            installation_id=association.installation_id,
+            purpose="creator-association-status",
+            account_id=association.creator_account_id,
+        )
+        response = self._request(
+            path,
+            {
+                "request": request_body,
+                "proof": self._proof(
+                    challenge=challenge,
+                    request_body=request_body,
+                    path=path,
+                    purpose="creator-association-status",
+                    installation_id=association.installation_id,
+                    account_id=association.creator_account_id,
+                    key=key,
+                ),
+            },
+        )
+        if response.status_code in {408, 425, 429} or response.status_code >= 500:
+            raise HostedGrantUnavailable("Hosted creator association is unavailable")
+        if response.status_code != 200:
+            raise CreatorAssociationRefused("Creator association was refused")
+        document = _response_object(response)
+        self._validated_association_response(
+            document, association, status="approved", binding=True
+        )
+        token = document["creator_account_binding"]
+        if not isinstance(token, str):
+            raise HostedGrantUnavailable("Hosted creator association is invalid")
+        payload = _untrusted_payload(token)
+        reference = self._verified_reference(
+            token,
+            payload,
+            grant_type="creator_account_binding",
+            organization_id=association.organization_id,
+            installation_id=association.installation_id,
+            key=key,
+            external_issuer=membership.issuer,
+            external_subject=membership.subject,
+            requested_account_ids=(),
+        )
+        if reference.creator_account_id != association.creator_account_id:
+            raise GrantVerificationRefused("creator_account_mismatch")
+        self._store.record_verified_grant(reference)
+        return reference
+
     def refresh_grant(
         self,
         identity: AuthContext,
@@ -426,6 +587,86 @@ class HostedGrantClient:
         ):
             raise HostedGrantUnavailable("Hosted response is unavailable")
         return response
+
+    def _proof_challenge(
+        self,
+        *,
+        installation_id: str,
+        purpose: str,
+        account_id: str,
+    ) -> str:
+        response = self._request(
+            f"/v1/installations/{installation_id}/proof-challenges",
+            {
+                "profile": PROOF_PROFILE,
+                "purpose": purpose,
+                "account_id": account_id,
+            },
+        )
+        if response.status_code != 201:
+            raise HostedGrantUnavailable("Hosted proof challenge is unavailable")
+        return self._validated_challenge(
+            _response_object(response),
+            installation_id=installation_id,
+            purpose=purpose,
+        )
+
+    def _association_membership(
+        self,
+        association: CreatorAssociationRequest,
+        membership_reference_id: str,
+        key: InstallationKeyReference,
+    ) -> VerifiedGrantReference:
+        membership = self._store.verified_grant(membership_reference_id)
+        if (
+            membership is None
+            or membership.grant_type != "membership_snapshot"
+            or membership.organization_id != association.organization_id
+            or membership.installation_id != association.installation_id
+            or membership.installation_key_id != key.installation_key_id
+            or membership.installation_key_jkt != key.installation_key_jkt
+        ):
+            raise AuthenticationStateError(
+                "Creator association membership reference is unavailable"
+            )
+        return membership
+
+    @staticmethod
+    def _validated_association_response(
+        document: Mapping[str, object],
+        association: CreatorAssociationRequest,
+        *,
+        status: Literal["pending", "approved"],
+        binding: bool,
+    ) -> CreatorAssociationStatus:
+        expected = {
+            "profile",
+            "association_request_id",
+            "organization_id",
+            "installation_id",
+            "creator_account_id",
+            "status",
+            "updated_at",
+            "creator_account_binding",
+        }
+        if (
+            set(document) != expected
+            or document.get("profile") != CREATOR_ASSOCIATION_PROFILE
+            or document.get("association_request_id")
+            != association.association_request_id
+            or document.get("organization_id") != association.organization_id
+            or document.get("installation_id") != association.installation_id
+            or document.get("creator_account_id") != association.creator_account_id
+            or document.get("status") != status
+            or not isinstance(document.get("updated_at"), str)
+            or (
+                document.get("creator_account_binding") is not None
+                if not binding
+                else not isinstance(document.get("creator_account_binding"), str)
+            )
+        ):
+            raise HostedGrantUnavailable("Hosted creator association is invalid")
+        return CreatorAssociationStatus(document["updated_at"])
 
     def _proof(
         self,
