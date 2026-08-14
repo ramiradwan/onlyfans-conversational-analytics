@@ -510,6 +510,52 @@ def test_heartbeat_failure_stops_thread_and_closes_connection(
     assert harness.database.open_connection_count(harness.database.path) == 0
 
 
+def test_heartbeat_ownership_loss_is_not_masked_as_writer_invalid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = SQLiteGraphHarness(tmp_path / "heartbeat-ownership-race.sqlite3")
+    generation_id = harness.begin_build()
+    writer = SQLiteGraphGenerationWriter(
+        harness.database,
+        generation_id=generation_id,
+        partition_key=harness.account_ref,
+        owner=harness.owner,
+        lease_seconds=0.01,
+    )
+    invalidated = threading.Event()
+    release_heartbeat = threading.Event()
+    original_invalidate_ownership = writer._invalidate_ownership
+
+    def pause_after_ownership_invalidation() -> None:
+        original_invalidate_ownership()
+        invalidated.set()
+        assert release_heartbeat.wait(timeout=3)
+
+    monkeypatch.setattr(
+        writer,
+        "_invalidate_ownership",
+        pause_after_ownership_invalidation,
+    )
+    writer._start_heartbeat()
+    try:
+        with harness.database.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE projection_generations
+                SET owner_capability_digest=?
+                WHERE generation_id=? AND status='building'
+                """,
+                ("sha256:" + "f" * 64, generation_id),
+            )
+        assert invalidated.wait(timeout=3)
+        with pytest.raises(GraphStoreError, match="graph_generation_ownership_lost"):
+            writer._check_heartbeat()
+    finally:
+        release_heartbeat.set()
+        writer._stop_heartbeat()
+
+
 def test_chunked_write_losing_lease_stays_invisible_and_is_reclaimed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

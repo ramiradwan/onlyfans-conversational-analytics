@@ -1701,6 +1701,7 @@ class SQLiteGraphGenerationWriter:
         self._lease_session_owner: int | None = None
         self._lease_session_depth = 0
         self._terminal_transition = False
+        self._ownership_lost = False
         self._valid = True
 
     @property
@@ -2110,11 +2111,14 @@ class SQLiteGraphGenerationWriter:
         with self._state_lock:
             error = self._heartbeat_error
             valid = self._valid
+            ownership_lost = self._ownership_lost
         if error is not None:
             if isinstance(error, GraphStoreError):
                 raise error
             raise GraphStoreError("graph_generation_ownership_lost") from error
         if not valid:
+            if ownership_lost:
+                raise GraphStoreError("graph_generation_ownership_lost")
             raise GraphStoreError("graph_writer_invalid")
 
     def refresh(self) -> None:
@@ -2326,6 +2330,7 @@ class SQLiteGraphGenerationWriter:
 
     def _invalidate_ownership(self) -> None:
         with self._state_lock:
+            self._ownership_lost = True
             self._valid = False
             self._lease_deadline_monotonic = None
 
