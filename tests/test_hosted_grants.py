@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import struct
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +34,7 @@ from app.security.hosted_grants import (
     InstallationClaim,
     InstallationClaimReplay,
     TransportResponse,
+    _PROOF_DOMAIN,
 )
 from app.security.installation_key import InstallationProof
 from app.security.runtime_policy import AuthContext
@@ -48,6 +50,31 @@ _ACCOUNT_ID = "creator-account-fixture-001"
 _SECOND_ACCOUNT_ID = "creator-account-fixture-002"
 _EXTERNAL_ISSUER = "https://identity.test.invalid/fixture-tenant"
 _EXTERNAL_SUBJECT = "fixture-customer-subject-001"
+
+# Every proof purpose the client is allowed to use, listed explicitly so a
+# fixture never derives its expectations from the production module it is
+# meant to be checking.
+_RECOGNIZED_PURPOSES = {
+    "installation-claim-consume",
+    "creator-association-request",
+    "creator-association-status",
+    "installation-grant-refresh",
+    "creator-account-binding-refresh",
+    "membership-snapshot-refresh",
+    "license-entitlement-refresh",
+}
+
+
+def _proof_purpose(canonical: bytes) -> str:
+    """Extract the purpose field from a signed proof's canonical bytes."""
+    assert canonical.startswith(_PROOF_DOMAIN)
+    offset = len(_PROOF_DOMAIN)
+    for _ in range(4):  # skip challenge, method, path, body-digest fields
+        (length,) = struct.unpack_from("!I", canonical, offset)
+        offset += 4 + length
+    (length,) = struct.unpack_from("!I", canonical, offset)
+    offset += 4
+    return canonical[offset : offset + length].decode("ascii")
 
 
 @dataclass(frozen=True)
@@ -69,6 +96,8 @@ class FakeProofAuthority:
 
     def sign_challenge(self, challenge: bytes) -> InstallationProof:
         self.signed_values.append(challenge)
+        purpose = _proof_purpose(challenge)
+        assert purpose in _RECOGNIZED_PURPOSES, f"unrecognized proof purpose: {purpose!r}"
         return InstallationProof(
             self.reference.installation_key_id,
             "ES256",
@@ -124,6 +153,28 @@ class StoredClaimTransport:
             )
         if path.endswith("/proof-challenges"):
             purpose = json_body["purpose"]
+            if purpose not in _RECOGNIZED_PURPOSES:
+                # An unrecognised purpose gets a syntactically valid
+                # challenge whose echoed "purpose" cannot match the
+                # request. HostedGrantClient._validated_challenge's own
+                # purpose-equality check then refuses it, so the failure
+                # is attributable to that mismatch instead of collapsing
+                # into the same generic transport-exception path every
+                # other malfunction produces (that path is deliberately
+                # swallowed by HostedGrantClient._request's credential-leak
+                # guard and cannot distinguish causes).
+                return _json_response(
+                    201,
+                    {
+                        "profile": PROOF_PROFILE,
+                        "purpose": "unrecognized-proof-purpose",
+                        "installation_id": self.claim.installation_id,
+                        "challenge": _b64url(b"a" * 32),
+                        "audience": PROOF_AUDIENCE,
+                        "issued_at": "2026-07-18T00:01:00.000Z",
+                        "expires_at": "2026-07-18T00:02:00.000Z",
+                    },
+                )
             if purpose in {
                 "creator-association-request",
                 "creator-association-status",
