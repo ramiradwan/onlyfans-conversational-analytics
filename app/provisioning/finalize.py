@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal, Mapping
@@ -45,8 +47,8 @@ FinalizationRefusal = Literal[
     "grant_set_not_current",
 ]
 
-# One digest per required grant type. The canonical implementation is the
-# separate digest subunit; finalization only hands it the selected tuple.
+# One digest per required grant type. Finalization hands the seam the selected
+# tuple; `grant_bundle_digest` is the canonical implementation.
 GrantBundleDigest = Callable[[tuple[VerifiedGrantReference, ...]], str]
 
 
@@ -82,12 +84,30 @@ class FinalizedProvisioning:
     configuration: FirstRunResult
 
 
+def grant_bundle_digest(grants: tuple[VerifiedGrantReference, ...]) -> str:
+    """Digest exactly one verified grant per required grant type.
+
+    SHA-256 over canonical JSON holding the `(grant_type, grant_digest)` pairs
+    sorted by grant type. The value records the provenance of initial
+    provisioning. It is independent of the order the grants arrive in and of
+    every grant field outside the pair, so an unchanged grant set always
+    produces an unchanged digest.
+    """
+
+    document = json.dumps(
+        [[grant_type, digest] for grant_type, digest in _digested_pairs(grants)],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(document.encode("utf-8")).hexdigest()
+
+
 def finalize_provisioning(
     *,
     store: AuthenticationStore,
     request: FinalizationRequest,
     extension_id: str,
-    bundle_digest: GrantBundleDigest,
+    bundle_digest: GrantBundleDigest = grant_bundle_digest,
     data_directory: str | Path | None = None,
 ) -> FinalizedProvisioning:
     """Derive verified bindings and create production configuration once.
@@ -111,7 +131,7 @@ def verified_grant_bindings(
     *,
     store: AuthenticationStore,
     request: FinalizationRequest,
-    bundle_digest: GrantBundleDigest,
+    bundle_digest: GrantBundleDigest = grant_bundle_digest,
 ) -> tuple[VerifiedGrantBindings, tuple[str, ...]]:
     """Build the bindings from exactly one verified four-grant tuple.
 
@@ -182,6 +202,27 @@ def _one_grant_per_required_type(
             raise FinalizationRefused("ambiguous_grant_set")
         selected[grant_type] = matches[0]
     return selected
+
+
+def _digested_pairs(
+    grants: tuple[VerifiedGrantReference, ...],
+) -> tuple[tuple[str, str], ...]:
+    """Select one `(grant_type, grant_digest)` pair per required grant type.
+
+    A grant type outside the required list, a repeated type, or a missing type
+    is refused rather than digested: the bundle covers the required set exactly.
+    """
+
+    digests: dict[str, str] = {}
+    for grant in grants:
+        if grant.grant_type not in REQUIRED_GRANT_TYPES:
+            raise FinalizationRefused("incoherent_grant_set")
+        if grant.grant_type in digests:
+            raise FinalizationRefused("ambiguous_grant_set")
+        digests[grant.grant_type] = grant.grant_digest
+    if any(grant_type not in digests for grant_type in REQUIRED_GRANT_TYPES):
+        raise FinalizationRefused("incomplete_grant_set")
+    return tuple(sorted(digests.items()))
 
 
 def _require_coherent_tuple(
