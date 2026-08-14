@@ -40,6 +40,12 @@ class RevocationScopeType(str, Enum):
     INSTALLATION = "installation"
 
 
+class ProvisioningCandidateState(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    CANCELLED = "cancelled"
+
+
 @dataclass(frozen=True, slots=True)
 class RevocationKey:
     scope_type: RevocationScopeType
@@ -267,6 +273,24 @@ class ConsumedTicket:
         return self.policy.identity.creator_account_id
 
 
+@dataclass(frozen=True, slots=True)
+class ProvisioningCandidate:
+    """One locally detected upstream account awaiting or holding hosted approval.
+
+    Nonsecret recovery/state coordinates only: no claim secret, compact grant,
+    or hosted credential ever belongs on this record.
+    """
+
+    association_request_id: str
+    installation_id: str
+    onboarding_transaction_id: str
+    organization_id: str
+    creator_account_id: str
+    state: ProvisioningCandidateState
+    requested_at: datetime
+    resolved_at: datetime | None = None
+
+
 class AuthenticationStore(Protocol):
     def reserve_installation_key(
         self, reservation: InstallationKeyReservation
@@ -365,6 +389,26 @@ class AuthenticationStore(Protocol):
     def revoke(self, key: RevocationKey, *, reason: str | None = None) -> int: ...
 
     def revocation_version(self, key: RevocationKey) -> int: ...
+
+    def record_provisioning_candidate(
+        self, candidate: ProvisioningCandidate
+    ) -> None: ...
+
+    def provisioning_candidate(
+        self, association_request_id: str
+    ) -> ProvisioningCandidate | None: ...
+
+    def pending_provisioning_candidate(
+        self, installation_id: str
+    ) -> ProvisioningCandidate | None: ...
+
+    def approve_provisioning_candidate(
+        self, association_request_id: str, *, resolved_at: datetime
+    ) -> bool: ...
+
+    def cancel_provisioning_candidate(
+        self, association_request_id: str, *, resolved_at: datetime
+    ) -> bool: ...
 
 
 class AuthenticationStateError(ValueError):
@@ -1930,6 +1974,126 @@ class SQLiteAuthenticationStore:
         if not valid:
             raise ValueError("Ticket parent and expected binding do not match purpose")
 
+    def record_provisioning_candidate(
+        self, candidate: ProvisioningCandidate
+    ) -> None:
+        """Persist one newly detected candidate as the installation's pending slot.
+
+        Fails closed if another candidate is already pending for the same
+        installation: a new/different candidate requires the caller to cancel
+        the pending transaction first (competition is scoped to one candidate).
+        Approved rows are never touched here and are never overwritten.
+        """
+
+        _require_provisioning_candidate(candidate)
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                """
+                SELECT 1 FROM provisioning_candidates
+                WHERE installation_id = ? AND state = 'pending'
+                """,
+                (candidate.installation_id,),
+            ).fetchone()
+            if existing is not None:
+                raise AuthenticationStateError(
+                    "A provisioning candidate is already pending for this installation"
+                )
+            connection.execute(
+                """
+                INSERT INTO provisioning_candidates (
+                    association_request_id, installation_id,
+                    onboarding_transaction_id, organization_id,
+                    creator_account_id, state, requested_at, resolved_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+                """,
+                (
+                    candidate.association_request_id,
+                    candidate.installation_id,
+                    candidate.onboarding_transaction_id,
+                    candidate.organization_id,
+                    candidate.creator_account_id,
+                    candidate.state.value,
+                    _time_text(candidate.requested_at),
+                ),
+            )
+            self._increment_authorization_epoch(connection)
+
+    def provisioning_candidate(
+        self, association_request_id: str
+    ) -> ProvisioningCandidate | None:
+        with self.database.read() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM provisioning_candidates
+                WHERE association_request_id = ?
+                """,
+                (association_request_id,),
+            ).fetchone()
+        return None if row is None else _provisioning_candidate(row)
+
+    def pending_provisioning_candidate(
+        self, installation_id: str
+    ) -> ProvisioningCandidate | None:
+        with self.database.read() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM provisioning_candidates
+                WHERE installation_id = ? AND state = 'pending'
+                """,
+                (installation_id,),
+            ).fetchone()
+        return None if row is None else _provisioning_candidate(row)
+
+    def approve_provisioning_candidate(
+        self, association_request_id: str, *, resolved_at: datetime
+    ) -> bool:
+        """Atomically transition one pending candidate to approved.
+
+        This is the approval transition: it only ever succeeds against a row
+        that is still `pending`. A candidate already resolved (approved or
+        cancelled) by a competing transition is left untouched and this
+        returns False rather than resurrecting or double-applying it.
+        """
+
+        return self._resolve_provisioning_candidate(
+            association_request_id,
+            resolved_state=ProvisioningCandidateState.APPROVED,
+            resolved_at=resolved_at,
+        )
+
+    def cancel_provisioning_candidate(
+        self, association_request_id: str, *, resolved_at: datetime
+    ) -> bool:
+        return self._resolve_provisioning_candidate(
+            association_request_id,
+            resolved_state=ProvisioningCandidateState.CANCELLED,
+            resolved_at=resolved_at,
+        )
+
+    def _resolve_provisioning_candidate(
+        self,
+        association_request_id: str,
+        *,
+        resolved_state: ProvisioningCandidateState,
+        resolved_at: datetime,
+    ) -> bool:
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE provisioning_candidates
+                SET state = ?, resolved_at = ?
+                WHERE association_request_id = ? AND state = 'pending'
+                """,
+                (
+                    resolved_state.value,
+                    _time_text(resolved_at),
+                    association_request_id,
+                ),
+            )
+            if cursor.rowcount == 1:
+                self._increment_authorization_epoch(connection)
+        return cursor.rowcount == 1
+
     def _now(self) -> datetime:
         value = self._clock()
         _time_text(value)
@@ -1954,6 +2118,38 @@ def _time_text(value: datetime) -> str:
 
 def _parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value).astimezone(timezone.utc)
+
+
+def _require_provisioning_candidate(candidate: ProvisioningCandidate) -> None:
+    if not all(
+        (
+            candidate.association_request_id,
+            candidate.installation_id,
+            candidate.onboarding_transaction_id,
+            candidate.organization_id,
+            candidate.creator_account_id,
+        )
+    ):
+        raise ValueError("Provisioning candidate fields must not be empty")
+    if candidate.state is not ProvisioningCandidateState.PENDING:
+        raise ValueError("A newly recorded provisioning candidate must start pending")
+    if candidate.resolved_at is not None:
+        raise ValueError("A newly recorded provisioning candidate must not be resolved")
+    _time_text(candidate.requested_at)
+
+
+def _provisioning_candidate(row: sqlite3.Row) -> ProvisioningCandidate:
+    resolved = row["resolved_at"]
+    return ProvisioningCandidate(
+        association_request_id=str(row["association_request_id"]),
+        installation_id=str(row["installation_id"]),
+        onboarding_transaction_id=str(row["onboarding_transaction_id"]),
+        organization_id=str(row["organization_id"]),
+        creator_account_id=str(row["creator_account_id"]),
+        state=ProvisioningCandidateState(str(row["state"])),
+        requested_at=_parse_time(str(row["requested_at"])),
+        resolved_at=None if resolved is None else _parse_time(str(resolved)),
+    )
 
 
 def _require_installation_key_reservation(
