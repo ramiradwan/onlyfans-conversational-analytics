@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Iterable, Protocol
+from typing import Callable, Iterable, Literal, Protocol
 from uuid import uuid4
 
 from app.persistence.database import AuthSQLite
@@ -79,6 +80,28 @@ class VerifiedGrantReference:
     product_id: str | None = None
     allowed_creator_account_ids: tuple[str, ...] | None = None
     membership_roles: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedAccountBinding:
+    """One creator account this installation has durably authorized.
+
+    A verified grant reference records what the hosted control plane signed.
+    This record states that local finalization accepted the account, and it
+    retains the provenance of the grant tuple the acceptance rested on:
+    `grant_bundle_sha256` digests the whole tuple and `grant_reference_ids`
+    names its members. Eligibility is not stored; it is resolved from this
+    record and current grant state.
+    """
+
+    creator_account_id: str
+    installation_id: str
+    platform_creator_id: str
+    association_request_id: str
+    grant_bundle_sha256: str
+    authorized_at: datetime
+    grant_reference_ids: tuple[str, ...]
+    revoked_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,6 +413,18 @@ class AuthenticationStore(Protocol):
 
     def revocation_version(self, key: RevocationKey) -> int: ...
 
+    def scope_is_revoked(self, key: RevocationKey) -> bool: ...
+
+    def record_authorized_account_binding(
+        self, binding: AuthorizedAccountBinding
+    ) -> None: ...
+
+    def authorized_account_bindings(
+        self,
+    ) -> tuple[AuthorizedAccountBinding, ...]: ...
+
+    def revoke_authorized_account_binding(self, creator_account_id: str) -> bool: ...
+
     def record_provisioning_candidate(
         self, candidate: ProvisioningCandidate
     ) -> None: ...
@@ -415,12 +450,27 @@ class AuthenticationStateError(ValueError):
     """Raised when an authentication object cannot be issued from current state."""
 
 
+AccountBindingRefusal = Literal[
+    "additional_account_binding_unsupported",
+    "account_binding_already_recorded",
+]
+
+
+class AccountBindingRefused(AuthenticationStateError):
+    """Refusal carrying a fixed message and a nonsecret reason code."""
+
+    def __init__(self, reason: AccountBindingRefusal) -> None:
+        super().__init__("Authorized account binding is refused")
+        self.reason = reason
+
+
 _BRIDGE_REQUIRED_GRANTS = frozenset(
     {"installation_grant", "membership_snapshot", "creator_account_binding"}
 )
 _AGENT_REQUIRED_GRANTS = frozenset(
     {"installation_grant", "creator_account_binding"}
 )
+_SHA256_TEXT = re.compile(r"[0-9a-f]{64}")
 
 
 class SQLiteAuthenticationStore:
@@ -1448,6 +1498,25 @@ class SQLiteAuthenticationStore:
         with self.database.read() as connection:
             return self._revocation_version(connection, key)
 
+    def scope_is_revoked(self, key: RevocationKey) -> bool:
+        """Report whether one revocation scope has been revoked."""
+
+        with self.database.read() as connection:
+            return self._scope_is_revoked(connection, key)
+
+    @staticmethod
+    def _scope_is_revoked(
+        connection: sqlite3.Connection, key: RevocationKey
+    ) -> bool:
+        row = connection.execute(
+            """
+            SELECT revoked_at FROM auth_revocation_state
+            WHERE scope_type = ? AND scope_id = ?
+            """,
+            (key.scope_type.value, key.scope_id),
+        ).fetchone()
+        return row is not None and row["revoked_at"] is not None
+
     @staticmethod
     def _revocation_version(
         connection: sqlite3.Connection, key: RevocationKey
@@ -2094,6 +2163,125 @@ class SQLiteAuthenticationStore:
                 self._increment_authorization_epoch(connection)
         return cursor.rowcount == 1
 
+    def record_authorized_account_binding(
+        self, binding: AuthorizedAccountBinding
+    ) -> None:
+        """Durably authorize one creator account for this installation.
+
+        Pilot cardinality: at most one authorized account exists per
+        installation. A second, different account is refused, and so is a
+        repeat of an account already recorded, rather than overwriting the
+        provenance of the first. Revoked rows still count, so revoking one
+        account does not open a slot for another.
+        """
+
+        _require_authorized_account_binding(binding)
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT creator_account_id FROM authorized_account_bindings"
+            ).fetchall()
+            if any(
+                str(row["creator_account_id"]) == binding.creator_account_id
+                for row in existing
+            ):
+                raise AccountBindingRefused("account_binding_already_recorded")
+            if existing:
+                raise AccountBindingRefused(
+                    "additional_account_binding_unsupported"
+                )
+            connection.execute(
+                """
+                INSERT INTO authorized_account_bindings (
+                    creator_account_id, installation_id, platform_creator_id,
+                    association_request_id, grant_bundle_sha256, authorized_at,
+                    revoked_at
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL)
+                """,
+                (
+                    binding.creator_account_id,
+                    binding.installation_id,
+                    binding.platform_creator_id,
+                    binding.association_request_id,
+                    binding.grant_bundle_sha256,
+                    _time_text(binding.authorized_at),
+                ),
+            )
+            self._insert_grants(
+                connection,
+                "authorized_account_binding_grants",
+                "creator_account_id",
+                binding.creator_account_id,
+                _unique(binding.grant_reference_ids),
+            )
+            self._ensure_scope(
+                connection,
+                RevocationKey(
+                    RevocationScopeType.CREATOR_ACCOUNT,
+                    binding.creator_account_id,
+                ),
+            )
+            self._increment_authorization_epoch(connection)
+
+    def authorized_account_bindings(
+        self,
+    ) -> tuple[AuthorizedAccountBinding, ...]:
+        """Return every authorized account binding, revoked ones included.
+
+        Eligibility is decided by the resolver, not here: a caller that needs
+        the currently eligible accounts must apply the revocation and validity
+        predicates rather than treating this collection as an allowlist.
+        """
+
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM authorized_account_bindings
+                ORDER BY authorized_at, creator_account_id
+                """
+            ).fetchall()
+            return tuple(
+                _authorized_account_binding(
+                    row,
+                    grants=tuple(
+                        str(grant["grant_reference_id"])
+                        for grant in connection.execute(
+                            """
+                            SELECT grant_reference_id
+                            FROM authorized_account_binding_grants
+                            WHERE creator_account_id = ?
+                            ORDER BY grant_reference_id
+                            """,
+                            (row["creator_account_id"],),
+                        ).fetchall()
+                    ),
+                )
+                for row in rows
+            )
+
+    def revoke_authorized_account_binding(self, creator_account_id: str) -> bool:
+        """Revoke one authorized account binding and its account scope."""
+
+        with self.database.transaction() as connection:
+            timestamp = _time_text(self._now())
+            cursor = connection.execute(
+                """
+                UPDATE authorized_account_bindings SET revoked_at = ?
+                WHERE creator_account_id = ? AND revoked_at IS NULL
+                """,
+                (timestamp, creator_account_id),
+            )
+            if cursor.rowcount != 1:
+                return False
+            self._revoke_in_transaction(
+                connection,
+                RevocationKey(
+                    RevocationScopeType.CREATOR_ACCOUNT, creator_account_id
+                ),
+                reason="account_binding_revoked",
+            )
+            self._increment_authorization_epoch(connection)
+        return True
+
     def _now(self) -> datetime:
         value = self._clock()
         _time_text(value)
@@ -2149,6 +2337,41 @@ def _provisioning_candidate(row: sqlite3.Row) -> ProvisioningCandidate:
         state=ProvisioningCandidateState(str(row["state"])),
         requested_at=_parse_time(str(row["requested_at"])),
         resolved_at=None if resolved is None else _parse_time(str(resolved)),
+    )
+
+
+def _require_authorized_account_binding(binding: AuthorizedAccountBinding) -> None:
+    if not all(
+        (
+            binding.creator_account_id,
+            binding.installation_id,
+            binding.platform_creator_id,
+            binding.association_request_id,
+        )
+    ):
+        raise ValueError("Authorized account binding fields must not be empty")
+    if _SHA256_TEXT.fullmatch(binding.grant_bundle_sha256) is None:
+        raise ValueError("Grant bundle digest must be lowercase SHA-256")
+    if not binding.grant_reference_ids:
+        raise ValueError("Authorized account binding requires its grant references")
+    if binding.revoked_at is not None:
+        raise ValueError("A newly recorded account binding must not be revoked")
+    _time_text(binding.authorized_at)
+
+
+def _authorized_account_binding(
+    row: sqlite3.Row, *, grants: tuple[str, ...]
+) -> AuthorizedAccountBinding:
+    revoked = row["revoked_at"]
+    return AuthorizedAccountBinding(
+        creator_account_id=str(row["creator_account_id"]),
+        installation_id=str(row["installation_id"]),
+        platform_creator_id=str(row["platform_creator_id"]),
+        association_request_id=str(row["association_request_id"]),
+        grant_bundle_sha256=str(row["grant_bundle_sha256"]),
+        authorized_at=_parse_time(str(row["authorized_at"])),
+        grant_reference_ids=grants,
+        revoked_at=None if revoked is None else _parse_time(str(revoked)),
     )
 
 

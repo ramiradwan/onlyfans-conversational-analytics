@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Literal, Mapping
 
@@ -17,6 +18,7 @@ from app.core.first_run import (
 from app.persistence.auth import (
     AuthenticationStateError,
     AuthenticationStore,
+    AuthorizedAccountBinding,
     InstallationKeyReference,
     ProvisioningCandidate,
     ProvisioningCandidateState,
@@ -151,6 +153,36 @@ def finalize_provisioning(
         data_directory=data_directory,
     )
     return FinalizedProvisioning(bindings, account, references, configuration)
+
+
+def authorize_finalized_account(
+    *,
+    store: AuthenticationStore,
+    request: FinalizationRequest,
+    finalized: FinalizedProvisioning,
+    authorized_at: datetime,
+) -> AuthorizedAccountBinding:
+    """Record what finalization verified as a durable account authorization.
+
+    Finalization verifies one account; this states that the installation
+    authorized it, and retains the grant tuple and its digest as the provenance
+    of that decision. The store applies the pilot cardinality limit.
+    """
+
+    candidate = _approved_candidate(store, request.association_request_id)
+    if candidate.creator_account_id != finalized.account.creator_account_id:
+        raise FinalizationRefused("unapproved_creator_account")
+    binding = AuthorizedAccountBinding(
+        creator_account_id=finalized.account.creator_account_id,
+        installation_id=candidate.installation_id,
+        platform_creator_id=finalized.account.platform_creator_id,
+        association_request_id=candidate.association_request_id,
+        grant_bundle_sha256=finalized.account.grant_bundle_sha256,
+        authorized_at=authorized_at,
+        grant_reference_ids=finalized.grant_reference_ids,
+    )
+    store.record_authorized_account_binding(binding)
+    return binding
 
 
 def verified_grant_bindings(
