@@ -17,10 +17,21 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.persistence.auth import (
+    AuthorizedAccountBinding,
     InstallationKeyReference,
     InstallationKeyReservation,
+    ProvisioningCandidate,
+    ProvisioningCandidateState,
+    RevocationKey,
+    RevocationScopeType,
     SQLiteAuthenticationStore,
     VerifiedGrantReference,
+)
+from app.security.account_bindings import (
+    AccountResolutionRefused,
+    eligible_account_for_policy,
+    eligible_accounts,
+    sole_eligible_account,
 )
 from app.security.activation_gate import (
     AUTHENTICATION_STORE,
@@ -53,6 +64,7 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
     ProviderKeyInfo,
 )
+from app.security.runtime_policy import AuthContext
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
     DEV_BRIDGE_AUTH_TICKET,
@@ -65,7 +77,12 @@ from app.transport.manager import (
 CONTRACTS = Path(__file__).resolve().parents[1] / "contracts" / "grant-profile-v1"
 FIXTURE_TRUST_SET_PATH = "grant-profile-v1/keys/trust-set.json"
 PROVIDER_KEY_NAME = "bridge-clean.installation.v1"
-REQUIRED_GRANT_TYPES = (
+# Stated independently of the gate's own set, so removing a type from the gate
+# fails this file's agreement instead of deleting the case that covers it.
+ACTIVATION_GRANT_TYPES = ("installation_grant", "membership_snapshot")
+# What a fully provisioned installation holds. The account binding is among
+# them; activation must be satisfied without it.
+RECORDED_GRANT_TYPES = (
     "installation_grant",
     "membership_snapshot",
     "creator_account_binding",
@@ -343,15 +360,15 @@ def key_provider(
     return EmulatedKeyProvider(installation_private_key.public_key())
 
 
-@pytest.fixture
-def store(
-    tmp_path: Path,
+def _provisioned_store(
+    path: Path,
     now: datetime,
     installation_private_key: ec.EllipticCurvePrivateKey,
+    grant_types: tuple[str, ...],
 ) -> SQLiteAuthenticationStore:
-    """A provisioned store: one activated installation key and the required grants."""
+    """Build a store with an activated installation key and the named grants."""
 
-    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
+    store = SQLiteAuthenticationStore(path)
     created_at = now - timedelta(days=1)
     store.reserve_installation_key(
         InstallationKeyReservation(
@@ -383,11 +400,40 @@ def store(
             activated_at=created_at,
         )
     )
-    for grant_type in REQUIRED_GRANT_TYPES:
+    for grant_type in grant_types:
         store.record_verified_grant(
             _admit(grant_type, "valid-current", verified_at=now - timedelta(minutes=1))
         )
     return store
+
+
+@pytest.fixture
+def store(
+    tmp_path: Path,
+    now: datetime,
+    installation_private_key: ec.EllipticCurvePrivateKey,
+) -> SQLiteAuthenticationStore:
+    """A provisioned store: an activated installation key and every grant."""
+
+    return _provisioned_store(
+        tmp_path / "auth.sqlite3", now, installation_private_key, RECORDED_GRANT_TYPES
+    )
+
+
+@pytest.fixture
+def unauthorized_store(
+    tmp_path: Path,
+    now: datetime,
+    installation_private_key: ec.EllipticCurvePrivateKey,
+) -> SQLiteAuthenticationStore:
+    """An installation during setup: valid identity and no account grant."""
+
+    return _provisioned_store(
+        tmp_path / "setup" / "auth.sqlite3",
+        now,
+        installation_private_key,
+        ACTIVATION_GRANT_TYPES,
+    )
 
 
 @pytest.fixture
@@ -639,7 +685,7 @@ def _replacing(
 
 
 @pytest.mark.contract_integrity
-@pytest.mark.parametrize("grant_type", REQUIRED_GRANT_TYPES)
+@pytest.mark.parametrize("grant_type", ACTIVATION_GRANT_TYPES)
 def test_required_grants_refuse_an_absent_grant(
     inputs: ActivationInputs, grant_type: str
 ) -> None:
@@ -720,7 +766,7 @@ def test_required_grants_refuse_a_mismatched_installation(
             store=_StaticStore(
                 store,
                 _replacing(
-                    store, "creator_account_binding", installation_id="other-installation"
+                    store, "membership_snapshot", installation_id="other-installation"
                 ),
             ),
         )
@@ -753,69 +799,123 @@ def test_required_grants_refuse_a_mismatched_external_principal(
     )
 
 
-@pytest.mark.contract_integrity
-def test_required_grants_refuse_an_account_binding_outside_the_membership(
-    inputs: ActivationInputs,
-) -> None:
-    """The bound account is read from the grant, and membership must allow it."""
-
-    store = inputs.store
-    assert isinstance(store, SQLiteAuthenticationStore)
-
-    decision = evaluate_activation(
-        replace(
-            inputs,
-            store=_StaticStore(
-                store,
-                _replacing(
-                    store,
-                    "creator_account_binding",
-                    creator_account_id="creator-account-other",
-                ),
-            ),
-        )
-    )
-
-    assert not decision.activated
-    assert (
-        _refusal(decision, REQUIRED_GRANTS)
-        == "the membership grant does not allow the bound creator account"
-    )
-
-
-@pytest.mark.contract_integrity
-def test_required_grants_refuse_a_membership_that_excludes_the_account(
-    inputs: ActivationInputs,
-) -> None:
-    store = inputs.store
-    assert isinstance(store, SQLiteAuthenticationStore)
-
-    decision = evaluate_activation(
-        replace(
-            inputs,
-            store=_StaticStore(
-                store,
-                _replacing(
-                    store,
-                    "membership_snapshot",
-                    allowed_creator_account_ids=("creator-account-other",),
-                ),
-            ),
-        )
-    )
-
-    assert not decision.activated
-    assert (
-        _refusal(decision, REQUIRED_GRANTS)
-        == "the membership grant does not allow the bound creator account"
-    )
-
-
 def test_required_grants_refuse_an_absent_store(inputs: ActivationInputs) -> None:
     decision = evaluate_activation(replace(inputs, store=None))
 
     assert not decision.activated
     assert _refusal(decision, REQUIRED_GRANTS) == "the authentication store is unavailable"
+
+
+# --------------------------------------------------------------------------
+# Activation is separate from account authorization
+# --------------------------------------------------------------------------
+
+
+def _authorize_account_on(
+    store: SQLiteAuthenticationStore, now: datetime
+) -> AuthorizedAccountBinding:
+    """Record one authorized account whose basis is the installation grants.
+
+    The writer applies cardinality and referential integrity, not grant-type
+    composition, so this state is reachable. It exists to leave the resolver's
+    coherence check as the only thing that can withhold the account.
+    """
+
+    identity = store.verified_grants()[0]
+    association_request_id = "association-setup"
+    store.record_provisioning_candidate(
+        ProvisioningCandidate(
+            association_request_id=association_request_id,
+            installation_id=identity.installation_id,
+            onboarding_transaction_id="onboarding-setup",
+            organization_id=identity.organization_id,
+            creator_account_id=ACCOUNT_ID,
+            state=ProvisioningCandidateState.PENDING,
+            requested_at=now - timedelta(minutes=3),
+        )
+    )
+    store.approve_provisioning_candidate(
+        association_request_id, resolved_at=now - timedelta(minutes=2)
+    )
+    binding = AuthorizedAccountBinding(
+        creator_account_id=ACCOUNT_ID,
+        installation_id=identity.installation_id,
+        platform_creator_id=ACCOUNT_ID,
+        association_request_id=association_request_id,
+        grant_bundle_sha256="ab" * 32,
+        authorized_at=now - timedelta(minutes=1),
+        grant_reference_ids=tuple(
+            grant.reference_id for grant in store.verified_grants()
+        ),
+    )
+    store.record_authorized_account_binding(binding)
+    return binding
+
+
+@pytest.mark.contract_integrity
+def test_an_installation_with_no_authorized_account_activates(
+    inputs: ActivationInputs,
+    unauthorized_store: SQLiteAuthenticationStore,
+    now: datetime,
+) -> None:
+    """Setup state: valid identity, no account authorized, runtime activated."""
+
+    decision = evaluate_activation(replace(inputs, store=unauthorized_store))
+
+    assert decision.activated, decision.refusals
+    assert unauthorized_store.authorized_account_bindings() == ()
+    assert eligible_accounts(unauthorized_store, now=now) == ()
+
+
+@pytest.mark.contract_integrity
+def test_an_active_installation_is_not_authority_for_an_account(
+    inputs: ActivationInputs,
+    unauthorized_store: SQLiteAuthenticationStore,
+    now: datetime,
+) -> None:
+    """Being active must not imply authority to act for any account.
+
+    The binding is recorded and unrevoked, its account scope is unrevoked, and
+    the grants it rests on are current -- activation succeeding on the same
+    store is what establishes that they are. Every other reason the resolver
+    could withhold the account is therefore excluded, and only the coherence
+    check between the account binding and the membership snapshot remains.
+    """
+
+    binding = _authorize_account_on(unauthorized_store, now)
+    decision = evaluate_activation(replace(inputs, store=unauthorized_store))
+
+    assert decision.activated, decision.refusals
+    assert [
+        (record.creator_account_id, record.revoked_at)
+        for record in unauthorized_store.authorized_account_bindings()
+    ] == [(ACCOUNT_ID, None)]
+    assert (
+        unauthorized_store.scope_is_revoked(
+            RevocationKey(RevocationScopeType.CREATOR_ACCOUNT, ACCOUNT_ID)
+        )
+        is False
+    )
+    assert binding.grant_reference_ids != ()
+
+    assert eligible_accounts(unauthorized_store, now=now) == ()
+    with pytest.raises(AccountResolutionRefused) as sole:
+        sole_eligible_account(unauthorized_store, now=now)
+    with pytest.raises(AccountResolutionRefused) as scoped:
+        eligible_account_for_policy(
+            unauthorized_store,
+            unauthorized_store.build_runtime_policy(
+                AuthContext(
+                    principal_id="principal-fixture-001",
+                    creator_account_id=ACCOUNT_ID,
+                    role="creator",
+                )
+            ),
+            now=now,
+        )
+
+    assert sole.value.reason == "no_eligible_account"
+    assert scoped.value.reason == "no_eligible_account"
 
 
 # --------------------------------------------------------------------------

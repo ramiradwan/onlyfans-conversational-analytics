@@ -26,6 +26,7 @@ from app.security.grant_verifier import (
     load_pinned_trust_set,
     verify_grant,
 )
+from app.security.grant_types import HOSTED_CLAIM_GRANT_TYPES
 from app.security.installation_key import InstallationProof
 from app.security.runtime_policy import AuthContext, RuntimePolicy
 
@@ -45,11 +46,6 @@ _UUIDV7_RE = re.compile(
 )
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$")
 _VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$")
-_GRANT_ORDER = (
-    "installation_grant",
-    "membership_snapshot",
-    "license_entitlement",
-)
 _AUDIENCES = {
     "installation_grant": "urn:bridge-clean:local-brain:installation",
     "creator_account_binding": "urn:bridge-clean:local-brain:creator-binding",
@@ -742,13 +738,13 @@ class HostedGrantClient:
         grants = document.get("grants")
         if (
             not isinstance(grants, dict)
-            or set(grants) != set(_GRANT_ORDER)
-            or not all(isinstance(grants[name], str) for name in _GRANT_ORDER)
+            or set(grants) != set(HOSTED_CLAIM_GRANT_TYPES)
+            or not all(isinstance(grants[name], str) for name in HOSTED_CLAIM_GRANT_TYPES)
             or not isinstance(document.get("consumed_at"), str)
             or not isinstance(document.get("bootstrap_config_version"), str)
         ):
             raise HostedGrantUnavailable("Hosted claim response is invalid")
-        return {name: grants[name] for name in _GRANT_ORDER}
+        return {name: grants[name] for name in HOSTED_CLAIM_GRANT_TYPES}
 
     def _verify_bundle(
         self,
@@ -761,7 +757,7 @@ class HostedGrantClient:
     ) -> tuple[VerifiedGrantReference, ...]:
         payloads = {
             grant_type: _untrusted_payload(tokens[grant_type])
-            for grant_type in _GRANT_ORDER
+            for grant_type in HOSTED_CLAIM_GRANT_TYPES
         }
         membership = payloads["membership_snapshot"]
         external_issuer = _required_string(membership, "ciam_issuer")
@@ -785,7 +781,7 @@ class HostedGrantClient:
                     else ()
                 ),
             )
-            for grant_type in _GRANT_ORDER
+            for grant_type in HOSTED_CLAIM_GRANT_TYPES
         )
         return references
 

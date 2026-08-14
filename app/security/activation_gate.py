@@ -3,6 +3,12 @@
 Activation is separate from process startup. An installation that does not
 satisfy every condition still starts and exposes the bounded loopback
 provisioning surface; it does not activate the authorized runtime.
+
+Activation is also separate from account authorization. The conditions read
+installation identity and the person holding it, never an authorized creator
+account, so an installation activates with zero accounts authorized. Acting on
+account-scoped data is a further question, answered by the eligible-account
+resolver in `app.security.account_bindings`.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from app.persistence.auth import (
     VerifiedGrantReference,
 )
 from app.persistence.database import SQLiteConfigurationError
+from app.security.grant_types import ACTIVATION_GRANT_TYPES
 from app.security.grant_verifier import load_pinned_trust_set, trusted_signing_keys
 from app.security.installation_key import (
     INSTALLATION_KEY_ALGORITHM,
@@ -47,11 +54,6 @@ DEVELOPMENT_PRINCIPAL_ID = "dev-principal"
 
 _DEVELOPMENT_ENVIRONMENTS = frozenset({"development", "dev", "local", "test"})
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
-_REQUIRED_GRANT_TYPES = (
-    "installation_grant",
-    "membership_snapshot",
-    "creator_account_binding",
-)
 _REQUIRED_TRUST_PURPOSES = frozenset({"installation-binding", "membership"})
 _REQUIRED_TABLES = frozenset(
     {
@@ -176,7 +178,7 @@ def _required_grants(inputs: ActivationInputs) -> str | None:
         return "the installation key reference is absent"
     grants = store.verified_grants()
     selected: dict[str, VerifiedGrantReference] = {}
-    for grant_type in _REQUIRED_GRANT_TYPES:
+    for grant_type in ACTIVATION_GRANT_TYPES:
         current = [
             grant
             for grant in grants
@@ -198,14 +200,6 @@ def _required_grants(inputs: ActivationInputs) -> str | None:
     principals = {(grant.issuer, grant.subject) for grant in selected.values()}
     if len(principals) != 1:
         return f"required grants name {len(principals)} external principals"
-    # The account is read from the grant that carries it, never from
-    # installation configuration; this checks the grant set is self-coherent.
-    account_id = selected["creator_account_binding"].creator_account_id
-    if not account_id:
-        return "the account-binding grant names no creator account"
-    allowed = selected["membership_snapshot"].allowed_creator_account_ids
-    if allowed is None or account_id not in allowed:
-        return "the membership grant does not allow the bound creator account"
     return None
 
 

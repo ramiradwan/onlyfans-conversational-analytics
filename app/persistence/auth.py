@@ -16,6 +16,11 @@ from uuid import uuid4
 
 from app.persistence.database import AuthSQLite
 from app.persistence.migrations import MigrationRunner
+from app.security.grant_types import (
+    ACCOUNT_AUTHORITY_GRANT_TYPES,
+    AGENT_PAIRING_GRANT_TYPES,
+    CREATOR_ACCOUNT_BINDING,
+)
 from app.security.runtime_policy import (
     AuthContext,
     AuthorizationEpoch,
@@ -464,12 +469,6 @@ class AccountBindingRefused(AuthenticationStateError):
         self.reason = reason
 
 
-_BRIDGE_REQUIRED_GRANTS = frozenset(
-    {"installation_grant", "membership_snapshot", "creator_account_binding"}
-)
-_AGENT_REQUIRED_GRANTS = frozenset(
-    {"installation_grant", "creator_account_binding"}
-)
 _SHA256_TEXT = re.compile(r"[0-9a-f]{64}")
 
 
@@ -1719,11 +1718,11 @@ class SQLiteAuthenticationStore:
             ).fetchone()
             stored_account = row["creator_account_id"]
             exact_binding_mismatch = (
-                row["grant_type"] == "creator_account_binding"
+                row["grant_type"] == CREATOR_ACCOUNT_BINDING
                 and stored_account != creator_account_id
             )
             scoped_reference_mismatch = (
-                row["grant_type"] != "creator_account_binding"
+                row["grant_type"] != CREATOR_ACCOUNT_BINDING
                 and stored_account not in {None, creator_account_id}
             )
             if exact_binding_mismatch or scoped_reference_mismatch:
@@ -1745,7 +1744,7 @@ class SQLiteAuthenticationStore:
         self._require_grants_for_account(
             connection, grants, now, creator_account_id
         )
-        self._require_grant_types(connection, grants, _BRIDGE_REQUIRED_GRANTS)
+        self._require_grant_types(connection, grants, ACCOUNT_AUTHORITY_GRANT_TYPES)
         for reference_id in grants:
             row = connection.execute(
                 """
@@ -1777,7 +1776,7 @@ class SQLiteAuthenticationStore:
         self._require_grants_for_account(
             connection, grants, now, creator_account_id
         )
-        self._require_grant_types(connection, grants, _AGENT_REQUIRED_GRANTS)
+        self._require_grant_types(connection, grants, AGENT_PAIRING_GRANT_TYPES)
         for reference_id in grants:
             row = connection.execute(
                 """
@@ -1799,7 +1798,7 @@ class SQLiteAuthenticationStore:
     def _require_grant_types(
         connection: sqlite3.Connection,
         grants: tuple[str, ...],
-        required: frozenset[str],
+        required: tuple[str, ...],
     ) -> None:
         found = {
             row["grant_type"]
@@ -1812,7 +1811,7 @@ class SQLiteAuthenticationStore:
                 (reference_id,),
             ).fetchall()
         }
-        if not required <= found:
+        if not set(required) <= found:
             raise AuthenticationStateError(
                 "Required verified grant reference types are missing"
             )

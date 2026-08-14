@@ -24,6 +24,7 @@ from app.persistence.auth import (
     RevocationScopeType,
     VerifiedGrantReference,
 )
+from app.security.grant_types import CREATOR_ACCOUNT_BINDING, MEMBERSHIP_SNAPSHOT
 from app.security.runtime_policy import (
     RuntimePolicy,
     authorized_account,
@@ -31,8 +32,8 @@ from app.security.runtime_policy import (
 )
 
 
-ACCOUNT_BINDING_GRANT_TYPE = "creator_account_binding"
-MEMBERSHIP_GRANT_TYPE = "membership_snapshot"
+ACCOUNT_BINDING_GRANT_TYPE = CREATOR_ACCOUNT_BINDING
+MEMBERSHIP_GRANT_TYPE = MEMBERSHIP_SNAPSHOT
 
 AccountResolutionRefusal = Literal[
     "no_eligible_account",

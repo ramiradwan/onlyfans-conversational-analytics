@@ -23,16 +23,16 @@ from app.persistence.auth import (
     VerifiedGrantReference,
 )
 from app.provisioning.finalize import (
-    REQUIRED_GRANT_TYPES,
     FinalizationRefused,
     FinalizationRequest,
     VerifiedAccountBinding,
     finalize_provisioning,
 )
+from app.security.grant_types import PROVISIONING_GRANT_TYPES
 
 
 # Stated independently of the module under test so that dropping a required
-# type from `REQUIRED_GRANT_TYPES` cannot silently drop the case that covers it.
+# type from `PROVISIONING_GRANT_TYPES` cannot silently drop the case that covers it.
 EXPECTED_GRANT_TYPES = (
     "creator_account_binding",
     "installation_grant",
@@ -232,7 +232,7 @@ def finalize(
 
 
 def test_the_required_tuple_is_the_four_signed_grant_types() -> None:
-    assert REQUIRED_GRANT_TYPES == EXPECTED_GRANT_TYPES
+    assert PROVISIONING_GRANT_TYPES == EXPECTED_GRANT_TYPES
 
 
 def test_finalization_writes_bindings_from_the_verified_four_grant_tuple(

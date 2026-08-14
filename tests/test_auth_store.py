@@ -612,6 +612,89 @@ def test_session_and_pairing_require_the_adr_grant_sets(
         )
 
 
+# Stated independently of the store's own sets, so removing a member from a
+# predicate fails a case here instead of deleting the case that covers it.
+EXPECTED_BRIDGE_GRANT_TYPES = (
+    "installation_grant",
+    "membership_snapshot",
+    "creator_account_binding",
+)
+EXPECTED_PAIRING_GRANT_TYPES = ("installation_grant", "creator_account_binding")
+
+
+def grant_of(
+    store: SQLiteAuthenticationStore, instant: datetime, grant_type: str
+) -> str:
+    return record_grant(
+        store,
+        instant,
+        reference_id=f"{grant_type}-reference",
+        grant_type=grant_type,
+        creator_account_id=(
+            "creator-1" if grant_type == "creator_account_binding" else None
+        ),
+    )
+
+
+@pytest.mark.parametrize("omitted", EXPECTED_BRIDGE_GRANT_TYPES)
+def test_a_bridge_session_requires_each_grant_type_in_its_own_right(
+    store: SQLiteAuthenticationStore,
+    instant: datetime,
+    omitted: str,
+) -> None:
+    """Every member of the set is refused by its own absence, alone."""
+
+    supplied = tuple(
+        grant_of(store, instant, grant_type)
+        for grant_type in EXPECTED_BRIDGE_GRANT_TYPES
+        if grant_type != omitted
+    )
+    credential = register_credential(store, instant)
+
+    with pytest.raises(AuthenticationStateError, match="types are missing"):
+        store.issue_bridge_session(
+            BridgeSessionIssue(
+                credential_id=credential.credential_id,
+                principal_id=credential.principal_id,
+                creator_account_id="creator-1",
+                role="creator",
+                expires_at=instant + timedelta(minutes=30),
+                grant_reference_ids=supplied,
+            )
+        )
+
+
+@pytest.mark.parametrize("omitted", EXPECTED_PAIRING_GRANT_TYPES)
+def test_an_agent_pairing_requires_each_grant_type_in_its_own_right(
+    store: SQLiteAuthenticationStore,
+    instant: datetime,
+    omitted: str,
+) -> None:
+    supplied = tuple(
+        grant_of(store, instant, grant_type)
+        for grant_type in EXPECTED_PAIRING_GRANT_TYPES
+        if grant_type != omitted
+    )
+
+    with pytest.raises(AuthenticationStateError, match="types are missing"):
+        store.register_agent_pairing(
+            AgentPairing(
+                pairing_id=f"pairing-without-{omitted}",
+                key_id=f"key-without-{omitted}",
+                principal_id="principal-1",
+                creator_account_id="creator-1",
+                agent_installation_id="agent-installation-1",
+                external_issuer="issuer.example",
+                external_subject="customer-subject",
+                installation_id="brain-installation-1",
+                public_key=b"agent-public-key",
+                key_fingerprint=f"fingerprint-without-{omitted}",
+                created_at=instant,
+                grant_reference_ids=supplied,
+            )
+        )
+
+
 def test_creator_account_binding_cannot_be_account_neutral(
     store: SQLiteAuthenticationStore,
     instant: datetime,

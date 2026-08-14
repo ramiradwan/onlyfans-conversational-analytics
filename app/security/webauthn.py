@@ -28,6 +28,11 @@ from app.persistence.auth import (
     WebAuthnChallengeBinding,
     WebAuthnCredential,
 )
+from app.security.grant_types import (
+    ACCOUNT_AUTHORITY_GRANT_TYPES,
+    CREATOR_ACCOUNT_BINDING,
+    MEMBERSHIP_SNAPSHOT,
+)
 from app.security.runtime_policy import RuntimePolicy
 
 
@@ -101,13 +106,6 @@ class WebAuthnAuthorityDecision:
             raise ValueError("Only an authorized decision may contain authority")
 
 
-_WEBAUTHN_REQUIRED_GRANT_TYPES = (
-    "installation_grant",
-    "membership_snapshot",
-    "creator_account_binding",
-)
-
-
 class WebAuthnAuthorityPort:
     """Derive WebAuthn authority from one policy and current verified state.
 
@@ -149,7 +147,7 @@ class WebAuthnAuthorityPort:
             if not _webauthn_policy_is_current(connection, policy, now):
                 return _authority_refusal(WebAuthnAuthorityResult.POLICY_NOT_CURRENT)
             selected: dict[str, sqlite3.Row] = {}
-            for grant_type in _WEBAUTHN_REQUIRED_GRANT_TYPES:
+            for grant_type in ACCOUNT_AUTHORITY_GRANT_TYPES:
                 result, row = _select_webauthn_grant(
                     connection,
                     grant_type=grant_type,
@@ -157,7 +155,7 @@ class WebAuthnAuthorityPort:
                     now=now,
                     require_unique_current=(
                         identity is None
-                        and grant_type == "creator_account_binding"
+                        and grant_type == CREATOR_ACCOUNT_BINDING
                     ),
                 )
                 if result is not WebAuthnAuthorityResult.AUTHORIZED:
@@ -166,8 +164,8 @@ class WebAuthnAuthorityPort:
                     raise RuntimeError("authorized grant selection returned no row")
                 selected[grant_type] = row
 
-            membership = selected["membership_snapshot"]
-            binding = selected["creator_account_binding"]
+            membership = selected[MEMBERSHIP_SNAPSHOT]
+            binding = selected[CREATOR_ACCOUNT_BINDING]
             account_id = binding["creator_account_id"]
             if not isinstance(account_id, str) or not account_id:
                 return _authority_refusal(WebAuthnAuthorityResult.MEMBERSHIP_ACCOUNT_MISMATCH)
@@ -261,7 +259,7 @@ class WebAuthnAuthorityPort:
 
             references = tuple(
                 selected[grant_type]["reference_id"]
-                for grant_type in _WEBAUTHN_REQUIRED_GRANT_TYPES
+                for grant_type in ACCOUNT_AUTHORITY_GRANT_TYPES
             )
             if not session:
                 return WebAuthnAuthorityDecision(

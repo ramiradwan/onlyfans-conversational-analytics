@@ -11,17 +11,17 @@ import pytest
 
 from app.persistence.auth import VerifiedGrantReference
 from app.provisioning.finalize import (
-    REQUIRED_GRANT_TYPES,
     FinalizationRefused,
     VerifiedAccountBinding,
     finalize_provisioning,
     grant_bundle_digest,
     verified_grant_bindings,
 )
+from app.security.grant_types import PROVISIONING_GRANT_TYPES
 
 
 # Stated independently of the module under test so that dropping a type from
-# `REQUIRED_GRANT_TYPES` cannot silently delete the case that covers it.
+# `PROVISIONING_GRANT_TYPES` cannot silently delete the case that covers it.
 EXPECTED_GRANT_TYPES = (
     "creator_account_binding",
     "installation_grant",
@@ -92,7 +92,7 @@ def vector(
 
 
 def test_the_canonical_grant_types_are_the_four_signed_types() -> None:
-    assert REQUIRED_GRANT_TYPES == EXPECTED_GRANT_TYPES
+    assert PROVISIONING_GRANT_TYPES == EXPECTED_GRANT_TYPES
 
 
 def test_the_four_grant_vector_digests_to_the_fixed_value() -> None:

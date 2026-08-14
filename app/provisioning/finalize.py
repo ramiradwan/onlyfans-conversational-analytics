@@ -24,15 +24,13 @@ from app.persistence.auth import (
     ProvisioningCandidateState,
     VerifiedGrantReference,
 )
+from app.security.grant_types import (
+    CREATOR_ACCOUNT_BINDING,
+    MEMBERSHIP_SNAPSHOT,
+    PROVISIONING_GRANT_TYPES,
+)
 from app.security.runtime_policy import AuthContext
 
-
-REQUIRED_GRANT_TYPES = (
-    "creator_account_binding",
-    "installation_grant",
-    "license_entitlement",
-    "membership_snapshot",
-)
 
 _CREATOR_ROLES = frozenset({"owner"})
 _OPERATOR_ROLES = frozenset({"administrator", "creator_operator"})
@@ -204,8 +202,8 @@ def verified_grant_bindings(
         raise FinalizationRefused("installation_key_unavailable")
 
     _require_coherent_tuple(selected, candidate=candidate, key=key)
-    binding = selected["creator_account_binding"]
-    membership = selected["membership_snapshot"]
+    binding = selected[CREATOR_ACCOUNT_BINDING]
+    membership = selected[MEMBERSHIP_SNAPSHOT]
 
     creator_account_id = binding.creator_account_id
     if creator_account_id is None or creator_account_id != candidate.creator_account_id:
@@ -215,7 +213,7 @@ def verified_grant_bindings(
 
     bridge_role = _bridge_role(membership.membership_roles)
     references = tuple(
-        selected[grant_type].reference_id for grant_type in REQUIRED_GRANT_TYPES
+        selected[grant_type].reference_id for grant_type in PROVISIONING_GRANT_TYPES
     )
     identity = AuthContext(
         principal_id=membership.subject,
@@ -235,7 +233,7 @@ def verified_grant_bindings(
         creator_account_id=creator_account_id,
         platform_creator_id=creator_account_id,
         grant_bundle_sha256=bundle_digest(
-            tuple(selected[grant_type] for grant_type in REQUIRED_GRANT_TYPES)
+            tuple(selected[grant_type] for grant_type in PROVISIONING_GRANT_TYPES)
         ),
     )
     return bindings, account, references
@@ -254,7 +252,7 @@ def _one_grant_per_required_type(
     grants: tuple[VerifiedGrantReference, ...],
 ) -> dict[str, VerifiedGrantReference]:
     selected: dict[str, VerifiedGrantReference] = {}
-    for grant_type in REQUIRED_GRANT_TYPES:
+    for grant_type in PROVISIONING_GRANT_TYPES:
         matches = [grant for grant in grants if grant.grant_type == grant_type]
         if not matches:
             raise FinalizationRefused("incomplete_grant_set")
@@ -275,12 +273,12 @@ def _digested_pairs(
 
     digests: dict[str, str] = {}
     for grant in grants:
-        if grant.grant_type not in REQUIRED_GRANT_TYPES:
+        if grant.grant_type not in PROVISIONING_GRANT_TYPES:
             raise FinalizationRefused("incoherent_grant_set")
         if grant.grant_type in digests:
             raise FinalizationRefused("ambiguous_grant_set")
         digests[grant.grant_type] = grant.grant_digest
-    if any(grant_type not in digests for grant_type in REQUIRED_GRANT_TYPES):
+    if any(grant_type not in digests for grant_type in PROVISIONING_GRANT_TYPES):
         raise FinalizationRefused("incomplete_grant_set")
     return tuple(sorted(digests.items()))
 
