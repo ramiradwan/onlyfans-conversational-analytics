@@ -57,8 +57,6 @@ function runGrantSeeder(authDatabasePath, { extraCurrentBinding = false } = {}) 
         AUTH_DATABASE_PATH: authDatabasePath,
         LOCAL_SESSION_BOOTSTRAP_TOKEN: 'e2e-grant-seeder-bootstrap-token-000000',
         LOCAL_PRINCIPAL_ID: 'e2e-local-principal',
-        LOCAL_CREATOR_ACCOUNT_ID: 'dev-creator-account',
-        LOCAL_PLATFORM_CREATOR_ID: 'e2e-local-platform-creator',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
