@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import ctypes
+import hashlib
+import json
 import os
 import re
 import secrets
@@ -26,7 +29,10 @@ from app.core.runtime_paths import (
     runtime_configuration_file,
     runtime_data_directory,
 )
-from app.packaged_entry import PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE
+from app.packaged_entry import (
+    PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE,
+    PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE,
+)
 from app.provisioning.app import PROVISIONING_HANDOFF_PATH, PROVISIONING_REDEEM_PATH
 
 
@@ -38,6 +44,11 @@ PROVISIONING_COMPLETE_EXIT_CODE = 75
 PROVISIONING_HANDOFF_PATH = PROVISIONING_HANDOFF_PATH
 PROVISIONING_REDEEM_PATH = PROVISIONING_REDEEM_PATH
 SESSION_COOKIE_NAME = "__Host-bridge_session"
+# The pinned `key` member of this manifest fixes the extension's identity, so the
+# unpacked installation and the store listing share one ID.
+EXTENSION_MANIFEST_FILE = (
+    Path(__file__).resolve().parents[1] / "extension" / "manifest.json"
+)
 _HANDOFF_CODE = re.compile(r"[A-Za-z0-9_-]{32,}")
 
 
@@ -389,6 +400,17 @@ def _response_detail(response: Any) -> str | None:
     return detail if isinstance(detail, str) else None
 
 
+def _extension_identity() -> str:
+    """Derive the extension ID Chrome assigns to the pinned manifest key.
+
+    The ID is the first 128 bits of the SHA-256 digest of the SPKI DER public
+    key, each hex digit rendered as the letter at that offset from ``a``.
+    """
+    manifest = json.loads(EXTENSION_MANIFEST_FILE.read_text(encoding="utf-8"))
+    digest = hashlib.sha256(base64.b64decode(manifest["key"], validate=True)).hexdigest()
+    return "".join(chr(ord("a") + int(nibble, 16)) for nibble in digest[:32])
+
+
 def _same_image(actual: Path, expected: Path) -> bool:
     actual_path = os.path.normcase(str(actual.resolve(strict=False)))
     expected_path = os.path.normcase(str(expected.resolve(strict=False)))
@@ -403,6 +425,9 @@ def _start_brain(configuration: LauncherConfiguration) -> subprocess.Popen[bytes
     if configuration.provisioning_handoff_token is not None:
         environment[PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE] = (
             configuration.provisioning_handoff_token
+        )
+        environment[PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE] = (
+            _extension_identity()
         )
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     return subprocess.Popen(

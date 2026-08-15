@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import os
+import re
 import socket
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,8 +25,13 @@ from app.launcher import (
     PROVISIONING_HANDOFF_PATH,
     PROVISIONING_REDEEM_PATH,
     WindowsPortOwnership,
+    _start_brain,
 )
 from app.core.runtime_paths import runtime_configuration_file
+from app.packaged_entry import (
+    PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE,
+    PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE,
+)
 
 
 @dataclass
@@ -326,6 +336,76 @@ def test_provisioning_completion_restarts_the_same_brain_in_runtime_mode(
         f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?code={'p' * 43}",
         target,
     ]
+
+
+def brain_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    provisioning_handoff_token: str | None,
+) -> dict[str, str]:
+    """Capture the child environment the production process starter builds.
+
+    Both provisioning variables are removed from the parent environment first, so
+    every captured value was set by the starter itself.
+    """
+    monkeypatch.delenv(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE, raising=False)
+    monkeypatch.delenv(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, raising=False)
+    captured: dict[str, dict[str, str]] = {}
+
+    def fake_popen(command: Any, **keywords: Any) -> FakeProcess:
+        captured["environment"] = keywords["env"]
+        return FakeProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    _start_brain(
+        LauncherConfiguration(
+            brain_command=(str((tmp_path / "Brain.exe").resolve()), "--brain"),
+            brain_image_path=(tmp_path / "Brain.exe").resolve(),
+            working_directory=tmp_path.resolve(),
+            data_directory=(tmp_path / "data").resolve(),
+            provisioning_handoff_token=provisioning_handoff_token,
+        )
+    )
+    return captured["environment"]
+
+
+def test_provisioning_brain_receives_the_handoff_token_and_an_extension_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provisioning = brain_environment(
+        tmp_path, monkeypatch, provisioning_handoff_token="t" * 32
+    )
+    runtime = brain_environment(tmp_path, monkeypatch, provisioning_handoff_token=None)
+
+    assert provisioning[PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE] == "t" * 32
+    assert (
+        re.fullmatch(
+            r"[a-p]{32}", provisioning[PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE]
+        )
+        is not None
+    )
+    assert PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE not in runtime
+    assert PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE not in runtime
+
+
+def test_provisioning_extension_identity_is_the_one_pinned_by_the_manifest_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_file = (
+        Path(__file__).resolve().parents[1] / "extension" / "manifest.json"
+    )
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    digest = hashlib.sha256(base64.b64decode(manifest["key"])).hexdigest()
+    pinned = "".join(chr(ord("a") + int(nibble, 16)) for nibble in digest[:32])
+
+    environment = brain_environment(
+        tmp_path, monkeypatch, provisioning_handoff_token="t" * 32
+    )
+
+    assert environment[PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE] == pinned
 
 
 @pytest.mark.parametrize(
