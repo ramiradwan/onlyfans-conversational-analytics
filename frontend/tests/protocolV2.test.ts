@@ -67,6 +67,23 @@ describe('Bridge protocol v2', () => {
     expect(isBrainToBridgeMessage(legacyReadiness)).toBe(false);
   });
 
+  it('accepts an agent.state describing an account that holds no configuration', () => {
+    const noConfiguration = fixture('agent.state');
+    noConfiguration.payload.status = 'disconnected';
+    noConfiguration.payload.agent_installation_id = null;
+    noConfiguration.payload.connection_id = null;
+    noConfiguration.payload.required_config_revision = null;
+    noConfiguration.payload.applied_config_revision = null;
+    noConfiguration.payload.last_heartbeat_at = null;
+    noConfiguration.payload.degraded_reason =
+      'No Agent configuration is required for this account';
+
+    const parsed = parseBrainToBridgeMessage(noConfiguration);
+    expect(parsed.type).toBe('agent.state');
+    if (parsed.type !== 'agent.state') return;
+    expect(parsed.payload.required_config_revision).toBeNull();
+  });
+
   it('accepts dimension-only next-revision deltas with the locked coverage vocabulary', () => {
     const snapshot = fixture('state.snapshot');
     const delta = {

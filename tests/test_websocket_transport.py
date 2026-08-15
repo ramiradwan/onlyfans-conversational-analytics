@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from datetime import timedelta
 from pathlib import Path
@@ -13,6 +14,15 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.core.config import Settings, settings
 from app.main import app
+from app.persistence.auth import (
+    AuthorizedAccountBinding,
+    InstallationKeyReference,
+    InstallationKeyReservation,
+    ProvisioningCandidate,
+    ProvisioningCandidateState,
+    SQLiteAuthenticationStore,
+    VerifiedGrantReference,
+)
 from app.transport import DEV_ACCOUNT_ID, DEV_AGENT_AUTH_TICKET, transport_manager
 from app.transport.manager import (
     HEARTBEAT_INTERVAL_SECONDS,
@@ -21,15 +31,114 @@ from app.transport.manager import (
     REQUIRED_CONFIG_REVISION,
     AuthenticationError,
     InMemoryTransportManager,
+    authorized_account_ids,
     utc_now,
 )
 
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
+AUTHORIZATION_GRANT_TYPES = (
+    "installation_grant",
+    "membership_snapshot",
+    "creator_account_binding",
+)
+INSTALLATION_ID = "transport-installation"
+ORGANIZATION_ID = "transport-organization"
+INSTALLATION_KEY_ID = "transport-installation-key"
+INSTALLATION_KEY_JKT = "transport-installation-key-thumbprint"
 
 
 def fixture(name: str) -> dict:
     return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def authorize_account_durably(path: Path, account_id: str) -> None:
+    """Record one account's durable authorization in a fresh store at `path`.
+
+    Writes what provisioning writes: an activated installation key, the grant
+    tuple the authorization rests on, the approved candidate, and the binding.
+    Grant validity is anchored to the current instant because eligibility is
+    resolved against the wall clock at the moment it is asked for.
+    """
+
+    now = utc_now()
+    store = SQLiteAuthenticationStore(path)
+    store.reserve_installation_key(
+        InstallationKeyReservation(
+            provider_name="test-provider",
+            provider_key_name="test-key",
+            algorithm="ES256",
+            created_at=now - timedelta(minutes=10),
+        )
+    )
+    store.activate_installation_key(
+        InstallationKeyReference(
+            provider_name="test-provider",
+            provider_key_name="test-key",
+            algorithm="ES256",
+            installation_key_id=INSTALLATION_KEY_ID,
+            installation_key_jkt=INSTALLATION_KEY_JKT,
+            public_key_jwk='{"kty":"EC"}',
+            created_at=now - timedelta(minutes=10),
+            activated_at=now - timedelta(minutes=9),
+        )
+    )
+    reference_ids: list[str] = []
+    for grant_type in AUTHORIZATION_GRANT_TYPES:
+        reference_id = f"{grant_type}-{account_id}"
+        membership = grant_type == "membership_snapshot"
+        store.record_verified_grant(
+            VerifiedGrantReference(
+                reference_id=reference_id,
+                grant_identifier=f"{reference_id}-identifier",
+                grant_type=grant_type,
+                grant_digest=hashlib.sha256(reference_id.encode()).hexdigest(),
+                issuer="https://identity.example",
+                subject="external-subject-1",
+                installation_id=INSTALLATION_ID,
+                creator_account_id=(
+                    account_id if grant_type == "creator_account_binding" else None
+                ),
+                valid_from=now - timedelta(hours=1),
+                expires_at=now + timedelta(hours=1),
+                verified_at=now - timedelta(minutes=5),
+                organization_id=ORGANIZATION_ID,
+                installation_key_id=INSTALLATION_KEY_ID,
+                installation_key_jkt=INSTALLATION_KEY_JKT,
+                membership_id=f"membership-{account_id}" if membership else None,
+                allowed_creator_account_ids=(account_id,) if membership else None,
+                membership_roles=("owner",) if membership else None,
+            )
+        )
+        reference_ids.append(reference_id)
+    association_request_id = f"association-{account_id}"
+    store.record_provisioning_candidate(
+        ProvisioningCandidate(
+            association_request_id=association_request_id,
+            installation_id=INSTALLATION_ID,
+            onboarding_transaction_id=f"onboarding-{account_id}",
+            organization_id=ORGANIZATION_ID,
+            creator_account_id=account_id,
+            state=ProvisioningCandidateState.PENDING,
+            requested_at=now - timedelta(minutes=3),
+        )
+    )
+    store.approve_provisioning_candidate(
+        association_request_id, resolved_at=now - timedelta(minutes=2)
+    )
+    store.record_authorized_account_binding(
+        AuthorizedAccountBinding(
+            creator_account_id=account_id,
+            installation_id=INSTALLATION_ID,
+            platform_creator_id=account_id,
+            association_request_id=association_request_id,
+            grant_bundle_sha256=hashlib.sha256(
+                "\n".join(sorted(reference_ids)).encode()
+            ).hexdigest(),
+            authorized_at=now - timedelta(minutes=1),
+            grant_reference_ids=tuple(reference_ids),
+        )
+    )
 
 
 def agent_handshake(socket) -> tuple[dict, dict]:
@@ -237,6 +346,44 @@ def test_bridge_bind_publishes_configuration_for_an_authorized_account(
         _, _, initial = bridge_handshake(bridge)
 
     assert initial[2]["payload"]["required_config_revision"] == REQUIRED_CONFIG_REVISION
+
+
+def test_a_durable_authorization_reaches_configuration_through_the_manager(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The manager hands the configuration authority its account resolver.
+
+    Nothing here reaches into the authority: the account is authorized only in
+    the durable record, and the development bootstrap account is withdrawn, so
+    the sole route from that record to a required revision is the resolver the
+    manager supplies at construction. `agent.state` therefore carries a
+    concrete revision instead of the null that describes an account holding no
+    configuration -- a description well formed enough to be reached whether or
+    not the resolver is wired, which is why the authorized case states it.
+    """
+
+    auth_database_path = tmp_path / "auth.sqlite3"
+    authorize_account_durably(auth_database_path, DEV_ACCOUNT_ID)
+    monkeypatch.setattr(settings, "auth_database_path", auth_database_path)
+    monkeypatch.setattr(
+        transport_manager.config_authority, "bootstrap_account_id", None
+    )
+    transport_manager.config_authority.repository.reset()
+
+    # The durable record resolves on its own, so a null revision below can only
+    # be the authority never consulting it.
+    assert authorized_account_ids() == frozenset({DEV_ACCOUNT_ID})
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws/bridge") as bridge:
+        _, _, initial = bridge_handshake(bridge)
+
+    agent_state = initial[2]["payload"]
+    assert agent_state["required_config_revision"] == REQUIRED_CONFIG_REVISION
+    assert (
+        transport_manager.required_config_document(DEV_ACCOUNT_ID).config_revision
+        == REQUIRED_CONFIG_REVISION
+    )
 
 
 def test_agent_drop_reconnects_with_new_connection_and_fence() -> None:
