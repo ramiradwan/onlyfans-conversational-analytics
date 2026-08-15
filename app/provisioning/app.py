@@ -18,9 +18,30 @@ from app.provisioning.session import (
 PROVISIONING_HANDOFF_PATH = "/api/v1/provisioning/handoff"
 PROVISIONING_REDEEM_PATH = "/provisioning/handoff"
 PROVISIONING_STATUS_PATH = "/api/v1/provisioning/status"
+PROVISIONING_CLAIM_PATH = "/api/v1/provisioning/claim"
 PROVISIONING_FINALIZE_PATH = "/api/v1/provisioning/finalize"
 
 BoundedIdentifier = Annotated[str, StringConstraints(min_length=1, max_length=200)]
+
+# Transport bound for the pasted field, stated here because this module imports
+# no runtime code. It is deliberately looser than the claim package's own
+# maximum so that an oversized package is refused by the decoder, which reports
+# a nonsecret reason, rather than by request validation.
+BoundedClaimPackage = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
+
+
+class ClaimSubmissionBody(BaseModel):
+    """Bounded provisioning-page body carrying one pasted claim package."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    package: BoundedClaimPackage
+
+
+class ClaimSubmission(Protocol):
+    """Seam to claim consumption: `None` on success, a nonsecret reason otherwise."""
+
+    def __call__(self, *, package: str) -> str | None: ...
 
 
 class FinalizationBody(BaseModel):
@@ -47,6 +68,7 @@ class FinalizeAction(Protocol):
 
 def create_provisioning_app(
     *,
+    claim_submission: ClaimSubmission,
     completion_ready: Callable[[], bool],
     finalize_action: FinalizeAction,
     launcher_handoff_token: str | None = None,
@@ -106,6 +128,23 @@ def create_provisioning_app(
                 background=BackgroundTask(request_completion_exit),
             )
         return JSONResponse({"state": "provisioning_ready"})
+
+    @application.post(PROVISIONING_CLAIM_PATH, include_in_schema=False)
+    async def submit_claim(request: Request, body: ClaimSubmissionBody) -> JSONResponse:
+        sessions.require_mutation(request)
+        # Surrounding whitespace is transport, not package: a pasted field can
+        # carry it and it cannot change the decoded object. Trimming here keeps
+        # the decoder byte-strict and gives every client the same entry point.
+        refusal = claim_submission(package=body.package.strip())
+        if refusal is not None:
+            return JSONResponse(
+                {"state": "provisioning_ready", "reason": refusal},
+                status_code=409,
+                headers={"Cache-Control": "no-store"},
+            )
+        return JSONResponse(
+            {"state": "installation_registered"}, headers={"Cache-Control": "no-store"}
+        )
 
     @application.post(PROVISIONING_FINALIZE_PATH, include_in_schema=False)
     async def finalize(request: Request, body: FinalizationBody) -> JSONResponse:
