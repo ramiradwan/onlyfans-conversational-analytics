@@ -423,7 +423,8 @@ export interface AgentStatePayload {
   status: 'connected' | 'stale' | 'disconnected';
   agent_installation_id: UUID | null;
   connection_id: UUID | null;
-  required_config_revision: string;
+  /** Null for an account that holds no Agent configuration. */
+  required_config_revision: string | null;
   applied_config_revision: string | null;
   required_history_settings_revision: number;
   applied_history_settings_revision: number | null;

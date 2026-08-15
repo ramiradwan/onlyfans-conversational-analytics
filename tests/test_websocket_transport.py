@@ -186,6 +186,59 @@ def test_agent_and_bridge_complete_role_specific_handshakes() -> None:
         assert initial[3]["payload"]["readiness"] == "unavailable"
 
 
+def test_bridge_binds_an_account_that_holds_no_agent_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An installation authorizing no account still completes a Bridge bind.
+
+    Zero authorized accounts is a state an installation activates in, so the
+    four initial frames must all be produced. `agent.state` describes the
+    absent configuration with a null required revision instead of failing the
+    socket after `bridge.session` already reported success.
+    """
+    monkeypatch.setattr(
+        transport_manager.config_authority, "_authorized_accounts", frozenset
+    )
+    monkeypatch.setattr(
+        transport_manager.config_authority, "bootstrap_account_id", None
+    )
+    transport_manager.config_authority.repository.reset()
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws/bridge") as bridge:
+        _, _, initial = bridge_handshake(bridge)
+
+    agent_state = initial[2]["payload"]
+    assert agent_state["required_config_revision"] is None
+    assert agent_state["applied_config_revision"] is None
+    assert agent_state["status"] == "disconnected"
+    assert (
+        agent_state["degraded_reason"]
+        == "No Agent configuration is required for this account"
+    )
+
+
+def test_bridge_bind_publishes_configuration_for_an_authorized_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Authorization recorded after start still reaches the bound socket."""
+    monkeypatch.setattr(
+        transport_manager.config_authority,
+        "_authorized_accounts",
+        lambda: frozenset({DEV_ACCOUNT_ID}),
+    )
+    monkeypatch.setattr(
+        transport_manager.config_authority, "bootstrap_account_id", None
+    )
+    transport_manager.config_authority.repository.reset()
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws/bridge") as bridge:
+        _, _, initial = bridge_handshake(bridge)
+
+    assert initial[2]["payload"]["required_config_revision"] == REQUIRED_CONFIG_REVISION
+
+
 def test_agent_drop_reconnects_with_new_connection_and_fence() -> None:
     client = TestClient(app)
     with client.websocket_connect("/ws/agent") as first:

@@ -13,8 +13,11 @@ import hashlib
 import hmac
 import json
 import secrets
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -31,8 +34,10 @@ from app.services.command_execution import (
     CommandRecord,
     CommandService,
 )
+from app.persistence.auth import SQLiteAuthenticationStore
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 from app.persistence.history import IngestResult, InvariantViolation, StreamKey
+from app.security.account_bindings import eligible_accounts
 from app.security.activation_gate import runtime_is_activated
 from app.utils.logger import logger
 
@@ -51,6 +56,30 @@ STATE_DELTA_FLUSH_SECONDS = 0.1
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@lru_cache(maxsize=4)
+def _authentication_store(path: str) -> SQLiteAuthenticationStore:
+    """Open one authentication store per path; opening it runs its migrations."""
+
+    return SQLiteAuthenticationStore(Path(path))
+
+
+def authorized_account_ids() -> frozenset[str]:
+    """Return the creator accounts this installation currently authorizes.
+
+    Resolved from the durable authorization records and current grant state, so
+    a lapsed or revoked authorization stops resolving. An installation with no
+    authorization, and one whose authentication store cannot be opened, both
+    resolve to the empty set.
+    """
+
+    try:
+        store = _authentication_store(str(settings.auth_database_path))
+        accounts = eligible_accounts(store, now=utc_now())
+    except (OSError, ValueError, sqlite3.Error):
+        return frozenset()
+    return frozenset(account.creator_account_id for account in accounts)
 
 
 @dataclass(slots=True)
@@ -129,7 +158,9 @@ class InMemoryTransportManager:
         self.projection = repositories.projection
         self.ingestion = repositories.ingestion
         self.projection_activation = repositories.projection_activation
-        self.config_authority = AgentConfigurationAuthority(repositories.configuration)
+        self.config_authority = AgentConfigurationAuthority(
+            repositories.configuration, authorized_accounts=authorized_account_ids
+        )
         self.commands = CommandService(repositories.commands)
         self.canonical_database = repositories.database
         self.projection_database = repositories.projection_database
@@ -919,6 +950,14 @@ class InMemoryTransportManager:
     def required_config_document(self, account_id: str):
         return self.config_authority.required_document(account_id)
 
+    def optional_required_config_revision(self, account_id: str) -> str | None:
+        """Return the required config revision, or `None` when there is none."""
+
+        try:
+            return self.required_config_document(account_id).config_revision
+        except LookupError:
+            return None
+
     async def observe_presence(
         self,
         lease: AgentLease,
@@ -1000,22 +1039,33 @@ class InMemoryTransportManager:
                 await self.broadcast_presence_state(account_id)
 
     def agent_state_payload(self, account_id: str) -> dict[str, Any]:
+        """Describe Agent state for one bound account.
+
+        An account the installation has not authorized holds no configuration,
+        which is an ordinary state rather than a failure. It is described with a
+        null required revision and a reason: an omitted frame is
+        indistinguishable to a client from a lost one.
+        """
+
         lease = self.active_agents.get(account_id)
         history_settings = self.history.history_settings(account_id)
-        if lease is None:
+        required_config_revision = self.optional_required_config_revision(account_id)
+        if lease is None or required_config_revision is None:
             return {
                 "creator_account_id": account_id,
                 "status": "disconnected",
                 "agent_installation_id": None,
                 "connection_id": None,
-                "required_config_revision": self.required_config_document(
-                    account_id
-                ).config_revision,
+                "required_config_revision": required_config_revision,
                 "applied_config_revision": None,
                 "required_history_settings_revision": int(history_settings["settings_revision"]),
                 "applied_history_settings_revision": history_settings["effective_settings_revision"],
                 "last_heartbeat_at": None,
-                "degraded_reason": "No active Agent lease",
+                "degraded_reason": (
+                    "No active Agent lease"
+                    if required_config_revision is not None
+                    else "No Agent configuration is required for this account"
+                ),
             }
         config_record = self.config_authority.installation(
             account_id, lease.agent_installation_id

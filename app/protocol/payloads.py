@@ -252,7 +252,9 @@ class AgentStatePayload(StrictModel):
     status: Literal["connected", "stale", "disconnected"]
     agent_installation_id: UUID | None
     connection_id: UUID | None
-    required_config_revision: NonEmptyString
+    # Null for an account that holds no Agent configuration, which is the state
+    # of an account this installation has not authorized.
+    required_config_revision: NonEmptyString | None
     applied_config_revision: str | None
     required_history_settings_revision: NonNegativeInt
     applied_history_settings_revision: NonNegativeInt | None

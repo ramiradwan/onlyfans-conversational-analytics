@@ -30,7 +30,7 @@ This document is a non-authoritative restatement for implementation readers. It 
 - Only the sender named in the matrix may originate a type. Brain never echoes an Agent type to Bridge; it validates the input and emits a Brain-owned consumer type.
 - Unknown, wrong-role, pre-handshake, conflicting-identity, or unsupported-version messages produce `protocol.error` when safe and close the socket when marked fatal. They are never generically republished.
 - Durable Agent operations use acknowledgments and deduplication. Bridge state uses snapshot plus revision-gap recovery. Presence and heartbeats use expiry rather than replay.
-- Brain sends `bridge.session`, then the initial `state.snapshot`, `presence.state`, `agent.state`, and `system.state` for the bound account.
+- Brain sends `bridge.session`, then the initial `state.snapshot`, `presence.state`, `agent.state`, and `system.state` for the bound account. An account that holds no Agent configuration is described by a null required revision, not by omitting the frame: Bridge cannot distinguish an omitted frame from a lost one.
 - Bridge displays command state but never originates `command.request`, `command.execute`, or an equivalent command message, and it has no direct Agent data or command channel.
 
 ## Canonical communication matrix

@@ -8,7 +8,7 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import AbstractSet, Any, Callable, Iterable
 from uuid import UUID
 
 from app.core.config import settings
@@ -269,6 +269,9 @@ class AgentConfigurationAuthority:
 
     `bootstrap_account_id` is `None` until an authorized account is supplied; an
     installation with no authorized account holds no bootstrap configuration.
+    `authorized_accounts` reports the accounts an installation authorizes at the
+    moment it is asked, which is how an account authorized after construction
+    reaches configuration.
     """
 
     def __init__(
@@ -276,9 +279,11 @@ class AgentConfigurationAuthority:
         repository: AgentConfigRepository,
         *,
         bootstrap_account_id: str | None = None,
+        authorized_accounts: Callable[[], AbstractSet[str]] | None = None,
     ) -> None:
         self.repository = repository
         self._publish_lock = asyncio.Lock()
+        self._authorized_accounts = authorized_accounts
         # The authorized account is supplied by the caller. No account is derived
         # from installation identity, and an installation may authorize none.
         if bootstrap_account_id is None and _development_bootstrap_allowed():
@@ -291,6 +296,16 @@ class AgentConfigurationAuthority:
         account_id = self.bootstrap_account_id
         if account_id is None:
             raise RuntimeError("No account is authorized for Agent configuration")
+        self.bootstrap_account(account_id)
+
+    def bootstrap_account(self, account_id: str) -> None:
+        """Publish the bootstrap document for one account and require it.
+
+        Idempotent: an account that already holds the bootstrap document keeps
+        it, and a persisted document whose content differs is a hard error
+        rather than a silent replacement.
+        """
+
         current = build_config_document(
             creator_account_id=account_id,
             config_revision=BOOTSTRAP_CONFIG_REVISION,
@@ -327,6 +342,22 @@ class AgentConfigurationAuthority:
             self.bootstrap()
 
     def required_document(self, creator_account_id: str) -> AgentConfigDocumentResponse:
+        """Return the required document, publishing one for a new authorization.
+
+        An account is authorized through a durable record this authority does
+        not own and can gain while the runtime is running, so its bootstrap
+        document is published on first use. The authorization is read only while
+        the account holds no configuration, which keeps the steady state off it.
+        """
+
+        try:
+            return self.repository.required_document(creator_account_id)
+        except LookupError:
+            if self._authorized_accounts is None:
+                raise
+            if creator_account_id not in self._authorized_accounts():
+                raise
+        self.bootstrap_account(creator_account_id)
         return self.repository.required_document(creator_account_id)
 
     async def publish(

@@ -313,7 +313,7 @@ const messagePayloadValidators: Record<string, Validator> = {
     status: literal('connected', 'stale', 'disconnected'),
     agent_installation_id: nullable(uuid),
     connection_id: nullable(uuid),
-    required_config_revision: nonEmptyString,
+    required_config_revision: nullable(nonEmptyString),
     applied_config_revision: nullable(string),
     required_history_settings_revision: integer(0),
     applied_history_settings_revision: nullable(integer(0)),
