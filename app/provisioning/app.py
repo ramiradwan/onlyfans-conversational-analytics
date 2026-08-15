@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Annotated, Callable, Protocol
 
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel, ConfigDict, StringConstraints
 from starlette.background import BackgroundTask
 
 from app.provisioning.session import (
@@ -17,17 +18,38 @@ from app.provisioning.session import (
 PROVISIONING_HANDOFF_PATH = "/api/v1/provisioning/handoff"
 PROVISIONING_REDEEM_PATH = "/provisioning/handoff"
 PROVISIONING_STATUS_PATH = "/api/v1/provisioning/status"
+PROVISIONING_FINALIZE_PATH = "/api/v1/provisioning/finalize"
+
+BoundedIdentifier = Annotated[str, StringConstraints(min_length=1, max_length=200)]
 
 
-def coherent_grant_tuple_exists() -> bool:
-    """Fail closed until the later durable grant resolver is installed."""
-    return False
+class FinalizationBody(BaseModel):
+    """Bounded provisioning-page body addressing one approved association."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    association_request_id: BoundedIdentifier
+    detected_creator_account_id: BoundedIdentifier
+    reported_platform_creator_id: BoundedIdentifier | None = None
+
+
+class FinalizeAction(Protocol):
+    """Seam to finalization: `None` on success, a nonsecret reason on refusal."""
+
+    def __call__(
+        self,
+        *,
+        association_request_id: str,
+        detected_creator_account_id: str,
+        reported_platform_creator_id: str | None,
+    ) -> str | None: ...
 
 
 def create_provisioning_app(
     *,
+    completion_ready: Callable[[], bool],
+    finalize_action: FinalizeAction,
     launcher_handoff_token: str | None = None,
-    completion_ready: Callable[[], bool] = coherent_grant_tuple_exists,
     completion_exit: Callable[[], None] | None = None,
     session_manager: ProvisioningSessionManager | None = None,
 ) -> FastAPI:
@@ -84,6 +106,24 @@ def create_provisioning_app(
                 background=BackgroundTask(request_completion_exit),
             )
         return JSONResponse({"state": "provisioning_ready"})
+
+    @application.post(PROVISIONING_FINALIZE_PATH, include_in_schema=False)
+    async def finalize(request: Request, body: FinalizationBody) -> JSONResponse:
+        sessions.require_mutation(request)
+        refusal = finalize_action(
+            association_request_id=body.association_request_id,
+            detected_creator_account_id=body.detected_creator_account_id,
+            reported_platform_creator_id=body.reported_platform_creator_id,
+        )
+        if refusal is not None:
+            return JSONResponse(
+                {"state": "provisioning_ready", "reason": refusal},
+                status_code=409,
+                headers={"Cache-Control": "no-store"},
+            )
+        return JSONResponse(
+            {"state": "configured_restart"}, headers={"Cache-Control": "no-store"}
+        )
 
     @application.post("/api/v1/provisioning/retry", include_in_schema=False)
     async def retry(request: Request) -> JSONResponse:

@@ -11,6 +11,7 @@ from app.core.runtime_paths import runtime_configuration_file
 
 
 PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HANDOFF_TOKEN"
+PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_EXTENSION_ID"
 
 
 def select_brain_application(
@@ -24,8 +25,24 @@ def select_brain_application(
 
         return app
     from app.provisioning.app import create_provisioning_app
+    from app.provisioning.completion import (
+        durable_authentication_store,
+        durable_completion_reader,
+        durable_finalize_action,
+    )
 
+    open_store = durable_authentication_store(data_directory)
     return create_provisioning_app(
+        completion_ready=durable_completion_reader(
+            open_store, data_directory=data_directory
+        ),
+        finalize_action=durable_finalize_action(
+            open_store,
+            extension_id=os.environ.get(
+                PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""
+            ),
+            data_directory=data_directory,
+        ),
         launcher_handoff_token=os.environ.get(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE),
         completion_exit=provisioning_completion_exit,
     )
