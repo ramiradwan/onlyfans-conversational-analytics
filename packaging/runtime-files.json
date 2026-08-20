@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "required_files": [
+    "Brain.exe",
+    "_internal/app/templates/index.html",
+    "_internal/contracts/manifest.json",
+    "_internal/contracts/consumer-pin.json",
+    "THIRD_PARTY_NOTICES.md",
+    "release-manifest.json"
+  ],
+  "required_directories": [
+    "_internal/app/static",
+    "_internal/app/static/dist",
+    "_internal/contracts",
+    "Agent"
+  ],
+  "frontend": {
+    "dist_path": "_internal/app/static/dist",
+    "manifest_paths": ["manifest.json", ".vite/manifest.json"]
+  },
+  "sql_catalogs": [
+    {
+      "path": "_internal/app/persistence/sql",
+      "files": {
+        "0001_canonical_plane.sql": "486bebc7319989ae4300367ccc5b2f8498c79483199ea293311e1469dd0db33d",
+        "0002_history_acquisition.sql": "fa3fc1ec8e92d50a2c1ed015c9177080ef167ea40be44b5bb592862fc4f2b0a4",
+        "0003_analytics_projection_activation.sql": "5b36de7eef59fbab16d5c4f5549badb8a803fc18022357f5ba87d74e89c2e3ad",
+        "0004_analytics_projection_publication_identity.sql": "a10bcccdbec787fad1bb0713b02fa845dc0171b16c951ed9612ddbe186f8fd18",
+        "0005_analytics_projection_writer_capability.sql": "237a12a0a164a5eb30eb772c12050b738b5abb2a834e3c7762d1ad5d11dae93b",
+        "0006_launcher_session_handoff.sql": "73949dc9a268d4e887ae72175d36ba69c1c741fa27725919ef67bbf93265df42"
+      }
+    },
+    {
+      "path": "_internal/app/persistence/auth_sql",
+      "files": {
+        "0001_local_authentication.sql": "65a3fbad0c40debe583f381b2642a989884546527f587cd010b5110bc91df944",
+        "0002_installation_key_reference.sql": "818dd485a081e4a2c626aa92e38577053468a58a43a01548f8a52bbb0485ce8e",
+        "0003_authorization_epoch.sql": "d5ae6519b887c10d41a152ed023919da8f3594c33bcec4e49649c02a92fd9bf5",
+        "0004_grant_refresh_context.sql": "bdc059fbe29de6866c369c575b140e53f0edcd7d8365ea92cbcbb07d44868de9",
+        "0005_membership_roles.sql": "0c6b4257735a72eb5941f24b8b2d7d732dd20bd1da74a6ba6b6980622bbe3f48",
+        "0006_provisioning_state.sql": "60c25de7e57d1229ad288300833454e31dec385cf53d7c51cf3dc8d6c9bc51fc",
+        "0007_authorized_account_bindings.sql": "14be709e2f7a817ffcab3821f32ffba64a51d42e6876bc5a6d566a9c6f7afae3",
+        "0008_claim_submissions.sql": "7654cd89756af28b33e155ba9c115f2b53fa76cc13995b1568a51df25fb86618"
+      }
+    },
+    {
+      "path": "_internal/app/persistence/projection_sql",
+      "files": {
+        "0001_read_models.sql": "02f017dec7473c4b3dd975be0f7d51bd8df85ae91845e43769908b06b7091d9b"
+      }
+    },
+    {
+      "path": "_internal/app/analytics/sql",
+      "files": {
+        "0001_projection_store.sql": "4f9e6a5792d5c6de1a95ffc9fbe71ad298870cfe6d82ff06755af6c77fb6acc3",
+        "0002_generation_lifecycle.sql": "d7fa1c72193d22feb2e15a85ef1d03f54088dd21d02588886546e0340be41ada",
+        "0003_opaque_graph_contract.sql": "ef3ab0d86ef0c6f3c695010a023364f98ca07c9e1d6878e2db0beb4b3484e3f5",
+        "0004_topic_property_pair.sql": "9bd27a1c33e50bac50a09d097e6707c9e1cd219760cb59a7b9ff8a42f11a47cb"
+      }
+    }
+  ],
+  "contracts": {
+    "path": "_internal/contracts",
+    "manifest_sha256": "0a2c6cdcc5bf62fea690ac912be79952e97261db860d8086ce22bf112c05041c",
+    "consumer_pin_sha256": "c9f7bf3eecd1081bcc70aff2ec6eaa6b6fa7a8f5c63dba717d9a1d3ba0918c71"
+  },
+  "byte_preserved_paths": [
+    "_internal/app/persistence/sql/**",
+    "_internal/app/persistence/auth_sql/**",
+    "_internal/app/persistence/projection_sql/**",
+    "_internal/app/analytics/sql/**",
+    "_internal/contracts/**"
+  ],
+  "forbidden_paths": [
+    "_internal/app/.env",
+    "_internal/app/.env.example",
+    "_internal/.env",
+    "_internal/.env.example",
+    "_internal/**/runtime.env",
+    "_internal/frontend/**",
+    "_internal/extension/**",
+    "_internal/tests/**",
+    "_internal/tools/**",
+    "_internal/requirements-dev.txt",
+    "_internal/**/node.exe",
+    "_internal/**/npm.cmd",
+    "_internal/**/npx.cmd",
+    "_internal/**/vite.cmd",
+    "app/.env",
+    "app/.env.example",
+    "frontend/**",
+    "extension/**",
+    "tests/**",
+    "tools/**",
+    "requirements-dev.txt"
+  ]
+}
