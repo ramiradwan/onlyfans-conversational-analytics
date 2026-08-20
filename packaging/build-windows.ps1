@@ -24,7 +24,13 @@ param(
 
     # Optional explicit Inno Setup compiler. When omitted, discovery runs
     # only after the staged artifact has passed every release gate.
-    [string] $InnoSetupCompiler = ""
+    [string] $InnoSetupCompiler = "",
+
+    # Release builds may proceed only when CI has supplied the signing
+    # configuration marker. This unit deliberately does not handle signing
+    # material or invoke a signing tool.
+    [switch] $ReleaseMode,
+    [string] $SigningConfiguration = $env:WINDOWS_SIGNING_CONFIGURATION
 )
 
 Set-StrictMode -Version Latest
@@ -41,6 +47,20 @@ $RuntimePolicyPath = Join-Path $ProjectRoot "packaging\runtime-files.json"
 $InnoScriptPath = Join-Path $ProjectRoot "packaging\inno\brain.iss"
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
+
+function Assert-ReleaseSigningConfiguration {
+    param(
+        [switch] $ReleaseMode,
+        [string] $SigningConfiguration
+    )
+
+    if (-not $ReleaseMode) {
+        return
+    }
+    if ([string]::IsNullOrWhiteSpace($SigningConfiguration)) {
+        throw "Release mode requires signing configuration: WINDOWS_SIGNING_CONFIGURATION is not set."
+    }
+}
 
 if (-not (Test-Path -LiteralPath $BuildPython -PathType Leaf)) {
     throw "Build Python does not exist: $BuildPython"
@@ -60,6 +80,8 @@ if ($OutputRoot -eq $ProjectRoot -or $OutputRoot.StartsWith($ProjectRoot + [IO.P
 if (Test-Path -LiteralPath $OutputRoot) {
     throw "Build output directory already exists; choose a fresh path: $OutputRoot"
 }
+
+Assert-ReleaseSigningConfiguration -ReleaseMode:$ReleaseMode -SigningConfiguration $SigningConfiguration
 
 & $BuildPython -c "import struct, sys; sys.exit(0 if struct.calcsize('P') == 8 else 1)"
 if ($LASTEXITCODE -ne 0) {

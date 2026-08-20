@@ -1,0 +1,56 @@
+name: Windows package
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+jobs:
+  windows-package:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            packaging/requirements-build.txt
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+
+      - name: Provision Inno Setup compiler
+        run: choco install innosetup --yes --no-progress
+
+      - name: Create isolated build environment
+        run: |
+          python -m venv .build-venv
+          .\.build-venv\Scripts\python.exe -m pip install -r requirements.txt -r packaging/requirements-build.txt
+
+      - name: Build release package
+        env:
+          WINDOWS_SIGNING_CONFIGURATION: ${{ secrets.WINDOWS_SIGNING_CONFIGURATION }}
+        run: |
+          .\packaging\build-windows.ps1 `
+            -BuildPython .\.build-venv\Scripts\python.exe `
+            -OutputRoot "$env:RUNNER_TEMP\windows-package" `
+            -ReleaseMode
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-package-${{ github.ref_name }}
+          path: |
+            ${{ runner.temp }}\windows-package\installer\
+            ${{ runner.temp }}\windows-package\dist\Brain\sha256sums.txt

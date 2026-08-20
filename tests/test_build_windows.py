@@ -62,14 +62,52 @@ for relative in (
     return command
 
 
+def _write_inno_setup_standin(tmp_path: Path) -> Path:
+    """Provide a compiler seam that emits the installer named by the build script."""
+
+    standin = tmp_path / "inno_setup_standin.py"
+    standin.write_text(
+        """
+import sys
+from pathlib import Path
+
+arguments = sys.argv[1:]
+output = Path(
+    next(
+        argument.split("=", 1)[1]
+        for argument in arguments
+        if argument.startswith("/DOutputRoot=")
+    )
+)
+version = next(
+    argument.split("=", 1)[1]
+    for argument in arguments
+    if argument.startswith("/DAppVersion=")
+)
+output.mkdir(parents=True, exist_ok=True)
+(output / f"OnlyFans-Conversational-Analytics-Setup-{version}-x64.exe").write_bytes(b"installer")
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    command = tmp_path / "iscc.cmd"
+    command.write_text(
+        f'@echo off\r\n"{sys.executable}" "{standin}" %*\r\n', encoding="ascii"
+    )
+    return command
+
+
 def _run_build(
     script: Path,
     pyinstaller: Path,
     output: Path,
     *,
     test_injection: str = "DevelopmentConfiguration",
+    release_mode: bool = False,
+    inno_setup_compiler: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     environment = os.environ | {"BRAIN_PROJECT_ROOT": str(ROOT)}
+    environment.pop("WINDOWS_SIGNING_CONFIGURATION", None)
     command = [
         "powershell.exe",
         "-NoProfile",
@@ -85,6 +123,10 @@ def _run_build(
         str(output),
         "-SkipAssetBuild",
     ]
+    if release_mode:
+        command.append("-ReleaseMode")
+    if inno_setup_compiler is not None:
+        command.extend(("-InnoSetupCompiler", str(inno_setup_compiler)))
     if test_injection:
         command.extend(("-TestInjection", test_injection))
     return subprocess.run(
@@ -95,6 +137,118 @@ def _run_build(
         text=True,
         check=False,
     )
+
+
+def _assert_release_refuses_unsigned(result: subprocess.CompletedProcess[str]) -> None:
+    assert result.returncode == 1, (
+        "release mode must refuse a build without signing configuration"
+    )
+    assert "WINDOWS_SIGNING_CONFIGURATION is not set" in result.stdout + result.stderr
+
+
+def _assert_unsigned_engineering_build_succeeds(
+    result: subprocess.CompletedProcess[str], output: Path
+) -> None:
+    assert result.returncode == 0, (
+        "engineering mode must permit a build without signing configuration"
+    )
+    assert (output / "installer").is_dir()
+
+
+def test_release_mode_refuses_unsigned_build_and_is_load_bearing(
+    tmp_path: Path,
+) -> None:
+    """Changing the missing-signing failure to a warning permits the same release build."""
+
+    pyinstaller = _write_pyinstaller_standin(tmp_path)
+    compiler = _write_inno_setup_standin(tmp_path)
+
+    rejected_output = tmp_path / "release-rejected"
+    rejected = _run_build(
+        BUILD_SCRIPT,
+        pyinstaller,
+        rejected_output,
+        test_injection="",
+        release_mode=True,
+        inno_setup_compiler=compiler,
+    )
+
+    _assert_release_refuses_unsigned(rejected)
+    assert not (rejected_output / "installer").exists()
+
+    source = BUILD_SCRIPT.read_text(encoding="utf-8")
+    failure = (
+        'throw "Release mode requires signing configuration: '
+        'WINDOWS_SIGNING_CONFIGURATION is not set."'
+    )
+    warning = (
+        'Write-Warning "Release mode requires signing configuration: '
+        'WINDOWS_SIGNING_CONFIGURATION is not set."\n        return'
+    )
+    mutated = source.replace(failure, warning, 1)
+    assert mutated != source, "release falsifier must replace the gate failure"
+    warning_only_script = tmp_path / "build-windows-signing-warning.ps1"
+    warning_only_script.write_text(mutated, encoding="utf-8")
+
+    permitted_output = tmp_path / "release-warning-only"
+    permitted = _run_build(
+        warning_only_script,
+        pyinstaller,
+        permitted_output,
+        test_injection="",
+        release_mode=True,
+        inno_setup_compiler=compiler,
+    )
+
+    with pytest.raises(AssertionError, match="release mode must refuse"):
+        _assert_release_refuses_unsigned(permitted)
+    assert permitted.returncode == 0, permitted.stdout + permitted.stderr
+    assert (permitted_output / "installer").is_dir()
+
+
+def test_engineering_build_remains_unsigned_and_is_load_bearing(
+    tmp_path: Path,
+) -> None:
+    """Making the release-only condition unconditional rejects engineering builds."""
+
+    pyinstaller = _write_pyinstaller_standin(tmp_path)
+    compiler = _write_inno_setup_standin(tmp_path)
+
+    engineering_output = tmp_path / "engineering"
+    engineering = _run_build(
+        BUILD_SCRIPT,
+        pyinstaller,
+        engineering_output,
+        test_injection="",
+        inno_setup_compiler=compiler,
+    )
+
+    _assert_unsigned_engineering_build_succeeds(engineering, engineering_output)
+
+    source = BUILD_SCRIPT.read_text(encoding="utf-8")
+    release_only = "if (-not $ReleaseMode) {\n        return\n    }"
+    unconditional = "if ($false) {\n        return\n    }"
+    mutated = source.replace(release_only, unconditional, 1)
+    assert mutated != source, (
+        "engineering falsifier must make the release gate unconditional"
+    )
+    unconditional_script = tmp_path / "build-windows-unconditional-signing.ps1"
+    unconditional_script.write_text(mutated, encoding="utf-8")
+
+    rejected_output = tmp_path / "engineering-rejected"
+    rejected = _run_build(
+        unconditional_script,
+        pyinstaller,
+        rejected_output,
+        test_injection="",
+        inno_setup_compiler=compiler,
+    )
+
+    with pytest.raises(AssertionError, match="engineering mode must permit"):
+        _assert_unsigned_engineering_build_succeeds(rejected, rejected_output)
+    assert rejected.returncode == 1, rejected.stdout + rejected.stderr
+    assert "WINDOWS_SIGNING_CONFIGURATION is not set" in rejected.stdout + rejected.stderr
+    assert not (tmp_path / "engineering-rejected" / "installer").exists()
 
 
 def test_policy_gate_rejects_development_configuration_and_is_load_bearing(
