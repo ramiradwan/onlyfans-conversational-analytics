@@ -69,6 +69,7 @@ def select_brain_application(
             ),
             data_directory=data_directory,
         ),
+        extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""),
         launcher_handoff_token=os.environ.get(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE),
         completion_exit=provisioning_completion_exit,
     )

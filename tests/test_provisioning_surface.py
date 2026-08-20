@@ -13,6 +13,7 @@ from app.provisioning.app import (
     PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH,
     PROVISIONING_CREATOR_ASSOCIATION_PATH,
     PROVISIONING_FINALIZE_PATH,
+    PROVISIONING_SCRIPT_PATH,
     PROVISIONING_STATUS_PATH,
     create_provisioning_app,
 )
@@ -24,6 +25,7 @@ from app.provisioning.session import (
 
 
 HANDOFF_TOKEN = "t" * 32
+EXTENSION_ID = "lfiompogjmmgnbkacdnikbfoihmlloda"
 ASSOCIATION_REQUEST_ID = "association-1"
 ACCOUNT_ID = "creator-account-1"
 REPORTED_PLATFORM_ID = "platform-creator-9999"
@@ -108,6 +110,7 @@ def provisioning_app(
     completion_ready: Any = lambda: False,
     finalize_action: Any = None,
     completion_exit: Any = None,
+    extension_id: str | None = EXTENSION_ID,
 ):
     return create_provisioning_app(
         claim_submission=claim_submission or RecordingClaimSubmission(),
@@ -119,6 +122,7 @@ def provisioning_app(
         ),
         completion_ready=completion_ready,
         finalize_action=finalize_action or RecordingFinalizeAction(),
+        extension_id=extension_id,
         launcher_handoff_token=HANDOFF_TOKEN,
         completion_exit=completion_exit,
     )
@@ -156,6 +160,7 @@ def test_provisioning_app_exposes_no_runtime_route() -> None:
         ("/api/v1/provisioning/handoff", ("POST",)),
         ("/provisioning/handoff", ("GET",)),
         ("/provisioning", ("GET",)),
+        ("/provisioning/provisioning.js", ("GET",)),
         ("/api/v1/provisioning/status", ("GET",)),
         ("/api/v1/provisioning/claim", ("POST",)),
         ("/api/v1/provisioning/creator-association", ("POST",)),
@@ -164,6 +169,42 @@ def test_provisioning_app_exposes_no_runtime_route() -> None:
         ("/api/v1/provisioning/retry", ("POST",)),
     }
     assert not any(isinstance(route, WebSocketRoute) for route in application.routes)
+
+
+def test_shell_serves_module_relative_provisioning_document_and_script() -> None:
+    application = provisioning_app()
+    client, cookie, _ = bounded_session(application)
+
+    shell = client.get("/provisioning", headers=cookie)
+    script = client.get(PROVISIONING_SCRIPT_PATH, headers=cookie)
+
+    assert shell.status_code == 200
+    assert f'data-provisioning-extension-id="{EXTENSION_ID}"' in shell.text
+    assert 'src="/provisioning/provisioning.js"' in shell.text
+    assert script.status_code == 200
+    assert script.headers["content-type"].startswith("application/javascript")
+    assert "createProvisioningController" in script.text
+
+
+@pytest.mark.parametrize("extension_id", [None, "wrong", "q" * 32])
+def test_shell_with_invalid_configured_extension_id_exposes_no_extension_target(
+    extension_id: str | None,
+) -> None:
+    application = provisioning_app(extension_id=extension_id)
+    client, cookie, _ = bounded_session(application)
+
+    shell = client.get("/provisioning", headers=cookie)
+
+    assert 'data-provisioning-extension-id=""' in shell.text
+
+
+def test_provisioning_shell_refuses_a_wrong_host() -> None:
+    application = provisioning_app()
+    client, cookie, _ = bounded_session(application)
+
+    response = client.get("/provisioning", headers={**cookie, "Host": "wrong.localhost"})
+
+    assert response.status_code == 421
 
 
 def test_ready_provisioning_requests_distinguished_restart() -> None:
@@ -316,6 +357,24 @@ def test_creator_association_hands_only_the_detected_account_to_its_action() -> 
     ]
 
 
+def test_a_refused_creator_association_reports_its_nonsecret_reason() -> None:
+    action = RecordingCreatorAssociationInitiation(refusal="account_already_bound")
+    application = provisioning_app(creator_association_initiation=action)
+    client, cookie, token = bounded_session(application)
+
+    response = client.post(
+        PROVISIONING_CREATOR_ASSOCIATION_PATH,
+        json={"detected_creator_account_id": ACCOUNT_ID},
+        headers={**cookie, "Origin": PROVISIONING_ORIGIN, PROVISIONING_CSRF_HEADER: token},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "state": "provisioning_ready",
+        "reason": "account_already_bound",
+    }
+
+
 def test_creator_binding_acquisition_has_no_caller_supplied_coordinates() -> None:
     action = RecordingCreatorBindingAcquisition()
     application = provisioning_app(creator_binding_acquisition=action)
@@ -333,6 +392,24 @@ def test_creator_binding_acquisition_has_no_caller_supplied_coordinates() -> Non
         "status": "approved",
     }
     assert action.calls == 1
+
+
+def test_a_refused_creator_binding_acquisition_reports_its_nonsecret_reason() -> None:
+    action = RecordingCreatorBindingAcquisition(refusal="approval_pending")
+    application = provisioning_app(creator_binding_acquisition=action)
+    client, cookie, token = bounded_session(application)
+
+    response = client.post(
+        PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH,
+        json={},
+        headers={**cookie, "Origin": PROVISIONING_ORIGIN, PROVISIONING_CSRF_HEADER: token},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "state": "provisioning_ready",
+        "reason": "approval_pending",
+    }
 
 
 def test_creator_binding_acquisition_rejects_caller_coordinates() -> None:

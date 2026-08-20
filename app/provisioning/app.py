@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import html
+import re
+from pathlib import Path
 from typing import Annotated, Callable, Protocol
 
 from fastapi import FastAPI, Header, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from starlette.background import BackgroundTask
 
@@ -24,6 +27,12 @@ PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH = (
     "/api/v1/provisioning/creator-association/acquire"
 )
 PROVISIONING_FINALIZE_PATH = "/api/v1/provisioning/finalize"
+PROVISIONING_SCRIPT_PATH = "/provisioning/provisioning.js"
+
+_MODULE_DIRECTORY = Path(__file__).parent
+_SHELL_TEMPLATE = _MODULE_DIRECTORY / "provisioning.html"
+_SCRIPT_ASSET = _MODULE_DIRECTORY / "provisioning.js"
+_EXTENSION_ID_PATTERN = re.compile(r"[a-p]{32}")
 
 BoundedIdentifier = Annotated[str, StringConstraints(min_length=1, max_length=200)]
 
@@ -117,6 +126,7 @@ def create_provisioning_app(
     creator_binding_acquisition: CreatorBindingAcquisition,
     completion_ready: Callable[[], bool],
     finalize_action: FinalizeAction,
+    extension_id: str | None = None,
     launcher_handoff_token: str | None = None,
     completion_exit: Callable[[], None] | None = None,
     session_manager: ProvisioningSessionManager | None = None,
@@ -124,6 +134,13 @@ def create_provisioning_app(
     """Build the isolated provisioning surface without importing runtime modules."""
     sessions = session_manager or ProvisioningSessionManager(launcher_handoff_token)
     application = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+
+    def provisioned_extension_id() -> str:
+        """Return only a locally valid configured Chrome extension identifier."""
+
+        if extension_id is None or _EXTENSION_ID_PATTERN.fullmatch(extension_id) is None:
+            return ""
+        return extension_id
 
     @application.get("/health", include_in_schema=False)
     async def health() -> dict[str, str]:
@@ -154,9 +171,24 @@ def create_provisioning_app(
     @application.get("/provisioning", include_in_schema=False)
     async def shell(request: Request) -> HTMLResponse:
         session = sessions.require_session(request)
+        document = _SHELL_TEMPLATE.read_text(encoding="utf-8")
+        document = document.replace(
+            "{{PROVISIONING_CSRF}}", html.escape(session.csrf_token, quote=True)
+        ).replace(
+            "{{PROVISIONING_EXTENSION_ID}}",
+            html.escape(provisioned_extension_id(), quote=True),
+        )
         return HTMLResponse(
-            "<main data-provisioning-csrf=\"%s\">Provisioning</main>"
-            % session.csrf_token,
+            document,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @application.get(PROVISIONING_SCRIPT_PATH, include_in_schema=False)
+    async def script(request: Request) -> Response:
+        sessions.require_session(request)
+        return Response(
+            _SCRIPT_ASSET.read_text(encoding="utf-8"),
+            media_type="application/javascript",
             headers={"Cache-Control": "no-store"},
         )
 

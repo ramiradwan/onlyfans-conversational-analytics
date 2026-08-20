@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bridge provisioning</title>
+  </head>
+  <body>
+    <main
+      data-provisioning-csrf="{{PROVISIONING_CSRF}}"
+      data-provisioning-extension-id="{{PROVISIONING_EXTENSION_ID}}"
+    >
+      <h1>Configure Bridge</h1>
+      <p id="provisioning-status" role="status" aria-live="polite"></p>
+
+      <section aria-labelledby="claim-heading">
+        <h2 id="claim-heading">1. Register this installation</h2>
+        <form id="claim-form">
+          <label for="claim-package">Installation package</label>
+          <textarea id="claim-package" name="package" required></textarea>
+          <button type="submit">Register installation</button>
+        </form>
+      </section>
+
+      <section aria-labelledby="identity-heading">
+        <h2 id="identity-heading">2. Confirm the signed-in creator account</h2>
+        <p id="identity-status" role="status" aria-live="polite"></p>
+        <p>Account to associate: <output id="detected-identity">None detected</output></p>
+        <button id="refresh-identity" type="button">Check extension again</button>
+        <button id="confirm-identity" type="button" disabled>Confirm this account</button>
+      </section>
+
+      <section aria-labelledby="binding-heading">
+        <h2 id="binding-heading">3. Acquire association approval</h2>
+        <button id="acquire-association" type="button" disabled>Acquire approval</button>
+      </section>
+
+      <section aria-labelledby="finalize-heading">
+        <h2 id="finalize-heading">4. Finish configuration</h2>
+        <button id="finalize-provisioning" type="button" disabled>Finish configuration</button>
+      </section>
+    </main>
+    <script type="module" src="/provisioning/provisioning.js"></script>
+  </body>
+</html>

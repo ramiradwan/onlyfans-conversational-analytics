@@ -65,6 +65,9 @@ jobs:
       - name: Test extension
         run: npm test --prefix extension
 
+      - name: Test provisioning page module
+        run: node --test app/provisioning/provisioning.test.mjs
+
       - name: Build and audit deterministic extension artifact
         run: |
           npm run build --prefix extension
