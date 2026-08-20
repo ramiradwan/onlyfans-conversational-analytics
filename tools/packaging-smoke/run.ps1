@@ -8,10 +8,6 @@ param(
     [ValidatePattern('^[0-9a-fA-F]{64}$')]
     [string] $PublishedSha256,
 
-    [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
-    [string] $LauncherPath,
-
     [string] $TranscriptPath = (Join-Path (Get-Location) 'packaging-smoke-transcript.json'),
 
     [string[]] $InspectionRoot = @($env:SystemDrive),
@@ -29,6 +25,7 @@ $ExitCode = @{
     NodeDetected = 22
     RepositoryDetected = 23
     DigestMismatch = 31
+    InstallationFailed = 32
     AcceptanceBlocked = 40
     AcceptanceFailed = 41
 }
@@ -184,20 +181,135 @@ function Assert-ArtifactDigest {
     }
 }
 
+function New-InstallationLayout {
+    $runRoot = Join-Path ([IO.Path]::GetTempPath()) ("ofca-packaging-smoke-" + [guid]::NewGuid().ToString('N'))
+    $installationPrefix = Join-Path $runRoot 'installation'
+    $runtimeDataDirectory = Join-Path $runRoot 'runtime-data'
+    New-Item -ItemType Directory -Path $runRoot | Out-Null
+    return [pscustomobject]@{
+        RunRoot = $runRoot
+        InstallationPrefix = $installationPrefix
+        RuntimeDataDirectory = $runtimeDataDirectory
+    }
+}
+
+function Invoke-InstallArtifact {
+    param([Parameter(Mandatory)] [psobject] $Layout)
+
+    try {
+        $installerProcess = Start-Process -FilePath $ArtifactPath -ArgumentList @(
+            '/SILENT', '/SUPPRESSMSGBOXES', ("/DIR=`"" + $Layout.InstallationPrefix + "`"")
+        ) -Wait -PassThru
+        if ($installerProcess.ExitCode -ne 0) {
+            throw "installer exited with code $($installerProcess.ExitCode)"
+        }
+        $launcherPath = Join-Path -Path $Layout.InstallationPrefix -ChildPath 'Brain.exe'
+        $uninstallerPath = Join-Path -Path $Layout.InstallationPrefix -ChildPath 'unins000.exe'
+        if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+            throw "installer did not create the required launcher: $launcherPath"
+        }
+        if (-not (Test-Path -LiteralPath $uninstallerPath -PathType Leaf)) {
+            throw "installer did not create the required uninstaller: $uninstallerPath"
+        }
+        Add-Result -Step 'install-artifact' -Outcome pass -Evidence @{
+            artifact_path = (Resolve-Path -LiteralPath $ArtifactPath).Path
+            installation_prefix = (Resolve-Path -LiteralPath $Layout.InstallationPrefix).Path
+            runtime_data_directory = $Layout.RuntimeDataDirectory
+            launcher_path = (Resolve-Path -LiteralPath $launcherPath).Path
+            launcher_exists = $true
+        }
+        return [pscustomobject]@{
+            InstallationPrefix = $Layout.InstallationPrefix
+            RuntimeDataDirectory = $Layout.RuntimeDataDirectory
+            LauncherPath = $launcherPath
+            UninstallerPath = $uninstallerPath
+        }
+    } catch {
+        Add-Result -Step 'install-artifact' -Outcome fail -Evidence @{
+            finding = 'installation_failed'; exception = $_.Exception.GetType().Name; message = $_.Exception.Message
+        }
+        return $null
+    }
+}
+
 function Invoke-OpenBridge {
-    if (-not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) {
-        Add-Result -Step 'open-bridge' -Outcome fail -Evidence @{ finding = 'launcher_missing'; path = $LauncherPath }
+    param([Parameter(Mandatory)] [psobject] $Installation)
+
+    $launcherPath = $Installation.LauncherPath
+    if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+        Add-Result -Step 'open-bridge' -Outcome fail -Evidence @{ finding = 'launcher_missing'; path = $launcherPath }
         return $null
     }
     try {
-        $process = Start-Process -FilePath $LauncherPath -PassThru
+        $process = Start-Process -FilePath $launcherPath -PassThru
         Add-Result -Step 'open-bridge' -Outcome pass -Evidence @{
-            launcher_path = (Resolve-Path -LiteralPath $LauncherPath).Path; process_id = $process.Id
+            launcher_path = (Resolve-Path -LiteralPath $launcherPath).Path; process_id = $process.Id
         }
         return $process
     } catch {
         Add-Result -Step 'open-bridge' -Outcome fail -Evidence @{ finding = 'launcher_start_failed'; exception = $_.Exception.GetType().Name }
         return $null
+    }
+}
+
+function Get-DescendantProcessIds {
+    param([Parameter(Mandatory)] [int] $ParentProcessId)
+
+    $descendants = [System.Collections.Generic.List[int]]::new()
+    foreach ($child in @(Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId = $ParentProcessId" -ErrorAction Stop)) {
+        $childId = [int] $child.ProcessId
+        $descendants.Add($childId)
+        foreach ($descendantId in @(Get-DescendantProcessIds -ParentProcessId $childId)) {
+            $descendants.Add($descendantId)
+        }
+    }
+    return @($descendants)
+}
+
+function Stop-LauncherProcess {
+    param([System.Diagnostics.Process] $LauncherProcess)
+
+    if ($null -eq $LauncherProcess) {
+        return
+    }
+    try {
+        $processIds = @(Get-DescendantProcessIds -ParentProcessId $LauncherProcess.Id) + @($LauncherProcess.Id)
+        [array]::Reverse($processIds)
+        $stoppedProcessIds = [System.Collections.Generic.List[int]]::new()
+        foreach ($processId in $processIds) {
+            $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+            if ($null -ne $process -and -not $process.HasExited) {
+                Stop-Process -Id $processId -Force -ErrorAction Stop
+                $stoppedProcessIds.Add($processId)
+            }
+        }
+        Add-Result -Step 'close-bridge' -Outcome pass -Evidence @{ stopped_process_ids = @($stoppedProcessIds) }
+    } catch {
+        Add-Result -Step 'close-bridge' -Outcome fail -Evidence @{ finding = 'launcher_stop_failed'; exception = $_.Exception.GetType().Name }
+    }
+}
+
+function Invoke-UninstallArtifact {
+    param([psobject] $Installation, [psobject] $Layout)
+
+    try {
+        if ($null -ne $Installation) {
+            if (-not (Test-Path -LiteralPath $Installation.UninstallerPath -PathType Leaf)) {
+                throw "installer cleanup cannot find uninstaller: $($Installation.UninstallerPath)"
+            }
+            $uninstallerProcess = Start-Process -FilePath $Installation.UninstallerPath -ArgumentList @(
+                '/SILENT', '/SUPPRESSMSGBOXES'
+            ) -Wait -PassThru
+            if ($uninstallerProcess.ExitCode -ne 0) {
+                throw "uninstaller exited with code $($uninstallerProcess.ExitCode)"
+            }
+        }
+        if ($null -ne $Layout -and (Test-Path -LiteralPath $Layout.RunRoot -PathType Container)) {
+            Remove-Item -LiteralPath $Layout.RunRoot -Recurse -Force
+        }
+        Add-Result -Step 'uninstall-artifact' -Outcome pass -Evidence @{ removed_temporary_installation = $true }
+    } catch {
+        Add-Result -Step 'uninstall-artifact' -Outcome fail -Evidence @{ finding = 'uninstall_failed'; exception = $_.Exception.GetType().Name; message = $_.Exception.Message }
     }
 }
 
@@ -266,12 +378,34 @@ function Invoke-ConsumeInstallationClaim {
 
 Assert-CleanEnvironment
 Assert-ArtifactDigest
-$launcher = Invoke-OpenBridge
-$listenerReady = Invoke-VerifyProvisioningListener -LauncherProcess $launcher
-Invoke-VerifyInstallationKey -ListenerReady $listenerReady
-Invoke-VerifyProvisioningHandoff -ListenerReady $listenerReady
-Invoke-SubmitInstallationClaim
-Invoke-ConsumeInstallationClaim
+$layout = New-InstallationLayout
+$previousRuntimeDataDirectory = $env:LOCAL_ANALYTICS_DATA_DIR
+$env:LOCAL_ANALYTICS_DATA_DIR = $layout.RuntimeDataDirectory
+$installation = $null
+$launcher = $null
+$installationFailed = $false
+try {
+    $installation = Invoke-InstallArtifact -Layout $layout
+    if ($null -eq $installation) {
+        $installationFailed = $true
+    } else {
+        $launcher = Invoke-OpenBridge -Installation $installation
+        $listenerReady = Invoke-VerifyProvisioningListener -LauncherProcess $launcher
+        Invoke-VerifyInstallationKey -ListenerReady $listenerReady
+        Invoke-VerifyProvisioningHandoff -ListenerReady $listenerReady
+        Invoke-SubmitInstallationClaim
+        Invoke-ConsumeInstallationClaim
+    }
+} finally {
+    Stop-LauncherProcess -LauncherProcess $launcher
+    Invoke-UninstallArtifact -Installation $installation -Layout $layout
+    $env:LOCAL_ANALYTICS_DATA_DIR = $previousRuntimeDataDirectory
+}
+
+if ($installationFailed) {
+    Write-Transcript -RunEvidence @{ status = 'failed'; reason = 'installation_failed' }
+    exit $ExitCode.InstallationFailed
+}
 
 $outcomes = @($script:results | Select-Object -ExpandProperty outcome)
 if ($outcomes -contains 'fail') {
