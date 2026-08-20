@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.endpoints import frontend, history, insights, transport_ws, webauthn
 from app.core.config import settings
 from app.core.broadcast import broadcast
+from app.core.resource_paths import resource_path
 from app.persistence.auth import InstallationKeyReference, SQLiteAuthenticationStore
 from app.security.activation_gate import (
     evaluate_runtime_activation,
@@ -108,7 +109,7 @@ app.add_middleware(
 # -------------------------------------------------
 # Static file mount (Vite build output in app/static/dist)
 # -------------------------------------------------
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount("/static", StaticFiles(directory=resource_path("app/static")), name="static")
 
 # -------------------------------------------------
 # Router Registration

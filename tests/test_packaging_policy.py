@@ -119,7 +119,7 @@ def test_required_directories_cover_runtime_static_mount() -> None:
     from app.main import app
 
     runtime_directories = {
-        f"_internal/{Path(static_app.directory).as_posix()}"
+        f"_internal/{Path(static_app.directory).resolve().relative_to(ROOT).as_posix()}"
         for route in app.routes
         if isinstance(static_app := getattr(route, "app", None), StaticFiles)
     }

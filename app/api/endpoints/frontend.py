@@ -8,7 +8,6 @@ import hmac
 import json
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, Any
 from urllib.parse import urlsplit
 
@@ -18,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.utils.logger import logger
 from app.core.config import settings
+from app.core.resource_paths import ResourcePathError, resource_path
 from app.api.security import (
     csrf_token,
     get_runtime_policy,
@@ -28,13 +28,10 @@ from app.transport import transport_manager
 router = APIRouter(tags=["Frontend"])
 
 # Directories
-TEMPLATES_DIR = Path("app/templates")
-DIST_DIR = Path("app/static/dist")
+TEMPLATES_DIR = resource_path("app/templates")
+DIST_DIR = resource_path("app/static/dist")
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-
-
-DEVELOPMENT_SCRIPT_URL = "http://localhost:5173/src/main.tsx"
 
 
 @dataclass(frozen=True)
@@ -86,6 +83,23 @@ def _manifest_entry(manifest: Dict[str, Any]) -> tuple[str | None, Dict[str, Any
         return None, {}
     entry = manifest[entry_key]
     return entry_key, entry
+
+
+def _validate_manifest_assets(entry: Dict[str, Any]) -> str | None:
+    """Ensure manifest-referenced frontend assets stay inside the dist package."""
+
+    css_assets = entry.get("css", [])
+    if not isinstance(css_assets, list):
+        return "Vite manifest has an invalid frontend asset reference"
+    assets = [entry.get("file"), *css_assets]
+    if not all(isinstance(asset, str) and asset for asset in assets):
+        return "Vite manifest has an invalid frontend asset reference"
+    for asset in assets:
+        try:
+            resource_path(asset, root=DIST_DIR)
+        except (FileNotFoundError, ResourcePathError) as error:
+            return f"Vite manifest frontend asset is invalid: {error}"
+    return None
 
 
 _manifest_load = _load_manifest()
@@ -207,15 +221,16 @@ async def serve_frontend(
             status_code=500,
             detail="Production frontend packaging error: Vite manifest has no entry",
         )
+    if _is_production_environment():
+        asset_error = _validate_manifest_assets(entry)
+        if asset_error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Production frontend packaging error: {asset_error}",
+            )
 
     app_script = entry.get("file") if entry_key else None
     css_files = entry.get("css", []) if entry_key else []
-    development_script = (
-        DEVELOPMENT_SCRIPT_URL
-        if not _is_production_environment() and not app_script
-        else None
-    )
-
     api_base_url = (
         str(request.base_url).rstrip("/")
         if settings.websocket_auth_mode == "development_stub"
@@ -267,7 +282,6 @@ async def serve_frontend(
         context={
             "request": request,
             "app_script": f"/static/dist/{app_script}" if app_script else None,
-            "development_script": development_script,
             "css_files": [f"/static/dist/{c}" for c in css_files],
             "config": config,
             "csrf_token": None if identity is None else csrf_token(policy),

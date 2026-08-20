@@ -21,9 +21,6 @@
   {% if app_script %}  
     <!-- Production build -->  
     <script type="module" src="{{ app_script }}"></script>  
-  {% elif development_script %}
-    <!-- Dev mode with Vite -->  
-    <script type="module" src="{{ development_script }}"></script>
   {% endif %}  
 </body>  
 </html>
