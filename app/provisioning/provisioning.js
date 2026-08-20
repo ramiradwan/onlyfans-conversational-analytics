@@ -182,6 +182,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
     }
     const payload = await mutate('/api/v1/provisioning/claim', { package: packageValue });
     if (payload?.state === 'installation_registered') setStatus('Installation registered.');
+    else if (payload !== null) setStatus('The provisioning request could not be completed.');
   }
 
   async function confirmIdentity() {
@@ -195,7 +196,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
       associatedAccountId = confirmedAccountId;
       setStatus(`Association request ${associationRequestId} created.`);
       setBusy(false);
-    }
+    } else if (payload !== null) setStatus('The provisioning request could not be completed.');
   }
 
   async function acquireAssociation() {
@@ -206,7 +207,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
       elements.acquireAssociation.dataset.acquired = 'true';
       setStatus('Association approval acquired.');
       setBusy(false);
-    }
+    } else if (payload !== null) setStatus('The provisioning request could not be completed.');
   }
 
   async function finalizeProvisioning() {
@@ -219,7 +220,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
       configurationComplete = true;
       setBusy(false);
       setStatus('Configuration is complete. Restart Bridge to continue.');
-    }
+    } else if (payload !== null) setStatus('The provisioning request could not be completed.');
   }
 
   async function start() {

@@ -206,3 +206,86 @@ test('confirm sends the displayed identity exactly once while the request is in 
   await controller.confirmIdentity();
   assert.equal(fetchCalls.length, 1, 'confirmed_identity_is_not_submitted_twice');
 });
+
+test('acquire control is unavailable before association succeeds', async () => {
+  const { controller, elements } = harness({
+    extensionResponse: {
+      type: 'provisioning.identity.result', version: 1,
+      authenticated_profile: { creator_account_id: 'creator-42' },
+    },
+  });
+
+  await controller.refreshIdentity();
+
+  assert.equal(elements.acquireAssociation.disabled, true, 'acquire_control_requires_association');
+});
+
+test('finalize control is unavailable before acquisition succeeds', async () => {
+  const { controller, elements } = harness({
+    extensionResponse: {
+      type: 'provisioning.identity.result', version: 1,
+      authenticated_profile: { creator_account_id: 'creator-42' },
+    },
+    fetch: async () => response(200, {
+      association_request_id: 'request-1', status: 'pending', updated_at: 'now',
+    }),
+  });
+
+  await controller.refreshIdentity();
+  await controller.confirmIdentity();
+
+  assert.equal(elements.finalizeProvisioning.disabled, true, 'finalize_control_requires_acquisition');
+});
+
+test('acquire handler issues no request before association succeeds', async () => {
+  const fetchCalls = [];
+  const { controller } = harness({
+    fetch: async (...arguments_) => {
+      fetchCalls.push(arguments_);
+      return response(200, {});
+    },
+  });
+
+  await controller.acquireAssociation();
+
+  assert.equal(fetchCalls.length, 0, 'acquire_handler_requires_association');
+});
+
+test('finalize handler issues no request before acquisition succeeds', async () => {
+  const fetchCalls = [];
+  const { controller } = harness({
+    extensionResponse: {
+      type: 'provisioning.identity.result', version: 1,
+      authenticated_profile: { creator_account_id: 'creator-42' },
+    },
+    fetch: async (...arguments_) => {
+      fetchCalls.push(arguments_);
+      return response(200, { association_request_id: 'request-1' });
+    },
+  });
+
+  await controller.refreshIdentity();
+  await controller.confirmIdentity();
+  await controller.finalizeProvisioning();
+
+  assert.equal(fetchCalls.length, 1, 'finalize_handler_requires_acquisition');
+});
+
+test('unexpected successful mutation shape tells the operator the request failed', async () => {
+  const { controller, elements } = harness({
+    extensionResponse: {
+      type: 'provisioning.identity.result', version: 1,
+      authenticated_profile: { creator_account_id: 'creator-42' },
+    },
+    fetch: async () => response(200, {}),
+  });
+
+  await controller.refreshIdentity();
+  await controller.confirmIdentity();
+
+  assert.equal(
+    elements.status.textContent,
+    'The provisioning request could not be completed.',
+    'unexpected_success_shape_is_visible',
+  );
+});
