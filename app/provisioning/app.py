@@ -20,6 +20,9 @@ PROVISIONING_REDEEM_PATH = "/provisioning/handoff"
 PROVISIONING_STATUS_PATH = "/api/v1/provisioning/status"
 PROVISIONING_CLAIM_PATH = "/api/v1/provisioning/claim"
 PROVISIONING_CREATOR_ASSOCIATION_PATH = "/api/v1/provisioning/creator-association"
+PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH = (
+    "/api/v1/provisioning/creator-association/acquire"
+)
 PROVISIONING_FINALIZE_PATH = "/api/v1/provisioning/finalize"
 
 BoundedIdentifier = Annotated[str, StringConstraints(min_length=1, max_length=200)]
@@ -73,6 +76,18 @@ class CreatorAssociationInitiation(Protocol):
     ) -> object: ...
 
 
+class CreatorBindingAcquisitionBody(BaseModel):
+    """Empty body: acquisition coordinates come only from durable state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CreatorBindingAcquisition(Protocol):
+    """Seam to one hosted binding acquisition and candidate approval."""
+
+    def __call__(self) -> object: ...
+
+
 class FinalizationBody(BaseModel):
     """Bounded provisioning-page body addressing one approved association."""
 
@@ -99,6 +114,7 @@ def create_provisioning_app(
     *,
     claim_submission: ClaimSubmission,
     creator_association_initiation: CreatorAssociationInitiation,
+    creator_binding_acquisition: CreatorBindingAcquisition,
     completion_ready: Callable[[], bool],
     finalize_action: FinalizeAction,
     launcher_handoff_token: str | None = None,
@@ -198,6 +214,29 @@ def create_provisioning_app(
                 "association_request_id": outcome.association_request_id,
                 "status": outcome.status,
                 "updated_at": outcome.updated_at,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @application.post(
+        PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH, include_in_schema=False
+    )
+    async def acquire_creator_binding(
+        request: Request, body: CreatorBindingAcquisitionBody
+    ) -> JSONResponse:
+        del body
+        sessions.require_mutation(request)
+        outcome = creator_binding_acquisition()
+        if isinstance(outcome, str):
+            return JSONResponse(
+                {"state": "provisioning_ready", "reason": outcome},
+                status_code=409,
+                headers={"Cache-Control": "no-store"},
+            )
+        return JSONResponse(
+            {
+                "association_request_id": outcome.association_request_id,
+                "status": outcome.status,
             },
             headers={"Cache-Control": "no-store"},
         )

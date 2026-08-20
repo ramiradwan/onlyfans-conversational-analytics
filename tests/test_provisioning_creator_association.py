@@ -285,6 +285,7 @@ def test_caller_coordinates_are_refused_before_the_hosted_request(tmp_path) -> N
     application = create_provisioning_app(
         claim_submission=lambda *, package: None,
         creator_association_initiation=action,
+        creator_binding_acquisition=lambda: "binding_acquisition_unavailable",
         completion_ready=lambda: False,
         finalize_action=lambda **_: None,
         launcher_handoff_token=HANDOFF_TOKEN,

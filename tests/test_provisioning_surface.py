@@ -10,6 +10,7 @@ from starlette.routing import WebSocketRoute
 
 from app.provisioning.app import (
     PROVISIONING_CLAIM_PATH,
+    PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH,
     PROVISIONING_CREATOR_ASSOCIATION_PATH,
     PROVISIONING_FINALIZE_PATH,
     PROVISIONING_STATUS_PATH,
@@ -80,10 +81,30 @@ class RecordingCreatorAssociationInitiation:
         )()
 
 
+class RecordingCreatorBindingAcquisition:
+    def __init__(self, refusal: str | None = None) -> None:
+        self.refusal = refusal
+        self.calls = 0
+
+    def __call__(self) -> object:
+        self.calls += 1
+        if self.refusal is not None:
+            return self.refusal
+        return type(
+            "BindingAcquisitionStatus",
+            (),
+            {
+                "association_request_id": ASSOCIATION_REQUEST_ID,
+                "status": "approved",
+            },
+        )()
+
+
 def provisioning_app(
     *,
     claim_submission: Any = None,
     creator_association_initiation: Any = None,
+    creator_binding_acquisition: Any = None,
     completion_ready: Any = lambda: False,
     finalize_action: Any = None,
     completion_exit: Any = None,
@@ -92,6 +113,9 @@ def provisioning_app(
         claim_submission=claim_submission or RecordingClaimSubmission(),
         creator_association_initiation=(
             creator_association_initiation or RecordingCreatorAssociationInitiation()
+        ),
+        creator_binding_acquisition=(
+            creator_binding_acquisition or RecordingCreatorBindingAcquisition()
         ),
         completion_ready=completion_ready,
         finalize_action=finalize_action or RecordingFinalizeAction(),
@@ -135,6 +159,7 @@ def test_provisioning_app_exposes_no_runtime_route() -> None:
         ("/api/v1/provisioning/status", ("GET",)),
         ("/api/v1/provisioning/claim", ("POST",)),
         ("/api/v1/provisioning/creator-association", ("POST",)),
+        ("/api/v1/provisioning/creator-association/acquire", ("POST",)),
         ("/api/v1/provisioning/finalize", ("POST",)),
         ("/api/v1/provisioning/retry", ("POST",)),
     }
@@ -289,6 +314,40 @@ def test_creator_association_hands_only_the_detected_account_to_its_action() -> 
             "installation_id": None,
         }
     ]
+
+
+def test_creator_binding_acquisition_has_no_caller_supplied_coordinates() -> None:
+    action = RecordingCreatorBindingAcquisition()
+    application = provisioning_app(creator_binding_acquisition=action)
+    client, cookie, token = bounded_session(application)
+
+    response = client.post(
+        PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH,
+        json={},
+        headers={**cookie, "Origin": PROVISIONING_ORIGIN, PROVISIONING_CSRF_HEADER: token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "association_request_id": ASSOCIATION_REQUEST_ID,
+        "status": "approved",
+    }
+    assert action.calls == 1
+
+
+def test_creator_binding_acquisition_rejects_caller_coordinates() -> None:
+    action = RecordingCreatorBindingAcquisition()
+    application = provisioning_app(creator_binding_acquisition=action)
+    client, cookie, token = bounded_session(application)
+
+    response = client.post(
+        PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH,
+        json={"installation_id": "attacker-installation"},
+        headers={**cookie, "Origin": PROVISIONING_ORIGIN, PROVISIONING_CSRF_HEADER: token},
+    )
+
+    assert response.status_code == 422
+    assert action.calls == 0
 
 
 @pytest.mark.parametrize(

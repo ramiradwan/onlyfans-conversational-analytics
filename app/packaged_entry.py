@@ -30,6 +30,9 @@ def select_brain_application(
     from app.provisioning.creator_association import (
         durable_creator_association_initiation,
     )
+    from app.provisioning.binding_acquisition import (
+        durable_creator_account_binding_acquisition,
+    )
     from app.provisioning.completion import (
         durable_authentication_store,
         durable_completion_reader,
@@ -45,6 +48,12 @@ def select_brain_application(
             ),
         ),
         creator_association_initiation=durable_creator_association_initiation(
+            open_store,
+            hosted_origin=os.environ.get(
+                PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""
+            ),
+        ),
+        creator_binding_acquisition=durable_creator_account_binding_acquisition(
             open_store,
             hosted_origin=os.environ.get(
                 PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""

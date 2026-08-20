@@ -762,6 +762,37 @@ def test_tampered_creator_binding_is_refused_before_it_is_stored(
     )
 
 
+def test_valid_creator_binding_for_another_account_is_refused_before_storage(
+    tmp_path: Path,
+    bundle: SignedBundle,
+    claim: InstallationClaim,
+    identity: AuthContext,
+    device: DeviceMetadata,
+) -> None:
+    client, store, _, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device, identity=identity)
+    association = _association(
+        request_id="0198a1b2-c3d4-7800-8000-000000000006"
+    )
+    # The second binding is validly signed, but it names a different account.
+    bundle.creator_bindings[_ACCOUNT_ID] = bundle.creator_bindings[_SECOND_ACCOUNT_ID]
+    client.request_creator_association(association)
+
+    refusal: str | None = None
+    try:
+        client.acquire_creator_account_binding(
+            association, membership_reference_id=consumed.grant_reference_ids[1]
+        )
+    except GrantVerificationRefused as error:
+        refusal = error.result
+
+    assert refusal == "creator_account_mismatch"
+    assert not any(
+        grant.grant_type == "creator_account_binding"
+        for grant in store.verified_grants()
+    )
+
+
 @pytest.mark.parametrize(
     ("mode", "error"),
     [
