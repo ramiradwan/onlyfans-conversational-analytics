@@ -228,6 +228,50 @@ def test_posix_profile_path_is_rejected_but_rest_users_route_is_clean(tmp_path: 
     ), "an interior REST users segment is not an absolute POSIX profile path"
 
 
+def test_user_profile_path_delimiter_and_url_tables_are_constrained(tmp_path: Path) -> None:
+    must_be_reported = (
+        ("windows-backslash", r"C:\Users\rami\claim.json"),
+        ("windows-slash", "C:/Users/rami/claim.json"),
+        ("single-quoted-home", "'/home/rami/.config'"),
+        ("double-quoted-home", '"/home/rami/.config"'),
+        ("environment-assignment", "HOME=/home/rami"),
+        ("call-argument", "open(/home/rami/x)"),
+        ("scheme-like-prefix", "datadir:/home/rami/data"),
+        ("json-value", '{"p":"/home/rami"}'),
+        ("comma-delimited", "a,/home/rami,b"),
+        ("bare-home", "/home/rami/.config"),
+    )
+    must_be_clean = (
+        ("fetch-users-route", 'fetch("/api2/v2/users/me")'),
+        ("https-users-route", "https://example.com/users/me"),
+        ("http-users-route", "http://h2/users/me"),
+        ("relative-users-route", "api/v2/users/me"),
+    )
+
+    stage = _stage_runtime_tree(tmp_path)
+    for case, payload in (*must_be_reported, *must_be_clean):
+        (stage / "_internal" / "app" / f"{case}.txt").write_text(
+            payload, encoding="utf-8"
+        )
+
+    findings = verify_runtime_files(stage)
+
+    for case, _ in must_be_reported:
+        assert any(
+            finding.code == "forbidden_material_present"
+            and finding.path == f"_internal/app/{case}.txt"
+            and finding.detail == "matches forbidden material declaration: user_profile_path"
+            for finding in findings
+        ), f"must-be-reported case {case!r} must reach the user_profile_path assertion"
+    for case, _ in must_be_clean:
+        assert not any(
+            finding.code == "forbidden_material_present"
+            and finding.path == f"_internal/app/{case}.txt"
+            and finding.detail == "matches forbidden material declaration: user_profile_path"
+            for finding in findings
+        ), f"must-be-clean case {case!r} must remain outside user_profile_path"
+
+
 def test_binary_payload_is_not_scanned_but_its_forbidden_path_is_rejected(tmp_path: Path) -> None:
     """An undecodable binary skips payload inspection but still receives path inspection."""
 
