@@ -24,12 +24,14 @@ $ExitCode = @{
     PythonDetected = 21
     NodeDetected = 22
     RepositoryDetected = 23
+    PortOccupied = 24
     DigestMismatch = 31
     InstallationFailed = 32
     AcceptanceBlocked = 40
     AcceptanceFailed = 41
 }
 $script:results = [System.Collections.Generic.List[object]]::new()
+$script:ownedListenerProcessIds = [System.Collections.Generic.List[int]]::new()
 
 function Add-Result {
     param(
@@ -181,6 +183,27 @@ function Assert-ArtifactDigest {
     }
 }
 
+function Get-ListeningProcessIdsForPort {
+    param([Parameter(Mandatory)] [int] $Port)
+
+    return @(
+        Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty OwningProcess -Unique
+    )
+}
+
+function Assert-ProvisioningPortAvailable {
+    $listenerProcessIds = @(Get-ListeningProcessIdsForPort -Port 17871)
+    if ($listenerProcessIds.Count -ne 0) {
+        Add-Result -Step 'provisioning-listener-port-preflight' -Outcome abort -Evidence @{
+            finding = 'provisioning_listener_port_occupied'; port = 17871; listener_process_ids = $listenerProcessIds
+        }
+        Write-Transcript -RunEvidence @{ status = 'aborted'; reason = 'provisioning_listener_port_occupied' }
+        exit $ExitCode.PortOccupied
+    }
+    Add-Result -Step 'provisioning-listener-port-preflight' -Outcome pass -Evidence @{ port = 17871; listener_process_ids = @() }
+}
+
 function New-InstallationLayout {
     $runRoot = Join-Path ([IO.Path]::GetTempPath()) ("ofca-packaging-smoke-" + [guid]::NewGuid().ToString('N'))
     $installationPrefix = Join-Path $runRoot 'installation'
@@ -266,6 +289,24 @@ function Get-DescendantProcessIds {
     return @($descendants)
 }
 
+function Get-LauncherFamilyProcessIds {
+    param([Parameter(Mandatory)] [System.Diagnostics.Process] $LauncherProcess)
+
+    return @(@($LauncherProcess.Id) + @(Get-DescendantProcessIds -ParentProcessId $LauncherProcess.Id) | Select-Object -Unique)
+}
+
+function Wait-ForProvisioningPortRelease {
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        $listenerProcessIds = @(Get-ListeningProcessIdsForPort -Port 17871)
+        if ($listenerProcessIds.Count -eq 0) {
+            return [pscustomobject]@{ Released = $true; ListenerProcessIds = @() }
+        }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    return [pscustomobject]@{ Released = $false; ListenerProcessIds = @(Get-ListeningProcessIdsForPort -Port 17871) }
+}
+
 function Stop-LauncherProcess {
     param([System.Diagnostics.Process] $LauncherProcess)
 
@@ -273,8 +314,9 @@ function Stop-LauncherProcess {
         return
     }
     try {
-        $processIds = @(Get-DescendantProcessIds -ParentProcessId $LauncherProcess.Id) + @($LauncherProcess.Id)
-        [array]::Reverse($processIds)
+        $descendantProcessIds = @(Get-DescendantProcessIds -ParentProcessId $LauncherProcess.Id)
+        [array]::Reverse($descendantProcessIds)
+        $processIds = @($descendantProcessIds) + @($script:ownedListenerProcessIds) + @($LauncherProcess.Id) | Select-Object -Unique
         $stoppedProcessIds = [System.Collections.Generic.List[int]]::new()
         foreach ($processId in $processIds) {
             $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
@@ -283,7 +325,17 @@ function Stop-LauncherProcess {
                 $stoppedProcessIds.Add($processId)
             }
         }
-        Add-Result -Step 'close-bridge' -Outcome pass -Evidence @{ stopped_process_ids = @($stoppedProcessIds) }
+        $portRelease = Wait-ForProvisioningPortRelease
+        if (-not $portRelease.Released) {
+            Add-Result -Step 'close-bridge' -Outcome fail -Evidence @{
+                finding = 'provisioning_listener_port_not_released'; stopped_process_ids = @($stoppedProcessIds)
+                listener_process_ids = @($portRelease.ListenerProcessIds); port_released = $false
+            }
+            return
+        }
+        Add-Result -Step 'close-bridge' -Outcome pass -Evidence @{
+            stopped_process_ids = @($stoppedProcessIds); port_released = $true; listener_process_ids = @()
+        }
     } catch {
         Add-Result -Step 'close-bridge' -Outcome fail -Evidence @{ finding = 'launcher_stop_failed'; exception = $_.Exception.GetType().Name }
     }
@@ -324,11 +376,34 @@ function Invoke-VerifyProvisioningListener {
     $lastFailure = 'listener_not_ready'
     do {
         try {
+            $listenerProcessIds = @(Get-ListeningProcessIdsForPort -Port 17871)
+            if ($listenerProcessIds.Count -ne 1) {
+                $lastFailure = 'listener_owner_not_unique'
+                Start-Sleep -Milliseconds 250
+                continue
+            }
+            $ownerProcessId = [int] $listenerProcessIds[0]
+            $ownedProcessIds = @(Get-LauncherFamilyProcessIds -LauncherProcess $LauncherProcess)
+            $listenerOwnedByLauncher = $ownerProcessId -in $ownedProcessIds
+            if (-not $listenerOwnedByLauncher) {
+                Add-Result -Step 'provisioning-listener' -Outcome fail -Evidence @{
+                    finding = 'listener_owned_by_unrelated_process'; endpoint = 'http://127.0.0.1:17871/health'
+                    listener_process_id = $ownerProcessId; launcher_process_id = $LauncherProcess.Id
+                    launcher_family_process_ids = $ownedProcessIds
+                }
+                return $false
+            }
             $response = Invoke-WebRequest -Uri 'http://127.0.0.1:17871/health' -TimeoutSec 2
             $health = $response.Content | ConvertFrom-Json
             if ($response.StatusCode -eq 200 -and $health.status -eq 'ok') {
+                if (-not $script:ownedListenerProcessIds.Contains($ownerProcessId)) {
+                    $script:ownedListenerProcessIds.Add($ownerProcessId)
+                }
                 Add-Result -Step 'provisioning-listener' -Outcome pass -Evidence @{
                     endpoint = 'http://127.0.0.1:17871/health'; status_code = $response.StatusCode; status = $health.status
+                    listener_process_id = $ownerProcessId; launcher_process_id = $LauncherProcess.Id
+                    launcher_family_process_ids = $ownedProcessIds
+                    listener_ownership = $(if ($ownerProcessId -eq $LauncherProcess.Id) { 'launcher' } else { 'launcher_descendant' })
                 }
                 return $true
             }
@@ -378,6 +453,7 @@ function Invoke-ConsumeInstallationClaim {
 
 Assert-CleanEnvironment
 Assert-ArtifactDigest
+Assert-ProvisioningPortAvailable
 $layout = New-InstallationLayout
 $previousRuntimeDataDirectory = $env:LOCAL_ANALYTICS_DATA_DIR
 $env:LOCAL_ANALYTICS_DATA_DIR = $layout.RuntimeDataDirectory

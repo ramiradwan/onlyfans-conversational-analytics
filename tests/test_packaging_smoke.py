@@ -53,6 +53,50 @@ class _HealthServer:
         self.thread.join(timeout=5)
 
 
+class _HealthServerProcess:
+    """A process-owned impostor listener, isolated from the test runner."""
+
+    def __enter__(self) -> "_HealthServerProcess":
+        program = """
+import http.server
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        payload = b'{\\"status\\":\\"ok\\"}'
+        self.send_response(200 if self.path == '/health' else 404)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(payload)))
+        self.end_headers()
+        if self.path == '/health':
+            self.wfile.write(payload)
+    def log_message(self, format, *args):
+        return
+
+http.server.ThreadingHTTPServer(('127.0.0.1', 17871), Handler).serve_forever()
+"""
+        self.process = subprocess.Popen(
+            [sys.executable, "-c", program],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        for _ in range(100):
+            if self.process.poll() is not None:
+                raise AssertionError("impostor listener failed to start")
+            try:
+                with __import__("socket").create_connection(("127.0.0.1", 17871), 0.1):
+                    return self
+            except OSError:
+                pass
+        self.process.terminate()
+        self.process.wait(timeout=5)
+        raise AssertionError("impostor listener did not acquire port 17871")
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        if self.process.poll() is None:
+            self.process.terminate()
+            self.process.wait(timeout=5)
+
+
 def _run_smoke(
     tmp_path: Path,
     *,
@@ -97,14 +141,13 @@ def _run_smoke(
         "-ExecutableSearchPath",
         str(search_path),
     ]
-    with _HealthServer():
-        result = subprocess.run(
-            command,
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     if not transcript_path.is_file():
         raise AssertionError(
             f"smoke script produced no transcript (exit {result.returncode}): "
@@ -113,7 +156,70 @@ def _run_smoke(
     return result, json.loads(transcript_path.read_text(encoding="utf-8-sig"))
 
 
-def _write_pyinstaller_standin(tmp_path: Path) -> Path:
+def _write_listener_executable(tmp_path: Path) -> Path:
+    """Compile a launcher fixture whose child owns the fixed local listener."""
+
+    compiler = Path(r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe")
+    assert compiler.is_file(), "the Windows C# compiler is required for this fixture"
+    source = tmp_path / "listener_launcher.cs"
+    executable = tmp_path / "Brain.exe"
+    source.write_text(
+        r'''
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+
+public static class ListenerLauncher {
+    public static void Main(string[] arguments) {
+        if (arguments.Length == 1 && arguments[0] == "--brain") {
+            Serve();
+            return;
+        }
+        string image = Process.GetCurrentProcess().MainModule.FileName;
+        Process child = Process.Start(new ProcessStartInfo(image, "--brain") {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+        });
+        child.WaitForExit();
+    }
+
+    private static void Serve() {
+        TcpListener listener = new TcpListener(IPAddress.Loopback, 17871);
+        listener.Start();
+        while (true) {
+            using (TcpClient client = listener.AcceptTcpClient())
+            using (NetworkStream stream = client.GetStream()) {
+                byte[] request = new byte[4096];
+                stream.Read(request, 0, request.Length);
+                byte[] response = Encoding.ASCII.GetBytes(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}"
+                );
+                stream.Write(response, 0, response.Length);
+            }
+        }
+    }
+}
+'''.strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    compiled = subprocess.run(
+        [str(compiler), "/nologo", "/target:exe", f"/out:{executable}", str(source)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert compiled.returncode == 0, compiled.stdout + compiled.stderr
+    return executable
+
+
+def _write_pyinstaller_standin(
+    tmp_path: Path, *, listener_executable: Path | None = None
+) -> Path:
     """Stage a runnable Windows executable for a real Inno Setup invocation."""
 
     standin = tmp_path / "pyinstaller_standin.py"
@@ -129,7 +235,7 @@ arguments = sys.argv[1:]
 dist = Path(arguments[arguments.index('--distpath') + 1])
 stage = dist / 'Brain'
 (stage / '_internal').mkdir(parents=True)
-shutil.copyfile(Path(os.environ['ComSpec']), stage / 'Brain.exe')
+shutil.copyfile(Path({str(listener_executable)!r}) if {listener_executable is not None!r} else Path(os.environ['ComSpec']), stage / 'Brain.exe')
 for relative in (
     'app/templates',
     'app/static/dist',
@@ -151,12 +257,15 @@ for relative in (
     return command
 
 
-def _build_real_installer(tmp_path: Path) -> Path:
+def _build_real_installer(tmp_path: Path, *, serves_health: bool = False) -> Path:
     """Use the production build script and real Inno compiler, not an installer stand-in."""
 
     compiler = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Inno Setup 6" / "ISCC.exe"
     assert compiler.is_file(), "Inno Setup is required for packaging-smoke installer falsifiers"
-    pyinstaller = _write_pyinstaller_standin(tmp_path)
+    listener_executable = _write_listener_executable(tmp_path) if serves_health else None
+    pyinstaller = _write_pyinstaller_standin(
+        tmp_path, listener_executable=listener_executable
+    )
     output = tmp_path / "build-output"
     built = subprocess.run(
         [
@@ -209,6 +318,25 @@ def _assert_install_failure_exit(result: subprocess.CompletedProcess[str], trans
     assert transcript["artifact"] == {"status": "failed", "reason": "installation_failed"}
     assert _step(transcript, "artifact-digest")["outcome"] == "pass"
     assert _step(transcript, "install-artifact")["evidence"]["finding"] == "installation_failed"
+
+
+def _assert_port_preflight_abort(
+    result: subprocess.CompletedProcess[str], transcript: dict
+) -> None:
+    assert result.returncode == 24, result.stdout + result.stderr
+    assert transcript["artifact"] == {
+        "status": "aborted",
+        "reason": "provisioning_listener_port_occupied",
+    }
+    preflight = _step(transcript, "provisioning-listener-port-preflight")
+    assert preflight["outcome"] == "abort"
+    assert preflight["evidence"]["finding"] == "provisioning_listener_port_occupied"
+
+
+def _without_port_preflight(script: str) -> str:
+    route = "Assert-CleanEnvironment\nAssert-ArtifactDigest\nAssert-ProvisioningPortAvailable"
+    assert route in script
+    return script.replace(route, "Assert-CleanEnvironment\nAssert-ArtifactDigest", 1)
 
 
 def test_real_interpreter_is_still_detected(tmp_path: Path) -> None:
@@ -268,6 +396,30 @@ def test_repository_marker_file_remains_detected(tmp_path: Path) -> None:
     }
 
 
+def test_listener_port_preflight_has_a_distinct_exit_code(tmp_path: Path) -> None:
+    """An existing fixed-port listener aborts before any installer is launched."""
+
+    with _HealthServer():
+        result, transcript = _run_smoke(tmp_path)
+    _assert_port_preflight_abort(result, transcript)
+
+    mutated_script = tmp_path / "run-generic-port-preflight.ps1"
+    original = SMOKE_SCRIPT.read_text(encoding="utf-8")
+    route = "exit $ExitCode.PortOccupied"
+    assert route in original
+    mutated_script.write_text(
+        original.replace(route, "exit $ExitCode.InvalidInput", 1), encoding="utf-8"
+    )
+    with _HealthServer():
+        mutated_result, mutated_transcript = _run_smoke(
+            tmp_path / "mutated", smoke_script=mutated_script
+        )
+
+    assert mutated_result.returncode == 2, mutated_result.stdout + mutated_result.stderr
+    with pytest.raises(AssertionError):
+        _assert_port_preflight_abort(mutated_result, mutated_transcript)
+
+
 def test_harness_launches_the_executable_its_real_installer_placed(
     tmp_path: Path,
 ) -> None:
@@ -276,8 +428,9 @@ def test_harness_launches_the_executable_its_real_installer_placed(
     installer = _build_real_installer(tmp_path)
     result, transcript = _run_smoke(tmp_path, artifact_path=installer)
 
-    assert result.returncode == 40, result.stdout + result.stderr
+    assert result.returncode == 41, result.stdout + result.stderr
     _assert_launcher_was_installed(transcript)
+    assert _step(transcript, "provisioning-listener")["outcome"] == "fail"
     installation = _step(transcript, "install-artifact")
     assert not Path(installation["evidence"]["installation_prefix"]).parent.exists()
 
@@ -292,9 +445,88 @@ def test_harness_launches_the_executable_its_real_installer_placed(
         tmp_path / "mutated", smoke_script=mutated_script, artifact_path=installer
     )
 
-    assert mutated_result.returncode == 40, mutated_result.stdout + mutated_result.stderr
+    assert mutated_result.returncode == 41, mutated_result.stdout + mutated_result.stderr
     with pytest.raises(AssertionError, match="was not installed beneath"):
         _assert_launcher_was_installed(mutated_transcript)
+
+
+def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
+    tmp_path: Path,
+) -> None:
+    """A 200 from an externally-owned listener is not launcher readiness."""
+
+    installer = _build_real_installer(tmp_path)
+    original = SMOKE_SCRIPT.read_text(encoding="utf-8")
+    binding_script = tmp_path / "run-without-port-preflight.ps1"
+    binding_script.write_text(_without_port_preflight(original), encoding="utf-8")
+
+    with _HealthServerProcess():
+        result, transcript = _run_smoke(
+            tmp_path / "bound",
+            smoke_script=binding_script,
+            artifact_path=installer,
+        )
+
+    listener = _step(transcript, "provisioning-listener")
+    assert result.returncode == 41, result.stdout + result.stderr
+    assert listener["outcome"] == "fail"
+    assert listener["evidence"]["finding"] == "listener_owned_by_unrelated_process"
+
+    mutated_script = tmp_path / "run-without-listener-binding.ps1"
+    derivation = "$listenerOwnedByLauncher = $ownerProcessId -in $ownedProcessIds"
+    assert derivation in original
+    mutated_script.write_text(
+        _without_port_preflight(original).replace(
+            derivation, "$listenerOwnedByLauncher = $true", 1
+        ),
+        encoding="utf-8",
+    )
+    with _HealthServerProcess():
+        mutated_result, mutated_transcript = _run_smoke(
+            tmp_path / "unbound",
+            smoke_script=mutated_script,
+            artifact_path=installer,
+        )
+
+    assert mutated_result.returncode == 40, mutated_result.stdout + mutated_result.stderr
+    assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "pass"
+    with pytest.raises(AssertionError):
+        assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "fail"
+
+
+def test_installed_listener_is_attributed_to_the_launcher_family(tmp_path: Path) -> None:
+    """A real installer passes only when its installed listener is attributed."""
+
+    installer = _build_real_installer(tmp_path, serves_health=True)
+    result, transcript = _run_smoke(tmp_path, artifact_path=installer)
+
+    listener = _step(transcript, "provisioning-listener")
+    assert result.returncode == 40, result.stdout + result.stderr
+    assert listener["outcome"] == "pass"
+    assert listener["evidence"]["listener_ownership"] == "launcher_descendant"
+    assert listener["evidence"]["listener_process_id"] in listener["evidence"][
+        "launcher_family_process_ids"
+    ]
+    assert _step(transcript, "close-bridge")["evidence"]["port_released"] is True
+
+    mutated_script = tmp_path / "run-with-unrelated-attribution.ps1"
+    original = SMOKE_SCRIPT.read_text(encoding="utf-8")
+    derivation = "$listenerOwnedByLauncher = $ownerProcessId -in $ownedProcessIds"
+    assert derivation in original
+    mutated_script.write_text(
+        original.replace(derivation, "$listenerOwnedByLauncher = $ownerProcessId -eq 0", 1),
+        encoding="utf-8",
+    )
+    mutated_result, mutated_transcript = _run_smoke(
+        tmp_path / "unrelated-attribution",
+        smoke_script=mutated_script,
+        artifact_path=installer,
+    )
+
+    assert mutated_result.returncode == 41, mutated_result.stdout + mutated_result.stderr
+    assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "fail"
+    with pytest.raises(AssertionError):
+        assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "pass"
 
 
 def test_install_failure_has_a_distinct_exit_code(tmp_path: Path) -> None:
