@@ -132,9 +132,8 @@ def _check_forbidden_material(
             continue
         for path, relative in staged_paths:
             matches_path = matcher.search(relative) is not None
-            matches_contents = path.is_file() and matcher.search(
-                path.read_bytes().decode("utf-8", errors="replace")
-            ) is not None
+            contents = _read_utf8_text(path) if path.is_file() else None
+            matches_contents = contents is not None and matcher.search(contents) is not None
             if matches_path or matches_contents:
                 findings.append(
                     PackagingFinding(
@@ -143,6 +142,15 @@ def _check_forbidden_material(
                         f"matches forbidden material declaration: {name}",
                     )
                 )
+
+
+def _read_utf8_text(path: Path) -> str | None:
+    """Return a UTF-8 text payload, leaving binary files to path checks only."""
+
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
 
 
 def _check_sql_catalogs(

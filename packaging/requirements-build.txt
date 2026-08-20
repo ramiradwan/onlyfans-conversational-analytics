@@ -1,0 +1,3 @@
+# Build-only tooling.  Install this into an isolated build environment, never
+# into the runtime virtual environment.
+pyinstaller==6.11.1

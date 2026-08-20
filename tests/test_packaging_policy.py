@@ -184,6 +184,71 @@ def test_per_user_material_in_a_staged_payload_produces_a_named_finding(
     ), f"the {material} payload must produce its named per-user-material finding"
 
 
+def test_text_payload_with_windows_profile_path_is_rejected_after_binary_narrowing(
+    tmp_path: Path,
+) -> None:
+    """A user profile path in a UTF-8 payload remains forbidden material."""
+
+    stage = _stage_runtime_tree(tmp_path)
+    seeded = stage / "_internal" / "app" / "claim.json"
+    seeded.write_text(r"C:\Users\somebody\claim.json", encoding="utf-8")
+
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "forbidden_material_present"
+        and finding.path == "_internal/app/claim.json"
+        and finding.detail == "matches forbidden material declaration: user_profile_path"
+        for finding in findings
+    ), "the text profile-path falsifier must reach the forbidden-material assertion"
+
+
+def test_posix_profile_path_is_rejected_but_rest_users_route_is_clean(tmp_path: Path) -> None:
+    """Absolute POSIX profiles remain forbidden without treating API routes as profiles."""
+
+    stage = _stage_runtime_tree(tmp_path)
+    profile = stage / "_internal" / "app" / "profile-path.txt"
+    route = stage / "_internal" / "app" / "api-route.txt"
+    profile.write_text("/home/someone/.config/secret", encoding="utf-8")
+    route.write_text("/api2/v2/users/me", encoding="utf-8")
+
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "forbidden_material_present"
+        and finding.path == "_internal/app/profile-path.txt"
+        and finding.detail == "matches forbidden material declaration: user_profile_path"
+        for finding in findings
+    ), "the POSIX profile-path falsifier must reach the forbidden-material assertion"
+    assert not any(
+        finding.code == "forbidden_material_present"
+        and finding.path == "_internal/app/api-route.txt"
+        and finding.detail == "matches forbidden material declaration: user_profile_path"
+        for finding in findings
+    ), "an interior REST users segment is not an absolute POSIX profile path"
+
+
+def test_binary_payload_is_not_scanned_but_its_forbidden_path_is_rejected(tmp_path: Path) -> None:
+    """An undecodable binary skips payload inspection but still receives path inspection."""
+
+    stage = _stage_runtime_tree(tmp_path)
+    binary = stage / "_internal" / "app" / "blocked-native.pyd"
+    binary.write_bytes(b"\xffC:\\Users\\upstream-builder\\wheel-source")
+    policy = load_runtime_policy(POLICY_PATH)
+    policy["forbidden_material"] = [
+        {"name": "forbidden_binary_path", "pattern": r"blocked-native\.pyd$"}
+    ]
+
+    findings = verify_runtime_files(stage, policy)
+
+    assert any(
+        finding.code == "forbidden_material_present"
+        and finding.path == "_internal/app/blocked-native.pyd"
+        and finding.detail == "matches forbidden material declaration: forbidden_binary_path"
+        for finding in findings
+    ), "an undecodable binary must still be rejected when its staged path matches"
+
+
 def test_per_user_material_declarations_cover_every_required_category() -> None:
     declarations = load_runtime_policy(POLICY_PATH)["forbidden_material"]
 

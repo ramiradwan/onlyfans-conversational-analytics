@@ -114,7 +114,7 @@
     },
     {
       "name": "user_profile_path",
-      "pattern": "(?i)(?:[a-z]:\\\\users\\\\|/users/|/home/)"
+      "pattern": "(?i)(?:[a-z]:\\\\users\\\\|(?<![A-Za-z0-9._~!$&'()*+,;=:@%/-])/(?:users|home)/)"
     }
   ]
 }
