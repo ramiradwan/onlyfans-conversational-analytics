@@ -1,4 +1,4 @@
-"""Durable, installation-scoped provisioning candidate/approval state."""
+"""Durable provisioning state: claim submissions and candidate/approval rows."""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ import pytest
 
 from app.persistence.auth import (
     AuthenticationStateError,
+    ClaimSubmission,
+    ClaimSubmissionState,
     ProvisioningCandidate,
     ProvisioningCandidateState,
     SQLiteAuthenticationStore,
@@ -280,3 +282,204 @@ def test_provisioning_candidates_are_durable_across_store_reopen(
     stored = reopened.provisioning_candidate("assoc-1")
     assert stored is not None
     assert stored.state is ProvisioningCandidateState.APPROVED
+
+
+def submission(
+    instant: datetime,
+    *,
+    claim_id: str = "claim-1",
+    onboarding_transaction_id: str = "txn-1",
+    organization_id: str = "org-1",
+    installation_id: str = "install-1",
+) -> ClaimSubmission:
+    return ClaimSubmission(
+        claim_id=claim_id,
+        onboarding_transaction_id=onboarding_transaction_id,
+        organization_id=organization_id,
+        installation_id=installation_id,
+        submitted_at=instant,
+    )
+
+
+def test_a_recorded_claim_submission_reads_back_unresolved(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    store.record_claim_submission(submission(instant))
+
+    stored = store.claim_submission("claim-1")
+
+    assert stored == submission(instant)
+    assert stored.state is ClaimSubmissionState.SUBMITTED
+    assert stored.outcome is None
+    assert stored.resolved_at is None
+    assert store.unresolved_claim_submissions() == (submission(instant),)
+
+
+def test_an_unknown_claim_reads_as_none(store: SQLiteAuthenticationStore) -> None:
+    assert store.claim_submission("missing") is None
+    assert store.unresolved_claim_submissions() == ()
+
+
+def test_a_consumed_claim_leaves_the_unresolved_set(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    store.record_claim_submission(submission(instant))
+
+    resolved = store.resolve_claim_submission(
+        "claim-1", outcome=None, resolved_at=instant + timedelta(seconds=3)
+    )
+
+    assert resolved is True
+    stored = store.claim_submission("claim-1")
+    assert stored.state is ClaimSubmissionState.CONSUMED
+    assert stored.outcome is None
+    assert stored.resolved_at == instant + timedelta(seconds=3)
+    assert store.unresolved_claim_submissions() == ()
+
+
+def test_a_refused_claim_records_its_nonsecret_reason(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    store.record_claim_submission(submission(instant))
+
+    resolved = store.resolve_claim_submission(
+        "claim-1", outcome="hosted_unavailable", resolved_at=instant
+    )
+
+    assert resolved is True
+    stored = store.claim_submission("claim-1")
+    assert stored.state is ClaimSubmissionState.REFUSED
+    assert stored.outcome == "hosted_unavailable"
+    assert store.unresolved_claim_submissions() == ()
+
+
+def test_resolving_an_unrecorded_claim_moves_nothing(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    assert (
+        store.resolve_claim_submission("claim-1", outcome=None, resolved_at=instant)
+        is False
+    )
+    assert store.claim_submission("claim-1") is None
+
+
+def test_a_retried_claim_reopens_the_same_row_as_uncertain(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    """A retry after a refusal is uncertain again until the plane answers."""
+
+    store.record_claim_submission(submission(instant))
+    store.resolve_claim_submission(
+        "claim-1", outcome="hosted_unavailable", resolved_at=instant
+    )
+    retried_at = instant + timedelta(minutes=5)
+
+    store.record_claim_submission(submission(retried_at))
+
+    stored = store.claim_submission("claim-1")
+    assert stored == submission(retried_at)
+    assert store.unresolved_claim_submissions() == (submission(retried_at),)
+
+
+def test_a_consumed_claim_is_terminal_and_a_later_attempt_cannot_erase_it(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    store.record_claim_submission(submission(instant))
+    store.resolve_claim_submission("claim-1", outcome=None, resolved_at=instant)
+    later = instant + timedelta(minutes=5)
+
+    store.record_claim_submission(submission(later))
+    late_refusal = store.resolve_claim_submission(
+        "claim-1", outcome="claim_already_consumed", resolved_at=later
+    )
+
+    assert late_refusal is False
+    stored = store.claim_submission("claim-1")
+    assert stored.state is ClaimSubmissionState.CONSUMED
+    assert stored.submitted_at == instant
+    assert stored.resolved_at == instant
+
+
+def test_different_coordinates_under_a_recorded_claim_id_are_refused(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    store.record_claim_submission(submission(instant))
+
+    with pytest.raises(AuthenticationStateError, match="do not match"):
+        store.record_claim_submission(submission(instant, installation_id="install-2"))
+
+    assert store.claim_submission("claim-1").installation_id == "install-1"
+
+
+def test_two_claims_are_independently_recoverable(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    later = instant + timedelta(minutes=1)
+    store.record_claim_submission(submission(instant))
+    store.record_claim_submission(submission(later, claim_id="claim-2"))
+
+    store.resolve_claim_submission("claim-1", outcome=None, resolved_at=later)
+
+    assert store.unresolved_claim_submissions() == (
+        submission(later, claim_id="claim-2"),
+    )
+
+
+def test_recording_an_empty_or_already_resolved_claim_submission_is_refused(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        store.record_claim_submission(submission(instant, organization_id=""))
+
+    with pytest.raises(ValueError, match="must start submitted"):
+        store.record_claim_submission(
+            ClaimSubmission(
+                claim_id="claim-1",
+                onboarding_transaction_id="txn-1",
+                organization_id="org-1",
+                installation_id="install-1",
+                submitted_at=instant,
+                state=ClaimSubmissionState.CONSUMED,
+                resolved_at=instant,
+            )
+        )
+
+    with pytest.raises(ValueError, match="must not be resolved"):
+        store.record_claim_submission(
+            ClaimSubmission(
+                claim_id="claim-1",
+                onboarding_transaction_id="txn-1",
+                organization_id="org-1",
+                installation_id="install-1",
+                submitted_at=instant,
+                outcome="hosted_unavailable",
+            )
+        )
+
+    assert store.claim_submission("claim-1") is None
+
+
+def test_resolving_with_an_empty_outcome_is_refused(
+    store: SQLiteAuthenticationStore, instant: datetime
+) -> None:
+    store.record_claim_submission(submission(instant))
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        store.resolve_claim_submission("claim-1", outcome="", resolved_at=instant)
+
+    assert store.claim_submission("claim-1").state is ClaimSubmissionState.SUBMITTED
+
+
+def test_claim_submissions_are_durable_across_store_reopen(
+    tmp_path: Path, clock: MutableClock, instant: datetime
+) -> None:
+    path = tmp_path / "auth.sqlite3"
+    store = SQLiteAuthenticationStore(path, clock=clock)
+    store.record_claim_submission(submission(instant))
+    store.record_claim_submission(submission(instant, claim_id="claim-2"))
+    store.resolve_claim_submission("claim-2", outcome=None, resolved_at=instant)
+
+    reopened = SQLiteAuthenticationStore(path, clock=clock)
+
+    assert reopened.unresolved_claim_submissions() == (submission(instant),)
+    assert reopened.claim_submission("claim-2").state is ClaimSubmissionState.CONSUMED

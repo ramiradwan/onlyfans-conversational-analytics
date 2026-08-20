@@ -52,6 +52,12 @@ class ProvisioningCandidateState(str, Enum):
     CANCELLED = "cancelled"
 
 
+class ClaimSubmissionState(str, Enum):
+    SUBMITTED = "submitted"
+    CONSUMED = "consumed"
+    REFUSED = "refused"
+
+
 @dataclass(frozen=True, slots=True)
 class RevocationKey:
     scope_type: RevocationScopeType
@@ -319,6 +325,30 @@ class ProvisioningCandidate:
     resolved_at: datetime | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ClaimSubmission:
+    """One pasted installation claim, recorded before it is consumed.
+
+    The four coordinates are the claim's nonsecret recovery identity: they name
+    the claim without carrying it. The claim secret, its challenge, and any
+    hosted credential are excluded by construction and must stay excluded.
+
+    `state` distinguishes a claim whose hosted outcome is still unknown
+    (`SUBMITTED`) from one that resolved, which is what makes a claim
+    interrupted mid-consumption recoverable. `outcome` carries the nonsecret
+    refusal reason of a refused claim and is absent otherwise.
+    """
+
+    claim_id: str
+    onboarding_transaction_id: str
+    organization_id: str
+    installation_id: str
+    submitted_at: datetime
+    state: ClaimSubmissionState = ClaimSubmissionState.SUBMITTED
+    outcome: str | None = None
+    resolved_at: datetime | None = None
+
+
 class AuthenticationStore(Protocol):
     def reserve_installation_key(
         self, reservation: InstallationKeyReservation
@@ -449,6 +479,16 @@ class AuthenticationStore(Protocol):
     def cancel_provisioning_candidate(
         self, association_request_id: str, *, resolved_at: datetime
     ) -> bool: ...
+
+    def record_claim_submission(self, submission: ClaimSubmission) -> None: ...
+
+    def resolve_claim_submission(
+        self, claim_id: str, *, outcome: str | None, resolved_at: datetime
+    ) -> bool: ...
+
+    def claim_submission(self, claim_id: str) -> ClaimSubmission | None: ...
+
+    def unresolved_claim_submissions(self) -> tuple[ClaimSubmission, ...]: ...
 
 
 class AuthenticationStateError(ValueError):
@@ -2162,6 +2202,121 @@ class SQLiteAuthenticationStore:
                 self._increment_authorization_epoch(connection)
         return cursor.rowcount == 1
 
+    def record_claim_submission(self, submission: ClaimSubmission) -> None:
+        """Persist one pasted claim's coordinates before it is consumed.
+
+        The row is written unresolved so that a claim whose hosted outcome never
+        arrives is still recoverable from durable state. Only the nonsecret
+        coordinates are stored; the claim secret and challenge are not columns
+        of this table and must never become columns of it.
+
+        A resubmission of the same claim reopens the existing row rather than
+        adding a second one, except once the claim is recorded as consumed:
+        that outcome is terminal and a later attempt cannot erase it. Different
+        coordinates under a recorded claim identifier are refused. Nothing here
+        is an authorization input, so the authorization epoch is not touched.
+        """
+
+        _require_claim_submission(submission)
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT * FROM provisioning_claim_submissions WHERE claim_id = ?",
+                (submission.claim_id,),
+            ).fetchone()
+            if existing is None:
+                connection.execute(
+                    """
+                    INSERT INTO provisioning_claim_submissions (
+                        claim_id, onboarding_transaction_id, organization_id,
+                        installation_id, state, outcome, submitted_at, resolved_at
+                    ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)
+                    """,
+                    (
+                        submission.claim_id,
+                        submission.onboarding_transaction_id,
+                        submission.organization_id,
+                        submission.installation_id,
+                        ClaimSubmissionState.SUBMITTED.value,
+                        _time_text(submission.submitted_at),
+                    ),
+                )
+                return
+            recorded = _claim_submission(existing)
+            if _claim_coordinates(recorded) != _claim_coordinates(submission):
+                raise AuthenticationStateError(
+                    "Claim submission coordinates do not match the recorded claim"
+                )
+            if recorded.state is ClaimSubmissionState.CONSUMED:
+                return
+            connection.execute(
+                """
+                UPDATE provisioning_claim_submissions
+                SET state = ?, outcome = NULL, submitted_at = ?, resolved_at = NULL
+                WHERE claim_id = ?
+                """,
+                (
+                    ClaimSubmissionState.SUBMITTED.value,
+                    _time_text(submission.submitted_at),
+                    submission.claim_id,
+                ),
+            )
+
+    def resolve_claim_submission(
+        self, claim_id: str, *, outcome: str | None, resolved_at: datetime
+    ) -> bool:
+        """Record what became of one submitted claim.
+
+        `outcome` is None when the hosted plane consumed the claim, and a
+        nonsecret refusal reason otherwise. A claim already recorded as consumed
+        is left untouched. Returns whether a row moved.
+        """
+
+        if outcome is not None and not outcome:
+            raise ValueError("Claim submission outcome must not be empty")
+        state = (
+            ClaimSubmissionState.CONSUMED
+            if outcome is None
+            else ClaimSubmissionState.REFUSED
+        )
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE provisioning_claim_submissions
+                SET state = ?, outcome = ?, resolved_at = ?
+                WHERE claim_id = ? AND state <> ?
+                """,
+                (
+                    state.value,
+                    outcome,
+                    _time_text(resolved_at),
+                    claim_id,
+                    ClaimSubmissionState.CONSUMED.value,
+                ),
+            )
+        return cursor.rowcount == 1
+
+    def claim_submission(self, claim_id: str) -> ClaimSubmission | None:
+        with self.database.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM provisioning_claim_submissions WHERE claim_id = ?",
+                (claim_id,),
+            ).fetchone()
+        return None if row is None else _claim_submission(row)
+
+    def unresolved_claim_submissions(self) -> tuple[ClaimSubmission, ...]:
+        """Return every claim whose hosted outcome is still unknown."""
+
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM provisioning_claim_submissions
+                WHERE state = ?
+                ORDER BY submitted_at, claim_id
+                """,
+                (ClaimSubmissionState.SUBMITTED.value,),
+            ).fetchall()
+        return tuple(_claim_submission(row) for row in rows)
+
     def record_authorized_account_binding(
         self, binding: AuthorizedAccountBinding
     ) -> None:
@@ -2335,6 +2490,40 @@ def _provisioning_candidate(row: sqlite3.Row) -> ProvisioningCandidate:
         creator_account_id=str(row["creator_account_id"]),
         state=ProvisioningCandidateState(str(row["state"])),
         requested_at=_parse_time(str(row["requested_at"])),
+        resolved_at=None if resolved is None else _parse_time(str(resolved)),
+    )
+
+
+def _require_claim_submission(submission: ClaimSubmission) -> None:
+    if not all(_claim_coordinates(submission)):
+        raise ValueError("Claim submission coordinates must not be empty")
+    if submission.state is not ClaimSubmissionState.SUBMITTED:
+        raise ValueError("A newly recorded claim submission must start submitted")
+    if submission.outcome is not None or submission.resolved_at is not None:
+        raise ValueError("A newly recorded claim submission must not be resolved")
+    _time_text(submission.submitted_at)
+
+
+def _claim_coordinates(submission: ClaimSubmission) -> tuple[str, str, str, str]:
+    return (
+        submission.claim_id,
+        submission.onboarding_transaction_id,
+        submission.organization_id,
+        submission.installation_id,
+    )
+
+
+def _claim_submission(row: sqlite3.Row) -> ClaimSubmission:
+    outcome = row["outcome"]
+    resolved = row["resolved_at"]
+    return ClaimSubmission(
+        claim_id=str(row["claim_id"]),
+        onboarding_transaction_id=str(row["onboarding_transaction_id"]),
+        organization_id=str(row["organization_id"]),
+        installation_id=str(row["installation_id"]),
+        submitted_at=_parse_time(str(row["submitted_at"])),
+        state=ClaimSubmissionState(str(row["state"])),
+        outcome=None if outcome is None else str(outcome),
         resolved_at=None if resolved is None else _parse_time(str(resolved)),
     )
 

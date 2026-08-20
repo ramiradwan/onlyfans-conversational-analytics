@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import sqlite3
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -23,10 +24,15 @@ from fastapi.testclient import TestClient
 from app import packaged_entry
 from app.core.config import Settings
 from app.core.runtime_paths import runtime_data_directory
-from app.persistence.auth import InstallationKeyReference, SQLiteAuthenticationStore
+from app.persistence.auth import (
+    ClaimSubmission,
+    ClaimSubmissionState,
+    InstallationKeyReference,
+    SQLiteAuthenticationStore,
+)
 from app.provisioning import claim_submission as submission_module
 from app.provisioning.app import PROVISIONING_CLAIM_PATH
-from app.provisioning.claim_package import CLAIM_PACKAGE_PROFILE
+from app.provisioning.claim_package import CLAIM_PACKAGE_PROFILE, decode_claim_package
 from app.provisioning.claim_submission import PRODUCT_VERSION, durable_claim_submission
 from app.provisioning.session import (
     PROVISIONING_CSRF_HEADER,
@@ -70,6 +76,18 @@ GRANT_LIFETIMES = {
     "license_entitlement": 86_400,
 }
 LOCAL_PLATFORM = {"win32": "windows", "darwin": "macos", "linux": "linux"}[sys.platform]
+
+# The durable claim record and the columns it keeps for local bookkeeping.
+# Every other column of that table carries claim material, so the set is stated
+# here rather than derived from the schema under test.
+CLAIM_RECORD_TABLE = "provisioning_claim_submissions"
+CLAIM_RECORD_LOCAL_COLUMNS = {"state", "outcome", "submitted_at", "resolved_at"}
+CLAIM_RECORD_COORDINATES = {
+    "claim_id",
+    "onboarding_transaction_id",
+    "organization_id",
+    "installation_id",
+}
 
 # Every refusal reason this action is allowed to report. A reason outside the
 # set, or one carrying claim material, would reach the provisioning page.
@@ -208,6 +226,40 @@ class HostedClaimTransport:
                 "bootstrap_config_version": "1.0.0",
             },
         )
+
+
+class RecordObservingTransport(HostedClaimTransport):
+    """Hosted transport that reads durable claim state as the call is made."""
+
+    def __init__(
+        self, grants: SignedGrants, store: SQLiteAuthenticationStore
+    ) -> None:
+        super().__init__(grants)
+        self.store = store
+        self.unresolved_at_request: tuple[ClaimSubmission, ...] = ()
+
+    def request(
+        self, method: str, path: str, *, json_body: dict[str, object]
+    ) -> TransportResponse:
+        self.unresolved_at_request = self.store.unresolved_claim_submissions()
+        return super().request(method, path, json_body=json_body)
+
+
+class GrantStorageFailure(RuntimeError):
+    """A local write that fails after the hosted plane consumed the claim."""
+
+
+class BrokenGrantStore:
+    """The authentication store with only its verified-grant write broken."""
+
+    def __init__(self, store: SQLiteAuthenticationStore) -> None:
+        self._store = store
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._store, name)
+
+    def record_verified_grants(self, grants: Any) -> None:
+        raise GrantStorageFailure("emulated durable grant write failure")
 
 
 class EmulatedPlatformProvider:
@@ -606,6 +658,160 @@ def test_the_composed_surface_registers_the_installation_from_one_package(
     assert {record.installation_key_id for record in stored} == {
         installation_key.installation_key_id
     }
+
+
+def test_the_claim_record_exists_before_the_hosted_call_and_resolves_after(
+    store: SQLiteAuthenticationStore, grants: SignedGrants
+) -> None:
+    """The coordinates are durable while the outcome is still unknown."""
+
+    transport = RecordObservingTransport(grants, store)
+
+    assert submission(store, grants, transport)(package=PACKAGE) is None
+
+    in_flight = transport.unresolved_at_request
+    assert [record.claim_id for record in in_flight] == [CLAIM_ID]
+    assert in_flight[0].onboarding_transaction_id == ONBOARDING_TRANSACTION_ID
+    assert in_flight[0].organization_id == ORGANIZATION_ID
+    assert in_flight[0].installation_id == INSTALLATION_ID
+    resolved = store.claim_submission(CLAIM_ID)
+    assert resolved.state is ClaimSubmissionState.CONSUMED
+    assert resolved.outcome is None
+    assert store.unresolved_claim_submissions() == ()
+
+
+@pytest.mark.parametrize(
+    ("status", "reason"),
+    [
+        (409, "claim_already_consumed"),
+        (403, "claim_refused"),
+        (503, "hosted_unavailable"),
+    ],
+)
+def test_a_hosted_refusal_resolves_the_claim_record_with_its_reason(
+    store: SQLiteAuthenticationStore,
+    grants: SignedGrants,
+    status: int,
+    reason: str,
+) -> None:
+    transport = HostedClaimTransport(grants, status=status)
+
+    assert submission(store, grants, transport)(package=PACKAGE) == reason
+
+    recorded = store.claim_submission(CLAIM_ID)
+    assert recorded.state is ClaimSubmissionState.REFUSED
+    assert recorded.outcome == reason
+    assert recorded.outcome in NONSECRET_REASONS
+    assert store.unresolved_claim_submissions() == ()
+
+
+def test_a_claim_consumed_without_a_usable_local_result_stays_recoverable(
+    store: SQLiteAuthenticationStore, grants: SignedGrants
+) -> None:
+    """The hosted plane spent the claim; nothing local can say it did not."""
+
+    transport = HostedClaimTransport(grants)
+    submit = durable_claim_submission(
+        lambda: BrokenGrantStore(store),
+        hosted_origin=HOSTED_ORIGIN,
+        transport_factory=_transport_factory(transport),
+        proof_authority_factory=lambda _: FakeProofAuthority(
+            grants.installation_key
+        ),
+        device_display_name=lambda: DEVICE_NAME,
+        trust_set=grants.trust_set,
+    )
+
+    with pytest.raises(GrantStorageFailure):
+        submit(package=PACKAGE)
+
+    assert transport.consumed is True
+    assert store.verified_grants() == ()
+    unresolved = store.unresolved_claim_submissions()
+    assert [record.claim_id for record in unresolved] == [CLAIM_ID]
+    assert unresolved[0].onboarding_transaction_id == ONBOARDING_TRANSACTION_ID
+    assert unresolved[0].resolved_at is None
+
+
+@pytest.mark.parametrize(
+    ("pasted", "hosted_origin"),
+    [
+        ("not a package", HOSTED_ORIGIN),
+        (package({**claim_document(), "claim_secret": "short"}), HOSTED_ORIGIN),
+        (PACKAGE, ""),
+    ],
+)
+def test_a_claim_that_cannot_reach_the_plane_is_never_recorded(
+    store: SQLiteAuthenticationStore,
+    grants: SignedGrants,
+    pasted: str,
+    hosted_origin: str,
+) -> None:
+    """Only a claim the hosted plane could have consumed becomes durable."""
+
+    transport = HostedClaimTransport(grants)
+
+    def open_transport(origin: str) -> Any:
+        # The real transport parses the origin; an empty one is unusable.
+        if not origin:
+            raise ValueError("hosted origin is unusable")
+        return _transport_factory(transport)(origin)
+
+    submit = durable_claim_submission(
+        lambda: store,
+        hosted_origin=hosted_origin,
+        transport_factory=open_transport,
+        proof_authority_factory=lambda _: FakeProofAuthority(
+            grants.installation_key
+        ),
+        device_display_name=lambda: DEVICE_NAME,
+        trust_set=grants.trust_set,
+    )
+
+    assert submit(package=pasted) is not None
+    assert transport.requests == []
+    assert store.claim_submission(CLAIM_ID) is None
+    assert store.unresolved_claim_submissions() == ()
+
+
+def test_the_claim_record_holds_only_the_nonsecret_coordinates(
+    store: SQLiteAuthenticationStore, tmp_path: Path
+) -> None:
+    """The persisted set is exactly what the decoder calls durable."""
+
+    decoded = decode_claim_package(PACKAGE)
+    try:
+        coordinates = set(decoded.durable_state())
+    finally:
+        decoded.clear()
+    with sqlite3.connect(tmp_path / DATABASE_FILENAME) as connection:
+        columns = {
+            str(row[1])
+            for row in connection.execute(f"PRAGMA table_info({CLAIM_RECORD_TABLE})")
+        }
+
+    assert columns
+    assert coordinates == CLAIM_RECORD_COORDINATES
+    assert columns - CLAIM_RECORD_LOCAL_COLUMNS == CLAIM_RECORD_COORDINATES
+
+
+def test_no_claim_secret_reaches_the_authentication_database(
+    store: SQLiteAuthenticationStore, grants: SignedGrants, tmp_path: Path
+) -> None:
+    """The whole database file, not just the claim record, is searched."""
+
+    transport = HostedClaimTransport(grants)
+    assert submission(store, grants, transport)(package=PACKAGE) is None
+    assert store.claim_submission(CLAIM_ID) is not None
+
+    written = b"".join(
+        path.read_bytes() for path in sorted(tmp_path.glob(f"{DATABASE_FILENAME}*"))
+    )
+
+    # The identifier proves the search reaches the row the secret was stripped from.
+    assert CLAIM_ID.encode("ascii") in written
+    assert CLAIM_SECRET.encode("ascii") not in written
+    assert CHALLENGE.encode("ascii") not in written
 
 
 def _emulate_platform(

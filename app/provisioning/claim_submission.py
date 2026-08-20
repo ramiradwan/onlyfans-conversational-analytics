@@ -6,6 +6,11 @@ lives only inside the request that decodes it: it is released once to the hosted
 client and dropped in every exit path, so a refusal cannot leave a reusable
 secret behind and no later request can reach one.
 
+The claim's nonsecret coordinates are recorded durably before the outbound call
+and its outcome after, so a claim consumed by the hosted plane without a usable
+local result is still named by durable state. The recorded set is exactly
+`DecodedClaimPackage.durable_state()`: the claim secret never reaches storage.
+
 Device metadata is built from local values only. The pasted package supplies
 none of it, and nothing in it is read back from the hosted response.
 """
@@ -13,9 +18,10 @@ none of it, and nothing in it is read back from the hosted response.
 from __future__ import annotations
 
 import platform
+from datetime import datetime, timezone
 from typing import Callable, Literal, Mapping
 
-from app.persistence.auth import AuthenticationStore
+from app.persistence.auth import AuthenticationStore, ClaimSubmission
 from app.provisioning.claim_package import (
     ClaimPackageError,
     DecodedClaimPackage,
@@ -23,6 +29,7 @@ from app.provisioning.claim_package import (
     local_device_metadata,
 )
 from app.security.hosted_grants import (
+    DeviceMetadata,
     GrantVerificationRefused,
     HostedGrantClient,
     HostedGrantUnavailable,
@@ -77,6 +84,7 @@ def durable_claim_submission(
     ] = installation_proof_authority,
     device_display_name: Callable[[], str] = platform.node,
     trust_set: Mapping[str, object] | None = None,
+    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
 ) -> Callable[..., str | None]:
     """Build the action that consumes one pasted claim into verified grants.
 
@@ -89,6 +97,12 @@ def durable_claim_submission(
     unauthoritative hosted result are refusals. A packaged trust set that fails
     its integrity check is not: it is a defect in the installed artifact rather
     than a state the customer can act on, and it must not be reported as one.
+
+    The claim record is written after every refusal the local process can decide
+    on its own and before the call that can consume the claim remotely, so the
+    only claims it names are the ones that could have reached the hosted plane.
+    A record that cannot be written stops the submission instead of spending the
+    single-use claim on an outcome nothing durable would name.
     """
 
     client: HostedGrantClient | None = None
@@ -121,19 +135,16 @@ def durable_claim_submission(
             return "hosted_origin_unavailable"
         except InstallationKeyError:
             return "installation_key_unavailable"
-        try:
-            client.consume_claim(decoded.release_claim(), device)
-        except InstallationKeyError:
-            return "installation_key_unavailable"
-        except InstallationClaimReplay:
-            return "claim_already_consumed"
-        except InstallationClaimRefused:
-            return "claim_refused"
-        except GrantVerificationRefused:
-            return "grant_verification_refused"
-        except HostedGrantUnavailable:
-            return "hosted_unavailable"
-        return None
+        store = open_store()
+        coordinates = decoded.durable_state()
+        store.record_claim_submission(
+            ClaimSubmission(**coordinates, submitted_at=now())
+        )
+        outcome = _hosted_outcome(client, decoded, device)
+        store.resolve_claim_submission(
+            coordinates["claim_id"], outcome=outcome, resolved_at=now()
+        )
+        return outcome
 
     def submit_claim(*, package: str) -> str | None:
         try:
@@ -146,3 +157,29 @@ def durable_claim_submission(
             decoded.clear()
 
     return submit_claim
+
+
+def _hosted_outcome(
+    client: HostedGrantClient,
+    decoded: DecodedClaimPackage,
+    device: DeviceMetadata,
+) -> str | None:
+    """Consume one released claim and name the outcome, or None on success.
+
+    An exception outside this set leaves the claim record unresolved, which is
+    the accurate state: the hosted plane may have consumed the claim.
+    """
+
+    try:
+        client.consume_claim(decoded.release_claim(), device)
+    except InstallationKeyError:
+        return "installation_key_unavailable"
+    except InstallationClaimReplay:
+        return "claim_already_consumed"
+    except InstallationClaimRefused:
+        return "claim_refused"
+    except GrantVerificationRefused:
+        return "grant_verification_refused"
+    except HostedGrantUnavailable:
+        return "hosted_unavailable"
+    return None
