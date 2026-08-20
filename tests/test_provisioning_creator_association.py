@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
 from app.persistence.auth import (
     ClaimSubmission,
+    InstallationKeyReference,
     SQLiteAuthenticationStore,
 )
 from app.provisioning.app import (
@@ -25,8 +28,14 @@ from app.provisioning.session import (
     PROVISIONING_SESSION_COOKIE_NAME,
 )
 from app.security.hosted_grants import (
+    CREATOR_ASSOCIATION_PROFILE,
+    PROOF_AUDIENCE,
+    PROOF_PROFILE,
     CreatorAssociationRequest,
     CreatorAssociationStatus,
+    HostedGrantClient,
+    InstallationProof,
+    TransportResponse,
 )
 
 
@@ -38,6 +47,12 @@ ACCOUNT_ID = "creator-account-1"
 REQUEST_ID = "0198a1b2-c3d4-7000-8000-000000000001"
 UPDATED_AT = "2026-08-20T00:00:00Z"
 HANDOFF_TOKEN = "t" * 32
+INSTALLATION_KEY_ID = "installation-key-1"
+PROOF_CHALLENGE = base64.urlsafe_b64encode(b"c" * 32).rstrip(b"=").decode("ascii")
+
+
+def _b64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
 class RecordingHostedClient:
@@ -51,18 +66,177 @@ class RecordingHostedClient:
         return CreatorAssociationStatus(UPDATED_AT)
 
 
-def consumed_claim(store: SQLiteAuthenticationStore) -> None:
+class RecordingProofAuthority:
+    def __init__(self, key: InstallationKeyReference) -> None:
+        self.key = key
+        self.challenges: list[bytes] = []
+
+    def ensure_ready(self) -> InstallationKeyReference:
+        return self.key
+
+    def sign_challenge(self, challenge: bytes) -> InstallationProof:
+        self.challenges.append(challenge)
+        return InstallationProof(INSTALLATION_KEY_ID, "ES256", b"\x01" * 64)
+
+
+class RecordingAssociationTransport:
+    def __init__(self) -> None:
+        self.requests: list[tuple[str, dict[str, object]]] = []
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, object],
+    ) -> TransportResponse:
+        assert method == "POST"
+        self.requests.append((path, json_body))
+        if path.endswith("/proof-challenges"):
+            return _transport_response(
+                201,
+                {
+                    "profile": PROOF_PROFILE,
+                    "purpose": "creator-association-request",
+                    "installation_id": INSTALLATION_ID,
+                    "challenge": PROOF_CHALLENGE,
+                    "audience": PROOF_AUDIENCE,
+                    "issued_at": UPDATED_AT,
+                    "expires_at": UPDATED_AT,
+                },
+            )
+
+        assert path == (
+            f"/v1/installations/{INSTALLATION_ID}/creator-associations"
+        )
+        request = json_body["request"]
+        assert isinstance(request, dict)
+        return _transport_response(
+            202,
+            {
+                "profile": CREATOR_ASSOCIATION_PROFILE,
+                "association_request_id": request["association_request_id"],
+                "organization_id": request["organization_id"],
+                "installation_id": request["installation_id"],
+                "creator_account_id": request["creator_account_id"],
+                "status": "pending",
+                "updated_at": UPDATED_AT,
+                "creator_account_binding": None,
+            },
+        )
+
+
+def _transport_response(status_code: int, value: dict[str, object]) -> TransportResponse:
+    return TransportResponse(
+        status_code,
+        json.dumps(value, separators=(",", ":")).encode("utf-8"),
+        "application/json",
+    )
+
+
+def consumed_claim(
+    store: SQLiteAuthenticationStore,
+    *,
+    claim_id: str = CLAIM_ID,
+    onboarding_transaction_id: str = ONBOARDING_TRANSACTION_ID,
+    organization_id: str = ORGANIZATION_ID,
+    installation_id: str = INSTALLATION_ID,
+) -> None:
     instant = datetime(2026, 8, 20, tzinfo=timezone.utc)
     store.record_claim_submission(
         ClaimSubmission(
-            claim_id=CLAIM_ID,
-            onboarding_transaction_id=ONBOARDING_TRANSACTION_ID,
-            organization_id=ORGANIZATION_ID,
-            installation_id=INSTALLATION_ID,
+            claim_id=claim_id,
+            onboarding_transaction_id=onboarding_transaction_id,
+            organization_id=organization_id,
+            installation_id=installation_id,
             submitted_at=instant,
         )
     )
-    assert store.resolve_claim_submission(CLAIM_ID, outcome=None, resolved_at=instant)
+    assert store.resolve_claim_submission(claim_id, outcome=None, resolved_at=instant)
+
+
+def test_no_consumed_claims_refuse_without_a_hosted_call(tmp_path) -> None:
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
+    client = RecordingHostedClient()
+
+    result = initiate_creator_association(
+        store=store,
+        client=client,
+        detected_creator_account_id=ACCOUNT_ID,
+        request_id_factory=lambda: REQUEST_ID,
+    )
+
+    assert result == "claim_coordinates_unavailable"
+    assert client.requests == []
+
+
+def test_two_consumed_claims_refuse_without_a_hosted_call(tmp_path) -> None:
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
+    consumed_claim(store)
+    consumed_claim(
+        store,
+        claim_id="claim-2",
+        onboarding_transaction_id="onboarding-2",
+        organization_id="organization-2",
+        installation_id="installation-2",
+    )
+    client = RecordingHostedClient()
+
+    result = initiate_creator_association(
+        store=store,
+        client=client,
+        detected_creator_account_id=ACCOUNT_ID,
+        request_id_factory=lambda: REQUEST_ID,
+    )
+
+    assert result == "claim_coordinates_ambiguous"
+    assert client.requests == []
+
+
+def test_hosted_association_request_carries_installation_key_proof(tmp_path) -> None:
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
+    consumed_claim(store)
+    key = InstallationKeyReference(
+        provider_name="test-provider",
+        provider_key_name="test-key",
+        algorithm="ECDSA_P256",
+        installation_key_id=INSTALLATION_KEY_ID,
+        installation_key_jkt="installation-key-jkt",
+        public_key_jwk=json.dumps(
+            {
+                "crv": "P-256",
+                "kid": INSTALLATION_KEY_ID,
+                "kty": "EC",
+                "x": "x",
+                "y": "y",
+            }
+        ),
+        created_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
+        activated_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
+    )
+    transport = RecordingAssociationTransport()
+    client = HostedGrantClient(
+        transport,
+        RecordingProofAuthority(key),
+        store,
+    )
+
+    result = initiate_creator_association(
+        store=store,
+        client=client,
+        detected_creator_account_id=ACCOUNT_ID,
+        request_id_factory=lambda: REQUEST_ID,
+    )
+
+    assert result.association_request_id == REQUEST_ID
+    assert len(transport.requests) == 2
+    path, outbound = transport.requests[-1]
+    assert path == f"/v1/installations/{INSTALLATION_ID}/creator-associations"
+    assert outbound["proof"] == {
+        "challenge": PROOF_CHALLENGE,
+        "key_id": INSTALLATION_KEY_ID,
+        "signature": _b64url(b"\x01" * 64),
+    }
 
 
 def test_initiation_builds_the_hosted_tuple_from_the_consumed_claim(tmp_path) -> None:
