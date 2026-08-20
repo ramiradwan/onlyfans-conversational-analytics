@@ -154,6 +154,48 @@ def test_forbidden_development_configuration_examples_are_reported_from_multiple
     } <= reported, "development configuration examples must be forbidden at every depth"
 
 
+@pytest.mark.parametrize(
+    ("material", "payload"),
+    [
+        ("installation_claim", "installation_claim=claim-package-with-secret"),
+        ("claim_secret", "claim_secret=secret-value"),
+        ("bearer_or_session_token", "Authorization: Bearer opaque-token-value-123"),
+        ("bearer_or_session_token", "session_token=session-token-value-123"),
+        ("generated_runtime_secret", "runtime_secret=generated-value"),
+        ("user_profile_path", r"C:\Users\installer-test\profile"),
+    ],
+)
+def test_per_user_material_in_a_staged_payload_produces_a_named_finding(
+    tmp_path: Path, material: str, payload: str
+) -> None:
+    """The material itself, rather than a fixture boundary, causes the finding."""
+
+    stage = _stage_runtime_tree(tmp_path)
+    seeded = stage / "_internal" / "app" / "staged-data.txt"
+    seeded.write_text(payload, encoding="utf-8")
+
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "forbidden_material_present"
+        and finding.path == "_internal/app/staged-data.txt"
+        and finding.detail == f"matches forbidden material declaration: {material}"
+        for finding in findings
+    ), f"the {material} payload must produce its named per-user-material finding"
+
+
+def test_per_user_material_declarations_cover_every_required_category() -> None:
+    declarations = load_runtime_policy(POLICY_PATH)["forbidden_material"]
+
+    assert {declaration["name"] for declaration in declarations} == {
+        "installation_claim",
+        "claim_secret",
+        "bearer_or_session_token",
+        "generated_runtime_secret",
+        "user_profile_path",
+    }, "the per-user-material policy must name every prohibited category"
+
+
 def test_sql_catalog_declaration_is_a_complete_derived_closure() -> None:
     """Removing any declared SQL file makes this exact-set assertion fail."""
 

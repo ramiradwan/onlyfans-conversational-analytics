@@ -94,5 +94,27 @@
     "tests/**",
     "tools/**",
     "requirements-dev.txt"
+  ],
+  "forbidden_material": [
+    {
+      "name": "installation_claim",
+      "pattern": "(?i)\\binstallation[_-]?claim(?:[_-]?package)?[\\\"']?\\s*[:=]\\s*(?:[\\\"'][^\\\"']{16,}[\\\"']|[A-Za-z0-9_-]{16,})"
+    },
+    {
+      "name": "claim_secret",
+      "pattern": "(?i)\\bclaim[_-]?secret\\b\\s*[:=]"
+    },
+    {
+      "name": "bearer_or_session_token",
+      "pattern": "(?i)(?:\\bbearer\\s+[A-Za-z0-9._~-]{16,}|\\b(?:bearer|session)[_-]?token[\\\"']?\\s*[:=]\\s*(?:[\\\"'][^\\\"']{16,}[\\\"']|[A-Za-z0-9._~-]{16,}))"
+    },
+    {
+      "name": "generated_runtime_secret",
+      "pattern": "(?i)\\b(?:runtime|security|signing)[_-]?secret\\b\\s*[:=]"
+    },
+    {
+      "name": "user_profile_path",
+      "pattern": "(?i)(?:[a-z]:\\\\users\\\\|/users/|/home/)"
+    }
   ]
 }

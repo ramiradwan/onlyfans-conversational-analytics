@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -46,6 +47,7 @@ def verify_runtime_files(
 
     _check_required_paths(root, effective_policy, findings)
     _check_forbidden_paths(root, effective_policy, findings)
+    _check_forbidden_material(root, effective_policy, findings)
     _check_sql_catalogs(root, effective_policy, findings)
     _check_contracts(root, effective_policy, findings)
     _check_frontend_closure(root, effective_policy, findings)
@@ -80,6 +82,67 @@ def _check_forbidden_paths(
         for relative in paths:
             if PurePosixPath(relative).match(pattern):
                 findings.append(PackagingFinding("forbidden_path_present", relative, f"matches {pattern}"))
+
+
+def _check_forbidden_material(
+    root: Path, policy: Mapping[str, Any], findings: list[PackagingFinding]
+) -> None:
+    """Reject named per-user material in any staged path or file payload."""
+
+    declarations = policy.get("forbidden_material", [])
+    if not isinstance(declarations, list):
+        findings.append(
+            PackagingFinding(
+                "policy_invalid",
+                "forbidden_material",
+                "declaration is not a list",
+            )
+        )
+        return
+    staged_paths = tuple(
+        (path, path.relative_to(root).as_posix())
+        for path in root.rglob("*")
+        if path.is_file() or path.is_dir()
+    )
+    for declaration in declarations:
+        if not isinstance(declaration, Mapping):
+            findings.append(
+                PackagingFinding(
+                    "policy_invalid",
+                    "forbidden_material",
+                    "declaration is not an object",
+                )
+            )
+            continue
+        name = declaration.get("name")
+        pattern = declaration.get("pattern")
+        if not isinstance(name, str) or not name or not isinstance(pattern, str) or not pattern:
+            findings.append(
+                PackagingFinding(
+                    "policy_invalid",
+                    "forbidden_material",
+                    "declaration requires nonempty name and pattern",
+                )
+            )
+            continue
+        try:
+            matcher = re.compile(pattern)
+        except re.error as error:
+            findings.append(PackagingFinding("policy_invalid", name, str(error)))
+            continue
+        for path, relative in staged_paths:
+            matches_path = matcher.search(relative) is not None
+            matches_contents = path.is_file() and matcher.search(
+                path.read_bytes().decode("utf-8", errors="replace")
+            ) is not None
+            if matches_path or matches_contents:
+                findings.append(
+                    PackagingFinding(
+                        "forbidden_material_present",
+                        relative,
+                        f"matches forbidden material declaration: {name}",
+                    )
+                )
 
 
 def _check_sql_catalogs(
