@@ -490,6 +490,8 @@ class AuthenticationStore(Protocol):
 
     def unresolved_claim_submissions(self) -> tuple[ClaimSubmission, ...]: ...
 
+    def consumed_claim_submissions(self) -> tuple[ClaimSubmission, ...]: ...
+
 
 class AuthenticationStateError(ValueError):
     """Raised when an authentication object cannot be issued from current state."""
@@ -2314,6 +2316,25 @@ class SQLiteAuthenticationStore:
                 ORDER BY submitted_at, claim_id
                 """,
                 (ClaimSubmissionState.SUBMITTED.value,),
+            ).fetchall()
+        return tuple(_claim_submission(row) for row in rows)
+
+    def consumed_claim_submissions(self) -> tuple[ClaimSubmission, ...]:
+        """Return the durable coordinates of claims consumed by the hosted plane.
+
+        A consumed claim is the local enrollment record.  Its coordinates may
+        start a creator-association request, unlike an unresolved claim whose
+        remote outcome is still unknown.
+        """
+
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM provisioning_claim_submissions
+                WHERE state = ?
+                ORDER BY submitted_at, claim_id
+                """,
+                (ClaimSubmissionState.CONSUMED.value,),
             ).fetchall()
         return tuple(_claim_submission(row) for row in rows)
 

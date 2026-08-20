@@ -10,6 +10,7 @@ from starlette.routing import WebSocketRoute
 
 from app.provisioning.app import (
     PROVISIONING_CLAIM_PATH,
+    PROVISIONING_CREATOR_ASSOCIATION_PATH,
     PROVISIONING_FINALIZE_PATH,
     PROVISIONING_STATUS_PATH,
     create_provisioning_app,
@@ -57,15 +58,41 @@ class RecordingClaimSubmission:
         return self.refusal
 
 
+class RecordingCreatorAssociationInitiation:
+    """Association seam standing in for the durable hosted action."""
+
+    def __init__(self, refusal: str | None = None) -> None:
+        self.refusal = refusal
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, **arguments: Any) -> object:
+        self.calls.append(arguments)
+        if self.refusal is not None:
+            return self.refusal
+        return type(
+            "AssociationStatus",
+            (),
+            {
+                "association_request_id": "0198a1b2-c3d4-7000-8000-000000000001",
+                "status": "pending",
+                "updated_at": "2026-08-20T00:00:00Z",
+            },
+        )()
+
+
 def provisioning_app(
     *,
     claim_submission: Any = None,
+    creator_association_initiation: Any = None,
     completion_ready: Any = lambda: False,
     finalize_action: Any = None,
     completion_exit: Any = None,
 ):
     return create_provisioning_app(
         claim_submission=claim_submission or RecordingClaimSubmission(),
+        creator_association_initiation=(
+            creator_association_initiation or RecordingCreatorAssociationInitiation()
+        ),
         completion_ready=completion_ready,
         finalize_action=finalize_action or RecordingFinalizeAction(),
         launcher_handoff_token=HANDOFF_TOKEN,
@@ -107,6 +134,7 @@ def test_provisioning_app_exposes_no_runtime_route() -> None:
         ("/provisioning", ("GET",)),
         ("/api/v1/provisioning/status", ("GET",)),
         ("/api/v1/provisioning/claim", ("POST",)),
+        ("/api/v1/provisioning/creator-association", ("POST",)),
         ("/api/v1/provisioning/finalize", ("POST",)),
         ("/api/v1/provisioning/retry", ("POST",)),
     }
@@ -234,6 +262,33 @@ def test_a_pasted_package_reaches_the_claim_submission_action() -> None:
     assert response.status_code == 200
     assert response.json() == {"state": "installation_registered"}
     assert submission.packages == [PACKAGE]
+
+
+def test_creator_association_hands_only_the_detected_account_to_its_action() -> None:
+    action = RecordingCreatorAssociationInitiation()
+    application = provisioning_app(creator_association_initiation=action)
+    client, cookie, token = bounded_session(application)
+
+    response = client.post(
+        PROVISIONING_CREATOR_ASSOCIATION_PATH,
+        json={"detected_creator_account_id": ACCOUNT_ID},
+        headers={**cookie, "Origin": PROVISIONING_ORIGIN, PROVISIONING_CSRF_HEADER: token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "association_request_id": "0198a1b2-c3d4-7000-8000-000000000001",
+        "status": "pending",
+        "updated_at": "2026-08-20T00:00:00Z",
+    }
+    assert action.calls == [
+        {
+            "detected_creator_account_id": ACCOUNT_ID,
+            "onboarding_transaction_id": None,
+            "organization_id": None,
+            "installation_id": None,
+        }
+    ]
 
 
 @pytest.mark.parametrize(

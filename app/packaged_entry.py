@@ -27,6 +27,9 @@ def select_brain_application(
         return app
     from app.provisioning.app import create_provisioning_app
     from app.provisioning.claim_submission import durable_claim_submission
+    from app.provisioning.creator_association import (
+        durable_creator_association_initiation,
+    )
     from app.provisioning.completion import (
         durable_authentication_store,
         durable_completion_reader,
@@ -36,6 +39,12 @@ def select_brain_application(
     open_store = durable_authentication_store(data_directory)
     return create_provisioning_app(
         claim_submission=durable_claim_submission(
+            open_store,
+            hosted_origin=os.environ.get(
+                PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""
+            ),
+        ),
+        creator_association_initiation=durable_creator_association_initiation(
             open_store,
             hosted_origin=os.environ.get(
                 PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""
