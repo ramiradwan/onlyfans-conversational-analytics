@@ -420,7 +420,7 @@ class HostedGrantClient:
         *,
         membership_reference_id: str,
     ) -> VerifiedGrantReference:
-        """Verify and append an approved creator-account binding."""
+        """Verify and return an approved creator-account binding."""
 
         key = self._installation_key.ensure_ready()
         membership = self._association_membership(
@@ -480,7 +480,6 @@ class HostedGrantClient:
         )
         if reference.creator_account_id != association.creator_account_id:
             raise GrantVerificationRefused("creator_account_mismatch")
-        self._store.record_verified_grant(reference)
         return reference
 
     def refresh_grant(

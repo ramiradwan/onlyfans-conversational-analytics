@@ -84,7 +84,7 @@ def acquire_creator_account_binding(
         return "binding_acquisition_unavailable"
     association = _association_request(candidate)
     try:
-        client.acquire_creator_account_binding(
+        binding = client.acquire_creator_account_binding(
             association,
             membership_reference_id=membership.reference_id,
         )
@@ -98,8 +98,10 @@ def acquire_creator_account_binding(
         return "membership_reference_unavailable"
     except InstallationKeyError:
         return "installation_key_unavailable"
-    if not store.approve_provisioning_candidate(
-        candidate.association_request_id, resolved_at=now()
+    if not store.record_verified_grant_and_approve_provisioning_candidate(
+        binding,
+        candidate.association_request_id,
+        resolved_at=now(),
     ):
         return "candidate_resolution_conflict"
     return BindingAcquisitionStatus(candidate.association_request_id)

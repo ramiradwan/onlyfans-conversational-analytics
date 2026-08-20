@@ -695,7 +695,7 @@ def _association(
     )
 
 
-def test_second_creator_binding_is_appended_without_disturbing_the_first(
+def test_creator_binding_acquisition_defers_local_persistence_to_its_caller(
     tmp_path: Path,
     bundle: SignedBundle,
     claim: InstallationClaim,
@@ -722,15 +722,12 @@ def test_second_creator_binding_is_appended_without_disturbing_the_first(
         second_request, membership_reference_id=membership_reference_id
     )
 
-    bindings = {
-        grant.creator_account_id: grant
+    assert first.creator_account_id == _ACCOUNT_ID
+    assert second.creator_account_id == _SECOND_ACCOUNT_ID
+    assert not any(
+        grant.grant_type == "creator_account_binding"
         for grant in store.verified_grants()
-        if grant.grant_type == "creator_account_binding"
-    }
-    assert set(bindings) == {_ACCOUNT_ID, _SECOND_ACCOUNT_ID}
-    assert bindings[_ACCOUNT_ID] == first
-    assert bindings[_SECOND_ACCOUNT_ID] == second
-    assert store.verified_grant(first.reference_id) == first
+    )
 
 
 def test_tampered_creator_binding_is_refused_before_it_is_stored(

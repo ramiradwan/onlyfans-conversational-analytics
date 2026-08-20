@@ -7,7 +7,7 @@ import json
 import re
 import secrets
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -385,6 +385,14 @@ class AuthenticationStore(Protocol):
         self, grants: tuple[VerifiedGrantReference, ...]
     ) -> None: ...
 
+    def record_verified_grant_and_approve_provisioning_candidate(
+        self,
+        grant: VerifiedGrantReference,
+        association_request_id: str,
+        *,
+        resolved_at: datetime,
+    ) -> bool: ...
+
     def replace_verified_grant(
         self, previous_reference_id: str, grant: VerifiedGrantReference
     ) -> None: ...
@@ -495,6 +503,10 @@ class AuthenticationStore(Protocol):
 
 class AuthenticationStateError(ValueError):
     """Raised when an authentication object cannot be issued from current state."""
+
+
+class _ProvisioningCandidateResolutionConflict(Exception):
+    """Roll back a compound binding write when approval cannot be applied."""
 
 
 AccountBindingRefusal = Literal[
@@ -771,6 +783,47 @@ class SQLiteAuthenticationStore:
             for grant in grants:
                 self._insert_verified_grant(connection, grant)
             self._increment_authorization_epoch(connection)
+
+    def record_verified_grant_and_approve_provisioning_candidate(
+        self,
+        grant: VerifiedGrantReference,
+        association_request_id: str,
+        *,
+        resolved_at: datetime,
+    ) -> bool:
+        """Commit a verified binding and its candidate approval together.
+
+        Replaying an interrupted acquisition may reverify the same signed
+        binding with a later local verification timestamp after an earlier
+        release recorded the grant but did not approve its candidate. That
+        existing reference is reused; a conflicting reference is still refused
+        by the original uniqueness constraint.
+        """
+
+        self._validate_verified_grant(grant)
+        try:
+            with self.database.transaction() as connection:
+                try:
+                    self._insert_verified_grant(connection, grant)
+                except sqlite3.IntegrityError:
+                    row = connection.execute(
+                        "SELECT * FROM verified_grant_references WHERE reference_id = ?",
+                        (grant.reference_id,),
+                    ).fetchone()
+                    if row is None or replace(
+                        _verified_grant_reference(row), verified_at=grant.verified_at
+                    ) != grant:
+                        raise
+                if not self._approve_provisioning_candidate_in_transaction(
+                    connection,
+                    association_request_id,
+                    resolved_at=resolved_at,
+                ):
+                    raise _ProvisioningCandidateResolutionConflict
+                self._increment_authorization_epoch(connection)
+        except _ProvisioningCandidateResolutionConflict:
+            return False
+        return True
 
     def replace_verified_grant(
         self, previous_reference_id: str, grant: VerifiedGrantReference
@@ -2188,20 +2241,50 @@ class SQLiteAuthenticationStore:
         resolved_at: datetime,
     ) -> bool:
         with self.database.transaction() as connection:
-            cursor = connection.execute(
-                """
-                UPDATE provisioning_candidates
-                SET state = ?, resolved_at = ?
-                WHERE association_request_id = ? AND state = 'pending'
-                """,
-                (
-                    resolved_state.value,
-                    _time_text(resolved_at),
-                    association_request_id,
-                ),
+            resolved = self._resolve_provisioning_candidate_in_transaction(
+                connection,
+                association_request_id,
+                resolved_state=resolved_state,
+                resolved_at=resolved_at,
             )
-            if cursor.rowcount == 1:
+            if resolved:
                 self._increment_authorization_epoch(connection)
+        return resolved
+
+    @staticmethod
+    def _approve_provisioning_candidate_in_transaction(
+        connection: sqlite3.Connection,
+        association_request_id: str,
+        *,
+        resolved_at: datetime,
+    ) -> bool:
+        return SQLiteAuthenticationStore._resolve_provisioning_candidate_in_transaction(
+            connection,
+            association_request_id,
+            resolved_state=ProvisioningCandidateState.APPROVED,
+            resolved_at=resolved_at,
+        )
+
+    @staticmethod
+    def _resolve_provisioning_candidate_in_transaction(
+        connection: sqlite3.Connection,
+        association_request_id: str,
+        *,
+        resolved_state: ProvisioningCandidateState,
+        resolved_at: datetime,
+    ) -> bool:
+        cursor = connection.execute(
+            """
+            UPDATE provisioning_candidates
+            SET state = ?, resolved_at = ?
+            WHERE association_request_id = ? AND state = 'pending'
+            """,
+            (
+                resolved_state.value,
+                _time_text(resolved_at),
+                association_request_id,
+            ),
+        )
         return cursor.rowcount == 1
 
     def record_claim_submission(self, submission: ClaimSubmission) -> None:

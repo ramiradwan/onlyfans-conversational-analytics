@@ -36,6 +36,7 @@ _CARRIED_COST_MODULES = (
     "security/permit_reserve_port.py",
 )
 _BACKGROUND_PLANE_MARKERS = (
+    "background",
     "pipeline",
     "projection",
     "rebuild",
@@ -43,6 +44,8 @@ _BACKGROUND_PLANE_MARKERS = (
     "scheduling",
     "worker",
 )
+_BINDING_ACQUISITION_MODULE = "app.provisioning.binding_acquisition"
+_BINDING_ACQUISITION_ACTION = "acquire_creator_account_binding"
 _EXPECTED_BACKGROUND_MODULES = frozenset(
     {
         "analytics/pipeline.py",
@@ -105,6 +108,42 @@ def _background_reserve_violations(brain_root: Path) -> list[str]:
         if not _is_background_plane_path(relative):
             continue
         references = _reserve_port_references(path)
+        if references:
+            violations.append(f"{relative.as_posix()}: {references}")
+    return violations
+
+
+def _binding_acquisition_references(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    references: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == _BINDING_ACQUISITION_MODULE:
+                    references.add(f"imports {_BINDING_ACQUISITION_MODULE}")
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == _BINDING_ACQUISITION_MODULE:
+                references.add(f"imports from {_BINDING_ACQUISITION_MODULE}")
+            if any(alias.name == _BINDING_ACQUISITION_ACTION for alias in node.names):
+                references.add(f"references {_BINDING_ACQUISITION_ACTION}")
+        elif isinstance(node, ast.Name) and node.id == _BINDING_ACQUISITION_ACTION:
+            references.add(f"references {_BINDING_ACQUISITION_ACTION}")
+        elif (
+            isinstance(node, ast.Attribute)
+            and node.attr == _BINDING_ACQUISITION_ACTION
+        ):
+            references.add(f"references {_BINDING_ACQUISITION_ACTION}")
+    return sorted(references)
+
+
+def _background_binding_acquisition_violations(brain_root: Path) -> list[str]:
+    violations: list[str] = []
+    for path in sorted(brain_root.rglob("*.py")):
+        relative = path.relative_to(brain_root)
+        if not _is_background_plane_path(relative):
+            continue
+        references = _binding_acquisition_references(path)
         if references:
             violations.append(f"{relative.as_posix()}: {references}")
     return violations
@@ -178,6 +217,21 @@ def test_no_background_module_imports_the_reserve_port() -> None:
     )
 
 
+def _assert_no_background_module_imports_the_binding_acquisition_action(
+    brain_root: Path,
+) -> None:
+    violations = _background_binding_acquisition_violations(brain_root)
+
+    assert not violations, (
+        "A scheduler, worker, or background module imports the binding acquisition "
+        "action:\n" + "\n".join(violations)
+    )
+
+
+def test_no_background_module_imports_the_binding_acquisition_action() -> None:
+    _assert_no_background_module_imports_the_binding_acquisition_action(BRAIN_ROOT)
+
+
 def test_guard_rejects_reserve_port_import_in_a_background_module(
     tmp_path: Path,
 ) -> None:
@@ -192,6 +246,25 @@ def test_guard_rejects_reserve_port_import_in_a_background_module(
         "analytics/scheduling.py: "
         f"['imports from {RESERVE_PORT_MODULE}', 'references reserve_admission']"
     ]
+
+
+def test_guard_rejects_binding_acquisition_import_in_a_background_module(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "app" / "analytics" / "scheduling.py"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        f"from {_BINDING_ACQUISITION_MODULE} import {_BINDING_ACQUISITION_ACTION}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        AssertionError,
+        match="A scheduler, worker, or background module imports the binding acquisition",
+    ):
+        _assert_no_background_module_imports_the_binding_acquisition_action(
+            tmp_path / "app"
+        )
 
 
 def test_confirmation_is_minted_only_through_the_request_adapter() -> None:
