@@ -50,6 +50,15 @@ function Add-Result {
     Write-Host ('[{0}] {1}' -f $Outcome.ToUpperInvariant(), $Step)
 }
 
+function Test-UsableFileIdentity {
+    param([Parameter(Mandatory)] [IO.FileSystemInfo] $File)
+
+    if ($File.PSIsContainer -or $File.Length -le 0) {
+        return $false
+    }
+    return (($File.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0)
+}
+
 function Write-Transcript {
     param([hashtable] $RunEvidence)
 
@@ -87,8 +96,16 @@ function Find-ExecutableOnSearchPath {
     foreach ($directory in $directories) {
         foreach ($name in $Names) {
             $candidate = Join-Path -Path $directory -ChildPath $name
-            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-                return (Resolve-Path -LiteralPath $candidate).Path
+            if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+                continue
+            }
+            try {
+                $file = Get-Item -LiteralPath $candidate -Force -ErrorAction Stop
+            } catch {
+                continue
+            }
+            if (Test-UsableFileIdentity -File $file) {
+                return $file.FullName
             }
         }
     }
@@ -108,7 +125,14 @@ function Find-RepositoryCheckout {
         $fileMarker = Get-ChildItem -LiteralPath $root -Force -Recurse -File -Filter '.git' -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if ($null -ne $fileMarker) {
-            return $fileMarker.FullName
+            try {
+                $file = Get-Item -LiteralPath $fileMarker.FullName -Force -ErrorAction Stop
+            } catch {
+                $file = $null
+            }
+            if ($null -ne $file -and (Test-UsableFileIdentity -File $file)) {
+                return $file.FullName
+            }
         }
     }
     return $null
