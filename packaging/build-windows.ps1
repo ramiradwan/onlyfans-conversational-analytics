@@ -20,7 +20,11 @@ param(
     # A narrow falsifier seam. It can only inject named prohibited material
     # after freezing and before policy verification; it cannot alter a release.
     [ValidateSet("", "DevelopmentConfiguration", "InstallationClaim")]
-    [string] $TestInjection = ""
+    [string] $TestInjection = "",
+
+    # Optional explicit Inno Setup compiler. When omitted, discovery runs
+    # only after the staged artifact has passed every release gate.
+    [string] $InnoSetupCompiler = ""
 )
 
 Set-StrictMode -Version Latest
@@ -34,6 +38,7 @@ $ProjectRoot = if ($env:BRAIN_PROJECT_ROOT) {
 $SpecPath = Join-Path $ProjectRoot "packaging\pyinstaller\brain.spec"
 $PolicyPath = Join-Path $ProjectRoot "tools\packaging_policy.py"
 $RuntimePolicyPath = Join-Path $ProjectRoot "packaging\runtime-files.json"
+$InnoScriptPath = Join-Path $ProjectRoot "packaging\inno\brain.iss"
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 
@@ -45,6 +50,9 @@ if (-not (Test-Path -LiteralPath $SpecPath -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $RuntimePolicyPath -PathType Leaf)) {
     throw "Runtime packaging policy does not exist: $RuntimePolicyPath"
+}
+if (-not (Test-Path -LiteralPath $InnoScriptPath -PathType Leaf)) {
+    throw "Inno Setup script does not exist: $InnoScriptPath"
 }
 if ($OutputRoot -eq $ProjectRoot -or $OutputRoot.StartsWith($ProjectRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Build output must be outside the repository: $OutputRoot"
@@ -104,6 +112,50 @@ function Get-BrainVersion {
         throw "The authoritative Brain version is absent from app/core/config.py"
     }
     return $match.Groups["version"].Value
+}
+
+function Resolve-InnoSetupCompiler {
+    param([string] $ExplicitCompiler)
+
+    $searched = [System.Collections.Generic.List[string]]::new()
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    if ($ExplicitCompiler) {
+        $searched.Add("explicit -InnoSetupCompiler: $ExplicitCompiler")
+        $candidates.Add($ExplicitCompiler)
+    } else {
+        $searched.Add("explicit -InnoSetupCompiler (not supplied)")
+    }
+    foreach ($environmentVariable in @("INNO_SETUP_COMPILER", "ISCC")) {
+        $value = [Environment]::GetEnvironmentVariable($environmentVariable)
+        $searched.Add("environment variable $environmentVariable" + $(if ($value) { ": $value" } else { " (unset)" }))
+        if ($value) {
+            $candidates.Add($value)
+        }
+    }
+    $searched.Add("PATH: ISCC.exe")
+    $onPath = Get-Command -Name "ISCC.exe" -CommandType Application -ErrorAction SilentlyContinue
+    if ($null -ne $onPath) {
+        $candidates.Add($onPath.Source)
+    }
+    $knownBases = @(
+        $env:LOCALAPPDATA,
+        ${env:ProgramFiles(x86)},
+        $env:ProgramFiles
+    ) | Where-Object { $_ }
+    foreach ($knownBase in $knownBases) {
+        $knownLocation = Join-Path $knownBase "Programs\Inno Setup 6\ISCC.exe"
+        if ($knownBase -ne $env:LOCALAPPDATA) {
+            $knownLocation = Join-Path $knownBase "Inno Setup 6\ISCC.exe"
+        }
+        $searched.Add("known location: $knownLocation")
+        $candidates.Add($knownLocation)
+    }
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return [IO.Path]::GetFullPath($candidate)
+        }
+    }
+    throw "Inno Setup compiler was not found. Searched: $($searched -join '; ')"
 }
 
 function Write-ReleaseManifest {
@@ -220,4 +272,18 @@ Invoke-PackagingPolicy -BuildPython $BuildPython -ProjectRoot $ProjectRoot -Stag
 Write-Sha256Sums -StagingRoot $stagingRoot
 
 # Reserved signing hook: signing is intentionally not implemented in this unit.
-Write-Host "Windows one-dir artifact ready: $stagingRoot"
+$installerOutput = Join-Path $OutputRoot "installer"
+$compiler = Resolve-InnoSetupCompiler -ExplicitCompiler $InnoSetupCompiler
+$version = Get-BrainVersion
+Invoke-RequiredCommand -FilePath $compiler -Arguments @(
+    "/DStagingRoot=$stagingRoot",
+    "/DOutputRoot=$installerOutput",
+    "/DAppVersion=$version",
+    $InnoScriptPath
+)
+$installerName = "OnlyFans-Conversational-Analytics-Setup-$version-x64.exe"
+$installerPath = Join-Path $installerOutput $installerName
+if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
+    throw "Inno Setup did not produce the required installer: $installerPath"
+}
+Write-Host "Windows installer ready: $installerPath"
