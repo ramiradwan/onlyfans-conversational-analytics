@@ -77,9 +77,8 @@ def _check_forbidden_paths(
         if not isinstance(pattern, str):
             findings.append(PackagingFinding("policy_invalid", "forbidden_paths", "pattern is not a string"))
             continue
-        matcher = PurePosixPath(pattern)
         for relative in paths:
-            if matcher.match(relative):
+            if PurePosixPath(relative).match(pattern):
                 findings.append(PackagingFinding("forbidden_path_present", relative, f"matches {pattern}"))
 
 
@@ -123,6 +122,34 @@ def _check_contracts(
         return
     relative = contracts["path"]
     contracts_root = root / relative
+    expected_root_files = contracts.get("root_files")
+    if not isinstance(expected_root_files, list) or not all(
+        isinstance(filename, str) and filename for filename in expected_root_files
+    ):
+        findings.append(PackagingFinding("policy_invalid", "contracts.root_files", "root files are invalid"))
+        return
+    actual_root_files = (
+        {path.name for path in contracts_root.iterdir() if path.is_file()}
+        if contracts_root.is_dir()
+        else set()
+    )
+    declared_root_files = set(expected_root_files)
+    for filename in sorted(declared_root_files - actual_root_files):
+        findings.append(
+            PackagingFinding(
+                "contracts_root_file_missing",
+                f"{relative}/{filename}",
+                "declared contracts-root file is absent",
+            )
+        )
+    for filename in sorted(actual_root_files - declared_root_files):
+        findings.append(
+            PackagingFinding(
+                "contracts_root_file_unexpected",
+                f"{relative}/{filename}",
+                "contracts-root files must be exact",
+            )
+        )
     for filename, key in (("manifest.json", "manifest_sha256"), ("consumer-pin.json", "consumer_pin_sha256")):
         candidate = contracts_root / filename
         expected_digest = contracts.get(key)

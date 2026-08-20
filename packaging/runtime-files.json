@@ -62,20 +62,19 @@
   "contracts": {
     "path": "_internal/contracts",
     "manifest_sha256": "0a2c6cdcc5bf62fea690ac912be79952e97261db860d8086ce22bf112c05041c",
-    "consumer_pin_sha256": "c9f7bf3eecd1081bcc70aff2ec6eaa6b6fa7a8f5c63dba717d9a1d3ba0918c71"
+    "consumer_pin_sha256": "c9f7bf3eecd1081bcc70aff2ec6eaa6b6fa7a8f5c63dba717d9a1d3ba0918c71",
+    "root_files": [
+      "README.md",
+      "__init__.py",
+      "consumer-pin.json",
+      "loader.py",
+      "manifest.json",
+      "verify.py"
+    ]
   },
-  "byte_preserved_paths": [
-    "_internal/app/persistence/sql/**",
-    "_internal/app/persistence/auth_sql/**",
-    "_internal/app/persistence/projection_sql/**",
-    "_internal/app/analytics/sql/**",
-    "_internal/contracts/**"
-  ],
   "forbidden_paths": [
-    "_internal/app/.env",
-    "_internal/app/.env.example",
-    "_internal/.env",
-    "_internal/.env.example",
+    ".env",
+    ".env.example",
     "_internal/**/runtime.env",
     "_internal/frontend/**",
     "_internal/extension/**",
@@ -86,8 +85,6 @@
     "_internal/**/npm.cmd",
     "_internal/**/npx.cmd",
     "_internal/**/vite.cmd",
-    "app/.env",
-    "app/.env.example",
     "frontend/**",
     "extension/**",
     "tests/**",

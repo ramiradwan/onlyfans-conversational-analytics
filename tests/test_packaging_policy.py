@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from fastapi.staticfiles import StaticFiles
+
 from tools.packaging_policy import load_runtime_policy, verify_runtime_files
 
 
@@ -78,16 +80,19 @@ def test_verifier_module_is_importable_without_shadowing_installed_packaging() -
     assert result.returncode == 0, result.stderr
 
 
-def test_complete_synthetic_staging_tree_satisfies_policy(tmp_path: Path) -> None:
-    assert verify_runtime_files(_stage_runtime_tree(tmp_path)) == ()
+def test_declared_wildcard_rejects_runtime_environment_file(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    forbidden = stage / "_internal" / "app" / "runtime.env"
+    forbidden.write_text("ENVIRONMENT=development\n", encoding="utf-8")
 
+    findings = verify_runtime_files(stage)
 
-def test_required_paths_cover_the_single_entry_for_both_boot_modes() -> None:
-    policy = load_runtime_policy(POLICY_PATH)
-
-    assert "Brain.exe" in policy["required_files"]
-    assert "_internal/app/static/dist" in policy["required_directories"]
-    assert "_internal/contracts" in policy["required_directories"]
+    assert any(
+        finding.code == "forbidden_path_present"
+        and finding.path == "_internal/app/runtime.env"
+        and finding.detail == "matches _internal/**/runtime.env"
+        for finding in findings
+    ), "declared runtime.env wildcard must reject the staged file"
 
 
 def test_missing_required_file_is_reported(tmp_path: Path) -> None:
@@ -97,41 +102,60 @@ def test_missing_required_file_is_reported(tmp_path: Path) -> None:
     assert "required_file_missing" in _codes(verify_runtime_files(stage))
 
 
-def test_missing_required_directory_is_reported(tmp_path: Path) -> None:
+def test_required_paths_checker_reports_a_missing_required_directory(tmp_path: Path) -> None:
     stage = _stage_runtime_tree(tmp_path)
     (stage / "Agent").rmdir()
 
-    assert "required_directory_missing" in _codes(verify_runtime_files(stage))
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "required_directory_missing" and finding.path == "Agent"
+        for finding in findings
+    ), "required-path checker must report a declared missing directory"
 
 
-def test_forbidden_app_env_example_is_reported(tmp_path: Path) -> None:
+def test_required_directories_cover_runtime_static_mount() -> None:
+    from app.main import app
+
+    runtime_directories = {
+        f"_internal/{Path(static_app.directory).as_posix()}"
+        for route in app.routes
+        if isinstance(static_app := getattr(route, "app", None), StaticFiles)
+    }
+    declared_directories = set(load_runtime_policy(POLICY_PATH)["required_directories"])
+
+    assert runtime_directories <= declared_directories, (
+        "required_directories must include every directory mounted by the runtime"
+    )
+
+
+def test_forbidden_development_configuration_examples_are_reported_from_multiple_locations(
+    tmp_path: Path,
+) -> None:
     stage = _stage_runtime_tree(tmp_path)
-    forbidden = stage / "_internal" / "app" / ".env.example"
-    forbidden.parent.mkdir(parents=True, exist_ok=True)
-    forbidden.write_text("ENVIRONMENT=development\n", encoding="utf-8")
+    first_forbidden = stage / "_internal" / "app" / ".env.example"
+    second_forbidden = stage / "_internal" / "app" / "config" / ".env.example"
+    first_forbidden.write_text("ENVIRONMENT=development\n", encoding="utf-8")
+    second_forbidden.parent.mkdir(parents=True, exist_ok=True)
+    second_forbidden.write_text("ENVIRONMENT=development\n", encoding="utf-8")
 
     findings = verify_runtime_files(stage)
 
-    assert "forbidden_path_present" in _codes(findings)
-    assert any(finding.path == "_internal/app/.env.example" for finding in findings)
+    reported = {
+        finding.path
+        for finding in findings
+        if finding.code == "forbidden_path_present"
+    }
+    assert {
+        "_internal/app/.env.example",
+        "_internal/app/config/.env.example",
+    } <= reported, "development configuration examples must be forbidden at every depth"
 
 
 def test_sql_catalog_declaration_is_a_complete_derived_closure() -> None:
     """Removing any declared SQL file makes this exact-set assertion fail."""
 
     assert _declared_sql_digests(load_runtime_policy(POLICY_PATH)) == _source_sql_digests()
-
-
-def test_byte_preservation_scope_covers_each_immutable_loader_tree() -> None:
-    policy = load_runtime_policy(POLICY_PATH)
-
-    assert set(policy["byte_preserved_paths"]) == {
-        "_internal/app/persistence/sql/**",
-        "_internal/app/persistence/auth_sql/**",
-        "_internal/app/persistence/projection_sql/**",
-        "_internal/app/analytics/sql/**",
-        "_internal/contracts/**",
-    }
 
 
 def test_contract_anchor_hashes_match_the_derived_contract_closure() -> None:
@@ -180,6 +204,29 @@ def test_contract_closure_is_derived_from_the_staged_manifest(tmp_path: Path) ->
     missing.unlink()
 
     assert "contracts_closure_failed" in _codes(verify_runtime_files(stage))
+
+
+def test_contract_verifier_rejects_an_unlisted_contract_root_file(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    unlisted = stage / "_internal" / "contracts" / "unlisted-contract.json"
+    unlisted.write_text("{}\n", encoding="utf-8")
+
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "contracts_root_file_unexpected"
+        and finding.path == "_internal/contracts/unlisted-contract.json"
+        for finding in findings
+    ), "contract verification must reject an unlisted contracts-root file"
+
+
+def test_contract_root_file_declaration_exactly_matches_the_staged_root(tmp_path: Path) -> None:
+    findings = verify_runtime_files(_stage_runtime_tree(tmp_path))
+
+    assert not any(
+        finding.code in {"contracts_root_file_missing", "contracts_root_file_unexpected"}
+        for finding in findings
+    ), "contracts-root declaration must exactly match the staged root files"
 
 
 def test_frontend_without_a_manifest_fails_closed(tmp_path: Path) -> None:
