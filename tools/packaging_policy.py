@@ -157,6 +157,31 @@ def _check_contracts(
             continue
         if not isinstance(expected_digest, str) or _sha256(candidate) != expected_digest:
             findings.append(PackagingFinding("byte_preservation_failed", f"{relative}/{filename}", "SHA-256 differs from declaration"))
+    root_file_digests = contracts.get("root_file_sha256", {})
+    if not isinstance(root_file_digests, Mapping) or not all(
+        isinstance(filename, str) and isinstance(digest, str)
+        for filename, digest in root_file_digests.items()
+    ):
+        findings.append(
+            PackagingFinding(
+                "policy_invalid",
+                "contracts.root_file_sha256",
+                "root file digest anchors are invalid",
+            )
+        )
+    else:
+        for filename, expected_digest in root_file_digests.items():
+            candidate = contracts_root / filename
+            if not candidate.is_file():
+                continue
+            if _sha256(candidate) != expected_digest:
+                findings.append(
+                    PackagingFinding(
+                        "byte_preservation_failed",
+                        f"{relative}/{filename}",
+                        "SHA-256 differs from declaration",
+                    )
+                )
     try:
         from contracts.loader import verify_snapshot_integrity
 

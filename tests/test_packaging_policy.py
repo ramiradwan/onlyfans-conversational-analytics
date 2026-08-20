@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.staticfiles import StaticFiles
 
 from tools.packaging_policy import load_runtime_policy, verify_runtime_files
@@ -124,6 +125,7 @@ def test_required_directories_cover_runtime_static_mount() -> None:
     }
     declared_directories = set(load_runtime_policy(POLICY_PATH)["required_directories"])
 
+    assert runtime_directories, "runtime must mount at least one static directory"
     assert runtime_directories <= declared_directories, (
         "required_directories must include every directory mounted by the runtime"
     )
@@ -170,6 +172,22 @@ def test_contract_anchor_hashes_match_the_derived_contract_closure() -> None:
     ).hexdigest()
 
 
+def test_contract_support_file_hashes_match_the_derived_contract_closure() -> None:
+    policy = load_runtime_policy(POLICY_PATH)
+    declared_digests = policy["contracts"]["root_file_sha256"]
+    assert set(declared_digests) == {"loader.py", "verify.py"}, (
+        "both executable contract support files must have digest anchors"
+    )
+    derived_digests = {
+        filename: hashlib.sha256((ROOT / "contracts" / filename).read_bytes()).hexdigest()
+        for filename in declared_digests
+    }
+
+    assert declared_digests == derived_digests, (
+        "contract support-file digest anchors must match the immutable source files"
+    )
+
+
 def test_missing_sql_catalog_file_is_reported(tmp_path: Path) -> None:
     stage = _stage_runtime_tree(tmp_path)
     removed = stage / "_internal" / "app" / "analytics" / "sql" / "0004_topic_property_pair.sql"
@@ -197,13 +215,50 @@ def test_unexpected_sql_catalog_file_is_reported(tmp_path: Path) -> None:
     assert "sql_catalog_file_unexpected" in _codes(verify_runtime_files(stage))
 
 
-def test_contract_closure_is_derived_from_the_staged_manifest(tmp_path: Path) -> None:
+@pytest.mark.parametrize("position", ("first", "middle", "last"))
+def test_contract_closure_is_derived_from_the_staged_manifest(
+    tmp_path: Path, position: str
+) -> None:
     stage = _stage_runtime_tree(tmp_path)
     manifest = json.loads((ROOT / "contracts" / "manifest.json").read_text(encoding="utf-8"))
-    missing = stage / "_internal" / "contracts" / manifest["files"][0]["path"]
+    indices = {
+        "first": 0,
+        "middle": len(manifest["files"]) // 2,
+        "last": len(manifest["files"]) - 1,
+    }
+    missing = stage / "_internal" / "contracts" / manifest["files"][indices[position]]["path"]
     missing.unlink()
 
-    assert "contracts_closure_failed" in _codes(verify_runtime_files(stage))
+    assert "contracts_closure_failed" in _codes(verify_runtime_files(stage)), (
+        f"contract closure must reject a missing {position} manifest entry"
+    )
+
+
+def test_contract_loader_byte_rewrite_is_reported(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    loader = stage / "_internal" / "contracts" / "loader.py"
+    loader.write_bytes(loader.read_bytes() + b"\n# staged rewrite\n")
+
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "byte_preservation_failed"
+        and finding.path == "_internal/contracts/loader.py"
+        for finding in findings
+    ), "contract loader byte rewrite must be reported by its digest anchor"
+
+
+def test_missing_declared_contract_root_file_is_reported(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    (stage / "_internal" / "contracts" / "loader.py").unlink()
+
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "contracts_root_file_missing"
+        and finding.path == "_internal/contracts/loader.py"
+        for finding in findings
+    ), "declared contract root files must be reported when absent"
 
 
 def test_contract_verifier_rejects_an_unlisted_contract_root_file(tmp_path: Path) -> None:
@@ -236,6 +291,19 @@ def test_frontend_without_a_manifest_fails_closed(tmp_path: Path) -> None:
     assert "frontend_manifest_missing" in _codes(verify_runtime_files(stage))
 
 
+def test_frontend_without_a_dist_directory_fails_closed(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    shutil.rmtree(stage / "_internal" / "app" / "static" / "dist")
+
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "frontend_manifest_missing"
+        and finding.path == "_internal/app/static/dist"
+        for finding in findings
+    ), "an absent frontend dist directory must fail closed"
+
+
 def test_malformed_frontend_manifest_is_reported(tmp_path: Path) -> None:
     stage = _stage_runtime_tree(tmp_path)
     (stage / "_internal" / "app" / "static" / "dist" / "manifest.json").write_text(
@@ -258,3 +326,9 @@ def test_missing_manifest_referenced_frontend_asset_is_reported(tmp_path: Path) 
 
 def test_missing_staging_root_returns_a_finding(tmp_path: Path) -> None:
     assert _codes(verify_runtime_files(tmp_path / "absent")) == {"staging_root_missing"}
+
+
+def test_complete_synthetic_staging_tree_satisfies_policy(tmp_path: Path) -> None:
+    findings = verify_runtime_files(_stage_runtime_tree(tmp_path))
+
+    assert findings == (), "a complete synthetic staging tree must satisfy the policy"

@@ -63,6 +63,10 @@
     "path": "_internal/contracts",
     "manifest_sha256": "0a2c6cdcc5bf62fea690ac912be79952e97261db860d8086ce22bf112c05041c",
     "consumer_pin_sha256": "c9f7bf3eecd1081bcc70aff2ec6eaa6b6fa7a8f5c63dba717d9a1d3ba0918c71",
+    "root_file_sha256": {
+      "loader.py": "fff06e359a6fc6e1fa4f9fac584e4c7dbd67e33c713eadefa251825521df40e3",
+      "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
+    },
     "root_files": [
       "README.md",
       "__init__.py",
