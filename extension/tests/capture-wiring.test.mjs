@@ -266,11 +266,12 @@ test('page hook recognizes bounded wrappers, empty pages, and keyed websocket me
   await pageWindow.fetch('/api2/v2/chats/73/messages');
   await pageWindow.fetch('/api2/v2/users/1/chats');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(posts.length, 4, 'only a truly empty recognized page may be silent');
-  assert.equal(posts[2].message.observation.event_type, 'message.observed');
-  assert.equal(posts[2].message.observation.context_chat_id, '73');
-  assert.equal(posts[3].message.observation.event_type, 'hook.diagnostic');
-  assert.equal(posts[3].message.observation.code, 'unrecognized_payload');
+  const observations = posts.filter(({ message }) => message.type === CAPTURE_MESSAGE_TYPE);
+  assert.equal(observations.length, 4, 'only a truly empty recognized page may be silent');
+  assert.equal(observations[2].message.observation.event_type, 'message.observed');
+  assert.equal(observations[2].message.observation.context_chat_id, '73');
+  assert.equal(observations[3].message.observation.event_type, 'hook.diagnostic');
+  assert.equal(observations[3].message.observation.code, 'unrecognized_payload');
 
   const socket = new pageWindow.WebSocket('wss://ws2.onlyfans.com/ws3/');
   socket.receive({
@@ -291,7 +292,10 @@ test('page hook recognizes bounded wrappers, empty pages, and keyed websocket me
     },
   });
   assert.deepEqual(
-    posts.slice(4).map(({ message }) => message.observation.context_chat_id),
+    posts
+      .filter(({ message }) => message.type === CAPTURE_MESSAGE_TYPE)
+      .slice(4)
+      .map(({ message }) => message.observation.context_chat_id),
     ['73', '73'],
   );
 });

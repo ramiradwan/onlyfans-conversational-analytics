@@ -4,6 +4,8 @@
 
   const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
   const PROTOCOL_VERSION = '2';
+  const PROVISIONING_IDENTITY_MESSAGE_TYPE = 'ofca.provisioning.identity.update';
+  const PROVISIONING_IDENTITY_VERSION = 1;
   const pageOrigin = window.location.origin;
   let droppedEnvelopeCount = 0;
   let deliveryFailureCount = 0;
@@ -33,34 +35,59 @@
     });
   }
 
+  function isProvisioningIdentityEnvelope(envelope) {
+    if (
+      !isRecord(envelope)
+      || !hasExactKeys(envelope, ['type', 'version', 'authenticated_profile'])
+      || envelope.type !== PROVISIONING_IDENTITY_MESSAGE_TYPE
+      || envelope.version !== PROVISIONING_IDENTITY_VERSION
+    ) return false;
+    if (envelope.authenticated_profile === null) return true;
+    const profile = envelope.authenticated_profile;
+    return isRecord(profile)
+      && hasExactKeys(profile, ['creator_account_id'])
+      && typeof profile.creator_account_id === 'string'
+      && profile.creator_account_id.length >= 1
+      && profile.creator_account_id.length <= 200;
+  }
+
+  function forwardRuntimeMessage(message, isDeliveryFailure) {
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError || isDeliveryFailure(response)) reportDeliveryFailure();
+      });
+    } catch (_error) {
+      reportDeliveryFailure();
+    }
+  }
+
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== pageOrigin) return;
 
     const envelope = event.data;
-    if (!isRecord(envelope) || envelope.type !== CAPTURE_MESSAGE_TYPE) return;
-    if (
-      envelope.protocol_version !== PROTOCOL_VERSION
-      || !hasExactKeys(envelope, ['type', 'protocol_version', 'observation'])
-    ) {
-      reportBridgeDrop('invalid_page_envelope');
+    if (!isRecord(envelope)) return;
+    if (envelope.type === CAPTURE_MESSAGE_TYPE) {
+      if (
+        envelope.protocol_version !== PROTOCOL_VERSION
+        || !hasExactKeys(envelope, ['type', 'protocol_version', 'observation'])
+      ) {
+        reportBridgeDrop('invalid_page_envelope');
+        return;
+      }
+
+      forwardRuntimeMessage({
+        type: CAPTURE_MESSAGE_TYPE,
+        protocol_version: PROTOCOL_VERSION,
+        observation: envelope.observation,
+      }, (response) => response?.retryable === true);
       return;
     }
 
-    try {
-      chrome.runtime.sendMessage(
-        {
-          type: CAPTURE_MESSAGE_TYPE,
-          protocol_version: PROTOCOL_VERSION,
-          observation: envelope.observation,
-        },
-        (response) => {
-          if (chrome.runtime.lastError || response?.retryable === true) {
-            reportDeliveryFailure();
-          }
-        },
-      );
-    } catch (_error) {
-      reportDeliveryFailure();
+    if (envelope.type !== PROVISIONING_IDENTITY_MESSAGE_TYPE) return;
+    if (!isProvisioningIdentityEnvelope(envelope)) {
+      reportBridgeDrop('invalid_provisioning_identity_envelope');
+      return;
     }
+    forwardRuntimeMessage(envelope, (response) => response?.ok !== true);
   });
 })();

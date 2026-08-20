@@ -9,6 +9,7 @@ import {
   CaptureIngestionService,
   createCaptureMessageBridge,
 } from './transport/capture-ingestion.mjs';
+import { createProvisioningIdentityBridge } from './transport/provisioning-identity.mjs';
 
 export const chromeAdapter = createChromeAdapter();
 export const agentRuntime = createAgentRuntime({
@@ -34,6 +35,7 @@ export const captureIngestion = new CaptureIngestionService({
 export const captureMessageBridge = createCaptureMessageBridge({
   ingestion: captureIngestion,
 });
+export const provisioningIdentityBridge = createProvisioningIdentityBridge();
 const agentWorkerInstanceId = crypto.randomUUID();
 
 /** Payload-free worker diagnostics used by local health checks and the system E2E harness. */
@@ -84,5 +86,6 @@ Object.defineProperty(globalThis, '__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__', {
 // top-level await so a failed storage/config step cannot leave the worker unwakeable.
 captureMessageBridge.register();
 brainBindingBridge.register();
+provisioningIdentityBridge.register();
 agentRuntime.registerListeners();
 void agentRuntime.wake().catch(() => undefined);

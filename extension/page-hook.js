@@ -4,6 +4,8 @@
 
   const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
   const PROTOCOL_VERSION = '2';
+  const PROVISIONING_IDENTITY_MESSAGE_TYPE = 'ofca.provisioning.identity.update';
+  const PROVISIONING_IDENTITY_VERSION = 1;
   const MAX_PAYLOAD_WRAPPER_DEPTH = 3;
   const PAYLOAD_WRAPPER_KEYS = Object.freeze(['data', 'response', 'result']);
   const targetOrigin = window.location.origin;
@@ -32,6 +34,21 @@
       );
     } catch (_error) {
       // A non-cloneable platform record is ignored without exposing its contents.
+    }
+  }
+
+  function postProvisioningIdentity(authenticatedProfile) {
+    try {
+      window.postMessage(
+        {
+          type: PROVISIONING_IDENTITY_MESSAGE_TYPE,
+          version: PROVISIONING_IDENTITY_VERSION,
+          authenticated_profile: authenticatedProfile,
+        },
+        targetOrigin,
+      );
+    } catch (_error) {
+      // The provisioning hint is best-effort and contains no captured record.
     }
   }
 
@@ -154,6 +171,11 @@
       : body?.user?.id;
     const detected = identifier(rawId);
     if (detected !== null) creatorPlatformUserId = detected;
+    postProvisioningIdentity(
+      detected !== null && detected.length <= 200
+        ? { creator_account_id: detected }
+        : null,
+    );
   }
 
   function emitRecords(resource, pathname, body, sourceEventType) {
