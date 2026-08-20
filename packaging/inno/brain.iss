@@ -16,6 +16,8 @@
 #define InstallerName "OnlyFans-Conversational-Analytics-Setup-" + AppVersion + "-x64"
 
 [Setup]
+; Stable installer identity. Never change this after a release.
+AppId={{a860574e-ff86-4305-be8f-93b5c91cde44}
 AppName={#AppName}
 AppVersion={#AppVersion}
 DefaultDirName={localappdata}\Programs\{#AppName}

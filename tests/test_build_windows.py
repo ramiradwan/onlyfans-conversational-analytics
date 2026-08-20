@@ -126,8 +126,17 @@ def test_policy_gate_rejects_development_configuration_and_is_load_bearing(
 
 
 def _run_installer(installer: Path, prefix: Path, environment: dict[str, str]) -> None:
+    _run_installer_with_directory(installer, environment, prefix)
+
+
+def _run_installer_with_directory(
+    installer: Path, environment: dict[str, str], prefix: Path | None = None
+) -> None:
+    command = [str(installer), "/SILENT", "/SUPPRESSMSGBOXES"]
+    if prefix is not None:
+        command.append(f"/DIR={prefix}")
     result = subprocess.run(
-        [str(installer), "/SILENT", f"/DIR={prefix}"],
+        command,
         env=environment,
         capture_output=True,
         text=True,
@@ -156,11 +165,101 @@ def _assert_user_data_retained(data_file: Path) -> None:
 def _assert_program_payload_removed(prefix: Path) -> None:
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
-        remaining = list(prefix.iterdir()) if prefix.exists() else []
+        try:
+            remaining = list(prefix.iterdir())
+        except FileNotFoundError:
+            return
         if not remaining:
             return
         time.sleep(0.05)
     assert not remaining, f"uninstall must leave no program payload behind: {remaining}"
+
+
+def _inno_setup_compiler() -> Path:
+    compiler = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Inno Setup 6" / "ISCC.exe"
+    assert compiler.is_file(), "Inno Setup compiler is required for installer behavior tests"
+    return compiler
+
+
+def _compile_installer(
+    script: Path, staging_root: Path, output: Path, version: str
+) -> Path:
+    compiled = subprocess.run(
+        [
+            str(_inno_setup_compiler()),
+            f"/DStagingRoot={staging_root}",
+            f"/DOutputRoot={output}",
+            f"/DAppVersion={version}",
+            str(script),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert compiled.returncode == 0, compiled.stdout + compiled.stderr
+    installer = output / f"OnlyFans-Conversational-Analytics-Setup-{version}-x64.exe"
+    assert installer.is_file(), "Inno Setup must produce the named installer"
+    return installer
+
+
+def _higher_version(version: str) -> str:
+    parts = version.split(".")
+    assert len(parts) == 3 and all(part.isdecimal() for part in parts)
+    return ".".join((*parts[:2], str(int(parts[2]) + 1)))
+
+
+def _uninstall_registrations(prefixes: tuple[Path, ...]) -> dict[Path, list[str]]:
+    import winreg
+
+    registrations = {prefix: [] for prefix in prefixes}
+    uninstall_root = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, uninstall_root) as root:
+        index = 0
+        while True:
+            try:
+                key_name = winreg.EnumKey(root, index)
+            except OSError:
+                break
+            index += 1
+            with winreg.OpenKey(root, key_name) as key:
+                try:
+                    location, _ = winreg.QueryValueEx(key, "InstallLocation")
+                except FileNotFoundError:
+                    continue
+            if not isinstance(location, str):
+                continue
+            for prefix in prefixes:
+                if Path(location).resolve() == prefix.resolve():
+                    registrations[prefix].append(key_name)
+    return registrations
+
+
+def _assert_upgrade_installation(
+    installed_prefix: Path, unexpected_prefix: Path
+) -> None:
+    registrations = _uninstall_registrations((installed_prefix, unexpected_prefix))
+    assert (installed_prefix / "Brain.exe").is_file(), "the upgrade must retain one install directory"
+    assert not unexpected_prefix.exists(), "the upgrade must not create a parallel install directory"
+    assert len(registrations[installed_prefix]) == 1, "the upgrade must retain one uninstall registration"
+    assert not registrations[unexpected_prefix], "the upgrade must not register a parallel uninstall"
+
+
+def _assert_parallel_installations(first_prefix: Path, second_prefix: Path) -> None:
+    registrations = _uninstall_registrations((first_prefix, second_prefix))
+    assert (first_prefix / "Brain.exe").is_file(), "the first installation must remain present"
+    assert (second_prefix / "Brain.exe").is_file(), "the second installation must be created"
+    assert len(registrations[first_prefix]) == 1, "the first installation must retain its uninstall registration"
+    assert len(registrations[second_prefix]) == 1, "the second installation must register separately"
+
+
+def _uninstall_all(prefixes: tuple[Path, ...], environment: dict[str, str]) -> None:
+    for prefix in prefixes:
+        if (prefix / "unins000.exe").is_file():
+            _run_uninstaller(prefix, environment)
+        _assert_program_payload_removed(prefix)
+    registrations = _uninstall_registrations(prefixes)
+    assert not any(registrations.values()), "installer test cleanup must remove every uninstall registration"
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Inno Setup installer behavior is Windows-only")
@@ -247,3 +346,90 @@ def test_installer_excludes_agent_and_uninstall_retains_redirected_user_data(
     _assert_program_payload_removed(mutated_prefix)
     with pytest.raises(AssertionError, match="uninstaller must retain"):
         _assert_user_data_retained(retained_file)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Inno Setup installer behavior is Windows-only")
+def test_app_id_upgrade_survives_a_product_rename_and_fails_without_it(
+    tmp_path: Path,
+) -> None:
+    """A stable AppId upgrades one install; its removal creates two real installs."""
+
+    pyinstaller = _write_pyinstaller_standin(tmp_path)
+    build_output = tmp_path / "build"
+    built = _run_build(BUILD_SCRIPT, pyinstaller, build_output, test_injection="")
+    assert built.returncode == 0, built.stdout + built.stderr
+
+    version = _authoritative_version()
+    higher_version = _higher_version(version)
+    staging_root = build_output / "dist" / "Brain"
+    current_installer = (
+        build_output
+        / "installer"
+        / f"OnlyFans-Conversational-Analytics-Setup-{version}-x64.exe"
+    )
+    assert current_installer.is_file(), "the current-version installer must be built"
+
+    original_script = (ROOT / "packaging" / "inno" / "brain.iss").read_text(
+        encoding="utf-8"
+    )
+    app_id_directive = "AppId={{a860574e-ff86-4305-be8f-93b5c91cde44}"
+    original_name = '#define AppName "OnlyFans Conversational Analytics"'
+    renamed_name = '#define AppName "OnlyFans Conversational Analytics Renamed Test"'
+    first_prefix = tmp_path / "installed-current"
+    second_prefix = tmp_path / "installed-renamed"
+    renamed_script = tmp_path / "brain-renamed.iss"
+    renamed_script.write_text(
+        original_script.replace(original_name, renamed_name, 1).replace(
+            "DefaultDirName={localappdata}\\Programs\\{#AppName}",
+            f"DefaultDirName={second_prefix}",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    renamed_installer = _compile_installer(
+        renamed_script, staging_root, tmp_path / "renamed-installer", higher_version
+    )
+
+    data_directory = tmp_path / "runtime-data"
+    environment = os.environ | {"LOCAL_ANALYTICS_DATA_DIR": str(data_directory)}
+    assert runtime_data_directory(environ=environment) == data_directory.resolve()
+    _run_installer(current_installer, first_prefix, environment)
+    try:
+        _run_installer_with_directory(renamed_installer, environment)
+        _assert_upgrade_installation(first_prefix, second_prefix)
+    finally:
+        _uninstall_all((first_prefix, second_prefix), environment)
+
+    without_app_id = original_script.replace(app_id_directive + "\n", "", 1)
+    without_app_id_script = tmp_path / "brain-without-app-id.iss"
+    without_app_id_script.write_text(without_app_id, encoding="utf-8")
+    without_app_id_installer = _compile_installer(
+        without_app_id_script,
+        staging_root,
+        tmp_path / "without-app-id-current-installer",
+        version,
+    )
+    without_app_id_renamed_script = tmp_path / "brain-renamed-without-app-id.iss"
+    without_app_id_renamed_script.write_text(
+        without_app_id.replace(original_name, renamed_name, 1).replace(
+            "DefaultDirName={localappdata}\\Programs\\{#AppName}",
+            f"DefaultDirName={second_prefix}",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    without_app_id_renamed_installer = _compile_installer(
+        without_app_id_renamed_script,
+        staging_root,
+        tmp_path / "without-app-id-renamed-installer",
+        higher_version,
+    )
+
+    _run_installer(without_app_id_installer, first_prefix, environment)
+    try:
+        _run_installer_with_directory(without_app_id_renamed_installer, environment)
+        with pytest.raises(AssertionError, match="upgrade must not create a parallel"):
+            _assert_upgrade_installation(first_prefix, second_prefix)
+        _assert_parallel_installations(first_prefix, second_prefix)
+    finally:
+        _uninstall_all((first_prefix, second_prefix), environment)
