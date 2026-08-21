@@ -10,8 +10,11 @@ param(
 
     [string] $TranscriptPath = (Join-Path (Get-Location) 'packaging-smoke-transcript.json'),
 
-    # The default is bounded to installed-program locations so the recursive repository scan has a fixed, documented cost.
-    [string[]] $InspectionRoot = @([IO.Path]::GetFullPath((Join-Path $env:SystemDrive 'Program Files')), [IO.Path]::GetFullPath((Join-Path $env:SystemDrive 'Program Files (x86)'))),
+    # The default preserves system-drive scope while bounding the recursive repository scan.
+    [string[]] $InspectionRoot = @([IO.Path]::GetFullPath((Join-Path -Path $env:SystemDrive -ChildPath '\'))),
+
+    [ValidateRange(0, 64)]
+    [int] $InspectionDepth = 4,
 
     [string] $ExecutableSearchPath = $env:Path
 )
@@ -117,12 +120,12 @@ function Find-RepositoryCheckout {
         if (-not (Test-Path -LiteralPath $root -PathType Container)) {
             continue
         }
-        $directoryMarker = Get-ChildItem -LiteralPath $root -Force -Recurse -Directory -Filter '.git' -ErrorAction SilentlyContinue |
+        $directoryMarker = Get-ChildItem -LiteralPath $root -Force -Recurse -Depth $InspectionDepth -Directory -Filter '.git' -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if ($null -ne $directoryMarker) {
             return $directoryMarker.FullName
         }
-        $fileMarker = Get-ChildItem -LiteralPath $root -Force -Recurse -File -Filter '.git' -ErrorAction SilentlyContinue |
+        $fileMarker = Get-ChildItem -LiteralPath $root -Force -Recurse -Depth $InspectionDepth -File -Filter '.git' -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if ($null -ne $fileMarker) {
             try {
@@ -160,6 +163,7 @@ function Assert-CleanEnvironment {
     Add-Result -Step 'clean-environment' -Outcome pass -Evidence @{
         executable_search_path = $ExecutableSearchPath
         inspection_roots = @($InspectionRoot)
+        inspection_depth = $InspectionDepth
     }
 }
 

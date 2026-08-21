@@ -6,8 +6,10 @@ import hashlib
 import http.server
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -413,21 +415,23 @@ def test_repository_marker_file_remains_detected(tmp_path: Path) -> None:
 def test_default_inspection_roots_are_absolute_and_not_the_working_directory(
     tmp_path: Path,
 ) -> None:
-    """The default scope is observed through the harness transcript."""
+    """The default scan finds a checkout at an absolute path, not the cwd."""
 
-    result, transcript = _run_smoke(tmp_path, use_script_default=True, cwd=ROOT)
+    clean_cwd = Path(r"C:\Windows\System32")
+    result, transcript = _run_smoke(
+        tmp_path, use_script_default=True, cwd=clean_cwd
+    )
 
-    assert result.returncode == 32, result.stdout + result.stderr
+    assert result.returncode == 23, result.stdout + result.stderr
     clean_environment = _step(transcript, "clean-environment")
-    assert clean_environment["outcome"] == "pass"
-    roots = clean_environment["evidence"]["inspection_roots"]
-    assert roots == [r"C:\Program Files", r"C:\Program Files (x86)"]
-    assert all(Path(root).is_absolute() for root in roots)
-    assert all(Path(root) != ROOT for root in roots)
+    assert clean_environment["outcome"] == "abort"
+    repository_path = Path(clean_environment["evidence"]["path"])
+    assert repository_path.is_absolute()
+    assert repository_path.parent != clean_cwd
 
     mutated_script = tmp_path / "run-bare-system-drive-default.ps1"
     original = SMOKE_SCRIPT.read_text(encoding="utf-8")
-    bounded_default = "    [string[]] $InspectionRoot = @([IO.Path]::GetFullPath((Join-Path $env:SystemDrive 'Program Files')), [IO.Path]::GetFullPath((Join-Path $env:SystemDrive 'Program Files (x86)'))),"
+    bounded_default = "    [string[]] $InspectionRoot = @([IO.Path]::GetFullPath((Join-Path -Path $env:SystemDrive -ChildPath '\\'))),"
     bare_drive_default = "    [string[]] $InspectionRoot = @($env:SystemDrive),"
     assert bounded_default in original
     mutated_script.write_text(
@@ -438,19 +442,43 @@ def test_default_inspection_roots_are_absolute_and_not_the_working_directory(
         tmp_path / "mutated",
         smoke_script=mutated_script,
         use_script_default=True,
-        cwd=ROOT,
+        cwd=clean_cwd,
     )
 
-    assert mutated_result.returncode == 23, (
+    assert mutated_result.returncode == 32, (
         mutated_result.stdout + mutated_result.stderr
     )
     assert mutated_transcript["artifact"] == {
-        "status": "aborted",
-        "reason": "repository_detected",
+        "status": "failed",
+        "reason": "installation_failed",
     }
-    mutated_clean = _step(mutated_transcript, "clean-environment")
-    assert mutated_clean["outcome"] == "abort"
-    assert mutated_clean["evidence"]["finding"] == "repository_checkout_present"
+
+
+@pytest.mark.external_default_scope
+def test_default_inspection_scope_detects_a_repository_marker(
+    tmp_path: Path,
+) -> None:
+    """The default scope detects a checkout planted at the system-drive root."""
+
+    fixture_root = Path(
+        tempfile.mkdtemp(prefix="!ofca-packaging-smoke-", dir="C:\\")
+    )
+    marker = fixture_root / ".git"
+    marker.mkdir()
+    try:
+        result, transcript = _run_smoke(
+            tmp_path,
+            use_script_default=True,
+            cwd=Path(r"C:\Windows\System32"),
+        )
+    finally:
+        shutil.rmtree(fixture_root)
+
+    assert result.returncode == 23, result.stdout + result.stderr
+    clean_environment = _step(transcript, "clean-environment")
+    assert clean_environment["outcome"] == "abort"
+    assert clean_environment["evidence"]["finding"] == "repository_checkout_present"
+    assert Path(clean_environment["evidence"]["path"]) == marker
 
 
 def test_listener_port_preflight_has_a_distinct_exit_code(tmp_path: Path) -> None:
