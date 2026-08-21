@@ -2,3 +2,6 @@
 
 pytest
 pytest-asyncio
+
+# Release-workflow policy tests parse .github/workflows into a structure.
+PyYAML

@@ -24,13 +24,7 @@ param(
 
     # Optional explicit Inno Setup compiler. When omitted, discovery runs
     # only after the staged artifact has passed every release gate.
-    [string] $InnoSetupCompiler = "",
-
-    # Release builds may proceed only when CI has supplied the signing
-    # configuration marker. This unit deliberately does not handle signing
-    # material or invoke a signing tool.
-    [switch] $ReleaseMode,
-    [string] $SigningConfiguration = $env:WINDOWS_SIGNING_CONFIGURATION
+    [string] $InnoSetupCompiler = ""
 )
 
 Set-StrictMode -Version Latest
@@ -45,6 +39,7 @@ $SpecPath = Join-Path $ProjectRoot "packaging\pyinstaller\brain.spec"
 $PolicyPath = Join-Path $ProjectRoot "tools\packaging_policy.py"
 $RuntimePolicyPath = Join-Path $ProjectRoot "packaging\runtime-files.json"
 $InnoScriptPath = Join-Path $ProjectRoot "packaging\inno\brain.iss"
+$DigestScriptPath = Join-Path $ProjectRoot "packaging\write-digests.ps1"
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 
@@ -52,20 +47,6 @@ $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 # directive in packaging/inno/brain.iss. A digest file that ships inside the
 # installation may not list anything under them.
 $InstallerExcludedStagingDirectories = @("Agent")
-
-function Assert-ReleaseSigningConfiguration {
-    param(
-        [switch] $ReleaseMode,
-        [string] $SigningConfiguration
-    )
-
-    if (-not $ReleaseMode) {
-        return
-    }
-    if ([string]::IsNullOrWhiteSpace($SigningConfiguration)) {
-        throw "Release mode requires signing configuration: WINDOWS_SIGNING_CONFIGURATION is not set."
-    }
-}
 
 if (-not (Test-Path -LiteralPath $BuildPython -PathType Leaf)) {
     throw "Build Python does not exist: $BuildPython"
@@ -79,14 +60,15 @@ if (-not (Test-Path -LiteralPath $RuntimePolicyPath -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $InnoScriptPath -PathType Leaf)) {
     throw "Inno Setup script does not exist: $InnoScriptPath"
 }
+if (-not (Test-Path -LiteralPath $DigestScriptPath -PathType Leaf)) {
+    throw "Digest writer does not exist: $DigestScriptPath"
+}
 if ($OutputRoot -eq $ProjectRoot -or $OutputRoot.StartsWith($ProjectRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Build output must be outside the repository: $OutputRoot"
 }
 if (Test-Path -LiteralPath $OutputRoot) {
     throw "Build output directory already exists; choose a fresh path: $OutputRoot"
 }
-
-Assert-ReleaseSigningConfiguration -ReleaseMode:$ReleaseMode -SigningConfiguration $SigningConfiguration
 
 & $BuildPython -c "import struct, sys; sys.exit(0 if struct.calcsize('P') == 8 else 1)"
 if ($LASTEXITCODE -ne 0) {
@@ -320,29 +302,16 @@ function Get-InstalledRelativePath {
 
 function Write-Sha256Sums {
     <#
-        Record `<sha256> *<relative/path>` for files that sit beside the digest
-        file. A path that is absent is a defect in the caller's artifact set, so
-        it fails the build instead of being recorded.
+        Delegate to packaging/write-digests.ps1, the one digest writer the
+        release path uses. The signing job runs the same script over the signed
+        artifacts, so a digest file means the same thing in both places.
     #>
     param(
         [Parameter(Mandatory)] [string] $Directory,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $RelativePaths
     )
 
-    $lines = foreach ($relative in @($RelativePaths | Sort-Object)) {
-        $path = Join-Path $Directory $relative
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "A digest file may only record files beside it; this one is absent: $path"
-        }
-        $hasher = [Security.Cryptography.SHA256]::Create()
-        try {
-            $digest = [BitConverter]::ToString($hasher.ComputeHash([IO.File]::ReadAllBytes($path))).Replace("-", "").ToLowerInvariant()
-        } finally {
-            $hasher.Dispose()
-        }
-        "{0} *{1}" -f $digest, ($relative -replace '\\', '/')
-    }
-    Set-Content -LiteralPath (Join-Path $Directory "sha256sums.txt") -Value $lines -Encoding ascii
+    & $DigestScriptPath -Directory $Directory -RelativePath $RelativePaths
 }
 
 function Get-AgentVersion {
@@ -442,7 +411,6 @@ if ($TestInjection -eq "DevelopmentConfiguration") {
 Invoke-PackagingPolicy -BuildPython $BuildPython -ProjectRoot $ProjectRoot -StagingRoot $stagingRoot
 Write-Sha256Sums -Directory $stagingRoot -RelativePaths (Get-InstalledRelativePath -StagingRoot $stagingRoot)
 
-# Reserved signing hook: signing is intentionally not implemented in this unit.
 $installerOutput = Join-Path $OutputRoot "installer"
 $compiler = Resolve-InnoSetupCompiler -ExplicitCompiler $InnoSetupCompiler
 $version = Get-BrainVersion

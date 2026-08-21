@@ -141,10 +141,10 @@ The script freezes Brain with PyInstaller, embeds the Agent extension identity, 
 files declared in `packaging/runtime-files.json`, writes `release-manifest.json`, verifies the staged
 tree against that policy, and writes the installed program's `sha256sums.txt` over the files the
 installer places. It then compiles the Inno Setup script, packs the staged `Agent` directory into the
-Agent bundle, and writes the published `sha256sums.txt` over the installer and that bundle. The three
-published files land in `installer\` under the output root. It performs no signing. `-ReleaseMode`
-requires the `WINDOWS_SIGNING_CONFIGURATION` environment variable to be present, but the script
-neither handles signing material nor invokes a signing tool.
+Agent bundle, and writes the published `sha256sums.txt` over the installer and that bundle. Both
+digest files are written by `packaging/write-digests.ps1`. The three published files land in
+`installer\` under the output root. The script performs no signing: it handles no signing material,
+accepts none, and invokes no signing tool.
 
 To exercise a built installer end to end on a clean guest, see
 [the acceptance sequence](installation-and-acceptance.md).

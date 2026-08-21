@@ -5,8 +5,11 @@ on:
     tags: [ 'v*' ]
 
 jobs:
-  windows-package:
+  build:
+    name: Build the unsigned package
     runs-on: windows-2022
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -38,19 +41,85 @@ jobs:
           python -m venv .build-venv
           .\.build-venv\Scripts\python.exe -m pip install -r requirements.txt -r packaging/requirements-build.txt
 
-      - name: Build release package
-        env:
-          WINDOWS_SIGNING_CONFIGURATION: ${{ secrets.WINDOWS_SIGNING_CONFIGURATION }}
+      - name: Build package
         run: |
           .\packaging\build-windows.ps1 `
             -BuildPython .\.build-venv\Scripts\python.exe `
-            -OutputRoot "$env:RUNNER_TEMP\windows-package" `
-            -ReleaseMode
+            -OutputRoot "$env:RUNNER_TEMP\windows-package"
 
-      # The installer directory is the published artifact set: the installer, the
-      # Agent bundle, and the sha256sums.txt computed over both.
-      - name: Upload Windows package
+      # The installer directory is the artifact set: the installer, the Agent
+      # bundle, and the sha256sums.txt computed over both. Signing rewrites the
+      # installer, so the signing job recomputes that digest file.
+      - name: Upload the unsigned package
         uses: actions/upload-artifact@v4
         with:
-          name: windows-package-${{ github.ref_name }}
+          name: windows-package-unsigned-${{ github.ref_name }}
           path: ${{ runner.temp }}\windows-package\installer\
+
+  sign:
+    # The federated credential is scoped to a job, not to a step, so this job
+    # installs no dependency, compiles nothing, checks out no build tooling,
+    # and pins every action it runs to a commit.
+    name: Sign and publish the package
+    needs: build
+    runs-on: windows-2022
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_DIRECTORY: ${{ github.workspace }}\release
+
+    steps:
+      - name: Check out the release scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: |
+            packaging/verify-signatures.ps1
+            packaging/write-digests.ps1
+          sparse-checkout-cone-mode: false
+
+      - name: Download the unsigned package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-package-unsigned-${{ github.ref_name }}
+          path: ${{ github.workspace }}\release
+
+      - name: Acquire a federated Azure token
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: 630068e3-b320-40bb-acd0-3d8f1d70d545
+          tenant-id: f6894ba7-98c1-4b4b-bbe4-1b3f9584a861
+          subscription-id: f16174c3-f1aa-494b-b813-675d03956f3c
+
+      # The signing certificate is short-lived, so the countersignature timestamp
+      # is what keeps a released signature verifying after it expires. The
+      # timestamp authority is declared here rather than left to an action
+      # default, and the verification step rejects an untimestamped signature.
+      - name: Sign the installer
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: https://swn.codesigning.azure.net/
+          signing-account-name: Dipsy
+          certificate-profile-name: simple-legal-doc-signer
+          files-folder: ${{ github.workspace }}\release
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify signatures
+        id: verify-signatures
+        shell: pwsh
+        run: .\packaging\verify-signatures.ps1 -Path "$env:RELEASE_DIRECTORY"
+
+      - name: Digest the published artifacts
+        shell: pwsh
+        run: .\packaging\write-digests.ps1 -Directory "$env:RELEASE_DIRECTORY"
+
+      - name: Publish the signed package
+        if: steps.verify-signatures.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-package-${{ github.ref_name }}
+          path: ${{ github.workspace }}\release\
