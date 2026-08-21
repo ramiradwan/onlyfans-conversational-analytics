@@ -9,7 +9,7 @@ This page covers the acceptance sequence for a built artifact. For ordinary inst
 
 Use a Windows guest with a TPM-capable configuration and no Python installation, Node installation, or product repository checkout. Restore the guest to its product-free checkpoint before each run.
 
-1. Obtain the published release artifact and its SHA-256 digest from the same release source.
+1. Obtain the published installer and the `sha256sums.txt` published beside it. The digest to supply is the entry recorded for the installer filename.
 2. Copy `tools/packaging-smoke/run.ps1` into the guest as acceptance tooling. It is not part of the installed product.
 3. Run the script from a directory outside the installation tree, supplying the installer artifact and its published SHA-256 digest. The harness installs to an isolated temporary prefix, starts the `Brain.exe` that installation placed, redirects runtime data to its temporary root, and uninstalls before it exits.
 
@@ -40,4 +40,4 @@ After claim consumption, continue in Bridge: confirm the detected creator accoun
 
 ## Artifact boundary
 
-The acceptance script compares a real installed artifact with a published digest. Packaging-policy tests inspect staged contents and reject per-user material; they do not construct a release artifact for a hash comparison. A production-artifact hash-equality test belongs with the installer assembly input when that input exists.
+The acceptance script compares a real installed artifact with a published digest. The build writes that digest after the installer exists, so the value the script consumes is the digest of the released bytes. Packaging-policy tests inspect staged contents and reject per-user material; the hash equality between a published digest entry and the installer on disk is constrained separately, at the installer assembly step.

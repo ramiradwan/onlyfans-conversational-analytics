@@ -47,10 +47,10 @@ jobs:
             -OutputRoot "$env:RUNNER_TEMP\windows-package" `
             -ReleaseMode
 
+      # The installer directory is the published artifact set: the installer, the
+      # Agent bundle, and the sha256sums.txt computed over both.
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
           name: windows-package-${{ github.ref_name }}
-          path: |
-            ${{ runner.temp }}\windows-package\installer\
-            ${{ runner.temp }}\windows-package\dist\Brain\sha256sums.txt
+          path: ${{ runner.temp }}\windows-package\installer\

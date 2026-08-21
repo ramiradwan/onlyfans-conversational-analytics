@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -16,6 +19,8 @@ from app.core.runtime_paths import runtime_data_directory
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
+EXTENSION_DIST = ROOT / "extension" / "dist"
+DIGEST_FILE_NAME = "sha256sums.txt"
 
 
 def _authoritative_version() -> str:
@@ -587,3 +592,240 @@ def test_app_id_upgrade_survives_a_product_rename_and_fails_without_it(
         _assert_parallel_installations(first_prefix, second_prefix)
     finally:
         _uninstall_all((first_prefix, second_prefix), environment)
+
+
+def _digest_entries(digest_file: Path) -> dict[str, str]:
+    """Read `<sha256> *<relative/path>` records into a path-to-digest mapping."""
+
+    entries: dict[str, str] = {}
+    for line in digest_file.read_text(encoding="ascii").splitlines():
+        if not line.strip():
+            continue
+        digest, separator, relative = line.partition(" *")
+        assert separator and relative, f"malformed digest record in {digest_file}: {line!r}"
+        entries[relative] = digest
+    return entries
+
+
+def _write_digest_entries(digest_file: Path, entries: dict[str, str]) -> None:
+    digest_file.write_text(
+        "".join(
+            f"{digest} *{relative}\n" for relative, digest in sorted(entries.items())
+        ),
+        encoding="ascii",
+    )
+
+
+def _published_names(release_directory: Path) -> list[str]:
+    return sorted(path.name for path in release_directory.iterdir())
+
+
+def _published_installer(release_directory: Path) -> Path:
+    installers = sorted(release_directory.glob("*-Setup-*.exe"))
+    assert len(installers) == 1, (
+        "the published artifact set must contain one installer: "
+        f"{_published_names(release_directory)}"
+    )
+    return installers[0]
+
+
+def _assert_published_set_contains_the_agent_bundle(release_directory: Path) -> Path:
+    """The published artifact set must hand the user the built Agent extension."""
+
+    bundles = sorted(release_directory.glob("*-Agent-*.zip"))
+    assert len(bundles) == 1, (
+        "the published artifact set must contain the Agent extension bundle: "
+        f"{_published_names(release_directory)}"
+    )
+    return bundles[0]
+
+
+def _assert_bundle_carries_the_built_extension(bundle: Path) -> None:
+    with zipfile.ZipFile(bundle) as archive:
+        packed = {name: archive.read(name) for name in archive.namelist()}
+    built = {
+        path.relative_to(EXTENSION_DIST).as_posix(): path.read_bytes()
+        for path in EXTENSION_DIST.rglob("*")
+        if path.is_file()
+    }
+    assert built, f"the built Agent artifact is absent: {EXTENSION_DIST}"
+    assert packed == built, (
+        "the published Agent bundle must carry the built extension bytes"
+    )
+
+
+def _assert_published_digest_records_the_installer(release_directory: Path) -> None:
+    """The published digest entry must equal the installer's own bytes."""
+
+    digest_file = release_directory / DIGEST_FILE_NAME
+    assert digest_file.is_file(), (
+        f"the published artifact set must contain {DIGEST_FILE_NAME}: "
+        f"{_published_names(release_directory)}"
+    )
+    installer = _published_installer(release_directory)
+    entries = _digest_entries(digest_file)
+    recorded = entries.get(installer.name)
+    assert recorded is not None, (
+        f"the published digest must record {installer.name}: {sorted(entries)}"
+    )
+    assert recorded == hashlib.sha256(installer.read_bytes()).hexdigest(), (
+        f"the published digest for {installer.name} is not the digest of its bytes"
+    )
+
+
+def _assert_shipped_digest_files_list_present_files(prefix: Path) -> None:
+    """Every digest file an installation ships lists only files beside it."""
+
+    digest_files = sorted(prefix.rglob(DIGEST_FILE_NAME))
+    assert digest_files, f"the installation must ship a digest file: {prefix}"
+    for digest_file in digest_files:
+        entries = _digest_entries(digest_file)
+        assert entries, f"a shipped digest file records nothing: {digest_file}"
+        for relative, digest in entries.items():
+            listed = digest_file.parent / relative
+            assert listed.is_file(), (
+                f"{digest_file.name} lists an absent path: {relative}"
+            )
+            assert hashlib.sha256(listed.read_bytes()).hexdigest() == digest, (
+                f"{digest_file.name} records a stale digest for {relative}"
+            )
+
+
+@pytest.fixture(scope="module")
+def released_build(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Run the real build script once and return its published artifact directory."""
+
+    base = tmp_path_factory.mktemp("release")
+    started_at = time.monotonic()
+    built = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(base),
+        base / "build",
+        test_injection="",
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    print(f"release build wall-clock seconds: {time.monotonic() - started_at:.1f}")
+    return base / "build" / "installer"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows release assembly is Windows-only")
+def test_release_publishes_the_built_agent_extension_bundle(
+    released_build: Path, tmp_path: Path
+) -> None:
+    """Dropping the bundle from the published set makes the named assertion red."""
+
+    _assert_bundle_carries_the_built_extension(
+        _assert_published_set_contains_the_agent_bundle(released_build)
+    )
+
+    source = BUILD_SCRIPT.read_text(encoding="utf-8")
+    publication = (
+        "New-AgentBundle -AgentRoot $stagedAgentRoot "
+        "-BundlePath (Join-Path $installerOutput $agentBundleName)\n"
+        "Write-Sha256Sums -Directory $installerOutput "
+        "-RelativePaths @($installerName, $agentBundleName)"
+    )
+    assert publication in source, (
+        "the bundle falsifier must remove the real Agent publication step"
+    )
+    without_bundle = tmp_path / "build-windows-without-agent-bundle.ps1"
+    without_bundle.write_text(
+        source.replace(
+            publication,
+            "Write-Sha256Sums -Directory $installerOutput "
+            "-RelativePaths @($installerName)",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "build"
+    built = _run_build(
+        without_bundle,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+
+    with pytest.raises(AssertionError, match="must contain the Agent extension bundle"):
+        _assert_published_set_contains_the_agent_bundle(output / "installer")
+    _assert_published_digest_records_the_installer(output / "installer")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows release assembly is Windows-only")
+def test_published_digest_records_the_real_installer_bytes(
+    released_build: Path, tmp_path: Path
+) -> None:
+    """Another artifact's digest, or one altered character, turns the entry red."""
+
+    _assert_published_digest_records_the_installer(released_build)
+
+    substituted = tmp_path / "substituted"
+    shutil.copytree(released_build, substituted)
+    bundle = _assert_published_set_contains_the_agent_bundle(substituted)
+    bundle_digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+    entries = _digest_entries(substituted / DIGEST_FILE_NAME)
+    entries[_published_installer(substituted).name] = bundle_digest
+    _write_digest_entries(substituted / DIGEST_FILE_NAME, entries)
+
+    with pytest.raises(AssertionError, match="is not the digest of its bytes"):
+        _assert_published_digest_records_the_installer(substituted)
+
+    perturbed = tmp_path / "perturbed"
+    shutil.copytree(released_build, perturbed)
+    entries = _digest_entries(perturbed / DIGEST_FILE_NAME)
+    installer_name = _published_installer(perturbed).name
+    recorded = entries[installer_name]
+    entries[installer_name] = ("1" if recorded[0] == "0" else "0") + recorded[1:]
+    _write_digest_entries(perturbed / DIGEST_FILE_NAME, entries)
+
+    with pytest.raises(AssertionError, match="is not the digest of its bytes"):
+        _assert_published_digest_records_the_installer(perturbed)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows release assembly is Windows-only")
+def test_shipped_digest_files_list_only_installed_files(
+    released_build: Path, tmp_path: Path
+) -> None:
+    """Re-admitting an excluded staging path into a shipped digest turns it red."""
+
+    data_directory = tmp_path / "runtime-data"
+    environment = os.environ | {"LOCAL_ANALYTICS_DATA_DIR": str(data_directory)}
+    assert runtime_data_directory(environ=environment) == data_directory.resolve()
+
+    prefix = tmp_path / "installed"
+    _run_installer(_published_installer(released_build), prefix, environment)
+    try:
+        _assert_shipped_digest_files_list_present_files(prefix)
+    finally:
+        _run_uninstaller(prefix, environment)
+    _assert_program_payload_removed(prefix)
+
+    source = BUILD_SCRIPT.read_text(encoding="utf-8")
+    exclusion = '$InstallerExcludedStagingDirectories = @("Agent")'
+    assert exclusion in source, (
+        "the shipped-digest falsifier must empty the real exclusion declaration"
+    )
+    staged_only = tmp_path / "build-windows-without-installer-exclusions.ps1"
+    staged_only.write_text(
+        source.replace(exclusion, "$InstallerExcludedStagingDirectories = @()", 1),
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "build"
+    built = _run_build(
+        staged_only, _write_pyinstaller_standin(tmp_path), output, test_injection=""
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+
+    staged_only_prefix = tmp_path / "installed-staged-only"
+    _run_installer(
+        _published_installer(output / "installer"), staged_only_prefix, environment
+    )
+    try:
+        with pytest.raises(AssertionError, match="lists an absent path"):
+            _assert_shipped_digest_files_list_present_files(staged_only_prefix)
+    finally:
+        _run_uninstaller(staged_only_prefix, environment)
+    _assert_program_payload_removed(staged_only_prefix)

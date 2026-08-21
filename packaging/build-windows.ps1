@@ -48,6 +48,11 @@ $InnoScriptPath = Join-Path $ProjectRoot "packaging\inno\brain.iss"
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 
+# Staging directories the installer leaves out; keep in step with the Excludes
+# directive in packaging/inno/brain.iss. A digest file that ships inside the
+# installation may not list anything under them.
+$InstallerExcludedStagingDirectories = @("Agent")
+
 function Assert-ReleaseSigningConfiguration {
     param(
         [switch] $ReleaseMode,
@@ -278,23 +283,110 @@ raise SystemExit(1 if findings else 0)
     }
 }
 
-function Write-Sha256Sums {
+function Get-RelativeFilePath {
+    param(
+        [Parameter(Mandatory)] [string] $Root,
+        [Parameter(Mandatory)] [string] $FullName
+    )
+
+    return ($FullName.Substring($Root.Length).TrimStart('\', '/')) -replace '\\', '/'
+}
+
+function Get-InstalledRelativePath {
+    <#
+        The relative paths the installer places, which is the staged tree minus
+        the directories the Inno script excludes and minus the digest file.
+    #>
     param([Parameter(Mandatory)] [string] $StagingRoot)
 
-    $checksumFile = Join-Path $StagingRoot "sha256sums.txt"
-    Get-ChildItem -LiteralPath $StagingRoot -Recurse -File |
-        Where-Object { $_.FullName -ne $checksumFile } |
-        Sort-Object FullName |
-        ForEach-Object {
-            $relative = $_.FullName.Substring($StagingRoot.Length).TrimStart('\', '/')
-            $hasher = [Security.Cryptography.SHA256]::Create()
-            try {
-                $digest = [BitConverter]::ToString($hasher.ComputeHash([IO.File]::ReadAllBytes($_.FullName))).Replace("-", "").ToLowerInvariant()
-            } finally {
-                $hasher.Dispose()
+    $excludedPrefixes = @(
+        $InstallerExcludedStagingDirectories | ForEach-Object { "$_/" }
+    )
+    return @(
+        Get-ChildItem -LiteralPath $StagingRoot -Recurse -File |
+            Sort-Object FullName |
+            ForEach-Object { Get-RelativeFilePath -Root $StagingRoot -FullName $_.FullName } |
+            Where-Object { $_ -ne "sha256sums.txt" } |
+            Where-Object {
+                $relative = $_
+                $excluded = @(
+                    $excludedPrefixes |
+                        Where-Object { $relative.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }
+                )
+                $excluded.Count -eq 0
             }
-            "{0} *{1}" -f $digest, ($relative -replace '\\', '/')
-        } | Set-Content -LiteralPath $checksumFile -Encoding ascii
+    )
+}
+
+function Write-Sha256Sums {
+    <#
+        Record `<sha256> *<relative/path>` for files that sit beside the digest
+        file. A path that is absent is a defect in the caller's artifact set, so
+        it fails the build instead of being recorded.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Directory,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $RelativePaths
+    )
+
+    $lines = foreach ($relative in @($RelativePaths | Sort-Object)) {
+        $path = Join-Path $Directory $relative
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "A digest file may only record files beside it; this one is absent: $path"
+        }
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try {
+            $digest = [BitConverter]::ToString($hasher.ComputeHash([IO.File]::ReadAllBytes($path))).Replace("-", "").ToLowerInvariant()
+        } finally {
+            $hasher.Dispose()
+        }
+        "{0} *{1}" -f $digest, ($relative -replace '\\', '/')
+    }
+    Set-Content -LiteralPath (Join-Path $Directory "sha256sums.txt") -Value $lines -Encoding ascii
+}
+
+function Get-AgentVersion {
+    param([Parameter(Mandatory)] [string] $AgentRoot)
+
+    $metadata = Get-Content -Raw -LiteralPath (Join-Path $AgentRoot "build-meta.json") | ConvertFrom-Json
+    if ([string]::IsNullOrWhiteSpace($metadata.extension_version)) {
+        throw "The staged Agent artifact declares no extension_version"
+    }
+    return $metadata.extension_version
+}
+
+function New-AgentBundle {
+    <#
+        Pack the staged Agent directory into the archive a user loads into the
+        browser. It is packed from the staging tree the packaging policy has
+        already accepted, and entry names use forward slashes.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $AgentRoot,
+        [Parameter(Mandatory)] [string] $BundlePath
+    )
+
+    Add-Type -AssemblyName System.IO.Compression | Out-Null
+    $bundleStream = [IO.File]::Open($BundlePath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+    try {
+        $archive = [IO.Compression.ZipArchive]::new($bundleStream, [IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($file in @(Get-ChildItem -LiteralPath $AgentRoot -Recurse -File | Sort-Object FullName)) {
+                $relative = Get-RelativeFilePath -Root $AgentRoot -FullName $file.FullName
+                $entryStream = $archive.CreateEntry($relative, [IO.Compression.CompressionLevel]::Optimal).Open()
+                try {
+                    $bytes = [IO.File]::ReadAllBytes($file.FullName)
+                    $entryStream.Write($bytes, 0, $bytes.Length)
+                } finally {
+                    $entryStream.Dispose()
+                }
+            }
+        } finally {
+            $archive.Dispose()
+        }
+    } finally {
+        $bundleStream.Dispose()
+    }
 }
 
 if (-not $SkipAssetBuild) {
@@ -348,7 +440,7 @@ if ($TestInjection -eq "DevelopmentConfiguration") {
 }
 
 Invoke-PackagingPolicy -BuildPython $BuildPython -ProjectRoot $ProjectRoot -StagingRoot $stagingRoot
-Write-Sha256Sums -StagingRoot $stagingRoot
+Write-Sha256Sums -Directory $stagingRoot -RelativePaths (Get-InstalledRelativePath -StagingRoot $stagingRoot)
 
 # Reserved signing hook: signing is intentionally not implemented in this unit.
 $installerOutput = Join-Path $OutputRoot "installer"
@@ -365,4 +457,13 @@ $installerPath = Join-Path $installerOutput $installerName
 if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
     throw "Inno Setup did not produce the required installer: $installerPath"
 }
+
+# The published artifact set: the installer, the Agent bundle a user loads into
+# the browser, and a digest file computed over both after they exist.
+$stagedAgentRoot = Join-Path $stagingRoot "Agent"
+$agentBundleName = "OnlyFans-Conversational-Analytics-Agent-$(Get-AgentVersion -AgentRoot $stagedAgentRoot)-chrome.zip"
+New-AgentBundle -AgentRoot $stagedAgentRoot -BundlePath (Join-Path $installerOutput $agentBundleName)
+Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName, $agentBundleName)
 Write-Host "Windows installer ready: $installerPath"
+Write-Host "Agent bundle ready: $(Join-Path $installerOutput $agentBundleName)"
+Write-Host "Published digests ready: $(Join-Path $installerOutput 'sha256sums.txt')"
