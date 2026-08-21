@@ -13,6 +13,23 @@ OnlyFans Conversational Analytics is a local-first system that captures creator-
 
 Conversation processing stays in the creator-controlled local runtime. External provisioning may issue signed offline-verifiable grants, but it does not receive conversation data.
 
+## Install and run
+
+The product ships as a per-user Windows installer, `OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe`. It installs under `%LOCALAPPDATA%\Programs\OnlyFans Conversational Analytics` without administrator rights and needs no Python, Node.js, or repository checkout.
+
+Released artifacts are not signed, so Microsoft Defender SmartScreen shows an unrecognized-application warning when the installer starts. Comparing digests is the available integrity check: compute the installer's SHA-256 and compare it with the digest published with the release.
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe
+```
+
+Start **OnlyFans Conversational Analytics** from the Start Menu. `Brain.exe` starts the local runtime on `127.0.0.1:17871` and opens the browser at `http://bridge.localhost:17871`, running the configuration sequence on first launch. The Agent browser extension is added to the browser separately; the installer does not install it.
+
+Per-user data lives in `%LOCALAPPDATA%\OnlyFans Conversational Analytics`. Uninstalling removes the program files and leaves that directory in place, because it holds the authoritative database.
+
+- [Install and run on Windows](docs/install-windows.md) — requirements, verification, first run, data location, uninstall, and building the installer.
+- [Acceptance sequence](docs/installation-and-acceptance.md) — running a built artifact through the acceptance harness on a clean guest.
+
 ## Architecture
 
 - [Architecture decision records](docs/adr/README.md)

@@ -2,6 +2,9 @@
 
 OnlyFans Conversational Analytics runs locally on the creator's Windows account. Brain hosts the local Bridge at `http://bridge.localhost:17871`, and the Agent is the browser extension that connects the signed-in creator account to that local runtime.
 
+This page covers the acceptance sequence for a built artifact. For ordinary installation, see
+[Install and run on Windows](install-windows.md).
+
 ## Install
 
 Use a Windows guest with a TPM-capable configuration and no Python installation, Node installation, or product repository checkout. Restore the guest to its product-free checkpoint before each run.
@@ -12,7 +15,7 @@ Use a Windows guest with a TPM-capable configuration and no Python installation,
 
 ```powershell
 pwsh -NoProfile -File .\run.ps1 `
-  -ArtifactPath 'C:\path\to\OnlyFans-Conversational-Analytics-Setup-x64.exe' `
+  -ArtifactPath 'C:\path\to\OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe' `
   -PublishedSha256 '<published SHA-256>'
 ```
 
