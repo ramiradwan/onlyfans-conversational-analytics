@@ -10,7 +10,8 @@ param(
 
     [string] $TranscriptPath = (Join-Path (Get-Location) 'packaging-smoke-transcript.json'),
 
-    [string[]] $InspectionRoot = @($env:SystemDrive),
+    # The default is bounded to installed-program locations so the recursive repository scan has a fixed, documented cost.
+    [string[]] $InspectionRoot = @([IO.Path]::GetFullPath((Join-Path $env:SystemDrive 'Program Files')), [IO.Path]::GetFullPath((Join-Path $env:SystemDrive 'Program Files (x86)'))),
 
     [string] $ExecutableSearchPath = $env:Path
 )

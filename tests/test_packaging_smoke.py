@@ -105,6 +105,9 @@ def _run_smoke(
     executable_name: str | None = None,
     executable_contents: bytes | None = None,
     repository_marker: bytes | None = None,
+    inspection_root: Path | None = None,
+    use_script_default: bool = False,
+    cwd: Path = ROOT,
 ) -> tuple[subprocess.CompletedProcess[str], dict]:
     tmp_path.mkdir(parents=True, exist_ok=True)
     search_path = tmp_path / "search-path"
@@ -113,10 +116,12 @@ def _run_smoke(
         candidate = search_path / executable_name
         candidate.write_bytes(executable_contents or b"")
 
-    inspection_root = tmp_path / "inspection-root"
-    inspection_root.mkdir()
+    inspection_fixture_root = tmp_path / "inspection-root"
+    inspection_fixture_root.mkdir()
     if repository_marker is not None:
-        (inspection_root / ".git").write_bytes(repository_marker)
+        (inspection_fixture_root / ".git").write_bytes(repository_marker)
+    if not use_script_default:
+        inspection_root = inspection_fixture_root
 
     artifact = artifact_path or (tmp_path / "artifact.exe")
     if artifact_path is None:
@@ -136,14 +141,23 @@ def _run_smoke(
         hashlib.sha256(artifact.read_bytes()).hexdigest(),
         "-TranscriptPath",
         str(transcript_path),
-        "-InspectionRoot",
-        str(inspection_root),
-        "-ExecutableSearchPath",
-        str(search_path),
     ]
+    if inspection_root is not None:
+        command.extend(
+            [
+                "-InspectionRoot",
+                str(inspection_root),
+            ]
+        )
+    command.extend(
+        [
+            "-ExecutableSearchPath",
+            str(search_path),
+        ]
+    )
     result = subprocess.run(
         command,
-        cwd=ROOT,
+        cwd=cwd,
         capture_output=True,
         text=True,
         check=False,
@@ -394,6 +408,49 @@ def test_repository_marker_file_remains_detected(tmp_path: Path) -> None:
         "status": "aborted",
         "reason": "repository_detected",
     }
+
+
+def test_default_inspection_roots_are_absolute_and_not_the_working_directory(
+    tmp_path: Path,
+) -> None:
+    """The default scope is observed through the harness transcript."""
+
+    result, transcript = _run_smoke(tmp_path, use_script_default=True, cwd=ROOT)
+
+    assert result.returncode == 32, result.stdout + result.stderr
+    clean_environment = _step(transcript, "clean-environment")
+    assert clean_environment["outcome"] == "pass"
+    roots = clean_environment["evidence"]["inspection_roots"]
+    assert roots == [r"C:\Program Files", r"C:\Program Files (x86)"]
+    assert all(Path(root).is_absolute() for root in roots)
+    assert all(Path(root) != ROOT for root in roots)
+
+    mutated_script = tmp_path / "run-bare-system-drive-default.ps1"
+    original = SMOKE_SCRIPT.read_text(encoding="utf-8")
+    bounded_default = "    [string[]] $InspectionRoot = @([IO.Path]::GetFullPath((Join-Path $env:SystemDrive 'Program Files')), [IO.Path]::GetFullPath((Join-Path $env:SystemDrive 'Program Files (x86)'))),"
+    bare_drive_default = "    [string[]] $InspectionRoot = @($env:SystemDrive),"
+    assert bounded_default in original
+    mutated_script.write_text(
+        original.replace(bounded_default, bare_drive_default, 1), encoding="utf-8"
+    )
+
+    mutated_result, mutated_transcript = _run_smoke(
+        tmp_path / "mutated",
+        smoke_script=mutated_script,
+        use_script_default=True,
+        cwd=ROOT,
+    )
+
+    assert mutated_result.returncode == 23, (
+        mutated_result.stdout + mutated_result.stderr
+    )
+    assert mutated_transcript["artifact"] == {
+        "status": "aborted",
+        "reason": "repository_detected",
+    }
+    mutated_clean = _step(mutated_transcript, "clean-environment")
+    assert mutated_clean["outcome"] == "abort"
+    assert mutated_clean["evidence"]["finding"] == "repository_checkout_present"
 
 
 def test_listener_port_preflight_has_a_distinct_exit_code(tmp_path: Path) -> None:

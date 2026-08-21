@@ -21,6 +21,8 @@ pwsh -NoProfile -File .\run.ps1 `
 
 The script writes `packaging-smoke-transcript.json` beside the command's working directory unless `-TranscriptPath` specifies another location. It exits with `21` when Python is detected, `22` when Node is detected, and `23` when a repository checkout is found in an inspected root. A digest mismatch exits `31`, and an installer failure exits `32`; a blocked sequence exits `40`; a failed acceptance step exits `41`.
 
+When `-InspectionRoot` is omitted, the repository scan inspects exactly `C:\Program Files` and `C:\Program Files (x86)`. These are absolute roots and do not depend on the command's working directory. Supply `-InspectionRoot` explicitly when the clean-machine scope includes another location; the transcript's `inspection_roots` field records the roots actually scanned.
+
 ## Acceptance sequence
 
 The transcript records an outcome and non-secret evidence for each action:
