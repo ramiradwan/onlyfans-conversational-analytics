@@ -13,18 +13,20 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+import exclusive_resource
 from app.core.config import Settings
 
 
 PACKAGED_ARTIFACT_ENVIRONMENT_VARIABLE = "BRAIN_PACKAGED_ARTIFACT_DIR"
 INSTALLED_LAUNCHER_E2E_ENVIRONMENT_VARIABLE = "BRAIN_INSTALLED_LAUNCHER_E2E"
 PACKAGED_BUILD_PYTHON_ENVIRONMENT_VARIABLE = "BRAIN_PACKAGED_BUILD_PYTHON"
-_BRAIN_PORT = 17871
+_BRAIN_PORT = exclusive_resource.PROVISIONING_PORT
 _STARTUP_TIMEOUT_SECONDS = 15
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
@@ -52,6 +54,21 @@ BROADCAST_URL="memory://"
 class _HttpResponse:
     status: int
     body: str
+
+
+@pytest.fixture(autouse=True)
+def _provisioning_resources() -> Iterator[None]:
+    """Serialize every Brain start against other suite runs on this machine.
+
+    Every test here attributes a response on the fixed provisioning port to the
+    child it started, which only holds while no other run owns that port.
+    """
+
+    if os.name != "nt":
+        yield
+        return
+    with exclusive_resource.exclusive_provisioning_resources():
+        yield
 
 
 @pytest.fixture
@@ -490,13 +507,8 @@ def _start_source_brain(data_directory: Path) -> subprocess.Popen[str]:
 
 def _wait_for_port_release(timeout_seconds: float = 5.0) -> None:
     """Poll until 17871 stops accepting connections, tolerating OS teardown lag."""
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
-            if connection.connect_ex(("127.0.0.1", _BRAIN_PORT)) != 0:
-                return
-        time.sleep(0.1)
-    pytest.fail(f"port {_BRAIN_PORT} remained occupied after the Brain child exited")
+    if not exclusive_resource.wait_for_port_release(timeout_seconds=timeout_seconds):
+        pytest.fail(f"port {_BRAIN_PORT} remained occupied after the Brain child exited")
 
 
 def test_configured_local_session_rejects_invalid_bootstrap_token(tmp_path: Path) -> None:

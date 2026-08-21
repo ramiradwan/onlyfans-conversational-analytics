@@ -225,8 +225,11 @@ function Invoke-InstallArtifact {
     param([Parameter(Mandatory)] [psobject] $Layout)
 
     try {
+        # /VERYSILENT also suppresses the installation progress window, which
+        # /SILENT still displays and which steals desktop focus.
         $installerProcess = Start-Process -FilePath $ArtifactPath -ArgumentList @(
-            '/SILENT', '/SUPPRESSMSGBOXES', ("/DIR=`"" + $Layout.InstallationPrefix + "`"")
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+            ("/DIR=`"" + $Layout.InstallationPrefix + "`"")
         ) -Wait -PassThru
         if ($installerProcess.ExitCode -ne 0) {
             throw "installer exited with code $($installerProcess.ExitCode)"
@@ -269,7 +272,9 @@ function Invoke-OpenBridge {
         return $null
     }
     try {
-        $process = Start-Process -FilePath $launcherPath -PassThru
+        # -WindowStyle Hidden keeps the launcher console off the desktop; without
+        # it Start-Process gives a console launcher its own terminal window.
+        $process = Start-Process -FilePath $launcherPath -PassThru -WindowStyle Hidden
         Add-Result -Step 'open-bridge' -Outcome pass -Evidence @{
             launcher_path = (Resolve-Path -LiteralPath $launcherPath).Path; process_id = $process.Id
         }
@@ -355,7 +360,7 @@ function Invoke-UninstallArtifact {
                 throw "installer cleanup cannot find uninstaller: $($Installation.UninstallerPath)"
             }
             $uninstallerProcess = Start-Process -FilePath $Installation.UninstallerPath -ArgumentList @(
-                '/SILENT', '/SUPPRESSMSGBOXES'
+                '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
             ) -Wait -PassThru
             if ($uninstallerProcess.ExitCode -ne 0) {
                 throw "uninstaller exited with code $($uninstallerProcess.ExitCode)"

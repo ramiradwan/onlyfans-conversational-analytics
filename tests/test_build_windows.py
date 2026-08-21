@@ -9,10 +9,12 @@ import subprocess
 import sys
 import time
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+import visible_windows
 from app.core.config import Settings
 from app.core.runtime_paths import runtime_data_directory
 
@@ -21,6 +23,32 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
 EXTENSION_DIST = ROOT / "extension" / "dist"
 DIGEST_FILE_NAME = "sha256sums.txt"
+
+
+@pytest.fixture(autouse=True)
+def _no_installer_window() -> Iterator[None]:
+    """Fail a test whose installer or uninstaller puts a window on the desktop.
+
+    Every install and uninstall in this module drives a real Inno Setup
+    artifact, so one recording per test covers each of them.
+    """
+
+    if os.name != "nt":
+        yield
+        return
+    with visible_windows.recording_windows(
+        lambda window: visible_windows.is_inno_setup_image(window.process_image)
+    ) as observed:
+        yield
+    displayed = sorted(
+        (window.class_name, window.title)
+        for window in observed
+        if window.steals_focus()
+    )
+    assert displayed == [], (
+        f"the installer displayed {displayed}; a default-tier run must not open "
+        "an interactive installer window"
+    )
 
 
 def _authoritative_version() -> str:
@@ -175,7 +203,9 @@ def _run_installer(installer: Path, prefix: Path, environment: dict[str, str]) -
 def _run_installer_with_directory(
     installer: Path, environment: dict[str, str], prefix: Path | None = None
 ) -> None:
-    command = [str(installer), "/SILENT", "/SUPPRESSMSGBOXES"]
+    # /VERYSILENT also suppresses the installation progress window, which
+    # /SILENT still displays and which steals desktop focus.
+    command = [str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]
     if prefix is not None:
         command.append(f"/DIR={prefix}")
     result = subprocess.run(
@@ -192,7 +222,7 @@ def _run_uninstaller(prefix: Path, environment: dict[str, str]) -> None:
     uninstaller = prefix / "unins000.exe"
     assert uninstaller.is_file(), f"installer did not create an uninstaller: {uninstaller}"
     result = subprocess.run(
-        [str(uninstaller), "/SILENT", "/SUPPRESSMSGBOXES"],
+        [str(uninstaller), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
         env=environment,
         capture_output=True,
         text=True,

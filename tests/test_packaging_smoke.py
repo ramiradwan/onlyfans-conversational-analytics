@@ -11,14 +11,34 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+import exclusive_resource
+import visible_windows
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE_SCRIPT = ROOT / "tools" / "packaging-smoke" / "run.ps1"
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
+
+
+@pytest.fixture(autouse=True)
+def _provisioning_resources() -> Iterator[None]:
+    """Serialize every smoke run against other suite runs on this machine.
+
+    Each run drives the fixed provisioning port through `run.ps1`, so runs that
+    overlap read one another's listeners as a port-preflight abort.
+    """
+
+    if os.name != "nt":
+        yield
+        return
+    with exclusive_resource.exclusive_provisioning_resources():
+        yield
 
 
 class _HealthHandler(http.server.BaseHTTPRequestHandler):
@@ -313,6 +333,31 @@ def _build_real_installer(tmp_path: Path, *, serves_health: bool = False) -> Pat
     return installers[0]
 
 
+# Every run installs beneath a run root carrying this prefix, so a window the
+# installer or the launcher opens names it in the title or in the owning image.
+_SMOKE_RUN_TOKEN = "ofca-packaging-smoke-"
+
+
+def _opened_by_a_smoke_run(window: visible_windows.DesktopWindow) -> bool:
+    """Attribute a window to a smoke run's installer or launcher."""
+
+    return visible_windows.is_inno_setup_image(window.process_image) or window.mentions(
+        _SMOKE_RUN_TOKEN
+    )
+
+
+def _remove_fixture_tree(path: Path, *, attempts: int = 10) -> bool:
+    """Delete a fixture tree, tolerating transient Windows sharing violations."""
+
+    for attempt in range(attempts):
+        shutil.rmtree(path, ignore_errors=True)
+        if not path.exists():
+            return True
+        if attempt < attempts - 1:
+            time.sleep(0.2)
+    return False
+
+
 def _step(transcript: dict, name: str) -> dict:
     return next(step for step in transcript["steps"] if step["step"] == name)
 
@@ -460,19 +505,22 @@ def test_default_inspection_scope_detects_a_repository_marker(
 ) -> None:
     """The default scope detects a checkout planted at the system-drive root."""
 
+    # The name carries this run's process id and a random suffix so a marker
+    # planted here is attributable and cannot collide with another run's.
     fixture_root = Path(
-        tempfile.mkdtemp(prefix="!ofca-packaging-smoke-", dir="C:\\")
+        tempfile.mkdtemp(prefix=f"!ofca-packaging-smoke-{os.getpid()}-", dir="C:\\")
     )
     marker = fixture_root / ".git"
-    marker.mkdir()
     try:
+        marker.mkdir()
         result, transcript = _run_smoke(
             tmp_path,
             use_script_default=True,
             cwd=Path(r"C:\Windows\System32"),
         )
     finally:
-        shutil.rmtree(fixture_root)
+        removed = _remove_fixture_tree(fixture_root)
+    assert removed, f"the system-drive fixture {fixture_root} could not be removed"
 
     assert result.returncode == 23, result.stdout + result.stderr
     clean_environment = _step(transcript, "clean-environment")
@@ -533,6 +581,36 @@ def test_harness_launches_the_executable_its_real_installer_placed(
     assert mutated_result.returncode == 41, mutated_result.stdout + mutated_result.stderr
     with pytest.raises(AssertionError, match="was not installed beneath"):
         _assert_launcher_was_installed(mutated_transcript)
+
+
+def test_the_real_smoke_cycle_shows_no_window(tmp_path: Path) -> None:
+    """A default-tier install, launch and uninstall never takes desktop focus.
+
+    Inno Setup displays its progress window under /SILENT, and Start-Process
+    gives a console launcher a terminal window of its own.  This test drives a
+    real installer and reads back every top-level window the run opened.
+    """
+
+    installer = _build_real_installer(tmp_path)
+    with visible_windows.recording_windows(_opened_by_a_smoke_run) as observed:
+        result, transcript = _run_smoke(tmp_path, artifact_path=installer)
+
+    # The transcript establishes that a real install, launch and uninstall ran,
+    # so an empty window recording means silence rather than an absent step.
+    assert result.returncode == 41, result.stdout + result.stderr
+    assert _step(transcript, "install-artifact")["outcome"] == "pass"
+    assert _step(transcript, "open-bridge")["outcome"] == "pass"
+    assert _step(transcript, "uninstall-artifact")["outcome"] == "pass"
+
+    displayed = sorted(
+        (window.class_name, window.title)
+        for window in observed
+        if window.steals_focus()
+    )
+    assert displayed == [], (
+        f"the smoke run displayed {displayed}; a default-tier run must not open "
+        "a window on the desktop"
+    )
 
 
 def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
