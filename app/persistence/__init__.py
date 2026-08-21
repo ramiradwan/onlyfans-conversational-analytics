@@ -10,11 +10,6 @@ from app.persistence.migrations import (
     MigrationRunner,
     SchemaCompatibilityError,
 )
-from app.persistence.repositories import (
-    SQLiteAgentConfigRepository,
-    SQLiteCommandRepository,
-    SQLiteIngestionRepository,
-)
 
 __all__ = [
     "CanonicalRepositories",
@@ -32,6 +27,11 @@ __all__ = [
 ]
 
 _FACTORY_NAMES = {"CanonicalRepositories", "create_canonical_repositories"}
+_REPOSITORY_NAMES = {
+    "SQLiteAgentConfigRepository",
+    "SQLiteCommandRepository",
+    "SQLiteIngestionRepository",
+}
 
 
 def __getattr__(name: str) -> Any:
@@ -46,4 +46,10 @@ def __getattr__(name: str) -> Any:
         from app.persistence import factory
 
         return getattr(factory, name)
+    # Repository re-exports resolve on first attribute access, so importing
+    # this package does not import runtime configuration.
+    if name in _REPOSITORY_NAMES:
+        from app.persistence import repositories
+
+        return getattr(repositories, name)
     raise AttributeError(name)

@@ -8,6 +8,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
@@ -16,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+
+from app.core.config import Settings
 
 
 PACKAGED_ARTIFACT_ENVIRONMENT_VARIABLE = "BRAIN_PACKAGED_ARTIFACT_DIR"
@@ -430,3 +433,114 @@ def test_packaged_runtime_missing_template_is_a_resource_failure_not_configurati
         "resource_failure: removing _internal/app/templates/index.html did not make "
         "the configured frozen runtime fail while rendering the bundled homepage"
     )
+
+
+_BOOTSTRAP_TOKEN_MESSAGE = (
+    "Local session mode requires a generated launcher bootstrap token of at "
+    "least 32 characters"
+)
+
+
+def _write_configured_runtime_with_bootstrap_token(
+    data_directory: Path, bootstrap_line: str | None
+) -> None:
+    """Write runtime.env with every field valid except the bootstrap token.
+
+    `bootstrap_line` replaces the LOCAL_SESSION_BOOTSTRAP_TOKEN line carried
+    by `_RUNTIME_CONFIGURATION`; pass None to test an absent token.
+    """
+    data_directory.mkdir()
+    configuration = _RUNTIME_CONFIGURATION.format(data_directory=data_directory.as_posix())
+    lines = [
+        line
+        for line in configuration.splitlines()
+        if not line.startswith("LOCAL_SESSION_BOOTSTRAP_TOKEN=")
+    ]
+    if bootstrap_line is not None:
+        lines.append(bootstrap_line)
+    (data_directory / "runtime.env").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _source_mode_environment(data_directory: Path) -> dict[str, str]:
+    """A clean environment for a source-mode `python -m app.packaged_entry` child.
+
+    Ambient Settings environment variables are stripped so the fixture's
+    runtime.env is the only configuration source.
+    """
+    settings_names = {name.upper() for name in Settings.model_fields}
+    environment = {
+        key: value for key, value in os.environ.items() if key not in settings_names
+    }
+    environment.pop("PYTHONPATH", None)
+    environment["LOCAL_ANALYTICS_DATA_DIR"] = str(data_directory)
+    return environment
+
+
+def _start_source_brain(data_directory: Path) -> subprocess.Popen[str]:
+    """Start Brain the same way the installed launcher does when unfrozen."""
+    return subprocess.Popen(
+        [sys.executable, "-m", "app.packaged_entry", "--brain"],
+        cwd=ROOT,
+        env=_source_mode_environment(data_directory),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def _wait_for_port_release(timeout_seconds: float = 5.0) -> None:
+    """Poll until 17871 stops accepting connections, tolerating OS teardown lag."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+            if connection.connect_ex(("127.0.0.1", _BRAIN_PORT)) != 0:
+                return
+        time.sleep(0.1)
+    pytest.fail(f"port {_BRAIN_PORT} remained occupied after the Brain child exited")
+
+
+def test_configured_local_session_rejects_invalid_bootstrap_token(tmp_path: Path) -> None:
+    """Configured local_session boot fails closed for an absent or short token,
+    entering through app.packaged_entry rather than direct Settings construction.
+    """
+    _assert_port_is_unused()
+
+    invalid_cases = (
+        ("token-absent", None),
+        ("31-character-token", 'LOCAL_SESSION_BOOTSTRAP_TOKEN="' + "a" * 31 + '"'),
+    )
+    for description, bootstrap_line in invalid_cases:
+        data_directory = tmp_path / description
+        _write_configured_runtime_with_bootstrap_token(data_directory, bootstrap_line)
+        process = _start_source_brain(data_directory)
+        try:
+            stdout, stderr = process.communicate(timeout=_STARTUP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate(timeout=5)
+            pytest.fail(
+                f"{description}: configured boot did not fail closed before "
+                f"the startup timeout (stdout={stdout!r}; stderr={stderr!r})"
+            )
+        assert process.returncode != 0, (
+            f"{description}: configured boot with an invalid bootstrap token "
+            f"exited 0 (stdout={stdout!r}; stderr={stderr!r})"
+        )
+        assert _BOOTSTRAP_TOKEN_MESSAGE in stderr, (
+            f"{description}: refusal diagnostic missing the expected message; "
+            f"stderr={stderr!r}"
+        )
+        _assert_port_is_unused()
+
+    control_directory = tmp_path / "valid-control"
+    _write_runtime_configuration(control_directory)
+    control = _start_source_brain(control_directory)
+    try:
+        health = _wait_for_response(control, "/health", description="valid control")
+        assert health.status == 200, (
+            "valid control: a 32-or-more-character token did not reach "
+            f"configured application selection (status {health.status})"
+        )
+    finally:
+        _stop_brain(control)
+    _wait_for_port_release()
