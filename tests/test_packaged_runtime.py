@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
 import socket
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -16,8 +19,13 @@ import pytest
 
 
 PACKAGED_ARTIFACT_ENVIRONMENT_VARIABLE = "BRAIN_PACKAGED_ARTIFACT_DIR"
+INSTALLED_LAUNCHER_E2E_ENVIRONMENT_VARIABLE = "BRAIN_INSTALLED_LAUNCHER_E2E"
+PACKAGED_BUILD_PYTHON_ENVIRONMENT_VARIABLE = "BRAIN_PACKAGED_BUILD_PYTHON"
 _BRAIN_PORT = 17871
 _STARTUP_TIMEOUT_SECONDS = 15
+ROOT = Path(__file__).resolve().parents[1]
+BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
+SMOKE_SCRIPT = ROOT / "tools" / "packaging-smoke" / "run.ps1"
 _RUNTIME_CONFIGURATION = """\
 ENVIRONMENT="production"
 WEBSOCKET_AUTH_MODE="local_session"
@@ -56,6 +64,29 @@ def packaged_artifact() -> Path:
     if not executable.is_file():
         pytest.fail(f"{PACKAGED_ARTIFACT_ENVIRONMENT_VARIABLE} has no Brain.exe: {artifact}")
     return artifact
+
+
+@pytest.fixture
+def packaged_build_python() -> Path:
+    if os.environ.get(INSTALLED_LAUNCHER_E2E_ENVIRONMENT_VARIABLE) != "1":
+        pytest.skip(
+            "real installed launcher end-to-end test is disabled; set "
+            f"{INSTALLED_LAUNCHER_E2E_ENVIRONMENT_VARIABLE}=1 to build, install, "
+            "and exercise the frozen launcher"
+        )
+    configured = os.environ.get(PACKAGED_BUILD_PYTHON_ENVIRONMENT_VARIABLE)
+    if not configured:
+        pytest.fail(
+            "real installed launcher end-to-end test requires an isolated build "
+            f"interpreter in {PACKAGED_BUILD_PYTHON_ENVIRONMENT_VARIABLE}"
+        )
+    build_python = Path(configured).resolve()
+    if not build_python.is_file():
+        pytest.fail(
+            f"{PACKAGED_BUILD_PYTHON_ENVIRONMENT_VARIABLE} is not a file: "
+            f"{build_python}"
+        )
+    return build_python
 
 
 def _write_runtime_configuration(data_directory: Path) -> None:
@@ -151,6 +182,139 @@ def _assert_port_is_unused() -> None:
         )
 
 
+def _build_real_installer(
+    build_python: Path, output_root: Path, *, project_root: Path = ROOT
+) -> Path:
+    """Freeze with the release build script and return its real installer."""
+
+    built = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(project_root / "packaging" / "build-windows.ps1"),
+            "-BuildPython",
+            str(build_python),
+            "-OutputRoot",
+            str(output_root),
+        ],
+        cwd=project_root,
+        env=os.environ | {"BRAIN_PROJECT_ROOT": str(project_root)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    installers = list((output_root / "installer").glob("*.exe"))
+    assert len(installers) == 1, "build-windows.ps1 must emit one installer"
+    return installers[0]
+
+
+def _run_installed_launcher_smoke(
+    installer: Path, run_root: Path
+) -> tuple[subprocess.CompletedProcess[str], dict]:
+    """Run the unmodified smoke harness with an isolated installer input."""
+
+    inspection_root = run_root / "inspection-root"
+    executable_search_path = run_root / "executable-search-path"
+    transcript_path = run_root / "packaging-smoke-transcript.json"
+    inspection_root.mkdir(parents=True)
+    executable_search_path.mkdir()
+    result = subprocess.run(
+        [
+            "pwsh.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(SMOKE_SCRIPT),
+            "-ArtifactPath",
+            str(installer),
+            "-PublishedSha256",
+            hashlib.sha256(installer.read_bytes()).hexdigest(),
+            "-TranscriptPath",
+            str(transcript_path),
+            "-InspectionRoot",
+            str(inspection_root),
+            "-ExecutableSearchPath",
+            str(executable_search_path),
+        ],
+        cwd=run_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert transcript_path.is_file(), result.stdout + result.stderr
+    return result, json.loads(transcript_path.read_text(encoding="utf-8-sig"))
+
+
+def _smoke_step(transcript: dict, name: str) -> dict:
+    return next(step for step in transcript["steps"] if step["step"] == name)
+
+
+def _assert_launcher_listener_ownership(transcript: dict) -> dict:
+    """Constrain the listener and its launcher-family ownership independently."""
+
+    listener = _smoke_step(transcript, "provisioning-listener")
+    assert listener["outcome"] == "pass", (
+        "the frozen launcher must create the provisioning listener"
+    )
+    assert listener["evidence"]["status_code"] == 200
+    assert listener["evidence"]["status"] == "ok"
+    assert listener["evidence"]["listener_process_id"] in listener["evidence"][
+        "launcher_family_process_ids"
+    ]
+    assert listener["evidence"]["listener_ownership"] in {
+        "launcher",
+        "launcher_descendant",
+    }
+    return listener
+
+
+def _assert_installed_launcher_listener(
+    result: subprocess.CompletedProcess[str], transcript: dict
+) -> dict:
+    """Constrain the launch, listener ownership, and smoke cleanup outcomes together."""
+
+    installation = _smoke_step(transcript, "install-artifact")
+    assert result.returncode == 40, result.stdout + result.stderr
+    listener = _assert_launcher_listener_ownership(transcript)
+    assert _smoke_step(transcript, "close-bridge")["evidence"]["port_released"] is True
+    assert _smoke_step(transcript, "uninstall-artifact")["outcome"] == "pass"
+    assert not Path(installation["evidence"]["installation_prefix"]).exists()
+    assert not Path(installation["evidence"]["runtime_data_directory"]).exists()
+    return listener
+
+
+def _launcher_source_mode_falsifier_project(tmp_path: Path) -> Path:
+    """Copy the product and restore the frozen branch's rejected source command."""
+
+    project_copy = tmp_path / "source-mode-launcher-project"
+    shutil.copytree(
+        ROOT,
+        project_copy,
+        ignore=shutil.ignore_patterns(
+            ".venv", ".pytest_cache", ".mypy_cache", ".ruff_cache", "__pycache__",
+            "node_modules"
+        ),
+    )
+    launcher = project_copy / "app" / "launcher.py"
+    source = launcher.read_text(encoding="utf-8")
+    frozen_branch = '''brain_command = (
+        (str(executable), "--brain")
+        if getattr(sys, "frozen", False)
+        else (str(executable), "-m", "app.packaged_entry", "--brain")
+    )'''
+    source_branch = '''brain_command = (
+        str(executable), "-m", "app.packaged_entry", "--brain"
+    )'''
+    assert frozen_branch in source, "launcher falsifier must replace the frozen branch"
+    launcher.write_text(source.replace(frozen_branch, source_branch, 1), encoding="utf-8")
+    return project_copy
+
+
 @pytest.mark.slow
 def test_packaged_runtime_resolves_bundle_resources_from_an_unrelated_cwd(
     packaged_artifact: Path, tmp_path: Path
@@ -167,6 +331,52 @@ def test_packaged_runtime_resolves_bundle_resources_from_an_unrelated_cwd(
         packaged_artifact,
         data_directory=data_directory,
         working_directory=unrelated_cwd,
+    )
+
+
+@pytest.mark.slow
+def test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener(
+    packaged_build_python: Path, tmp_path: Path
+) -> None:
+    """A real frozen installer starts Brain through its installed launcher."""
+
+    _assert_port_is_unused()
+    started_at = time.monotonic()
+    build_output = tmp_path / "frozen-build-output"
+    smoke_run_root = tmp_path / "installed-launcher-smoke"
+    falsifier_root = Path(
+        tempfile.mkdtemp(prefix="ofca-e2e-", dir=Path(tempfile.gettempdir()).anchor)
+    )
+    falsifier_build_output = falsifier_root / "build"
+    falsifier_smoke_run_root = falsifier_root / "smoke"
+    try:
+        installer = _build_real_installer(packaged_build_python, build_output)
+        result, transcript = _run_installed_launcher_smoke(installer, smoke_run_root)
+        _assert_installed_launcher_listener(result, transcript)
+
+        falsifier_project = _launcher_source_mode_falsifier_project(falsifier_root)
+        falsifier_installer = _build_real_installer(
+            packaged_build_python,
+            falsifier_build_output,
+            project_root=falsifier_project,
+        )
+        falsifier_result, falsifier_transcript = _run_installed_launcher_smoke(
+            falsifier_installer, falsifier_smoke_run_root
+        )
+        with pytest.raises(
+            AssertionError, match="frozen launcher must create the provisioning listener"
+        ):
+            _assert_launcher_listener_ownership(falsifier_transcript)
+    finally:
+        shutil.rmtree(build_output, ignore_errors=True)
+        shutil.rmtree(smoke_run_root, ignore_errors=True)
+        shutil.rmtree(falsifier_build_output, ignore_errors=True)
+        shutil.rmtree(falsifier_smoke_run_root, ignore_errors=True)
+        shutil.rmtree(falsifier_root, ignore_errors=True)
+    _assert_port_is_unused()
+    print(
+        "real installed launcher end-to-end wall-clock seconds: "
+        f"{time.monotonic() - started_at:.1f}"
     )
 
 

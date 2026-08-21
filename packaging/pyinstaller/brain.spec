@@ -16,9 +16,10 @@ from PyInstaller.utils.hooks import collect_dynamic_libs  # type: ignore[import-
 
 
 _PROJECT_ROOT = Path(os.environ.get("BRAIN_PROJECT_ROOT", Path.cwd())).resolve()
+_SOURCE_ROOT = Path(os.environ.get("BRAIN_SOURCE_ROOT", _PROJECT_ROOT)).resolve()
 _POLICY_PATH = _PROJECT_ROOT / "packaging" / "runtime-files.json"
 _POLICY = json.loads(_POLICY_PATH.read_text(encoding="utf-8"))
-_ENTRY = _PROJECT_ROOT / "app" / "packaged_entry.py"
+_ENTRY = _SOURCE_ROOT / "app" / "packaged_entry.py"
 _INTERNAL_PREFIX = "_internal/"
 
 
@@ -107,7 +108,7 @@ _EXCLUDES = [
 
 a = Analysis(
     [str(_ENTRY)],
-    pathex=[str(_PROJECT_ROOT)],
+    pathex=[str(_SOURCE_ROOT), str(_PROJECT_ROOT)],
     binaries=collect_dynamic_libs("cryptography"),
     datas=_DATAS,
     hiddenimports=_HIDDEN_IMPORTS,

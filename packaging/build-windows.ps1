@@ -19,7 +19,7 @@ param(
 
     # A narrow falsifier seam. It can only inject named prohibited material
     # after freezing and before policy verification; it cannot alter a release.
-    [ValidateSet("", "DevelopmentConfiguration", "InstallationClaim")]
+    [ValidateSet("", "DevelopmentConfiguration", "InstallationClaim", "EmbeddedExtensionIdentityMismatch")]
     [string] $TestInjection = "",
 
     # Optional explicit Inno Setup compiler. When omitted, discovery runs
@@ -125,6 +125,54 @@ function Copy-AgentArtifact {
         throw "The declared Agent artifact is absent: $source"
     }
     Copy-Item -LiteralPath $source -Destination (Join-Path $StagingRoot "Agent") -Recurse
+}
+
+function New-PackagingSourceRoot {
+    param(
+        [Parameter(Mandatory)] [string] $BuildPython,
+        [Parameter(Mandatory)] [string] $OutputRoot,
+        [Parameter(Mandatory)] [string] $ProjectRoot
+    )
+
+    $sourceRoot = Join-Path $OutputRoot "source"
+    $sourceApp = Join-Path $sourceRoot "app"
+    Copy-Item -LiteralPath (Join-Path $ProjectRoot "app") -Destination $sourceApp -Recurse
+    $manifestPath = Join-Path $ProjectRoot "extension\manifest.json"
+    $embeddedIdentityPath = Join-Path $sourceApp "core\packaged_extension_identity.py"
+    Push-Location $ProjectRoot
+    try {
+        Invoke-RequiredCommand -FilePath $BuildPython -Arguments @(
+            "-m", "app.core.extension_identity", "--manifest", $manifestPath,
+            "--output", $embeddedIdentityPath
+        )
+    } finally {
+        Pop-Location
+    }
+    return [pscustomobject]@{
+        SourceRoot = $sourceRoot
+        ManifestPath = $manifestPath
+        EmbeddedIdentityPath = $embeddedIdentityPath
+    }
+}
+
+function Assert-EmbeddedExtensionIdentity {
+    param(
+        [Parameter(Mandatory)] [string] $BuildPython,
+        [Parameter(Mandatory)] [string] $ProjectRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $EmbeddedIdentityPath
+    )
+
+    Push-Location $ProjectRoot
+    try {
+        & $BuildPython -m app.core.extension_identity --manifest $ManifestPath --verify-embedded $EmbeddedIdentityPath
+        $exitCode = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+    if ($exitCode -ne 0) {
+        throw "Embedded extension identity does not match the current manifest key"
+    }
 }
 
 function Get-BrainVersion {
@@ -256,8 +304,16 @@ if (-not $SkipAssetBuild) {
     Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("run", "build", "--prefix", (Join-Path $ProjectRoot "extension"))
 }
 
+$packagingSource = New-PackagingSourceRoot -BuildPython $BuildPython -OutputRoot $OutputRoot -ProjectRoot $ProjectRoot
+if ($TestInjection -eq "EmbeddedExtensionIdentityMismatch") {
+    Set-Content -LiteralPath $packagingSource.EmbeddedIdentityPath -Value 'EXTENSION_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' -Encoding ascii
+}
+Assert-EmbeddedExtensionIdentity -BuildPython $BuildPython -ProjectRoot $ProjectRoot -ManifestPath $packagingSource.ManifestPath -EmbeddedIdentityPath $packagingSource.EmbeddedIdentityPath
+
 $previousProjectRoot = $env:BRAIN_PROJECT_ROOT
+$previousSourceRoot = $env:BRAIN_SOURCE_ROOT
 $env:BRAIN_PROJECT_ROOT = $ProjectRoot
+$env:BRAIN_SOURCE_ROOT = $packagingSource.SourceRoot
 try {
     $pyInstallerArguments = @(
         "--noconfirm", "--clean", "--distpath", $distPath,
@@ -274,6 +330,7 @@ try {
     }
 } finally {
     $env:BRAIN_PROJECT_ROOT = $previousProjectRoot
+    $env:BRAIN_SOURCE_ROOT = $previousSourceRoot
 }
 
 $stagingRoot = Join-Path $distPath "Brain"

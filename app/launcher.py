@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import base64
 import ctypes
-import hashlib
-import json
 import os
 import re
 import secrets
@@ -29,6 +26,7 @@ from app.core.runtime_paths import (
     runtime_configuration_file,
     runtime_data_directory,
 )
+from app.core.extension_identity import extension_identity_from_manifest
 from app.packaged_entry import (
     PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE,
     PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE,
@@ -354,13 +352,13 @@ def default_launcher_configuration() -> LauncherConfiguration:
     product_root = Path(__file__).resolve().parents[1]
     executable = Path(sys.executable).resolve()
     process_image = Path(getattr(sys, "_base_executable", executable)).resolve()
+    brain_command = (
+        (str(executable), "--brain")
+        if getattr(sys, "frozen", False)
+        else (str(executable), "-m", "app.packaged_entry", "--brain")
+    )
     return LauncherConfiguration(
-        brain_command=(
-            str(executable),
-            "-m",
-            "app.packaged_entry",
-            "--brain",
-        ),
+        brain_command=brain_command,
         brain_image_path=process_image,
         working_directory=product_root,
         data_directory=runtime_data_directory(),
@@ -406,9 +404,13 @@ def _extension_identity() -> str:
     The ID is the first 128 bits of the SHA-256 digest of the SPKI DER public
     key, each hex digit rendered as the letter at that offset from ``a``.
     """
-    manifest = json.loads(EXTENSION_MANIFEST_FILE.read_text(encoding="utf-8"))
-    digest = hashlib.sha256(base64.b64decode(manifest["key"], validate=True)).hexdigest()
-    return "".join(chr(ord("a") + int(nibble, 16)) for nibble in digest[:32])
+    if getattr(sys, "frozen", False):
+        from app.core.packaged_extension_identity import EXTENSION_ID
+
+        if not isinstance(EXTENSION_ID, str):
+            raise RuntimeError("frozen package has no embedded extension identity")
+        return EXTENSION_ID
+    return extension_identity_from_manifest(EXTENSION_MANIFEST_FILE)
 
 
 def _same_image(actual: Path, expected: Path) -> bool:

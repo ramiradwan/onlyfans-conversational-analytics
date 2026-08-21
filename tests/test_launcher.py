@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import base64
-import hashlib
-import json
 import os
 import re
 import socket
@@ -14,6 +11,8 @@ from typing import Any
 
 import pytest
 
+import app.launcher as launcher_module
+from app.core.extension_identity import extension_identity_from_manifest
 from app.launcher import (
     BRIDGE_ORIGIN,
     HANDOFF_PATH,
@@ -42,6 +41,21 @@ class FakeResponse:
 
     def json(self) -> Any:
         return self.payload
+
+
+def test_default_launcher_configuration_uses_the_frozen_entry_point_directly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The frozen launcher must invoke Brain.exe with its strict entry argument."""
+
+    monkeypatch.setattr(launcher_module.sys, "frozen", True, raising=False)
+
+    configuration = launcher_module.default_launcher_configuration()
+
+    assert configuration.brain_command == (
+        str(Path(launcher_module.sys.executable).resolve()),
+        "--brain",
+    )
 
 
 class FakeClient:
@@ -397,9 +411,7 @@ def test_provisioning_extension_identity_is_the_one_pinned_by_the_manifest_key(
     manifest_file = (
         Path(__file__).resolve().parents[1] / "extension" / "manifest.json"
     )
-    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-    digest = hashlib.sha256(base64.b64decode(manifest["key"])).hexdigest()
-    pinned = "".join(chr(ord("a") + int(nibble, 16)) for nibble in digest[:32])
+    pinned = extension_identity_from_manifest(manifest_file)
 
     environment = brain_environment(
         tmp_path, monkeypatch, provisioning_handoff_token="t" * 32
