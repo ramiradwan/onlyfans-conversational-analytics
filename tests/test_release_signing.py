@@ -1,4 +1,5 @@
-"""Behavioural falsifiers for release signature verification and signing isolation."""
+"""Behavioural falsifiers for release signature verification, signing isolation, and
+the packaged first-run release gate."""
 
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -51,6 +53,20 @@ SIGNING_JOB_ACTIONS = frozenset(
 SIGNING_JOB_COMMANDS = frozenset(
     {VERIFICATION_COMMAND, ".\\packaging\\write-digests.ps1"}
 )
+
+# The build job is identified by the release build it runs, and its first-run
+# gate by the test that gate selects. That test opts out of itself unless the
+# opt-in variable is set, and pytest.ini deselects the slow tier it belongs to,
+# so the environment and the marker selection are both part of what makes the
+# gate run at all.
+PACKAGE_BUILD_COMMAND = ".\\packaging\\build-windows.ps1"
+FIRST_RUN_GATE_TEST = (
+    "tests/test_packaged_runtime.py"
+    "::test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener"
+)
+FIRST_RUN_GATE_OPT_IN = "BRAIN_INSTALLED_LAUNCHER_E2E"
+FIRST_RUN_GATE_BUILD_PYTHON = "BRAIN_PACKAGED_BUILD_PYTHON"
+BUILD_ENVIRONMENT_INTERPRETER = ".build-venv\\Scripts\\python.exe"
 
 
 # The workflow runs the verifier under `shell: pwsh`; Windows PowerShell is the
@@ -517,3 +533,156 @@ def test_publication_cannot_precede_verification() -> None:
     )
     with pytest.raises(AssertionError, match="exactly one verify-signatures step"):
         _assert_publication_is_downstream_of_verification(unverified)
+
+
+def _build_job_name(workflow: dict[str, Any]) -> str:
+    """The build job is identified by the release build it runs, not by its name."""
+
+    names = sorted(
+        name
+        for name, job in _jobs(workflow).items()
+        if any(
+            PACKAGE_BUILD_COMMAND in str(step.get("run") or "") for step in _steps(job)
+        )
+    )
+    assert len(names) == 1, f"exactly one job must run {PACKAGE_BUILD_COMMAND}: {names}"
+    return names[0]
+
+
+def _build_job(workflow: dict[str, Any]) -> dict[str, Any]:
+    return _jobs(workflow)[_build_job_name(workflow)]
+
+
+def _first_run_gate_index(steps: list[dict[str, Any]]) -> int:
+    gates = [
+        index
+        for index, step in enumerate(steps)
+        if FIRST_RUN_GATE_TEST in str(step.get("run") or "")
+    ]
+    assert len(gates) == 1, (
+        f"the build job must run {FIRST_RUN_GATE_TEST} exactly once, "
+        f"found {len(gates)}"
+    )
+    return gates[0]
+
+
+def _first_run_gate_step(workflow: dict[str, Any]) -> dict[str, Any]:
+    steps = _steps(_build_job(workflow))
+    return steps[_first_run_gate_index(steps)]
+
+
+def _pytest_arguments(step: dict[str, Any]) -> list[str]:
+    """What the gate hands pytest, which is what decides the selection."""
+
+    command = step.get("run")
+    assert isinstance(command, str), "the packaged first-run gate runs no command"
+    tokens = command.split()
+    assert "pytest" in tokens, (
+        f"the packaged first-run gate does not run pytest: {command!r}"
+    )
+    return tokens[tokens.index("pytest") + 1 :]
+
+
+def _without_marker_selection(arguments: list[str]) -> list[str]:
+    remaining = list(arguments)
+    assert "-m" in remaining, (
+        "the packaged first-run gate must select a marker explicitly, because "
+        "pytest.ini deselects the tier the test belongs to"
+    )
+    index = remaining.index("-m")
+    del remaining[index : index + 2]
+    return remaining
+
+
+def _collect(arguments: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", *arguments],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _collected_node_ids(
+    collected: subprocess.CompletedProcess[str],
+) -> list[str]:
+    return [line.strip() for line in collected.stdout.splitlines() if "::" in line]
+
+
+def _assert_the_packaged_first_run_gates_the_upload(workflow: dict[str, Any]) -> None:
+    steps = _steps(_build_job(workflow))
+    gate = _first_run_gate_index(steps)
+    environment = steps[gate].get("env") or {}
+    assert str(environment.get(FIRST_RUN_GATE_OPT_IN)) == "1", (
+        f"the gate must set {FIRST_RUN_GATE_OPT_IN}=1, or the test skips itself: "
+        f"{environment.get(FIRST_RUN_GATE_OPT_IN)!r}"
+    )
+    interpreter = str(environment.get(FIRST_RUN_GATE_BUILD_PYTHON, ""))
+    assert interpreter.endswith(BUILD_ENVIRONMENT_INTERPRETER), (
+        "the gate must freeze with the job's isolated build environment in "
+        f"{FIRST_RUN_GATE_BUILD_PYTHON}, not {interpreter!r}"
+    )
+    publication = [
+        index
+        for index, step in enumerate(steps)
+        if _action_path(step) == PUBLISH_ACTION
+    ]
+    assert len(publication) == 1, (
+        f"the build job must upload exactly once, found {len(publication)}"
+    )
+    assert gate < publication[0], (
+        "the packaged first-run gate must run before the package is uploaded"
+    )
+
+
+def test_the_build_job_gates_the_upload_on_a_packaged_first_run() -> None:
+    """Deleting the gate, its opt-in, its build environment, or its position ahead
+    of the upload turns the named check red."""
+
+    workflow = _workflow_document()
+    _assert_the_packaged_first_run_gates_the_upload(workflow)
+
+    ungated = deepcopy(workflow)
+    _build_job(ungated)["steps"].remove(_first_run_gate_step(ungated))
+    with pytest.raises(AssertionError, match="exactly once, found 0"):
+        _assert_the_packaged_first_run_gates_the_upload(ungated)
+
+    unopted = deepcopy(workflow)
+    _first_run_gate_step(unopted)["env"].pop(FIRST_RUN_GATE_OPT_IN)
+    with pytest.raises(AssertionError, match=f"must set {FIRST_RUN_GATE_OPT_IN}=1"):
+        _assert_the_packaged_first_run_gates_the_upload(unopted)
+
+    detached = deepcopy(workflow)
+    _first_run_gate_step(detached)["env"][FIRST_RUN_GATE_BUILD_PYTHON] = (
+        "${{ github.workspace }}\\.other-venv\\Scripts\\python.exe"
+    )
+    with pytest.raises(AssertionError, match="isolated build environment"):
+        _assert_the_packaged_first_run_gates_the_upload(detached)
+
+    reordered = deepcopy(workflow)
+    steps = _build_job(reordered)["steps"]
+    gate = _first_run_gate_index(_steps(_build_job(reordered)))
+    publication = next(
+        index
+        for index, step in enumerate(steps)
+        if _action_path(step) == PUBLISH_ACTION
+    )
+    steps.insert(gate, steps.pop(publication))
+    with pytest.raises(AssertionError, match="before the package is uploaded"):
+        _assert_the_packaged_first_run_gates_the_upload(reordered)
+
+
+def test_the_gate_selection_collects_the_packaged_first_run_test() -> None:
+    """The gate's own arguments are handed to pytest: dropping the marker
+    selection collects nothing, so the release would ship unexercised."""
+
+    arguments = _pytest_arguments(_first_run_gate_step(_workflow_document()))
+
+    selected = _collect(arguments)
+    assert _collected_node_ids(selected) == [FIRST_RUN_GATE_TEST], (
+        selected.stdout + selected.stderr
+    )
+
+    deselected = _collect(_without_marker_selection(arguments))
+    assert _collected_node_ids(deselected) == [], deselected.stdout + deselected.stderr

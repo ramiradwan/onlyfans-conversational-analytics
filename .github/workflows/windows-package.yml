@@ -22,6 +22,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             requirements.txt
+            requirements-dev.txt
             packaging/requirements-build.txt
 
       - name: Setup Node.js
@@ -41,11 +42,28 @@ jobs:
           python -m venv .build-venv
           .\.build-venv\Scripts\python.exe -m pip install -r requirements.txt -r packaging/requirements-build.txt
 
+      # The packaged first-run test runs on the runner interpreter and drives
+      # the isolated build environment through -BuildPython, so the test
+      # dependencies stay out of the environment that freezes the artifact.
+      - name: Install the test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
       - name: Build package
         run: |
           .\packaging\build-windows.ps1 `
             -BuildPython .\.build-venv\Scripts\python.exe `
             -OutputRoot "$env:RUNNER_TEMP\windows-package"
+
+      # A packaged build that cannot complete a first run must not reach the
+      # artifact. This freezes a real installer with the build environment
+      # above and runs the unmodified smoke harness against it. The test
+      # carries the slow marker, which pytest.ini deselects by default, so the
+      # marker is selected explicitly.
+      - name: Qualify the packaged first run
+        env:
+          BRAIN_INSTALLED_LAUNCHER_E2E: '1'
+          BRAIN_PACKAGED_BUILD_PYTHON: ${{ github.workspace }}\.build-venv\Scripts\python.exe
+        run: python -m pytest -m slow tests/test_packaged_runtime.py::test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener
 
       # The installer directory is the artifact set: the installer, the Agent
       # bundle, and the sha256sums.txt computed over both. Signing rewrites the
