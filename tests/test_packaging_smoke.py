@@ -6,6 +6,7 @@ import hashlib
 import http.server
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -128,6 +129,7 @@ def _run_smoke(
     tmp_path: Path,
     *,
     smoke_script: Path = SMOKE_SCRIPT,
+    shell: str = "pwsh.exe",
     artifact_path: Path | None = None,
     executable_name: str | None = None,
     executable_contents: bytes | None = None,
@@ -156,7 +158,7 @@ def _run_smoke(
     transcript_path = tmp_path / "transcript.json"
 
     command = [
-        "pwsh.exe",
+        shell,
         "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
@@ -195,6 +197,20 @@ def _run_smoke(
             f"{result.stdout}{result.stderr}"
         )
     return result, json.loads(transcript_path.read_text(encoding="utf-8-sig"))
+
+
+def _web_commands_without_basic_parsing(root: Path) -> list[str]:
+    """Return web cmdlet lines that omit the Windows PowerShell compatibility switch."""
+
+    findings: list[str] = []
+    for script in (root / "tools").rglob("*.ps1"):
+        lines = script.read_text(encoding="utf-8-sig").splitlines()
+        for line_number, line in enumerate(lines, start=1):
+            if not re.search(r"\bInvoke-(?:WebRequest|RestMethod)\b", line):
+                continue
+            if "-UseBasicParsing" not in line:
+                findings.append(f"{script.relative_to(root).as_posix()}:{line_number}")
+    return findings
 
 
 def _write_listener_executable(tmp_path: Path) -> Path:
@@ -419,6 +435,48 @@ def test_real_interpreter_is_still_detected(tmp_path: Path) -> None:
     assert transcript["artifact"] == {"status": "aborted", "reason": "python_detected"}
     assert transcript["steps"][0]["outcome"] == "abort"
     assert transcript["steps"][0]["evidence"]["path"].endswith("python.exe")
+
+
+def test_windows_powershell_51_runs_the_smoke_harness(tmp_path: Path) -> None:
+    """Windows PowerShell 5.1 remains a supported harness interpreter."""
+
+    if shutil.which("powershell.exe") is None:
+        pytest.skip("Windows PowerShell 5.1 is unavailable")
+
+    result, transcript = _run_smoke(
+        tmp_path,
+        shell="powershell.exe",
+        executable_name="python.exe",
+        executable_contents=b"real-interpreter-fixture",
+    )
+
+    assert result.returncode == 21, result.stdout + result.stderr
+    assert transcript["artifact"] == {"status": "aborted", "reason": "python_detected"}
+
+
+def test_tools_web_requests_use_windows_powershell_compatibility() -> None:
+    """Every tools web request must avoid the Windows PowerShell IE engine."""
+
+    assert _web_commands_without_basic_parsing(ROOT) == []
+
+
+def test_tools_web_request_guard_detects_a_removed_compatibility_switch(
+    tmp_path: Path,
+) -> None:
+    """The guard turns red when the compatibility switch is removed."""
+
+    script = tmp_path / "tools" / "packaging-smoke" / "run.ps1"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        SMOKE_SCRIPT.read_text(encoding="utf-8").replace(
+            "-UseBasicParsing ", "", 1
+        ),
+        encoding="utf-8",
+    )
+
+    assert _web_commands_without_basic_parsing(tmp_path) == [
+        "tools/packaging-smoke/run.ps1:406"
+    ]
 
 
 def test_zero_length_python_stub_is_not_an_interpreter(tmp_path: Path) -> None:

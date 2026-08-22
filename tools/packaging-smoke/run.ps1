@@ -403,7 +403,7 @@ function Invoke-VerifyProvisioningListener {
                 }
                 return $false
             }
-            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:17871/health' -TimeoutSec 2
+            $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:17871/health' -TimeoutSec 2
             $health = $response.Content | ConvertFrom-Json
             if ($response.StatusCode -eq 200 -and $health.status -eq 'ok') {
                 if (-not $script:ownedListenerProcessIds.Contains($ownerProcessId)) {
