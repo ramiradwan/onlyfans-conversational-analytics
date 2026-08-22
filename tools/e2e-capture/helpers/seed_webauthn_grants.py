@@ -9,11 +9,13 @@ authorizes no account, which is a valid state that holds no configuration.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import uuid4
 
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[3]
@@ -21,10 +23,17 @@ sys.path.insert(0, str(PRODUCT_ROOT))
 
 from app.persistence.auth import (
     AuthorizedAccountBinding,
+    InstallationKeyReference,
+    InstallationKeyReservation,
     ProvisioningCandidate,
     ProvisioningCandidateState,
     SQLiteAuthenticationStore,
     VerifiedGrantReference,
+)
+from app.security.installation_key import (
+    INSTALLATION_KEY_ALGORITHM,
+    InstallationKeyUnavailable,
+    WindowsCNGInstallationKeyProvider,
 )
 
 
@@ -33,6 +42,9 @@ INSTALLATION_ID = "e2e-temporary-installation"
 ORGANIZATION_ID = "e2e-organization"
 ASSOCIATION_REQUEST_ID = "e2e-association-request"
 PLATFORM_CREATOR_ID = "e2e-platform-creator"
+
+SYNTHETIC_KEY_PROVIDER_NAME = "E2E Synthetic Installation Key Provider"
+SYNTHETIC_KEY_NAME = "e2e-temporary-installation-key"
 
 
 def _grant(
@@ -113,6 +125,90 @@ def _authorize_account(
     return True
 
 
+def _real_key_provider_available() -> bool:
+    """Return whether this host offers the TPM-backed platform provider.
+
+    Mirrors the detection ``app.main.activate_runtime`` already performs at
+    Brain startup: constructing the provider raises
+    ``InstallationKeyUnavailable`` on a host with none, which is also why
+    Brain starts there unactivated instead of failing.
+    """
+
+    try:
+        WindowsCNGInstallationKeyProvider()
+    except InstallationKeyUnavailable:
+        return False
+    return True
+
+
+def _synthetic_installation_key_material(installation_key_id: str) -> tuple[str, str]:
+    """Return a syntactically valid (jkt, public_key_jwk) pair backed by no real key.
+
+    Nothing on this harness path re-derives or cryptographically verifies the
+    thumbprint; ``app.persistence.auth``'s validators only require every field
+    to be non-empty and the two values to be recorded together.
+    """
+
+    digest = hashlib.sha256(installation_key_id.encode("utf-8")).digest()
+    half = len(digest) // 2
+    x = base64.urlsafe_b64encode(digest[:half]).rstrip(b"=").decode("ascii")
+    y = base64.urlsafe_b64encode(digest[half:]).rstrip(b"=").decode("ascii")
+    jwk = json.dumps({"crv": "P-256", "kty": "EC", "x": x, "y": y}, sort_keys=True)
+    jkt = base64.urlsafe_b64encode(
+        hashlib.sha256(jwk.encode("utf-8")).digest()
+    ).rstrip(b"=").decode("ascii")
+    return jkt, jwk
+
+
+def _ensure_installation_key_active(
+    store: SQLiteAuthenticationStore,
+) -> InstallationKeyReference | None:
+    """Return the active installation key, seeding an e2e-only one if needed.
+
+    Production activates a real TPM-backed key at Brain startup when a
+    platform key provider is present (``app.main.initialize_installation_key``).
+    A host with no such provider starts Brain there unactivated by design, so
+    on that host this drives a synthetic key through the store's real
+    reserve/activate transitions instead of writing the reference row
+    directly. When a real provider is present but no key was activated, this
+    seeds nothing and leaves the failure to the caller: a present provider
+    that never activated is a real condition to surface, not to paper over.
+    """
+
+    key = store.installation_key_reference()
+    if key is not None:
+        return key
+    if _real_key_provider_available():
+        return None
+
+    now = datetime.now(timezone.utc)
+    installation_key_id = f"{SYNTHETIC_KEY_NAME}-{uuid4()}"
+    installation_key_jkt, public_key_jwk = _synthetic_installation_key_material(
+        installation_key_id
+    )
+    store.reserve_installation_key(
+        InstallationKeyReservation(
+            provider_name=SYNTHETIC_KEY_PROVIDER_NAME,
+            provider_key_name=SYNTHETIC_KEY_NAME,
+            algorithm=INSTALLATION_KEY_ALGORITHM,
+            created_at=now,
+        )
+    )
+    store.activate_installation_key(
+        InstallationKeyReference(
+            provider_name=SYNTHETIC_KEY_PROVIDER_NAME,
+            provider_key_name=SYNTHETIC_KEY_NAME,
+            algorithm=INSTALLATION_KEY_ALGORITHM,
+            installation_key_id=installation_key_id,
+            installation_key_jkt=installation_key_jkt,
+            public_key_jwk=public_key_jwk,
+            created_at=now,
+            activated_at=now,
+        )
+    )
+    return store.installation_key_reference()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--auth-database", required=True, type=Path)
@@ -120,7 +216,7 @@ def main() -> int:
     arguments = parser.parse_args()
 
     store = SQLiteAuthenticationStore(arguments.auth_database)
-    key = store.installation_key_reference()
+    key = _ensure_installation_key_active(store)
     if key is None:
         raise RuntimeError("Temporary installation key is not active")
     grants = [
