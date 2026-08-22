@@ -37,6 +37,10 @@ from app.services.command_execution import (
 from app.persistence.auth import SQLiteAuthenticationStore
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 from app.persistence.history import IngestResult, InvariantViolation, StreamKey
+from app.provisioning.progress_reporting import (
+    OnboardingProgressCoordinator,
+    configured_runtime_onboarding_progress,
+)
 from app.security.account_bindings import eligible_accounts
 from app.security.activation_gate import runtime_is_activated
 from app.utils.logger import logger
@@ -143,7 +147,12 @@ class AuthorizationError(ValueError):
 class InMemoryTransportManager:
     """Account-partitioned sessions, leases, presence, and ingestion cursors."""
 
-    def __init__(self, repositories: CanonicalRepositories | None = None) -> None:
+    def __init__(
+        self,
+        repositories: CanonicalRepositories | None = None,
+        *,
+        onboarding_progress: OnboardingProgressCoordinator | None = None,
+    ) -> None:
         repositories = repositories or create_canonical_repositories("memory")
         # Retain the repository aggregate so its disposable TemporaryDirectory
         # remains alive for the full manager lifetime in isolated tests.
@@ -172,6 +181,7 @@ class InMemoryTransportManager:
             str, asyncio.Task[dict[str, Any] | None]
         ] = {}
         self._projection_pending_accounts: set[str] = set()
+        self._onboarding_progress = onboarding_progress
 
     def _development_stub_allowed(self) -> bool:
         auth_mode = settings.websocket_auth_mode
@@ -596,6 +606,11 @@ class InMemoryTransportManager:
 
     async def start(self) -> None:
         self.validate_auth_configuration()
+        if self._onboarding_progress is not None:
+            try:
+                await self._onboarding_progress.start()
+            except Exception:
+                pass
         if self._sweeper_task is None or self._sweeper_task.done():
             self._sweeper_task = asyncio.create_task(self._sweep(), name="phase2-transport-expiry")
         pending_accounts = await asyncio.to_thread(self.projection.pending_accounts)
@@ -603,6 +618,11 @@ class InMemoryTransportManager:
             self.schedule_projection(account_id)
 
     async def stop(self) -> None:
+        if self._onboarding_progress is not None:
+            try:
+                await self._onboarding_progress.stop()
+            except Exception:
+                pass
         task = self._sweeper_task
         self._sweeper_task = None
         if task is not None:
@@ -1300,6 +1320,14 @@ class InMemoryTransportManager:
             self.history.mark_history_config_applied(
                 lease.creator_account_id, payload.config_revision
             )
+            if self._onboarding_progress is not None:
+                try:
+                    await asyncio.to_thread(
+                        self._onboarding_progress.mark,
+                        "first-capture-ready",
+                    )
+                except Exception:
+                    pass
         await self.broadcast_agent_state(lease.creator_account_id)
         # Applying config can flip configuration_aligned; refresh readiness so the
         # dashboard leaves "configuration=pending" without waiting for a reconnect.
@@ -1399,5 +1427,6 @@ transport_manager = InMemoryTransportManager(
             if settings.canonical_persistence_backend == "sqlite"
             else None
         ),
-    )
+    ),
+    onboarding_progress=configured_runtime_onboarding_progress(),
 )

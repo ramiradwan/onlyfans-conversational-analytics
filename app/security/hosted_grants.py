@@ -19,6 +19,7 @@ from app.persistence.auth import (
     AuthenticationStateError,
     AuthenticationStore,
     InstallationKeyReference,
+    OnboardingProgressEvent,
     VerifiedGrantReference,
 )
 from app.security.grant_verifier import (
@@ -36,6 +37,11 @@ PROOF_PROFILE = "urn:bridge-clean:installation-key-proof:v1"
 REFRESH_PROFILE = "urn:bridge-clean:grant-refresh:v1"
 CREATOR_ASSOCIATION_PROFILE = "urn:bridge-clean:creator-association:v1"
 PROOF_AUDIENCE = "urn:bridge-clean:commercial-control-plane:provisioning"
+PROGRESS_PROFILE = "urn:bridge-clean:onboarding-progress:v1"
+PROGRESS_PROOF_PROFILE = "urn:bridge-clean:provisioning-proof:v1"
+PROGRESS_PROOF_AUDIENCE = (
+    "urn:bridge-clean:commercial-control-plane:provisioning-v2"
+)
 PRODUCTION_TRUST_SET = "production/grant-profile-v1/trust-set.json"
 
 _PROOF_DOMAIN = b"BRIDGE-CLEAN-INSTALLATION-PROOF-V1\x00"
@@ -46,6 +52,12 @@ _UUIDV7_RE = re.compile(
 )
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$")
 _VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$")
+_TIMESTAMP_RE = re.compile(
+    r"^(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29|"
+    r"[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|"
+    r"(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))"
+    r"T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\.[0-9]{3}Z$"
+)
 _AUDIENCES = {
     "installation_grant": "urn:bridge-clean:local-brain:installation",
     "creator_account_binding": "urn:bridge-clean:local-brain:creator-binding",
@@ -76,6 +88,10 @@ _REFRESH = {
         "license-entitlement-refresh",
     ),
 }
+_RETRYABLE_STATUS_CODES = frozenset({408, 425, 429})
+_ONBOARDING_MILESTONES = frozenset(
+    {"installed", "enrolled", "account-bound", "first-capture-ready"}
+)
 
 
 class HostedGrantError(RuntimeError):
@@ -271,6 +287,9 @@ class GrantRefresh:
     policy: RuntimePolicy | None
 
 
+ProgressDelivery = Literal["delivered", "retry", "refused"]
+
+
 class HostedGrantClient:
     """Consumes installation claims and refreshes verified local grants."""
 
@@ -363,6 +382,75 @@ class HostedGrantClient:
         return self._store.build_runtime_policy_from_grants(
             identity, grant_reference_ids
         )
+
+    def report_onboarding_progress(
+        self, event: OnboardingProgressEvent
+    ) -> ProgressDelivery:
+        """Push one closed event with provisioning-v2 installation-key proof."""
+
+        if event.milestone not in _ONBOARDING_MILESTONES:
+            raise ValueError("Onboarding progress milestone is invalid")
+        key = self._installation_key.ensure_ready()
+        if not self._progress_key_is_bound(event, key):
+            # `installed` is durably observed before enrollment can install the
+            # verified grant. Local not-ready state must remain retryable.
+            return "retry"
+        challenge_path = (
+            f"/v1/installations/{event.installation_id}/proof-challenges"
+        )
+        try:
+            challenge_response = self._request(
+                challenge_path,
+                {
+                    "profile": PROGRESS_PROOF_PROFILE,
+                    "purpose": "onboarding-progress-report",
+                },
+            )
+        except HostedGrantUnavailable:
+            return "retry"
+        if _retryable(challenge_response.status_code):
+            return "retry"
+        if 400 <= challenge_response.status_code < 500:
+            return "refused"
+        if challenge_response.status_code != 201:
+            return "retry"
+        try:
+            challenge = self._validated_progress_challenge(
+                _response_object(challenge_response),
+                installation_id=event.installation_id,
+            )
+        except (HostedGrantUnavailable, ValueError):
+            return "retry"
+
+        path = f"/v1/installations/{event.installation_id}/onboarding-progress"
+        request_body = self._progress_request(event)
+        envelope = {
+            "request": request_body,
+            "proof": self._proof(
+                challenge=challenge,
+                request_body=request_body,
+                path=path,
+                purpose="onboarding-progress-report",
+                installation_id=event.installation_id,
+                key=key,
+                audience=PROGRESS_PROOF_AUDIENCE,
+            ),
+        }
+        try:
+            response = self._request(path, envelope)
+        except HostedGrantUnavailable:
+            return "retry"
+        if _retryable(response.status_code):
+            return "retry"
+        if 400 <= response.status_code < 500:
+            return "refused"
+        if response.status_code != 200:
+            return "retry"
+        try:
+            self._validated_progress_response(_response_object(response), event)
+        except HostedGrantUnavailable:
+            return "retry"
+        return "delivered"
 
     def request_creator_association(
         self, association: CreatorAssociationRequest
@@ -673,6 +761,7 @@ class HostedGrantClient:
         installation_id: str,
         key: InstallationKeyReference,
         account_id: str = "",
+        audience: str = PROOF_AUDIENCE,
     ) -> dict[str, str]:
         fields = (
             _decode_32(challenge),
@@ -683,7 +772,7 @@ class HostedGrantClient:
             installation_id.encode("utf-8"),
             account_id.encode("utf-8"),
             key.installation_key_id.encode("utf-8"),
-            PROOF_AUDIENCE.encode("ascii"),
+            audience.encode("ascii"),
         )
         canonical = bytearray(_PROOF_DOMAIN)
         for field in fields:
@@ -700,6 +789,79 @@ class HostedGrantClient:
             "key_id": key.installation_key_id,
             "signature": _b64url(proof.signature),
         }
+
+    def _progress_key_is_bound(
+        self, event: OnboardingProgressEvent, key: InstallationKeyReference
+    ) -> bool:
+        """Require one verified installation grant for the event/key tuple."""
+
+        return any(
+            grant.grant_type == "installation_grant"
+            and grant.installation_id == event.installation_id
+            and grant.organization_id == event.organization_id
+            and grant.installation_key_id == key.installation_key_id
+            and grant.installation_key_jkt == key.installation_key_jkt
+            for grant in self._store.verified_grants()
+        )
+
+    @staticmethod
+    def _progress_request(event: OnboardingProgressEvent) -> dict[str, object]:
+        return {
+            "profile": PROGRESS_PROFILE,
+            "event_id": event.event_id,
+            "milestone": event.milestone,
+            "occurred_at": _contract_timestamp(event.occurred_at),
+            "onboarding_transaction_id": event.onboarding_transaction_id,
+            "organization_id": event.organization_id,
+            "installation_id": event.installation_id,
+            "correlation_id": event.correlation_id,
+        }
+
+    @staticmethod
+    def _validated_progress_challenge(
+        document: Mapping[str, object], *, installation_id: str
+    ) -> str:
+        expected = {
+            "profile",
+            "purpose",
+            "installation_id",
+            "challenge",
+            "audience",
+            "issued_at",
+            "expires_at",
+        }
+        if (
+            set(document) != expected
+            or document.get("profile") != PROGRESS_PROOF_PROFILE
+            or document.get("purpose") != "onboarding-progress-report"
+            or document.get("installation_id") != installation_id
+            or document.get("audience") != PROGRESS_PROOF_AUDIENCE
+            or not isinstance(document.get("challenge"), str)
+            or not isinstance(document.get("issued_at"), str)
+            or _TIMESTAMP_RE.fullmatch(document["issued_at"]) is None
+            or not isinstance(document.get("expires_at"), str)
+            or _TIMESTAMP_RE.fullmatch(document["expires_at"]) is None
+        ):
+            raise HostedGrantUnavailable("Hosted progress challenge is invalid")
+        challenge = document["challenge"]
+        _decode_32(challenge)
+        return challenge
+
+    @staticmethod
+    def _validated_progress_response(
+        document: Mapping[str, object], event: OnboardingProgressEvent
+    ) -> None:
+        if (
+            set(document)
+            != {"profile", "event_id", "milestone", "status", "recorded_at"}
+            or document.get("profile") != PROGRESS_PROFILE
+            or document.get("event_id") != event.event_id
+            or document.get("milestone") != event.milestone
+            or document.get("status") not in {"recorded", "duplicate"}
+            or not isinstance(document.get("recorded_at"), str)
+            or _TIMESTAMP_RE.fullmatch(document["recorded_at"]) is None
+        ):
+            raise HostedGrantUnavailable("Hosted progress response is invalid")
 
     def _validated_claim_response(
         self,
@@ -1003,6 +1165,18 @@ class HostedGrantClient:
 def _media_type(content_type: str) -> str:
     """Return the lowercased media type without parameters."""
     return content_type.split(";", 1)[0].strip().lower()
+
+
+def _retryable(status_code: int) -> bool:
+    return status_code in _RETRYABLE_STATUS_CODES or status_code >= 500
+
+
+def _contract_timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("Onboarding progress timestamp must be timezone-aware")
+    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    )
 
 
 def _response_object(response: TransportResponse) -> dict[str, object]:

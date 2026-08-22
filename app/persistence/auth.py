@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Iterable, Literal, Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.persistence.database import AuthSQLite
 from app.persistence.migrations import MigrationRunner
@@ -20,6 +20,7 @@ from app.security.grant_types import (
     ACCOUNT_AUTHORITY_GRANT_TYPES,
     AGENT_PAIRING_GRANT_TYPES,
     CREATOR_ACCOUNT_BINDING,
+    LICENSE_ENTITLEMENT,
 )
 from app.security.runtime_policy import (
     AuthContext,
@@ -56,6 +57,18 @@ class ClaimSubmissionState(str, Enum):
     SUBMITTED = "submitted"
     CONSUMED = "consumed"
     REFUSED = "refused"
+
+
+OnboardingMilestone = Literal[
+    "installed",
+    "enrolled",
+    "account-bound",
+    "first-capture-ready",
+]
+
+_ONBOARDING_MILESTONES = frozenset(
+    {"installed", "enrolled", "account-bound", "first-capture-ready"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,6 +362,35 @@ class ClaimSubmission:
     resolved_at: datetime | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class OnboardingProgressEvent:
+    """One closed, content-free report retained until a terminal outcome."""
+
+    milestone: OnboardingMilestone
+    event_id: str
+    occurred_at: datetime
+    onboarding_transaction_id: str
+    organization_id: str
+    installation_id: str
+    correlation_id: str
+    attempts: int = 0
+
+    def __post_init__(self) -> None:
+        if self.milestone not in _ONBOARDING_MILESTONES:
+            raise ValueError("Onboarding progress milestone is invalid")
+        _require_uuid7(self.event_id, name="event_id")
+        for name in (
+            "onboarding_transaction_id",
+            "organization_id",
+            "installation_id",
+            "correlation_id",
+        ):
+            _require_cross_plane_id(getattr(self, name), name=name)
+        _contract_time(self.occurred_at)
+        if self.attempts < 0:
+            raise ValueError("Onboarding progress attempts must be non-negative")
+
+
 class AuthenticationStore(Protocol):
     def reserve_installation_key(
         self, reservation: InstallationKeyReservation
@@ -499,6 +541,33 @@ class AuthenticationStore(Protocol):
     def unresolved_claim_submissions(self) -> tuple[ClaimSubmission, ...]: ...
 
     def consumed_claim_submissions(self) -> tuple[ClaimSubmission, ...]: ...
+
+    def enqueue_onboarding_progress(
+        self,
+        milestone: OnboardingMilestone,
+        *,
+        event_id: str,
+        correlation_id: str,
+        occurred_at: datetime,
+    ) -> OnboardingProgressEvent | None: ...
+
+    def due_onboarding_progress(
+        self, *, now: datetime
+    ) -> tuple[OnboardingProgressEvent, ...]: ...
+
+    def deliver_onboarding_progress(
+        self, event_id: str, *, delivered_at: datetime
+    ) -> bool: ...
+
+    def retry_onboarding_progress(
+        self, event_id: str, *, next_attempt_at: datetime
+    ) -> bool: ...
+
+    def refuse_onboarding_progress(
+        self, event_id: str, *, refused_at: datetime
+    ) -> bool: ...
+
+    def onboarding_progress_events(self) -> tuple[OnboardingProgressEvent, ...]: ...
 
 
 class AuthenticationStateError(ValueError):
@@ -1029,6 +1098,13 @@ class SQLiteAuthenticationStore:
             )
             if cursor.rowcount == 1:
                 self._increment_authorization_epoch(connection)
+                self._enqueue_onboarding_progress_in_transaction(
+                    connection,
+                    "account-bound",
+                    event_id=_new_uuid7(instant),
+                    correlation_id=_new_uuid7(instant),
+                    occurred_at=instant,
+                )
             return cursor.rowcount == 1
 
     def issue_webauthn_challenge(
@@ -2325,6 +2401,14 @@ class SQLiteAuthenticationStore:
                         _time_text(submission.submitted_at),
                     ),
                 )
+                self._enqueue_onboarding_progress_in_transaction(
+                    connection,
+                    "installed",
+                    event_id=_new_uuid7(submission.submitted_at),
+                    correlation_id=_new_uuid7(submission.submitted_at),
+                    occurred_at=submission.submitted_at,
+                    claim=submission,
+                )
                 return
             recorded = _claim_submission(existing)
             if _claim_coordinates(recorded) != _claim_coordinates(submission):
@@ -2378,6 +2462,14 @@ class SQLiteAuthenticationStore:
                     ClaimSubmissionState.CONSUMED.value,
                 ),
             )
+            if cursor.rowcount == 1 and state is ClaimSubmissionState.CONSUMED:
+                self._enqueue_onboarding_progress_in_transaction(
+                    connection,
+                    "enrolled",
+                    event_id=_new_uuid7(resolved_at),
+                    correlation_id=_new_uuid7(resolved_at),
+                    occurred_at=resolved_at,
+                )
         return cursor.rowcount == 1
 
     def claim_submission(self, claim_id: str) -> ClaimSubmission | None:
@@ -2420,6 +2512,266 @@ class SQLiteAuthenticationStore:
                 (ClaimSubmissionState.CONSUMED.value,),
             ).fetchall()
         return tuple(_claim_submission(row) for row in rows)
+
+    def enqueue_onboarding_progress(
+        self,
+        milestone: OnboardingMilestone,
+        *,
+        event_id: str,
+        correlation_id: str,
+        occurred_at: datetime,
+    ) -> OnboardingProgressEvent | None:
+        """Insert one milestone after its durable local prerequisite exists.
+
+        The claim coordinates are the only cross-plane correlation source. No
+        caller can supply an account identifier or an open metadata object.
+        """
+
+        if milestone not in _ONBOARDING_MILESTONES:
+            raise ValueError("Onboarding progress milestone is invalid")
+        _require_uuid7(event_id, name="event_id")
+        _require_cross_plane_id(correlation_id, name="correlation_id")
+        occurred_text = _contract_time(occurred_at)
+        next_attempt_text = _time_text(occurred_at)
+        with self.database.transaction() as connection:
+            claims = connection.execute(
+                """
+                SELECT * FROM provisioning_claim_submissions
+                WHERE state = ?
+                ORDER BY submitted_at, claim_id
+                """,
+                (ClaimSubmissionState.CONSUMED.value,),
+            ).fetchall()
+            if len(claims) != 1:
+                return None
+            claim = _claim_submission(claims[0])
+            if milestone in {"account-bound", "first-capture-ready"}:
+                binding = connection.execute(
+                    """
+                    SELECT 1
+                    FROM authorized_account_bindings AS binding
+                    JOIN provisioning_candidates AS candidate
+                      ON candidate.association_request_id = binding.association_request_id
+                    JOIN agent_pairings AS pairing
+                      ON pairing.creator_account_id = binding.creator_account_id
+                     AND pairing.installation_id = binding.installation_id
+                    WHERE binding.installation_id = ?
+                      AND candidate.onboarding_transaction_id = ?
+                      AND candidate.organization_id = ?
+                      AND binding.revoked_at IS NULL
+                      AND pairing.activated_at IS NOT NULL
+                      AND pairing.revoked_at IS NULL
+                    """,
+                    (
+                        claim.installation_id,
+                        claim.onboarding_transaction_id,
+                        claim.organization_id,
+                    ),
+                ).fetchone()
+                if binding is None:
+                    return None
+            if milestone == "first-capture-ready":
+                entitlement = connection.execute(
+                    """
+                    SELECT 1
+                    FROM verified_grant_references AS entitlement
+                    JOIN installation_key_reference AS installation_key
+                      ON installation_key.singleton = 1
+                    WHERE entitlement.grant_type = ?
+                      AND entitlement.organization_id = ?
+                      AND entitlement.installation_id = ?
+                      AND entitlement.installation_key_id =
+                          installation_key.installation_key_id
+                      AND entitlement.installation_key_jkt =
+                          installation_key.installation_key_jkt
+                      AND installation_key.activated_at IS NOT NULL
+                      AND entitlement.revoked_at IS NULL
+                      AND entitlement.valid_from <= ?
+                      AND entitlement.expires_at > ?
+                    """,
+                    (
+                        LICENSE_ENTITLEMENT,
+                        claim.organization_id,
+                        claim.installation_id,
+                        occurred_text,
+                        occurred_text,
+                    ),
+                ).fetchone()
+                if entitlement is None:
+                    return None
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO onboarding_progress_outbox (
+                    milestone, event_id, occurred_at, onboarding_transaction_id,
+                    organization_id, installation_id, correlation_id, state,
+                    attempts, next_attempt_at, delivered_at, refused_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, NULL, NULL)
+                """,
+                (
+                    milestone,
+                    event_id,
+                    occurred_text,
+                    claim.onboarding_transaction_id,
+                    claim.organization_id,
+                    claim.installation_id,
+                    correlation_id,
+                    next_attempt_text,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM onboarding_progress_outbox WHERE milestone = ?",
+                (milestone,),
+            ).fetchone()
+        return None if row is None else _onboarding_progress_event(row)
+
+    def due_onboarding_progress(
+        self, *, now: datetime
+    ) -> tuple[OnboardingProgressEvent, ...]:
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM onboarding_progress_outbox
+                WHERE state = 'pending' AND next_attempt_at <= ?
+                ORDER BY occurred_at,
+                    CASE milestone
+                        WHEN 'installed' THEN 1
+                        WHEN 'enrolled' THEN 2
+                        WHEN 'account-bound' THEN 3
+                        WHEN 'first-capture-ready' THEN 4
+                    END
+                """,
+                (_time_text(now),),
+            ).fetchall()
+        return tuple(_onboarding_progress_event(row) for row in rows)
+
+    @staticmethod
+    def _enqueue_onboarding_progress_in_transaction(
+        connection: sqlite3.Connection,
+        milestone: OnboardingMilestone,
+        *,
+        event_id: str,
+        correlation_id: str,
+        occurred_at: datetime,
+        claim: ClaimSubmission | None = None,
+    ) -> None:
+        """Atomically couple a lifecycle transition to its closed outbox row."""
+
+        if claim is None:
+            claims = connection.execute(
+                """
+                SELECT * FROM provisioning_claim_submissions
+                WHERE state = ?
+                ORDER BY submitted_at, claim_id
+                """,
+                (ClaimSubmissionState.CONSUMED.value,),
+            ).fetchall()
+            if len(claims) != 1:
+                return
+            claim = _claim_submission(claims[0])
+        if milestone == "account-bound":
+            binding = connection.execute(
+                """
+                SELECT 1
+                FROM authorized_account_bindings AS binding
+                JOIN provisioning_candidates AS candidate
+                  ON candidate.association_request_id = binding.association_request_id
+                JOIN agent_pairings AS pairing
+                  ON pairing.creator_account_id = binding.creator_account_id
+                 AND pairing.installation_id = binding.installation_id
+                WHERE binding.installation_id = ?
+                  AND candidate.onboarding_transaction_id = ?
+                  AND candidate.organization_id = ?
+                  AND binding.revoked_at IS NULL
+                  AND pairing.activated_at IS NOT NULL
+                  AND pairing.revoked_at IS NULL
+                """,
+                (
+                    claim.installation_id,
+                    claim.onboarding_transaction_id,
+                    claim.organization_id,
+                ),
+            ).fetchone()
+            if binding is None:
+                return
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO onboarding_progress_outbox (
+                milestone, event_id, occurred_at, onboarding_transaction_id,
+                organization_id, installation_id, correlation_id, state,
+                attempts, next_attempt_at, delivered_at, refused_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, NULL, NULL)
+            """,
+            (
+                milestone,
+                event_id,
+                _contract_time(occurred_at),
+                claim.onboarding_transaction_id,
+                claim.organization_id,
+                claim.installation_id,
+                correlation_id,
+                _time_text(occurred_at),
+            ),
+        )
+
+    def deliver_onboarding_progress(
+        self, event_id: str, *, delivered_at: datetime
+    ) -> bool:
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE onboarding_progress_outbox
+                SET state = 'delivered', attempts = attempts + 1,
+                    next_attempt_at = NULL, delivered_at = ?, refused_at = NULL
+                WHERE event_id = ? AND state = 'pending'
+                """,
+                (_time_text(delivered_at), event_id),
+            )
+        return cursor.rowcount == 1
+
+    def retry_onboarding_progress(
+        self, event_id: str, *, next_attempt_at: datetime
+    ) -> bool:
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE onboarding_progress_outbox
+                SET attempts = attempts + 1, next_attempt_at = ?
+                WHERE event_id = ? AND state = 'pending'
+                """,
+                (_time_text(next_attempt_at), event_id),
+            )
+        return cursor.rowcount == 1
+
+    def refuse_onboarding_progress(
+        self, event_id: str, *, refused_at: datetime
+    ) -> bool:
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE onboarding_progress_outbox
+                SET state = 'refused', attempts = attempts + 1,
+                    next_attempt_at = NULL, delivered_at = NULL, refused_at = ?
+                WHERE event_id = ? AND state = 'pending'
+                """,
+                (_time_text(refused_at), event_id),
+            )
+        return cursor.rowcount == 1
+
+    def onboarding_progress_events(self) -> tuple[OnboardingProgressEvent, ...]:
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM onboarding_progress_outbox
+                ORDER BY occurred_at,
+                    CASE milestone
+                        WHEN 'installed' THEN 1
+                        WHEN 'enrolled' THEN 2
+                        WHEN 'account-bound' THEN 3
+                        WHEN 'first-capture-ready' THEN 4
+                    END
+                """
+            ).fetchall()
+        return tuple(_onboarding_progress_event(row) for row in rows)
 
     def record_authorized_account_binding(
         self, binding: AuthorizedAccountBinding
@@ -2552,6 +2904,21 @@ def _new_secret() -> tuple[str, str, str]:
     return object_id, value, _secret_digest(value)
 
 
+def _new_uuid7(now: datetime) -> str:
+    _time_text(now)
+    milliseconds = int(now.timestamp() * 1_000)
+    if not 0 <= milliseconds < 1 << 48:
+        raise ValueError("Onboarding progress time is outside UUIDv7 range")
+    value = (
+        (milliseconds << 80)
+        | (0x7 << 76)
+        | (secrets.randbits(12) << 64)
+        | (0b10 << 62)
+        | secrets.randbits(62)
+    )
+    return str(UUID(int=value))
+
+
 def _secret_digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -2560,6 +2927,13 @@ def _time_text(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("authentication timestamps must be timezone-aware")
     return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
+
+
+def _contract_time(value: datetime) -> str:
+    _time_text(value)
+    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z"
+    )
 
 
 def _parse_time(value: str) -> datetime:
@@ -2630,6 +3004,35 @@ def _claim_submission(row: sqlite3.Row) -> ClaimSubmission:
         outcome=None if outcome is None else str(outcome),
         resolved_at=None if resolved is None else _parse_time(str(resolved)),
     )
+
+
+def _onboarding_progress_event(row: sqlite3.Row) -> OnboardingProgressEvent:
+    milestone = str(row["milestone"])
+    if milestone not in _ONBOARDING_MILESTONES:
+        raise AuthenticationStateError("Stored onboarding milestone is invalid")
+    return OnboardingProgressEvent(
+        milestone=milestone,  # type: ignore[arg-type]
+        event_id=str(row["event_id"]),
+        occurred_at=_parse_time(str(row["occurred_at"])),
+        onboarding_transaction_id=str(row["onboarding_transaction_id"]),
+        organization_id=str(row["organization_id"]),
+        installation_id=str(row["installation_id"]),
+        correlation_id=str(row["correlation_id"]),
+        attempts=int(row["attempts"]),
+    )
+
+
+def _require_uuid7(value: str, *, name: str) -> None:
+    if re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+        value,
+    ) is None:
+        raise ValueError(f"{name} must be a lowercase UUIDv7")
+
+
+def _require_cross_plane_id(value: str, *, name: str) -> None:
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._~-]{0,127}", value) is None:
+        raise ValueError(f"{name} must be a closed cross-plane identifier")
 
 
 def _require_authorized_account_binding(binding: AuthorizedAccountBinding) -> None:

@@ -40,7 +40,8 @@
         "0005_membership_roles.sql": "0c6b4257735a72eb5941f24b8b2d7d732dd20bd1da74a6ba6b6980622bbe3f48",
         "0006_provisioning_state.sql": "60c25de7e57d1229ad288300833454e31dec385cf53d7c51cf3dc8d6c9bc51fc",
         "0007_authorized_account_bindings.sql": "14be709e2f7a817ffcab3821f32ffba64a51d42e6876bc5a6d566a9c6f7afae3",
-        "0008_claim_submissions.sql": "7654cd89756af28b33e155ba9c115f2b53fa76cc13995b1568a51df25fb86618"
+        "0008_claim_submissions.sql": "7654cd89756af28b33e155ba9c115f2b53fa76cc13995b1568a51df25fb86618",
+        "0009_onboarding_progress_outbox.sql": "6242d854731434a5b15ef282498210c06adcbd9690ae8c65793a7803e9006393"
       }
     },
     {
@@ -61,8 +62,8 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "0a2c6cdcc5bf62fea690ac912be79952e97261db860d8086ce22bf112c05041c",
-    "consumer_pin_sha256": "c9f7bf3eecd1081bcc70aff2ec6eaa6b6fa7a8f5c63dba717d9a1d3ba0918c71",
+    "manifest_sha256": "857ee2a5fb531cef2d2c997c52d92f6e4291caa467f63c28d7650850638218c8",
+    "consumer_pin_sha256": "d0bac207e75c255526a2c1b41158016ffd44891e4c9226978a61be819eb7296e",
     "root_file_sha256": {
       "loader.py": "fff06e359a6fc6e1fa4f9fac584e4c7dbd67e33c713eadefa251825521df40e3",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
