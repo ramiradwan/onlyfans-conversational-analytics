@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 import exclusive_resource
+import inno_setup_compiler
 import visible_windows
 
 
@@ -300,8 +301,9 @@ for relative in (
 def _build_real_installer(tmp_path: Path, *, serves_health: bool = False) -> Path:
     """Use the production build script and real Inno compiler, not an installer stand-in."""
 
-    compiler = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Inno Setup 6" / "ISCC.exe"
-    assert compiler.is_file(), "Inno Setup is required for packaging-smoke installer falsifiers"
+    compiler = inno_setup_compiler.require_inno_setup_compiler(
+        "Inno Setup is required for packaging-smoke installer falsifiers"
+    )
     listener_executable = _write_listener_executable(tmp_path) if serves_health else None
     pyinstaller = _write_pyinstaller_standin(
         tmp_path, listener_executable=listener_executable

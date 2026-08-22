@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+import inno_setup_compiler
 import visible_windows
 from app.core.config import Settings
 from app.core.runtime_paths import runtime_data_directory
@@ -250,9 +251,9 @@ def _assert_program_payload_removed(prefix: Path) -> None:
 
 
 def _inno_setup_compiler() -> Path:
-    compiler = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Inno Setup 6" / "ISCC.exe"
-    assert compiler.is_file(), "Inno Setup compiler is required for installer behavior tests"
-    return compiler
+    return inno_setup_compiler.require_inno_setup_compiler(
+        "Inno Setup compiler is required for installer behavior tests"
+    )
 
 
 def _compile_installer(
@@ -388,9 +389,9 @@ def test_installer_excludes_agent_and_uninstall_retains_redirected_user_data(
     assert mutated != original, "retention falsifier must mutate the actual uninstaller rule"
     mutated_script.write_text(mutated, encoding="utf-8")
     mutated_output = tmp_path / "mutated-installer"
-    compiler = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Inno Setup 6" / "ISCC.exe"
-    if not compiler.is_file():
-        pytest.skip("Inno Setup compiler is unavailable for the retention falsifier")
+    compiler = inno_setup_compiler.require_inno_setup_compiler(
+        "Inno Setup compiler is required for the retention falsifier"
+    )
     compiled = subprocess.run(
         [
             str(compiler),
