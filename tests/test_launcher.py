@@ -435,6 +435,7 @@ def test_provisioning_handoff_failure_sites_have_distinct_reason_codes(
     assert raised.value.code == expected_code
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows ownership API")
 def test_launch_failure_writes_a_secret_free_log_and_displays_the_reason_code(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -471,6 +472,7 @@ def test_launch_failure_writes_a_secret_free_log_and_displays_the_reason_code(
     ]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows ownership API")
 def test_unknown_launch_failure_does_not_disclose_its_code_or_message(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -497,6 +499,7 @@ def test_unknown_launch_failure_does_not_disclose_its_code_or_message(
     assert displayed == ["The local launcher failed. (Reason code: launch_failed)"]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows ownership API")
 def test_provisioning_control_client_connects_to_loopback_with_allowed_host(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
