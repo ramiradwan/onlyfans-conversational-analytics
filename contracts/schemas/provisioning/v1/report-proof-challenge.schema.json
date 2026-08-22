@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v1/report-proof-challenge.schema.json",
+  "title": "Domain-separated provisioning proof challenge v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "purpose", "installation_id", "challenge", "audience", "issued_at", "expires_at"],
+  "properties": {
+    "profile": {"const": "urn:bridge-clean:provisioning-proof:v1"},
+    "purpose": {"enum": ["bootstrap-recovery", "creator-association-request", "creator-association-status", "onboarding-progress-report"]},
+    "installation_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "challenge": {"$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"},
+    "audience": {"const": "urn:bridge-clean:commercial-control-plane:provisioning-v2"},
+    "issued_at": {"$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"},
+    "expires_at": {"$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"}
+  }
+}

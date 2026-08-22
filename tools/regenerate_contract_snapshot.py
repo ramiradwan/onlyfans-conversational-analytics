@@ -8,29 +8,66 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
-from urllib.parse import urlsplit
 from typing import Any
+from urllib.parse import urlsplit
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
+APPROVED_SOURCE_COMMIT = "ce510faf767e8d808a04eb9ceb28523b598eac0f"
 EXPORT_SET = [
     "grant-profile-v1",
     "capability-permit-v1",
     "permit-consumption",
     "production",
     "schemas",
+    "onboarding-progress",
 ]
 EXPORT_SOURCES = {
     "grant-profile-v1": "test-vectors/grant-profile-v1",
     "capability-permit-v1": "test-vectors/capability-permit-v1",
     "permit-consumption": "test-vectors/adr-0012-v1/permit-consumption",
+    "onboarding-progress": "test-vectors/adr-0012-v1/onboarding-progress",
 }
 SCHEMA_EXPORT = "schemas"
 SCHEMA_ROOT = Path("schemas")
-SCHEMA_ENTRYPOINT = Path("commercial/v1/capability-permit.schema.json")
-EXPECTED_SCHEMA_CLOSURE_SIZE = 2
-EXPECTED_FILE_COUNT = 428
+SCHEMA_ENTRYPOINTS = (
+    Path("commercial/v1/capability-permit.schema.json"),
+    Path("provisioning/v1/onboarding-progress-report.schema.json"),
+    Path("provisioning/v1/onboarding-progress-response.schema.json"),
+    Path("provisioning/v1/report-proof-challenge.schema.json"),
+)
+EXPECTED_SCHEMA_CLOSURE = frozenset(
+    {
+        *SCHEMA_ENTRYPOINTS,
+        Path("common/v1/definitions.schema.json"),
+    }
+)
+EXPECTED_PROGRESS_VECTOR_FILES = frozenset(
+    {
+        "metadata-rejected.expected.json",
+        "metadata-rejected.json",
+        "unknown-milestone.expected.json",
+        "unknown-milestone.json",
+        "valid.expected.json",
+        "valid.json",
+    }
+)
+EXPECTED_PROGRESS_PROFILE = "urn:bridge-clean:onboarding-progress:v1"
+EXPECTED_FILE_COUNT = 437
+APPROVED_SOURCE_SHA256 = {
+    "schemas/commercial/v1/capability-permit.schema.json": "9b0bfee05eb11ed87876a43b6ee88035f67a6f3067254fcc79e23dd5c42b1aa8",
+    "schemas/common/v1/definitions.schema.json": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa",
+    "schemas/provisioning/v1/onboarding-progress-report.schema.json": "062a9f277af0c29cdc22a469d2e35d73e306fb3f6dbf6435f942558b75987d65",
+    "schemas/provisioning/v1/onboarding-progress-response.schema.json": "fc3f762656fbbf605ca96ad4fa7c7401b3aa855194e952010e3b84a2ba2bf452",
+    "schemas/provisioning/v1/report-proof-challenge.schema.json": "96aeefee034ee710d98013b1cb2996ba84e576ec1000e40c5b24d2b28ba5f8f8",
+    "test-vectors/adr-0012-v1/onboarding-progress/metadata-rejected.expected.json": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
+    "test-vectors/adr-0012-v1/onboarding-progress/metadata-rejected.json": "b4e6637ad87e10801094be012ba0c2e6ec382e06d6f58f900473ceb9be17358f",
+    "test-vectors/adr-0012-v1/onboarding-progress/unknown-milestone.expected.json": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
+    "test-vectors/adr-0012-v1/onboarding-progress/unknown-milestone.json": "691de920f7e9b24931af356d976c9d901f38bd7772020b379279b777f182d1be",
+    "test-vectors/adr-0012-v1/onboarding-progress/valid.expected.json": "dfd9af3bf11a1bf83d5ebb81873a8fb2aa1328e5471884ad4ffd07a3779b0686",
+    "test-vectors/adr-0012-v1/onboarding-progress/valid.json": "55620d8c602da8feadabdb00e28dab91cdd500a3071f165742062f79a33e6f3f",
+}
 VECTOR_MANIFESTS = {
     "grant-profile-v1": "grant-profile-v1/manifest.json",
     "capability-permit-v1": "capability-permit-v1/manifest.json",
@@ -95,10 +132,9 @@ def _schema_references(value: Any) -> list[str]:
 
 
 def schema_dependency_closure(schema_root: Path) -> set[Path]:
-    """Resolve local schema files required by the capability-permit schema."""
+    """Resolve the selected permit and onboarding-progress schema closure."""
 
-    entrypoint = schema_root / SCHEMA_ENTRYPOINT
-    pending = [entrypoint]
+    pending = [schema_root / entrypoint for entrypoint in SCHEMA_ENTRYPOINTS]
     resolved: set[Path] = set()
     while pending:
         schema = pending.pop()
@@ -126,17 +162,96 @@ def schema_dependency_closure(schema_root: Path) -> set[Path]:
 def copy_schema_closure(source_root: Path, target_root: Path) -> None:
     source_schemas = source_root / SCHEMA_ROOT
     closure = schema_dependency_closure(source_schemas)
-    if len(closure) != EXPECTED_SCHEMA_CLOSURE_SIZE:
-        raise SystemExit(
-            "capability-permit schema closure has "
-            f"{len(closure)} members; expected {EXPECTED_SCHEMA_CLOSURE_SIZE}"
+    if closure != EXPECTED_SCHEMA_CLOSURE:
+        difference = sorted(
+            closure ^ EXPECTED_SCHEMA_CLOSURE,
+            key=lambda path: path.as_posix().encode("utf-8"),
         )
-    if target_root.exists():
-        shutil.rmtree(target_root)
+        raise SystemExit(
+            "selected schema closure does not match approved closure: "
+            + ", ".join(path.as_posix() for path in difference)
+        )
+    existing = (
+        {
+            path.relative_to(target_root)
+            for path in target_root.rglob("*")
+            if path.is_file()
+        }
+        if target_root.exists()
+        else set()
+    )
+    unexpected = existing - closure
+    if unexpected:
+        first = min(unexpected, key=lambda path: path.as_posix().encode("utf-8"))
+        raise SystemExit(f"selected schema export contains an unexpected file: {first.as_posix()}")
     for relative in sorted(closure, key=lambda path: path.as_posix().encode("utf-8")):
+        source = source_schemas / relative
         destination = target_root / relative
+        if destination.is_file():
+            if destination.read_bytes() != source.read_bytes():
+                raise SystemExit(f"existing vendored schema differs from approved source: {relative.as_posix()}")
+            continue
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source_schemas / relative, destination)
+        shutil.copyfile(source, destination)
+
+
+def selected_progress_profile() -> str:
+    progress_root = CONTRACTS_ROOT / "onboarding-progress"
+    actual = {
+        path.relative_to(progress_root).as_posix()
+        for path in progress_root.rglob("*")
+        if path.is_file()
+    }
+    if actual != EXPECTED_PROGRESS_VECTOR_FILES:
+        difference = sorted(actual ^ EXPECTED_PROGRESS_VECTOR_FILES)
+        raise SystemExit(
+            "selected onboarding-progress export does not match approved file set: "
+            + ", ".join(difference)
+        )
+    profiles = {
+        json.loads((progress_root / name).read_text("utf-8"))["request"]["profile"]
+        for name in actual
+        if name.endswith(".json") and not name.endswith(".expected.json")
+    }
+    if profiles != {EXPECTED_PROGRESS_PROFILE}:
+        raise SystemExit("selected onboarding-progress vectors have an unexpected profile")
+    return EXPECTED_PROGRESS_PROFILE
+
+
+def verify_approved_source_bytes(source_root: Path) -> None:
+    for relative, expected_digest in APPROVED_SOURCE_SHA256.items():
+        source = source_root / relative
+        if not source.is_file():
+            raise SystemExit(f"approved source checkout is missing pinned blob: {relative}")
+        if sha256(source) != expected_digest:
+            raise SystemExit(
+                f"approved source blob does not match {APPROVED_SOURCE_COMMIT}: {relative}"
+            )
+
+
+def copy_immutable_export(source: Path, target: Path, source_path: str) -> None:
+    if not target.exists():
+        shutil.copytree(source, target)
+        return
+    source_files = {
+        path.relative_to(source).as_posix(): path
+        for path in source.rglob("*")
+        if path.is_file()
+    }
+    target_files = {
+        path.relative_to(target).as_posix(): path
+        for path in target.rglob("*")
+        if path.is_file()
+    }
+    if source_files.keys() != target_files.keys():
+        difference = sorted(source_files.keys() ^ target_files.keys())
+        raise SystemExit(
+            f"existing vendored export differs from approved source {source_path}: "
+            + ", ".join(difference)
+        )
+    for relative, source_file in source_files.items():
+        if source_file.read_bytes() != target_files[relative].read_bytes():
+            raise SystemExit(f"existing vendored upstream fixture is immutable: {target / relative}")
 
 
 def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -171,6 +286,7 @@ def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
         json.loads((CONTRACTS_ROOT / path).read_text("utf-8"))["profile"]
         for path in POLICY_PROFILES.values()
     )
+    profiles.append(selected_progress_profile())
     entries = fixture_entries()
     manifest = {
         "content_digest": aggregate_digest(entries),
@@ -195,14 +311,13 @@ def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def copy_selected_export(source_root: Path) -> None:
+    verify_approved_source_bytes(source_root)
     for export, source_path in EXPORT_SOURCES.items():
         source = source_root / source_path
         target = CONTRACTS_ROOT / export
         if not source.is_dir():
             raise SystemExit(f"approved source checkout does not contain export source: {source_path}")
-        if target.exists():
-            shutil.rmtree(target)
-        shutil.copytree(source, target)
+        copy_immutable_export(source, target, source_path)
     copy_schema_closure(source_root, CONTRACTS_ROOT / SCHEMA_EXPORT)
 
     count = len(fixture_entries())
@@ -212,7 +327,7 @@ def copy_selected_export(source_root: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Regenerate the selected grant-profile contract snapshot and public pin."
+        description="Regenerate the selected contract snapshot and public pin."
     )
     parser.add_argument(
         "--copy-from",

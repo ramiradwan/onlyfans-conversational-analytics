@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v1/onboarding-progress-report.schema.json",
+  "title": "Onboarding progress report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request", "proof"],
+  "properties": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "event_id",
+        "milestone",
+        "occurred_at",
+        "onboarding_transaction_id",
+        "organization_id",
+        "installation_id",
+        "correlation_id"
+      ],
+      "properties": {
+        "profile": {"const": "urn:bridge-clean:onboarding-progress:v1"},
+        "event_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"},
+        "milestone": {"enum": ["installed", "enrolled", "account-bound", "first-capture-ready"]},
+        "occurred_at": {"$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"},
+        "onboarding_transaction_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "organization_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "installation_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "correlation_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"}
+      }
+    },
+    "proof": {"$ref": "../../common/v1/definitions.schema.json#/$defs/proof"}
+  }
+}

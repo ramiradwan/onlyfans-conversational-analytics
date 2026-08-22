@@ -1,11 +1,16 @@
 # Offline contract snapshot
 
 This is a selected export set, not a complete copy of its source. It contains
-only `urn:bridge-clean:grant-profile:v1` fixture bytes. `manifest.json` records
-the selected bytes and their aggregate digest; `consumer-pin.json` independently
-pins that manifest, the vector manifest, the trust set, generator version, and
-the selected export set. `python -m contracts.verify` verifies both records
-before a trust set can be loaded.
+grant-profile and capability-permit fixtures, permit-consumption policy vectors,
+the selected ADR 0012 onboarding-progress cases, production grant trust material,
+and the minimal closed schema dependency set for those contracts. The progress
+schemas and vectors are pinned to approved source commit
+`ce510faf767e8d808a04eb9ceb28523b598eac0f`; the installation-claim export is not
+selected. `manifest.json` records the selected bytes and their aggregate digest;
+`consumer-pin.json` independently pins that manifest, the vector manifests, trust
+sets, generator versions, supported profiles, and selected export set.
+`python -m contracts.verify` verifies both records before a trust set can be
+loaded.
 
 Fixture trust sets are test-only and cannot authorize production work: loading
 one outside `development` is refused.

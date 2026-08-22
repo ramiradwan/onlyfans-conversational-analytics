@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v1/onboarding-progress-response.schema.json",
+  "title": "Onboarding progress response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "event_id", "milestone", "status", "recorded_at"],
+  "properties": {
+    "profile": {"const": "urn:bridge-clean:onboarding-progress:v1"},
+    "event_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"},
+    "milestone": {"enum": ["installed", "enrolled", "account-bound", "first-capture-ready"]},
+    "status": {"enum": ["recorded", "duplicate"]},
+    "recorded_at": {"$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"}
+  }
+}

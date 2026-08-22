@@ -1,11 +1,12 @@
 {
-  "content_digest": "f4901331a38a6a3b5c0c44e44e68a8cf55ba2a82194eab1fa1ce619dd28c849e",
+  "content_digest": "3645915c29f9ddcd7cff88166148a0bfcf9286fdd21bf10636e537ee8116d615",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
     "permit-consumption",
     "production",
-    "schemas"
+    "schemas",
+    "onboarding-progress"
   ],
   "files": [
     {
@@ -2069,6 +2070,36 @@
       "size": 807
     },
     {
+      "path": "onboarding-progress/metadata-rejected.expected.json",
+      "sha256": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
+      "size": 51
+    },
+    {
+      "path": "onboarding-progress/metadata-rejected.json",
+      "sha256": "b4e6637ad87e10801094be012ba0c2e6ec382e06d6f58f900473ceb9be17358f",
+      "size": 729
+    },
+    {
+      "path": "onboarding-progress/unknown-milestone.expected.json",
+      "sha256": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
+      "size": 51
+    },
+    {
+      "path": "onboarding-progress/unknown-milestone.json",
+      "sha256": "691de920f7e9b24931af356d976c9d901f38bd7772020b379279b777f182d1be",
+      "size": 683
+    },
+    {
+      "path": "onboarding-progress/valid.expected.json",
+      "sha256": "dfd9af3bf11a1bf83d5ebb81873a8fb2aa1328e5471884ad4ffd07a3779b0686",
+      "size": 44
+    },
+    {
+      "path": "onboarding-progress/valid.json",
+      "sha256": "55620d8c602da8feadabdb00e28dab91cdd500a3071f165742062f79a33e6f3f",
+      "size": 679
+    },
+    {
       "path": "permit-consumption/duplicate-reservation.expected.json",
       "sha256": "7cc7c39edac555880c754e113d3233d276932b8b78a79c4266a5c8224ba92e66",
       "size": 57
@@ -2147,12 +2178,28 @@
       "path": "schemas/common/v1/definitions.schema.json",
       "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa",
       "size": 2321
+    },
+    {
+      "path": "schemas/provisioning/v1/onboarding-progress-report.schema.json",
+      "sha256": "062a9f277af0c29cdc22a469d2e35d73e306fb3f6dbf6435f942558b75987d65",
+      "size": 1514
+    },
+    {
+      "path": "schemas/provisioning/v1/onboarding-progress-response.schema.json",
+      "sha256": "fc3f762656fbbf605ca96ad4fa7c7401b3aa855194e952010e3b84a2ba2bf452",
+      "size": 764
+    },
+    {
+      "path": "schemas/provisioning/v1/report-proof-challenge.schema.json",
+      "sha256": "96aeefee034ee710d98013b1cb2996ba84e576ec1000e40c5b24d2b28ba5f8f8",
+      "size": 1077
     }
   ],
   "manifest_version": 2,
   "profiles": [
     "urn:bridge-clean:grant-profile:v1",
     "urn:bridge-clean:capability-permit-v1",
-    "urn:bridge-clean:capability-permit-consumption-policy:v1"
+    "urn:bridge-clean:capability-permit-consumption-policy:v1",
+    "urn:bridge-clean:onboarding-progress:v1"
   ]
 }

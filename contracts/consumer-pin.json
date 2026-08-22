@@ -1,14 +1,15 @@
 {
-  "aggregate_bundle_sha256": "f4901331a38a6a3b5c0c44e44e68a8cf55ba2a82194eab1fa1ce619dd28c849e",
+  "aggregate_bundle_sha256": "3645915c29f9ddcd7cff88166148a0bfcf9286fdd21bf10636e537ee8116d615",
   "consumer_pin_version": 2,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "0a2c6cdcc5bf62fea690ac912be79952e97261db860d8086ce22bf112c05041c",
+  "contract_manifest_sha256": "857ee2a5fb531cef2d2c997c52d92f6e4291caa467f63c28d7650850638218c8",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
     "permit-consumption",
     "production",
-    "schemas"
+    "schemas",
+    "onboarding-progress"
   ],
   "generator_versions": [
     {
@@ -23,7 +24,8 @@
   "supported_profiles": [
     "urn:bridge-clean:grant-profile:v1",
     "urn:bridge-clean:capability-permit-v1",
-    "urn:bridge-clean:capability-permit-consumption-policy:v1"
+    "urn:bridge-clean:capability-permit-consumption-policy:v1",
+    "urn:bridge-clean:onboarding-progress:v1"
   ],
   "trust_sets": [
     {

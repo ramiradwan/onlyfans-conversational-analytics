@@ -1,0 +1,17 @@
+{
+  "proof": {
+    "challenge": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    "key_id": "ik1.AAAAAAAAAAAAAAAAAAAAAA",
+    "signature": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+  },
+  "request": {
+    "correlation_id": "correlation-fixture-001",
+    "event_id": "0198a1b2-c3d4-7400-8000-000000000001",
+    "installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+    "milestone": "installed",
+    "occurred_at": "2026-07-19T00:00:00.000Z",
+    "onboarding_transaction_id": "onboarding-fixture-001",
+    "organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+    "profile": "urn:bridge-clean:onboarding-progress:v1"
+  }
+}
