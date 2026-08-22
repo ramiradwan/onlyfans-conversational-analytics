@@ -19,6 +19,7 @@ from app.persistence.auth import (
     VerifiedGrantReference,
 )
 from app.provisioning import binding_acquisition as binding_acquisition_module
+from app.provisioning import claim_submission as claim_submission_module
 from app.provisioning.app import PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH
 from app.provisioning.binding_acquisition import (
     BindingAcquisitionStatus,
@@ -30,6 +31,7 @@ from app.provisioning.session import (
     PROVISIONING_SESSION_COOKIE_NAME,
 )
 from app.security.hosted_grants import CreatorAssociationRequest
+from app.security.installation_key import PLATFORM_CRYPTO_PROVIDER
 
 
 ORGANIZATION_ID = "organization-1"
@@ -251,6 +253,20 @@ class ComposedBindingClient(RecordingBindingClient):
         self.instances.append(self)
 
 
+class InertPlatformProvider:
+    """Satisfies the platform-provider identity check and nothing else.
+
+    `durable_creator_account_binding_acquisition` builds a real proof
+    authority as a `HostedGrantClient` constructor argument even when
+    `HostedGrantClient` itself is replaced, because the argument is
+    evaluated before the (replaced) call runs. `ComposedBindingClient`
+    discards that argument immediately, so this route never exercises the
+    provider beyond `InstallationKeyAuthority.__init__`'s identity check.
+    """
+
+    provider_name = PLATFORM_CRYPTO_PROVIDER
+
+
 def test_packaged_entry_routes_binding_acquisition_from_local_candidate(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -264,6 +280,11 @@ def test_packaged_entry_routes_binding_acquisition_from_local_candidate(
     ComposedBindingClient.instances.clear()
     monkeypatch.setattr(
         binding_acquisition_module, "HostedGrantClient", ComposedBindingClient
+    )
+    monkeypatch.setattr(
+        claim_submission_module,
+        "WindowsCNGInstallationKeyProvider",
+        InertPlatformProvider,
     )
     monkeypatch.setenv(
         packaged_entry.PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE, HANDOFF_TOKEN

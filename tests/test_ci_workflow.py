@@ -22,6 +22,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 BACKEND_TEST_COMMAND = "python -m pytest"
 DEPENDENCY_INSTALL_COMMAND = "python -m pip install -r requirements-dev.txt"
+FRONTEND_BUILD_COMMAND = "npm run build --prefix frontend"
 
 
 def _workflow_document() -> dict[str, Any]:
@@ -90,6 +91,30 @@ def _assert_the_windows_job_installs_dependencies_before_testing(
     )
 
 
+def _jobs_building_frontend_and_testing_backend(workflow: dict[str, Any]) -> list[str]:
+    return sorted(
+        name
+        for name, job in _jobs(workflow).items()
+        if _run_step_indexes(job, FRONTEND_BUILD_COMMAND)
+        and _run_step_indexes(job, BACKEND_TEST_COMMAND)
+    )
+
+
+def _assert_the_frontend_is_built_before_the_backend_tests_run(
+    workflow: dict[str, Any],
+) -> None:
+    names = _jobs_building_frontend_and_testing_backend(workflow)
+    assert len(names) == 1, (
+        f"exactly one ci.yml job must both build the frontend "
+        f"(`{FRONTEND_BUILD_COMMAND}`) and run the backend tests "
+        f"(`{BACKEND_TEST_COMMAND}`); found {names}"
+    )
+    job = _jobs(workflow)[names[0]]
+    build = _run_step_indexes(job, FRONTEND_BUILD_COMMAND)
+    test = _run_step_indexes(job, BACKEND_TEST_COMMAND)
+    assert build[0] < test[0], "the frontend must be built before pytest runs"
+
+
 def test_a_windows_runner_executes_the_backend_tests_on_every_push() -> None:
     """Retargeting the Windows job at ubuntu-latest turns the named check red.
 
@@ -122,3 +147,27 @@ def test_the_windows_job_installs_backend_dependencies_before_testing() -> None:
         AssertionError, match="must install backend dependencies before running pytest"
     ):
         _assert_the_windows_job_installs_dependencies_before_testing(reordered)
+
+
+def test_the_frontend_is_built_before_the_backend_tests_run() -> None:
+    """Moving pytest ahead of the frontend build turns the named check red.
+
+    app/api/endpoints/frontend.py resolves app/static/dist at module import
+    time, and that directory is a frontend build output rather than a
+    tracked file. On a fresh checkout it does not exist until the frontend
+    is built, so importing app.main - and therefore collecting the backend
+    test suite - fails without this ordering.
+    """
+
+    workflow = _workflow_document()
+    _assert_the_frontend_is_built_before_the_backend_tests_run(workflow)
+
+    reordered = deepcopy(workflow)
+    job_name = _jobs_building_frontend_and_testing_backend(reordered)[0]
+    steps = _jobs(reordered)[job_name]["steps"]
+    test_index = _run_step_indexes(_jobs(reordered)[job_name], BACKEND_TEST_COMMAND)[0]
+    steps.insert(0, steps.pop(test_index))
+    with pytest.raises(
+        AssertionError, match="the frontend must be built before pytest runs"
+    ):
+        _assert_the_frontend_is_built_before_the_backend_tests_run(reordered)

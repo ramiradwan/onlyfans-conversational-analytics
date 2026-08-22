@@ -69,12 +69,24 @@ def test_shipped_example_is_an_explicit_development_configuration(
     assert "SECURITY_SIGNING_SECRET=" not in content
 
 
-def test_platform_data_directory_uses_standard_per_user_locations() -> None:
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason="a win32 candidate is a relative path under PosixPath, so it resolves"
+    " under the test CWD instead of as the drive-rooted path this asserts",
+)
+def test_windows_data_directory_uses_the_standard_per_user_location() -> None:
     windows = runtime_data_directory(
         environ={"LOCALAPPDATA": "C:/Users/example/AppData/Local"},
         platform="win32",
         home=Path("C:/Users/example"),
     )
+
+    assert windows == Path(
+        "C:/Users/example/AppData/Local/OnlyFans Conversational Analytics"
+    )
+
+
+def test_linux_and_macos_data_directories_use_the_standard_per_user_locations() -> None:
     linux = runtime_data_directory(
         environ={"XDG_DATA_HOME": "/home/example/.local/share"},
         platform="linux",
@@ -84,9 +96,6 @@ def test_platform_data_directory_uses_standard_per_user_locations() -> None:
         environ={}, platform="darwin", home=Path("/Users/example")
     )
 
-    assert windows == Path(
-        "C:/Users/example/AppData/Local/OnlyFans Conversational Analytics"
-    )
     assert linux.as_posix().endswith(
         "/home/example/.local/share/onlyfans-conversational-analytics"
     )

@@ -56,6 +56,9 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
 
+      - name: Build frontend
+        run: npm run build --prefix frontend
+
       - name: Test backend
         run: python -m pytest
 
@@ -75,9 +78,6 @@ jobs:
 
       - name: Qualify bounded 10k-message snapshot repair
         run: npm run qualify:snapshot:ci --prefix extension
-
-      - name: Build frontend
-        run: npm run build --prefix frontend
 
       - name: Upload frontend build
         uses: actions/upload-artifact@v4
