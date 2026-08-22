@@ -91,28 +91,30 @@ def _assert_the_windows_job_installs_dependencies_before_testing(
     )
 
 
-def _jobs_building_frontend_and_testing_backend(workflow: dict[str, Any]) -> list[str]:
+def _jobs_testing_backend(workflow: dict[str, Any]) -> list[str]:
     return sorted(
         name
         for name, job in _jobs(workflow).items()
-        if _run_step_indexes(job, FRONTEND_BUILD_COMMAND)
-        and _run_step_indexes(job, BACKEND_TEST_COMMAND)
+        if _run_step_indexes(job, BACKEND_TEST_COMMAND)
     )
 
 
 def _assert_the_frontend_is_built_before_the_backend_tests_run(
     workflow: dict[str, Any],
 ) -> None:
-    names = _jobs_building_frontend_and_testing_backend(workflow)
-    assert len(names) == 1, (
-        f"exactly one ci.yml job must both build the frontend "
-        f"(`{FRONTEND_BUILD_COMMAND}`) and run the backend tests "
-        f"(`{BACKEND_TEST_COMMAND}`); found {names}"
-    )
-    job = _jobs(workflow)[names[0]]
-    build = _run_step_indexes(job, FRONTEND_BUILD_COMMAND)
-    test = _run_step_indexes(job, BACKEND_TEST_COMMAND)
-    assert build[0] < test[0], "the frontend must be built before pytest runs"
+    names = _jobs_testing_backend(workflow)
+    assert names, f"no ci.yml job runs `{BACKEND_TEST_COMMAND}`"
+    for name in names:
+        job = _jobs(workflow)[name]
+        build = _run_step_indexes(job, FRONTEND_BUILD_COMMAND)
+        test = _run_step_indexes(job, BACKEND_TEST_COMMAND)
+        assert build, (
+            f"job `{name}` runs `{BACKEND_TEST_COMMAND}` but never builds the "
+            f"frontend (`{FRONTEND_BUILD_COMMAND}`)"
+        )
+        assert build[0] < test[0], (
+            f"job `{name}` must build the frontend before pytest runs"
+        )
 
 
 def test_a_windows_runner_executes_the_backend_tests_on_every_push() -> None:
@@ -163,11 +165,38 @@ def test_the_frontend_is_built_before_the_backend_tests_run() -> None:
     _assert_the_frontend_is_built_before_the_backend_tests_run(workflow)
 
     reordered = deepcopy(workflow)
-    job_name = _jobs_building_frontend_and_testing_backend(reordered)[0]
+    job_name = _jobs_testing_backend(reordered)[0]
     steps = _jobs(reordered)[job_name]["steps"]
     test_index = _run_step_indexes(_jobs(reordered)[job_name], BACKEND_TEST_COMMAND)[0]
     steps.insert(0, steps.pop(test_index))
     with pytest.raises(
-        AssertionError, match="the frontend must be built before pytest runs"
+        AssertionError, match="must build the frontend before pytest runs"
     ):
         _assert_the_frontend_is_built_before_the_backend_tests_run(reordered)
+
+
+def test_every_pytest_job_builds_the_frontend_not_just_the_intersection() -> None:
+    """A pytest job that never builds the frontend at all turns the check red.
+
+    An intersection-based check (jobs that both build the frontend AND run
+    pytest) cannot see this defect: a job that runs pytest without ever
+    building the frontend is simply absent from that intersection, so the
+    check would pass while the job fails on a fresh checkout. The check must
+    instead require the ordering from every job that runs pytest.
+    """
+
+    workflow = _workflow_document()
+    pytest_jobs = _jobs_testing_backend(workflow)
+    assert len(pytest_jobs) > 1, "need at least two pytest jobs to isolate one"
+
+    stripped = deepcopy(workflow)
+    job_name = _assert_a_windows_runner_executes_the_backend_tests(stripped)
+    job = _jobs(stripped)[job_name]
+    build_indexes = set(_run_step_indexes(job, FRONTEND_BUILD_COMMAND))
+    assert build_indexes, f"job `{job_name}` is expected to build the frontend"
+    job["steps"] = [
+        step for index, step in enumerate(job["steps"]) if index not in build_indexes
+    ]
+
+    with pytest.raises(AssertionError, match="never builds the frontend"):
+        _assert_the_frontend_is_built_before_the_backend_tests_run(stripped)
