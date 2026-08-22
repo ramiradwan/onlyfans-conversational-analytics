@@ -14,6 +14,7 @@ import time
 import webbrowser
 from ctypes import wintypes
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol, Sequence
 from urllib.parse import urlencode
@@ -35,8 +36,10 @@ from app.provisioning.app import PROVISIONING_HANDOFF_PATH, PROVISIONING_REDEEM_
 
 
 BRIDGE_ORIGIN = "http://bridge.localhost:17871"
+LOOPBACK_CONTROL_ORIGIN = "http://127.0.0.1:17871"
 BRIDGE_PORT = 17871
 BRIDGE_BIND_ADDRESS = "127.0.0.1"
+BRIDGE_CONTROL_HOST = "bridge.localhost:17871"
 HANDOFF_PATH = "/api/v1/session/handoff"
 PROVISIONING_COMPLETE_EXIT_CODE = 75
 PROVISIONING_HANDOFF_PATH = PROVISIONING_HANDOFF_PATH
@@ -48,6 +51,12 @@ EXTENSION_MANIFEST_FILE = (
     Path(__file__).resolve().parents[1] / "extension" / "manifest.json"
 )
 _HANDOFF_CODE = re.compile(r"[A-Za-z0-9_-]{32,}")
+LAUNCH_FAILURE_EXIT_CODE = 2
+LAUNCHER_LOG_FILENAME = "launcher.log"
+LAUNCHER_LOG_MAX_BYTES = 64 * 1024
+PROVISIONING_HANDOFF_FAILURE_MESSAGE = (
+    "The local provisioning browser handoff failed."
+)
 
 
 class ProcessHandle(Protocol):
@@ -110,6 +119,7 @@ class LaunchFailure(RuntimeError):
 
 
 FAILURE_MESSAGES = {
+    "launch_failed": "The local launcher failed.",
     "configuration_unavailable": "The local runtime configuration is unavailable.",
     "port_inspection_failed": "The listener on port 17871 could not be verified.",
     "port_conflict": (
@@ -119,10 +129,20 @@ FAILURE_MESSAGES = {
     "brain_start_failed": "Brain could not be started.",
     "brain_start_timeout": "Brain did not acquire port 17871 in time.",
     "handoff_failed": "The local browser handoff failed.",
-    "provisioning_handoff_failed": "The local provisioning browser handoff failed.",
+    "provisioning_handoff_token_invalid": PROVISIONING_HANDOFF_FAILURE_MESSAGE,
+    "provisioning_handoff_response_rejected": PROVISIONING_HANDOFF_FAILURE_MESSAGE,
+    "provisioning_handoff_request_failed": PROVISIONING_HANDOFF_FAILURE_MESSAGE,
+    "provisioning_handoff_payload_invalid": PROVISIONING_HANDOFF_FAILURE_MESSAGE,
     "provisioning_exit_failed": "Provisioning stopped before completing.",
     "browser_open_failed": "The system browser could not be opened.",
 }
+
+
+def _safe_failure_code(failure: LaunchFailure) -> str:
+    """Return a reason code that is safe to persist or present."""
+    if isinstance(failure.code, str) and failure.code in FAILURE_MESSAGES:
+        return failure.code
+    return "launch_failed"
 
 
 class Launcher:
@@ -183,8 +203,8 @@ class Launcher:
         token = self.provisioning_token_factory()
         if len(token) < 32:
             raise LaunchFailure(
-                "provisioning_handoff_failed",
-                FAILURE_MESSAGES["provisioning_handoff_failed"],
+                "provisioning_handoff_token_invalid",
+                FAILURE_MESSAGES["provisioning_handoff_token_invalid"],
             )
         configuration = LauncherConfiguration(
             brain_command=self.configuration.brain_command,
@@ -292,26 +312,29 @@ class Launcher:
             with self.client_factory() as client:
                 response = client.post(
                     PROVISIONING_HANDOFF_PATH,
-                    headers={"Authorization": f"Provisioning {token}"},
+                    headers={
+                        "Host": BRIDGE_CONTROL_HOST,
+                        "Authorization": f"Provisioning {token}",
+                    },
                 )
                 if _client_has_cookies(client, response) or response.status_code != 200:
                     raise LaunchFailure(
-                        "provisioning_handoff_failed",
-                        FAILURE_MESSAGES["provisioning_handoff_failed"],
+                        "provisioning_handoff_response_rejected",
+                        FAILURE_MESSAGES["provisioning_handoff_response_rejected"],
                     )
                 payload = response.json()
         except LaunchFailure:
             raise
         except Exception as error:
             raise LaunchFailure(
-                "provisioning_handoff_failed",
-                FAILURE_MESSAGES["provisioning_handoff_failed"],
+                "provisioning_handoff_request_failed",
+                FAILURE_MESSAGES["provisioning_handoff_request_failed"],
             ) from error
         code = payload.get("handoff_code") if isinstance(payload, dict) else None
         if not isinstance(code, str) or _HANDOFF_CODE.fullmatch(code) is None:
             raise LaunchFailure(
-                "provisioning_handoff_failed",
-                FAILURE_MESSAGES["provisioning_handoff_failed"],
+                "provisioning_handoff_payload_invalid",
+                FAILURE_MESSAGES["provisioning_handoff_payload_invalid"],
             )
         return f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?{urlencode({'code': code})}"
 
@@ -320,7 +343,10 @@ class Launcher:
             with self.client_factory() as client:
                 response = client.post(
                     HANDOFF_PATH,
-                    headers={"Authorization": f"Bootstrap {credential}"},
+                    headers={
+                        "Host": BRIDGE_CONTROL_HOST,
+                        "Authorization": f"Bootstrap {credential}",
+                    },
                 )
                 if _client_has_cookies(client, response):
                     raise LaunchFailure(
@@ -375,7 +401,7 @@ def _load_launcher_credential(configuration_file: Path) -> str:
 
 def _http_client() -> httpx.Client:
     return httpx.Client(
-        base_url=BRIDGE_ORIGIN,
+        base_url=LOOPBACK_CONTROL_ORIGIN,
         timeout=5.0,
         follow_redirects=False,
         trust_env=False,
@@ -672,12 +698,44 @@ def _show_error(message: str) -> None:
         print(message, file=sys.stderr)
 
 
-def main() -> int:
+def launcher_log_file(data_directory: Path) -> Path:
+    """Return the per-user bounded launcher diagnostics file."""
+    return data_directory / LAUNCHER_LOG_FILENAME
+
+
+def _record_launch_failure(data_directory: Path, reason_code: str) -> None:
+    """Append a bounded non-secret launcher failure record."""
     try:
-        Launcher(default_launcher_configuration()).launch()
+        data_directory.mkdir(parents=True, exist_ok=True)
+        log_file = launcher_log_file(data_directory)
+        record = (
+            f"timestamp={datetime.now(timezone.utc).isoformat()} "
+            f"reason_code={reason_code} exit_code={LAUNCH_FAILURE_EXIT_CODE}\n"
+        )
+        if log_file.exists() and (
+            log_file.stat().st_size + len(record.encode("utf-8"))
+            > LAUNCHER_LOG_MAX_BYTES
+        ):
+            backup = log_file.with_suffix(".log.1")
+            backup.unlink(missing_ok=True)
+            log_file.replace(backup)
+        with log_file.open("a", encoding="utf-8") as output:
+            output.write(record)
+    except OSError:
+        return
+
+
+def main() -> int:
+    configuration = default_launcher_configuration()
+    try:
+        Launcher(configuration).launch()
     except LaunchFailure as error:
-        _show_error(str(error))
-        return 2
+        reason_code = _safe_failure_code(error)
+        _record_launch_failure(configuration.data_directory, reason_code)
+        _show_error(
+            f"{FAILURE_MESSAGES[reason_code]} (Reason code: {reason_code})"
+        )
+        return LAUNCH_FAILURE_EXIT_CODE
     return 0
 
 

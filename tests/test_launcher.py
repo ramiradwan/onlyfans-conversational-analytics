@@ -6,7 +6,9 @@ import socket
 import subprocess
 import sys
 from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 from typing import Any
 
 import pytest
@@ -15,6 +17,9 @@ import app.launcher as launcher_module
 from app.core.extension_identity import extension_identity_from_manifest
 from app.launcher import (
     BRIDGE_ORIGIN,
+    BRIDGE_BIND_ADDRESS,
+    BRIDGE_CONTROL_HOST,
+    BRIDGE_PORT,
     HANDOFF_PATH,
     LaunchFailure,
     Launcher,
@@ -24,7 +29,9 @@ from app.launcher import (
     PROVISIONING_HANDOFF_PATH,
     PROVISIONING_REDEEM_PATH,
     WindowsPortOwnership,
+    _http_client,
     _start_brain,
+    launcher_log_file,
 )
 from app.core.runtime_paths import runtime_configuration_file
 from app.packaged_entry import (
@@ -80,6 +87,12 @@ class FakeClient:
         self.events.append("post")
         self.requests.append((path, headers))
         return self.response
+
+
+class RaisingClient(FakeClient):
+    def post(self, path: str, *, headers: dict[str, str]) -> FakeResponse:
+        del path, headers
+        raise OSError("loopback unavailable")
 
 
 class FakeOwnership:
@@ -189,7 +202,13 @@ def test_verified_owner_is_reused_and_launcher_cookie_jar_stays_empty(
     assert target == f"{BRIDGE_ORIGIN}{HANDOFF_PATH}?code={code}"
     assert browser_urls == [target]
     assert requests == [
-        (HANDOFF_PATH, {"Authorization": "Bootstrap " + "b" * 40})
+        (
+            HANDOFF_PATH,
+            {
+                "Host": BRIDGE_CONTROL_HOST,
+                "Authorization": "Bootstrap " + "b" * 40,
+            },
+        )
     ]
     assert client.cookies == {}
     assert events == ["ownership", "sid", "post"]
@@ -343,13 +362,182 @@ def test_provisioning_completion_restarts_the_same_brain_in_runtime_mode(
     assert target == f"{BRIDGE_ORIGIN}{HANDOFF_PATH}?code={'p' * 43}"
     assert starts[0].provisioning_handoff_token == "t" * 32
     assert requests == [
-        (PROVISIONING_HANDOFF_PATH, {"Authorization": "Provisioning " + "t" * 32}),
-        (HANDOFF_PATH, {"Authorization": "Bootstrap " + "b" * 40}),
+        (
+            PROVISIONING_HANDOFF_PATH,
+            {
+                "Host": BRIDGE_CONTROL_HOST,
+                "Authorization": "Provisioning " + "t" * 32,
+            },
+        ),
+        (
+            HANDOFF_PATH,
+            {
+                "Host": BRIDGE_CONTROL_HOST,
+                "Authorization": "Bootstrap " + "b" * 40,
+            },
+        ),
     ]
     assert browsers == [
         f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?code={'p' * 43}",
         target,
     ]
+
+
+@pytest.mark.parametrize(
+    ("token", "response", "client_class", "expected_code"),
+    [
+        ("short", None, FakeClient, "provisioning_handoff_token_invalid"),
+        (
+            "t" * 32,
+            FakeResponse(401, {"detail": "invalid authorization"}, {}),
+            FakeClient,
+            "provisioning_handoff_response_rejected",
+        ),
+        (
+            "t" * 32,
+            FakeResponse(200, {"handoff_code": "h" * 43}, {}),
+            RaisingClient,
+            "provisioning_handoff_request_failed",
+        ),
+        (
+            "t" * 32,
+            FakeResponse(200, {"handoff_code": "invalid code"}, {}),
+            FakeClient,
+            "provisioning_handoff_payload_invalid",
+        ),
+    ],
+    ids=["token", "response", "request", "payload"],
+)
+def test_provisioning_handoff_failure_sites_have_distinct_reason_codes(
+    tmp_path: Path,
+    token: str,
+    response: FakeResponse | None,
+    client_class: type[FakeClient],
+    expected_code: str,
+) -> None:
+    config = configuration(tmp_path)
+    runtime_configuration_file(config.data_directory).unlink()
+    events: list[str] = []
+    requests: list[tuple[str, dict[str, str]]] = []
+    client = client_class(
+        response or FakeResponse(200, {}, {}), requests, events
+    )
+    launcher = Launcher(
+        config,
+        ownership=FakeOwnership([[trusted_owner(config)]], events),
+        client_factory=lambda: client,
+        provisioning_token_factory=lambda: token,
+    )
+
+    with pytest.raises(LaunchFailure) as raised:
+        launcher.launch()
+
+    assert raised.value.code == expected_code
+
+
+def test_launch_failure_writes_a_secret_free_log_and_displays_the_reason_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = configuration(tmp_path)
+    displayed: list[str] = []
+    secret = "provisioning-secret-material"
+
+    monkeypatch.setattr(launcher_module, "default_launcher_configuration", lambda: config)
+    monkeypatch.setattr(
+        launcher_module.Launcher,
+        "launch",
+        lambda _: (_ for _ in ()).throw(
+            LaunchFailure(
+                "provisioning_handoff_response_rejected",
+                launcher_module.FAILURE_MESSAGES[
+                    "provisioning_handoff_response_rejected"
+                ],
+            )
+        ),
+    )
+    monkeypatch.setattr(launcher_module, "_show_error", displayed.append)
+
+    assert launcher_module.main() == launcher_module.LAUNCH_FAILURE_EXIT_CODE
+
+    log_contents = launcher_log_file(config.data_directory).read_text(encoding="utf-8")
+    assert "reason_code=provisioning_handoff_response_rejected" in log_contents
+    assert "exit_code=2" in log_contents
+    assert "timestamp=" in log_contents
+    assert secret not in log_contents
+    assert displayed == [
+        "The local provisioning browser handoff failed. "
+        "(Reason code: provisioning_handoff_response_rejected)"
+    ]
+
+
+def test_unknown_launch_failure_does_not_disclose_its_code_or_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = configuration(tmp_path)
+    displayed: list[str] = []
+    unsafe_code = "unknown\nreason_code=injected"
+    unsafe_message = "Bootstrap credential must not be displayed"
+
+    monkeypatch.setattr(launcher_module, "default_launcher_configuration", lambda: config)
+    monkeypatch.setattr(
+        launcher_module.Launcher,
+        "launch",
+        lambda _: (_ for _ in ()).throw(LaunchFailure(unsafe_code, unsafe_message)),
+    )
+    monkeypatch.setattr(launcher_module, "_show_error", displayed.append)
+
+    assert launcher_module.main() == launcher_module.LAUNCH_FAILURE_EXIT_CODE
+
+    log_contents = launcher_log_file(config.data_directory).read_text(encoding="utf-8")
+    assert "reason_code=launch_failed" in log_contents
+    assert unsafe_code not in log_contents
+    assert unsafe_message not in log_contents
+    assert displayed == ["The local launcher failed. (Reason code: launch_failed)"]
+
+
+def test_provisioning_control_client_connects_to_loopback_with_allowed_host(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_hosts: list[str] = []
+    handoff_code = "h" * 43
+
+    class ControlHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            observed_hosts.append(self.headers["Host"])
+            body = ('{"handoff_code":"' + handoff_code + '"}').encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    original_getaddrinfo = socket.getaddrinfo
+
+    def reject_bridge_dns(host: object, *args: object, **kwargs: object) -> Any:
+        if host in {"bridge.localhost", b"bridge.localhost"}:
+            raise AssertionError("bridge.localhost DNS must not be used")
+        return original_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", reject_bridge_dns)
+    server = ThreadingHTTPServer((BRIDGE_BIND_ADDRESS, BRIDGE_PORT), ControlHandler)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        launcher = Launcher(configuration(tmp_path), client_factory=_http_client)
+        target = launcher._request_provisioning_browser_target("t" * 32)
+    finally:
+        server.shutdown()
+        worker.join(timeout=5)
+        server.server_close()
+
+    assert target == f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?code={handoff_code}"
+    assert observed_hosts == [BRIDGE_CONTROL_HOST]
 
 
 def brain_environment(
