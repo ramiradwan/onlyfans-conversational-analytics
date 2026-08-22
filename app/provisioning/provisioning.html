@@ -3,42 +3,452 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Bridge provisioning</title>
+    <title>Configure Bridge</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --color-primary: #5B57F2;
+        --color-primary-strong: #4340C9;
+        --color-on-primary: #FFFFFF;
+        --color-background: #F4F4F9;
+        --color-surface: #FFFFFF;
+        --color-surface-subtle: #EEEEF5;
+        --color-text: #17161F;
+        --color-text-secondary: #5C5A69;
+        --color-text-muted: #6B6979;
+        --color-text-disabled: #9B99A8;
+        --color-divider: rgba(20, 18, 33, 0.06);
+        --color-selected: rgba(91, 87, 242, 0.10);
+        --color-success: #008300;
+        --color-error: #C9363E;
+        --elevation-surface: 0 1px 2px rgba(17, 17, 26, 0.04), 0 12px 32px -14px rgba(17, 17, 26, 0.16);
+        --focus-width: 2px;
+        --focus-offset: 2px;
+        --space-1: 0.5rem;
+        --space-2: 1rem;
+        --space-3: 1.5rem;
+        --space-4: 2rem;
+        --radius-small: 10px;
+        --radius-medium: 14px;
+        --radius-large: 18px;
+        --motion-duration: 200ms;
+        --motion-easing: cubic-bezier(0.4, 0, 0.2, 1);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-width: 15rem;
+        min-height: 100vh;
+        margin: 0;
+        background: var(--color-background);
+        color: var(--color-text);
+        font-size: 1rem;
+        line-height: 1.5;
+      }
+
+      main {
+        width: min(100% - 2rem, 56rem);
+        margin-inline: auto;
+        padding-block: clamp(2rem, 6vw, 4rem);
+      }
+
+      .page-header {
+        max-width: 44rem;
+        margin-block-end: var(--space-4);
+      }
+
+      h1,
+      h2,
+      p {
+        margin-block-start: 0;
+      }
+
+      h1 {
+        margin-block-end: var(--space-1);
+        font-size: clamp(2rem, 6vw, 2.5rem);
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+      }
+
+      .intro {
+        max-width: 65ch;
+        margin-block-end: var(--space-2);
+        color: var(--color-text-secondary);
+      }
+
+      .page-status {
+        min-height: 3.5rem;
+        margin: 0;
+        padding: var(--space-2);
+        border: 1px solid var(--color-divider);
+        border-radius: var(--radius-medium);
+        background: var(--color-surface-subtle);
+      }
+
+      .page-status[data-tone="error"] {
+        border-color: var(--color-error);
+      }
+
+      .steps {
+        display: grid;
+        gap: var(--space-2);
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .step {
+        padding: clamp(1rem, 4vw, 2rem);
+        border: 1px solid var(--color-divider);
+        border-radius: var(--radius-large);
+        background: var(--color-surface);
+        box-shadow: var(--elevation-surface);
+      }
+
+      .step[data-state="current"] {
+        border-color: var(--color-primary);
+        box-shadow: inset 0.25rem 0 var(--color-primary), var(--elevation-surface);
+      }
+
+      .step-heading {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        margin-block-end: var(--space-2);
+      }
+
+      .step-number {
+        display: inline-grid;
+        flex: 0 0 2rem;
+        width: 2rem;
+        height: 2rem;
+        border: 1px solid var(--color-divider);
+        border-radius: 50%;
+        place-items: center;
+        background: var(--color-surface-subtle);
+        font-weight: 600;
+      }
+
+      .step[data-state="current"] .step-number {
+        border-color: var(--color-primary);
+        background: var(--color-selected);
+      }
+
+      .step[data-state="completed"] .step-number {
+        border-color: var(--color-success);
+        color: var(--color-success);
+      }
+
+      .step-title-group {
+        min-width: 0;
+        flex: 1;
+      }
+
+      h2 {
+        margin-block-end: 0;
+        font-size: 1.25rem;
+        line-height: 1.35;
+        letter-spacing: -0.02em;
+      }
+
+      .step-state {
+        margin: 0;
+        color: var(--color-text-secondary);
+        font-size: 0.875rem;
+        font-weight: 600;
+      }
+
+      .step[data-state="completed"] .step-state {
+        color: var(--color-success);
+      }
+
+      .step-description,
+      .help,
+      .control-help {
+        max-width: 65ch;
+        color: var(--color-text-secondary);
+      }
+
+      form,
+      .step-body {
+        display: grid;
+        gap: var(--space-1);
+      }
+
+      label {
+        font-weight: 600;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 8.5rem;
+        resize: vertical;
+        padding: var(--space-2);
+        border: 1px solid var(--color-text-muted);
+        border-radius: var(--radius-small);
+        background: var(--color-surface);
+        color: var(--color-text);
+        font: 1rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        overflow-wrap: anywhere;
+      }
+
+      textarea[aria-invalid="true"] {
+        border-color: var(--color-error);
+      }
+
+      textarea:disabled {
+        color: var(--color-text-disabled);
+        cursor: not-allowed;
+      }
+
+      .field-meta {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: var(--space-1) var(--space-2);
+      }
+
+      .field-meta p,
+      .control-help,
+      .identity-line,
+      .identity-status {
+        margin: 0;
+      }
+
+      .validation-message[data-valid="false"] {
+        color: var(--color-error);
+        font-weight: 600;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+        margin-block-start: var(--space-1);
+      }
+
+      button {
+        min-height: 3rem;
+        min-width: 3rem;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid transparent;
+        border-radius: var(--radius-medium);
+        background: var(--color-primary);
+        color: var(--color-on-primary);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform var(--motion-duration) var(--motion-easing), opacity var(--motion-duration) var(--motion-easing);
+      }
+
+      button.secondary {
+        border-color: var(--color-primary);
+        background: transparent;
+        color: var(--color-primary-strong);
+      }
+
+      button:active:not(:disabled) {
+        transform: scale(0.98);
+      }
+
+      button:disabled {
+        border-color: var(--color-divider);
+        background: var(--color-surface-subtle);
+        color: var(--color-text-disabled);
+        cursor: not-allowed;
+      }
+
+      :focus-visible {
+        outline: var(--focus-width) solid var(--color-primary);
+        outline-offset: var(--focus-offset);
+      }
+
+      output {
+        overflow-wrap: anywhere;
+        font-weight: 600;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --color-primary: #8B87FF;
+          --color-primary-strong: #A78BFA;
+          --color-on-primary: #08080C;
+          --color-background: #08080C;
+          --color-surface: #17171F;
+          --color-surface-subtle: #1E1E28;
+          --color-text: #F4F3F9;
+          --color-text-secondary: #B6B4C4;
+          --color-text-muted: #9B99A8;
+          --color-text-disabled: #6F6D7E;
+          --color-divider: rgba(255, 255, 255, 0.07);
+          --color-selected: rgba(139, 135, 255, 0.16);
+          --color-success: #4CAF50;
+          --color-error: #E66767;
+          --elevation-surface: 0 2px 4px rgba(0, 0, 0, 0.50), 0 20px 48px -24px rgba(0, 0, 0, 0.85);
+        }
+
+        button {
+          color: var(--color-on-primary);
+        }
+
+        button.secondary {
+          color: var(--color-primary);
+        }
+      }
+
+      @media (max-width: 37.5rem) {
+        main {
+          width: min(100% - 1rem, 56rem);
+          padding-block: var(--space-2);
+        }
+
+        .page-header {
+          margin-block-end: var(--space-2);
+        }
+
+        .actions,
+        .actions button {
+          width: 100%;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
+
+      @media (forced-colors: active) {
+        .step,
+        .page-status,
+        textarea,
+        button {
+          border: 1px solid CanvasText;
+          box-shadow: none;
+          forced-color-adjust: auto;
+        }
+
+        .step[data-state="current"] {
+          border: 2px solid Highlight;
+          box-shadow: inset 0.25rem 0 Highlight;
+        }
+
+        .step[data-state="completed"] .step-number {
+          border: 2px solid CanvasText;
+        }
+
+        :focus-visible {
+          outline-color: Highlight;
+        }
+      }
+    </style>
   </head>
   <body>
     <main
       data-provisioning-csrf="{{PROVISIONING_CSRF}}"
       data-provisioning-extension-id="{{PROVISIONING_EXTENSION_ID}}"
     >
-      <h1>Configure Bridge</h1>
-      <p id="provisioning-status" role="status" aria-live="polite"></p>
+      <header class="page-header">
+        <h1>Configure Bridge</h1>
+        <p class="intro">Complete these four steps to connect this installation to the signed-in creator account. Keep this page open until configuration is complete.</p>
+        <p id="provisioning-status" class="page-status" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral">Start by registering this installation.</p>
+      </header>
 
-      <section aria-labelledby="claim-heading">
-        <h2 id="claim-heading">1. Register this installation</h2>
-        <form id="claim-form">
-          <label for="claim-package">Installation package</label>
-          <textarea id="claim-package" name="package" required></textarea>
-          <button type="submit">Register installation</button>
-        </form>
-      </section>
+      <ol class="steps" aria-label="Configuration progress">
+        <li id="claim-step" class="step" data-step="registration" data-state="current" aria-current="step">
+          <div class="step-heading">
+            <span class="step-number" aria-hidden="true">1</span>
+            <div class="step-title-group">
+              <h2 id="claim-heading">Register this installation</h2>
+              <p id="claim-step-state" class="step-state">Current step</p>
+            </div>
+          </div>
+          <p class="step-description">Paste the installation package provided during setup. Bridge checks its format here before sending it.</p>
+          <form id="claim-form" novalidate>
+            <label for="claim-package">Installation package</label>
+            <p id="claim-package-help" class="help">Copy the complete package, then paste it without editing. Whitespace before or after it is ignored.</p>
+            <textarea
+              id="claim-package"
+              name="package"
+              rows="6"
+              required
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              wrap="soft"
+              aria-describedby="claim-package-help claim-package-validation claim-package-count claim-action-help"
+              aria-invalid="false"
+            ></textarea>
+            <div class="field-meta">
+              <p id="claim-package-validation" class="validation-message" data-valid="true">Ready for a package.</p>
+              <p id="claim-package-count" class="help">0 / 1,400 characters</p>
+            </div>
+            <div class="actions">
+              <button id="claim-submit" type="submit" aria-describedby="claim-action-help">Register installation</button>
+            </div>
+            <p id="claim-action-help" class="control-help">Available now.</p>
+          </form>
+        </li>
 
-      <section aria-labelledby="identity-heading">
-        <h2 id="identity-heading">2. Confirm the signed-in creator account</h2>
-        <p id="identity-status" role="status" aria-live="polite"></p>
-        <p>Account to associate: <output id="detected-identity">None detected</output></p>
-        <button id="refresh-identity" type="button">Check extension again</button>
-        <button id="confirm-identity" type="button" disabled>Confirm this account</button>
-      </section>
+        <li id="identity-step" class="step" data-step="identity" data-state="locked">
+          <div class="step-heading">
+            <span class="step-number" aria-hidden="true">2</span>
+            <div class="step-title-group">
+              <h2 id="identity-heading">Confirm the signed-in creator account</h2>
+              <p id="identity-step-state" class="step-state">Locked</p>
+            </div>
+          </div>
+          <div class="step-body">
+            <p class="step-description">Check the browser extension for the account currently signed in. You can detect it now, but confirmation unlocks only after registration.</p>
+            <p id="identity-status" class="identity-status" role="status" aria-live="polite" aria-atomic="true">No account check has completed.</p>
+            <p class="identity-line">Account to confirm: <output id="detected-identity">None detected</output></p>
+            <div class="actions">
+              <button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Check extension again</button>
+              <button id="confirm-identity" type="button" disabled aria-describedby="identity-confirm-help">Confirm this account</button>
+            </div>
+            <p id="identity-confirm-help" class="control-help">Register this installation before confirming an account.</p>
+          </div>
+        </li>
 
-      <section aria-labelledby="binding-heading">
-        <h2 id="binding-heading">3. Acquire association approval</h2>
-        <button id="acquire-association" type="button" disabled>Acquire approval</button>
-      </section>
+        <li id="binding-step" class="step" data-step="approval" data-state="locked">
+          <div class="step-heading">
+            <span class="step-number" aria-hidden="true">3</span>
+            <div class="step-title-group">
+              <h2 id="binding-heading">Acquire association approval</h2>
+              <p id="binding-step-state" class="step-state">Locked</p>
+            </div>
+          </div>
+          <p class="step-description">After the account is confirmed, ask Bridge to obtain approval for this installation.</p>
+          <div class="actions">
+            <button id="acquire-association" type="button" disabled aria-describedby="binding-action-help">Acquire approval</button>
+          </div>
+          <p id="binding-action-help" class="control-help">Confirm the creator account before acquiring approval.</p>
+        </li>
 
-      <section aria-labelledby="finalize-heading">
-        <h2 id="finalize-heading">4. Finish configuration</h2>
-        <button id="finalize-provisioning" type="button" disabled>Finish configuration</button>
-      </section>
+        <li id="finalize-step" class="step" data-step="finalization" data-state="locked">
+          <div class="step-heading">
+            <span class="step-number" aria-hidden="true">4</span>
+            <div class="step-title-group">
+              <h2 id="finalize-heading">Finish configuration</h2>
+              <p id="finalize-step-state" class="step-state">Locked</p>
+            </div>
+          </div>
+          <p class="step-description">Finish after approval is acquired. Bridge must restart before normal use.</p>
+          <div class="actions">
+            <button id="finalize-provisioning" type="button" disabled aria-describedby="finalize-action-help">Finish configuration</button>
+          </div>
+          <p id="finalize-action-help" class="control-help">Acquire approval before finishing configuration.</p>
+        </li>
+      </ol>
     </main>
     <script type="module" src="/provisioning/provisioning.js"></script>
   </body>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
 from typing import Any
 
 import pytest
@@ -35,6 +36,46 @@ BODY = {
     "detected_creator_account_id": ACCOUNT_ID,
     "reported_platform_creator_id": REPORTED_PLATFORM_ID,
 }
+
+
+class ProvisioningMarkup(HTMLParser):
+    """Small structural probe for the served, dependency-free document."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.elements_by_id: dict[str, dict[str, str | None]] = {}
+        self.labels_for: set[str] = set()
+        self.step_order: list[str] = []
+        self.styles: list[str] = []
+        self.scripts: list[dict[str, str | None]] = []
+        self.external_asset_tags: list[str] = []
+        self._style_parts: list[str] | None = None
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        attributes = dict(attrs)
+        if identifier := attributes.get("id"):
+            self.elements_by_id[identifier] = attributes
+        if tag == "label" and (target := attributes.get("for")):
+            self.labels_for.add(target)
+        if step := attributes.get("data-step"):
+            self.step_order.append(step)
+        if tag == "style":
+            self._style_parts = []
+        if tag == "script":
+            self.scripts.append(attributes)
+        if tag in {"link", "img", "picture", "source", "video", "audio", "iframe", "object"}:
+            self.external_asset_tags.append(tag)
+
+    def handle_data(self, data: str) -> None:
+        if self._style_parts is not None:
+            self._style_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "style" and self._style_parts is not None:
+            self.styles.append("".join(self._style_parts))
+            self._style_parts = None
 
 
 class RecordingFinalizeAction:
@@ -184,6 +225,71 @@ def test_shell_serves_module_relative_provisioning_document_and_script() -> None
     assert script.status_code == 200
     assert script.headers["content-type"].startswith("application/javascript")
     assert "createProvisioningController" in script.text
+
+
+def test_served_shell_has_accessible_step_structure_and_inline_adaptive_theme() -> None:
+    application = provisioning_app()
+    client, cookie, _ = bounded_session(application)
+
+    shell = client.get("/provisioning", headers=cookie)
+    markup = ProvisioningMarkup()
+    markup.feed(shell.text)
+
+    assert shell.status_code == 200
+    assert markup.step_order == ["registration", "identity", "approval", "finalization"]
+    assert [markup.elements_by_id[f"{name}-step"]["data-state"] for name in (
+        "claim", "identity", "binding", "finalize"
+    )] == ["current", "locked", "locked", "locked"]
+    assert markup.elements_by_id["claim-step"]["aria-current"] == "step"
+    assert all(
+        "aria-current" not in markup.elements_by_id[f"{name}-step"]
+        for name in ("identity", "binding", "finalize")
+    )
+    assert "claim-package" in markup.labels_for
+    assert set(
+        markup.elements_by_id["claim-package"]["aria-describedby"].split()
+    ) == {
+        "claim-package-help",
+        "claim-package-validation",
+        "claim-package-count",
+        "claim-action-help",
+    }
+    for control_id in (
+        "claim-submit",
+        "refresh-identity",
+        "confirm-identity",
+        "acquire-association",
+        "finalize-provisioning",
+    ):
+        description_ids = markup.elements_by_id[control_id]["aria-describedby"].split()
+        assert description_ids
+        assert all(description_id in markup.elements_by_id for description_id in description_ids)
+    assert all(
+        f"{name}-step-state" in markup.elements_by_id
+        for name in ("claim", "identity", "binding", "finalize")
+    )
+
+    assert len(markup.styles) == 1
+    style = markup.styles[0]
+    assert all(
+        feature in style
+        for feature in (
+            "--color-primary:",
+            "--space-1:",
+            "--radius-small:",
+            ":focus-visible",
+            "prefers-color-scheme: dark",
+            "prefers-reduced-motion: reduce",
+            "forced-colors: active",
+        )
+    )
+    assert "@import" not in style
+    assert "@font-face" not in style
+    assert "url(" not in style
+    assert markup.external_asset_tags == []
+    assert markup.scripts == [
+        {"type": "module", "src": "/provisioning/provisioning.js"}
+    ]
 
 
 @pytest.mark.parametrize("extension_id", [None, "wrong", "q" * 32])
