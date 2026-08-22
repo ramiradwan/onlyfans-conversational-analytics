@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -13,6 +14,10 @@ import pytest
 
 import exclusive_resource
 
+
+pytestmark = pytest.mark.skipif(
+    os.name != "nt", reason="machine_wide_lock is a Win32 named-mutex claim"
+)
 
 TESTS_DIRECTORY = Path(__file__).resolve().parent
 _HOLD_SECONDS = 1.5

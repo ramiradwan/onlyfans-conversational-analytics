@@ -11,8 +11,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from app.core.extension_identity import extension_identity_from_manifest
 
+
+pytestmark = pytest.mark.skipif(
+    os.name != "nt", reason="drives build-windows.ps1 via powershell.exe"
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"

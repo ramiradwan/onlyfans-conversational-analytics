@@ -168,6 +168,7 @@ def _run_build(
     )
 
 
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
 def test_policy_gate_rejects_development_configuration_and_is_load_bearing(
     tmp_path: Path,
 ) -> None:

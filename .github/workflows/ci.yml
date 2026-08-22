@@ -91,6 +91,31 @@ jobs:
           name: extension-dist
           path: extension/dist/
 
+  windows-tests:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Provision Inno Setup compiler
+        run: choco install innosetup --yes --no-progress
+
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Test backend
+        run: python -m pytest
+
   capture-e2e:
     runs-on: ubuntu-latest
 
