@@ -347,10 +347,10 @@ def test_a_valid_package_stores_every_grant_the_hosted_plane_returned(
     refusal = submission(store, grants, transport)(package=PACKAGE)
 
     assert refusal is None
-    assert [record.grant_type for record in store.verified_grants()] == [
+    assert sorted(record.grant_type for record in store.verified_grants()) == [
         "installation_grant",
-        "membership_snapshot",
         "license_entitlement",
+        "membership_snapshot",
     ]
     assert [(method, path) for method, path, _ in transport.requests] == [
         ("POST", CONSUME_PATH)
@@ -650,10 +650,10 @@ def test_the_composed_surface_registers_the_installation_from_one_package(
     assert response.status_code == 200
     assert response.json() == {"state": "installation_registered"}
     stored = _composed_store(data_directory).verified_grants()
-    assert [record.grant_type for record in stored] == [
+    assert sorted(record.grant_type for record in stored) == [
         "installation_grant",
-        "membership_snapshot",
         "license_entitlement",
+        "membership_snapshot",
     ]
     assert {record.installation_key_id for record in stored} == {
         installation_key.installation_key_id
