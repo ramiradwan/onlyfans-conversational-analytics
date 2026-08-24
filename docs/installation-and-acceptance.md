@@ -14,12 +14,14 @@ Use a Windows guest with a TPM-capable configuration and no Python installation,
 3. Run the script from a directory outside the installation tree, supplying the installer artifact and its published SHA-256 digest. The harness installs to an isolated temporary prefix, starts the `Brain.exe` that installation placed, redirects runtime data to its temporary root, and uninstalls before it exits.
 
 ```powershell
-pwsh -NoProfile -File .\run.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 `
   -ArtifactPath 'C:\path\to\OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe' `
   -PublishedSha256 '<published SHA-256>'
 ```
 
 The script writes `packaging-smoke-transcript.json` beside the command's working directory unless `-TranscriptPath` specifies another location. It exits with `21` when Python is detected, `22` when Node is detected, and `23` when a repository checkout is found in an inspected root. A digest mismatch exits `31`, and an installer failure exits `32`; a blocked sequence exits `40`; a failed acceptance step exits `41`.
+
+On Windows 11, run this command with the inbox Windows PowerShell 5.1 executable (`powershell.exe`), not `pwsh`. Exit `40` is valid only when all pre-hosted-input checks pass and the remaining browser/claim steps are explicitly recorded as `blocked`; it is not a successful hosted acceptance. With accepted hosted inputs, the complete sequence exits `0`.
 
 When `-InspectionRoot` is omitted, the repository scan inspects the absolute system-drive root (for example, `C:\`) through four directory levels. This preserves system-drive scope while bounding the recursive scan and does not depend on the command's working directory. Supply `-InspectionRoot` explicitly when the clean-machine scope uses another root; the transcript's `inspection_roots` and `inspection_depth` fields record the scope actually scanned.
 
