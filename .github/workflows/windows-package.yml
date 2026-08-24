@@ -34,9 +34,6 @@ jobs:
             frontend/package-lock.json
             extension/package-lock.json
 
-      - name: Provision Inno Setup compiler
-        run: choco install innosetup --yes --no-progress
-
       - name: Create isolated build environment
         run: |
           python -m venv .build-venv
