@@ -3,6 +3,8 @@
   "required_files": [
     "Brain.exe",
     "_internal/app/templates/index.html",
+    "_internal/app/provisioning/provisioning.html",
+    "_internal/app/provisioning/provisioning.js",
     "_internal/contracts/manifest.json",
     "_internal/contracts/consumer-pin.json",
     "THIRD_PARTY_NOTICES.md",

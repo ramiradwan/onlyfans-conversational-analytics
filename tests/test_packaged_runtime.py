@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import shutil
@@ -12,6 +13,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -28,6 +30,8 @@ INSTALLED_LAUNCHER_E2E_ENVIRONMENT_VARIABLE = "BRAIN_INSTALLED_LAUNCHER_E2E"
 PACKAGED_BUILD_PYTHON_ENVIRONMENT_VARIABLE = "BRAIN_PACKAGED_BUILD_PYTHON"
 _BRAIN_PORT = exclusive_resource.PROVISIONING_PORT
 _STARTUP_TIMEOUT_SECONDS = 15
+_PROVISIONING_HANDOFF_TOKEN = "packaged-provisioning-handoff-token-0001"
+_PROVISIONING_EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
 SMOKE_SCRIPT = ROOT / "tools" / "packaging-smoke" / "run.ps1"
@@ -133,6 +137,24 @@ def _start_brain(
     )
 
 
+def _start_provisioning_brain(
+    artifact: Path, *, data_directory: Path, working_directory: Path
+) -> subprocess.Popen[str]:
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    environment["LOCAL_ANALYTICS_DATA_DIR"] = str(data_directory)
+    environment["LOCAL_PROVISIONING_HANDOFF_TOKEN"] = _PROVISIONING_HANDOFF_TOKEN
+    environment["LOCAL_PROVISIONING_EXTENSION_ID"] = _PROVISIONING_EXTENSION_ID
+    return subprocess.Popen(
+        [str(artifact / "Brain.exe"), "--brain"],
+        cwd=working_directory,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
 def _stop_brain(process: subprocess.Popen[str]) -> None:
     if process.poll() is None:
         process.terminate()
@@ -153,6 +175,22 @@ def _request(path: str) -> _HttpResponse | None:
         return _HttpResponse(error.code, error.read().decode("utf-8"))
     except urllib.error.URLError:
         return None
+
+
+def _raw_request(
+    method: str, path: str, *, headers: dict[str, str]
+) -> tuple[int, dict[str, str], str]:
+    connection = http.client.HTTPConnection("127.0.0.1", _BRAIN_PORT, timeout=2)
+    try:
+        connection.request(method, path, headers=headers)
+        response = connection.getresponse()
+        response_headers = {
+            name.lower(): value for name, value in response.getheaders()
+        }
+        body = response.read().decode("utf-8")
+        return response.status, response_headers, body
+    finally:
+        connection.close()
 
 
 def _wait_for_response(
@@ -190,6 +228,52 @@ def _assert_packaged_runtime_serves_homepage(
             f"bundled homepage (status {homepage.status})"
         )
         assert "<!doctype html" in homepage.body.lower()
+    finally:
+        _stop_brain(process)
+
+
+def _assert_packaged_runtime_serves_provisioning_surface(
+    artifact: Path, *, data_directory: Path, working_directory: Path
+) -> None:
+    process = _start_provisioning_brain(
+        artifact, data_directory=data_directory, working_directory=working_directory
+    )
+    browser_headers = {"Host": "bridge.localhost:17871"}
+    try:
+        health = _wait_for_response(process, "/health", description="provisioning runtime")
+        assert health.status == 200
+        status, _, body = _raw_request(
+            "POST",
+            "/api/v1/provisioning/handoff",
+            headers=browser_headers
+            | {"Authorization": f"Provisioning {_PROVISIONING_HANDOFF_TOKEN}"},
+        )
+        assert status == 200, f"provisioning handoff returned {status}"
+        handoff_code = json.loads(body)["handoff_code"]
+        status, headers, _ = _raw_request(
+            "GET",
+            "/provisioning/handoff?code=" + urllib.parse.quote(handoff_code),
+            headers=browser_headers,
+        )
+        assert status == 303, f"provisioning handoff redemption returned {status}"
+        cookie = headers["set-cookie"].split(";", 1)[0]
+        session_headers = browser_headers | {"Cookie": cookie}
+        status, _, shell = _raw_request(
+            "GET", "/provisioning", headers=session_headers
+        )
+        assert status == 200, (
+            "resource_failure: the frozen provisioning runtime could not render "
+            f"its bundled page (status {status})"
+        )
+        assert "<!doctype html" in shell.lower()
+        status, _, script = _raw_request(
+            "GET", "/provisioning/provisioning.js", headers=session_headers
+        )
+        assert status == 200, (
+            "resource_failure: the frozen provisioning runtime could not serve "
+            f"its bundled script (status {status})"
+        )
+        assert "application/json" in script
     finally:
         _stop_brain(process)
 
@@ -355,6 +439,24 @@ def test_packaged_runtime_resolves_bundle_resources_from_an_unrelated_cwd(
 
 
 @pytest.mark.slow
+def test_packaged_provisioning_surface_resolves_bundled_assets(
+    packaged_artifact: Path, tmp_path: Path
+) -> None:
+    """The frozen pre-configuration app serves its page and script assets."""
+
+    _assert_port_is_unused()
+    data_directory = tmp_path / "provisioning-data"
+    unrelated_cwd = tmp_path / "provisioning-unrelated-cwd"
+    unrelated_cwd.mkdir()
+
+    _assert_packaged_runtime_serves_provisioning_surface(
+        packaged_artifact,
+        data_directory=data_directory,
+        working_directory=unrelated_cwd,
+    )
+
+
+@pytest.mark.slow
 def test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener(
     packaged_build_python: Path, tmp_path: Path
 ) -> None:
@@ -371,6 +473,13 @@ def test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener(
     falsifier_smoke_run_root = falsifier_root / "smoke"
     try:
         installer = _build_real_installer(packaged_build_python, build_output)
+        provisioning_cwd = smoke_run_root / "provisioning-cwd"
+        provisioning_cwd.mkdir(parents=True)
+        _assert_packaged_runtime_serves_provisioning_surface(
+            build_output / "dist" / "Brain",
+            data_directory=smoke_run_root / "provisioning-data",
+            working_directory=provisioning_cwd,
+        )
         result, transcript = _run_installed_launcher_smoke(installer, smoke_run_root)
         _assert_installed_launcher_listener(result, transcript)
 

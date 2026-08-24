@@ -36,6 +36,10 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", stage / "THIRD_PARTY_NOTICES.md")
     (stage / "Agent").mkdir()
     shutil.copytree(ROOT / "app" / "templates", internal / "app" / "templates")
+    provisioning = internal / "app" / "provisioning"
+    provisioning.mkdir()
+    for name in ("provisioning.html", "provisioning.js"):
+        shutil.copy2(ROOT / "app" / "provisioning" / name, provisioning / name)
     shutil.copytree(ROOT / "app" / "static", internal / "app" / "static")
     shutil.copytree(ROOT / "contracts", internal / "contracts")
     for catalog in SQL_CATALOGS:
@@ -101,6 +105,28 @@ def test_missing_required_file_is_reported(tmp_path: Path) -> None:
     (stage / "Brain.exe").unlink()
 
     assert "required_file_missing" in _codes(verify_runtime_files(stage))
+
+
+def test_required_files_cover_the_provisioning_page_assets(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    policy = load_runtime_policy(POLICY_PATH)
+    required = set(policy["required_files"])
+    assets = {
+        "_internal/app/provisioning/provisioning.html",
+        "_internal/app/provisioning/provisioning.js",
+    }
+
+    assert assets <= required
+    for relative in assets:
+        asset = stage / relative
+        contents = asset.read_bytes()
+        asset.unlink()
+        findings = verify_runtime_files(stage)
+        assert any(
+            finding.code == "required_file_missing" and finding.path == relative
+            for finding in findings
+        ), f"the package policy must reject a missing {relative}"
+        asset.write_bytes(contents)
 
 
 def test_required_paths_checker_reports_a_missing_required_directory(tmp_path: Path) -> None:

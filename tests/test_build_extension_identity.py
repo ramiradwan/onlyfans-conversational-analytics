@@ -50,6 +50,10 @@ for relative in (
     'contracts',
 ):
     shutil.copytree(root / relative, stage / '_internal' / relative)
+provisioning = stage / '_internal' / 'app' / 'provisioning'
+provisioning.mkdir()
+for name in ('provisioning.html', 'provisioning.js'):
+    shutil.copyfile(root / 'app' / 'provisioning' / name, provisioning / name)
 """.strip()
         + "\n",
         encoding="utf-8",
