@@ -372,22 +372,30 @@ def _assert_the_signing_job_installs_and_builds_nothing(
             )
 
 
-def _assert_every_signing_job_action_is_pinned_to_a_commit(
-    workflow: dict[str, Any],
+def _assert_every_job_action_is_pinned_to_a_commit(
+    job: dict[str, Any], *, label: str
 ) -> None:
     references = [
         step["uses"]
-        for step in _steps(_signing_job(workflow))
+        for step in _steps(job)
         if isinstance(step.get("uses"), str)
     ]
-    assert references, "the signing job uses no action, so nothing was checked"
+    assert references, f"the {label} uses no action, so nothing was checked"
     unpinned = sorted(
         reference
         for reference in references
         if not COMMIT_SHA.fullmatch(reference.partition("@")[2])
     )
     assert not unpinned, (
-        f"every signing-job action must be pinned to a 40-character commit: {unpinned}"
+        f"every {label} action must be pinned to a 40-character commit: {unpinned}"
+    )
+
+
+def _assert_every_signing_job_action_is_pinned_to_a_commit(
+    workflow: dict[str, Any],
+) -> None:
+    _assert_every_job_action_is_pinned_to_a_commit(
+        _signing_job(workflow), label="signing-job"
     )
 
 
@@ -553,6 +561,14 @@ def _build_job(workflow: dict[str, Any]) -> dict[str, Any]:
     return _jobs(workflow)[_build_job_name(workflow)]
 
 
+def _assert_every_release_build_action_is_pinned_to_a_commit(
+    workflow: dict[str, Any],
+) -> None:
+    _assert_every_job_action_is_pinned_to_a_commit(
+        _build_job(workflow), label="release-build-job"
+    )
+
+
 def _first_run_gate_index(steps: list[dict[str, Any]]) -> int:
     gates = [
         index
@@ -564,6 +580,22 @@ def _first_run_gate_index(steps: list[dict[str, Any]]) -> int:
         f"found {len(gates)}"
     )
     return gates[0]
+
+
+def test_the_release_build_job_pins_every_action_to_a_commit() -> None:
+    """A movable action before signing can substitute the artifact being signed."""
+
+    workflow = _workflow_document()
+    _assert_every_release_build_action_is_pinned_to_a_commit(workflow)
+
+    for index, step in enumerate(_steps(_build_job(workflow))):
+        if not isinstance(step.get("uses"), str):
+            continue
+        movable = deepcopy(workflow)
+        action = _action_path(step)
+        _build_job(movable)["steps"][index]["uses"] = f"{action}@v4"
+        with pytest.raises(AssertionError, match="pinned to a 40-character commit"):
+            _assert_every_release_build_action_is_pinned_to_a_commit(movable)
 
 
 def _first_run_gate_step(workflow: dict[str, Any]) -> dict[str, Any]:
