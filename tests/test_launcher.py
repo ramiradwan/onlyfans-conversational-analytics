@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+import exclusive_resource
 import app.launcher as launcher_module
 from app.core.extension_identity import extension_identity_from_manifest
 from app.launcher import (
@@ -528,16 +529,17 @@ def test_provisioning_control_client_connects_to_loopback_with_allowed_host(
         return original_getaddrinfo(host, *args, **kwargs)
 
     monkeypatch.setattr(socket, "getaddrinfo", reject_bridge_dns)
-    server = ThreadingHTTPServer((BRIDGE_BIND_ADDRESS, BRIDGE_PORT), ControlHandler)
-    worker = Thread(target=server.serve_forever, daemon=True)
-    worker.start()
-    try:
-        launcher = Launcher(configuration(tmp_path), client_factory=_http_client)
-        target = launcher._request_provisioning_browser_target("t" * 32)
-    finally:
-        server.shutdown()
-        worker.join(timeout=5)
-        server.server_close()
+    with exclusive_resource.exclusive_provisioning_resources():
+        server = ThreadingHTTPServer((BRIDGE_BIND_ADDRESS, BRIDGE_PORT), ControlHandler)
+        worker = Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            launcher = Launcher(configuration(tmp_path), client_factory=_http_client)
+            target = launcher._request_provisioning_browser_target("t" * 32)
+        finally:
+            server.shutdown()
+            worker.join(timeout=5)
+            server.server_close()
 
     assert target == f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?code={handoff_code}"
     assert observed_hosts == [BRIDGE_CONTROL_HOST]
