@@ -325,7 +325,9 @@ class InProcessProjectionScheduler:
 
         revoked = publication_epoch is None
         if publication_epoch is not None:
+            attempts = 0
             while True:
+                attempts += 1
                 try:
                     self.pipeline.revoke_publication_epoch(
                         publication_epoch,
@@ -335,10 +337,11 @@ class InProcessProjectionScheduler:
                     revoked = True
                     break
                 except Exception:
-                    if time.monotonic() >= deadline:
+                    if attempts >= 2 and time.monotonic() >= deadline:
                         break
-                    # A transient first failure must not strand an otherwise
-                    # healthy persisted publication capability in the open state.
+                    # The deadline bounds the caller's join, not this background
+                    # fail-closed cleanup. Always make one retry after a transient
+                    # first failure, even when the thread started near the deadline.
                     continue
         try:
             self.pipeline.close_projection_storage()

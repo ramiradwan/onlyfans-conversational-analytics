@@ -800,13 +800,16 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
     await scheduler.start(recover=False)
     entered = threading.Event()
     release = threading.Event()
+    first_revocation_started = threading.Event()
+    release_first_revocation = threading.Event()
+    canonical_revoked = threading.Event()
     original_publish = pipeline.publish_candidate
     observed_candidates = []
 
     def paused_publish(candidate):
         observed_candidates.append(candidate)
         entered.set()
-        assert release.wait(timeout=3)
+        release.wait()
         return original_publish(candidate)
 
     pipeline.publish_candidate = paused_publish  # type: ignore[method-assign]
@@ -819,28 +822,43 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
         nonlocal revocations
         revocations += 1
         if revocations == 1:
+            first_revocation_started.set()
+            release_first_revocation.wait()
             raise sqlite3.OperationalError("synthetic_canonical_revocation_failure")
-        return original_revoke(*args, **kwargs)
+        result = original_revoke(*args, **kwargs)
+        canonical_revoked.set()
+        return result
 
     monkeypatch.setattr(
         repositories.projection_activation,
         "revoke_publication_epoch",
         flaky_canonical_revoke,
     )
-    close_started = time.monotonic()
-    assert not await scheduler.close(timeout=0.02)
-    assert time.monotonic() - close_started < 0.08
-    assert revocations >= 1
-    assert repositories.database is not None
-    with repositories.database.read() as connection:
-        canonical_epoch = connection.execute(
-            "SELECT state FROM analytics_projection_publication_epochs WHERE publication_epoch=?",
-            (observed_candidates[0].publication_epoch,),
-        ).fetchone()
-    assert canonical_epoch is not None and canonical_epoch["state"] == "revoked"
-    assert store.database.active_generation("account-a") is None
-    release.set()
-    deadline = time.monotonic() + 3
+    close_task = asyncio.create_task(scheduler.close(timeout=0.02))
+    try:
+        assert await asyncio.to_thread(first_revocation_started.wait, 5)
+        assert not await close_task
+
+        # Complete the synthetic late first failure only after the caller's hard
+        # deadline. Persisted revocation must still receive its fail-closed retry.
+        release_first_revocation.set()
+        assert await asyncio.to_thread(canonical_revoked.wait, 5)
+        assert revocations >= 2
+        assert repositories.database is not None
+        with repositories.database.read() as connection:
+            canonical_epoch = connection.execute(
+                "SELECT state FROM analytics_projection_publication_epochs WHERE publication_epoch=?",
+                (observed_candidates[0].publication_epoch,),
+            ).fetchone()
+        assert canonical_epoch is not None and canonical_epoch["state"] == "revoked"
+        assert store.database.active_generation("account-a") is None
+    finally:
+        release_first_revocation.set()
+        release.set()
+        if not close_task.done():
+            await close_task
+
+    deadline = time.monotonic() + 5
     while scheduler.executor_thread_count and time.monotonic() < deadline:
         await asyncio.sleep(0.01)
     assert scheduler.executor_thread_count == 0
