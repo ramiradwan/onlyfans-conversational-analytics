@@ -580,12 +580,14 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
 
     recovery_entered = threading.Event()
     release_recovery = threading.Event()
+    recovery_timeout_seconds = 15
     original_ensure_ready = stores.projections.ensure_ready
 
     def paused_recovery() -> None:
         recovery_entered.set()
-        if not release_recovery.wait(timeout=5):
-            raise RuntimeError("synthetic_recovery_pause_timeout")
+        # The coroutine's finally block owns this release. A worker-side
+        # deadline would turn host scheduling delay into a recovery failure.
+        release_recovery.wait()
         original_ensure_ready()
 
     monkeypatch.setattr(stores.projections, "ensure_ready", paused_recovery)
@@ -597,10 +599,20 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
             transport=ASGITransport(app=app), base_url="http://testserver"
         ) as client:
             responses.append(await client.get("/api/v1/insights/projection"))
-            entered = await asyncio.to_thread(recovery_entered.wait, 2)
+            entered = await asyncio.to_thread(
+                recovery_entered.wait, recovery_timeout_seconds
+            )
             assert entered
             responses.append(await client.get("/api/v1/insights/projection"))
             responses.append(await client.get("/api/v1/insights/projection"))
+        recovery_task = scheduler._recovery_task
+        assert recovery_task is not None
+        release_recovery.set()
+        # Observe the one coalesced recovery and its scheduled rebuild
+        # directly instead of creating competing reads in a polling loop.
+        await asyncio.wait_for(
+            asyncio.shield(recovery_task), timeout=recovery_timeout_seconds
+        )
         assert {response.status_code for response in responses} == {503}
         assert all(
             response.json()["detail"]
@@ -614,22 +626,17 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         )
         assert all(str(projection_path) not in response.text for response in responses)
 
-        release_recovery.set()
         account = repositories.ingestion.account_read_model(
             payload.creator_account_id
         )
-        deadline = time.monotonic() + 5
-        recovered = None
-        while time.monotonic() < deadline:
-            try:
-                recovered = await scheduler.active_projection(
-                    payload.creator_account_id, account
-                )
-            except ProjectionStorageUnavailable:
-                recovered = None
-            if recovered is not None:
-                break
-            await asyncio.sleep(0.01)
+        recovery_state = await asyncio.wait_for(
+            scheduler.wait(payload.creator_account_id),
+            timeout=recovery_timeout_seconds,
+        )
+        assert recovery_state.availability is AvailabilityStatus.AVAILABLE
+        recovered = await scheduler.active_projection(
+            payload.creator_account_id, account
+        )
         assert recovered is not None
         assert recovered.source_revision == account.view_revision
         assert build_count == 1
