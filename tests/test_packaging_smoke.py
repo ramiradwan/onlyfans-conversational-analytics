@@ -82,7 +82,13 @@ class _HealthServer:
 
 
 class _HealthServerProcess:
-    """A process-owned impostor listener, isolated from the test runner."""
+    """A one-response process-owned impostor, isolated from the test runner.
+
+    The ownership mutation must prove only that the harness accepted an external
+    listener.  Once that listener serves the mutated health request it exits on
+    its own, so the mutation does not also depend on the harness killing an
+    unrelated process quickly enough for the cleanup deadline.
+    """
 
     def __enter__(self) -> "_HealthServerProcess":
         program = """
@@ -97,10 +103,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         if self.path == '/health':
             self.wfile.write(payload)
+            self.wfile.flush()
+            self.server.health_served = True
     def log_message(self, format, *args):
         return
 
-http.server.ThreadingHTTPServer(('127.0.0.1', 17871), Handler).serve_forever()
+server = http.server.HTTPServer(('127.0.0.1', 17871), Handler)
+server.timeout = 0.1
+server.health_served = False
+try:
+    while not server.health_served:
+        server.handle_request()
+finally:
+    server.server_close()
 """
         self.process = subprocess.Popen(
             [sys.executable, "-c", program],
@@ -721,6 +736,8 @@ def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
 
     assert mutated_result.returncode == 40, mutated_result.stdout + mutated_result.stderr
     assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "pass"
+    assert _step(mutated_transcript, "close-bridge")["outcome"] == "pass"
+    assert _step(mutated_transcript, "close-bridge")["evidence"]["port_released"] is True
     with pytest.raises(AssertionError):
         assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "fail"
 
