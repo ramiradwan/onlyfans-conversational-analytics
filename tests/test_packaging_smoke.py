@@ -96,15 +96,21 @@ import http.server
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path != '/health':
+            self.send_error(404)
+            return
         payload = b'{\\"status\\":\\"ok\\"}'
-        self.send_response(200 if self.path == '/health' else 404)
+        # The request socket is already accepted at this point. Closing the
+        # listening socket here ensures that by the time the client can observe
+        # a successful response, port 17871 is no longer listening.
+        self.server.server_close()
+        self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(payload)))
         self.end_headers()
-        if self.path == '/health':
-            self.wfile.write(payload)
-            self.wfile.flush()
-            self.server.health_served = True
+        self.wfile.write(payload)
+        self.wfile.flush()
+        self.server.health_served = True
     def log_message(self, format, *args):
         return
 
@@ -261,8 +267,8 @@ public static class ListenerLauncher {
     private static void Serve() {
         TcpListener listener = new TcpListener(IPAddress.Loopback, 17871);
         listener.Start();
-        while (true) {
-            using (TcpClient client = listener.AcceptTcpClient())
+        using (TcpClient client = listener.AcceptTcpClient()) {
+            listener.Stop();
             using (NetworkStream stream = client.GetStream()) {
                 byte[] request = new byte[4096];
                 stream.Read(request, 0, request.Length);
@@ -270,6 +276,7 @@ public static class ListenerLauncher {
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}"
                 );
                 stream.Write(response, 0, response.Length);
+                stream.Flush();
             }
         }
     }
