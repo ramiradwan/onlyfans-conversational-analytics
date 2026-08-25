@@ -96,15 +96,21 @@ import http.server
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path != '/health':
+            self.send_error(404)
+            return
         payload = b'{\\"status\\":\\"ok\\"}'
-        self.send_response(200 if self.path == '/health' else 404)
+        # The request socket is already accepted at this point. Closing the
+        # listening socket here ensures that by the time the client can observe
+        # a successful response, port 17871 is no longer listening.
+        self.server.server_close()
+        self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(payload)))
         self.end_headers()
-        if self.path == '/health':
-            self.wfile.write(payload)
-            self.wfile.flush()
-            self.server.health_served = True
+        self.wfile.write(payload)
+        self.wfile.flush()
+        self.server.health_served = True
     def log_message(self, format, *args):
         return
 
@@ -734,19 +740,10 @@ def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
             artifact_path=installer,
         )
 
+    assert mutated_result.returncode == 40, mutated_result.stdout + mutated_result.stderr
     assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "pass"
-    close_bridge = _step(mutated_transcript, "close-bridge")
-    if close_bridge["outcome"] == "pass":
-        assert mutated_result.returncode == 40, (
-            mutated_result.stdout + mutated_result.stderr
-        )
-        assert close_bridge["evidence"]["port_released"] is True
-    else:
-        assert close_bridge["outcome"] == "fail"
-        assert close_bridge["evidence"]["finding"] == "provisioning_listener_port_not_released"
-        assert mutated_result.returncode == 41, (
-            mutated_result.stdout + mutated_result.stderr
-        )
+    assert _step(mutated_transcript, "close-bridge")["outcome"] == "pass"
+    assert _step(mutated_transcript, "close-bridge")["evidence"]["port_released"] is True
     with pytest.raises(AssertionError):
         assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "fail"
 
