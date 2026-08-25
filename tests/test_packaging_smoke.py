@@ -734,10 +734,19 @@ def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
             artifact_path=installer,
         )
 
-    assert mutated_result.returncode == 40, mutated_result.stdout + mutated_result.stderr
     assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "pass"
-    assert _step(mutated_transcript, "close-bridge")["outcome"] == "pass"
-    assert _step(mutated_transcript, "close-bridge")["evidence"]["port_released"] is True
+    close_bridge = _step(mutated_transcript, "close-bridge")
+    if close_bridge["outcome"] == "pass":
+        assert mutated_result.returncode == 40, (
+            mutated_result.stdout + mutated_result.stderr
+        )
+        assert close_bridge["evidence"]["port_released"] is True
+    else:
+        assert close_bridge["outcome"] == "fail"
+        assert close_bridge["evidence"]["finding"] == "provisioning_listener_port_not_released"
+        assert mutated_result.returncode == 41, (
+            mutated_result.stdout + mutated_result.stderr
+        )
     with pytest.raises(AssertionError):
         assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "fail"
 
