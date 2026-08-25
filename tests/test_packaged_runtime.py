@@ -274,6 +274,16 @@ def _assert_packaged_runtime_serves_provisioning_surface(
             f"its bundled script (status {status})"
         )
         assert "application/json" in script
+        status, _, disclosure = _raw_request(
+            "GET",
+            "/provisioning/creator-platform-data-risk-disclosure.html",
+            headers=session_headers,
+        )
+        assert status == 200, (
+            "resource_failure: the frozen provisioning runtime could not serve "
+            f"its bundled creator disclosure (status {status})"
+        )
+        assert "Creator platform &amp; data risk disclosure" in disclosure
     finally:
         _stop_brain(process)
 

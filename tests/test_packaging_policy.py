@@ -38,7 +38,11 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
     shutil.copytree(ROOT / "app" / "templates", internal / "app" / "templates")
     provisioning = internal / "app" / "provisioning"
     provisioning.mkdir()
-    for name in ("provisioning.html", "provisioning.js"):
+    for name in (
+        "provisioning.html",
+        "creator-platform-data-risk-disclosure.html",
+        "provisioning.js",
+    ):
         shutil.copy2(ROOT / "app" / "provisioning" / name, provisioning / name)
     shutil.copytree(ROOT / "app" / "static", internal / "app" / "static")
     shutil.copytree(ROOT / "contracts", internal / "contracts")
@@ -113,6 +117,7 @@ def test_required_files_cover_the_provisioning_page_assets(tmp_path: Path) -> No
     required = set(policy["required_files"])
     assets = {
         "_internal/app/provisioning/provisioning.html",
+        "_internal/app/provisioning/creator-platform-data-risk-disclosure.html",
         "_internal/app/provisioning/provisioning.js",
     }
 

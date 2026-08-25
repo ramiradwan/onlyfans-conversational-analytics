@@ -11,6 +11,9 @@ app/persistence/auth_sql/** text eol=lf
 app/persistence/projection_sql/** text eol=lf
 app/analytics/sql/** text eol=lf
 
+# The creator disclosure is served and integrity-tested as frozen UTF-8 bytes.
+app/provisioning/creator-platform-data-risk-disclosure.html text eol=lf
+
 # Fixture cases are generated review noise; manifests, pins, schemas, docs, and
 # loaders remain visible because they define the reviewable contract boundary.
 contracts/grant-profile-v1/*/*/** linguist-generated=true

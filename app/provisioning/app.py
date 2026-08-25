@@ -27,10 +27,14 @@ PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH = (
     "/api/v1/provisioning/creator-association/acquire"
 )
 PROVISIONING_FINALIZE_PATH = "/api/v1/provisioning/finalize"
+PROVISIONING_DISCLOSURE_PATH = (
+    "/provisioning/creator-platform-data-risk-disclosure.html"
+)
 PROVISIONING_SCRIPT_PATH = "/provisioning/provisioning.js"
 
 _MODULE_DIRECTORY = Path(__file__).parent
 _SHELL_TEMPLATE = _MODULE_DIRECTORY / "provisioning.html"
+_DISCLOSURE_ASSET = _MODULE_DIRECTORY / "creator-platform-data-risk-disclosure.html"
 _SCRIPT_ASSET = _MODULE_DIRECTORY / "provisioning.js"
 _EXTENSION_ID_PATTERN = re.compile(r"[a-p]{32}")
 
@@ -180,6 +184,14 @@ def create_provisioning_app(
         )
         return HTMLResponse(
             document,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @application.get(PROVISIONING_DISCLOSURE_PATH, include_in_schema=False)
+    async def disclosure(request: Request) -> HTMLResponse:
+        sessions.require_session(request)
+        return HTMLResponse(
+            _DISCLOSURE_ASSET.read_text(encoding="utf-8"),
             headers={"Cache-Control": "no-store"},
         )
 

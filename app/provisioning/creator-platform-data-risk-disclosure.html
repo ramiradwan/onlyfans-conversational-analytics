@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Creator platform &amp; data risk disclosure</title>
+  <meta name="description" content="Creator platform & data risk disclosure for [SOFTWARE NAME].">
+  <style>
+    :root {
+      --bg: #f7f7f8;
+      --surface: #ffffff;
+      --text: #171717;
+      --muted: #5f6368;
+      --border: #d9dce1;
+      --soft: #f0f2f5;
+      --accent: #1f4b99;
+      --warning-bg: #fff8e6;
+      --warning-border: #e2b84b;
+      --max: 920px;
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; background: var(--bg); }
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.62;
+      font-size: 16px;
+    }
+
+    a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+    a:hover { text-decoration-thickness: 2px; }
+
+    .page {
+      width: min(calc(100% - 32px), var(--max));
+      margin: 40px auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.06);
+      overflow: hidden;
+    }
+
+    header {
+      padding: 42px 48px 30px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfbfc 100%);
+    }
+
+    main { padding: 34px 48px 48px; }
+
+    h1 {
+      margin: 0 0 18px;
+      font-size: clamp(2rem, 5vw, 3rem);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+
+    h2 {
+      margin: 46px 0 14px;
+      padding-top: 2px;
+      font-size: 1.45rem;
+      line-height: 1.25;
+      letter-spacing: -0.015em;
+    }
+
+    h3 { margin: 28px 0 12px; font-size: 1.05rem; }
+    p { margin: 0 0 16px; }
+    ul { margin: 10px 0 20px 1.25rem; padding: 0; }
+    li { margin: 7px 0; }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px 18px;
+      margin-top: 16px;
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+
+    .meta strong {
+      display: block;
+      color: var(--text);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 2px;
+    }
+
+    .notice {
+      margin: 24px 0 10px;
+      padding: 20px 22px;
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      border-radius: 10px;
+    }
+
+    .notice h2 { margin: 0 0 10px; padding: 0; font-size: 1.2rem; }
+    .risk-list { list-style: none; margin-left: 0; }
+    .risk-list li { margin: 12px 0; }
+    .section-rule { border: 0; border-top: 1px solid var(--border); margin: 42px 0 0; }
+
+    .documents {
+      padding: 20px 22px;
+      background: var(--soft);
+      border-radius: 10px;
+      margin-top: 16px;
+    }
+    .documents ul { margin-bottom: 0; }
+
+    .acceptance {
+      margin-top: 24px;
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fcfcfd;
+    }
+
+    .checkbox-row {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: start;
+      gap: 11px;
+      padding: 12px 0;
+    }
+    .checkbox-row + .checkbox-row { border-top: 1px solid var(--border); }
+
+    input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      margin-top: 3px;
+      accent-color: var(--accent);
+    }
+
+    .activate {
+      width: 100%;
+      margin-top: 18px;
+      padding: 14px 20px;
+      border: 0;
+      border-radius: 10px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--accent);
+      color: white;
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+    .activate:disabled { cursor: not-allowed; opacity: 0.4; }
+    .activate:not(:disabled):active { transform: translateY(1px); }
+
+    .activation-note { margin-top: 14px; font-size: 0.94rem; color: var(--muted); }
+
+    footer {
+      border-top: 1px solid var(--border);
+      background: #fbfbfc;
+      padding: 24px 48px 30px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 24px;
+    }
+
+    .placeholder {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.94em;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 700px) {
+      .page { width: 100%; margin: 0; border-left: 0; border-right: 0; border-radius: 0; box-shadow: none; }
+      header, main, footer { padding-left: 22px; padding-right: 22px; }
+      .meta, .footer-grid { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      html, body { background: #fff; }
+      .page { width: 100%; margin: 0; border: 0; box-shadow: none; }
+      .acceptance .activate { display: none; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <article class="page">
+    <header>
+      <h1>Creator platform &amp; data risk disclosure</h1>
+      <div class="meta" aria-label="Document metadata">
+        <div><strong>Effective Date</strong><span class="placeholder">[EFFECTIVE DATE]</span></div>
+        <div><strong>Disclosure Version</strong><span class="placeholder">[VERSION]</span></div>
+        <div><strong>OnlyFans Policy Review Date</strong><span class="placeholder">[POLICY REVIEW DATE]</span></div>
+      </div>
+    </header>
+
+    <main>
+      <section class="notice" aria-labelledby="important-heading">
+        <h2 id="important-heading">Important — read before activating the software</h2>
+        <p><span class="placeholder">[SOFTWARE NAME]</span> (the <strong>“Software”</strong>) is an independent third-party analytics tool provided by <span class="placeholder">[PROVIDER LEGAL NAME]</span> (the <strong>“Provider”</strong>). The Software is not endorsed by or affiliated with OnlyFans, Fenix International Limited, or any other third-party platform with which it may interact.</p>
+        <p>Before activating the Software, you should understand these material risks:</p>
+        <ul class="risk-list">
+          <li><strong>Platform risk:</strong> Certain Software functions may conflict with platform rules concerning scraping, downloading, sharing, automated collection, or gathering information.</li>
+          <li><strong>Account and financial risk:</strong> A third-party platform may impose rate limits, additional authentication requirements, access restrictions, account suspension or termination, pausing or withholding of payments, forfeiture of Creator Earnings where permitted under its terms, or other consequences.</li>
+          <li><strong>Data responsibility:</strong> The Software’s core analytics workflow is designed to process and store conversation and subscriber information primarily on your local device. Any additional processing, such as support services or optional cloud-enabled features, is described in the Provider’s Privacy Notice.</li>
+          <li><strong>No compliance guarantee:</strong> The Provider does not guarantee that any third-party platform will permit use of the Software or consider its use compliant. A third-party platform may take enforcement action under its terms, policies, and enforcement processes.</li>
+          <li><strong>Technical risk:</strong> Changes to a platform, browser, operating system, authentication method, network environment, or other technical component may interrupt or disable Software functionality.</li>
+        </ul>
+        <p><strong>If these risks are unacceptable to you, do not activate or use the Software.</strong></p>
+      </section>
+
+      <section>
+        <h2>Unofficial third-party status</h2>
+        <p>The Software is an independent third-party product. The Provider has no authority to act for or bind OnlyFans, Fenix International Limited, or any other third-party platform.</p>
+        <p>The Provider does not represent that the Software has been approved, reviewed, licensed, certified, endorsed, or authorized by OnlyFans or any other third-party platform.</p>
+        <p>References to OnlyFans or other third-party platforms identify services with which the Software may interact and do not imply sponsorship, affiliation, or approval.</p>
+      </section>
+
+      <section>
+        <h2>Platform rules and account risk</h2>
+        <p>As of <span class="placeholder">[POLICY REVIEW DATE]</span>, the OnlyFans Acceptable Use Policy, identified by OnlyFans as last updated September 2025, contains restrictions relevant to the Software. These include restrictions concerning prohibited cyber activity and copying content, including scraping, downloading, sharing, or gathering information from OnlyFans or Creators.</p>
+        <p>OnlyFans may amend its policies at any time. You should review the current OnlyFans Terms of Service and Acceptable Use Policy before using the Software and periodically thereafter.</p>
+        <p>OnlyFans’ Terms also provide that a Creator remains legally responsible for complying with its Terms even when another person assists in operating the Creator’s account.</p>
+        <p>The Software may perform the following functions:</p>
+        <ul>
+          <li>Observe and capture information visible in your authenticated OnlyFans session.</li>
+          <li>Store information locally for analytics purposes.</li>
+          <li>Request and retrieve historical conversation information through programmatic methods.</li>
+          <li>Perform other functions described in the Software documentation.</li>
+        </ul>
+        <p>Because platform restrictions may be interpreted broadly, OnlyFans or another third-party platform may consider some Software functionality inconsistent with its applicable rules or contractual terms.</p>
+        <p><strong>None of the following conditions guarantees compliance:</strong></p>
+        <ul>
+          <li>You authorize the Software.</li>
+          <li>The information is accessible through your account.</li>
+          <li>Processing occurs locally.</li>
+          <li>A feature operates in read-only mode.</li>
+          <li>The Software does not use a remote scraper.</li>
+          <li>Requests are rate-limited or otherwise bounded.</li>
+          <li>The Software does not autonomously send messages.</li>
+        </ul>
+        <p>These factors may affect practical risk, but they do not override a third-party platform’s contractual rules or determine how that platform will interpret or enforce its policies.</p>
+      </section>
+
+      <section>
+        <h2>Possible platform enforcement</h2>
+        <p>Third-party platforms independently determine how they detect, investigate, and respond to activity involving their services. Possible consequences may include:</p>
+        <ul>
+          <li>Throttling or rate limiting of requests.</li>
+          <li>CAPTCHA or additional identity verification.</li>
+          <li>Session invalidation or forced logout.</li>
+          <li>Restriction of features.</li>
+          <li>Temporary or permanent suspension of your account.</li>
+          <li>Pausing or withholding of payments.</li>
+          <li>Forfeiture of Creator Earnings where permitted under the applicable platform terms.</li>
+          <li>Other technical, contractual, or financial measures.</li>
+        </ul>
+        <p>The Provider does not control these actions. No technical safeguard, including local processing, read-only operation, request limits, or retry mechanisms, guarantees platform compliance or account safety.</p>
+        <p>If loss of access to your creator account could cause material financial or professional harm, consider obtaining independent professional advice before activating the Software.</p>
+      </section>
+
+      <section>
+        <h2>Your decision and responsibilities</h2>
+        <p>You decide whether and how to use the Software. You remain responsible for:</p>
+        <ul>
+          <li>Your creator account and activity performed through it.</li>
+          <li>Assessing whether the Software is appropriate for your use case.</li>
+          <li>Enabling or disabling optional features.</li>
+          <li>Complying with contractual obligations applicable to your account.</li>
+          <li>Complying with laws and regulations applicable to your business and your processing of information.</li>
+          <li>Maintaining reasonable security for devices and systems under your control.</li>
+        </ul>
+        <p>The Provider does not make legal or compliance decisions on your behalf. Nothing in this Disclosure transfers to you any legal responsibility that applicable law places on the Provider.</p>
+      </section>
+
+      <section>
+        <h2>Local-first processing</h2>
+        <p>The Software is designed so that its core analytics workflow processes and stores conversation and subscriber information primarily on your local device. Separate processing, such as support services or optional cloud-enabled features, is described in the Privacy Notice.</p>
+        <p>As described in the Privacy Notice, the Software’s normal local analytics workflow does not require you to provide your OnlyFans password to the Provider. The Provider also does not maintain a hosted central database containing your full private-message history for that workflow.</p>
+        <p>Separate processing may occur when you use:</p>
+        <ul>
+          <li>Customer support or troubleshooting services.</li>
+          <li>Diagnostic or crash-reporting services.</li>
+          <li>Licensing or entitlement services.</li>
+          <li>Software update or installation services.</li>
+          <li>Optional cloud-enabled features.</li>
+          <li>Other services or features for which Provider-side processing is disclosed in the Privacy Notice or at the point of collection.</li>
+        </ul>
+        <p>Provider-side processing is described in and handled in accordance with the Privacy Notice and, where applicable, additional data-processing terms.</p>
+        <p>Local processing does not eliminate privacy or security risk. The Software may locally process information including:</p>
+        <ul>
+          <li>Usernames and account identifiers.</li>
+          <li>Direct-message content.</li>
+          <li>Timestamps and metadata.</li>
+          <li>Interaction and response information.</li>
+          <li>Subscriber engagement or presence information.</li>
+          <li>Locally generated analytics.</li>
+          <li>Personal information that may fall within a protected category under applicable law, including sensitive personal information or special categories of personal data.</li>
+        </ul>
+        <p>You should apply security measures appropriate to the sensitivity and volume of information stored on your device.</p>
+      </section>
+
+      <section>
+        <h2>Support and diagnostic information</h2>
+        <p>If you voluntarily provide the Provider with support or diagnostic materials, those materials may include personal or conversational information. Examples include:</p>
+        <ul>
+          <li>Screenshots.</li>
+          <li>Logs or debug files.</li>
+          <li>Diagnostic reports or crash dumps.</li>
+          <li>Database extracts or exports.</li>
+          <li>Configuration information.</li>
+          <li>Other troubleshooting information.</li>
+        </ul>
+        <p>You should avoid providing personal or sensitive information unless it is reasonably necessary for support.</p>
+        <p>The Provider’s processing of such information is described in the Privacy Notice.</p>
+      </section>
+
+      <section>
+        <h2>Privacy and data protection</h2>
+        <p>Using the Software may involve obligations under privacy and data protection laws such as the GDPR, UK GDPR, the California Consumer Privacy Act (CCPA), as amended by the California Privacy Rights Act (CPRA), or other applicable regimes.</p>
+        <p>Potential obligations may concern:</p>
+        <ul>
+          <li>Lawful basis for processing.</li>
+          <li>Transparency and notice.</li>
+          <li>Data minimization.</li>
+          <li>Retention.</li>
+          <li>Access, correction, and deletion rights.</li>
+          <li>Security.</li>
+          <li>Profiling.</li>
+          <li>Processing of sensitive personal information or special categories of personal data.</li>
+          <li>Documentation or Data Protection Impact Assessments, where required.</li>
+        </ul>
+        <p>Your legal role and obligations depend on the applicable laws and how you use the Software. The Provider does not represent that:</p>
+        <ul>
+          <li>Every Creator is subject to the same privacy laws.</li>
+          <li>Every Creator is the sole data controller for all processing.</li>
+          <li>Any particular lawful basis applies to all uses.</li>
+          <li>A Data Protection Impact Assessment is always required.</li>
+          <li>Any particular retention period is legally sufficient.</li>
+          <li>Any single security measure guarantees compliance.</li>
+        </ul>
+        <p>Each party remains responsible for the privacy and data protection obligations applicable to its own processing of personal information. Nothing in this Disclosure transfers to you any legal responsibility that applicable law places on the Provider.</p>
+        <p>The Provider’s processing of personal information is described in the Privacy Notice and, where applicable, in any data-processing terms between you and the Provider.</p>
+      </section>
+
+      <section>
+        <h2>Reliability and compatibility</h2>
+        <p>The Software depends on systems outside the Provider’s control, including:</p>
+        <ul>
+          <li>OnlyFans and other third-party platforms.</li>
+          <li>Browser extension or automation APIs.</li>
+          <li>Browser security settings and policies.</li>
+          <li>Authentication and session mechanisms.</li>
+          <li>Operating-system functionality.</li>
+          <li>Local networking and connectivity.</li>
+          <li>Storage and database systems.</li>
+          <li>Other software dependencies.</li>
+        </ul>
+        <p>These systems may change without notice. As a result, the Software may:</p>
+        <ul>
+          <li>Stop collecting information.</li>
+          <li>Collect incomplete information.</li>
+          <li>Experience synchronization delays.</li>
+          <li>Require reconfiguration or updates.</li>
+          <li>Produce incomplete or inaccurate analytics.</li>
+          <li>Lose compatibility with certain browsers or platforms.</li>
+          <li>Become temporarily or permanently unavailable.</li>
+        </ul>
+        <p>The Software should not be treated as the sole system of record for information needed to operate your business. You should maintain independent records or backups of information that would be difficult to recover or replace.</p>
+      </section>
+
+      <section>
+        <h2>Historical synchronization and higher-risk features</h2>
+        <p>Some Software functions may involve greater platform risk than others. In particular, historical synchronization may generate repeated programmatic requests and retrieve information beyond what is currently displayed in the active interface.</p>
+        <p>OnlyFans or another third-party platform may therefore apply its restrictions on automated access, scraping, downloading, or gathering information to such functionality.</p>
+        <p>The Provider may implement measures such as:</p>
+        <ul>
+          <li>Request rate limits.</li>
+          <li>Bounded synchronization batches.</li>
+          <li>Retry delays.</li>
+          <li>Exponential backoff mechanisms.</li>
+          <li>Feature restrictions.</li>
+          <li>Other technical controls.</li>
+        </ul>
+        <p>These measures are intended to improve reliability and reduce unnecessary activity, but they do not guarantee platform compliance or account safety.</p>
+        <p>If a feature is optional, you are responsible for deciding whether to enable it or continue using it after considering the associated risks.</p>
+      </section>
+
+      <section>
+        <h2>No legal or compliance advice</h2>
+        <p>Information supplied by the Provider concerning:</p>
+        <ul>
+          <li>Platform terms.</li>
+          <li>Privacy or data protection.</li>
+          <li>Cybersecurity.</li>
+          <li>Applicable laws and regulations, including laws governing computer access and taxation.</li>
+          <li>Other legal matters.</li>
+        </ul>
+        <p>is provided for general informational purposes only.</p>
+        <p>Platform rules and applicable law are separate legal issues. A breach or alleged breach of a platform’s contractual terms does not, by itself, establish a violation of laws governing computer access or other applicable laws. Whether particular conduct is lawful depends on factors including jurisdiction, the method of access, applicable technical controls, the information involved, and other relevant circumstances.</p>
+        <p>The Provider does not provide legal, tax, regulatory, cybersecurity, or other professional advice and does not determine whether any particular use of the Software is lawful. You should consult appropriately qualified professionals regarding legal or regulatory obligations specific to your circumstances.</p>
+      </section>
+
+      <section>
+        <h2>No guarantee of platform compliance or account safety</h2>
+        <p>The Provider may design the Software to:</p>
+        <ul>
+          <li>Minimize external data disclosure.</li>
+          <li>Reduce unnecessary access.</li>
+          <li>Constrain automated behavior.</li>
+          <li>Limit request rates.</li>
+          <li>Implement other technical safeguards.</li>
+        </ul>
+        <p>However, these measures do not guarantee that:</p>
+        <ul>
+          <li>OnlyFans or another third-party platform permits use of the Software.</li>
+          <li>Use of the Software complies with applicable platform rules.</li>
+          <li>Your activity will not be detected or reviewed.</li>
+          <li>Your account will not be restricted or terminated.</li>
+          <li>Payments or Creator Earnings will not be affected.</li>
+          <li>Future versions of the Software will remain compatible with future platform policies.</li>
+        </ul>
+        <p>Third-party platforms may change their policies, systems, or enforcement practices at any time.</p>
+      </section>
+
+      <section>
+        <h2>Changes to platforms and the software</h2>
+        <p>The Provider may modify, restrict, suspend, or discontinue functionality if reasonably necessary because of:</p>
+        <ul>
+          <li>Changes to third-party platform rules or systems.</li>
+          <li>Technical incompatibility.</li>
+          <li>Security concerns.</li>
+          <li>Legal or regulatory requirements.</li>
+          <li>Other operational considerations.</li>
+        </ul>
+        <p>For example, the Provider may:</p>
+        <ul>
+          <li>Reduce synchronization activity.</li>
+          <li>Disable particular functionality.</li>
+          <li>Suspend an integration.</li>
+          <li>Require a Software update.</li>
+          <li>Discontinue support for a platform.</li>
+        </ul>
+        <p>Continued availability of any specific feature or integration is not guaranteed.</p>
+      </section>
+
+      <section>
+        <h2>Contractual terms and mandatory rights</h2>
+        <p>Your legal rights and the Provider’s contractual obligations concerning:</p>
+        <ul>
+          <li>Software licensing.</li>
+          <li>Warranties.</li>
+          <li>Payment terms.</li>
+          <li>Remedies.</li>
+          <li>Limitations of liability.</li>
+          <li>Indemnification.</li>
+          <li>Termination.</li>
+          <li>Intellectual property.</li>
+          <li>Dispute resolution.</li>
+          <li>Other contractual matters.</li>
+        </ul>
+        <p>are governed by the <strong>[Software Terms of Use / License Agreement]</strong>.</p>
+        <p>The Software Terms contain important limitations and exclusions. Nothing in this Disclosure or the Software Terms excludes or limits any right, remedy, warranty, or liability that applicable law does not permit to be excluded or limited.</p>
+        <p>This Disclosure is intended to inform you of material risks associated with activating and using the Software. It does not replace or modify the Software Terms or the Privacy Notice.</p>
+      </section>
+
+      <hr class="section-rule">
+
+      <section>
+        <h2>Creator acknowledgment</h2>
+        <p>Before activation, please confirm that you understand the following:</p>
+        <ul>
+          <li>The Software is an unofficial third-party product and is not endorsed or authorized by OnlyFans.</li>
+          <li>As of the Policy Review Date shown above, OnlyFans’ published policies contain restrictions relevant to the Software, including restrictions concerning prohibited cyber activity and copying content, including scraping, downloading, sharing, or gathering information.</li>
+          <li>Some Software functionality may be considered inconsistent with those restrictions.</li>
+          <li>A third-party platform may take technical, account-related, or financial enforcement measures.</li>
+          <li>The Provider cannot guarantee platform compliance or account safety.</li>
+          <li>The Software’s core analytics workflow operates primarily on your local device; separate Provider-side processing is described in the Privacy Notice.</li>
+          <li>Conversation information may include personal information that falls within a protected category under applicable law, including sensitive personal information or special categories of personal data.</li>
+          <li>Technical or platform changes may interrupt or permanently disable Software functionality.</li>
+          <li>The Software Terms, this Disclosure, and the Privacy Notice serve different purposes and should each be reviewed before activation.</li>
+        </ul>
+
+        <div class="documents" aria-labelledby="documents-heading">
+          <h3 id="documents-heading">Documents to review before activation</h3>
+          <ul>
+            <!-- Replace href="#" values with production URLs before deployment. -->
+            <li><a href="#" data-document="software-terms">Software Terms</a></li>
+            <li><a href="#" data-document="privacy-notice">Privacy Notice</a></li>
+            <li><a href="#" data-document="onlyfans-terms">OnlyFans Terms of Service</a></li>
+            <li><a href="#" data-document="onlyfans-aup">OnlyFans Acceptable Use Policy</a></li>
+          </ul>
+        </div>
+
+        <div class="acceptance" aria-labelledby="acceptance-heading">
+          <h3 id="acceptance-heading">Required acceptance</h3>
+          <label class="checkbox-row">
+            <input id="termsAccepted" type="checkbox">
+            <span>I agree to the <strong>[Software Terms of Use / License Agreement]</strong>.</span>
+          </label>
+          <label class="checkbox-row">
+            <input id="riskAccepted" type="checkbox">
+            <span>I have read the <strong>Creator platform &amp; data risk disclosure</strong> and acknowledge the platform, account, privacy, data-security, and technical risks described in it.</span>
+          </label>
+          <button id="activateButton" class="activate" type="button" disabled>Activate Software</button>
+          <p class="activation-note">By selecting <strong>Activate Software</strong> after completing the required acknowledgments above, I choose to activate the Software after reviewing and acknowledging the risks described in this Disclosure.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-grid">
+        <div><strong>Disclosure Version:</strong> <span class="placeholder">[VERSION]</span></div>
+        <div><strong>Software Terms Version:</strong> <span class="placeholder">[SOFTWARE TERMS VERSION]</span></div>
+        <div><strong>Privacy Notice Version:</strong> <span class="placeholder">[PRIVACY NOTICE VERSION]</span></div>
+        <div><strong>Privacy Notice Effective Date:</strong> <span class="placeholder">[PRIVACY NOTICE EFFECTIVE DATE]</span></div>
+        <div><strong>Application Version:</strong> <span class="placeholder">[APPLICATION VERSION]</span></div>
+        <div><strong>OnlyFans Policy Review Date:</strong> <span class="placeholder">[POLICY REVIEW DATE]</span></div>
+      </div>
+    </footer>
+  </article>
+
+  <script>
+    (() => {
+      const termsAccepted = document.getElementById('termsAccepted');
+      const riskAccepted = document.getElementById('riskAccepted');
+      const activateButton = document.getElementById('activateButton');
+
+      function syncActivationState() {
+        activateButton.disabled = !(termsAccepted.checked && riskAccepted.checked);
+      }
+
+      termsAccepted.addEventListener('change', syncActivationState);
+      riskAccepted.addEventListener('change', syncActivationState);
+
+      activateButton.addEventListener('click', () => {
+        /*
+          Replace this placeholder behavior with the production activation flow.
+          The backend should record the acceptance event and the exact versions
+          of the documents/application presented at the time of assent.
+        */
+        window.dispatchEvent(new CustomEvent('creatorDisclosureAccepted', {
+          detail: {
+            disclosureVersion: '[VERSION]',
+            softwareTermsVersion: '[SOFTWARE TERMS VERSION]',
+            privacyNoticeVersion: '[PRIVACY NOTICE VERSION]',
+            applicationVersion: '[APPLICATION VERSION]',
+            onlyFansPolicyReviewDate: '[POLICY REVIEW DATE]',
+            acceptedAt: new Date().toISOString()
+          }
+        }));
+
+        alert('Disclosure acknowledged. Connect this button to your production activation flow.');
+      });
+
+      syncActivationState();
+    })();
+  </script>
+</body>
+</html>

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -13,6 +15,7 @@ from app.provisioning.app import (
     PROVISIONING_CLAIM_PATH,
     PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH,
     PROVISIONING_CREATOR_ASSOCIATION_PATH,
+    PROVISIONING_DISCLOSURE_PATH,
     PROVISIONING_FINALIZE_PATH,
     PROVISIONING_SCRIPT_PATH,
     PROVISIONING_STATUS_PATH,
@@ -36,6 +39,13 @@ BODY = {
     "detected_creator_account_id": ACCOUNT_ID,
     "reported_platform_creator_id": REPORTED_PLATFORM_ID,
 }
+DISCLOSURE_ASSET = (
+    Path(__file__).resolve().parents[1]
+    / "app"
+    / "provisioning"
+    / "creator-platform-data-risk-disclosure.html"
+)
+DISCLOSURE_SHA256 = "3fe0ab83b27d9e638a753b53a7ce5a1a7399851fed3f4413a7c22d58d00a3630"
 
 
 class ProvisioningMarkup(HTMLParser):
@@ -201,6 +211,7 @@ def test_provisioning_app_exposes_no_runtime_route() -> None:
         ("/api/v1/provisioning/handoff", ("POST",)),
         ("/provisioning/handoff", ("GET",)),
         ("/provisioning", ("GET",)),
+        ("/provisioning/creator-platform-data-risk-disclosure.html", ("GET",)),
         ("/provisioning/provisioning.js", ("GET",)),
         ("/api/v1/provisioning/status", ("GET",)),
         ("/api/v1/provisioning/claim", ("POST",)),
@@ -225,6 +236,26 @@ def test_shell_serves_module_relative_provisioning_document_and_script() -> None
     assert script.status_code == 200
     assert script.headers["content-type"].startswith("application/javascript")
     assert "createProvisioningController" in script.text
+
+
+def test_shell_links_to_session_bound_frozen_disclosure() -> None:
+    application = provisioning_app()
+    client, cookie, _ = bounded_session(application)
+
+    shell = client.get("/provisioning", headers=cookie)
+    disclosure = client.get(PROVISIONING_DISCLOSURE_PATH, headers=cookie)
+    anonymous = TestClient(application, base_url=PROVISIONING_ORIGIN)
+
+    assert (
+        f'href="{PROVISIONING_DISCLOSURE_PATH}" target="_blank" '
+        'rel="noopener noreferrer"'
+    ) in shell.text
+    assert disclosure.status_code == 200
+    assert disclosure.headers["content-type"].startswith("text/html")
+    assert disclosure.headers["cache-control"] == "no-store"
+    assert disclosure.content == DISCLOSURE_ASSET.read_bytes()
+    assert hashlib.sha256(disclosure.content).hexdigest() == DISCLOSURE_SHA256
+    assert anonymous.get(PROVISIONING_DISCLOSURE_PATH).status_code == 401
 
 
 def test_served_shell_has_accessible_step_structure_and_inline_adaptive_theme() -> None:

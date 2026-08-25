@@ -4,6 +4,7 @@
     "Brain.exe",
     "_internal/app/templates/index.html",
     "_internal/app/provisioning/provisioning.html",
+    "_internal/app/provisioning/creator-platform-data-risk-disclosure.html",
     "_internal/app/provisioning/provisioning.js",
     "_internal/contracts/manifest.json",
     "_internal/contracts/consumer-pin.json",

@@ -327,7 +327,11 @@ for relative in (
     shutil.copytree(root / relative, stage / '_internal' / relative)
 provisioning = stage / '_internal' / 'app' / 'provisioning'
 provisioning.mkdir()
-for name in ('provisioning.html', 'provisioning.js'):
+for name in (
+    'provisioning.html',
+    'creator-platform-data-risk-disclosure.html',
+    'provisioning.js',
+):
     shutil.copyfile(root / 'app' / 'provisioning' / name, provisioning / name)
 """.strip()
         + "\n",
