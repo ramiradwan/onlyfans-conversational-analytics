@@ -1,17 +1,28 @@
-# Install and run the product acceptance sequence
+<!-- CODE-VERIFY: Verify smoke-harness prerequisites, parameters, exit codes, step outcomes, teardown behavior, PowerShell compatibility, and browser/hosted boundaries against tools/packaging-smoke/run.ps1 and its tests before editing. -->
 
-OnlyFans Conversational Analytics runs locally on the creator's Windows account. Brain hosts the local Bridge at `http://bridge.localhost:17871`, and the Agent is the browser extension that connects the signed-in creator account to that local runtime.
+# Run Windows packaging smoke acceptance
 
-This page covers the acceptance sequence for a built artifact. For ordinary installation, see
-[Install and run on Windows](install-windows.md).
+Use this procedure to verify a built Windows installer on a clean guest. The current harness proves the local packaging, launcher, listener-ownership, and teardown boundary. It does not automate full browser or hosted provisioning acceptance.
 
-## Install
+For normal installation and first-run provisioning, see [Install on Windows](install-windows.md).
 
-Use a Windows guest with a TPM-capable configuration and no Python installation, Node installation, or product repository checkout. Restore the guest to its product-free checkpoint before each run.
+## Prepare the guest
 
-1. Obtain the published installer and the `sha256sums.txt` published beside it. The digest to supply is the entry recorded for the installer filename.
-2. Copy `tools/packaging-smoke/run.ps1` into the guest as acceptance tooling. It is not part of the installed product.
-3. Run the script from a directory outside the installation tree, supplying the installer artifact and its published SHA-256 digest. The harness installs to an isolated temporary prefix, starts the `Brain.exe` that installation placed, redirects runtime data to its temporary root, and uninstalls before it exits.
+Use a Windows guest with:
+
+- no Python installation;
+- no Node.js installation;
+- no checkout of this repository.
+
+Restore the guest to a product-free checkpoint before each run. The command below uses the built-in Windows PowerShell host. The automated smoke tests also drive the same script with `pwsh.exe`; the harness does not reject PowerShell 7 by version.
+
+A TPM-backed installation key is required for a separate full provisioning run, but the current smoke harness does not exercise claim consumption and does not verify TPM readiness.
+
+## Run the harness
+
+1. Copy the installer and its published SHA-256 digest to the guest.
+2. Copy `tools/packaging-smoke/run.ps1` to a directory outside the installation tree.
+3. Run the harness:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 `
@@ -19,29 +30,52 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 `
   -PublishedSha256 '<published SHA-256>'
 ```
 
-The script writes `packaging-smoke-transcript.json` beside the command's working directory unless `-TranscriptPath` specifies another location. It exits with `21` when Python is detected, `22` when Node is detected, and `23` when a repository checkout is found in an inspected root. A digest mismatch exits `31`, and an installer failure exits `32`; a blocked sequence exits `40`; a failed acceptance step exits `41`.
+The harness installs into an isolated temporary location, starts the installed `Brain.exe`, redirects runtime data to its temporary root, stops the launcher-owned process family, waits for port `17871` to be released, and uninstalls before it exits.
 
-On Windows 11, run this command with the inbox Windows PowerShell 5.1 executable (`powershell.exe`), not `pwsh`. Exit `40` is valid only when all pre-hosted-input checks pass and the remaining browser/claim steps are explicitly recorded as `blocked`; it is not a successful hosted acceptance. With accepted hosted inputs, the complete sequence exits `0`.
+It writes `packaging-smoke-transcript.json` in the working directory unless `-TranscriptPath` specifies another path.
 
-When `-InspectionRoot` is omitted, the repository scan inspects the absolute system-drive root (for example, `C:\`) through four directory levels. This preserves system-drive scope while bounding the recursive scan and does not depend on the command's working directory. Supply `-InspectionRoot` explicitly when the clean-machine scope uses another root; the transcript's `inspection_roots` and `inspection_depth` fields record the scope actually scanned.
+## Interpret the exit code
 
-## Acceptance sequence
+| Code | Meaning |
+| --- | --- |
+| `0` | Every recorded step passed. This is unreachable in the current harness because four provisioning-dependent steps are always recorded as blocked after the local smoke path. |
+| `2` | The artifact file was missing. |
+| `21` | Python was found on the clean guest. |
+| `22` | Node.js was found on the clean guest. |
+| `23` | A repository checkout was found in the inspected scope. |
+| `24` | Port `17871` was already occupied. |
+| `31` | The installer digest did not match the published value. |
+| `32` | Installation failed. |
+| `40` | Local smoke checks completed without a failing step, but one or more required provisioning steps were blocked. With the current harness, this is the expected successful local-smoke boundary. |
+| `41` | An acceptance step failed. |
 
-The transcript records an outcome and non-secret evidence for each action:
+PowerShell parameter-binding failures, such as a malformed `-PublishedSha256` value, occur before the script's exit-code logic and are not represented by this table.
 
-1. Verify the installer artifact SHA-256 against the published digest.
-2. Install that verified artifact into the isolated temporary prefix.
-3. Open Bridge through the launcher the installation placed.
-4. Confirm the provisioning listener answers its local health endpoint.
-5. Confirm installation-key readiness through an available non-secret product signal.
-6. Complete the launcher-to-browser provisioning handoff.
-7. Paste the installation claim into the provisioning page.
-8. Let Brain consume the claim through the hosted provisioning service.
+When `-InspectionRoot` is omitted, the repository check scans the system-drive root through four directory levels. Set `-InspectionRoot` when the clean-machine scope uses another root.
 
-The final four actions require browser-bound state, a real claim, and—in the claim-consumption case—a reachable hosted provisioning service. When those inputs are absent, the script records `blocked` with the reason. It never treats a blocked action as a pass and never places claim material in the command line or transcript.
+## What the harness proves
 
-After claim consumption, continue in Bridge: confirm the detected creator account, complete the hosted approval, enroll and sign in with the local WebAuthn credential, request Agent pairing, and confirm the Agent connects for that exact account.
+The transcript records non-secret evidence for these local steps:
 
-## Artifact boundary
+1. Reject Python, Node.js, or a repository checkout in the inspected clean-machine scope.
+2. Verify the installer SHA-256 digest.
+3. Refuse to run when port `17871` is already occupied.
+4. Install the verified artifact into an isolated temporary location.
+5. Start the installed launcher.
+6. Prove the responding provisioning listener on `127.0.0.1:17871` belongs to the launcher process family and returns a healthy response.
+7. Stop the launcher-owned process family, confirm the listener port is released, uninstall, and remove the temporary run root.
 
-The acceptance script compares a real installed artifact with a published digest. The build writes that digest after the installer exists, so the value the script consumes is the digest of the released bytes. Packaging-policy tests inspect staged contents and reject per-user material; the hash equality between a published digest entry and the installer on disk is constrained separately, at the installer assembly step.
+The harness then records these steps as `blocked` by design:
+
+- installation-key readiness, because the provisioning surface exposes no public non-secret readiness signal before claim consumption;
+- launcher-to-browser provisioning handoff, because the harness does not extract or manufacture the launcher secret;
+- installation-claim submission, because claim material is accepted only through the browser UI;
+- hosted claim consumption, because it requires the browser-submitted claim and a reachable hosted provisioning plane.
+
+The harness never accepts claim material on its command line or writes claim material to its transcript.
+
+## Full provisioning acceptance
+
+`run.ps1` tears down the temporary installation immediately after recording the blocked boundary, so the browser and hosted provisioning sequence cannot be completed inside the current harness run.
+
+To exercise installation claim consumption, creator-account association, finalization, WebAuthn enrollment, Agent pairing, and account-bound Agent connection, perform a separate normal installation and follow [Install on Windows](install-windows.md). That sequence is currently a manual acceptance activity rather than a completed `run.ps1` automation path.

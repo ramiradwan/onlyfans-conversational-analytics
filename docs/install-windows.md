@@ -1,150 +1,64 @@
-# Install and run on Windows
+<!-- CODE-VERIFY: Verify Windows requirements, installer behavior, provisioning prerequisites and steps, extension ordering, runtime paths, launcher behavior, and uninstall behavior against source and packaging configuration before editing. -->
 
-OnlyFans Conversational Analytics ships as a per-user Windows installer. Installation requires no
-administrator rights, no Python or Node.js installation, and no repository checkout.
+# Install on Windows
+
+OnlyFans Conversational Analytics installs per user. You do not need administrator rights, Python, Node.js, or a repository checkout.
 
 ## Requirements
 
-- 64-bit Windows on an x64-compatible processor. The installer declares `x64compatible`, so it also
-  accepts an ARM64 system that runs x64 binaries.
-- A Chromium-based browser at version 116 or later, for the Agent extension.
-- Loopback TCP port 17871 free. Brain binds `127.0.0.1:17871` and serves Bridge at the fixed origin
-  `http://bridge.localhost:17871`.
+- 64-bit Windows that can run x64 applications.
+- A Chromium-based browser version 116 or later for the Agent extension.
+- TCP port `17871` available on the local machine.
+- A usable hardware-backed Microsoft Platform Crypto Provider for the installation signing key. Provisioning refuses software-only or unavailable installation-key providers.
+- `LOCAL_PROVISIONING_HOSTED_ORIGIN` set to the HTTPS origin of the hosted provisioning service before first run. The installer does not create this setting.
 
-## Release artifacts
+## Download
 
-A release publishes three files from one directory:
+Download the Windows installer and Agent extension bundle from the same published Windows package.
 
-- `OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe` — the installer, where `<version>` is
-  the Brain version declared in `app/core/config.py`.
-- `OnlyFans-Conversational-Analytics-Agent-<extension version>-chrome.zip` — the Agent browser
-  extension, packed from the same build.
-- `sha256sums.txt` — one line per published file, in the form `<sha256> *<relative/path>`.
-
-A `sha256sums.txt` covers the files that sit beside it. The published one covers the installer and
-the Agent bundle; the installed program directory contains its own, covering the installed files.
-
-## Verify the download
-
-Released artifacts are not signed. There is no code signature, no publisher identity, and no
-timestamp countersignature on the installer or on any file it contains. Expect the following:
-
-- Microsoft Defender SmartScreen shows the "Windows protected your PC" dialog when the installer
-  starts, because the application is unrecognized and unsigned. Continuing requires **More info**
-  and then **Run anyway**.
-- Windows reports no publisher for the installer.
-- A browser may warn while downloading an unsigned executable.
-
-No administrator prompt appears at any point; the installer requests the lowest privileges.
-
-Because no signature exists, comparing digests is the available integrity check. Compute the
-installer's SHA-256 and compare it with the entry for that filename in the `sha256sums.txt`
-published with the release:
-
-```powershell
-Get-FileHash -Algorithm SHA256 .\OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe
-```
-
-The same file records the digest of the Agent bundle. A digest match establishes that a copy is
-byte-identical to the published bytes. It does not establish who produced them.
+Before installing, [verify the downloaded files](verify-release.md) against the published SHA-256 digests.
 
 ## Install
 
-Run the installer. It:
+Run `OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe`.
 
-- installs under `%LOCALAPPDATA%\Programs\OnlyFans Conversational Analytics`;
-- creates one Start Menu entry, **OnlyFans Conversational Analytics**, that runs `Brain.exe`;
-- writes nothing outside the installation directory.
+The installer:
 
-The installer accepts the standard Inno Setup command-line switches, including `/SILENT`,
-`/SUPPRESSMSGBOXES`, and `/DIR="<path>"` for an unattended installation into a chosen directory.
+- installs the application under `%LOCALAPPDATA%\Programs\OnlyFans Conversational Analytics`;
+- creates a Start Menu entry named **OnlyFans Conversational Analytics**;
+- does not require administrator privileges.
+
+## Add the Agent extension
+
+The installer does not add the Agent to the browser. Install the Agent before first-run provisioning because the provisioning page uses it to detect the creator account.
+
+Unpack `OnlyFans-Conversational-Analytics-Agent-<extension version>-chrome.zip` and add the unpacked directory to a Chromium-based browser as an extension.
+
+See [Agent documentation](../extension/README.md) for its behavior and security boundaries.
 
 ## First run
 
-Start **OnlyFans Conversational Analytics** from the Start Menu. `Brain.exe` is a launcher. It
-inspects the listener on port 17871, starts Brain as a background process when the port is free, and
-opens the system browser at `http://bridge.localhost:17871` through a single-use handoff code.
+Open **OnlyFans Conversational Analytics** from the Start Menu. The launcher starts Brain on the local machine and opens the provisioning page in your browser.
 
-Until the runtime is configured, the launcher opens the configuration page instead of Bridge. The
-page has four steps:
+Complete the four provisioning steps:
 
-1. **Register this installation** — paste the installation package into the form.
-2. **Confirm the signed-in creator account** — the page reads the account the Agent detects and
-   associates it with this installation.
-3. **Acquire association approval**.
-4. **Finish configuration** — writes `runtime.env` into the data directory.
+1. Paste and submit the installation package to register the installation.
+2. Confirm the creator account detected by the Agent.
+3. Acquire the creator-account association approval.
+4. Finish configuration.
 
-Brain then restarts into runtime mode, and the launcher opens Bridge.
+After successful finalization, Brain exits provisioning mode, the launcher restarts it in runtime mode, and Bridge opens at `http://bridge.localhost:17871`.
 
-If a process other than the installed `Brain.exe` running under the current user owns port 17871,
-the launcher stops with a message and does not terminate that process. Stop the conflicting process
-and start the launcher again.
-
-## Agent browser extension
-
-The Agent is a separate Chrome MV3 extension named `OnlyFans Conversational Analytics Agent`. The
-installer does not install it into the browser: the packaging step stages the built extension beside
-the program files so that the packaging policy covers it, the installer excludes that directory, and
-the release publishes it separately as
-`OnlyFans-Conversational-Analytics-Agent-<extension version>-chrome.zip`. Unpack that archive and
-add the resulting directory to the browser.
-
-The extension's `manifest.json` pins a public `key`, so the extension ID is fixed rather than
-derived from the installation path. Its content security policy permits connections only to
-`http://bridge.localhost:17871` and `ws://bridge.localhost:17871`, and its host permissions are
-limited to `https://onlyfans.com/*` and `http://bridge.localhost/*`. It requires Chrome 116 or later.
+If another process owns port `17871`, the launcher stops without terminating that process. Stop the conflicting process and start the application again.
 
 ## Local data
 
-Per-user runtime state lives outside the installation directory, in
-`%LOCALAPPDATA%\OnlyFans Conversational Analytics`. The directory is created with owner-only
-permissions and holds:
+Runtime data is stored by default in `%LOCALAPPDATA%\OnlyFans Conversational Analytics`. This directory contains the local databases and runtime configuration.
 
-- `runtime.env` — the runtime configuration written during the configuration sequence, including the
-  absolute database paths;
-- `canonical.sqlite3` — the authoritative conversation store;
-- `auth.sqlite3`, `projections.sqlite3`, and `analytics-projections.sqlite3`.
-
-`LOCAL_ANALYTICS_DATA_DIR` overrides the location. The value must be an absolute path and must not
-resolve inside the installed application. Database paths are recorded in `runtime.env` when the
-configuration is created, so set the override before the first run rather than after it.
+To use another location, set `LOCAL_ANALYTICS_DATA_DIR` to an absolute path outside the installation directory before the first run.
 
 ## Uninstall
 
-Uninstall through **Settings > Apps > Installed apps**, or run `unins000.exe` in the installation
-directory. Uninstalling removes the installation directory and the Start Menu entry.
+Uninstall through **Settings > Apps > Installed apps**, or run `unins000.exe` from the installation directory.
 
-The per-user data directory is deliberately left in place, because it holds the authoritative
-database and remains available for viewing, export, backup, or recovery. Delete
-`%LOCALAPPDATA%\OnlyFans Conversational Analytics` yourself when the data it holds is no longer
-wanted.
-
-## Build the installer from source
-
-`packaging/build-windows.ps1` produces the installer. It requires:
-
-- a build interpreter in an isolated environment with `requirements.txt` and
-  `packaging/requirements-build.txt` installed — not the repository's `.venv`;
-- Node.js and npm, unless `-SkipAssetBuild` is passed, because the script builds the Bridge frontend
-  and the Agent artifact;
-- the Inno Setup 6 compiler, resolved from `-InnoSetupCompiler`, the `INNO_SETUP_COMPILER` or `ISCC`
-  environment variable, `PATH`, or the standard installation locations;
-- an output directory outside the repository that does not already exist.
-
-```powershell
-python -m venv .build-venv
-.\.build-venv\Scripts\python.exe -m pip install -r requirements.txt -r packaging/requirements-build.txt
-.\packaging\build-windows.ps1 -BuildPython .\.build-venv\Scripts\python.exe
-```
-
-The script freezes Brain with PyInstaller, embeds the Agent extension identity, stages the runtime
-files declared in `packaging/runtime-files.json`, writes `release-manifest.json`, verifies the staged
-tree against that policy, and writes the installed program's `sha256sums.txt` over the files the
-installer places. It then compiles the Inno Setup script, packs the staged `Agent` directory into the
-Agent bundle, and writes the published `sha256sums.txt` over the installer and that bundle. Both
-digest files are written by `packaging/write-digests.ps1`. The three published files land in
-`installer\` under the output root. The script performs no signing: it handles no signing material,
-accepts none, and invokes no signing tool.
-
-To exercise a built installer end to end on a clean guest, see
-[the acceptance sequence](installation-and-acceptance.md).
+Uninstalling removes the application files and Start Menu entry. It leaves the runtime data directory in place so that uninstalling does not delete conversation data.

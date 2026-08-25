@@ -1,38 +1,29 @@
-# Models
+<!-- CODE-VERIFY: Verify protocol locations, shared fixtures, history models, version rules, and public contract behavior against source before editing. -->
 
-The active public contracts are split by boundary rather than collected in one model module.
+# Models and public contracts
 
-## Wire protocol
+Public data contracts are grouped by system boundary instead of collected in one model module.
 
-`app/protocol/` is the source of truth for protocol version 2:
+## WebSocket protocol
 
-- role-specific Agent and Bridge message unions;
-- bounded `ingest.snapshot` begin/chunk/commit frames;
-- account-scoped raw chat, message, tombstone, and coverage evidence;
-- bounded Bridge conversation summaries and readiness state;
-- immutable Agent configuration documents.
+`app/protocol/` defines protocol version 2 for Agent and Bridge communication, including role-specific messages, ingestion frames, bounded Bridge state, and Agent configuration.
 
-Every stack validates the shared fixtures in `shared/fixtures/protocol/v2/`.
+Python, Agent, and Bridge implementations validate the shared fixtures under `shared/fixtures/protocol/v2/`.
 
 ## History HTTP models
 
-`history.py` defines authenticated REST request and response models for:
+`history.py` defines request and response models for history settings, paged messages, readiness state, and partial analytics.
 
-- creator-controlled history settings;
-- paged conversation messages;
-- acquisition coverage, projection readiness, and live freshness;
-- partial analytics with explicit basis, range, sample size, and revision.
-
-Transport authority supplies the creator account. Clients do not select an account in request parameters.
+The authenticated transport supplies the creator account. Clients do not choose an arbitrary account through request parameters.
 
 ## Internal models
 
-Domain-specific internal models remain local to their owning service or persistence module. Internal records do not become wire contracts merely because they are represented with Pydantic or dataclasses.
+Service and persistence modules may define internal Pydantic models or dataclasses for their own work. An internal record does not become a public contract merely because it uses a schema type.
 
 ## Contract rules
 
-- Use strict schemas and reject unknown fields at external boundaries.
-- Keep protocol, configuration, extension, IndexedDB, signer, and SQLite versions independent.
-- Preserve raw observations and canonical facts separately from derived projections.
-- Represent unavailable or partial analysis explicitly; do not substitute sample values.
-- Add or change public operations only through an accepted architecture decision and synchronized cross-language fixtures.
+- Reject unknown fields at external boundaries where the contract is strict.
+- Keep protocol, configuration, extension, signer, browser-storage, and SQLite versions independent.
+- Keep raw observations and canonical facts separate from derived projections.
+- Represent unavailable or partial analysis explicitly instead of substituting sample values.
+- Coordinate public protocol changes with the relevant architecture decision and cross-language fixtures.

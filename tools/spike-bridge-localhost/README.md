@@ -1,17 +1,21 @@
+<!-- CODE-VERIFY: Verify package scripts, browser channels, generated evidence files, and remaining manual checks against the spike source before editing. -->
+
 # `bridge.localhost` browser-host spike
 
-This directory is an isolated implementation spike for the ADR 0009 gate. It does not import or modify product code.
+This directory is an isolated implementation spike for the ADR 0009 browser-host decision. It does not import or modify product code.
 
-Playwright is intentionally a **spike-only development dependency** in this directory. The runner launches the system-installed stable browsers through Playwright channels `chrome` and `msedge`; it never installs or uses Playwright's bundled browser binaries.
+The spike uses system-installed Chrome and Edge through Playwright channels. It does not use Playwright's downloaded browser binaries.
 
-Run from this directory with:
+## Run the spike
+
+From this directory:
 
 ```powershell
 $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1'
-npm install
+npm ci
 npm run spike
 ```
 
-`npm run spike` performs the port-owner checks, starts the loopback Brain stand-in, runs the named checks in fresh and then reused throwaway profiles for both browser channels, and rewrites `EVIDENCE.md`, `results.json`, and `request-log.json` from the observations.
+The run checks browser behavior against the local stand-in and rewrites `EVIDENCE.md`, `results.json`, and `request-log.json` from the observations.
 
-The virtual CDP authenticator exercises Chromium's WebAuthn implementation but is not the physical Windows Hello platform authenticator. A manual real-authenticator confirmation remains a cutover requirement, as recorded in the evidence.
+The virtual WebAuthn authenticator exercises Chromium's WebAuthn flow but is not a physical Windows Hello authenticator. Any remaining manual real-authenticator requirement is recorded in `EVIDENCE.md`.

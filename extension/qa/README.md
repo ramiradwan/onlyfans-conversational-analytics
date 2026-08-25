@@ -1,41 +1,13 @@
-# 📄 QA Usage Guide
-  
-This folder contains **developer‑only** helper scripts for testing the browser extension without hitting the real OnlyFans API or backend.  
-  
-## Files  
-  
-- **qa-helper-sw.js** — Run in the extension **Service Worker console** (`chrome://extensions`) to test:  
-  - MV3 injection into MAIN world  
-  - Upstream `_OF_FORWARDER_` bridge  
-  - Downstream `_OF_BACKEND_` command flow  
-  - Keepalive persistence checks  
-  
-- **qa-helper-page.js** — Run in the **MAIN world console** of an active OnlyFans tab to simulate:  
-  - Fetch response capture  
-  - WebSocket message capture  
-  - Backend command execution  
-  - New raw message delta  
-  
-## Usage  
-  
-### Service Worker helper  
-1. Open `chrome://extensions`.  
-2. Click "service worker" under the Agent extension.  
-3. Paste `qa-helper-sw.js` into the console.  
-4. Run:  
-```js  
-   qaHelper.runAllQA();  
-```  
-  
-### Page helper
-1. Navigate to https://onlyfans.com with the Agent loaded.  
-2. Open DevTools (F12) → Console.  
-3. Paste qa-helper-page.js into the console.  
-4. Run:  
-```js  
-qaPageHelper.runAllPageQA();  
-```  
-  
-> [!NOTE]  
-> - Never ship qa/ to production — it’s for local dev only.  
-> - Ensure .gitignore or build scripts exclude qa/ from release zips.  
+<!-- CODE-VERIFY: Verify helper message names, browser behavior, and build exclusion against current extension source before changing this status. -->
+
+# Extension QA helpers
+
+`qa/` contains old manual development helpers. They are not part of the built Agent artifact.
+
+The helpers use legacy `_OF_FORWARDER_` and `_OF_BACKEND_` message names that are not part of the current production extension contract. Do not use these scripts as evidence that current Agent protocol or command behavior works.
+
+Prefer the automated extension tests and the [capture E2E harness](../../tools/e2e-capture/README.md) for current behavior.
+
+The extension build writes its production scripts, manifest, icons, notices, and build metadata to `dist/`; it does not copy this `qa/` directory.
+
+Do not run these legacy helpers against a live account or production data. Update or remove the helper code in a separate code change if manual QA support is still required.
