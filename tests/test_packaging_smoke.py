@@ -267,8 +267,8 @@ public static class ListenerLauncher {
     private static void Serve() {
         TcpListener listener = new TcpListener(IPAddress.Loopback, 17871);
         listener.Start();
-        while (true) {
-            using (TcpClient client = listener.AcceptTcpClient())
+        using (TcpClient client = listener.AcceptTcpClient()) {
+            listener.Stop();
             using (NetworkStream stream = client.GetStream()) {
                 byte[] request = new byte[4096];
                 stream.Read(request, 0, request.Length);
@@ -276,6 +276,7 @@ public static class ListenerLauncher {
                     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}"
                 );
                 stream.Write(response, 0, response.Length);
+                stream.Flush();
             }
         }
     }
