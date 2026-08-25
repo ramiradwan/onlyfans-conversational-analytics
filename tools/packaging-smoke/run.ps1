@@ -327,13 +327,26 @@ function Stop-LauncherProcess {
         $descendantProcessIds = @(Get-DescendantProcessIds -ParentProcessId $LauncherProcess.Id)
         [array]::Reverse($descendantProcessIds)
         $processIds = @($descendantProcessIds) + @($script:ownedListenerProcessIds) + @($LauncherProcess.Id) | Select-Object -Unique
+        $processesRequestedToStop = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
         $stoppedProcessIds = [System.Collections.Generic.List[int]]::new()
         foreach ($processId in $processIds) {
             $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
             if ($null -ne $process -and -not $process.HasExited) {
-                Stop-Process -Id $processId -Force -ErrorAction Stop
-                $stoppedProcessIds.Add($processId)
+                Stop-Process -InputObject $process -Force -ErrorAction Stop
+                $processesRequestedToStop.Add($process)
             }
+        }
+        $processExitStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        foreach ($process in $processesRequestedToStop) {
+            $remainingMilliseconds = [Math]::Max(0, 5000 - [int]$processExitStopwatch.ElapsedMilliseconds)
+            if (-not $process.WaitForExit($remainingMilliseconds)) {
+                Add-Result -Step 'close-bridge' -Outcome fail -Evidence @{
+                    finding = 'launcher_process_not_exited'; process_id = $process.Id
+                    stopped_process_ids = @($stoppedProcessIds); timeout_seconds = 5
+                }
+                return
+            }
+            $stoppedProcessIds.Add($process.Id)
         }
         $portRelease = Wait-ForProvisioningPortRelease
         if (-not $portRelease.Released) {

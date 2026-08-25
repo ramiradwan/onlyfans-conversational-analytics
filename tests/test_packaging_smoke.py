@@ -267,8 +267,8 @@ public static class ListenerLauncher {
     private static void Serve() {
         TcpListener listener = new TcpListener(IPAddress.Loopback, 17871);
         listener.Start();
-        using (TcpClient client = listener.AcceptTcpClient()) {
-            listener.Stop();
+        while (true) {
+            using (TcpClient client = listener.AcceptTcpClient())
             using (NetworkStream stream = client.GetStream()) {
                 byte[] request = new byte[4096];
                 stream.Read(request, 0, request.Length);
@@ -501,7 +501,7 @@ def test_tools_web_request_guard_detects_a_removed_compatibility_switch(
     )
 
     assert _web_commands_without_basic_parsing(tmp_path) == [
-        "tools/packaging-smoke/run.ps1:406"
+        "tools/packaging-smoke/run.ps1:419"
     ]
 
 
@@ -750,19 +750,22 @@ def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
 
 
 def test_installed_listener_is_attributed_to_the_launcher_family(tmp_path: Path) -> None:
-    """A real installer passes only when its installed listener is attributed."""
+    """A real installer passes only when its listener is attributed and stopped."""
 
     installer = _build_real_installer(tmp_path, serves_health=True)
     result, transcript = _run_smoke(tmp_path, artifact_path=installer)
 
     listener = _step(transcript, "provisioning-listener")
+    listener_process_id = listener["evidence"]["listener_process_id"]
     assert result.returncode == 40, result.stdout + result.stderr
     assert listener["outcome"] == "pass"
     assert listener["evidence"]["listener_ownership"] == "launcher_descendant"
-    assert listener["evidence"]["listener_process_id"] in listener["evidence"][
-        "launcher_family_process_ids"
-    ]
-    assert _step(transcript, "close-bridge")["evidence"]["port_released"] is True
+    assert listener_process_id in listener["evidence"]["launcher_family_process_ids"]
+
+    close_bridge = _step(transcript, "close-bridge")
+    assert close_bridge["outcome"] == "pass"
+    assert listener_process_id in close_bridge["evidence"]["stopped_process_ids"]
+    assert close_bridge["evidence"]["port_released"] is True
 
     mutated_script = tmp_path / "run-with-unrelated-attribution.ps1"
     original = SMOKE_SCRIPT.read_text(encoding="utf-8")
