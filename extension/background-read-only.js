@@ -1,21 +1,21 @@
-import { createAgentRuntime } from './transport/agent-runtime.mjs';
+import { createReadOnlyAgentRuntime } from './transport/read-only-agent-runtime.mjs';
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
 import {
   createBrainBindingBridge,
   createChromeAdapter,
-} from './transport/chrome-adapter.mjs';
+} from './transport/read-only-chrome-adapter.mjs';
 import {
   CaptureDiagnostics,
   CaptureIngestionService,
   createCaptureMessageBridge,
-} from './transport/capture-ingestion.mjs';
+} from './transport/read-only-capture-ingestion.mjs';
 import { createProvisioningIdentityBridge } from './transport/provisioning-identity.mjs';
 import { ConsentController } from './runtime/consent-controller.mjs';
 import { PreviewMetricsStore } from './runtime/preview-metrics.mjs';
 import { clearExtensionLocalData } from './runtime/local-data.mjs';
 
 export const chromeAdapter = createChromeAdapter();
-export const agentRuntime = createAgentRuntime({
+export const agentRuntime = createReadOnlyAgentRuntime({
   chromeAdapter,
   signerFactory: (options) => createChromeBrowserSigningProvider(options),
   onStartupError: () => {

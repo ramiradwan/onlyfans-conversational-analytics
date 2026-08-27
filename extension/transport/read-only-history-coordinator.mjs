@@ -1,7 +1,7 @@
 import {
   normalizeSignerConversation,
   normalizeSignerMessage,
-} from './signer-normalization.mjs';
+} from './read-only-signer-normalization.mjs';
 
 const TERMINAL_CONVERSATION_PHASES = new Set(['complete', 'failed']);
 const MAX_RETRY_DELAY_MS = 3_600_000;

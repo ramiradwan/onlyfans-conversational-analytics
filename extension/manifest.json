@@ -1,44 +1,37 @@
 {
   "manifest_version": 3,
-  "name": "OnlyFans Conversational Analytics Agent",
-  "description": "Captures and streams OnlyFans chat events locally for analysis via a real-time dashboard.",
+  "name": "Conversation Analytics",
+  "description": "Shows seven-day local OnlyFans creator activity metrics and, with consent, connects conversation analytics to a service on this computer.",
   "version": "2.0.0",
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqhNtBO+9pyBjjZ44ipTp9cmoXUAenjBOCUzSxvYhzcR2TNIHGv+mOFrnNqgPZrYxHjaYR3eTpTY4f+mF0SNy7u4XoZaRvuYuS14dcksGrVezVM8d8XXY+oDgwRbocfyAti5/59COM2ifeDb3yUx4dYC9jXHePCIpzoXlJrg0e18jQ4gMhKyo8pDjCwiYag1w5/1oe1O9fpRkyUooQE6Sr0+dC3zQYh3TQz1TawBWZthFbvDEvwA4BD9AgEdkbRwyUGuwi52veEIH7VEPJ0CToGZLdAwB5/QAfEa410QsCPz8GUF/pZv2A+q0siezZGCnsOJXSlj66MBrsR9imV/a0wIDAQAB",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyWQCF67th6qtJWrNrsswTlhJ50Bu/b2t42H1q6ysOKDAclF1hur1ukUxnevw2JzRXJriSMhqsRw4l9+YrqI6rNND3TU5XlJGWJHm0ZOxbMgw8Et96WseELBWH/a4ZaxQhDLBG3J7Du8kHwb2Y6MPf2e5USdKminQXfyA7ohKVsbPk13+/kpU0Ptat5/z27m+dFxlCMYXSiFqCepVu6Na2S6C5hfag3fImqLguivG5WVDQEEp2iMhCPbdcYyHrKbLJmrDJl0WIBLiAJdmfOgRcRD3D8fYPKbb6Uj87U5vruMPzFbw0I234PbO3SdCxivbC+hJudamFyCfOJK8WvurDwIDAQAB",
   "minimum_chrome_version": "116",
   "permissions": [
     "alarms",
     "scripting",
     "storage",
-    "unlimitedStorage",
+    "unlimitedStorage"
+  ],
+  "optional_permissions": [
     "webRequest"
   ],
-  "host_permissions": [
+  "optional_host_permissions": [
     "https://onlyfans.com/*",
-    "http://bridge.localhost/*"
+    "http://bridge.localhost:17871/*"
   ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": ["https://onlyfans.com/*"],
-      "js": ["page-hook.js"],
-      "run_at": "document_start",
-      "all_frames": false,
-      "world": "MAIN"
-    },
-    {
-      "matches": ["https://onlyfans.com/*"],
-      "js": ["content.js"],
-      "run_at": "document_start",
-      "all_frames": false,
-      "world": "ISOLATED"
+  "action": {
+    "default_title": "Conversation Analytics",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon48.png"
     }
-  ],
+  },
   "externally_connectable": {
     "matches": [
-      "http://bridge.localhost/*"
+      "http://bridge.localhost:17871/*"
     ]
   },
   "icons": {

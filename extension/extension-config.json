@@ -1,0 +1,6 @@
+{
+  "schema": "ofca-extension-config/v1",
+  "privacy_policy_url": "",
+  "dashboard_url": "http://bridge.localhost:17871/",
+  "history_settings_url": "http://bridge.localhost:17871/settings"
+}

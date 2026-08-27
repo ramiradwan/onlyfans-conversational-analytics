@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const manifestPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'manifest.json');
-const expectedExtensionId = 'lfiompogjmmgnbkacdnikbfoihmlloda';
+const expectedExtensionId = 'mldllkjpnnjhdccpofhebhlhigpefcba';
 
 function extensionIdFromPublicKey(publicKeyBase64) {
   const publicKeyDer = crypto.createPublicKey({

@@ -297,7 +297,7 @@ async function bind(client, socket, sessionDocument) {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-test('WebSocket command routing uses the Phase 5 client applied document as authority', async () => {
+test('WebSocket command routing uses the active client configuration as authority', async () => {
   const socket = new MockSocket();
   const persistence = memoryPersistence();
   const executor = {

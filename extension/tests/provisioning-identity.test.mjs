@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { webcrypto } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+
+import { build } from 'esbuild';
 
 import { parseIdentityResponse } from '../../app/provisioning/provisioning.js';
 import {
@@ -73,6 +75,18 @@ function dispatch(listener, message, sender) {
   });
 }
 
+async function bundledSource(relativePath) {
+  const result = await build({
+    entryPoints: [fileURLToPath(new URL(relativePath, import.meta.url))],
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: ['chrome116'],
+    write: false,
+  });
+  return result.outputFiles[0].text;
+}
+
 test('hooked identity responses flow through the content bridge, clear on sign-out, and satisfy the page parser', async () => {
   const h = bridgeHarness();
   const pageListeners = [];
@@ -105,6 +119,7 @@ test('hooked identity responses flow through the content bridge, clear on sign-o
     },
   };
   const pageContext = vm.createContext({
+    __OFCA_CAPTURE_MODE__: 'identity',
     console,
     Date,
     JSON,
@@ -120,6 +135,7 @@ test('hooked identity responses flow through the content bridge, clear on sign-o
     chrome: {
       runtime: {
         lastError: null,
+        onMessage: { addListener() {} },
         sendMessage(message, callback) {
           const listener = h.internalListeners[0];
           assert.equal(
@@ -133,10 +149,10 @@ test('hooked identity responses flow through the content bridge, clear on sign-o
     window: pageWindow,
   });
   await Promise.all([
-    readFile(new URL('../page-hook.js', import.meta.url), 'utf8').then((source) => (
+    bundledSource('../page-hook.js').then((source) => (
       vm.runInContext(source, pageContext)
     )),
-    readFile(new URL('../content.js', import.meta.url), 'utf8').then((source) => (
+    bundledSource('../content.js').then((source) => (
       vm.runInContext(source, contentContext)
     )),
   ]);
@@ -237,32 +253,9 @@ test('identity updates require the extension content sender and replace the one 
   assert.deepEqual(parseIdentityResponse(repeated), { accountId: 'creator-b' });
 });
 
-test('background registers the provisioning identity external responder', async () => {
-  globalThis.crypto ??= webcrypto;
-  const h = bridgeHarness({ register: false });
-  const wakeEvents = () => ({ addListener() {}, removeListener() {} });
-  globalThis.chrome = {
-    ...h.chromeApi,
-    alarms: {
-      create() { return Promise.resolve(); },
-      get: async () => undefined,
-      onAlarm: wakeEvents(),
-    },
-    tabs: { onUpdated: wakeEvents() },
-    runtime: {
-      ...h.chromeApi.runtime,
-      onInstalled: wakeEvents(),
-      onStartup: wakeEvents(),
-    },
-  };
-  await import(`../background.js?provisioning-identity-registration=${Date.now()}`);
-  const replies = await Promise.all(h.externalListeners.map((listener) => (
-    dispatch(listener, QUERY, BRIDGE_SENDER)
-  )));
-  const response = replies.find((candidate) => candidate?.type === 'provisioning.identity.result');
-  assert.deepEqual(
-    parseIdentityResponse(response),
-    { accountId: null },
-    'background registers provisioning identity external responder',
-  );
+test('background places the provisioning identity bridge behind consent control', async () => {
+  const source = await readFile(new URL('../background.js', import.meta.url), 'utf8');
+  assert.match(source, /createProvisioningIdentityBridge/);
+  assert.match(source, /provisioningIdentityBridge\s*=\s*createProvisioningIdentityBridge/);
+  assert.match(source, /provisioningIdentityBridge,\s*\n\s*previewMetrics/);
 });

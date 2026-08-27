@@ -1,0 +1,15 @@
+{
+  "schema": "local-packaged-signing-rule/v1",
+  "source_revision": "test-fixture-revision",
+  "static_param": "test-fixture-static-param",
+  "format": {
+    "prefix": "test-prefix",
+    "suffix": "test-suffix",
+    "checksum_indexes": [
+      0,
+      7,
+      13
+    ],
+    "checksum_constant": 17
+  }
+}

@@ -347,7 +347,7 @@ test('stale-fence rejection closes the session and schedules a fresh handshake',
   assert.equal(JSON.parse(h.sockets[1].sent[0]).type, 'agent.hello');
 });
 
-test('outbound snapshot and presence are fenced and Phase 1 validated', async () => {
+test('outbound snapshot and presence are fenced and protocol validated', async () => {
   const h = harness();
   const socket = await connectAndBind(h);
   const snapshot = await fixture('ingest.snapshot');

@@ -1,41 +1,43 @@
 import {
-  AgentConfigClient,
   AtomicConfigActivator,
-} from './agent-config-client.mjs';
-import { AgentWebSocketClient } from './agent-websocket.mjs';
-import { createChromeAdapter } from './chrome-adapter.mjs';
-import { createConfigHttpAdapter } from './config-http-adapter.mjs';
-import { DurableIngestOutbox } from './durable-outbox.mjs';
-import { HistoryAcquisitionCoordinator } from './history-coordinator.mjs';
+  ReadOnlyAgentConfigClient,
+} from './read-only-agent-config-client.mjs';
+import { ReadOnlyAgentWebSocketClient } from './read-only-agent-websocket.mjs';
+import { READ_ONLY_CAPABILITIES } from '../protocol/read-only.mjs';
+import { createChromeAdapter } from './read-only-chrome-adapter.mjs';
+import { createReadOnlyConfigHttpAdapter } from './read-only-config-http-adapter.mjs';
+import { DurableIngestOutbox } from './read-only-durable-outbox.mjs';
+import { HistoryAcquisitionCoordinator } from './read-only-history-coordinator.mjs';
 import {
-  createIndexedDbIngestionStorage,
-} from './indexeddb-ingestion-storage.mjs';
+  assertOnlyFansTabCanRun,
+  guardMainWorldDispatch,
+} from './read-only-frozen-tab-guard.mjs';
+import {
+  createReadOnlyIndexedDbIngestionStorage,
+} from './read-only-indexeddb-ingestion-storage.mjs';
 
 import {
   AgentRuntime,
   createAccountSigningPersistence,
 } from './agent-runtime-core.mjs';
 
-export {
-  AgentRuntime,
-  createAccountSigningPersistence,
-} from './agent-runtime-core.mjs';
+
 
 /** Compose the production Agent runtime behind injectable seams for deterministic tests. */
-export function createAgentRuntime(options = {}) {
+export function createReadOnlyAgentRuntime(options = {}) {
   const chromeAdapter = options.chromeAdapter ?? createChromeAdapter();
   const ingestionStorageFactory = options.ingestionStorageFactory
-    ?? ((storageOptions) => createIndexedDbIngestionStorage(undefined, storageOptions));
+    ?? ((storageOptions) => createReadOnlyIndexedDbIngestionStorage(undefined, storageOptions));
   const outboxFactory = options.outboxFactory
     ?? ((outboxOptions) => new DurableIngestOutbox(outboxOptions));
   const configActivatorFactory = options.configActivatorFactory
     ?? (() => new AtomicConfigActivator());
   const configHttpFactory = options.configHttpFactory
-    ?? (() => createConfigHttpAdapter());
+    ?? (() => createReadOnlyConfigHttpAdapter());
   const configClientFactory = options.configClientFactory
-    ?? ((configOptions) => new AgentConfigClient(configOptions));
+    ?? ((configOptions) => new ReadOnlyAgentConfigClient(configOptions));
   const transportFactory = options.transportFactory
-    ?? ((transportOptions) => new AgentWebSocketClient(transportOptions));
+    ?? ((transportOptions) => new ReadOnlyAgentWebSocketClient(transportOptions));
   const historyCoordinatorFactory = options.historyCoordinatorFactory
     ?? ((historyOptions) => new HistoryAcquisitionCoordinator(historyOptions));
   const signerFactory = options.signerFactory ?? null;
@@ -85,6 +87,7 @@ export function createAgentRuntime(options = {}) {
       let history = null;
       const configuration = configClientFactory({
         identity,
+        capabilities: READ_ONLY_CAPABILITIES,
         creatorAccountId,
         http: configHttpFactory(),
         persistence: durableOutbox,
@@ -110,14 +113,18 @@ export function createAgentRuntime(options = {}) {
               throw new Error('History acquisition has no authorized signer identity');
             }
             if (signer === null || signerIdentity !== expectedIdentity) {
+              const chromeApi = options.chromeApi ?? globalThis.chrome;
               signer = await signerFactory({
                 creatorAccountId,
-                chromeApi: options.chromeApi ?? globalThis.chrome,
+                chromeApi: guardMainWorldDispatch(chromeApi),
                 persistence: createAccountSigningPersistence(accountStorage, creatorAccountId),
                 expectedIdentity,
               });
               signerIdentity = expectedIdentity;
             }
+            // This happens before the signer can mint a request. The guarded Chrome
+            // API performs the matching check immediately before MAIN-world dispatch.
+            await assertOnlyFansTabCanRun(options.chromeApi ?? globalThis.chrome);
             return signer.read(request);
           },
         };
@@ -136,6 +143,7 @@ export function createAgentRuntime(options = {}) {
 
       transport = transportFactory({
         identity,
+        capabilities: READ_ONLY_CAPABILITIES,
         creatorAccountId,
         authTicket,
         reconnectAuthTicket,

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Conversation Analytics</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand-mark" aria-hidden="true">CA</div>
+        <div>
+          <h1>Conversation Analytics</h1>
+          <p id="mode-label" class="status-line">Checking local status…</p>
+        </div>
+      </header>
+
+      <section class="notice" aria-labelledby="notice-title">
+        <h2 id="notice-title">Your data stays on this computer</h2>
+        <p>
+          Preview reads OnlyFans creator chat activity and stores seven days of aggregate
+          observation counts—never message text. Full analytics also reads normalized chat
+          identities and message text and sends them only to the analytics service running
+          on this computer. The extension sends no telemetry or conversation data to any
+          external service.
+        </p>
+        <p>
+          Requests are made to OnlyFans within the user’s existing authenticated browser
+          session; the extension does not read or export raw passwords or authentication cookies.
+        </p>
+        <p class="independent">Independent software; not affiliated with or endorsed by OnlyFans.</p>
+      </section>
+
+      <section aria-labelledby="preview-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="preview-title">Observed in this browser</h2>
+            <p>Rolling seven-day operational preview; observations are not unique analytics.</p>
+          </div>
+          <button id="clear-preview" class="text-button" type="button">Clear</button>
+        </div>
+        <div class="metrics" aria-live="polite">
+          <div><strong id="messages-count">0</strong><span>Message observations</span></div>
+          <div><strong id="chats-count">0</strong><span>Chat observations</span></div>
+          <div><strong id="inbound-count">0</strong><span>Inbound</span></div>
+          <div><strong id="outbound-count">0</strong><span>Outbound</span></div>
+        </div>
+      </section>
+
+      <section aria-labelledby="connection-title">
+        <h2 id="connection-title">Local analytics connection</h2>
+        <dl class="connection-grid">
+          <div><dt>Desktop app</dt><dd id="brain-status">Checking…</dd></div>
+          <div><dt>Delivery</dt><dd id="delivery-status">Inactive</dd></div>
+          <div><dt>Pending locally</dt><dd id="pending-count">0</dd></div>
+        </dl>
+      </section>
+
+      <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+
+      <div class="actions">
+        <button id="enable-preview" class="primary" type="button">Enable activity preview</button>
+        <button id="enable-full" class="secondary" type="button">Connect full analytics</button>
+        <button id="resume" class="primary hidden" type="button">Review and resume</button>
+        <button id="pause" class="secondary hidden" type="button">Pause analytics</button>
+        <button id="history" class="secondary hidden" type="button">Set up history sync</button>
+        <button id="open-dashboard" class="secondary" type="button">Open local dashboard</button>
+        <button id="revoke" class="danger hidden" type="button">Revoke site access</button>
+        <button id="delete-local-data" class="danger" type="button">Delete all extension data</button>
+      </div>
+
+      <footer>
+        <span>Use only with a creator account you are authorized to analyze.</span>
+        <a id="privacy-link" href="#" aria-disabled="true">Privacy information unavailable</a>
+      </footer>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

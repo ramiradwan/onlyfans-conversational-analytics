@@ -6,17 +6,19 @@
     "test": "node --test",
     "build": "node build.mjs",
     "audit": "node build.mjs --audit",
+    "package:chrome": "node build.mjs --package",
+    "audit:chrome": "node build.mjs --audit-package",
     "qualify:snapshot": "node --expose-gc qualification/snapshot-100k.mjs",
     "qualify:snapshot:ci": "node --expose-gc qualification/snapshot-100k.mjs --messages=10000"
   },
   "dependencies": {
-    "local-authenticated-read-connector": "file:vendor/local-authenticated-read-connector-0.2.0-beta.9.tgz",
-    "onlyfans-conversational-analytics-agent": "file:"
+    "local-authenticated-read-connector": "file:vendor/local-authenticated-read-connector-0.2.0-beta.10.tgz"
   },
   "devDependencies": {
-    "esbuild": "0.25.6"
+    "esbuild": "0.25.6",
+    "fflate": "0.8.2"
   },
-  "description": "The Agent is an MV3 browser extension for OnlyFans Conversational Analytics. It captures conversation data available to the logged-in creator, persists unacknowledged ingestion locally, and communicates with Brain through the role-specific protocol-v2 Agent channel.",
+  "description": "Conversation Analytics provides a consent-gated seven-day activity preview and connects creator-authorized analytics to an on-device service.",
   "main": "background.js",
   "directories": {
     "test": "tests"

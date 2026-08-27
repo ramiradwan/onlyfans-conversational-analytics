@@ -873,6 +873,74 @@ test('pause aborts the in-flight signer and a late page cannot commit or consume
   assert.equal(inventory.cursor, null);
 });
 
+test('a frozen-tab deadline abandons one attempt and fences its late signer completion', async () => {
+  const durable = outbox();
+  const state = await durable.initialize();
+  const timers = [];
+  let clock = 0;
+  let resolveLatePage;
+  let conversationReads = 0;
+  const signer = {
+    async read(request) {
+      if (request.operation === 'identity') {
+        return { operation: 'identity', success: true, data: { id: 'creator-platform-1' } };
+      }
+      conversationReads += 1;
+      if (conversationReads === 1) {
+        return new Promise((resolve) => { resolveLatePage = resolve; });
+      }
+      return {
+        operation: 'conversations',
+        success: true,
+        data: { items: [], continuation: null, boundary: 'inventory_end' },
+      };
+    },
+  };
+  const coordinator = new HistoryAcquisitionCoordinator({
+    outbox: durable,
+    signer,
+    idFactory: id,
+    now: () => '2026-07-19T09:00:00Z',
+    configuration: () => authorizedConfiguration(true),
+    session: () => ({
+      creator_account_id: ACCOUNT,
+      applied_config_revision: 'config-1',
+      account_epoch: state.account_epoch,
+    }),
+    setTimeoutImpl(handler, delay) {
+      const timer = { handler, delay, cleared: false };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeoutImpl(timer) { timer.cleared = true; },
+    clock: () => clock,
+  });
+
+  const abandoned = coordinator.wake();
+  while (resolveLatePage === undefined) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(timers[0].delay, 20_000);
+  timers[0].handler();
+  await assert.rejects(abandoned, (error) => error?.name === 'AbortError');
+  const entriesBeforeLateCompletion = (await durable.entries()).length;
+
+  resolveLatePage({
+    operation: 'conversations',
+    success: true,
+    data: { items: [{ id: 'late-chat' }], continuation: null, boundary: 'inventory_end' },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    (await durable.entries()).length,
+    entriesBeforeLateCompletion,
+    'late result must not re-enter the abandoned run',
+  );
+
+  assert.deepEqual(await coordinator.wake(), { status: 'deferred', pages: 0 });
+  clock = 3_000;
+  assert.deepEqual(await coordinator.wake(), { status: 'progressed', pages: 1 });
+  assert.equal(conversationReads, 2);
+});
+
 test('lease loss and shutdown abort signer work without recording a failed page', async (t) => {
   for (const action of ['lease-loss', 'shutdown']) {
     await t.test(action, async () => {
