@@ -411,7 +411,6 @@ export class HistoryAcquisitionCoordinator {
     if (this.activeRunAttempt !== attempt) throw abortError('History acquisition attempt was superseded');
     this.#assertActive(signal, authorization, job);
     const result = await awaitWithAbort(this.signer.read(request), signal);
-    if (this.activeRunAttempt !== attempt) throw abortError('History acquisition attempt was superseded');
     this.#assertActive(signal, authorization, job);
     return result;
   }
