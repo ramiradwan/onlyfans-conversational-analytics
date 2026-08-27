@@ -9,7 +9,9 @@ function delay(milliseconds) {
 }
 
 export async function launchExtensionBrowser(userDataDir) {
+  const executablePath = process.env.OFCA_E2E_BROWSER_EXECUTABLE;
   return chromium.launchPersistentContext(userDataDir, {
+    ...(executablePath ? { executablePath } : {}),
     headless: false,
     viewport: { width: 1280, height: 800 },
     serviceWorkers: 'allow',
@@ -22,6 +24,7 @@ export async function launchExtensionBrowser(userDataDir) {
       '--disable-default-apps',
       '--disable-sync',
       '--metrics-recording-only',
+      '--lang=en-US',
       '--no-default-browser-check',
       '--no-first-run',
     ],

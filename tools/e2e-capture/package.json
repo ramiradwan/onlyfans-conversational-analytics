@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "playwright test",
+    "test:standalone": "playwright test tests/standalone-preview.spec.mjs",
     "test:headed": "playwright test --headed",
     "install:browser": "playwright install chromium"
   },
