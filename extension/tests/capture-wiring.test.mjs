@@ -79,7 +79,8 @@ test('standalone preview observations contain counts-only fields', () => {
     id: 'message-synthetic',
     text: 'Synthetic content that must not cross the preview boundary',
     fromUser: { id: 'fan-synthetic' },
-  }, 'creator-synthetic', '2030-01-08T12:00:00Z');
+    chatUserId: 'fan-synthetic',
+  }, '2030-01-08T12:00:00Z');
   const chat = previewChatObservation('2030-01-08T12:00:00Z');
   assert.deepEqual(message, {
     kind: 'message',

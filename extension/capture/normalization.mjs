@@ -43,30 +43,10 @@ export function normalizedTimestamp(value) {
   }
 }
 
-export function messageDirection(record, senderId, creatorId) {
-  const explicit = firstDefined(record, [['direction']]);
-  if (typeof explicit === 'string') {
-    const normalized = explicit.toLowerCase();
-    if (['outbound', 'creator', 'outgoing', 'sent'].includes(normalized)) return 'outbound';
-    if (['inbound', 'fan', 'incoming', 'received'].includes(normalized)) return 'inbound';
-  }
-
-  const creatorFlag = firstDefined(record, [
-    ['isFromCreator'],
-    ['is_from_creator'],
-    ['isOutgoing'],
-    ['is_outgoing'],
-    ['outgoing'],
-    ['fromUser', 'is_me'],
-    ['fromUser', 'isMe'],
-    ['fromUser', 'me'],
-    ['from_user', 'is_me'],
-  ]);
-  if (typeof creatorFlag === 'boolean') return creatorFlag ? 'outbound' : 'inbound';
-  if (creatorId !== null && senderId !== null) {
-    return senderId === creatorId ? 'outbound' : 'inbound';
-  }
-  return null;
+export function messageDirection(record, senderId) {
+  const counterpartyId = identifier(firstDefined(record, [['chatUserId']]));
+  if (senderId === null || counterpartyId === null) return null;
+  return senderId === counterpartyId ? 'inbound' : 'outbound';
 }
 
 /** Reduce a platform chat record to the only fields allowed across the page boundary. */
@@ -119,7 +99,7 @@ export function normalizeChatRecord(record, observedAt) {
 /** Reduce a platform message record to the exact canonical message inputs. */
 export function normalizeMessageRecord(
   record,
-  { contextChatId = null, creatorPlatformUserId = null } = {},
+  { contextChatId = null } = {},
 ) {
   if (!isRecord(record)) return null;
   const messageId = identifier(firstDefined(record, [
@@ -149,11 +129,7 @@ export function normalizeMessageRecord(
     ['createdAt'],
     ['postedAt'],
   ]));
-  const direction = messageDirection(
-    record,
-    senderId,
-    identifier(creatorPlatformUserId),
-  );
+  const direction = messageDirection(record, senderId);
   if (
     messageId === null
     || chatId === null
@@ -173,7 +149,7 @@ export function normalizeMessageRecord(
 }
 
 /** Preview observations intentionally contain no identifiers or communication text. */
-export function previewMessageObservation(record, creatorPlatformUserId, observedAt) {
+export function previewMessageObservation(record, observedAt) {
   if (!isRecord(record) || normalizedTimestamp(observedAt) === null) return null;
   const senderId = identifier(firstDefined(record, [
     ['sender_platform_user_id'],
@@ -187,11 +163,7 @@ export function previewMessageObservation(record, creatorPlatformUserId, observe
   return {
     kind: 'message',
     observed_at: normalizedTimestamp(observedAt),
-    direction: messageDirection(
-      record,
-      senderId,
-      identifier(creatorPlatformUserId),
-    ) ?? 'unknown',
+    direction: messageDirection(record, senderId) ?? 'unknown',
   };
 }
 
