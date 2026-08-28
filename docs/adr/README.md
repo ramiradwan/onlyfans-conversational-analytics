@@ -18,6 +18,7 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0009: Use a local-first runtime and persistence boundary](0009-local-first-topology-and-persistence.md)
 - [ADR 0010: Use bounded account-scoped history acquisition](0010-signer-history-acquisition-and-bounded-state.md)
 - [ADR 0019: Encrypt local Brain persistence with device-bound keys](0019-encrypted-local-persistence.md)
+- [ADR 0020: Separate the Bridge read model from the analytics projection store](0020-projection-store-topology-and-activation.md)
 
 ## Proposed
 

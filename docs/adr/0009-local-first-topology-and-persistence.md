@@ -83,7 +83,7 @@ Trade-offs: key backup, recovery, indexing, migration, and support become more c
 
 ## Decision outcome
 
-Choose **one loopback-only Brain process serving the compiled Bridge, one MV3 Agent, three local SQLite files, and in-process post-commit event distribution**.
+Choose **one loopback-only Brain process serving the compiled Bridge, one MV3 Agent, three local SQLite files, and in-process post-commit event distribution**. **Superseded in this respect by [ADR 0020](0020-projection-store-topology-and-activation.md): four local SQLite files; all other text in this headline remains in force.**
 
 ### Runtime topology and lifecycle
 
@@ -141,7 +141,7 @@ Mutable data lives in a platform-native per-user application-data directory, sep
 | --- | --- | --- |
 | `auth.sqlite3` | WebAuthn credentials, Bridge sessions and CSRF state, challenges, Agent pairings, runtime tickets and tombstones, verified grants, trust references, revocation state, and auth migration metadata | Authoritative; required for same-installation authentication recovery |
 | `canonical.sqlite3` | Accepted raw ingest, source identities, deduplication records, canonical chats and messages, ingest checkpoints, configuration history, command records and results, durable projection work, and the monotonic Bridge revision allocator | Authoritative; required in every complete backup |
-| `projections.sqlite3` | Graph, search, analytics aggregates, Bridge read models, source high-water marks, and active projection generation metadata | Non-authoritative; may be omitted, deleted, or rebuilt |
+| `projections.sqlite3` | Graph, search, analytics aggregates, Bridge read models, source high-water marks, and active projection generation metadata. **Superseded in this respect by [ADR 0020](0020-projection-store-topology-and-activation.md); use its four authority rows for derived-output placement and projection activation.** | Non-authoritative; may be omitted, deleted, or rebuilt |
 
 Presence observations and live connection leases are ephemeral because freshness, not replay, is authoritative. Agent storage is the pre-acknowledgment retry source; after Brain acknowledges ingest, `canonical.sqlite3` is authoritative.
 
