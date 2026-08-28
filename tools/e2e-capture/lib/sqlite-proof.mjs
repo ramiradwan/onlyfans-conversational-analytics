@@ -1,14 +1,23 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { pythonExecutable } from './paths.mjs';
+import { PRODUCT_ROOT, pythonExecutable } from './paths.mjs';
 
 const execFileAsync = promisify(execFile);
 
+// The stores are SQLCipher databases, so the proof opens them through the
+// product's own keyed boundary. Scopes come from the runtime definitions so
+// this reader cannot drift from the code that wrote the files.
 const PROOF_SCRIPT = String.raw`
 import json
-import sqlite3
 import sys
+
+from app.persistence.database import (
+    PROJECTION_KEY_SCOPE,
+    CanonicalSQLite,
+    open_encrypted_sqlite,
+)
+from app.security.local_data_key import database_key
 
 def change_type(raw_event):
     document = json.loads(raw_event)
@@ -34,8 +43,16 @@ def slot_document(row):
         "readRevision": row[4],
     }
 
-canonical = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
-projection = sqlite3.connect(f"file:{sys.argv[2]}?mode=ro", uri=True)
+canonical = open_encrypted_sqlite(
+    sys.argv[1],
+    database_key(sys.argv[1], CanonicalSQLite.store_name),
+    read_only=True,
+)
+projection = open_encrypted_sqlite(
+    sys.argv[2],
+    database_key(sys.argv[2], PROJECTION_KEY_SCOPE),
+    read_only=True,
+)
 try:
     event_rows = canonical.execute(
         "SELECT event_id, source_seq, event_json FROM raw_ingest_events ORDER BY source_seq"
@@ -183,7 +200,13 @@ export async function readSqliteProof({ canonicalDatabasePath, projectionDatabas
   const { stdout } = await execFileAsync(
     pythonExecutable(),
     ['-c', PROOF_SCRIPT, canonicalDatabasePath, projectionDatabasePath],
-    { windowsHide: true, maxBuffer: 64 * 1024 },
+    {
+      cwd: PRODUCT_ROOT,
+      // Must match BrainProcess, or the two sides derive different keys.
+      env: { ...process.env, ENVIRONMENT: 'test' },
+      windowsHide: true,
+      maxBuffer: 64 * 1024,
+    },
   );
   return JSON.parse(stdout);
 }

@@ -63,7 +63,7 @@ jobs:
         run: npm run build --prefix frontend
 
       - name: Test backend
-        run: python -m pytest
+        run: python -m pytest -m "not slow and not windows_production"
 
       - name: Test frontend
         run: npm test --prefix frontend
@@ -134,11 +134,25 @@ jobs:
       - name: Build extension
         run: npm run build --prefix extension
 
+      # Production persistence derives its keys from Windows DPAPI, so these
+      # tests are selected positively here rather than skipped elsewhere. The
+      # invocation exits 5 if the marker ever stops matching them.
+      - name: Test Windows production boot
+        run: python -m pytest -m "not slow and windows_production"
+
       - name: Test backend
         run: python -m pytest
 
   capture-e2e:
     runs-on: ubuntu-latest
+
+    env:
+      # The harness declares the non-Windows runtime mode authorized by
+      # ADR 0019. Both variables are required: the derivation refuses this key
+      # outside test mode, and test mode without it falls through to DPAPI.
+      # Job scope so Brain and every helper subprocess derive the same keys.
+      ENVIRONMENT: test
+      OFCA_TEST_DATABASE_MASTER_KEY_HEX: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
 
     steps:
       - name: Checkout

@@ -76,6 +76,9 @@ export class BrainProcess {
         env: {
           ...process.env,
           PYTHONUNBUFFERED: '1',
+          // The harness declares its runtime mode rather than inheriting one.
+          // Key derivation reads this, so the proof reader declares it too.
+          ENVIRONMENT: 'test',
           BROADCAST_URL: 'memory://',
           AUTH_DATABASE_PATH: this.authDatabasePath,
           BRIDGE_ORIGIN: BRAIN_ORIGIN,

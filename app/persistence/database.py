@@ -319,3 +319,10 @@ class ProjectionsSQLite(LocalSQLite):
     """Disposable projections database using the accepted full-sync topology."""
 
     store_name = "projections"
+
+
+# One class serves two derivation scopes, so its callers name the scope
+# explicitly instead of relying on ``store_name``. Readers outside the runtime
+# import these rather than repeating the literals.
+PROJECTION_KEY_SCOPE = "projection"
+ANALYTICS_PROJECTION_KEY_SCOPE = "analytics-projection"

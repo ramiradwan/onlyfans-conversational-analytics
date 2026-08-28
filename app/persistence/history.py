@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from app.persistence.database import CanonicalSQLite, LocalSQLite, ProjectionsSQLite
+from app.persistence.database import (
+    PROJECTION_KEY_SCOPE,
+    CanonicalSQLite,
+    LocalSQLite,
+    ProjectionsSQLite,
+)
 from app.persistence.migrations import MigrationChecksumError, MigrationRunner
 from app.persistence.projection_pipeline import (
     CanonicalProjectionConversation,
@@ -1803,7 +1808,7 @@ class ProjectionRepository:
         migrations_dir = Path(__file__).with_name("projection_sql")
 
         def _open() -> ProjectionsSQLite:
-            database = ProjectionsSQLite(path, key_scope="projection")
+            database = ProjectionsSQLite(path, key_scope=PROJECTION_KEY_SCOPE)
             MigrationRunner(
                 database,
                 migrations_dir=migrations_dir,

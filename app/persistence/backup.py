@@ -21,6 +21,7 @@ from app.analytics.sqlite_projection_store import (
 from app.models.analytics import GraphCentralityResult, GraphCommunityResult
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.database import (
+    ANALYTICS_PROJECTION_KEY_SCOPE,
     CanonicalSQLite,
     LocalSQLite,
     ProjectionsSQLite,
@@ -996,7 +997,7 @@ def _destination_database(store_name: str, path: Path) -> LocalSQLite:
     if store_name == "canonical":
         return CanonicalSQLite(path)
     if store_name == "projections":
-        return ProjectionsSQLite(path, key_scope="analytics-projection")
+        return ProjectionsSQLite(path, key_scope=ANALYTICS_PROJECTION_KEY_SCOPE)
     raise SQLiteBackupError("backup store type is unsupported")
 
 

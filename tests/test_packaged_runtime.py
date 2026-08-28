@@ -649,6 +649,7 @@ def _wait_for_port_release(timeout_seconds: float = 5.0) -> None:
         pytest.fail(f"port {_BRAIN_PORT} remained occupied after the Brain child exited")
 
 
+@pytest.mark.windows_production
 def test_configured_local_session_rejects_invalid_bootstrap_token(tmp_path: Path) -> None:
     """Configured local_session boot fails closed for an absent or short token,
     entering through app.packaged_entry rather than direct Settings construction.

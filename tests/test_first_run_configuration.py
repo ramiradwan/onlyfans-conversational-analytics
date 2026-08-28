@@ -219,6 +219,7 @@ print('ambient_identity_override=false')
     assert "ambient_identity_override=false" in check.stdout
 
 
+@pytest.mark.windows_production
 def test_empty_tree_first_run_boots_production_and_placeholder_is_rejected(
     tmp_path: Path,
 ) -> None:
