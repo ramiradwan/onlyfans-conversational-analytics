@@ -183,6 +183,10 @@ A second backend worker or authoritative process requires a durable database out
 
 ### At-rest protection, export, and backup
 
+> The at-rest and backup-encryption choices in this section are superseded by
+> [ADR 0019](0019-encrypted-local-persistence.md). The authority, export,
+> coordination, and recovery boundaries below remain in force.
+
 At-rest confidentiality relies on platform full-disk encryption, OS credential protection for non-exportable keys, and user-only permissions on the application-data directory. When a reliable OS signal is available, missing full-disk encryption produces a persistent security warning. The application does not create or escrow a database-encryption key.
 
 Portable export emits documented, versioned creator data and excludes session credentials, ticket or challenge values and digests, private keys, CSRF secrets, and internal auth tombstones.
