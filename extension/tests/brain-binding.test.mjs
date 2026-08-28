@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import * as fullAdapter from '../transport/chrome-adapter.mjs';
+import * as readOnlyAdapter from '../transport/read-only-chrome-adapter.mjs';
 import {
   ACTIVE_ACCOUNT_PARTITION_KEY,
   BRAIN_BINDING_MESSAGE_TYPE,
-  createBrainBindingBridge,
-  createChromeAdapter,
 } from '../transport/chrome-adapter.mjs';
 import { INGESTION_STORES } from '../transport/durable-outbox.mjs';
 import { accountDatabaseName } from '../transport/indexeddb-ingestion-storage.mjs';
@@ -31,7 +31,7 @@ function storageArea(values) {
   };
 }
 
-function harness() {
+function harness({ module = fullAdapter, onBound } = {}) {
   const local = {};
   const session = {};
   const listeners = [];
@@ -48,12 +48,13 @@ function harness() {
       session: storageArea(session),
     },
   };
-  const adapter = createChromeAdapter(chromeApi, () => 'installation-1', { indexedDb });
+  const adapter = module.createChromeAdapter(chromeApi, () => 'installation-1', { indexedDb });
   let wakes = 0;
-  const bridge = createBrainBindingBridge({
+  const bridge = module.createBrainBindingBridge({
     chromeApi,
     adapter,
     runtime: { async wake() { wakes += 1; } },
+    onBound,
   });
   bridge.register();
   return { adapter, bridge, indexedDb, listeners, local, session, wakes: () => wakes };
@@ -184,3 +185,49 @@ test('reconnect credentials survive same-account pairing but are cleared on swit
     0,
   );
 });
+
+test('both adapter builds agree on the binding message type', () => {
+  assert.equal(readOnlyAdapter.BRAIN_BINDING_MESSAGE_TYPE, BRAIN_BINDING_MESSAGE_TYPE);
+});
+
+for (const [build, module] of [
+  ['chrome-adapter', fullAdapter],
+  ['read-only-chrome-adapter', readOnlyAdapter],
+]) {
+  test(`${build} hands runtime lifecycle to onBound instead of waking directly`, async () => {
+    let bound = 0;
+    const h = harness({ module, onBound: async () => { bound += 1; } });
+
+    assert.deepEqual(await dispatch(h.listeners[0], binding()), { ok: true });
+    assert.equal(bound, 1);
+    assert.equal(h.wakes(), 0);
+    assert.deepEqual(await h.adapter.loadBrainBinding(), {
+      creatorAccountId: 'creator-account-1',
+      authTicket: 'purpose-bound-agent-ticket',
+    });
+  });
+
+  test(`${build} wakes the runtime when no onBound is supplied`, async () => {
+    const h = harness({ module });
+
+    assert.deepEqual(await dispatch(h.listeners[0], binding()), { ok: true });
+    assert.equal(h.wakes(), 1);
+  });
+
+  test(`${build} reports agent_start_failed when onBound rejects`, async () => {
+    const h = harness({ module, onBound: async () => { throw new Error('reconcile failed'); } });
+
+    assert.deepEqual(await dispatch(h.listeners[0], binding()), {
+      ok: false,
+      code: 'agent_start_failed',
+    });
+    assert.equal(h.wakes(), 0);
+  });
+
+  test(`${build} refuses a non-callable onBound`, () => {
+    assert.throws(
+      () => harness({ module, onBound: 'reconcile' }),
+      /onBound must be a function/,
+    );
+  });
+}

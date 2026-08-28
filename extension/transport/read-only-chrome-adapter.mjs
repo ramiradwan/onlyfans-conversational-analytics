@@ -311,6 +311,7 @@ export function createBrainBindingBridge({
   chromeApi = globalThis.chrome,
   adapter,
   runtime,
+  onBound = null,
   allowedOrigins = ['http://bridge.localhost:17871'],
 } = {}) {
   if (!chromeApi?.runtime?.onMessageExternal?.addListener) {
@@ -321,6 +322,9 @@ export function createBrainBindingBridge({
   }
   if (typeof runtime?.wake !== 'function') {
     throw new Error('Brain binding bridge requires an Agent runtime');
+  }
+  if (onBound !== null && typeof onBound !== 'function') {
+    throw new Error('Brain binding bridge onBound must be a function');
   }
   const origins = new Set(allowedOrigins);
   let registered = false;
@@ -353,7 +357,10 @@ export function createBrainBindingBridge({
     }).then(
       async () => {
         try {
-          await runtime.wake();
+          // When onBound is supplied the consent controller owns runtime
+          // lifecycle; waking directly would leave its phase unreconciled.
+          if (onBound === null) await runtime.wake();
+          else await onBound();
           sendResponse({ ok: true });
         } catch {
           sendResponse({ ok: false, code: 'agent_start_failed' });
