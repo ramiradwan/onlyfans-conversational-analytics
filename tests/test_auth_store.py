@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -339,7 +338,7 @@ def test_schema_is_durable_and_opaque_secrets_are_never_stored(
     assert active is not None
     assert active.session_id == session.session_id
 
-    with sqlite3.connect(path) as connection:
+    with reopened.database.read() as connection:
         tables = {
             row[0]
             for row in connection.execute(

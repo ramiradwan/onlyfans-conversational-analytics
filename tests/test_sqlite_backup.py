@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +37,13 @@ from app.protocol.payloads import (
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
+
+
+def open_encrypted_backup(path: Path, store_name: str):
+    return backup_module.open_encrypted_sqlite(
+        path,
+        backup_module._backup_key(path, store_name),
+    )
 
 
 @dataclass
@@ -366,7 +372,7 @@ async def test_projection_backup_recomputes_rows_and_rejects_property_tamper(
     backup_path = tmp_path / "projections.backup.sqlite3"
     backup_projections_database(runtime.stores.database, backup_path)
     marker = "SYNTHETIC-TAMPERED-PROPERTY-991"
-    connection = sqlite3.connect(backup_path)
+    connection = open_encrypted_backup(backup_path, "projections")
     try:
         connection.execute("DROP TRIGGER graph_node_building_update")
         connection.execute(
@@ -396,8 +402,7 @@ async def test_projection_backup_rejects_algorithm_metric_tamper_after_sha_refre
     backup_path = tmp_path / "projections.backup.sqlite3"
     backup_projections_database(runtime.stores.database, backup_path)
 
-    connection = sqlite3.connect(backup_path)
-    connection.row_factory = sqlite3.Row
+    connection = open_encrypted_backup(backup_path, "projections")
     try:
         connection.execute("DROP TRIGGER graph_metric_update_blocked")
         row = connection.execute(
@@ -445,7 +450,7 @@ async def test_backup_verifies_external_hash_migration_checksums_and_limitation(
     )
     assert verify_backup(backup_path) == manifest
 
-    connection = sqlite3.connect(backup_path)
+    connection = open_encrypted_backup(backup_path, "canonical")
     try:
         connection.execute(
             "UPDATE schema_migrations SET checksum=? WHERE version=1",
@@ -685,7 +690,7 @@ async def test_windows_raw_open_handle_refuses_restore(tmp_path: Path) -> None:
     assert runtime.stores.database is not None
     backup_path = tmp_path / "projections.backup.sqlite3"
     backup_projections_database(runtime.stores.database, backup_path)
-    raw = sqlite3.connect(runtime.projections_path)
+    raw = runtime.stores.database.connect()
     try:
         raw.execute("PRAGMA journal_mode=WAL")
         raw.execute("BEGIN")

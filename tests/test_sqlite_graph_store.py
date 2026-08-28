@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -34,6 +33,7 @@ from app.models.analytics import (
     GraphRelation,
     GraphTraversalBounds,
 )
+from app.persistence import sqlite_api as sqlite3
 from app.persistence.migrations import MigrationChecksumError
 from app.persistence.private_files import _windows_acl_is_owner_only
 from app.persistence.projection_activation import (
@@ -957,7 +957,7 @@ def test_populated_projection_v2_metric_upgrade_discards_legacy_rows_and_restart
     upgraded = ProjectionsDatabase(path)
     backup_path = upgraded.migration_runner.last_backup_path
     assert backup_path is not None and backup_path.exists()
-    with sqlite3.connect(backup_path) as backup:
+    with upgraded.open_detached(backup_path) as backup:
         assert backup.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert backup.execute(
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
@@ -1035,7 +1035,7 @@ def test_populated_projection_v1_metric_upgrade_through_v4_is_restart_safe(
     upgraded = ProjectionsDatabase(path)
     backup_path = upgraded.migration_runner.last_backup_path
     assert backup_path is not None and backup_path.exists()
-    with sqlite3.connect(backup_path) as backup:
+    with upgraded.open_detached(backup_path) as backup:
         assert backup.execute("PRAGMA user_version").fetchone()[0] == 1
         assert backup.execute(
             "SELECT COUNT(*) FROM graph_algorithm_metrics"

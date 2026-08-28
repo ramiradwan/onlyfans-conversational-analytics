@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import sqlite3
+from app.persistence import sqlite_api as sqlite3
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from threading import RLock

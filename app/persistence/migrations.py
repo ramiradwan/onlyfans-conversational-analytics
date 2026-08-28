@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -13,6 +12,7 @@ from pathlib import Path
 from typing import BinaryIO
 from uuid import uuid4
 
+from app.persistence import sqlite_api as sqlite3
 from app.persistence.database import LocalSQLite
 from app.persistence.private_files import (
     PrivateFileSecurityError,
@@ -268,14 +268,14 @@ class MigrationRunner:
         )
         temporary = destination.with_suffix(destination.suffix + ".tmp")
         try:
-            backup = sqlite3.connect(temporary)
+            backup = self.database.open_detached(temporary)
             try:
                 apply_private_file_security(temporary)
                 source.backup(backup)
             finally:
                 backup.close()
             apply_private_file_security(temporary)
-            verification = sqlite3.connect(temporary)
+            verification = self.database.open_detached(temporary)
             try:
                 result = verification.execute("PRAGMA integrity_check").fetchone()[0]
                 if result != "ok":

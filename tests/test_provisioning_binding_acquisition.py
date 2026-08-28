@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -11,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import packaged_entry
+from app.persistence import sqlite_api as sqlite3
 from app.persistence.auth import (
     AuthenticationStore,
     ProvisioningCandidate,

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
-import sqlite3
 import stat
 import tempfile
 from contextlib import contextmanager
@@ -16,6 +16,8 @@ from typing import Callable, Iterator
 from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.errors import AnalyticsError, CanonicalAccountNotFound
 from app.analytics.pipeline import AnalyticsPipeline
+from app.persistence import sqlite_api as sqlite3
+from app.persistence.database import CanonicalSQLite, open_encrypted_sqlite
 from app.persistence.history import HistoryRepository
 from app.persistence.migrations import (
     Migration,
@@ -197,7 +199,11 @@ def _schema_signature(
 def _expected_schema_signature(
     migrations: list[Migration],
 ) -> dict[tuple[str, str], tuple[str, str]]:
-    connection = sqlite3.connect(":memory:", isolation_level=None)
+    connection = open_encrypted_sqlite(
+        ":memory:",
+        hashlib.sha256(b"ofca-schema-validation-v1").digest(),
+        isolation_level=None,
+    )
     try:
         MigrationRunner._ensure_ledger(connection)
         for migration in migrations:
@@ -219,20 +225,17 @@ class ReadOnlyCanonicalDatabase:
             )
         self.identity: FileIdentity | None = None
         self._connection: sqlite3.Connection | None = None
+        self._database = CanonicalSQLite(self.path)
 
     def __enter__(self) -> "ReadOnlyCanonicalDatabase":
         try:
             before_open = _file_identity(self.path)
-            connection = sqlite3.connect(
-                f"{self.path.as_uri()}?mode=ro",
-                uri=True,
+            connection = self._database.open_detached(
+                self.path,
+                read_only=True,
                 isolation_level=None,
-                check_same_thread=False,
+                query_only=True,
             )
-            connection.row_factory = sqlite3.Row
-            connection.execute("PRAGMA query_only = ON")
-            if int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1:
-                raise sqlite3.OperationalError("query-only mode was not enabled")
             after_open = _file_identity(self.path)
             if after_open != before_open:
                 connection.close()

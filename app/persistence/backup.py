@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import hashlib
 import os
-import sqlite3
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -20,7 +19,14 @@ from app.analytics.sqlite_projection_store import (
     recompute_generation,
 )
 from app.models.analytics import GraphCentralityResult, GraphCommunityResult
-from app.persistence.database import LocalSQLite, SQLiteConfigurationError
+from app.persistence import sqlite_api as sqlite3
+from app.persistence.database import (
+    CanonicalSQLite,
+    LocalSQLite,
+    ProjectionsSQLite,
+    SQLiteConfigurationError,
+    open_encrypted_sqlite,
+)
 from app.persistence.migrations import load_migration_catalog
 from app.persistence.private_files import (
     PrivateFileSecurityError,
@@ -31,9 +37,11 @@ from app.persistence.private_files import (
     sync_file,
 )
 from app.persistence.projection_activation import _sqlite_identity
+from app.security.local_data_key import LocalDataKeyError, unprotect_local_secret
 
 
 HighWaterReader = Callable[[sqlite3.Connection], dict[str, Any]]
+_BACKUP_KEY_SUFFIX = ".key.dpapi"
 
 
 class SQLiteBackupError(RuntimeError):
@@ -140,16 +148,22 @@ def create_online_backup(
         live_database_shm=Path(f"{database.path}-shm"),
         backup_destination=destination_candidate,
         backup_manifest=_manifest_path(destination_candidate),
+        backup_key=_key_path(destination_candidate),
         backup_temporary=temporary_candidate,
         backup_temporary_manifest=_manifest_path(temporary_candidate),
+        backup_temporary_key=_key_path(temporary_candidate),
     )
     destination_path = paths["backup_destination"]
     manifest_path = paths["backup_manifest"]
     temporary = paths["backup_temporary"]
     temporary_manifest = paths["backup_temporary_manifest"]
-    if temporary.exists() or temporary_manifest.exists():
+    key_path = paths["backup_key"]
+    temporary_key = paths["backup_temporary_key"]
+    if temporary.exists() or temporary_manifest.exists() or temporary_key.exists():
         raise SQLiteBackupError("backup_temporary_exists")
-    if (destination_path.exists() or manifest_path.exists()) and not overwrite:
+    if (
+        destination_path.exists() or manifest_path.exists() or key_path.exists()
+    ) and not overwrite:
         raise FileExistsError(destination_path)
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -159,8 +173,7 @@ def create_online_backup(
                 source_high_water = high_water_reader(source)
                 witnesses = _witnesses(source) if store_name == "canonical" else []
                 schema_version = int(source.execute("PRAGMA user_version").fetchone()[0])
-                target = sqlite3.connect(temporary)
-                target.row_factory = sqlite3.Row
+                target = database.open_detached(temporary)
                 try:
                     apply_private_file_security(temporary)
                     source.backup(target)
@@ -168,8 +181,7 @@ def create_online_backup(
                 finally:
                     target.close()
             apply_private_file_security(temporary)
-            verification = sqlite3.connect(temporary)
-            verification.row_factory = sqlite3.Row
+            verification = database.open_detached(temporary)
             try:
                 _verify_database(verification, store_name)
                 copied_high_water = high_water_reader(verification)
@@ -215,10 +227,16 @@ def create_online_backup(
                 file_sha256=digest,
             )
             _write_external_manifest(temporary_manifest, manifest)
+            _write_protected_key(
+                temporary_key,
+                database.protected_encryption_key(purpose=f"backup:{store_name}"),
+            )
             os.replace(temporary, destination_path)
             os.replace(temporary_manifest, manifest_path)
+            os.replace(temporary_key, key_path)
             apply_private_file_security(destination_path)
             apply_private_file_security(manifest_path)
+            apply_private_file_security(key_path)
             sync_directory(destination_path.parent)
             return manifest
     except (
@@ -229,12 +247,14 @@ def create_online_backup(
     ) as error:
         temporary.unlink(missing_ok=True)
         temporary_manifest.unlink(missing_ok=True)
+        temporary_key.unlink(missing_ok=True)
         if isinstance(error, SQLiteBackupError):
             raise
         raise SQLiteBackupError("backup publication failed") from error
     except BaseException:
         temporary.unlink(missing_ok=True)
         temporary_manifest.unlink(missing_ok=True)
+        temporary_key.unlink(missing_ok=True)
         raise
 
 
@@ -271,8 +291,11 @@ def verify_backup(
             raise SQLiteBackupError("external backup hash differs")
         if expected_store is not None and manifest.store_name != expected_store:
             raise SQLiteBackupError("backup store type differs")
-        connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-        connection.row_factory = sqlite3.Row
+        connection = open_encrypted_sqlite(
+            path,
+            _backup_key(path, manifest.store_name),
+            read_only=True,
+        )
         try:
             _verify_database(connection, manifest.store_name)
             metadata = {
@@ -311,7 +334,15 @@ def verify_backup(
             connection.close()
     except SQLiteBackupError:
         raise
-    except (OSError, sqlite3.Error, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (
+        OSError,
+        sqlite3.Error,
+        SQLiteConfigurationError,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as error:
         raise SQLiteBackupError("backup verification failed") from error
 
 
@@ -331,6 +362,7 @@ def restore_backup(
     roles: dict[str, str | Path] = {
         "restore_source": source_candidate,
         "restore_source_manifest": _manifest_path(source_candidate),
+        "restore_source_key": _key_path(source_candidate),
         "restore_destination": destination_candidate,
         "restore_destination_wal": Path(f"{destination_candidate}-wal"),
         "restore_destination_shm": Path(f"{destination_candidate}-shm"),
@@ -351,6 +383,7 @@ def restore_backup(
     temporary = paths["restore_temporary"]
     projection_target = paths.get("projection_discard")
     manifest = verify_backup(source_path, expected_store=expected_store)
+    destination_database = _destination_database(expected_store, destination_path)
     if destination_path.exists() and not overwrite:
         raise FileExistsError(destination_path)
     destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -364,7 +397,7 @@ def restore_backup(
             if destination_path.exists() and not overwrite:
                 raise FileExistsError(destination_path)
             _stage_verified_file_unlocked(
-                source_path, temporary, manifest
+                source_path, temporary, manifest, destination_database
             )
             if projection_target is not None:
                 _discard_projection_file_unlocked(projection_target)
@@ -392,6 +425,7 @@ def restore_backup_pair(
     roles: dict[str, str | Path] = {
         "canonical_source": canonical_source,
         "canonical_source_manifest": _manifest_path(canonical_source),
+        "canonical_source_key": _key_path(canonical_source),
         "canonical_destination": canonical_target_candidate,
         "canonical_destination_wal": Path(f"{canonical_target_candidate}-wal"),
         "canonical_destination_shm": Path(f"{canonical_target_candidate}-shm"),
@@ -405,6 +439,7 @@ def restore_backup_pair(
                 "projection_source_manifest": _manifest_path(
                     projection_source_candidate
                 ),
+                "projection_source_key": _key_path(projection_source_candidate),
             }
         )
     if projections_destination is not None:
@@ -446,6 +481,12 @@ def restore_backup_pair(
     compatible = projection is not None and _paired_witnesses_match(
         canonical, projection
     )
+    canonical_database = _destination_database("canonical", canonical_target)
+    projection_database = (
+        None
+        if projection_target is None
+        else _destination_database("projections", projection_target)
+    )
     targets = [canonical_target]
     if projection_target is not None:
         targets.append(projection_target)
@@ -460,7 +501,10 @@ def restore_backup_pair(
             ):
                 raise FileExistsError(projection_target)
             _stage_verified_file_unlocked(
-                paths["canonical_source"], canonical_temporary, canonical
+                paths["canonical_source"],
+                canonical_temporary,
+                canonical,
+                canonical_database,
             )
             if (
                 projection_source is not None
@@ -468,7 +512,10 @@ def restore_backup_pair(
                 and projection is not None
             ):
                 _stage_verified_file_unlocked(
-                    projection_source, projection_temporary, projection
+                    projection_source,
+                    projection_temporary,
+                    projection,
+                    projection_database,
                 )
             # Remove the old disposable side before publishing the authority.
             # Any later failure therefore leaves a valid canonical DB and no
@@ -513,14 +560,20 @@ def _stage_verified_file_unlocked(
     backup_path: str | Path,
     temporary: Path,
     manifest: BackupManifest,
+    destination_database: LocalSQLite | None,
 ) -> None:
     if temporary.exists():
         raise SQLiteBackupError("restore_temporary_exists")
     source_path = _path_identity(backup_path).path
+    if destination_database is None:
+        raise SQLiteBackupError("restore destination database is unavailable")
     try:
-        source = sqlite3.connect(f"file:{source_path.as_posix()}?mode=ro", uri=True)
-        target = sqlite3.connect(temporary)
-        target.row_factory = sqlite3.Row
+        source = open_encrypted_sqlite(
+            source_path,
+            _backup_key(source_path, manifest.store_name),
+            read_only=True,
+        )
+        target = destination_database.open_detached(temporary)
         try:
             apply_private_file_security(temporary)
             source.backup(target)
@@ -905,6 +958,46 @@ def _reader_for_store(store_name: str) -> HighWaterReader:
 
 def _manifest_path(path: Path) -> Path:
     return path.with_name(path.name + ".manifest.json")
+
+
+def _key_path(path: Path) -> Path:
+    return path.with_name(path.name + _BACKUP_KEY_SUFFIX)
+
+
+def _write_protected_key(path: Path, payload: bytes) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        apply_private_file_security(path)
+        sync_file(path)
+    except BaseException:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        path.unlink(missing_ok=True)
+        raise
+
+
+def _backup_key(path: Path, store_name: str) -> bytes:
+    try:
+        protected_path = _path_identity(_key_path(path)).path
+        return unprotect_local_secret(
+            protected_path.read_bytes(), purpose=f"backup:{store_name}"
+        )
+    except (OSError, LocalDataKeyError) as error:
+        raise SQLiteBackupError("backup key could not be recovered") from error
+
+
+def _destination_database(store_name: str, path: Path) -> LocalSQLite:
+    if store_name == "canonical":
+        return CanonicalSQLite(path)
+    if store_name == "projections":
+        return ProjectionsSQLite(path, key_scope="analytics-projection")
+    raise SQLiteBackupError("backup store type is unsupported")
 
 
 def _write_external_manifest(path: Path, manifest: BackupManifest) -> None:

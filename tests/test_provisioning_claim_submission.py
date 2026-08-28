@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import sqlite3
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -784,7 +783,7 @@ def test_the_claim_record_holds_only_the_nonsecret_coordinates(
         coordinates = set(decoded.durable_state())
     finally:
         decoded.clear()
-    with sqlite3.connect(tmp_path / DATABASE_FILENAME) as connection:
+    with store.database.read() as connection:
         columns = {
             str(row[1])
             for row in connection.execute(f"PRAGMA table_info({CLAIM_RECORD_TABLE})")
@@ -795,10 +794,10 @@ def test_the_claim_record_holds_only_the_nonsecret_coordinates(
     assert columns - CLAIM_RECORD_LOCAL_COLUMNS == CLAIM_RECORD_COORDINATES
 
 
-def test_no_claim_secret_reaches_the_authentication_database(
+def test_claim_values_are_not_exposed_in_authentication_database_files(
     store: SQLiteAuthenticationStore, grants: SignedGrants, tmp_path: Path
 ) -> None:
-    """The whole database file, not just the claim record, is searched."""
+    """Encrypted database files expose neither identifiers nor claim secrets."""
 
     transport = HostedClaimTransport(grants)
     assert submission(store, grants, transport)(package=PACKAGE) is None
@@ -808,8 +807,13 @@ def test_no_claim_secret_reaches_the_authentication_database(
         path.read_bytes() for path in sorted(tmp_path.glob(f"{DATABASE_FILENAME}*"))
     )
 
-    # The identifier proves the search reaches the row the secret was stripped from.
-    assert CLAIM_ID.encode("ascii") in written
+    with store.database.read() as connection:
+        assert connection.execute(
+            f"SELECT COUNT(*) FROM {CLAIM_RECORD_TABLE} WHERE claim_id = ?",
+            (CLAIM_ID,),
+        ).fetchone()[0] == 1
+
+    assert CLAIM_ID.encode("ascii") not in written
     assert CLAIM_SECRET.encode("ascii") not in written
     assert CHALLENGE.encode("ascii") not in written
 

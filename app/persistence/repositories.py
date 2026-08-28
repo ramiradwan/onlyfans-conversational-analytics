@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+from app.persistence import sqlite_api as sqlite3
 from app.persistence.database import CanonicalSQLite
 from app.protocol import AgentConfigDocumentResponse
 from app.services.agent_configuration import (

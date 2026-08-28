@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+from app.persistence import sqlite_api as sqlite3
 import threading
 import time
 from contextlib import contextmanager

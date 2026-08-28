@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
+import sqlite3 as plaintext_sqlite
 from contextlib import contextmanager
 from dataclasses import fields, replace
 from datetime import datetime, timedelta, timezone
@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.persistence import sqlite_api as cipher_sqlite
 from app.persistence.auth import (
     AuthorizedAccountBinding,
     InstallationKeyReference,
@@ -264,7 +265,7 @@ class UnreadableStore:
         return self._reference
 
     def verified_grants(self) -> tuple[VerifiedGrantReference, ...]:
-        raise sqlite3.OperationalError("database is locked")
+        raise cipher_sqlite.OperationalError("database is locked")
 
 
 class PlainDatabase:
@@ -275,9 +276,9 @@ class PlainDatabase:
         self._pragmas = pragmas
 
     @contextmanager
-    def read(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path)
-        connection.row_factory = sqlite3.Row
+    def read(self) -> Iterator[plaintext_sqlite.Connection]:
+        connection = plaintext_sqlite.connect(self.path)
+        connection.row_factory = plaintext_sqlite.Row
         try:
             for name, value in self._pragmas.items():
                 connection.execute(f"PRAGMA {name} = {value}")
@@ -309,7 +310,7 @@ def _plain_database(
     unique: bool = True,
     pragmas: dict[str, str] | None = None,
 ) -> PlainDatabase:
-    connection = sqlite3.connect(path)
+    connection = plaintext_sqlite.connect(path)
     try:
         for table in tables:
             column = UNIQUE_DIGEST_COLUMNS.get(table)

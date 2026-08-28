@@ -745,7 +745,9 @@ def test_schema_drifted_projection_db_is_quarantined_and_rebuilt(tmp_path) -> No
 
     rebuilt = ProjectionRepository.create(projection_path, repositories.history)
 
-    assert projection_path.read_bytes().startswith(b"SQLite format 3\x00")
+    assert not projection_path.read_bytes().startswith(b"SQLite format 3\x00")
+    with rebuilt.database.read() as connection:
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     quarantined = list(tmp_path.glob(".projections.sqlite3.*.quarantine"))
     assert len(quarantined) == 1
     assert rebuilt.state(ACCOUNT)["status"] in {"unavailable", "current", "pending"}

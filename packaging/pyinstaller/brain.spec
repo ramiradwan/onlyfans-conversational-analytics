@@ -74,6 +74,7 @@ _HIDDEN_IMPORTS = [
     "anyio._backends._asyncio",
     "cryptography.hazmat.bindings._rust",
     "pydantic_core",
+    "sqlcipher3.dbapi2",
     "uvicorn.lifespan.off",
     "uvicorn.lifespan.on",
     "uvicorn.logging",
@@ -109,7 +110,10 @@ _EXCLUDES = [
 a = Analysis(
     [str(_ENTRY)],
     pathex=[str(_SOURCE_ROOT), str(_PROJECT_ROOT)],
-    binaries=collect_dynamic_libs("cryptography"),
+    binaries=(
+        collect_dynamic_libs("cryptography")
+        + collect_dynamic_libs("sqlcipher3")
+    ),
     datas=_DATAS,
     hiddenimports=_HIDDEN_IMPORTS,
     hookspath=[],

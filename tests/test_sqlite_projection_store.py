@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import threading
@@ -46,6 +45,7 @@ from app.models.analytics import (
     GraphProjectionSummary,
     RebuildArtifact,
 )
+from app.persistence import sqlite_api as sqlite3
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 from app.persistence.history import HistoryRepository, StreamKey
 from app.persistence.projection_activation import ProjectionActivationConflict
@@ -1112,7 +1112,9 @@ async def test_non_sqlite_projection_file_cannot_block_canonical_readiness(
     await scheduler.start(recover=True)
     projection = await _wait_for_lazy_projection(scheduler, repositories)
     assert projection.source_revision == 0
-    assert path.read_bytes().startswith(b"SQLite format 3\x00")
+    rebuilt = path.read_bytes()
+    assert rebuilt != b"synthetic-not-a-sqlite-projection"
+    assert not rebuilt.startswith(b"SQLite format 3\x00")
     quarantines = list(path.parent.glob(f".{path.name}.*.quarantine"))
     assert quarantines and quarantines[0].read_bytes() == b"synthetic-not-a-sqlite-projection"
     assert await scheduler.close(timeout=2)

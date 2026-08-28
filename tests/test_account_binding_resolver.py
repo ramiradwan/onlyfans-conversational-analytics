@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import get_args
 
 import pytest
 
+from app.persistence import sqlite_api as sqlite3
 from app.persistence.auth import (
     AccountBindingRefusal,
     AccountBindingRefused,

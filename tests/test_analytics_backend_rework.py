@@ -7,12 +7,12 @@ import json
 import logging
 import os
 import shutil
-import sqlite3
 import stat
 import subprocess
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -78,6 +78,7 @@ from app.models.analytics import (
     MessageDirection,
     WindowScope,
 )
+from app.persistence.database import CanonicalSQLite
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 from app.persistence.history import HistoryRepository, StreamKey
 from app.persistence.migrations import load_migration_catalog
@@ -96,6 +97,17 @@ from app.transport.ingestion import AccountReadModel
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 REPOSITORY_ROOT = Path(__file__).parents[1]
+
+
+@contextmanager
+def encrypted_canonical_connection(path: Path):
+    """Open a canonical test file with its SQLCipher key."""
+
+    connection = CanonicalSQLite(path).open_detached(path)
+    try:
+        yield connection
+    finally:
+        connection.close()
 
 
 def _json_schema_accepts(value, schema: dict, root: dict) -> bool:
@@ -1007,11 +1019,11 @@ asyncio.run(run())
         "heartbeat": "connected",
         "ingest": "accepted",
     }
-    assert canonical_path.read_bytes().startswith(b"SQLite format 3\x00")
+    assert not canonical_path.read_bytes().startswith(b"SQLite format 3\x00")
     quarantined = list(tmp_path.glob(".projections.sqlite3.*.quarantine"))
     assert len(quarantined) == 1
     assert quarantined[0].read_bytes() == b"synthetic-corrupt-projection"
-    assert projection_path.read_bytes().startswith(b"SQLite format 3\x00")
+    assert not projection_path.read_bytes().startswith(b"SQLite format 3\x00")
 
 
 @pytest.mark.asyncio
@@ -2468,7 +2480,7 @@ async def test_rebuild_trusts_only_the_repository_migration_prefix_and_schema(
 
     checksum_path = tmp_path / "tampered-checksum.sqlite3"
     shutil.copy2(trusted_path, checksum_path)
-    with sqlite3.connect(checksum_path) as connection:
+    with encrypted_canonical_connection(checksum_path) as connection:
         connection.execute(
             "UPDATE schema_migrations SET checksum = ? WHERE version = 2",
             ("0" * 64,),
@@ -2477,19 +2489,19 @@ async def test_rebuild_trusts_only_the_repository_migration_prefix_and_schema(
 
     skipped_path = tmp_path / "skipped-migration.sqlite3"
     shutil.copy2(trusted_path, skipped_path)
-    with sqlite3.connect(skipped_path) as connection:
+    with encrypted_canonical_connection(skipped_path) as connection:
         connection.execute("DELETE FROM schema_migrations WHERE version = 1")
     cases.append(skipped_path)
 
     missing_index_path = tmp_path / "missing-index.sqlite3"
     shutil.copy2(trusted_path, missing_index_path)
-    with sqlite3.connect(missing_index_path) as connection:
+    with encrypted_canonical_connection(missing_index_path) as connection:
         connection.execute("DROP INDEX account_messages_page")
     cases.append(missing_index_path)
 
     forged_path = tmp_path / "forged-partial.sqlite3"
     catalog = load_migration_catalog()
-    with sqlite3.connect(forged_path) as connection:
+    with encrypted_canonical_connection(forged_path) as connection:
         connection.executescript(
             """
             CREATE TABLE schema_migrations (
@@ -2554,7 +2566,7 @@ async def test_rebuild_rejects_quick_check_ok_missing_index_entry(
     payload = await seed(repositories, "creator-beta")
     private_value = "private-corrupt-index-account-8d21"
 
-    with sqlite3.connect(database_path) as connection:
+    with encrypted_canonical_connection(database_path) as connection:
         connection.execute(
             """
             INSERT INTO commands (
@@ -2592,7 +2604,7 @@ async def test_rebuild_rejects_quick_check_ok_missing_index_entry(
 
     # Reopen with the index absent from the schema cache so this update cannot
     # update its b-tree, then restore the exact catalog row and root page.
-    with sqlite3.connect(database_path) as connection:
+    with encrypted_canonical_connection(database_path) as connection:
         connection.execute(
             """
             UPDATE commands
@@ -2601,7 +2613,7 @@ async def test_rebuild_rejects_quick_check_ok_missing_index_entry(
             """,
             (private_value, "2026-01-03T00:00:00+00:00"),
         )
-    with sqlite3.connect(database_path) as connection:
+    with encrypted_canonical_connection(database_path) as connection:
         connection.execute("PRAGMA writable_schema = ON")
         connection.execute(
             """
@@ -2616,10 +2628,10 @@ async def test_rebuild_rejects_quick_check_ok_missing_index_entry(
         )
         connection.execute(f"PRAGMA schema_version = {schema_version + 1}")
 
-    with sqlite3.connect(database_path) as connection:
+    with encrypted_canonical_connection(database_path) as connection:
         quick_rows = connection.execute("PRAGMA quick_check").fetchall()
         integrity_rows = connection.execute("PRAGMA integrity_check").fetchall()
-    assert quick_rows == [("ok",)]
+    assert [tuple(row) for row in quick_rows] == [("ok",)]
     assert any("missing from index commands_by_account" in row[0] for row in integrity_rows)
 
     with pytest.raises(RebuildFailure) as rejected:
@@ -2651,7 +2663,7 @@ async def test_rebuild_sanitizes_repository_and_validation_failures(
         "sqlite", canonical_path=database_path
     )
     payload = await seed(repositories, "creator-beta")
-    with sqlite3.connect(database_path) as connection:
+    with encrypted_canonical_connection(database_path) as connection:
         # account_messages.direction has a CHECK constraint restricting it to
         # inbound/outbound; disable enforcement on this connection to
         # reproduce a row that was corrupted by some other means (a manual

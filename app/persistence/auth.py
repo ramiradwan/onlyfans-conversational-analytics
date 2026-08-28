@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import secrets
-import sqlite3
+from app.persistence import sqlite_api as sqlite3
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum

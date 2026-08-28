@@ -13,7 +13,7 @@ resolver in `app.security.account_bindings`.
 
 from __future__ import annotations
 
-import sqlite3
+from app.persistence import sqlite_api as sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path

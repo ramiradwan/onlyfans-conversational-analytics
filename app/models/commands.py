@@ -20,8 +20,8 @@ class SendMessageCommand(BaseModel):
         description="The message text to send",  
         example="Hey, thanks for subscribing! 😊"  
     )  
-    media_url: str | None = Field(  
-        None,  
-        description="Optional media attachment URL",  
-        example="https://cdn.onlyfans.com/path/to/image.jpg"  
-    )  
+    media_url: str | None = Field(
+        None,
+        description="Optional media attachment URL",
+        example="https://cdn.onlyfans.com/path/to/image.jpg",
+    )

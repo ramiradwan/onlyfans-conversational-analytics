@@ -50,6 +50,7 @@ _ACCOUNT_ENVIRONMENT_NAMES = {
     "VERIFIED_GRANT_BUNDLE_SHA256",
 }
 _SETTING_ENVIRONMENT_NAMES = _EXPECTED_CONFIGURATION_KEYS | _ACCOUNT_ENVIRONMENT_NAMES
+_TEST_DATABASE_KEY_ENVIRONMENT_NAME = "OFCA_TEST_DATABASE_MASTER_KEY_HEX"
 
 
 def test_shipped_example_is_an_explicit_development_configuration(
@@ -200,6 +201,7 @@ def test_runtime_file_identity_cannot_be_overridden_by_ambient_environment(
         values["SECURITY_SIGNING_SECRET"] or "",
     }
     environment = dict(os.environ)
+    environment.pop(_TEST_DATABASE_KEY_ENVIRONMENT_NAME, None)
     environment["LOCAL_ANALYTICS_DATA_DIR"] = str(tmp_path)
     environment["LOCAL_PRINCIPAL_ID"] = "hand-written-process-environment"
     check = _run_python(
@@ -234,6 +236,7 @@ def test_empty_tree_first_run_boots_production_and_placeholder_is_rejected(
         key: value
         for key, value in os.environ.items()
         if key not in _SETTING_ENVIRONMENT_NAMES
+        and key != _TEST_DATABASE_KEY_ENVIRONMENT_NAME
     }
     environment["LOCAL_ANALYTICS_DATA_DIR"] = str(tmp_path)
     boot = _run_python(

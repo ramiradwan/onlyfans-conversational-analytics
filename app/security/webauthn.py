@@ -7,7 +7,7 @@ import binascii
 import hashlib
 import hmac
 import json
-import sqlite3
+from app.persistence import sqlite_api as sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum

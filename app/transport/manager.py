@@ -13,7 +13,6 @@ import hashlib
 import hmac
 import json
 import secrets
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -24,6 +23,7 @@ from uuid import UUID, uuid4
 from fastapi import WebSocket
 
 from app.core.config import settings
+from app.persistence import sqlite_api as sqlite3
 from app.protocol import BRAIN_TO_AGENT_ADAPTER, BRAIN_TO_BRIDGE_ADAPTER
 from app.services.agent_configuration import (
     BOOTSTRAP_CONFIG_REVISION,

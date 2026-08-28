@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
+from app.persistence import sqlite_api as sqlite3
 from datetime import datetime
 
 from app.persistence.history import HistoryRepository

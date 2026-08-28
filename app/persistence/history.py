@@ -5,14 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import sqlite3
+from app.persistence import sqlite_api as sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from app.persistence.database import CanonicalSQLite, LocalSQLite
+from app.persistence.database import CanonicalSQLite, LocalSQLite, ProjectionsSQLite
 from app.persistence.migrations import MigrationChecksumError, MigrationRunner
 from app.persistence.projection_pipeline import (
     CanonicalProjectionConversation,
@@ -1783,7 +1783,7 @@ class ProjectionRepository:
 
     def __init__(
         self,
-        database: CanonicalSQLite,
+        database: ProjectionsSQLite,
         canonical: HistoryRepository,
         *,
         pipeline: ProjectionPipeline | None = None,
@@ -1802,8 +1802,8 @@ class ProjectionRepository:
     ) -> "ProjectionRepository":
         migrations_dir = Path(__file__).with_name("projection_sql")
 
-        def _open() -> CanonicalSQLite:
-            database = CanonicalSQLite(path)
+        def _open() -> ProjectionsSQLite:
+            database = ProjectionsSQLite(path, key_scope="projection")
             MigrationRunner(
                 database,
                 migrations_dir=migrations_dir,

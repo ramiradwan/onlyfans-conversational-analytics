@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import secrets
-import sqlite3
+from app.persistence import sqlite_api as sqlite3
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone

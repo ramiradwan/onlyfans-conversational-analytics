@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
+from app.persistence import sqlite_api as sqlite3
 from app.persistence.database import CanonicalSQLite
 from app.persistence.factory import create_canonical_repositories
 from app.persistence.migrations import (
@@ -250,7 +250,7 @@ def test_migration_runner_refuses_foreign_key_integrity_failure(tmp_path: Path) 
     path = tmp_path / "canonical.sqlite3"
     database = CanonicalSQLite(path)
     MigrationRunner(database).run()
-    raw = sqlite3.connect(path)
+    raw = database.open_detached(path)
     try:
         raw.execute("PRAGMA foreign_keys = OFF")
         raw.execute(

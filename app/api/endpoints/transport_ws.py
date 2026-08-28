@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -21,6 +20,7 @@ from fastapi import (
 from pydantic import ValidationError
 
 from app.core.config import settings
+from app.persistence import sqlite_api as sqlite3
 from app.protocol import (
     AGENT_TO_BRAIN_ADAPTER,
     BRIDGE_TO_BRAIN_ADAPTER,

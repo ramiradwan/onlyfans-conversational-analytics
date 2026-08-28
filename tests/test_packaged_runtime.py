@@ -30,6 +30,7 @@ INSTALLED_LAUNCHER_E2E_ENVIRONMENT_VARIABLE = "BRAIN_INSTALLED_LAUNCHER_E2E"
 PACKAGED_BUILD_PYTHON_ENVIRONMENT_VARIABLE = "BRAIN_PACKAGED_BUILD_PYTHON"
 _BRAIN_PORT = exclusive_resource.PROVISIONING_PORT
 _STARTUP_TIMEOUT_SECONDS = 15
+_TEST_DATABASE_KEY_ENVIRONMENT_NAME = "OFCA_TEST_DATABASE_MASTER_KEY_HEX"
 _PROVISIONING_HANDOFF_TOKEN = "packaged-provisioning-handoff-token-0001"
 _PROVISIONING_EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,12 +122,23 @@ def _write_runtime_configuration(data_directory: Path) -> None:
     (data_directory / "runtime.env").write_text(configuration, encoding="utf-8")
 
 
+def _runtime_process_environment(data_directory: Path) -> dict[str, str]:
+    """Return an environment whose authority is the generated runtime file."""
+
+    settings_names = {name.upper() for name in Settings.model_fields}
+    environment = {
+        key: value for key, value in os.environ.items() if key not in settings_names
+    }
+    environment.pop("PYTHONPATH", None)
+    environment.pop(_TEST_DATABASE_KEY_ENVIRONMENT_NAME, None)
+    environment["LOCAL_ANALYTICS_DATA_DIR"] = str(data_directory)
+    return environment
+
+
 def _start_brain(
     artifact: Path, *, data_directory: Path, working_directory: Path
 ) -> subprocess.Popen[str]:
-    environment = os.environ.copy()
-    environment.pop("PYTHONPATH", None)
-    environment["LOCAL_ANALYTICS_DATA_DIR"] = str(data_directory)
+    environment = _runtime_process_environment(data_directory)
     return subprocess.Popen(
         [str(artifact / "Brain.exe"), "--brain"],
         cwd=working_directory,
@@ -140,9 +152,7 @@ def _start_brain(
 def _start_provisioning_brain(
     artifact: Path, *, data_directory: Path, working_directory: Path
 ) -> subprocess.Popen[str]:
-    environment = os.environ.copy()
-    environment.pop("PYTHONPATH", None)
-    environment["LOCAL_ANALYTICS_DATA_DIR"] = str(data_directory)
+    environment = _runtime_process_environment(data_directory)
     environment["LOCAL_PROVISIONING_HANDOFF_TOKEN"] = _PROVISIONING_HANDOFF_TOKEN
     environment["LOCAL_PROVISIONING_EXTENSION_ID"] = _PROVISIONING_EXTENSION_ID
     return subprocess.Popen(
@@ -603,13 +613,22 @@ def _source_mode_environment(data_directory: Path) -> dict[str, str]:
     Ambient Settings environment variables are stripped so the fixture's
     runtime.env is the only configuration source.
     """
-    settings_names = {name.upper() for name in Settings.model_fields}
-    environment = {
-        key: value for key, value in os.environ.items() if key not in settings_names
-    }
-    environment.pop("PYTHONPATH", None)
-    environment["LOCAL_ANALYTICS_DATA_DIR"] = str(data_directory)
-    return environment
+    return _runtime_process_environment(data_directory)
+
+
+def test_runtime_process_environment_excludes_test_and_ambient_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv(_TEST_DATABASE_KEY_ENVIRONMENT_NAME, "ab" * 32)
+    monkeypatch.setenv("AUTH_DATABASE_PATH", "ambient-auth.sqlite3")
+
+    environment = _runtime_process_environment(tmp_path)
+
+    assert environment["LOCAL_ANALYTICS_DATA_DIR"] == str(tmp_path)
+    assert "ENVIRONMENT" not in environment
+    assert "AUTH_DATABASE_PATH" not in environment
+    assert _TEST_DATABASE_KEY_ENVIRONMENT_NAME not in environment
 
 
 def _start_source_brain(data_directory: Path) -> subprocess.Popen[str]:
@@ -672,6 +691,7 @@ def test_configured_local_session_rejects_invalid_bootstrap_token(tmp_path: Path
             "valid control: a 32-or-more-character token did not reach "
             f"configured application selection (status {health.status})"
         )
+        assert (control_directory / ".ofca-master-key.dpapi").is_file()
     finally:
         _stop_brain(control)
     _wait_for_port_release()

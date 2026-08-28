@@ -69,7 +69,11 @@ class ProjectionsDatabase(ProjectionsSQLite):
         busy_timeout_ms: int = 5_000,
         migrations_dir: str | Path | None = None,
     ) -> None:
-        super().__init__(path, busy_timeout_ms=busy_timeout_ms)
+        super().__init__(
+            path,
+            busy_timeout_ms=busy_timeout_ms,
+            key_scope="analytics-projection",
+        )
         self.migrations_dir = Path(
             migrations_dir or Path(__file__).with_name("sql")
         )
