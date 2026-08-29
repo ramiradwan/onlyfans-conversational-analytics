@@ -964,6 +964,60 @@ test('coordinator deadline arming, backoff, and fence apply to both modules', as
   }
 });
 
+test('the run deadline reaches the global timer without a coordinator receiver', async (t) => {
+  for (const { name, Coordinator } of COORDINATOR_VARIANTS) {
+    await t.test(name, async () => {
+      const durable = outbox();
+      const state = await durable.initialize();
+      const signer = {
+        async read(request) {
+          if (request.operation === 'identity') {
+            return { operation: 'identity', success: true, data: { id: 'creator-platform-1' } };
+          }
+          return {
+            operation: 'conversations',
+            success: true,
+            data: { items: [], continuation: null, boundary: 'inventory_end' },
+          };
+        },
+      };
+      const globalTimer = globalThis.setTimeout;
+      const receivers = [];
+      let coordinator = null;
+      globalThis.setTimeout = function recordingSetTimeout(handler, delay) {
+        receivers.push(this);
+        return globalTimer(handler, delay);
+      };
+      try {
+        coordinator = new Coordinator({
+          outbox: durable,
+          signer,
+          idFactory: id,
+          now: () => '2026-07-19T09:00:00Z',
+          delay: async () => {},
+          configuration: () => authorizedConfiguration(true, { pages_per_wake: 1 }),
+          session: () => ({
+            creator_account_id: ACCOUNT,
+            applied_config_revision: 'config-1',
+            account_epoch: state.account_epoch,
+          }),
+        });
+        await coordinator.wake();
+      } finally {
+        globalThis.setTimeout = globalTimer;
+      }
+
+      assert.equal(receivers.length > 0, true, 'a run must arm its deadline through the timer');
+      // A browser rejects its own timer function invoked with any other receiver,
+      // so a wake that arms its deadline as a coordinator method throws there and
+      // never throws under this runtime.
+      for (const receiver of receivers) {
+        assert.notEqual(receiver, coordinator, 'the timer must not carry the coordinator');
+      }
+    });
+  }
+});
+
 test('read-only coordinator may differ only in its signer-normalization import', async () => {
   const primary = (await readFile(
     new URL('../transport/history-coordinator.mjs', import.meta.url),

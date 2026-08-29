@@ -119,8 +119,10 @@ export class HistoryAcquisitionCoordinator {
     now = () => new Date().toISOString(),
     delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
     clock = () => Date.now(),
-    setTimeoutImpl = setTimeout,
-    clearTimeoutImpl = clearTimeout,
+    // Wrapped rather than referenced: a bare global timer function invoked as a
+    // property of this coordinator carries the wrong receiver and is rejected.
+    setTimeoutImpl = (handler, delayMs) => setTimeout(handler, delayMs),
+    clearTimeoutImpl = (handle) => clearTimeout(handle),
     runDeadlineMs = HISTORY_RUN_DEADLINE_MS,
   }) {
     if (
