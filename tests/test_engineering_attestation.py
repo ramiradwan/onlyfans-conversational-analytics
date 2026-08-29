@@ -1393,8 +1393,20 @@ def test_evidence_pr_uses_exact_alias_blobs_and_cleans_a_changed_base() -> None:
     artifact = b"exact chrome zip bytes"
 
     class Client:
-        def __init__(self, current_base: str) -> None:
+        def __init__(
+            self,
+            current_base: str,
+            *,
+            author_id: int = 3,
+            signature_verified: bool = True,
+            evidence_parent: str | None = None,
+        ) -> None:
             self.current_base = current_base
+            self.author_id = author_id
+            self.signature_verified = signature_verified
+            self.evidence_parent = (
+                base_commit if evidence_parent is None else evidence_parent
+            )
             self.blob_calls = 0
             self.tree_payload: dict[str, Any] | None = None
             self.patches: list[tuple[str, dict[str, Any]]] = []
@@ -1406,9 +1418,22 @@ def test_evidence_pr_uses_exact_alias_blobs_and_cleans_a_changed_base() -> None:
                 return {"tree": {"sha": "b" * 40}}
             if path.endswith("/commits/" + "d" * 40):
                 return {
-                    "author": {"id": 3},
-                    "committer": {"id": 3},
-                    "parents": [{"sha": base_commit}],
+                    "author": {"id": self.author_id},
+                    "committer": {
+                        "id": 19864447,
+                        "login": "web-flow",
+                    },
+                    "parents": [{"sha": self.evidence_parent}],
+                    "commit": {
+                        "verification": {
+                            "verified": self.signature_verified,
+                            "reason": (
+                                "valid"
+                                if self.signature_verified
+                                else "unsigned"
+                            ),
+                        }
+                    },
                 }
             if path.endswith("/git/ref/heads/trunk"):
                 return {"object": {"sha": self.current_base}}
@@ -1515,6 +1540,66 @@ def test_evidence_pr_uses_exact_alias_blobs_and_cleans_a_changed_base() -> None:
         )
     ]
     assert len(changed.deletes) == 1
+
+    wrong_author = Client(base_commit, author_id=99)
+
+    with pytest.raises(
+        producer.ContractError,
+        match="App author, signature, or parent",
+    ):
+        producer.create_evidence_pr(
+            wrong_author,
+            configuration=REVIEW_CONFIGURATION,
+            identity=identity,
+            review_base_commit=base_commit,
+            attestation_bytes=attestation,
+            artifact_bytes=artifact,
+            pr_body="audit context",
+            workflow_run_id=12,
+            workflow_run_attempt=3,
+        )
+
+    invalid_signature = Client(
+        base_commit,
+        signature_verified=False,
+    )
+
+    with pytest.raises(
+        producer.ContractError,
+        match="App author, signature, or parent",
+    ):
+        producer.create_evidence_pr(
+            invalid_signature,
+            configuration=REVIEW_CONFIGURATION,
+            identity=identity,
+            review_base_commit=base_commit,
+            attestation_bytes=attestation,
+            artifact_bytes=artifact,
+            pr_body="audit context",
+            workflow_run_id=12,
+            workflow_run_attempt=4,
+        )
+
+    wrong_parent = Client(
+        base_commit,
+        evidence_parent="f" * 40,
+    )
+
+    with pytest.raises(
+        producer.ContractError,
+        match="App author, signature, or parent",
+    ):
+        producer.create_evidence_pr(
+            wrong_parent,
+            configuration=REVIEW_CONFIGURATION,
+            identity=identity,
+            review_base_commit=base_commit,
+            attestation_bytes=attestation,
+            artifact_bytes=artifact,
+            pr_body="audit context",
+            workflow_run_id=12,
+            workflow_run_attempt=5,
+        )
 
 
 def test_handoff_rejects_app_permission_expansion(tmp_path: Path) -> None:
