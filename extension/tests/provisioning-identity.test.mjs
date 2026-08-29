@@ -91,6 +91,18 @@ test('hooked identity responses flow through the content bridge, clear on sign-o
   const h = bridgeHarness();
   const pageListeners = [];
   const posts = [];
+  // The page hook and the content bridge each register a message listener, and
+  // the order they register in follows whichever bundle finishes building
+  // first. A browser delivers the event to every listener, so addressing one by
+  // index would make the assertion depend on that order.
+  const dispatchPageMessage = (message) => {
+    const event = {
+      source: pageWindow,
+      origin: 'https://onlyfans.com',
+      data: message,
+    };
+    for (const listener of [...pageListeners]) listener(event);
+  };
   let identityBody = { id: 'creator-from-platform' };
   class FakeWebSocket {
     addEventListener() {}
@@ -167,11 +179,7 @@ test('hooked identity responses flow through the content bridge, clear on sign-o
     },
     targetOrigin: 'https://onlyfans.com',
   });
-  pageListeners[0]({
-    source: pageWindow,
-    origin: 'https://onlyfans.com',
-    data: posts[0].message,
-  });
+  dispatchPageMessage(posts[0].message);
   await new Promise((resolve) => setImmediate(resolve));
 
   const signedIn = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
@@ -184,11 +192,7 @@ test('hooked identity responses flow through the content bridge, clear on sign-o
   identityBody = { user: null };
   await pageWindow.fetch('/api2/v2/init');
   await new Promise((resolve) => setImmediate(resolve));
-  pageListeners[0]({
-    source: pageWindow,
-    origin: 'https://onlyfans.com',
-    data: posts[1].message,
-  });
+  dispatchPageMessage(posts[1].message);
   await new Promise((resolve) => setImmediate(resolve));
 
   const signedOut = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
