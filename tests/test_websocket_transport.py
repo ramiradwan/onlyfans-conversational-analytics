@@ -456,6 +456,13 @@ def test_invalid_ingest_fixture_is_rejected_without_crashing_connection() -> Non
         # recorded as a reporting failure rather than as an applied revision.
         heartbeat["payload"]["applied_config_revision"] = REQUIRED_CONFIG_REVISION
         agent.send_json(heartbeat)
+
+        # A heartbeat is answered only towards Bridge, so reading the lease right
+        # after sending one races the connection. Frames are handled in order, so
+        # a reply to a later frame places the read after the heartbeat.
+        agent.send_json(invalid)
+        assert agent.receive_json()["type"] == "ingest.rejected"
+
         lease = transport_manager.active_agents[DEV_ACCOUNT_ID]
         assert lease.applied_config_revision == REQUIRED_CONFIG_REVISION
 
