@@ -219,12 +219,9 @@ import {
         continue;
       }
 
-      postPreview(previewMessageObservation(rawRecord, creatorPlatformUserId, observedAt));
+      postPreview(previewMessageObservation(rawRecord, observedAt));
       if (mode !== 'full') continue;
-      const record = normalizeMessageRecord(rawRecord, {
-        contextChatId: routeChatId,
-        creatorPlatformUserId,
-      });
+      const record = normalizeMessageRecord(rawRecord, { contextChatId: routeChatId });
       if (record === null) continue;
       postObservation({
         event_type: 'message.observed',
@@ -326,15 +323,10 @@ import {
             if (records.length === 0) return;
             const observedAt = new Date().toISOString();
             for (const rawRecord of records) {
-              postPreview(previewMessageObservation(
-                rawRecord,
-                creatorPlatformUserId,
-                observedAt,
-              ));
+              postPreview(previewMessageObservation(rawRecord, observedAt));
               if (mode !== 'full') continue;
               const record = normalizeMessageRecord(rawRecord, {
                 contextChatId: webSocketContextChatId(rawRecord, frame),
-                creatorPlatformUserId,
               });
               if (record === null) continue;
               postObservation({

@@ -15,6 +15,33 @@ import {
   mapPlatformObservation,
 } from '../transport/capture-ingestion.mjs';
 
+/** Argument count of every call to `name`, one entry per call site. */
+function callArgumentCounts(source, name) {
+  const counts = [];
+  const opening = `${name}(`;
+  for (
+    let index = source.indexOf(opening);
+    index !== -1;
+    index = source.indexOf(opening, index + 1)
+  ) {
+    let depth = 0;
+    let separators = 0;
+    let cursor = index + opening.length - 1;
+    for (; cursor < source.length; cursor += 1) {
+      const character = source[cursor];
+      if ('([{'.includes(character)) depth += 1;
+      else if (')]}'.includes(character)) {
+        depth -= 1;
+        if (depth === 0) break;
+      } else if (character === ',' && depth === 1) separators += 1;
+    }
+    const args = source.slice(index + opening.length, cursor).trim();
+    if (args.length === 0) counts.push(0);
+    else counts.push(args.endsWith(',') ? separators : separators + 1);
+  }
+  return counts;
+}
+
 const CHAT_OBSERVATION = Object.freeze({
   event_type: 'chat.observed',
   observed_at: '2030-01-08T12:00:00Z',
@@ -92,6 +119,17 @@ test('standalone preview observations contain counts-only fields', () => {
     observed_at: '2030-01-08T12:00:00.000Z',
   });
   assert.equal(JSON.stringify({ message, chat }).includes('Synthetic content'), false);
+});
+
+test('page hook calls preview normalizers with their declared parameter list', async () => {
+  const pageHook = await readFile(new URL('../page-hook.js', import.meta.url), 'utf8');
+  for (const normalizer of [previewChatObservation, previewMessageObservation]) {
+    const counts = callArgumentCounts(pageHook, normalizer.name);
+    assert.equal(counts.length > 0, true, `${normalizer.name} is unreachable from the page hook`);
+    // An extra positional argument shifts the timestamp out of its parameter,
+    // and the reduced observation is then null for every record ever observed.
+    for (const count of counts) assert.equal(count, normalizer.length, normalizer.name);
+  }
 });
 
 test('full chat observations map to canonical ingestion changes', () => {
