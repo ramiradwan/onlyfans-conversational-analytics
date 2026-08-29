@@ -97,7 +97,7 @@ def _chrome_zip(
         "extension_id": producer.EXPECTED_EXTENSION_ID,
         "determinism_verified": True,
         "outputs": {
-            name: hashlib.sha256(data).hexdigest()
+            name: f"sha256:{hashlib.sha256(data).hexdigest()}"
             for name, data in outputs.items()
         },
         "target": "chrome116",
@@ -547,9 +547,9 @@ def test_actions_artifact_rejects_server_digest_zip_metadata_and_inner_tampering
         json.dumps(wrong_manifest, sort_keys=True) + "\n"
     ).encode()
     wrong_metadata = json.loads(entries["build-meta.json"])
-    wrong_metadata["outputs"]["manifest.json"] = hashlib.sha256(
-        entries["manifest.json"]
-    ).hexdigest()
+    wrong_metadata["outputs"]["manifest.json"] = (
+        "sha256:" + hashlib.sha256(entries["manifest.json"]).hexdigest()
+    )
     entries["build-meta.json"] = (
         json.dumps(wrong_metadata, sort_keys=True) + "\n"
     ).encode()
@@ -576,6 +576,33 @@ def test_actions_artifact_rejects_server_digest_zip_metadata_and_inner_tampering
         producer.qualify_downloaded_artifact(
             tampered_archive,
             expected_server_digest=tampered_server_digest,
+            release_tag="v2.0.0",
+        )
+
+    _, chrome_zip = _chrome_zip()
+    with zipfile.ZipFile(io.BytesIO(chrome_zip)) as source:
+        entries = {entry: source.read(entry) for entry in source.namelist()}
+
+    metadata = json.loads(entries["build-meta.json"])
+    metadata["outputs"]["background.js"] = hashlib.sha256(
+        entries["background.js"]
+    ).hexdigest()
+    entries["build-meta.json"] = (
+        json.dumps(metadata, sort_keys=True) + "\n"
+    ).encode()
+
+    bare_digest_zip = _zip_bytes(entries)
+    bare_digest_archive, bare_digest_server_digest = _actions_artifact(
+        chrome_zip=bare_digest_zip
+    )
+
+    with pytest.raises(
+        producer.ContractError,
+        match="output digest has invalid format",
+    ):
+        producer.qualify_downloaded_artifact(
+            bare_digest_archive,
+            expected_server_digest=bare_digest_server_digest,
             release_tag="v2.0.0",
         )
 

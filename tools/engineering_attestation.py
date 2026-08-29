@@ -63,6 +63,7 @@ REQUIRED_PRODUCT_CI_JOB_NAMES = {
 HEX_40 = re.compile(r"^[a-f0-9]{40}$")
 HEX_64 = re.compile(r"^[a-f0-9]{64}$")
 SPKI_FINGERPRINT = re.compile(r"^sha256:[a-f0-9]{64}$")
+SHA256_DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
 TAG = re.compile(r"^v[0-9A-Za-z][0-9A-Za-z._-]*$")
 AGENT_ZIP = re.compile(
     r"^OnlyFans-Conversational-Analytics-Agent-"
@@ -1076,7 +1077,12 @@ def qualify_downloaded_artifact(
     for name, declared in outputs.items():
         if not isinstance(name, str) or not isinstance(declared, str):
             raise ContractError("extension output digest entry is malformed")
-        if declared != sha256_bytes(inner[name]):
+        if not SHA256_DIGEST.fullmatch(declared):
+            raise ContractError(
+                f"extension output digest has invalid format for {name}"
+            )
+        expected = f"sha256:{sha256_bytes(inner[name])}"
+        if declared != expected:
             raise ContractError(f"extension output digest mismatch for {name}")
 
     with zipfile.ZipFile(io.BytesIO(chrome_zip)) as archive:
