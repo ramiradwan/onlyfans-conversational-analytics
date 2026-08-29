@@ -1,5 +1,8 @@
 import { chromium } from '@playwright/test';
 
+// Taken from the shipping module rather than restated, so a rename of the
+// account partition cannot leave this proof matching a name nothing writes.
+import { INGESTION_DATABASE_NAME_PREFIX } from '../../../extension/transport/read-only-indexeddb-ingestion-storage.mjs';
 import { EXTENSION_DIST } from './paths.mjs';
 
 const RECONCILE_ALARM_NAME = 'ofca-agent-reconcile';
@@ -77,10 +80,10 @@ export async function bindAgentFromBridgePage(
 }
 
 export async function extensionOutboxProof(worker) {
-  return worker.evaluate(async () => {
+  return worker.evaluate(async (databasePrefix) => {
     const databases = await indexedDB.databases();
     const matches = databases.filter(({ name }) => (
-      typeof name === 'string' && name.startsWith('onlyfans-agent-account-v2-')
+      typeof name === 'string' && name.startsWith(`${databasePrefix}-`)
     ));
     if (matches.length !== 1) {
       throw new Error(`Expected one account-partitioned Agent database, found ${matches.length}.`);
@@ -106,7 +109,7 @@ export async function extensionOutboxProof(worker) {
     } finally {
       database.close();
     }
-  });
+  }, INGESTION_DATABASE_NAME_PREFIX);
 }
 
 export async function extensionWorker(context, { differentFrom = null, timeoutMs = 15_000 } = {}) {

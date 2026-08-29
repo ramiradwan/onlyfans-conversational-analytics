@@ -2,12 +2,17 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 
 import { expect, test } from '@playwright/test';
 
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
+import {
+  LOCAL_SERVICE_ORIGIN,
+  LOCAL_SERVICE_ORIGIN_PATTERN,
+  ONLYFANS_ORIGIN_PATTERN,
+  acceptNativeHostPermissionPrompt,
+  openPopup,
+} from '../lib/consent-ui.mjs';
 import {
   extensionId,
   extensionState,
@@ -16,13 +21,9 @@ import {
 } from '../lib/extension-browser.mjs';
 import { EXTENSION_DIST, assertBuiltExtension } from '../lib/paths.mjs';
 
-const LOCAL_SERVICE_ORIGIN = 'http://bridge.localhost:17871';
-const ONLYFANS_ORIGIN_PATTERN = 'https://onlyfans.com/*';
-const LOCAL_SERVICE_ORIGIN_PATTERN = `${LOCAL_SERVICE_ORIGIN}/*`;
 const IDENTITY_PATH = '/api2/v2/users/me';
 const CHATS_PATH = '/api2/v2/chats';
 const MESSAGES_PATH = `/api2/v2/chats/${SYNTHETIC.chatId}/messages`;
-const execFileAsync = promisify(execFile);
 
 function localServiceAcceptsConnections() {
   return new Promise((resolve) => {
@@ -89,16 +90,6 @@ async function extensionSnapshot(worker) {
   });
 }
 
-async function openPopup(context, targetExtensionId, pageErrors) {
-  const popup = await context.newPage();
-  popup.on('pageerror', (error) => pageErrors.push(error.message));
-  await popup.goto(`chrome-extension://${targetExtensionId}/popup.html`, {
-    waitUntil: 'domcontentloaded',
-  });
-  await expect(popup.locator('#mode-label')).not.toHaveText('Checking local status…');
-  return popup;
-}
-
 async function createClosedExtensionDatabases(worker, names) {
   await worker.evaluate(async (databaseNames) => {
     for (const databaseName of databaseNames) {
@@ -123,97 +114,6 @@ function expectNoOptionalAccess(snapshot) {
   expect(snapshot.permissions.permissions ?? []).not.toContain('webRequest');
 }
 
-async function browserProcessId(context) {
-  const cdp = await context.browser().newBrowserCDPSession();
-  try {
-    const { processInfo } = await cdp.send('SystemInfo.getProcessInfo');
-    const browser = processInfo.find((candidate) => candidate.type === 'browser');
-    if (!Number.isSafeInteger(browser?.id) || browser.id <= 0) {
-      throw new Error('Chrome browser process ID is unavailable');
-    }
-    return browser.id;
-  } finally {
-    await cdp.detach();
-  }
-}
-
-async function acceptNativeHostPermissionPrompt(context) {
-  if (process.platform !== 'win32') {
-    throw new Error('Native optional-permission automation is not configured for this platform');
-  }
-  const targetProcessId = await browserProcessId(context);
-  const script = String.raw`
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-$root = [System.Windows.Automation.AutomationElement]::RootElement
-$deadline = (Get-Date).AddSeconds(10)
-$targetProcessId = ${targetProcessId}
-do {
-  $promptNameCondition = New-Object System.Windows.Automation.PropertyCondition(
-    [System.Windows.Automation.AutomationElement]::NameProperty,
-    '"Conversation Analytics" has requested additional permissions.'
-  )
-  $promptProcessCondition = New-Object System.Windows.Automation.PropertyCondition(
-    [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
-    $targetProcessId
-  )
-  $promptCondition = New-Object System.Windows.Automation.AndCondition(
-    $promptNameCondition,
-    $promptProcessCondition
-  )
-  $prompt = $root.FindFirst(
-    [System.Windows.Automation.TreeScope]::Descendants,
-    $promptCondition
-  )
-  if ($null -ne $prompt) {
-    $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
-      [System.Windows.Automation.AutomationElement]::NameProperty,
-      'Allow'
-    )
-    $typeCondition = New-Object System.Windows.Automation.PropertyCondition(
-      [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-      [System.Windows.Automation.ControlType]::Button
-    )
-    $buttonCondition = New-Object System.Windows.Automation.AndCondition(
-      $nameCondition,
-      $typeCondition
-    )
-    $button = $prompt.FindFirst(
-      [System.Windows.Automation.TreeScope]::Descendants,
-      $buttonCondition
-    )
-    if ($null -ne $button -and $button.Current.IsEnabled) {
-      try {
-        $invoke = $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-        $invoke.Invoke()
-      } catch {
-        Start-Sleep -Milliseconds 100
-        continue
-      }
-      $dismissDeadline = (Get-Date).AddSeconds(5)
-      do {
-        Start-Sleep -Milliseconds 100
-        $remaining = $root.FindFirst(
-          [System.Windows.Automation.TreeScope]::Descendants,
-          $promptCondition
-        )
-        if ($null -eq $remaining) { exit 0 }
-      } while ((Get-Date) -lt $dismissDeadline)
-      throw 'Chrome optional host permission prompt did not close after Allow'
-    }
-  }
-  Start-Sleep -Milliseconds 100
-} while ((Get-Date) -lt $deadline)
-throw 'Chrome optional host permission prompt was not found'
-`;
-  await execFileAsync('powershell.exe', [
-    '-NoLogo',
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    script,
-  ], { timeout: 15_000, windowsHide: true });
-}
 
 test('standalone preview survives pause, deletion, and restart without a local service', async () => {
   test.slow();

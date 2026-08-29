@@ -30,6 +30,10 @@ DEPENDENCY_INSTALL_COMMAND = "python -m pip install -r requirements-dev.txt"
 FRONTEND_BUILD_COMMAND = "npm run build --prefix frontend"
 WINDOWS_PRODUCTION_MARKER = "windows_production"
 
+BROWSER_SUITE_DIRECTORY = "tools/e2e-capture"
+BROWSER_SUITE_INVOCATIONS = ("npm test", "npm run test", "playwright test")
+WINDOWS_ONLY_SPEC_GUARD = 'process.platform !== \'win32\''
+
 
 def _workflow_document() -> dict[str, Any]:
     document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
@@ -286,6 +290,92 @@ def test_the_production_boot_tests_are_selected_on_windows() -> None:
         f"no Windows job selects `{WINDOWS_PRODUCTION_MARKER}`, so the production "
         f"boot tests would stop executing anywhere in CI"
     )
+
+
+def _windows_only_sources() -> list[str]:
+    """Browser-suite sources that refuse to run off Windows, read from source.
+
+    Derived at check time rather than listed here: a literal list would keep
+    asserting the suite is Windows-only after the guard was removed from it.
+    Both the specs and the helpers they share are scanned, because a spec
+    inherits the constraint from any helper it calls.
+    """
+
+    directory = ROOT / BROWSER_SUITE_DIRECTORY
+    return sorted(
+        f"{path.parent.name}/{path.name}"
+        for pattern in ("tests/*.mjs", "lib/*.mjs")
+        for path in directory.glob(pattern)
+        if WINDOWS_ONLY_SPEC_GUARD in path.read_text(encoding="utf-8")
+    )
+
+
+def _runs_the_browser_suite(step: dict[str, Any]) -> bool:
+    command = step.get("run")
+    if not isinstance(command, str):
+        return False
+    directory = str(step.get("working-directory", "")).replace("\\", "/").strip("/")
+    if directory != BROWSER_SUITE_DIRECTORY:
+        return False
+    return any(invocation in command for invocation in BROWSER_SUITE_INVOCATIONS)
+
+
+def _jobs_running_the_browser_suite(workflow: dict[str, Any]) -> list[str]:
+    return sorted(
+        name
+        for name, job in _jobs(workflow).items()
+        if any(_runs_the_browser_suite(step) for step in _steps(job))
+    )
+
+
+def _assert_the_browser_suite_runs_on_windows(workflow: dict[str, Any]) -> None:
+    names = _jobs_running_the_browser_suite(workflow)
+    assert names, (
+        f"no ci.yml job runs the `{BROWSER_SUITE_DIRECTORY}` suite, so the "
+        f"browser acceptance specs would stop executing in CI"
+    )
+    for name in names:
+        assert _runs_on_windows(_jobs(workflow)[name]), (
+            f"job `{name}` runs the `{BROWSER_SUITE_DIRECTORY}` suite on a "
+            f"non-Windows runner, where {_windows_only_sources()} throw"
+        )
+
+
+def test_the_browser_suite_runs_where_its_windows_only_specs_can_execute() -> None:
+    """Retargeting the browser job at ubuntu-latest turns the named check red.
+
+    A spec that refuses to run off Windows fails the job rather than skipping,
+    so routing the suite to a Linux runner is a defect the workflow cannot
+    express as a passing run.
+    """
+
+    workflow = _workflow_document()
+    assert _windows_only_sources(), (
+        "no Playwright spec carries the Windows-only guard, so this check "
+        "could only ever return one answer"
+    )
+    _assert_the_browser_suite_runs_on_windows(workflow)
+
+    retargeted = deepcopy(workflow)
+    job_name = _jobs_running_the_browser_suite(retargeted)[0]
+    _jobs(retargeted)[job_name]["runs-on"] = "ubuntu-latest"
+    with pytest.raises(AssertionError, match="on a non-Windows runner"):
+        _assert_the_browser_suite_runs_on_windows(retargeted)
+
+
+def test_dropping_the_browser_suite_from_ci_turns_the_check_red() -> None:
+    """Deleting the job must fail rather than pass vacuously.
+
+    The Windows-runner assertion iterates the jobs that run the suite, so with
+    no such job it holds trivially. This is the check that notices.
+    """
+
+    workflow = _workflow_document()
+    stripped = deepcopy(workflow)
+    for name in _jobs_running_the_browser_suite(stripped):
+        del _jobs(stripped)[name]
+    with pytest.raises(AssertionError, match="no ci.yml job runs the"):
+        _assert_the_browser_suite_runs_on_windows(stripped)
 
 
 def test_non_windows_jobs_deselect_the_production_boot_tests() -> None:

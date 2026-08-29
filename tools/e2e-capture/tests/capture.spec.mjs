@@ -11,6 +11,7 @@ import {
   readBrainSummary,
   requestAgentPairingTicket,
 } from '../lib/brain-probe.mjs';
+import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
 import {
   bindAgentFromBridgePage,
   contentBridgeIsActive,
@@ -131,6 +132,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
   let brain = null;
   let context = null;
   let worker = null;
+  const pageErrors = [];
 
   try {
     await test.step('load the audited MV3 artifact and pair it through the exact Bridge origin', async () => {
@@ -144,6 +146,17 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       });
       await brain.start();
 
+      // A clean profile starts with consent off, which leaves the binding
+      // bridge unregistered and no optional origins granted. The popup
+      // transition is the only path that grants them, and it settles at the
+      // identity phase because no binding exists yet.
+      const popup = await openPopup(context, actualExtensionId, pageErrors);
+      await connectFullAnalytics(context, popup, worker);
+      await expect.poll(async () => (await extensionState(worker)).capturePhase, {
+        message: 'Granting both origins did not move capture into the identity phase.',
+      }).toBe('identity');
+      await popup.close();
+
       const bindingPage = context.pages()[0] ?? await context.newPage();
       await establishBrowserWebAuthnSession(bindingPage, authDatabasePath);
       const pairing = await requestAgentPairingTicket(context);
@@ -154,12 +167,17 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         creatorAccountId: pairing.creatorAccountId,
         authTicket: pairing.pairingTicket,
       });
+
+      // Pairing reconciles identity to full through the bridge's onBound
+      // callback; without it the runtime wakes but the phase never advances.
+      await expect.poll(async () => (await extensionState(worker)).capturePhase, {
+        message: 'Pairing did not reconcile the capture phase to full.',
+      }).toBe('full');
     });
 
     const platform = new SyntheticPlatform();
     await platform.install(context);
     const platformPage = context.pages()[0] ?? await context.newPage();
-    const pageErrors = [];
     platformPage.on('pageerror', (error) => pageErrors.push(error.message));
     await platformPage.goto('https://onlyfans.com/', { waitUntil: 'domcontentloaded' });
     const platformDocumentToken = await platformPage.evaluate(
@@ -167,9 +185,14 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     );
 
     await test.step('prove both page worlds and Brain-owned capture policy are active', async () => {
+      // The MAIN-world hook publishes its controller last, so reading the mode
+      // off it proves both that it installed and which mode script preceded it.
       await expect.poll(
-        () => platformPage.evaluate(() => globalThis.__OFCA_PAGE_HOOK_ACTIVE__ === true),
-      ).toBe(true);
+        () => platformPage.evaluate(
+          () => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode ?? null,
+        ),
+        { message: 'The MAIN-world page hook did not install in full capture mode.' },
+      ).toBe('full');
       await expect.poll(() => contentBridgeIsActive(worker)).toBe(true);
       const state = await waitForExtensionState(
         worker,

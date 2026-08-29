@@ -143,14 +143,18 @@ jobs:
       - name: Test backend
         run: python -m pytest
 
-  capture-e2e:
-    runs-on: ubuntu-latest
+  windows-browser-e2e:
+    # One of the specs drives a native Chrome permission dialog through
+    # UI Automation, which exists only on Windows. Both specs therefore run on
+    # a Windows runner; test_ci_workflow.py keeps that binding required.
+    runs-on: windows-latest
 
     env:
-      # The harness declares the non-Windows runtime mode authorized by
-      # ADR 0019. Both variables are required: the derivation refuses this key
-      # outside test mode, and test mode without it falls through to DPAPI.
-      # Job scope so Brain and every helper subprocess derive the same keys.
+      # The harness declares an explicit test key so the databases it derives
+      # do not depend on the runner's user profile. Both variables are
+      # required: the derivation refuses this key outside test mode, and test
+      # mode without it falls back to DPAPI. Job scope so Brain and every
+      # helper subprocess derive the same keys.
       ENVIRONMENT: test
       OFCA_TEST_DATABASE_MASTER_KEY_HEX: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
 
@@ -197,10 +201,10 @@ jobs:
       - name: Install pinned E2E dependencies
         run: npm ci --prefix tools/e2e-capture
 
-      - name: Install Playwright Chromium and system dependencies
+      - name: Install Playwright Chromium
         working-directory: tools/e2e-capture
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
-      - name: Run capture E2E beneath Xvfb
+      - name: Run browser E2E
         working-directory: tools/e2e-capture
-        run: xvfb-run --auto-servernum npm test
+        run: npm test

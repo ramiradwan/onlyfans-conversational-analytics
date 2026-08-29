@@ -154,6 +154,7 @@ export class SyntheticPlatform {
                   text: SYNTHETIC.historyTexts[0],
                   createdAt: '2026-07-19T08:00:00Z',
                   fromUser: { id: SYNTHETIC.chatId, isMe: false },
+                  chatUserId: SYNTHETIC.chatId,
                 },
                 {
                   messageId: SYNTHETIC.historyMessageIds[1],
@@ -161,6 +162,7 @@ export class SyntheticPlatform {
                   postedAt: '2026-07-19T08:01:00Z',
                   senderId: SYNTHETIC.creatorId,
                   isOutgoing: true,
+                  chatUserId: SYNTHETIC.chatId,
                 },
                 {
                   message_id: SYNTHETIC.historyMessageIds[2],
@@ -168,6 +170,7 @@ export class SyntheticPlatform {
                   sent_at: '2026-07-19T08:02:00Z',
                   sender: { id: SYNTHETIC.chatId },
                   direction: 'inbound',
+                  chatUserId: SYNTHETIC.chatId,
                 },
               ],
             },
@@ -188,6 +191,7 @@ export class SyntheticPlatform {
         text: SYNTHETIC.messageOnlyText,
         createdAt: '2026-07-19T08:03:00Z',
         fromUser: { id: SYNTHETIC.messageOnlyPeerId, isMe: false },
+        chatUserId: SYNTHETIC.messageOnlyPeerId,
       },
     });
   }
@@ -199,6 +203,7 @@ export class SyntheticPlatform {
         text: SYNTHETIC.offlineText,
         createdAt: '2026-07-19T08:04:00Z',
         fromUser: { id: SYNTHETIC.offlinePeerId, isMe: false },
+        chatUserId: SYNTHETIC.offlinePeerId,
       },
     });
   }
