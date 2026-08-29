@@ -44,7 +44,10 @@ BOOTSTRAP_CAPTURE_POLICY = {
     ],
 }
 BOOTSTRAP_COMMAND_POLICY = {
-    "allowed_actions": ["message.send"],
+    # The distributed Agent declares no command capability and refuses a document
+    # that authorizes one, which would leave it on its bundled policy and capture
+    # nothing. A command action is published to an installation that declares it.
+    "allowed_actions": [],
     "max_text_length": 1000,
     "require_idempotency": True,
 }
