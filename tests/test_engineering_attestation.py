@@ -484,7 +484,7 @@ def test_secret_key_files_are_created_once_with_owner_only_permissions(
 def test_qualified_actions_artifact_binds_exact_inner_chrome_zip() -> None:
     archive, server_digest = _actions_artifact()
     qualified = producer.qualify_downloaded_artifact(
-        archive, expected_server_digest=server_digest, release_tag="v0.7.5"
+        archive, expected_server_digest=server_digest, release_tag="v2.0.0"
     )
     name, chrome_zip = _chrome_zip()
     assert qualified.filename == name
@@ -512,7 +512,7 @@ def test_actions_artifact_rejects_server_digest_zip_metadata_and_inner_tampering
         producer.qualify_downloaded_artifact(
             archive,
             expected_server_digest="sha256:" + "0" * 64,
-            release_tag="v0.7.5",
+            release_tag="v2.0.0",
         )
 
     _, bad_time_zip = _chrome_zip(timestamp=(2026, 8, 28, 12, 0, 0))
@@ -521,7 +521,7 @@ def test_actions_artifact_rejects_server_digest_zip_metadata_and_inner_tampering
         producer.qualify_downloaded_artifact(
             bad_archive,
             expected_server_digest=bad_server_digest,
-            release_tag="v0.7.5",
+            release_tag="v2.0.0",
         )
 
     _, bad_metadata_zip = _chrome_zip(external_attr=0x20)
@@ -532,7 +532,7 @@ def test_actions_artifact_rejects_server_digest_zip_metadata_and_inner_tampering
         producer.qualify_downloaded_artifact(
             bad_metadata_archive,
             expected_server_digest=bad_metadata_server_digest,
-            release_tag="v0.7.5",
+            release_tag="v2.0.0",
         )
 
     _, chrome_zip = _chrome_zip()
@@ -561,7 +561,7 @@ def test_actions_artifact_rejects_server_digest_zip_metadata_and_inner_tampering
         producer.qualify_downloaded_artifact(
             wrong_identity_archive,
             expected_server_digest=wrong_identity_server_digest,
-            release_tag="v0.7.5",
+            release_tag="v2.0.0",
         )
 
     _, chrome_zip = _chrome_zip()
@@ -576,14 +576,14 @@ def test_actions_artifact_rejects_server_digest_zip_metadata_and_inner_tampering
         producer.qualify_downloaded_artifact(
             tampered_archive,
             expected_server_digest=tampered_server_digest,
-            release_tag="v0.7.5",
+            release_tag="v2.0.0",
         )
 
-    with pytest.raises(producer.ContractError, match="installer version differ"):
+    with pytest.raises(producer.ContractError, match="Agent version differ"):
         producer.qualify_downloaded_artifact(
             archive,
             expected_server_digest=server_digest,
-            release_tag="v0.7.6",
+            release_tag="v2.0.1",
         )
 
 

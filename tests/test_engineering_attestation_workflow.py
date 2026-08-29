@@ -127,15 +127,15 @@ def test_signer_repeats_qualification_inside_the_protected_environment() -> None
     assert "sign-and-handoff" in handoff["run"]
     assert "set +x" in handoff["run"]
     assert "ulimit -c 0" in handoff["run"]
-    assert "::add-mask::" in handoff["run"]
-    assert "${value//%/%25}" in handoff["run"]
-    assert "forbidden line break" in handoff["run"]
+    assert "::add-mask::" not in handoff["run"]
+    assert "${value//%/%25}" not in handoff["run"]
+    assert "forbidden line break" not in handoff["run"]
     assert "${{ inputs." not in handoff["run"]
     assert {
         "ENGINEERING_ATTESTATION_PRIVATE_KEY_B64",
         "REVIEW_APP_PRIVATE_KEY_B64",
     } <= set(handoff["env"])
-    review_variables = {
+    review_secrets = {
         "REVIEW_REPOSITORY",
         "REVIEW_DEFAULT_BRANCH",
         "REVIEW_PROJECTION_PATH",
@@ -145,9 +145,9 @@ def test_signer_repeats_qualification_inside_the_protected_environment() -> None
         "REVIEW_BOT_USER_ID",
         "REVIEW_REPOSITORY_ID",
     }
-    assert review_variables <= set(handoff["env"])
-    for name in review_variables:
-        assert handoff["env"][name] == "${{ vars." + name + " }}"
+    assert review_secrets <= set(handoff["env"])
+    for name in review_secrets:
+        assert handoff["env"][name] == "${{ secrets." + name + " }}"
 
     checkout = next(
         step for step in _steps(signer) if step.get("name", "").startswith("Check out")
