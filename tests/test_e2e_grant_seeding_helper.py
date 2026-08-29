@@ -11,13 +11,16 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 
-from app.persistence.auth import SQLiteAuthenticationStore
+from app.persistence.auth import InstallationKeyReservation, SQLiteAuthenticationStore
 from app.security.installation_key import (
+    INSTALLATION_KEY_ALGORITHM,
+    PLATFORM_CRYPTO_PROVIDER,
     InstallationKeyPolicyError,
     InstallationKeyUnavailable,
 )
@@ -47,6 +50,21 @@ seed = _load_helper()
 
 def _store(tmp_path: Path) -> SQLiteAuthenticationStore:
     return SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
+
+
+def _reserve(
+    store: SQLiteAuthenticationStore, provider_name: str, provider_key_name: str
+) -> InstallationKeyReservation:
+    """Reserve without activating, as Brain does before it opens a provider."""
+
+    return store.reserve_installation_key(
+        InstallationKeyReservation(
+            provider_name=provider_name,
+            provider_key_name=provider_key_name,
+            algorithm=INSTALLATION_KEY_ALGORITHM,
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        )
+    )
 
 
 def _seed_arguments(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -148,6 +166,93 @@ def test_a_usable_provider_never_seeds_a_synthetic_installation_key(
 
     assert seed._ensure_installation_key_active(store) is None
     assert store.installation_key_reference() is None
+
+
+def test_an_unusable_provider_supersedes_a_stranded_platform_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Brain reserves the platform provider before discovering it cannot open it.
+
+    The reservation outlives that failure, and the store binds activation to
+    whichever reservation it holds, so the synthetic key is activatable only
+    once the stranded one is released.
+    """
+
+    class Provider:
+        def key_info(self, provider_key_name: str) -> None:
+            raise InstallationKeyUnavailable("opening the installation key provider")
+
+    monkeypatch.setattr(seed, "WindowsCNGInstallationKeyProvider", Provider)
+    store = _store(tmp_path)
+    _reserve(store, PLATFORM_CRYPTO_PROVIDER, "bridge-clean.installation.v1.stranded")
+
+    key = seed._ensure_installation_key_active(store)
+
+    assert key is not None
+    assert key.provider_name == seed.SYNTHETIC_KEY_PROVIDER_NAME
+    assert store.installation_key_reservation().provider_name == (
+        seed.SYNTHETIC_KEY_PROVIDER_NAME
+    )
+
+
+def test_an_unusable_provider_resumes_its_own_earlier_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A synthetic reservation from an earlier run is resumed, not superseded."""
+
+    class Provider:
+        def key_info(self, provider_key_name: str) -> None:
+            raise InstallationKeyUnavailable("opening the installation key provider")
+
+    monkeypatch.setattr(seed, "WindowsCNGInstallationKeyProvider", Provider)
+    store = _store(tmp_path)
+    reserved = _reserve(
+        store, seed.SYNTHETIC_KEY_PROVIDER_NAME, seed.SYNTHETIC_KEY_NAME
+    )
+
+    key = seed._ensure_installation_key_active(store)
+
+    assert key is not None
+    assert key.created_at == reserved.created_at
+
+
+def test_a_usable_provider_leaves_a_platform_reservation_untouched(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Only a provider proven unusable may strand a reservation worth releasing."""
+
+    class Provider:
+        def key_info(self, provider_key_name: str) -> None:
+            return None
+
+    monkeypatch.setattr(seed, "WindowsCNGInstallationKeyProvider", Provider)
+    store = _store(tmp_path)
+    reserved = _reserve(store, PLATFORM_CRYPTO_PROVIDER, "bridge-clean.installation.v1.live")
+
+    assert seed._ensure_installation_key_active(store) is None
+    assert store.installation_key_reservation() == reserved
+    assert store.installation_key_reference() is None
+
+
+def test_an_unrecognized_reservation_is_refused_rather_than_replaced(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class Provider:
+        def key_info(self, provider_key_name: str) -> None:
+            raise InstallationKeyUnavailable("opening the installation key provider")
+
+    monkeypatch.setattr(seed, "WindowsCNGInstallationKeyProvider", Provider)
+    store = _store(tmp_path)
+    reserved = _reserve(store, "Some Other Key Storage Provider", "someone-elses-key")
+
+    with pytest.raises(RuntimeError, match="Refusing to replace"):
+        seed._ensure_installation_key_active(store)
+
+    assert store.installation_key_reservation() == reserved
 
 
 def test_an_unusable_provider_reports_the_synthetic_key_it_seeded(

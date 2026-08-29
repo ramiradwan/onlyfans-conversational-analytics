@@ -32,6 +32,7 @@ from app.persistence.auth import (
 )
 from app.security.installation_key import (
     INSTALLATION_KEY_ALGORITHM,
+    PLATFORM_CRYPTO_PROVIDER,
     InstallationKeyPolicyError,
     InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
@@ -167,6 +168,53 @@ def _synthetic_installation_key_material(installation_key_id: str) -> tuple[str,
     return jkt, jwk
 
 
+def _release_unusable_platform_reservation(
+    store: SQLiteAuthenticationStore,
+) -> None:
+    """Drop an unactivated reservation this host has been proven unable to use.
+
+    Brain reserves the platform provider before it opens one, so a host that
+    fails the open keeps an unactivated platform reservation. The store binds
+    activation to the reservation it holds and preserves that reservation
+    across further reservations, so a synthetic key can only be activated once
+    the unusable one is gone. Callers reach this only after proving the
+    provider unusable; the delete matches the exact unactivated row and any
+    other reservation is refused rather than replaced.
+    """
+
+    reservation = store.installation_key_reservation()
+    if reservation is None or reservation.provider_name == SYNTHETIC_KEY_PROVIDER_NAME:
+        return
+    if reservation.provider_name != PLATFORM_CRYPTO_PROVIDER:
+        raise RuntimeError(
+            "Refusing to replace an installation key reservation held by "
+            f"{reservation.provider_name}"
+        )
+    with store.database.transaction() as connection:
+        cursor = connection.execute(
+            """
+            DELETE FROM installation_key_reference
+            WHERE singleton = 1
+              AND activated_at IS NULL
+              AND installation_key_id IS NULL
+              AND installation_key_jkt IS NULL
+              AND public_key_jwk IS NULL
+              AND provider_name = ?
+              AND provider_key_name = ?
+              AND algorithm = ?
+            """,
+            (
+                reservation.provider_name,
+                reservation.provider_key_name,
+                reservation.algorithm,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError(
+                "Unactivated installation key reservation changed during fallback"
+            )
+
+
 def _ensure_installation_key_active(
     store: SQLiteAuthenticationStore,
 ) -> InstallationKeyReference | None:
@@ -188,12 +236,13 @@ def _ensure_installation_key_active(
     if _real_key_provider_available():
         return None
 
+    _release_unusable_platform_reservation(store)
     now = datetime.now(timezone.utc)
     installation_key_id = f"{SYNTHETIC_KEY_NAME}-{uuid4()}"
     installation_key_jkt, public_key_jwk = _synthetic_installation_key_material(
         installation_key_id
     )
-    store.reserve_installation_key(
+    reserved = store.reserve_installation_key(
         InstallationKeyReservation(
             provider_name=SYNTHETIC_KEY_PROVIDER_NAME,
             provider_key_name=SYNTHETIC_KEY_NAME,
@@ -201,15 +250,26 @@ def _ensure_installation_key_active(
             created_at=now,
         )
     )
+    if (
+        reserved.provider_name != SYNTHETIC_KEY_PROVIDER_NAME
+        or reserved.provider_key_name != SYNTHETIC_KEY_NAME
+        or reserved.algorithm != INSTALLATION_KEY_ALGORITHM
+    ):
+        raise RuntimeError(
+            "Installation key reservation is held by "
+            f"{reserved.provider_name}, not the e2e synthetic provider"
+        )
+    # Activation is bound to the reservation the store kept, whose creation
+    # instant is its own, so the reference restates it rather than this run's.
     store.activate_installation_key(
         InstallationKeyReference(
-            provider_name=SYNTHETIC_KEY_PROVIDER_NAME,
-            provider_key_name=SYNTHETIC_KEY_NAME,
-            algorithm=INSTALLATION_KEY_ALGORITHM,
+            provider_name=reserved.provider_name,
+            provider_key_name=reserved.provider_key_name,
+            algorithm=reserved.algorithm,
             installation_key_id=installation_key_id,
             installation_key_jkt=installation_key_jkt,
             public_key_jwk=public_key_jwk,
-            created_at=now,
+            created_at=reserved.created_at,
             activated_at=now,
         )
     )
