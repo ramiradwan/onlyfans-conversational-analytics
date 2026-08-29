@@ -1670,18 +1670,29 @@ def create_evidence_pr(
             f"{_repo_path(configuration.repository)}/commits/{evidence_commit_sha}"
         )
         author = rest_commit.get("author") if isinstance(rest_commit, dict) else None
-        committer = rest_commit.get("committer") if isinstance(rest_commit, dict) else None
         parents = rest_commit.get("parents") if isinstance(rest_commit, dict) else None
+        commit_metadata = (
+            rest_commit.get("commit") if isinstance(rest_commit, dict) else None
+        )
+        verification = (
+            commit_metadata.get("verification")
+            if isinstance(commit_metadata, dict)
+            else None
+        )
+
         if (
             not isinstance(author, dict)
             or author.get("id") != identity.bot_user_id
-            or not isinstance(committer, dict)
-            or committer.get("id") != identity.bot_user_id
+            or not isinstance(verification, dict)
+            or verification.get("verified") is not True
+            or verification.get("reason") != "valid"
             or not isinstance(parents, list)
             or [parent.get("sha") for parent in parents if isinstance(parent, dict)]
             != [review_base_commit]
         ):
-            raise ContractError("created evidence commit failed App actor or parent checks")
+            raise ContractError(
+                "created evidence commit failed App author, signature, or parent checks"
+            )
         if (
             resolve_branch_head(
                 client,
