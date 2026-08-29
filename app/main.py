@@ -38,9 +38,21 @@ _installation_key_reference: InstallationKeyReference | None = None
 
 
 def initialize_installation_key() -> InstallationKeyReference:
-    """Ready the TPM-backed installation key for this installation."""
+    """Ready the TPM-backed installation key for this installation.
+
+    A test runtime adopts a key that is already active, because its durable
+    store outlives the process while the provider that produced the key need
+    not be one this host can open. Every other runtime proves the key through
+    the provider authority, and a test runtime holding no active key does too.
+    """
     global _installation_key_authority, _installation_key_reference
     store = SQLiteAuthenticationStore(settings.auth_database_path)
+    if settings.environment.lower() == "test":
+        active = store.installation_key_reference()
+        if active is not None:
+            _installation_key_authority = None
+            _installation_key_reference = active
+            return active
     authority = InstallationKeyAuthority(
         store, WindowsCNGInstallationKeyProvider()
     )

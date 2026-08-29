@@ -1263,3 +1263,100 @@ def test_an_activated_runtime_admits_transport_authentication(
     )
 
     assert (principal_id, account_id) == (DEVELOPMENT_PRINCIPAL_ID, DEV_ACCOUNT_ID)
+
+
+SYNTHETIC_PROVIDER_NAME = "E2E Synthetic Installation Key Provider"
+
+
+def _store_with_active_key(path: Path, provider_name: str) -> InstallationKeyReference:
+    """Activate one installation key under the named provider."""
+
+    store = SQLiteAuthenticationStore(path)
+    created_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    store.reserve_installation_key(
+        InstallationKeyReservation(
+            provider_name,
+            PROVIDER_KEY_NAME,
+            INSTALLATION_KEY_ALGORITHM,
+            created_at,
+        )
+    )
+    store.activate_installation_key(
+        InstallationKeyReference(
+            provider_name=provider_name,
+            provider_key_name=PROVIDER_KEY_NAME,
+            algorithm=INSTALLATION_KEY_ALGORITHM,
+            installation_key_id=INSTALLATION_KEY_ID,
+            installation_key_jkt=INSTALLATION_KEY_JKT,
+            public_key_jwk=json.dumps(
+                {"crv": "P-256", "kty": "EC", "x": "x", "y": "y"}, sort_keys=True
+            ),
+            created_at=created_at,
+            activated_at=datetime.now(timezone.utc),
+        )
+    )
+    reference = store.installation_key_reference()
+    assert reference is not None
+    return reference
+
+
+def test_a_test_runtime_adopts_an_active_key_without_opening_a_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A test runtime restarts against its own durable store, whatever wrote it."""
+
+    import app.main as main_module
+
+    database = tmp_path / "auth.sqlite3"
+    active = _store_with_active_key(database, SYNTHETIC_PROVIDER_NAME)
+
+    class Forbidden:
+        def __init__(self) -> None:
+            raise AssertionError("An active key is adopted before any provider opens")
+
+    monkeypatch.setattr(main_module.settings, "environment", "test")
+    monkeypatch.setattr(main_module.settings, "auth_database_path", database)
+    monkeypatch.setattr(main_module, "WindowsCNGInstallationKeyProvider", Forbidden)
+
+    assert main_module.initialize_installation_key() == active
+
+
+def test_a_test_runtime_without_an_active_key_still_opens_the_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import app.main as main_module
+
+    class Unavailable:
+        def __init__(self) -> None:
+            raise InstallationKeyUnavailable("opening the installation key provider")
+
+    monkeypatch.setattr(main_module.settings, "environment", "test")
+    monkeypatch.setattr(
+        main_module.settings, "auth_database_path", tmp_path / "auth.sqlite3"
+    )
+    monkeypatch.setattr(main_module, "WindowsCNGInstallationKeyProvider", Unavailable)
+
+    with pytest.raises(InstallationKeyUnavailable):
+        main_module.initialize_installation_key()
+
+
+def test_a_production_runtime_proves_an_active_key_through_the_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Adoption is bound to the runtime, never to the provider that wrote the key."""
+
+    import app.main as main_module
+
+    database = tmp_path / "auth.sqlite3"
+    _store_with_active_key(database, SYNTHETIC_PROVIDER_NAME)
+
+    class Unavailable:
+        def __init__(self) -> None:
+            raise InstallationKeyUnavailable("opening the installation key provider")
+
+    monkeypatch.setattr(main_module.settings, "environment", "production")
+    monkeypatch.setattr(main_module.settings, "auth_database_path", database)
+    monkeypatch.setattr(main_module, "WindowsCNGInstallationKeyProvider", Unavailable)
+
+    with pytest.raises(InstallationKeyUnavailable):
+        main_module.initialize_installation_key()
