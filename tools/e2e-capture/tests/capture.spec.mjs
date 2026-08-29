@@ -5,7 +5,7 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
-import { BRAIN_ORIGIN, BrainProcess } from '../lib/brain.mjs';
+import { BOOTSTRAP_CONFIG_REVISION, BRAIN_ORIGIN, BrainProcess } from '../lib/brain.mjs';
 import {
   establishBrowserWebAuthnSession,
   readBrainSummary,
@@ -202,12 +202,12 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
           && candidate.sessionBound
           && candidate.heartbeatTimerPresent
           && candidate.syncRequired === false
-          && candidate.appliedConfigRevision === 'config-8'
+          && candidate.appliedConfigRevision === BOOTSTRAP_CONFIG_REVISION
           && candidate.enabledResources.includes('chats')
           && candidate.enabledResources.includes('messages')
           && candidate.reconcileAlarm?.periodInMinutes === 1
         ),
-        'Agent did not bind and apply config-8 chat/message capture policy.',
+        `Agent did not bind and apply the ${BOOTSTRAP_CONFIG_REVISION} capture policy.`,
       );
       expect(state.outbox).not.toBeNull();
       expect(state.outbox.lastSourceSeq).toBe(0);

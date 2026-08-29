@@ -24,6 +24,10 @@ from app.transport import DEV_ACCOUNT_ID, DEV_AGENT_AUTH_TICKET, transport_manag
 
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
+# The revision a first publication on top of the bootstrap document issues.
+PUBLISHED_CONFIG_REVISION = (
+    f"config-{int(BOOTSTRAP_CONFIG_REVISION.removeprefix('config-')) + 1}"
+)
 
 
 def fixture(name: str) -> dict:
@@ -149,24 +153,24 @@ def test_repository_seals_each_monotonic_revision_against_mutation() -> None:
             issued_at=datetime(2026, 7, 18, 12, 0, tzinfo=timezone.utc),
         )
     )
-    assert published.config_revision == "config-9"
+    assert published.config_revision == PUBLISHED_CONFIG_REVISION
 
     capture_policy["rules"][0]["enabled"] = False
     published.capture_policy.rules[0].enabled = False
-    stored = repository.document(DEV_ACCOUNT_ID, "config-9")
+    stored = repository.document(DEV_ACCOUNT_ID, PUBLISHED_CONFIG_REVISION)
     assert stored is not None
     assert stored.capture_policy.rules[0].enabled is True
     with pytest.raises(ValueError, match="immutable"):
         repository.add_document(stored)
 
 
-def test_bootstrap_requires_dependency_closed_config_8() -> None:
+def test_bootstrap_requires_a_dependency_closed_capture_policy() -> None:
     repository = InMemoryAgentConfigRepository()
     authority = AgentConfigurationAuthority(repository)
 
     current = repository.document(DEV_ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION)
     assert current is not None
-    assert authority.required_document(DEV_ACCOUNT_ID).config_revision == "config-8"
+    assert authority.required_document(DEV_ACCOUNT_ID).config_revision == BOOTSTRAP_CONFIG_REVISION
     assert current.capture_policy.model_dump(mode="json") == BOOTSTRAP_CAPTURE_POLICY
     assert {
         (rule.resource, rule.url_pattern)
@@ -229,7 +233,7 @@ def test_publish_signals_connected_agent_and_new_session_self_heals_loss() -> No
     client = TestClient(app)
     with client.websocket_connect("/ws/agent") as agent:
         _, session = agent_handshake(agent)
-        assert session["payload"]["required_config_revision"] == "config-8"
+        assert session["payload"]["required_config_revision"] == BOOTSTRAP_CONFIG_REVISION
         published = asyncio.run(
             transport_manager.publish_config(
                 DEV_ACCOUNT_ID,
@@ -257,7 +261,7 @@ def test_publish_signals_connected_agent_and_new_session_self_heals_loss() -> No
         )
         available = agent.receive_json()
         assert available["type"] == "config.available"
-        assert available["payload"]["required_config_revision"] == "config-9"
+        assert available["payload"]["required_config_revision"] == PUBLISHED_CONFIG_REVISION
         assert available["payload"]["digest"] == published.digest
 
         assert asyncio.run(transport_manager.signal_config_available(DEV_ACCOUNT_ID))
@@ -267,7 +271,7 @@ def test_publish_signals_connected_agent_and_new_session_self_heals_loss() -> No
 
     with client.websocket_connect("/ws/agent") as reconnected:
         _, repeated = agent_handshake(reconnected)
-        assert repeated["payload"]["required_config_revision"] == "config-9"
+        assert repeated["payload"]["required_config_revision"] == PUBLISHED_CONFIG_REVISION
 
 
 def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation() -> None:
@@ -281,7 +285,7 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
 
         with client.websocket_connect("/ws/agent") as agent:
             hello = fixture("agent.hello")
-            hello["payload"]["applied_config_revision"] = "config-8"
+            hello["payload"]["applied_config_revision"] = BOOTSTRAP_CONFIG_REVISION
             _, session = agent_handshake(agent, hello)
             connected = bridge.receive_json()
             assert connected["type"] == "agent.state"
@@ -308,8 +312,8 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
                 )
             )
             drift = bridge.receive_json()
-            assert drift["payload"]["required_config_revision"] == "config-9"
-            assert drift["payload"]["applied_config_revision"] == "config-8"
+            assert drift["payload"]["required_config_revision"] == PUBLISHED_CONFIG_REVISION
+            assert drift["payload"]["applied_config_revision"] == BOOTSTRAP_CONFIG_REVISION
             assert drift["payload"]["degraded_reason"] is not None
             assert agent.receive_json()["type"] == "config.available"
 
@@ -327,8 +331,8 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
             )
             stale_state = bridge.receive_json()
             assert stale_state["type"] == "agent.state"
-            assert stale_state["payload"]["required_config_revision"] == "config-9"
-            assert stale_state["payload"]["applied_config_revision"] == "config-8"
+            assert stale_state["payload"]["required_config_revision"] == PUBLISHED_CONFIG_REVISION
+            assert stale_state["payload"]["applied_config_revision"] == BOOTSTRAP_CONFIG_REVISION
             assert stale_state["payload"]["degraded_reason"] is not None
             # Applying config now also refreshes readiness (configuration alignment
             # can change), so a system.state trails each agent.state.
@@ -349,8 +353,8 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
             )
             converged = bridge.receive_json()
             assert converged["type"] == "agent.state"
-            assert converged["payload"]["required_config_revision"] == "config-9"
-            assert converged["payload"]["applied_config_revision"] == "config-9"
+            assert converged["payload"]["required_config_revision"] == PUBLISHED_CONFIG_REVISION
+            assert converged["payload"]["applied_config_revision"] == PUBLISHED_CONFIG_REVISION
             assert converged["payload"]["degraded_reason"] is None
             converged_readiness = bridge.receive_json()
             assert converged_readiness["type"] == "system.state"

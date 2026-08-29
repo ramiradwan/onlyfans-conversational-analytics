@@ -452,9 +452,12 @@ def test_invalid_ingest_fixture_is_rejected_without_crashing_connection() -> Non
         assert rejected["payload"]["retryable"] is False
 
         heartbeat = bind_agent_payload(fixture("agent.heartbeat"), session, hello)
+        # The fixture carries a revision this service never published, which is
+        # recorded as a reporting failure rather than as an applied revision.
+        heartbeat["payload"]["applied_config_revision"] = REQUIRED_CONFIG_REVISION
         agent.send_json(heartbeat)
         lease = transport_manager.active_agents[DEV_ACCOUNT_ID]
-        assert lease.applied_config_revision == "config-8"
+        assert lease.applied_config_revision == REQUIRED_CONFIG_REVISION
 
 
 @pytest.mark.parametrize(

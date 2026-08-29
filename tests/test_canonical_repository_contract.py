@@ -16,6 +16,7 @@ from app.main import app
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.services.agent_configuration import (
+    BOOTSTRAP_CONFIG_REVISION,
     AgentConfigurationAuthority,
     build_config_document,
     config_document_digest,
@@ -30,6 +31,11 @@ from app.transport.ingestion import IngestionService, StreamKey
 
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
+_BOOTSTRAP_SEQUENCE = int(BOOTSTRAP_CONFIG_REVISION.removeprefix("config-"))
+# The revision a first publication on top of the bootstrap document issues, and
+# the next one after it, which no publication has reached.
+PUBLISHED_CONFIG_REVISION = f"config-{_BOOTSTRAP_SEQUENCE + 1}"
+UNPUBLISHED_CONFIG_REVISION = f"config-{_BOOTSTRAP_SEQUENCE + 2}"
 ACCOUNT_ID = "dev-creator-account"
 NOW = datetime(2026, 7, 18, 10, 5, tzinfo=timezone.utc)
 ACTION = {
@@ -94,9 +100,9 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
 ) -> None:
     authority = AgentConfigurationAuthority(repositories.configuration)
     installation_id = uuid4()
-    initial = authority.bind_installation(ACCOUNT_ID, installation_id, "config-8")
-    assert initial.required_config_revision == "config-8"
-    assert initial.applied_config_revision == "config-8"
+    initial = authority.bind_installation(ACCOUNT_ID, installation_id, BOOTSTRAP_CONFIG_REVISION)
+    assert initial.required_config_revision == BOOTSTRAP_CONFIG_REVISION
+    assert initial.applied_config_revision == BOOTSTRAP_CONFIG_REVISION
 
     published = await authority.publish(
         ACCOUNT_ID,
@@ -108,7 +114,7 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
         },
         issued_at=NOW,
     )
-    assert published.config_revision == published.etag == "config-9"
+    assert published.config_revision == published.etag == PUBLISHED_CONFIG_REVISION
     assert published.digest == config_document_digest(published)
     assert authority.required_document(ACCOUNT_ID).etag == published.etag
     manager = InMemoryTransportManager(repositories)
@@ -134,12 +140,12 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
     assert not_modified.headers["etag"] == published.etag
 
     drift = authority.installation(ACCOUNT_ID, installation_id)
-    assert drift.required_config_revision == "config-9"
-    assert drift.applied_config_revision == "config-8"
+    assert drift.required_config_revision == PUBLISHED_CONFIG_REVISION
+    assert drift.applied_config_revision == BOOTSTRAP_CONFIG_REVISION
     converged = authority.record_report(
         ACCOUNT_ID,
         installation_id,
-        config_revision="config-9",
+        config_revision=PUBLISHED_CONFIG_REVISION,
         digest=published.digest,
         outcome="applied",
         capability_details=[],
@@ -166,7 +172,7 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
 
     bad_digest = build_config_document(
         creator_account_id=ACCOUNT_ID,
-        config_revision="config-10",
+        config_revision=UNPUBLISHED_CONFIG_REVISION,
         issued_at=NOW,
         capture_policy=CAPTURE_POLICY,
         command_policy={
@@ -269,7 +275,7 @@ async def test_command_identity_deadline_result_dedup_and_receipt_contract(
         creator_account_id=ACCOUNT_ID,
         agent_installation_id=stream.agent_installation_id,
         agent_stream_id=stream.agent_stream_id,
-        applied_config_revision="config-8",
+        applied_config_revision=BOOTSTRAP_CONFIG_REVISION,
         now=NOW,
     )
     monkeypatch.setattr(transport_ws, "transport_manager", manager)

@@ -16,6 +16,7 @@ from app.main import app
 from app.persistence.history import StreamKey
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
+from app.services.agent_configuration import BOOTSTRAP_CONFIG_REVISION
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
     DEV_AGENT_AUTH_TICKET,
@@ -28,6 +29,10 @@ from app.transport.manager import (
 
 INSTALLATION_ID = UUID("20000000-0000-4000-8000-000000000001")
 STREAM_ID = UUID("30000000-0000-4000-8000-000000000001")
+# The revision a first publication on top of the bootstrap document issues.
+PUBLISHED_CONFIG_REVISION = (
+    f"config-{int(BOOTSTRAP_CONFIG_REVISION.removeprefix('config-')) + 1}"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -281,10 +286,10 @@ def test_settings_are_csrf_cas_and_matching_config_revision_bound() -> None:
         assert updated.json()["effective_state"] == "not_applied"
         internal = transport_manager.history.history_settings(DEV_ACCOUNT_ID)
         required_config = internal["required_config_revision"]
-        assert required_config == "config-9"
+        assert required_config == PUBLISHED_CONFIG_REVISION
 
         transport_manager.history.mark_history_config_applied(
-            DEV_ACCOUNT_ID, "config-8"
+            DEV_ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION
         )
         assert transport_manager.history.history_settings(DEV_ACCOUNT_ID)[
             "effective_settings_revision"
@@ -394,7 +399,7 @@ def test_history_config_ack_is_reconciled_after_bind_and_on_heartbeat(
             agent_installation_id=UUID("00000000-0000-4000-8000-000000000099"),
             agent_stream_id=UUID("00000000-0000-4000-8000-000000000097"),
             config_auth_ticket="test-config-ticket",
-            applied_config_revision="config-9",
+            applied_config_revision=PUBLISHED_CONFIG_REVISION,
             last_heartbeat_at=now,
         )
         transport_manager.active_agents[account_id] = lease
@@ -403,7 +408,7 @@ def test_history_config_ack_is_reconciled_after_bind_and_on_heartbeat(
                 account_id, settings_record
             )
             assert sent.is_set()
-            assert document.config_revision == "config-9"
+            assert document.config_revision == PUBLISHED_CONFIG_REVISION
             effective = transport_manager.history.history_settings(account_id)
             assert effective["effective_settings_revision"] == 1
 

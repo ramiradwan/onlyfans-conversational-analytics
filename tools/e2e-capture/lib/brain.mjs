@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import net from 'node:net';
+import path from 'node:path';
 
 import { PRODUCT_ROOT, pythonExecutable } from './paths.mjs';
 
@@ -9,6 +11,22 @@ export const BRAIN_PORT = 17_871;
 export const BRAIN_ORIGIN = `http://bridge.localhost:${BRAIN_PORT}`;
 export const BRAIN_LOOPBACK_URL = `http://${BRAIN_HOST}:${BRAIN_PORT}`;
 export const BRAIN_HTTP_URL = BRAIN_ORIGIN;
+
+function bootstrapConfigRevision() {
+  const source = readFileSync(
+    path.join(PRODUCT_ROOT, 'app', 'services', 'agent_configuration.py'),
+    'utf8',
+  );
+  const match = /^BOOTSTRAP_CONFIG_REVISION = "([^"]+)"$/m.exec(source);
+  if (match === null) {
+    throw new Error('Unable to read BOOTSTRAP_CONFIG_REVISION from the Brain source.');
+  }
+  return match[1];
+}
+
+// Read from the service rather than restated here, so the revision this suite
+// waits for cannot drift from the one the service publishes.
+export const BOOTSTRAP_CONFIG_REVISION = bootstrapConfigRevision();
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));

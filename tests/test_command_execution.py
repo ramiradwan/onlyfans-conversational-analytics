@@ -9,6 +9,7 @@ import pytest
 
 from app.api.endpoints.transport_ws import _handle_agent_message
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
+from app.services.agent_configuration import BOOTSTRAP_CONFIG_REVISION
 from app.services.command_execution import (
     CommandAlreadyExistsError,
     CommandReissueError,
@@ -49,7 +50,7 @@ async def bind_agent(
         creator_account_id=DEV_ACCOUNT_ID,
         agent_installation_id=uuid4(),
         agent_stream_id=uuid4(),
-        applied_config_revision="config-8",
+        applied_config_revision=BOOTSTRAP_CONFIG_REVISION,
         now=now,
     )
 

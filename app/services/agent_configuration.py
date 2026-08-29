@@ -16,7 +16,7 @@ from app.protocol import AgentConfigDocumentResponse
 
 
 DEVELOPMENT_BOOTSTRAP_ACCOUNT_ID = "dev-creator-account"
-BOOTSTRAP_CONFIG_REVISION = "config-8"
+BOOTSTRAP_CONFIG_REVISION = "config-9"
 BOOTSTRAP_ISSUED_AT = datetime(2026, 7, 18, 10, 1, tzinfo=timezone.utc)
 BOOTSTRAP_CAPTURE_POLICY = {
     "observation_interval_seconds": 30,

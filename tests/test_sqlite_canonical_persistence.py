@@ -20,7 +20,9 @@ from app.persistence.migrations import (
     SchemaCompatibilityError,
 )
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
+from app.services import agent_configuration
 from app.services.agent_configuration import (
+    BOOTSTRAP_CONFIG_REVISION,
     AgentConfigurationAuthority,
     ConfigInstallationRecord,
     build_config_document,
@@ -30,6 +32,11 @@ from app.transport.ingestion import IngestionService, StreamKey
 
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
+_BOOTSTRAP_SEQUENCE = int(BOOTSTRAP_CONFIG_REVISION.removeprefix("config-"))
+# The revision immediately before the bootstrap document, which a fresh
+# database never holds, and the one a first publication on top of it issues.
+PRE_BOOTSTRAP_CONFIG_REVISION = f"config-{_BOOTSTRAP_SEQUENCE - 1}"
+PUBLISHED_CONFIG_REVISION = f"config-{_BOOTSTRAP_SEQUENCE + 1}"
 ACCOUNT_ID = "dev-creator-account"
 NOW = datetime(2026, 7, 18, 10, 5, tzinfo=timezone.utc)
 ACTION = {
@@ -87,7 +94,7 @@ def test_authoritative_connection_uses_wal_full_sync_foreign_keys_and_timeout(
         assert connection.execute("PRAGMA busy_timeout").fetchone()[0] == 7_500
 
 
-def test_fresh_sqlite_bootstrap_is_hard_cut_to_config_8(
+def test_fresh_sqlite_bootstrap_is_hard_cut_to_the_bootstrap_revision(
     tmp_path: Path,
 ) -> None:
     repositories = create_canonical_repositories(
@@ -95,9 +102,48 @@ def test_fresh_sqlite_bootstrap_is_hard_cut_to_config_8(
     )
     authority = AgentConfigurationAuthority(repositories.configuration)
 
-    assert repositories.configuration.document(ACCOUNT_ID, "config-7") is None
-    assert repositories.configuration.document(ACCOUNT_ID, "config-8") is not None
-    assert authority.required_document(ACCOUNT_ID).config_revision == "config-8"
+    assert repositories.configuration.document(
+        ACCOUNT_ID, PRE_BOOTSTRAP_CONFIG_REVISION
+    ) is None
+    assert repositories.configuration.document(ACCOUNT_ID, BOOTSTRAP_CONFIG_REVISION) is not None
+    assert authority.required_document(ACCOUNT_ID).config_revision == BOOTSTRAP_CONFIG_REVISION
+
+
+def _open_configuration(path: Path) -> AgentConfigurationAuthority:
+    return AgentConfigurationAuthority(
+        create_canonical_repositories("sqlite", canonical_path=path).configuration
+    )
+
+
+def test_persisted_bootstrap_content_change_demands_a_new_revision(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Revisions are immutable, so bootstrap content cannot change in place.
+
+    An installation that already persisted the current revision refuses to
+    start on altered content; publishing it under the next revision succeeds.
+    """
+
+    path = tmp_path / "installed.sqlite3"
+    _open_configuration(path)
+
+    monkeypatch.setattr(
+        agent_configuration,
+        "BOOTSTRAP_COMMAND_POLICY",
+        {**agent_configuration.BOOTSTRAP_COMMAND_POLICY, "max_text_length": 1},
+    )
+    with pytest.raises(RuntimeError, match="content has changed"):
+        _open_configuration(path)
+
+    monkeypatch.setattr(
+        agent_configuration, "BOOTSTRAP_CONFIG_REVISION", PUBLISHED_CONFIG_REVISION
+    )
+    reopened = _open_configuration(path)
+    assert (
+        reopened.required_document(ACCOUNT_ID).config_revision
+        == PUBLISHED_CONFIG_REVISION
+    )
 
 
 @pytest.mark.asyncio
@@ -108,7 +154,7 @@ async def test_configuration_and_commands_survive_fresh_repository_connections(
     first = create_canonical_repositories("sqlite", canonical_path=path)
     configuration = AgentConfigurationAuthority(first.configuration)
     installation_id = uuid4()
-    configuration.bind_installation(ACCOUNT_ID, installation_id, "config-8")
+    configuration.bind_installation(ACCOUNT_ID, installation_id, BOOTSTRAP_CONFIG_REVISION)
     published = await configuration.publish(
         ACCOUNT_ID,
         capture_policy=CAPTURE_POLICY,
@@ -149,7 +195,10 @@ async def test_configuration_and_commands_survive_fresh_repository_connections(
     second = create_canonical_repositories("sqlite", canonical_path=path)
     restarted_configuration = AgentConfigurationAuthority(second.configuration)
     restarted_command = second.commands.get(command.command_id)
-    assert restarted_configuration.required_document(ACCOUNT_ID).config_revision == "config-9"
+    assert (
+        restarted_configuration.required_document(ACCOUNT_ID).config_revision
+        == PUBLISHED_CONFIG_REVISION
+    )
     assert restarted_configuration.installation(
         ACCOUNT_ID, installation_id
     ).required_config_revision == published.config_revision
@@ -292,7 +341,7 @@ def test_configuration_publication_rolls_back_document_if_required_update_fails(
     authority = AgentConfigurationAuthority(repositories.configuration)
     document = build_config_document(
         creator_account_id=ACCOUNT_ID,
-        config_revision="config-9",
+        config_revision=PUBLISHED_CONFIG_REVISION,
         issued_at=NOW,
         capture_policy=CAPTURE_POLICY,
         command_policy={
@@ -313,5 +362,7 @@ def test_configuration_publication_rolls_back_document_if_required_update_fails(
         )
     with pytest.raises(sqlite3.IntegrityError, match="required update rejected"):
         repositories.configuration.publish_document(document)  # type: ignore[attr-defined]
-    assert repositories.configuration.document(ACCOUNT_ID, "config-9") is None
-    assert authority.required_document(ACCOUNT_ID).config_revision == "config-8"
+    assert repositories.configuration.document(
+        ACCOUNT_ID, PUBLISHED_CONFIG_REVISION
+    ) is None
+    assert authority.required_document(ACCOUNT_ID).config_revision == BOOTSTRAP_CONFIG_REVISION
