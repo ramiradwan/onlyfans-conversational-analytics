@@ -579,6 +579,33 @@ def test_actions_artifact_rejects_server_digest_zip_metadata_and_inner_tampering
             release_tag="v2.0.0",
         )
 
+    _, chrome_zip = _chrome_zip()
+    with zipfile.ZipFile(io.BytesIO(chrome_zip)) as source:
+        entries = {entry: source.read(entry) for entry in source.namelist()}
+
+    metadata = json.loads(entries["build-meta.json"])
+    metadata["outputs"]["background.js"] = hashlib.sha256(
+        entries["background.js"]
+    ).hexdigest()
+    entries["build-meta.json"] = (
+        json.dumps(metadata, sort_keys=True) + "\n"
+    ).encode()
+
+    bare_digest_zip = _zip_bytes(entries)
+    bare_digest_archive, bare_digest_server_digest = _actions_artifact(
+        chrome_zip=bare_digest_zip
+    )
+
+    with pytest.raises(
+        producer.ContractError,
+        match="output digest has invalid format",
+    ):
+        producer.qualify_downloaded_artifact(
+            bare_digest_archive,
+            expected_server_digest=bare_digest_server_digest,
+            release_tag="v2.0.0",
+        )
+
     with pytest.raises(producer.ContractError, match="Agent version differ"):
         producer.qualify_downloaded_artifact(
             archive,
