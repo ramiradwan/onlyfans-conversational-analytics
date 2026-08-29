@@ -32,6 +32,7 @@ from app.persistence.auth import (
 )
 from app.security.installation_key import (
     INSTALLATION_KEY_ALGORITHM,
+    InstallationKeyPolicyError,
     InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
 )
@@ -45,6 +46,10 @@ PLATFORM_CREATOR_ID = "e2e-platform-creator"
 
 SYNTHETIC_KEY_PROVIDER_NAME = "E2E Synthetic Installation Key Provider"
 SYNTHETIC_KEY_NAME = "e2e-temporary-installation-key"
+
+# Read by the provider probe and never activated, so the probe stays
+# non-mutating: its absence is what the probe expects to observe.
+PROVIDER_PROBE_KEY_NAME = "bridge-clean.e2e.provider-probe"
 
 
 def _grant(
@@ -126,17 +131,19 @@ def _authorize_account(
 
 
 def _real_key_provider_available() -> bool:
-    """Return whether this host offers the TPM-backed platform provider.
+    """Return whether this host has a usable TPM-backed platform provider.
 
-    Mirrors the detection ``app.main.activate_runtime`` already performs at
-    Brain startup: constructing the provider raises
-    ``InstallationKeyUnavailable`` on a host with none, which is also why
-    Brain starts there unactivated instead of failing.
+    Constructing the adapter only proves the Windows CNG API is callable; it
+    opens no provider. ``key_info`` opens the platform provider, enforces the
+    hardware-backed policy, and reads a named key without creating one, so a
+    probe for a key that is never activated returns ``None`` exactly when the
+    provider itself is usable.
     """
 
     try:
-        WindowsCNGInstallationKeyProvider()
-    except InstallationKeyUnavailable:
+        provider = WindowsCNGInstallationKeyProvider()
+        provider.key_info(PROVIDER_PROBE_KEY_NAME)
+    except (InstallationKeyUnavailable, InstallationKeyPolicyError):
         return False
     return True
 
@@ -165,13 +172,13 @@ def _ensure_installation_key_active(
 ) -> InstallationKeyReference | None:
     """Return the active installation key, seeding an e2e-only one if needed.
 
-    Production activates a real TPM-backed key at Brain startup when a
-    platform key provider is present (``app.main.initialize_installation_key``).
-    A host with no such provider starts Brain there unactivated by design, so
+    Production activates a real TPM-backed key at Brain startup when a usable
+    platform key provider exists (``app.main.initialize_installation_key``).
+    A host with no usable provider starts Brain there unactivated by design, so
     on that host this drives a synthetic key through the store's real
     reserve/activate transitions instead of writing the reference row
-    directly. When a real provider is present but no key was activated, this
-    seeds nothing and leaves the failure to the caller: a present provider
+    directly. When a usable provider exists but no key was activated, this
+    seeds nothing and leaves the failure to the caller: a usable provider
     that never activated is a real condition to surface, not to paper over.
     """
 
@@ -218,7 +225,11 @@ def main() -> int:
     store = SQLiteAuthenticationStore(arguments.auth_database)
     key = _ensure_installation_key_active(store)
     if key is None:
-        raise RuntimeError("Temporary installation key is not active")
+        # A usable provider is the only reason seeding is refused.
+        raise RuntimeError(
+            "Temporary installation key is not active; the TPM-backed "
+            "platform provider probe succeeded, so no synthetic key was seeded"
+        )
     grants = [
         _grant(
             grant_type,
