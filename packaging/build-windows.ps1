@@ -40,6 +40,7 @@ $PolicyPath = Join-Path $ProjectRoot "tools\packaging_policy.py"
 $RuntimePolicyPath = Join-Path $ProjectRoot "packaging\runtime-files.json"
 $InnoScriptPath = Join-Path $ProjectRoot "packaging\inno\brain.iss"
 $DigestScriptPath = Join-Path $ProjectRoot "packaging\write-digests.ps1"
+$AgentBundleScriptPath = Join-Path $ProjectRoot "packaging\new-agent-bundle.ps1"
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 
@@ -62,6 +63,9 @@ if (-not (Test-Path -LiteralPath $InnoScriptPath -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $DigestScriptPath -PathType Leaf)) {
     throw "Digest writer does not exist: $DigestScriptPath"
+}
+if (-not (Test-Path -LiteralPath $AgentBundleScriptPath -PathType Leaf)) {
+    throw "Deterministic Agent bundle writer does not exist: $AgentBundleScriptPath"
 }
 if ($OutputRoot -eq $ProjectRoot -or $OutputRoot.StartsWith($ProjectRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Build output must be outside the repository: $OutputRoot"
@@ -335,27 +339,7 @@ function New-AgentBundle {
         [Parameter(Mandatory)] [string] $BundlePath
     )
 
-    Add-Type -AssemblyName System.IO.Compression | Out-Null
-    $bundleStream = [IO.File]::Open($BundlePath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
-    try {
-        $archive = [IO.Compression.ZipArchive]::new($bundleStream, [IO.Compression.ZipArchiveMode]::Create)
-        try {
-            foreach ($file in @(Get-ChildItem -LiteralPath $AgentRoot -Recurse -File | Sort-Object FullName)) {
-                $relative = Get-RelativeFilePath -Root $AgentRoot -FullName $file.FullName
-                $entryStream = $archive.CreateEntry($relative, [IO.Compression.CompressionLevel]::Optimal).Open()
-                try {
-                    $bytes = [IO.File]::ReadAllBytes($file.FullName)
-                    $entryStream.Write($bytes, 0, $bytes.Length)
-                } finally {
-                    $entryStream.Dispose()
-                }
-            }
-        } finally {
-            $archive.Dispose()
-        }
-    } finally {
-        $bundleStream.Dispose()
-    }
+    & $AgentBundleScriptPath -SourceDirectory $AgentRoot -BundlePath $BundlePath
 }
 
 if (-not $SkipAssetBuild) {

@@ -15,6 +15,7 @@ Use these pages to find the instructions or reference material for a specific ta
 ## Release and acceptance
 
 - [Build Windows release artifacts](build-windows.md)
+- [Attest a released Chrome package](engineering-attestation.md)
 - [Run product qualification](qualification.md)
 - [Run Windows acceptance](installation-and-acceptance.md)
 

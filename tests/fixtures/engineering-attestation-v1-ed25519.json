@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "purpose": "Synthetic cross-repository conformance vector. The private seed is TEST-ONLY and must never be used for production signing.",
+  "projection": {
+    "object": {
+      "zeta": [3, 2, 1],
+      "alpha": {
+        "enabled": true,
+        "note": "legal projection test"
+      }
+    },
+    "canonical_json_utf8": "{\"alpha\":{\"enabled\":true,\"note\":\"legal projection test\"},\"zeta\":[3,2,1]}",
+    "sha256": "c64329cc3b747e7d255fc16f4cbd878ba918316b2488411ae36fc28515502e8f"
+  },
+  "ed25519": {
+    "test_private_seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=\n-----END PUBLIC KEY-----\n",
+    "public_key_spki_fingerprint": "sha256:06e3fd8fda29bb60ab59557de61edb0aecdb231134be30e75b455f8e1b792fa9",
+    "unsigned_attestation": {
+      "schema_version": "1.0",
+      "attestation_id": "chrome-extension-conformance-1",
+      "created_at": "2026-08-28T00:00:00Z",
+      "repository": "ramiradwan/onlyfans-conversational-analytics",
+      "commit_hash": "0123456789abcdef0123456789abcdef01234567",
+      "workflow": ".github/workflows/engineering-attestation.yml",
+      "target": "chrome-extension",
+      "artifact": {
+        "filename": "OnlyFans-Conversational-Analytics-Agent-1.2.3-chrome.zip",
+        "sha256": "abababababababababababababababababababababababababababababababab",
+        "size_bytes": 123456,
+        "version": "1.2.3",
+        "media_type": "application/zip"
+      },
+      "legal_projection": {
+        "zeta": [3, 2, 1],
+        "alpha": {
+          "enabled": true,
+          "note": "legal projection test"
+        }
+      },
+      "provenance": {
+        "algorithm": "ed25519",
+        "signed_at": "2026-08-28T00:00:00Z",
+        "signer_id": "product-engineering-attestation-ed25519-v1"
+      }
+    },
+    "signing_payload_utf8": "{\"artifact\":{\"filename\":\"OnlyFans-Conversational-Analytics-Agent-1.2.3-chrome.zip\",\"media_type\":\"application/zip\",\"sha256\":\"abababababababababababababababababababababababababababababababab\",\"size_bytes\":123456,\"version\":\"1.2.3\"},\"attestation_id\":\"chrome-extension-conformance-1\",\"commit_hash\":\"0123456789abcdef0123456789abcdef01234567\",\"created_at\":\"2026-08-28T00:00:00Z\",\"legal_projection\":{\"alpha\":{\"enabled\":true,\"note\":\"legal projection test\"},\"zeta\":[3,2,1]},\"provenance\":{\"algorithm\":\"ed25519\",\"signed_at\":\"2026-08-28T00:00:00Z\",\"signer_id\":\"product-engineering-attestation-ed25519-v1\"},\"repository\":\"ramiradwan/onlyfans-conversational-analytics\",\"schema_version\":\"1.0\",\"target\":\"chrome-extension\",\"workflow\":\".github/workflows/engineering-attestation.yml\"}",
+    "signing_payload_sha256": "6cd8ce2ccefa3cdcbb816ae0a6efa14ce7aa3dcf32106d72385a81e3d45b4c04",
+    "signature_base64": "Vo9ihqnomKBjH0Av36wCMckpOfQF6TRD1xQr9zlIQvZKN7MJALcEczAXmQVboYlfi0M0iOeLDWs8P6pmTQynCQ==",
+    "final_attestation_sha256": "e896413cda58855fc862511942c093299a04badcf644cfb01a8aa971f3d7c21f"
+  },
+  "negative_vectors": {
+    "malformed_base64_signature": "***not-base64***",
+    "wrong_signer_id": "product-engineering-attestation-ed25519-v2",
+    "duplicate_key_json": "{\"outer\":{\"duplicate\":1,\"duplicate\":2}}",
+    "nonfinite_json": "{\"bad\":NaN}"
+  }
+}

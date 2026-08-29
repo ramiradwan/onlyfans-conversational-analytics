@@ -1,0 +1,10 @@
+/.github/CODEOWNERS @ramiradwan
+/.github/workflows/engineering-attestation.yml @ramiradwan
+/attestation/ @ramiradwan
+/packaging/build-windows.ps1 @ramiradwan
+/packaging/new-agent-bundle.ps1 @ramiradwan
+/tests/fixtures/engineering-attestation-v1-ed25519.json @ramiradwan
+/tests/test_agent_bundle.py @ramiradwan
+/tests/test_engineering_attestation.py @ramiradwan
+/tests/test_engineering_attestation_workflow.py @ramiradwan
+/tools/engineering_attestation.py @ramiradwan
