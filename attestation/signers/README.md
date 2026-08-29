@@ -16,21 +16,21 @@ Environment variables:
 
 - `ENGINEERING_ATTESTATION_SIGNER_ID`
 - `ENGINEERING_ATTESTATION_SPKI_SHA256`
-- `REVIEW_REPOSITORY`
-- `REVIEW_DEFAULT_BRANCH`
-- `REVIEW_PROJECTION_PATH`
-- `REVIEW_PROJECTION_DIGEST_PATH`
-- `REVIEW_APP_ID`
-- `REVIEW_INSTALLATION_ID`
-- `REVIEW_BOT_USER_ID`
-- `REVIEW_REPOSITORY_ID`
 
 Environment secrets:
 
 - `ENGINEERING_ATTESTATION_PRIVATE_KEY_B64`, standard Base64 of the unencrypted Ed25519 private PEM;
+- `REVIEW_REPOSITORY`;
+- `REVIEW_DEFAULT_BRANCH`;
+- `REVIEW_PROJECTION_PATH`;
+- `REVIEW_PROJECTION_DIGEST_PATH`;
+- `REVIEW_APP_ID`;
+- `REVIEW_INSTALLATION_ID`;
+- `REVIEW_BOT_USER_ID`;
+- `REVIEW_REPOSITORY_ID`;
 - `REVIEW_APP_PRIVATE_KEY_B64`, standard Base64 of the dedicated review GitHub App private PEM.
 
-The four review-address variables have no tracked defaults. The workflow verifies that the resolved repository address and default branch still match the protected configuration, then independently verifies the numeric App, installation, bot-user, and repository identities. A rename, transfer, or default-branch change stops the producer until the protected configuration is deliberately reviewed and updated.
+The protected review configuration values have no tracked defaults. The workflow verifies that the resolved repository address and default branch still match the protected configuration, then independently verifies the numeric App, installation, bot-user, and repository identities. A rename, transfer, or default-branch change stops the producer until the protected configuration is deliberately reviewed and updated.
 
 The App must be installed on one selected review repository with only metadata read, contents read/write, and pull-request read/write. It cannot update verifier trust settings and must not be a ruleset bypass actor.
 

@@ -1032,10 +1032,10 @@ def qualify_downloaded_artifact(
             "Actions artifact must contain exactly one installer, one Agent ZIP, "
             "and sha256sums.txt"
         )
-    installer_match = INSTALLER.fullmatch(installer_names[0])
-    assert installer_match is not None
-    if release_tag != f"v{installer_match.group('version')}":
-        raise ContractError("release tag and packaged installer version differ")
+    agent_match = AGENT_ZIP.fullmatch(agent_names[0])
+    assert agent_match is not None
+    if release_tag != f"v{agent_match.group('version')}":
+        raise ContractError("release tag and packaged Agent version differ")
     sums = _parse_sha256sums(outer["sha256sums.txt"])
     expected_sum_names = set(agent_names + installer_names)
     if set(sums) != expected_sum_names:
@@ -1045,9 +1045,7 @@ def qualify_downloaded_artifact(
             raise ContractError(f"sha256sums.txt digest mismatch for {name}")
 
     filename = agent_names[0]
-    match = AGENT_ZIP.fullmatch(filename)
-    assert match is not None
-    version = match.group("version")
+    version = agent_match.group("version")
     chrome_zip = outer[filename]
     inner = _read_exact_zip_entries(chrome_zip, label="Chrome ZIP")
     if "manifest.json" not in inner or "build-meta.json" not in inner:

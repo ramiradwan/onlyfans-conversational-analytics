@@ -102,14 +102,14 @@ jobs:
           ENGINEERING_ATTESTATION_SIGNER_ID: ${{ vars.ENGINEERING_ATTESTATION_SIGNER_ID }}
           ENGINEERING_ATTESTATION_SPKI_SHA256: ${{ vars.ENGINEERING_ATTESTATION_SPKI_SHA256 }}
           ENGINEERING_ATTESTATION_PRIVATE_KEY_B64: ${{ secrets.ENGINEERING_ATTESTATION_PRIVATE_KEY_B64 }}
-          REVIEW_REPOSITORY: ${{ vars.REVIEW_REPOSITORY }}
-          REVIEW_DEFAULT_BRANCH: ${{ vars.REVIEW_DEFAULT_BRANCH }}
-          REVIEW_PROJECTION_PATH: ${{ vars.REVIEW_PROJECTION_PATH }}
-          REVIEW_PROJECTION_DIGEST_PATH: ${{ vars.REVIEW_PROJECTION_DIGEST_PATH }}
-          REVIEW_APP_ID: ${{ vars.REVIEW_APP_ID }}
-          REVIEW_INSTALLATION_ID: ${{ vars.REVIEW_INSTALLATION_ID }}
-          REVIEW_BOT_USER_ID: ${{ vars.REVIEW_BOT_USER_ID }}
-          REVIEW_REPOSITORY_ID: ${{ vars.REVIEW_REPOSITORY_ID }}
+          REVIEW_REPOSITORY: ${{ secrets.REVIEW_REPOSITORY }}
+          REVIEW_DEFAULT_BRANCH: ${{ secrets.REVIEW_DEFAULT_BRANCH }}
+          REVIEW_PROJECTION_PATH: ${{ secrets.REVIEW_PROJECTION_PATH }}
+          REVIEW_PROJECTION_DIGEST_PATH: ${{ secrets.REVIEW_PROJECTION_DIGEST_PATH }}
+          REVIEW_APP_ID: ${{ secrets.REVIEW_APP_ID }}
+          REVIEW_INSTALLATION_ID: ${{ secrets.REVIEW_INSTALLATION_ID }}
+          REVIEW_BOT_USER_ID: ${{ secrets.REVIEW_BOT_USER_ID }}
+          REVIEW_REPOSITORY_ID: ${{ secrets.REVIEW_REPOSITORY_ID }}
           REVIEW_APP_PRIVATE_KEY_B64: ${{ secrets.REVIEW_APP_PRIVATE_KEY_B64 }}
           ENGINEERING_ATTESTATION_TEMP_PARENT: ${{ runner.temp }}/engineering-attestation-${{ github.run_id }}-${{ github.run_attempt }}
           TMPDIR: ${{ runner.temp }}/engineering-attestation-${{ github.run_id }}-${{ github.run_attempt }}
@@ -120,21 +120,6 @@ jobs:
         run: |
           set +x
           ulimit -c 0
-          for value in \
-            "$REVIEW_REPOSITORY" \
-            "$REVIEW_DEFAULT_BRANCH" \
-            "$REVIEW_PROJECTION_PATH" \
-            "$REVIEW_PROJECTION_DIGEST_PATH"
-          do
-            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
-              echo 'Review configuration contains a forbidden line break' >&2
-              exit 1
-            fi
-            if [ -n "$value" ]; then
-              masked_value="${value//%/%25}"
-              printf '::add-mask::%s\n' "$masked_value"
-            fi
-          done
           install -d -m 700 -- "$ENGINEERING_ATTESTATION_TEMP_PARENT"
           python3 tools/engineering_attestation.py sign-and-handoff \
             --windows-package-run-id "$WINDOWS_PACKAGE_RUN_ID" \
