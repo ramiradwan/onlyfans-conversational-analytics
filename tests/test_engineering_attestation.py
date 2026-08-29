@@ -97,7 +97,7 @@ def _chrome_zip(
         "extension_id": producer.EXPECTED_EXTENSION_ID,
         "determinism_verified": True,
         "outputs": {
-            name: hashlib.sha256(data).hexdigest()
+            name: f"sha256:{hashlib.sha256(data).hexdigest()}"
             for name, data in outputs.items()
         },
         "target": "chrome116",
@@ -547,9 +547,9 @@ def test_actions_artifact_rejects_server_digest_zip_metadata_and_inner_tampering
         json.dumps(wrong_manifest, sort_keys=True) + "\n"
     ).encode()
     wrong_metadata = json.loads(entries["build-meta.json"])
-    wrong_metadata["outputs"]["manifest.json"] = hashlib.sha256(
-        entries["manifest.json"]
-    ).hexdigest()
+    wrong_metadata["outputs"]["manifest.json"] = f"sha256:{hashlib.sha256(
+        entries['manifest.json']
+    ).hexdigest()}"
     entries["build-meta.json"] = (
         json.dumps(wrong_metadata, sort_keys=True) + "\n"
     ).encode()
