@@ -24,6 +24,10 @@ projections.sqlite3
 projections.sqlite3-*
 analytics-projections.sqlite3
 analytics-projections.sqlite3-*
+# Defensive root-only exclusions for legacy or interrupted local test runs.
+/.analytics-projections.sqlite3.*.quarantine
+/.analytics-projections.sqlite3.*.quarantine-wal
+/.analytics-projections.sqlite3.*.quarantine-shm
 auth.sqlite3
 auth.sqlite3-*
 *.sqlite3-wal
@@ -35,6 +39,7 @@ projection-backups/
 .bridge-installation-migration.lock
 .projection-migration.lock
 *.migration.lock
+/.ofca-master-key.dpapi
 
 # ------------------------
 # IDE settings
@@ -91,4 +96,5 @@ frontend/src/theme/generated/*
 
 # Cryptographic key material
 *.pem
+!attestation/signers/product-engineering-attestation-ed25519-v1.pem
 

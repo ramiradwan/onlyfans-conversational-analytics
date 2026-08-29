@@ -1,0 +1,154 @@
+name: Engineering attestation
+
+on:
+  workflow_dispatch:
+    inputs:
+      windows_package_run_id:
+        description: Successful tag-triggered Windows package workflow run ID
+        required: true
+        type: string
+      release_tag:
+        description: Immutable v* tag that produced the Windows package
+        required: true
+        type: string
+      legal_projection_source_commit:
+        description: Review commit containing the projection snapshot
+        required: true
+        type: string
+      legal_projection_canonical_sha256:
+        description: Canonical SHA-256 of the reviewed projection
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: engineering-attestation-production
+  cancel-in-progress: false
+
+jobs:
+  resolve-source:
+    name: Resolve unprivileged source metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      source_commit: ${{ steps.resolve.outputs.source_commit }}
+      product_ci_run_id: ${{ steps.resolve.outputs.product_ci_run_id }}
+      artifact_id: ${{ steps.resolve.outputs.artifact_id }}
+      artifact_name: ${{ steps.resolve.outputs.artifact_name }}
+      artifact_server_digest: ${{ steps.resolve.outputs.artifact_server_digest }}
+    steps:
+      - name: Check out the committed producer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: tools/engineering_attestation.py
+          sparse-checkout-cone-mode: false
+
+      - name: Record runner tools
+        run: |
+          python3 --version
+          openssl version -a
+
+      - name: Resolve metadata without downloading candidate bytes
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PRODUCER_CONTROL_BASELINE_SHA: ${{ vars.PRODUCER_CONTROL_BASELINE_SHA }}
+          PRODUCER_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WINDOWS_PACKAGE_RUN_ID: ${{ inputs.windows_package_run_id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          python3 tools/engineering_attestation.py resolve-source \
+            --windows-package-run-id "$WINDOWS_PACKAGE_RUN_ID" \
+            --release-tag "$RELEASE_TAG"
+
+  sign-and-handoff:
+    name: Sign and privately hand off evidence
+    needs: resolve-source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: engineering-attestation-production
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out the protected producer and public key
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/engineering_attestation.py
+            attestation/signers/product-engineering-attestation-ed25519-v1.pem
+            tests/fixtures/engineering-attestation-v1-ed25519.json
+          sparse-checkout-cone-mode: false
+
+      - name: Record protected runner tools
+        run: |
+          python3 --version
+          openssl version -a
+
+      - name: Independently qualify, sign, and hand off
+        id: handoff
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PRODUCER_CONTROL_BASELINE_SHA: ${{ vars.PRODUCER_CONTROL_BASELINE_SHA }}
+          PRODUCER_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          ENGINEERING_ATTESTATION_SIGNER_ID: ${{ vars.ENGINEERING_ATTESTATION_SIGNER_ID }}
+          ENGINEERING_ATTESTATION_SPKI_SHA256: ${{ vars.ENGINEERING_ATTESTATION_SPKI_SHA256 }}
+          ENGINEERING_ATTESTATION_PRIVATE_KEY_B64: ${{ secrets.ENGINEERING_ATTESTATION_PRIVATE_KEY_B64 }}
+          REVIEW_REPOSITORY: ${{ vars.REVIEW_REPOSITORY }}
+          REVIEW_DEFAULT_BRANCH: ${{ vars.REVIEW_DEFAULT_BRANCH }}
+          REVIEW_PROJECTION_PATH: ${{ vars.REVIEW_PROJECTION_PATH }}
+          REVIEW_PROJECTION_DIGEST_PATH: ${{ vars.REVIEW_PROJECTION_DIGEST_PATH }}
+          REVIEW_APP_ID: ${{ vars.REVIEW_APP_ID }}
+          REVIEW_INSTALLATION_ID: ${{ vars.REVIEW_INSTALLATION_ID }}
+          REVIEW_BOT_USER_ID: ${{ vars.REVIEW_BOT_USER_ID }}
+          REVIEW_REPOSITORY_ID: ${{ vars.REVIEW_REPOSITORY_ID }}
+          REVIEW_APP_PRIVATE_KEY_B64: ${{ secrets.REVIEW_APP_PRIVATE_KEY_B64 }}
+          ENGINEERING_ATTESTATION_TEMP_PARENT: ${{ runner.temp }}/engineering-attestation-${{ github.run_id }}-${{ github.run_attempt }}
+          TMPDIR: ${{ runner.temp }}/engineering-attestation-${{ github.run_id }}-${{ github.run_attempt }}
+          WINDOWS_PACKAGE_RUN_ID: ${{ inputs.windows_package_run_id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          LEGAL_PROJECTION_SOURCE_COMMIT: ${{ inputs.legal_projection_source_commit }}
+          LEGAL_PROJECTION_CANONICAL_SHA256: ${{ inputs.legal_projection_canonical_sha256 }}
+        run: |
+          set +x
+          ulimit -c 0
+          for value in \
+            "$REVIEW_REPOSITORY" \
+            "$REVIEW_DEFAULT_BRANCH" \
+            "$REVIEW_PROJECTION_PATH" \
+            "$REVIEW_PROJECTION_DIGEST_PATH"
+          do
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo 'Review configuration contains a forbidden line break' >&2
+              exit 1
+            fi
+            if [ -n "$value" ]; then
+              masked_value="${value//%/%25}"
+              printf '::add-mask::%s\n' "$masked_value"
+            fi
+          done
+          install -d -m 700 -- "$ENGINEERING_ATTESTATION_TEMP_PARENT"
+          python3 tools/engineering_attestation.py sign-and-handoff \
+            --windows-package-run-id "$WINDOWS_PACKAGE_RUN_ID" \
+            --release-tag "$RELEASE_TAG" \
+            --legal-projection-source-commit "$LEGAL_PROJECTION_SOURCE_COMMIT" \
+            --legal-projection-canonical-sha256 "$LEGAL_PROJECTION_CANONICAL_SHA256"
+
+      - name: Remove temporary signer material
+        if: always()
+        env:
+          ENGINEERING_ATTESTATION_TEMP_PARENT: ${{ runner.temp }}/engineering-attestation-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          case "$ENGINEERING_ATTESTATION_TEMP_PARENT" in
+            "$RUNNER_TEMP"/engineering-attestation-*) ;;
+            *) echo 'Refusing to clean an unexpected temporary path' >&2; exit 1 ;;
+          esac
+          rm -rf -- "$ENGINEERING_ATTESTATION_TEMP_PARENT"
