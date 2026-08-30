@@ -10,9 +10,11 @@ AES-256-GCM. Derive independent encryption and deterministic-index keys with
 HKDF-SHA256 from a stable per-account root supplied by the local Brain. Use a
 fresh 96-bit nonce for every write, authenticate the database/store/routing
 envelope as additional data, and use HMAC-SHA256 tokens instead of plaintext
-personal identifiers for private primary keys and indexes. Non-sensitive
-monotonic sequence fields may remain clear where IndexedDB ordering requires
-them.
+personal identifiers for private primary keys and indexes. History-job
+primary keys use a two-level HMAC route (generation then exact job ID), which
+keeps one hidden generation contiguous for bounded cursor scans without
+revealing the generation or conversation identifier. Non-sensitive monotonic
+sequence fields may remain clear where IndexedDB ordering requires them.
 
 Brain derives the account root from the DPAPI CurrentUser-protected installation
 master established by ADR 0019. The extension never persists that root. It

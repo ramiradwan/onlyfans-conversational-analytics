@@ -119,6 +119,94 @@ test('encrypted records use fresh nonces and fail closed on wrong keys or tamper
   );
 });
 
+for (const [name, factory] of [
+  ['authoring graph', createIndexedDbIngestionStorage],
+  ['read-only Store graph', createReadOnlyIndexedDbIngestionStorage],
+]) {
+  test(`${name} preserves generation-scoped history pagination with encrypted job IDs`, async () => {
+    const indexedDb = new FakeIndexedDb();
+    const databaseName = `encrypted-history-jobs-${name}`;
+    const storage = factory(indexedDb, { databaseName, encryptionKey: KEY_A });
+    const generations = [
+      {
+        id: 'generation-alpha',
+        conversations: ['chat-a-1', 'chat-a-2', 'chat-a-3', 'chat-a-4', 'chat-a-5'],
+      },
+      {
+        id: 'generation-beta',
+        conversations: ['chat-b-1', 'chat-b-2', 'chat-b-3'],
+      },
+    ];
+    const jobs = generations.flatMap(({ id, conversations }) => [
+      {
+        job_id: `${id}:inventory`,
+        generation_id: id,
+        kind: 'inventory',
+      },
+      ...conversations.map((conversationId) => ({
+        job_id: `${id}:conversation:${conversationId}`,
+        generation_id: id,
+        kind: 'conversation',
+        conversation_id: conversationId,
+      })),
+    ]);
+
+    await storage.runTransaction(
+      'readwrite',
+      [INGESTION_STORES.historyJobs],
+      async (tx) => {
+        for (const job of [...jobs].reverse()) {
+          await tx.put(INGESTION_STORES.historyJobs, job);
+        }
+      },
+    );
+
+    const target = generations[0];
+    const prefix = `${target.id}:conversation:`;
+    const observed = [];
+    let afterJobId = null;
+    while (true) {
+      const page = await storage.runTransaction(
+        'readonly',
+        [INGESTION_STORES.historyJobs],
+        (tx) => tx.getPage(
+          INGESTION_STORES.historyJobs,
+          { afterKey: afterJobId ?? prefix, limit: 2 },
+        ),
+      );
+      let reachedEnd = page.length < 2;
+      for (const row of page) {
+        if (!String(row.key).startsWith(prefix)) {
+          reachedEnd = true;
+          break;
+        }
+        observed.push(row.key);
+      }
+      if (reachedEnd) break;
+      const nextAfter = observed.at(-1);
+      assert.equal(typeof nextAfter, 'string');
+      assert.notEqual(nextAfter, afterJobId);
+      afterJobId = nextAfter;
+    }
+
+    const expected = target.conversations
+      .map((conversationId) => `${target.id}:conversation:${conversationId}`)
+      .sort();
+    assert.deepEqual([...observed].sort(), expected);
+    assert.equal(new Set(observed).size, expected.length);
+
+    const raw = serializedRecords(indexedDb, databaseName);
+    for (const job of jobs) {
+      assert.equal(raw.includes(job.job_id), false, `raw IndexedDB leaked ${job.job_id}`);
+      assert.equal(
+        raw.includes(job.generation_id),
+        false,
+        `raw IndexedDB leaked ${job.generation_id}`,
+      );
+    }
+  });
+}
+
 test('Full-mode IndexedDB refuses to open without a Brain-unsealed key', () => {
   assert.throws(
     () => createIndexedDbIngestionStorage(new FakeIndexedDb(), { databaseName: 'plaintext' }),

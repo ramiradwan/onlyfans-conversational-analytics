@@ -166,6 +166,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         extensionId: actualExtensionId,
         creatorAccountId: pairing.creatorAccountId,
         authTicket: pairing.pairingTicket,
+        storageBootstrap: pairing.storageBootstrap,
       });
 
       // Pairing reconciles identity to full through the bridge's onBound
@@ -421,8 +422,8 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       return page;
     });
 
-    let pendingEventIds;
-    await test.step('persist exact pending sequences 7-8 while Brain is unavailable', async () => {
+    let pendingEncryptedOutbox;
+    await test.step('persist exact encrypted pending sequences 7-8 while Brain is unavailable', async () => {
       await brain.stop();
       await waitForExtensionState(
         worker,
@@ -444,15 +445,18 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       );
       const outboxProof = await extensionOutboxProof(worker);
       expect(outboxProof.sequences).toEqual([7, 8]);
-      expect(outboxProof.changeTypes).toEqual(['chat.upsert', 'message.upsert']);
-      pendingEventIds = outboxProof.eventIds;
-      expect(pendingEventIds).toHaveLength(2);
-      expect(new Set(pendingEventIds).size).toBe(2);
+      expect(outboxProof.records).toHaveLength(2);
+      expect(outboxProof.serialized).not.toContain('chat.upsert');
+      expect(outboxProof.serialized).not.toContain('message.upsert');
+      expect(outboxProof.serialized).not.toContain(SYNTHETIC.offlinePeerId);
+      expect(outboxProof.serialized).not.toContain(SYNTHETIC.offlineMessageId);
+      expect(outboxProof.serialized).not.toContain(SYNTHETIC.offlineText);
+      pendingEncryptedOutbox = outboxProof;
       expectNoDrops(pending);
       expect(platform.websocketFramesSent).toBe(2);
     });
 
-    await test.step('terminate the worker and replay the same IDs after a Brain restart', async () => {
+    await test.step('restart with Brain offline, prove ciphertext durability, then replay', async () => {
       const oldWorker = worker;
       const oldWorkerInstanceId = (await extensionState(oldWorker)).workerInstanceId;
       const watcher = watchExtensionWorkers(context);
@@ -460,13 +464,20 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         const terminated = await terminateExtensionWorker(context, oldWorker);
         expect(terminated.stoppedNormally).toBe(true);
         expect(terminated.stopMethod).toBe('stopWorker');
-        await brain.start();
         await startExtensionWorker(context, terminated.extensionOrigin);
         const restart = await restartedExtensionWorker(context, {
           previousTargetId: terminated.targetId,
           timeoutMs: WORKER_RECOVERY_TIMEOUT_MS,
         });
         worker = restart.worker;
+        expect(await extensionOutboxProof(worker)).toEqual(pendingEncryptedOutbox);
+        await brain.start();
+        await worker.evaluate(() => new Promise((resolve) => {
+          chrome.runtime.sendMessage({ type: 'ofca.e2e.reconcile' }, () => {
+            void chrome.runtime.lastError;
+            resolve();
+          });
+        }));
       } finally {
         watcher.stop();
       }
@@ -501,7 +512,8 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(proof.committedSourceSeq).toBe(8);
       expect(proof.eventCount).toBe(8);
       expect(proof.eventSequences).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-      expect(proof.eventIds.slice(6)).toEqual(pendingEventIds);
+      expect(proof.eventIds.slice(6)).toHaveLength(2);
+      expect(new Set(proof.eventIds.slice(6)).size).toBe(2);
       expect(proof.eventChangeTypes.slice(6)).toEqual(['chat.upsert', 'message.upsert']);
       expect(proof.canonicalChatCount).toBe(3);
       expect(proof.canonicalMessageCount).toBe(5);

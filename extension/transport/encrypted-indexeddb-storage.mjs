@@ -4,6 +4,8 @@ const ENCRYPTION_INFO = new TextEncoder().encode('ofca-extension-indexeddb-encry
 const INDEX_INFO = new TextEncoder().encode('ofca-extension-indexeddb-index-v1');
 const HKDF_SALT = new TextEncoder().encode('ofca-extension-indexeddb-hkdf-v1');
 const KEEPALIVE_KEY = '__ofca_encrypted_transaction_keepalive__';
+const HISTORY_JOB_INVENTORY_SUFFIX = ':inventory';
+const HISTORY_JOB_CONVERSATION_MARKER = ':conversation:';
 
 function compareKeys(left, right) {
   if (left < right) return -1;
@@ -125,6 +127,55 @@ async function deriveKeys(encryptionKey, databaseName, cryptoApi) {
   }
 }
 
+async function hmacHex(value, keys, cryptoApi) {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    throw new Error('Encrypted IndexedDB routing key is invalid');
+  }
+  const material = new TextEncoder().encode(canonicalJson([typeof value, value]));
+  const signature = new Uint8Array(await cryptoApi.subtle.sign('HMAC', keys.index, material));
+  return [...signature].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function historyJobRoute(key) {
+  if (typeof key !== 'string' || key.length === 0) {
+    throw new Error('Encrypted history job routing key is invalid');
+  }
+  const conversationIndex = key.indexOf(HISTORY_JOB_CONVERSATION_MARKER);
+  if (conversationIndex > 0) {
+    const generationId = key.slice(0, conversationIndex);
+    const conversationId = key.slice(
+      conversationIndex + HISTORY_JOB_CONVERSATION_MARKER.length,
+    );
+    if (generationId.includes(':')) {
+      throw new Error('Encrypted history job generation is invalid');
+    }
+    return {
+      generationId,
+      kindOrder: '1',
+      rangeStart: conversationId.length === 0,
+    };
+  }
+  if (key.endsWith(HISTORY_JOB_INVENTORY_SUFFIX)) {
+    const generationId = key.slice(0, -HISTORY_JOB_INVENTORY_SUFFIX.length);
+    if (!generationId || generationId.includes(':')) {
+      throw new Error('Encrypted history job generation is invalid');
+    }
+    return {
+      generationId,
+      kindOrder: '0',
+      rangeStart: false,
+    };
+  }
+  throw new Error('Encrypted history job routing key is invalid');
+}
+
+async function historyJobToken(key, keys, cryptoApi) {
+  const route = historyJobRoute(key);
+  const generationToken = await hmacHex(route.generationId, keys, cryptoApi);
+  const memberToken = route.rangeStart ? '' : await hmacHex(key, keys, cryptoApi);
+  return `hj1:${generationToken}:${route.kindOrder}:${memberToken}`;
+}
+
 async function tokenFor(key, protection, keys, cryptoApi) {
   if (protection === 'clear') {
     if (!Number.isSafeInteger(key) || key < 0) {
@@ -132,12 +183,13 @@ async function tokenFor(key, protection, keys, cryptoApi) {
     }
     return key;
   }
-  if (protection !== 'hmac' || (typeof key !== 'string' && typeof key !== 'number')) {
+  if (protection === 'history-job') {
+    return historyJobToken(key, keys, cryptoApi);
+  }
+  if (protection !== 'hmac') {
     throw new Error('Encrypted IndexedDB routing key is invalid');
   }
-  const material = new TextEncoder().encode(canonicalJson([typeof key, key]));
-  const signature = new Uint8Array(await cryptoApi.subtle.sign('HMAC', keys.index, material));
-  return `h1:${[...signature].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+  return `h1:${await hmacHex(key, keys, cryptoApi)}`;
 }
 
 async function encryptedRecord({

@@ -44,10 +44,20 @@ export function extensionId(worker) {
 
 export async function bindAgentFromBridgePage(
   page,
-  { extensionId: targetExtensionId, creatorAccountId, authTicket },
+  {
+    extensionId: targetExtensionId,
+    creatorAccountId,
+    authTicket,
+    storageBootstrap,
+  },
 ) {
   return page.evaluate(
-    ({ extensionId: id, creatorAccountId: account, authTicket: ticket }) => (
+    ({
+      extensionId: id,
+      creatorAccountId: account,
+      authTicket: ticket,
+      storageBootstrap: bootstrap,
+    }) => (
       new Promise((resolve, reject) => {
         if (typeof globalThis.chrome?.runtime?.sendMessage !== 'function') {
           reject(new Error('Chrome external messaging is unavailable at the Bridge origin.'));
@@ -58,6 +68,7 @@ export async function bindAgentFromBridgePage(
           protocol_version: '2',
           creator_account_id: account,
           auth_ticket: ticket,
+          storage_bootstrap: bootstrap,
         }, (response) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
@@ -75,6 +86,7 @@ export async function bindAgentFromBridgePage(
       extensionId: targetExtensionId,
       creatorAccountId,
       authTicket,
+      storageBootstrap,
     },
   );
 }
@@ -101,10 +113,38 @@ export async function extensionOutboxProof(worker) {
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error ?? new Error('Unable to read Agent outbox.'));
       });
+      const records = rows.map((row) => {
+        const expectedFields = [
+          '__ofca_ciphertext',
+          '__ofca_format',
+          '__ofca_nonce',
+          'source_seq',
+        ];
+        if (
+          typeof row !== 'object'
+          || row === null
+          || Array.isArray(row)
+          || row.__ofca_format !== 'ofca-idb-aesgcm/v1'
+          || typeof row.__ofca_nonce !== 'string'
+          || row.__ofca_nonce.length === 0
+          || typeof row.__ofca_ciphertext !== 'string'
+          || row.__ofca_ciphertext.length === 0
+          || !Number.isSafeInteger(row.source_seq)
+          || JSON.stringify(Object.keys(row).sort()) !== JSON.stringify(expectedFields)
+        ) {
+          throw new Error('Full-mode outbox contains a non-encrypted record.');
+        }
+        return {
+          sourceSeq: row.source_seq,
+          format: row.__ofca_format,
+          nonce: row.__ofca_nonce,
+          ciphertext: row.__ofca_ciphertext,
+        };
+      });
       return {
-        eventIds: rows.map((row) => row.event_id),
-        sequences: rows.map((row) => row.source_seq),
-        changeTypes: rows.map((row) => row.change?.type ?? null),
+        records,
+        sequences: records.map((row) => row.sourceSeq),
+        serialized: JSON.stringify(rows),
       };
     } finally {
       database.close();

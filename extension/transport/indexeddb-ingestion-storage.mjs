@@ -39,7 +39,7 @@ const STORE_SPECS = Object.freeze({
   }),
   [INGESTION_STORES.historyJobs]: Object.freeze({
     primaryField: 'job_id',
-    primaryProtection: 'hmac',
+    primaryProtection: 'history-job',
     indexes: Object.freeze({}),
   }),
   [INGESTION_STORES.commandResults]: Object.freeze({
