@@ -1,0 +1,46 @@
+{
+  "schema": "ofca-ret-001-object-registry-overlay-fragment/v1",
+  "evidence_catalog_additions": {},
+  "object_patches": {},
+  "added_objects": [
+    {
+      "id": "COMP-BACKUP-PROJECTIONS",
+      "system": "companion",
+      "location": {"physical":"backup destination","logical":"encrypted analytics-projections.sqlite3 backup file plus external manifest and protected .key.dpapi sidecar"},
+      "data_categories": ["complete analytics-projections.sqlite3 copy","opaque message/conversation/participant references","analytics projection documents","graph nodes/edges/statistics/algorithm results","projection generation/publication state"],
+      "purpose": "Provide a verified recovery copy of analytics-projections.sqlite3, including mature analytics projections, graph state, and projection lifecycle metadata.",
+      "raw_text_requirement": {"contains_raw_message_text":false,"necessary_after_ingestion_or_analysis":"The backed analytics projection and graph contracts do not persist raw message text at the pinned baseline, but retain linkable semantic and identifier-derived state; no engineering minimum is established.","minimum_operational_retention":"No engineering minimum established."},
+      "stable_identities": ["backup path","created_at","file_sha256","active generation identifiers","opaque account/message/conversation/participant references"],
+      "current_behavior": {
+        "creation_update_lifecycle":"online_encrypted_copy_of_analytics_projection_store_with_external_manifest_and_protected_key_sidecar",
+        "expiry_prune_behavior":"no_automatic_backup_rotation_or_retention_established",
+        "user_deletion_paths":["existing_projection_backup_is_independent_from_later_live_analytics_projection_deletion"],
+        "lifecycle_operations":{"history_revocation":"not_deletion","pause":"not_deletion","downgrade":"not_deletion","account_disconnect":"not_deletion","extension_delete_all":"independent_boundary","companion_dataset_deletion":"complete_dataset_deletion_control_not_established","uninstall":"extension_uninstall_does_not_establish_companion_deletion"},
+        "backup_inclusion":"this_object_is_a_backup_artifact_with_manifest_and_key_sidecar",
+        "restore_behavior":"verified projections backup can replace analytics-projections.sqlite3 through restore staging and recover pre-deletion analytics projection and graph rows"
+      },
+      "technical_capability":{"selective_deletion_feasibility":"not_a_selective_backup_feature","age_based_deletion_feasibility":"not_established","atomicity_boundary":"point_in_time_backup_not_transactionally_coupled_to_later_live_analytics_projection_deletion"},
+      "engineering_design_options":{"status":"not_selected","options":[]},
+      "legal_policy":{"status":"UNRESOLVED","retention_period":"UNRESOLVED","required_deletion_behavior":"UNRESOLVED","minimum_retention":"No engineering minimum established."},
+      "reconstruction":{"authoritative_source_object_ids":["COMP-ANALYTICS-GRAPH","COMP-ANALYTICS-PROJECTION","COMP-ANALYTICS-PROJECTION-STATE"],"derived_from_object_ids":[],"copies_to_object_ids":["COMP-RESTORE-TEMP"],"rebuild_or_replay_source_object_ids":["COMP-ANALYTICS-GRAPH","COMP-ANALYTICS-PROJECTION","COMP-ANALYTICS-PROJECTION-STATE"],"can_recreate_deleted_content_or_identifying_semantics":true},
+      "source_references":["app/persistence/backup.py","app/analytics/sql/0003_opaque_graph_contract.sql"],
+      "evidence_ids":["SRC-COMP-BACKUP","SRC-COMP-ANALYTICS-SCHEMA"]
+    },
+    {
+      "id":"COMP-LOCAL-KEY-MATERIAL",
+      "system":"companion",
+      "location":{"physical":".ofca-master-key.dpapi in the local database directory","logical":"DPAPI-protected installation master key used to derive per-store SQLCipher keys"},
+      "data_categories":["protected encryption key material","database key-derivation root"],
+      "purpose":"Protect and derive per-store local SQLCipher encryption keys for companion persistence.",
+      "raw_text_requirement":{"contains_raw_message_text":false,"necessary_after_ingestion_or_analysis":"The key file does not itself contain message text; with authorized OS-user protection and surviving ciphertext it enables database decryption.","minimum_operational_retention":"No engineering minimum established."},
+      "stable_identities":["master-key file path","current Windows user protection boundary"],
+      "current_behavior":{"creation_update_lifecycle":"created once on first production database-key demand and reused under Windows DPAPI","expiry_prune_behavior":"no_ret001_expiry_established","user_deletion_paths":["no_object_specific_creator_deletion_path_established"],"lifecycle_operations":{"history_revocation":"not_deletion","pause":"not_deletion","downgrade":"not_deletion","account_disconnect":"not_deletion","extension_delete_all":"independent_boundary","companion_dataset_deletion":"complete_dataset_deletion_control_not_established","uninstall":"extension_uninstall_does_not_establish_companion_deletion"},"backup_inclusion":"not included by the ordinary SQLite backup file itself; backup key sidecars protect per-backup keys separately","restore_behavior":"not a database restore artifact; required to derive live database keys in the installation"},
+      "technical_capability":{"selective_deletion_feasibility":"not_established","age_based_deletion_feasibility":"not_established","atomicity_boundary":"installation_local_key_protection_boundary"},
+      "engineering_design_options":{"status":"not_selected","options":[]},
+      "legal_policy":{"status":"UNRESOLVED","retention_period":"UNRESOLVED","required_deletion_behavior":"UNRESOLVED","minimum_retention":"No engineering minimum established."},
+      "reconstruction":{"authoritative_source_object_ids":[],"derived_from_object_ids":[],"copies_to_object_ids":[],"rebuild_or_replay_source_object_ids":[],"can_recreate_deleted_content_or_identifying_semantics":false},
+      "source_references":["app/security/local_data_key.py"],
+      "evidence_ids":["SRC-COMP-LOCAL-DATA-KEY"]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "schema": "ofca-ret-001-object-registry-overlay/v1",
+  "registry_version": 1,
+  "seed_file": "ret-001-objects.seed.json",
+  "seed_blob_sha": "b11123210456c6e16c6cd2c45de7b259f82cf781",
+  "expected_seed_inventory_status": "PHASE_1_SEED_INCOMPLETE",
+  "inventory_status": "COMPLETE",
+  "completeness_note": "Phase-1 inventory is complete within the supported Product application/browser boundary: schema, Chrome storage, Legal evidence, auth, SQLite sidecars, backup/restore/migration artifacts, and encryption-key surfaces are explicitly registered, covered, out of RET-001 scope, or marked UNVERIFIED below that boundary. Legal retention policy remains unresolved and no retention duration is selected.",
+  "fragment_files": [
+    "ret-001-objects.fragments/evidence-and-patches.json",
+    "ret-001-objects.fragments/companion-additions.json",
+    "ret-001-objects.fragments/extension-additions.json"
+  ]
+}
