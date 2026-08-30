@@ -5,26 +5,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
+from ret001_execution import load_module, validate_product_revision, write_json
 
 ROOT = Path(__file__).resolve().parents[2]
 LIBRARY_PATH = Path(__file__).with_name('run-ret-001-companion-observations.py')
 BACKUP_TEST_HELPER = ROOT / 'tests' / 'test_sqlite_backup.py'
-
-
-def load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f'Unable to load RET-001 helper {path}')
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
 
 lib = load_module('ret001_companion_observation_library', LIBRARY_PATH)
 backup_fixture = load_module('ret001_sqlite_backup_fixture', BACKUP_TEST_HELPER)
@@ -127,13 +116,12 @@ def main() -> int:
     parser.add_argument('--product-revision', required=True)
     parser.add_argument('--output-dir', required=True, type=Path)
     args = parser.parse_args()
-    if len(args.product_revision) != 40 or any(c not in '0123456789abcdef' for c in args.product_revision):
-        raise SystemExit('--product-revision must be a lowercase 40-hex commit SHA')
+    validate_product_revision(args.product_revision)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix='ret-001-projection-backup-') as temporary:
         result = run_projection_backup_restore(Path(temporary), args.product_revision)
     destination = args.output_dir / 'res-010-projection-backup-restore.json'
-    destination.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    write_json(destination, result)
     print(json.dumps({
         'schema': 'ofca-ret-001-projection-backup-observation-run/v1',
         'product_revision': args.product_revision,

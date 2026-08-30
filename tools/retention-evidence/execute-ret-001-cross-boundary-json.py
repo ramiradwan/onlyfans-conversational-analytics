@@ -8,8 +8,6 @@ scenario implementation in execute-ret-001-cross-boundary-observations.py.
 
 from __future__ import annotations
 
-import importlib.util
-import json
 from pathlib import Path
 from uuid import UUID
 
@@ -19,34 +17,27 @@ from app.protocol.payloads import (
     IngestSnapshotChunkPayload,
     IngestSnapshotCommitPayload,
 )
+from ret001_execution import canonical_json, load_module
 
 MODULE_PATH = Path(__file__).with_name("execute-ret-001-cross-boundary-observations.py")
-_SPEC = importlib.util.spec_from_file_location("ret001_cross_boundary_observations", MODULE_PATH)
-if _SPEC is None or _SPEC.loader is None:
-    raise RuntimeError(f"Unable to load RET-001 cross-boundary module {MODULE_PATH}")
-module = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(module)
-
-
-def json_document(value: dict) -> str:
-    return json.dumps(value, default=str, separators=(",", ":"), sort_keys=True)
+module = load_module("ret001_cross_boundary_observations", MODULE_PATH, register=False)
 
 
 def ingest_snapshot_json(history, account_id: str, stream_id: str, snapshot: dict) -> dict:
     key = module.stream_key(account_id, stream_id)
     bound = module.identity(account_id, stream_id)
     begin = IngestSnapshotBeginPayload.model_validate_json(
-        json_document({**bound, **snapshot["begin"]})
+        canonical_json({**bound, **snapshot["begin"]})
     )
     begin_result = history.begin_snapshot(key, begin)
     chunk_results = []
     for document in snapshot["chunks"]:
         chunk = IngestSnapshotChunkPayload.model_validate_json(
-            json_document({**bound, **document})
+            canonical_json({**bound, **document})
         )
         chunk_results.append(history.add_snapshot_chunk(key, chunk))
     commit = IngestSnapshotCommitPayload.model_validate_json(
-        json_document({**bound, **snapshot["commit"]})
+        canonical_json({**bound, **snapshot["commit"]})
     )
     commit_result = history.commit_snapshot(key, commit)
     return {
@@ -66,7 +57,7 @@ def ingest_delta_json(history, account_id: str, stream_id: str, item: dict):
         "acquisition_origin": item.get("acquisition_origin", "passive"),
         "change": item["change"],
     }
-    payload = IngestDeltaPayload.model_validate_json(json_document(document))
+    payload = IngestDeltaPayload.model_validate_json(canonical_json(document))
     return history.commit_delta(module.stream_key(account_id, stream_id), payload)
 
 
