@@ -466,7 +466,7 @@ export class ConsentController {
   }
 
   #onStorageChanged(changes, areaName) {
-    if (areaName === 'session' && Object.hasOwn(changes, 'active_account_partition_v4')) {
+    if (areaName === 'session' && Object.hasOwn(changes, 'active_account_partition_v5')) {
       void this.reconcile();
     }
   }

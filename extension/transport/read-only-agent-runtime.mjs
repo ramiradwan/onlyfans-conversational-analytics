@@ -43,7 +43,11 @@ export function createReadOnlyAgentRuntime(options = {}) {
   const signerFactory = options.signerFactory ?? null;
   const resolveBinding = () => (
     options.creatorAccountId && options.authTicket
-      ? { creatorAccountId: options.creatorAccountId, authTicket: options.authTicket }
+      ? {
+          creatorAccountId: options.creatorAccountId,
+          authTicket: options.authTicket,
+          storageKey: options.storageKey,
+        }
       : chromeAdapter.loadBrainBinding()
   );
   const bindingFingerprint = (binding) => binding.creatorAccountId;
@@ -63,13 +67,19 @@ export function createReadOnlyAgentRuntime(options = {}) {
     initialize: async () => {
       const binding = await resolveBinding();
       const { creatorAccountId, authTicket } = binding;
+      if (options.ingestionStorageFactory === undefined && !binding.storageKey) {
+        throw new Error('Brain-unsealed Full-mode encryption key is required');
+      }
       const reconnectAuthTicket = typeof chromeAdapter.loadReconnectAuthTicket === 'function'
         ? await chromeAdapter.loadReconnectAuthTicket(creatorAccountId)
         : null;
       const agentInstallationId = typeof chromeAdapter.loadAgentInstallationId === 'function'
         ? await chromeAdapter.loadAgentInstallationId()
         : (await chromeAdapter.loadAgentIdentity()).agentInstallationId;
-      const accountStorage = ingestionStorageFactory({ creatorAccountId });
+      const accountStorage = ingestionStorageFactory({
+        creatorAccountId,
+        encryptionKey: binding.storageKey,
+      });
       const durableOutbox = outboxFactory({
         storage: accountStorage,
         creatorAccountId,
@@ -148,9 +158,11 @@ export function createReadOnlyAgentRuntime(options = {}) {
         authTicket,
         reconnectAuthTicket,
         persistReconnectAuthTicket: typeof chromeAdapter.saveReconnectAuthTicket === 'function'
-          ? (ticket) => chromeAdapter.saveReconnectAuthTicket({
+          ? (ticket, configAuthTicket) => chromeAdapter.saveReconnectAuthTicket({
               creatorAccountId,
               authTicket: ticket,
+              configAuthTicket,
+              agentInstallationId,
             })
           : undefined,
         persistence: durableOutbox,

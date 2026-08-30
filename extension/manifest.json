@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Conversation Analytics",
-  "description": "Shows seven-day local OnlyFans creator activity metrics and, with consent, connects conversation analytics to a service on this computer.",
-  "version": "2.0.0",
+  "description": "Shows seven-day local OnlyFans creator activity metrics and, with consent, connects analytics to a service on this computer.",
+  "version": "2.0.1",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyWQCF67th6qtJWrNrsswTlhJ50Bu/b2t42H1q6ysOKDAclF1hur1ukUxnevw2JzRXJriSMhqsRw4l9+YrqI6rNND3TU5XlJGWJHm0ZOxbMgw8Et96WseELBWH/a4ZaxQhDLBG3J7Du8kHwb2Y6MPf2e5USdKminQXfyA7ohKVsbPk13+/kpU0Ptat5/z27m+dFxlCMYXSiFqCepVu6Na2S6C5hfag3fImqLguivG5WVDQEEp2iMhCPbdcYyHrKbLJmrDJl0WIBLiAJdmfOgRcRD3D8fYPKbb6Uj87U5vruMPzFbw0I234PbO3SdCxivbC+hJudamFyCfOJK8WvurDwIDAQAB",
   "minimum_chrome_version": "116",
   "permissions": [

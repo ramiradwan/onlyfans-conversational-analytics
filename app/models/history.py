@@ -60,4 +60,5 @@ class MessagePageResponse(StrictModel):
 
 class AgentPairingResponse(StrictModel):
     pairing_ticket: NonEmptyString
+    storage_bootstrap: str | None
     expires_at: Timestamp

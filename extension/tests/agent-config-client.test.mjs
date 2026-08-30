@@ -494,7 +494,7 @@ test('HTTP adapter keeps the config ticket out of the URL and sends it as author
   assert.equal(url.searchParams.get('creator_account_id'), ACCOUNT_ID);
 });
 
-test('Chrome adapter persists only the installation-global identifier', async () => {
+test('Chrome adapter identity initialization persists only the installation-global identifier', async () => {
   const values = {};
   const writes = [];
   const chromeMock = {

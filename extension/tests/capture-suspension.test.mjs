@@ -17,6 +17,7 @@ const ACCOUNT_ID = 'synthetic-account';
 const INSTALLATION_ID = '20000000-0000-4000-8000-000000000001';
 const STREAM_ID = '30000000-0000-4000-8000-000000000001';
 const DATABASE_NAME = 'capture-suspension-test';
+const STORAGE_KEY = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 
 const CHAT_OBSERVATION = {
   event_type: 'chat.observed',
@@ -139,6 +140,7 @@ function worker(fakeIndexedDb) {
     chromeAdapter,
     ingestionStorageFactory: () => createIndexedDbIngestionStorage(fakeIndexedDb, {
       databaseName: DATABASE_NAME,
+      encryptionKey: STORAGE_KEY,
     }),
     configHttpFactory: () => ({}),
     configActivatorFactory: () => ({}),

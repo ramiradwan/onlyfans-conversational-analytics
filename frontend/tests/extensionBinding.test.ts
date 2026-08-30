@@ -19,6 +19,7 @@ describe('Agent Brain-session binding', () => {
       extensionId: 'abcdefghijklmnopabcdefghijklmnop',
       creatorAccountId: 'creator-1',
       authTicket: 'purpose-bound-ticket',
+      storageBootstrap: 'device-bound-bootstrap',
       runtime,
     })).resolves.toEqual({ status: 'bound' });
     expect(calls).toEqual([{
@@ -28,6 +29,7 @@ describe('Agent Brain-session binding', () => {
         protocol_version: '2',
         creator_account_id: 'creator-1',
         auth_ticket: 'purpose-bound-ticket',
+        storage_bootstrap: 'device-bound-bootstrap',
       },
     }]);
   });
@@ -37,6 +39,7 @@ describe('Agent Brain-session binding', () => {
       extensionId: 'dev-extension-id',
       creatorAccountId: 'creator-1',
       authTicket: 'ticket',
+      storageBootstrap: 'device-bound-bootstrap',
       runtime: undefined,
     })).resolves.toEqual({ status: 'unavailable' });
   });

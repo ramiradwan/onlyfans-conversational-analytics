@@ -2,9 +2,72 @@ import {
   COVERAGE_SOURCE_SEQUENCE_INDEX,
   INGESTION_STORES,
 } from './read-only-durable-outbox.mjs';
+import {
+  ENCRYPTION_KEY_CHECK_STORE,
+  createEncryptedIndexedDbStorage,
+} from './encrypted-indexeddb-storage.mjs';
 
-export const INGESTION_DATABASE_NAME_PREFIX = 'conversation-analytics-read-only-account-v1';
+export const LEGACY_INGESTION_DATABASE_NAME_PREFIX = 'conversation-analytics-read-only-account-v1';
+export const INGESTION_DATABASE_NAME_PREFIX = 'conversation-analytics-read-only-encrypted-account-v1';
 export const INGESTION_DATABASE_VERSION = 4;
+
+const STORE_SPECS = Object.freeze({
+  [INGESTION_STORES.meta]: Object.freeze({
+    primaryField: null,
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.outbox]: Object.freeze({
+    primaryField: 'source_seq',
+    primaryProtection: 'clear',
+    indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.chats]: Object.freeze({
+    primaryField: 'chat_id',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.messages]: Object.freeze({
+    primaryField: 'message_id',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({ chat_id: 'hmac' }),
+  }),
+  [INGESTION_STORES.coverageEvidence]: Object.freeze({
+    primaryField: 'evidence_key',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({ [COVERAGE_SOURCE_SEQUENCE_INDEX]: 'clear' }),
+  }),
+  [INGESTION_STORES.historyJobs]: Object.freeze({
+    primaryField: 'job_id',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.config]: Object.freeze({
+    primaryField: 'key',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.snapshotManifests]: Object.freeze({
+    primaryField: 'snapshot_id',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.snapshotChunks]: Object.freeze({
+    primaryField: 'key',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.snapshotOverrides]: Object.freeze({
+    primaryField: 'key',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.credentials]: Object.freeze({
+    primaryField: 'key',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({}),
+  }),
+});
 
 export async function accountDatabaseName(creatorAccountId, cryptoApi = globalThis.crypto) {
   if (typeof creatorAccountId !== 'string' || creatorAccountId.length === 0) {
@@ -35,6 +98,9 @@ function openDatabase(indexedDb, databaseName) {
 
     request.onupgradeneeded = (event) => {
       const database = request.result;
+      if (!database.objectStoreNames.contains(ENCRYPTION_KEY_CHECK_STORE)) {
+        database.createObjectStore(ENCRYPTION_KEY_CHECK_STORE);
+      }
       if (!database.objectStoreNames.contains(INGESTION_STORES.meta)) {
         database.createObjectStore(INGESTION_STORES.meta);
       }
@@ -216,7 +282,7 @@ function transactionHandle(transaction, storeNames, isActive, keyRangeFactory) {
  * native IndexedDB transaction, and closes the connection, so correctness never depends on a
  * service worker retaining a live connection between wakes.
  */
-export function createReadOnlyIndexedDbIngestionStorage(
+function createRawReadOnlyIndexedDbIngestionStorage(
   indexedDb = globalThis.indexedDB,
   {
     creatorAccountId,
@@ -252,11 +318,13 @@ export function createReadOnlyIndexedDbIngestionStorage(
       let active = true;
       let transaction;
       try {
-        transaction = database.transaction([...new Set(storeNames)], mode);
+        const transactionStores = [...new Set([...storeNames, ENCRYPTION_KEY_CHECK_STORE])];
+        transaction = database.transaction(transactionStores, mode);
+        const releaseAsyncWorkHold = transaction.__ofca_hold_for_async_work?.() ?? (() => {});
         const completion = transactionCompletion(transaction);
         const handle = transactionHandle(
           transaction,
-          storeNames,
+          transactionStores,
           () => active,
           ranges,
         );
@@ -265,6 +333,7 @@ export function createReadOnlyIndexedDbIngestionStorage(
           result = await work(handle);
         } catch (error) {
           active = false;
+          releaseAsyncWorkHold();
           try {
             transaction.abort();
           } catch {
@@ -274,6 +343,7 @@ export function createReadOnlyIndexedDbIngestionStorage(
           throw error;
         }
         active = false;
+        releaseAsyncWorkHold();
         await completion;
         return result;
       } finally {
@@ -281,5 +351,27 @@ export function createReadOnlyIndexedDbIngestionStorage(
         database.close();
       }
     },
+  });
+}
+
+export function createReadOnlyIndexedDbIngestionStorage(
+  indexedDb = globalThis.indexedDB,
+  options = {},
+) {
+  const {
+    encryptionKey,
+    cryptoApi = globalThis.crypto,
+    transactionKeepAlive = globalThis.IDBKeyRange !== undefined,
+  } = options;
+  if (encryptionKey === undefined || encryptionKey === null) {
+    throw new Error('Full-mode encryption key is required');
+  }
+  const raw = createRawReadOnlyIndexedDbIngestionStorage(indexedDb, options);
+  return createEncryptedIndexedDbStorage(raw, {
+    encryptionKey,
+    databaseName: raw.databaseName,
+    storeSpecs: STORE_SPECS,
+    cryptoApi,
+    transactionKeepAlive,
   });
 }
