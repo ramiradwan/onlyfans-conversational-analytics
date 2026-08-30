@@ -27,6 +27,7 @@ describe('one-time Agent pairing API', () => {
     const fetch = vi.fn(async () =>
       jsonResponse({
         pairing_ticket: 'short-lived-one-time-ticket',
+        storage_bootstrap: 'device-bound-bootstrap',
         expires_at: '2026-07-19T12:01:00Z',
       }),
     );
@@ -35,6 +36,7 @@ describe('one-time Agent pairing API', () => {
 
     await expect(requestAgentPairingTicket(signal)).resolves.toEqual({
       pairing_ticket: 'short-lived-one-time-ticket',
+      storage_bootstrap: 'device-bound-bootstrap',
       expires_at: '2026-07-19T12:01:00Z',
     });
     expect(fetch).toHaveBeenCalledOnce();
@@ -67,6 +69,7 @@ describe('one-time Agent pairing API', () => {
       vi.fn(async () =>
         jsonResponse({
           pairing_ticket: 'ticket',
+          storage_bootstrap: 'device-bound-bootstrap',
           expires_at: 'not-a-time',
           unexpected: 'field',
         }),

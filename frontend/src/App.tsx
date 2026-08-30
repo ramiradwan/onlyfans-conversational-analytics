@@ -63,10 +63,14 @@ export function App() {
     if (EXTENSION_ID && EXTENSION_ID !== 'dev-extension-id') {
       void requestAgentPairingTicket(controller.signal)
         .then((ticket) => {
+          if (ticket.storage_bootstrap === null) {
+            throw new Error('Brain did not provide encrypted Agent storage bootstrap');
+          }
           return bindAgentToBrain({
             extensionId: EXTENSION_ID,
             creatorAccountId,
             authTicket: ticket.pairing_ticket,
+            storageBootstrap: ticket.storage_bootstrap,
           });
         })
         .catch(() => {

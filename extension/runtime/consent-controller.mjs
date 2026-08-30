@@ -128,7 +128,10 @@ export class ConsentController {
       throw new Error('Consent controller requires Chrome storage, scripting, and permissions');
     }
     if (!runtime?.start && !runtime?.wake) throw new Error('Consent controller requires Agent runtime');
-    if (typeof adapter?.loadBrainBinding !== 'function') {
+    if (
+      typeof adapter?.loadBrainBinding !== 'function'
+      || typeof adapter?.clearBrainBinding !== 'function'
+    ) {
       throw new Error('Consent controller requires the Agent storage adapter');
     }
     if (
@@ -399,6 +402,14 @@ export class ConsentController {
         failure ??= error;
       }
       try {
+        // The encrypted adapter caches the unsealed account key and Agent
+        // credential for the lifetime of the service worker. Deletion must
+        // invalidate that in-memory authority as well as durable browser data.
+        await this.adapter.clearBrainBinding();
+      } catch (error) {
+        failure ??= error;
+      }
+      try {
         await this.clearLocalData();
       } catch (error) {
         failure ??= error;
@@ -466,7 +477,7 @@ export class ConsentController {
   }
 
   #onStorageChanged(changes, areaName) {
-    if (areaName === 'session' && Object.hasOwn(changes, 'active_account_partition_v4')) {
+    if (areaName === 'session' && Object.hasOwn(changes, 'active_account_partition_v5')) {
       void this.reconcile();
     }
   }

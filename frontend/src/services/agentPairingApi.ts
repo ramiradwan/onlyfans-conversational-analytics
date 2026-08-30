@@ -1,5 +1,6 @@
 interface AgentPairingTicket {
   pairing_ticket: string;
+  storage_bootstrap: string | null;
   expires_at: string;
 }
 
@@ -11,9 +12,13 @@ function isPairingTicket(value: unknown): value is AgentPairingTicket {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
   return (
-    Object.keys(candidate).length === 2 &&
+    Object.keys(candidate).length === 3 &&
     typeof candidate.pairing_ticket === 'string' &&
     candidate.pairing_ticket.length > 0 &&
+    (
+      candidate.storage_bootstrap === null ||
+      (typeof candidate.storage_bootstrap === 'string' && candidate.storage_bootstrap.length > 0)
+    ) &&
     typeof candidate.expires_at === 'string' &&
     Number.isFinite(Date.parse(candidate.expires_at))
   );

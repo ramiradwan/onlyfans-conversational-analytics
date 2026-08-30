@@ -42,7 +42,13 @@ function harness({ unregisterFails = false } = {}) {
   const registeredScripts = [];
   const removedPermissions = [];
   const permissionState = { onlyFans: false, localService: false, history: false };
-  const counters = { starts: 0, suspends: 0, reloads: 0, deletes: 0 };
+  const counters = {
+    starts: 0,
+    suspends: 0,
+    reloads: 0,
+    deletes: 0,
+    bindingClears: 0,
+  };
   const chromeApi = {
     runtime: {
       id: 'synthetic-extension-id',
@@ -114,7 +120,10 @@ function harness({ unregisterFails = false } = {}) {
       async start() { counters.starts += 1; },
       async suspend() { counters.suspends += 1; },
     },
-    adapter: { async loadBrainBinding() { throw new Error('not bound'); } },
+    adapter: {
+      async loadBrainBinding() { throw new Error('not bound'); },
+      async clearBrainBinding() { counters.bindingClears += 1; },
+    },
     brainBindingBridge: bridge(),
     provisioningIdentityBridge: bridge(),
     previewMetrics: preview,
@@ -177,6 +186,7 @@ test('preview can be enabled, paused, resumed, and fully deleted without a local
   assert.deepEqual(h.session, {});
   assert.equal(h.permissionState.onlyFans, false);
   assert.equal(h.counters.deletes, 1);
+  assert.equal(h.counters.bindingClears, 1);
   assert.equal(h.removedPermissions.length, 1);
 });
 
@@ -229,6 +239,7 @@ test('delete attempts permission and storage cleanup after content-script teardo
   await assert.rejects(h.controller.deleteLocalData(), /scripting teardown failed/);
   assert.equal((await h.controller.status()).phase, 'unavailable');
   assert.equal(h.removedPermissions.length, 1);
+  assert.equal(h.counters.bindingClears, 1);
   assert.equal(h.counters.deletes, 1);
   assert.deepEqual(h.local, {});
   assert.deepEqual(h.session, {});

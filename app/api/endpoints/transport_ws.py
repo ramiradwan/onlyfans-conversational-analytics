@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from fastapi import (
     APIRouter,
+    Depends,
     Header,
     HTTPException,
     Query,
@@ -19,7 +21,14 @@ from fastapi import (
 )
 from pydantic import ValidationError
 
+from app.api.activation import require_activated_runtime
 from app.core.config import settings
+from app.models.extension_storage import (
+    ExtensionStorageRotateRequest,
+    ExtensionStorageRotateResponse,
+    ExtensionStorageUnsealRequest,
+    ExtensionStorageUnlockResponse,
+)
 from app.persistence import sqlite_api as sqlite3
 from app.protocol import (
     AGENT_TO_BRAIN_ADAPTER,
@@ -29,6 +38,13 @@ from app.protocol import (
     MAX_SNAPSHOT_FRAME_BYTES,
 )
 from app.persistence.history import InvariantViolation
+from app.security.extension_storage import (
+    UNLOCK_SCHEMA,
+    extension_storage_key_base64,
+    open_extension_storage_bootstrap,
+    seal_extension_storage_bootstrap,
+)
+from app.security.local_data_key import LocalDataKeyError
 from app.utils.logger import logger
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
@@ -71,6 +87,31 @@ KNOWN_SERVER_TYPES = {
     "command.execute",
     "command.result.ack",
 }
+
+
+def _verify_extension_storage_origin(request: Request) -> None:
+    """Restrict key release to the packaged extension on the loopback host."""
+
+    expected_host = urlsplit(settings.bridge_origin).netloc.lower()
+    expected_origin = f"chrome-extension://{settings.extension_id}"
+    if (
+        not settings.extension_id
+        or request.headers.get("host", "").lower() != expected_host
+        or request.headers.get("origin") != expected_origin
+    ):
+        raise HTTPException(status_code=403, detail="Extension storage origin is not authorized")
+
+
+def _bearer_auth_ticket(request: Request) -> str:
+    if "auth_ticket" in request.query_params:
+        raise HTTPException(status_code=400, detail="Authentication ticket must not appear in the URL")
+    authorization = request.headers.get("authorization")
+    if authorization is None:
+        raise HTTPException(status_code=401, detail="Authentication ticket is required")
+    scheme, separator, ticket = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer" or not ticket:
+        raise HTTPException(status_code=401, detail="Bearer authentication ticket is required")
+    return ticket
 
 
 def _safe_document(raw: str) -> dict[str, Any] | None:
@@ -730,6 +771,90 @@ async def get_agent_config(
         return Response(status_code=304, headers=headers)
     response.headers.update(headers)
     return document
+
+
+@router.post(
+    "/api/v1/agent/storage/unseal",
+    response_model=ExtensionStorageUnlockResponse,
+    dependencies=[Depends(require_activated_runtime)],
+)
+async def unseal_agent_storage(
+    request: Request,
+    body: ExtensionStorageUnsealRequest,
+    response: Response,
+) -> ExtensionStorageUnlockResponse:
+    """Release a Full-mode key only from a valid current-user bootstrap."""
+
+    _verify_extension_storage_origin(request)
+    try:
+        bootstrap = open_extension_storage_bootstrap(
+            body.storage_bootstrap,
+            expected_extension_id=settings.extension_id,
+        )
+        storage_key = extension_storage_key_base64(
+            settings.auth_database_path,
+            extension_id=settings.extension_id,
+            creator_account_id=bootstrap.creator_account_id,
+        )
+    except LocalDataKeyError as error:
+        raise HTTPException(
+            status_code=401,
+            detail="Extension storage bootstrap is invalid or unavailable",
+        ) from error
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return ExtensionStorageUnlockResponse(
+        schema=UNLOCK_SCHEMA,
+        creator_account_id=bootstrap.creator_account_id,
+        credential_kind=bootstrap.credential_kind,
+        auth_ticket=bootstrap.auth_ticket,
+        storage_key_base64=storage_key,
+    )
+
+
+@router.post(
+    "/api/v1/agent/storage/rotate",
+    response_model=ExtensionStorageRotateResponse,
+    dependencies=[Depends(require_activated_runtime)],
+)
+async def rotate_agent_storage(
+    request: Request,
+    body: ExtensionStorageRotateRequest,
+    response: Response,
+) -> ExtensionStorageRotateResponse:
+    """Replace the sealed bootstrap after a successful Agent handshake."""
+
+    _verify_extension_storage_origin(request)
+    config_ticket = _bearer_auth_ticket(request)
+    try:
+        current = open_extension_storage_bootstrap(
+            body.storage_bootstrap,
+            expected_extension_id=settings.extension_id,
+        )
+        if current.creator_account_id != body.creator_account_id:
+            raise AuthorizationError("Extension storage bootstrap is bound to another account")
+        transport_manager.authenticate_agent_storage_rotation(
+            config_auth_ticket=config_ticket,
+            reconnect_auth_ticket=body.reconnect_auth_ticket,
+            requested_account=body.creator_account_id,
+            agent_installation_id=body.agent_installation_id,
+        )
+        rotated = seal_extension_storage_bootstrap(
+            extension_id=settings.extension_id,
+            creator_account_id=body.creator_account_id,
+            credential_kind="reconnect",
+            auth_ticket=body.reconnect_auth_ticket,
+        )
+    except (AuthenticationError, LocalDataKeyError) as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    except AuthorizationError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return ExtensionStorageRotateResponse(
+        schema="ofca-extension-storage-rotation/v1",
+        storage_bootstrap=rotated,
+    )
 
 
 async def signal_config_available(account_id: str) -> bool:

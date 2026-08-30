@@ -24,7 +24,7 @@ Raw response bodies are discarded immediately. Persistent Agent state contains n
 
 ### Agent account isolation and identity
 
-Only `agent_installation_id` is installation-global. Each Brain-authorized creator account has a separately named IndexedDB database derived from a stable account hash, with the exact account identifier verified in its metadata. Stream/checkpoint state, applied configuration, command results, entities, tombstones, jobs, coverage, signer generations, outbox entries, and snapshot state are account-partitioned. Account epoch and job lease checks fence every asynchronous commit.
+Only `agent_installation_id` is installation-global. **Narrowed by [ADR 0021](0021-encrypted-extension-persistence.md): Full mode also retains one opaque, DPAPI-protected active-account bootstrap that exposes neither the account nor its credential at rest.** Each Brain-authorized creator account has a separately named IndexedDB database derived from a stable account hash, with the exact account identifier verified in its encrypted metadata. Stream/checkpoint state, applied configuration, command results, entities, tombstones, jobs, coverage, signer generations, outbox entries, and snapshot state are account-partitioned. Account epoch and job lease checks fence every asynchronous commit.
 
 Canonical Brain identities are `(creator_account_id, chat_id)` and `(creator_account_id, message_id)`. Installation, stream, event, sequence, and acquisition origin are provenance and deduplication fields, never canonical keys.
 

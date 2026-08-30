@@ -247,6 +247,7 @@ test('coverage snapshot uses source chronology across reversed generations and w
   const storage = createIndexedDbIngestionStorage(indexedDb, {
     creatorAccountId: ACCOUNT,
     databaseName,
+    encryptionKey: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
   });
   const firstWorker = outbox(storage);
   await firstWorker.initialize();

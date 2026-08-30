@@ -24,11 +24,13 @@ export function bindAgentToBrain({
   extensionId,
   creatorAccountId,
   authTicket,
+  storageBootstrap,
   runtime = browserRuntime(),
 }: {
   extensionId: string;
   creatorAccountId: string;
   authTicket: string;
+  storageBootstrap: string;
   runtime?: ChromeRuntimeLike;
 }): Promise<ExtensionBindingResult> {
   if (
@@ -36,7 +38,7 @@ export function bindAgentToBrain({
     || extensionId.length === 0
     || extensionId === 'dev-extension-id'
   ) return Promise.resolve({ status: 'unavailable' });
-  if (creatorAccountId.length === 0 || authTicket.length === 0) {
+  if (creatorAccountId.length === 0 || authTicket.length === 0 || storageBootstrap.length === 0) {
     return Promise.reject(new Error('Agent binding configuration is incomplete'));
   }
   return new Promise((resolve, reject) => {
@@ -45,6 +47,7 @@ export function bindAgentToBrain({
       protocol_version: '2',
       creator_account_id: creatorAccountId,
       auth_ticket: authTicket,
+      storage_bootstrap: storageBootstrap,
     }, (response) => {
       if (runtime.lastError) {
         reject(new Error('The local Agent extension could not be reached'));

@@ -604,6 +604,37 @@ class InMemoryTransportManager:
         )
         return str(document["principal"]), requested_account
 
+    def authenticate_agent_storage_rotation(
+        self,
+        *,
+        config_auth_ticket: str,
+        reconnect_auth_ticket: str,
+        requested_account: str,
+        agent_installation_id: UUID,
+        now: datetime | None = None,
+    ) -> tuple[str, str]:
+        """Require matching config and reconnect authority before resealing."""
+
+        self._require_activated_runtime()
+        authenticated_at = now or utc_now()
+        config = self._verify_runtime_ticket(
+            config_auth_ticket,
+            purpose="agent-config",
+            creator_account_id=requested_account,
+            agent_installation_id=agent_installation_id,
+            now=authenticated_at,
+        )
+        reconnect = self._verify_runtime_ticket(
+            reconnect_auth_ticket,
+            purpose="agent-reconnect",
+            creator_account_id=requested_account,
+            agent_installation_id=agent_installation_id,
+            now=authenticated_at,
+        )
+        if config["principal"] != reconnect["principal"]:
+            raise AuthorizationError("Agent storage credentials do not share one principal")
+        return str(config["principal"]), requested_account
+
     async def start(self) -> None:
         self.validate_auth_configuration()
         if self._onboarding_progress is not None:

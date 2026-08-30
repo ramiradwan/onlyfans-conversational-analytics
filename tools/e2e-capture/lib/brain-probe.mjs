@@ -256,6 +256,8 @@ export async function requestAgentPairingTicket(context) {
   if (
     typeof document?.pairing_ticket !== 'string'
     || document.pairing_ticket.length === 0
+    || typeof document.storage_bootstrap !== 'string'
+    || document.storage_bootstrap.length === 0
     || typeof document.expires_at !== 'string'
   ) {
     throw new Error('Brain returned an invalid Agent pairing response.');
@@ -264,6 +266,7 @@ export async function requestAgentPairingTicket(context) {
     creatorAccountId: config.CREATOR_ID,
     extensionId: config.EXTENSION_ID,
     pairingTicket: document.pairing_ticket,
+    storageBootstrap: document.storage_bootstrap,
     expiresAt: document.expires_at,
   };
 }

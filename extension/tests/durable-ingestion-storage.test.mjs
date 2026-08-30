@@ -16,6 +16,7 @@ import { FakeIndexedDb } from './fake-indexeddb.mjs';
 
 const ACCOUNT_A = 'creator-account-a';
 const ACCOUNT_B = 'creator-account-b';
+const STORAGE_KEY = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 let sequence = 0;
 const id = () => `50000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`;
 const chat = {
@@ -30,7 +31,10 @@ const chat = {
 };
 
 function storage(indexedDb, creatorAccountId) {
-  return createIndexedDbIngestionStorage(indexedDb, { creatorAccountId });
+  return createIndexedDbIngestionStorage(indexedDb, {
+    creatorAccountId,
+    encryptionKey: STORAGE_KEY,
+  });
 }
 
 test('IndexedDB schema version is independent and account database names are stable hashes', async () => {
@@ -61,6 +65,7 @@ test('IndexedDB v4 upgrades coverage indexes and adds account credential storage
     storage: createIndexedDbIngestionStorage(indexedDb, {
       creatorAccountId: ACCOUNT_A,
       databaseName,
+      encryptionKey: STORAGE_KEY,
     }),
     creatorAccountId: ACCOUNT_A,
     idFactory: id,

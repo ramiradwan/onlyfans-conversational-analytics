@@ -392,7 +392,7 @@ test('invalid fixtures and fatal protocol errors close safely without crashing',
   assert.equal(fatalHarness.scheduler.timeouts.length, 0);
 });
 
-test('Chrome adapter persists only stable installation identity and exposes wake events', async () => {
+test('Chrome adapter identity initialization persists only stable identity and exposes wake events', async () => {
   const values = {};
   const listeners = [];
   const alarmListeners = [];

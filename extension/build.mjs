@@ -561,7 +561,11 @@ async function auditArtifactView(view, {
       assert.match(source, /createChromeBrowserSigningProvider/);
       assert.match(source, /signer-state/);
       assert.match(source, /browser-signing-read\/v1/);
-      assert.match(source, /active_account_partition_v4/);
+      assert.match(source, /active_account_partition_v5/);
+      assert.match(source, /ofca_full_storage_bootstrap_v1/);
+      assert.match(source, /ofca-idb-aesgcm\/v1/);
+      assert.match(source, /\/api\/v1\/agent\/storage\/unseal/);
+      assert.doesNotMatch(source, /pairing_auth_ticket/);
       assert.doesNotMatch(source, /browser_signing_state_v2:/);
       assert.doesNotMatch(source, /bridge-clean-dev-ticket|DEV_AUTH_TICKET|DEV_ACCOUNT_ID/);
       assert.doesNotMatch(source, /dev-creator-account/);

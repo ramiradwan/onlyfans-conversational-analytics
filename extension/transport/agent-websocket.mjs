@@ -386,7 +386,10 @@ export class AgentWebSocketClient {
       return;
     }
     this.reconnectAuthTicket = session.reconnect_auth_ticket;
-    void Promise.resolve(this.persistReconnectAuthTicket(session.reconnect_auth_ticket))
+    void Promise.resolve(this.persistReconnectAuthTicket(
+      session.reconnect_auth_ticket,
+      session.config_auth_ticket,
+    ))
       .catch((error) => {
         this.reconnectAllowed = false;
         this.onValidationError(error);

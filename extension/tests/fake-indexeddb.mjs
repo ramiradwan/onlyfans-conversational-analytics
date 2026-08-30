@@ -183,6 +183,7 @@ class FakeTransaction {
     this.oncomplete = null;
     this.onabort = null;
     this.onerror = null;
+    this.asyncWorkHolds = 0;
     this.stores = new Map(this.storeNames.map((name) => {
       const source = databaseState.stores.get(name);
       if (!source) throw new Error(`Unknown object store ${name}`);
@@ -203,6 +204,17 @@ class FakeTransaction {
 
   requireWritable() {
     if (this.mode !== 'readwrite') throw new Error('IndexedDB transaction is readonly');
+  }
+
+  __ofca_hold_for_async_work() {
+    this.asyncWorkHolds += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.asyncWorkHolds -= 1;
+      this.scheduleCompletionCheck();
+    };
   }
 
   request(operation) {
@@ -244,7 +256,12 @@ class FakeTransaction {
   scheduleCompletionCheck() {
     const generation = ++this.generation;
     setImmediate(() => {
-      if (!this.active || this.pending !== 0 || generation !== this.generation) return;
+      if (
+        !this.active
+        || this.pending !== 0
+        || this.asyncWorkHolds !== 0
+        || generation !== this.generation
+      ) return;
       if (this.mode === 'readwrite') {
         for (const [name, store] of this.stores) {
           const target = this.databaseState.stores.get(name);
@@ -331,6 +348,21 @@ export class FakeIndexedDb {
           target: request,
         });
       }
+      request.onsuccess?.({ target: request });
+    });
+    return request;
+  }
+
+  deleteDatabase(name) {
+    const request = {
+      result: undefined,
+      error: null,
+      onblocked: null,
+      onsuccess: null,
+      onerror: null,
+    };
+    queueMicrotask(() => {
+      this.databases.delete(name);
       request.onsuccess?.({ target: request });
     });
     return request;

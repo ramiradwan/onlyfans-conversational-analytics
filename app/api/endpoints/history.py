@@ -16,6 +16,7 @@ from app.api.security import (
     verify_csrf_token,
 )
 from app.security.runtime_policy import RuntimePolicy
+from app.security.extension_storage import seal_extension_storage_bootstrap
 from app.core.config import settings
 from app.models.history import (
     AgentPairingResponse,
@@ -87,7 +88,19 @@ def create_agent_pairing(
         creator_account_id=policy.identity.creator_account_id,
     )
     response.headers["Cache-Control"] = "no-store"
-    return AgentPairingResponse(pairing_ticket=ticket, expires_at=expires_at)
+    storage_bootstrap = None
+    if settings.extension_id:
+        storage_bootstrap = seal_extension_storage_bootstrap(
+            extension_id=settings.extension_id,
+            creator_account_id=policy.identity.creator_account_id,
+            credential_kind="pairing",
+            auth_ticket=ticket,
+        )
+    return AgentPairingResponse(
+        pairing_ticket=ticket,
+        storage_bootstrap=storage_bootstrap,
+        expires_at=expires_at,
+    )
 
 
 @router.get(
