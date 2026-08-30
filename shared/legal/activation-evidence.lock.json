@@ -1,0 +1,9 @@
+{
+  "schema": "ofca-legal-schema-lock/v1",
+  "source_repository": "ramiradwan/legal",
+  "source_revision": "24467f3d7545fa14e4a3731a55bbbed114579a45",
+  "source_path": "schemas/activation-evidence.schema.json",
+  "source_blob_sha": "aa550690ae5dbf840826b74864a5fbd0290ab441",
+  "schema_version": "2.0",
+  "source_sha256": "f894a550be749adaeba6099718db87d7758d795c6b29428d23ca89d08bc0c85c"
+}

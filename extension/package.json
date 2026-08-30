@@ -8,6 +8,7 @@
     "audit": "node build.mjs --audit",
     "package:chrome": "node build.mjs --package",
     "audit:chrome": "node build.mjs --audit-package",
+    "legal:evidence": "node ../tools/legal-evidence/generate-activation-bundle.mjs",
     "qualify:snapshot": "node --expose-gc qualification/snapshot-100k.mjs",
     "qualify:snapshot:ci": "node --expose-gc qualification/snapshot-100k.mjs --messages=10000"
   },

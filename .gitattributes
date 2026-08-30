@@ -17,6 +17,9 @@ app/provisioning/creator-platform-data-risk-disclosure.html text eol=lf
 # Cross-repository attestation vectors are compared as exact published text.
 tests/fixtures/engineering-attestation-v1-ed25519.json text eol=lf
 
+# Vendored Legal evidence JSON is integrity-checked as exact source bytes.
+shared/legal/*.json text eol=lf
+
 # Fixture cases are generated review noise; manifests, pins, schemas, docs, and
 # loaders remain visible because they define the reviewable contract boundary.
 contracts/grant-profile-v1/*/*/** linguist-generated=true
