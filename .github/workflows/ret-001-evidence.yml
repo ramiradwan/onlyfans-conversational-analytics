@@ -14,13 +14,11 @@ jobs:
       OFCA_RET001_EXECUTION_ROOT: ${{ github.workspace }}/artifacts/legal/ret-001-execution
       PYTHONPATH: ${{ github.workspace }}
       WEBSOCKET_AUTH_MODE: development_stub
-
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -29,113 +27,72 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - name: Install backend dependencies
         run: python -m pip install -r requirements-dev.txt
-
       - name: Execute RET-001 companion resurrection observations
         run: |
           set -o pipefail
           mkdir -p "$OFCA_RET001_EXECUTION_ROOT/scenario-results"
-          python tools/retention-evidence/execute-ret-001-companion-observations.py \
-            --product-revision "$OFCA_PRODUCT_REVISION" \
-            --output-dir "$OFCA_RET001_EXECUTION_ROOT/scenario-results" \
-            | tee "$OFCA_RET001_EXECUTION_ROOT/companion-observation-run.json"
-
+          python tools/retention-evidence/execute-ret-001-companion-observations.py --product-revision "$OFCA_PRODUCT_REVISION" --output-dir "$OFCA_RET001_EXECUTION_ROOT/scenario-results" | tee "$OFCA_RET001_EXECUTION_ROOT/companion-observation-run.json"
       - name: Execute RET-001 projection backup resurrection observation
         run: |
           set -o pipefail
-          python tools/retention-evidence/execute-ret-001-projection-backup.py \
-            --product-revision "$OFCA_PRODUCT_REVISION" \
-            --output-dir "$OFCA_RET001_EXECUTION_ROOT/scenario-results" \
-            | tee "$OFCA_RET001_EXECUTION_ROOT/projection-backup-observation-run.json"
-
+          python tools/retention-evidence/execute-ret-001-projection-backup.py --product-revision "$OFCA_PRODUCT_REVISION" --output-dir "$OFCA_RET001_EXECUTION_ROOT/scenario-results" | tee "$OFCA_RET001_EXECUTION_ROOT/projection-backup-observation-run.json"
       - name: Generate RET-001 Extension replay state
         run: |
           set -o pipefail
-          node tools/retention-evidence/produce-ret-001-extension-state.mjs \
-            --product-revision "$OFCA_PRODUCT_REVISION" \
-            --output "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state.json" \
-            | tee "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state-run.json"
-
+          node tools/retention-evidence/produce-ret-001-extension-state.mjs --product-revision "$OFCA_PRODUCT_REVISION" --output "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state.json" | tee "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state-run.json"
       - name: Execute RET-001 cross-boundary replay observations
         run: |
           set -o pipefail
-          python tools/retention-evidence/execute-ret-001-cross-boundary-json.py \
-            --product-revision "$OFCA_PRODUCT_REVISION" \
-            --extension-state "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state.json" \
-            --output-dir "$OFCA_RET001_EXECUTION_ROOT/scenario-results" \
-            | tee "$OFCA_RET001_EXECUTION_ROOT/cross-boundary-observation-run.json"
-
-      - name: Execute RET-001 Phase 4 companion behavior observations
+          python tools/retention-evidence/execute-ret-001-cross-boundary-json.py --product-revision "$OFCA_PRODUCT_REVISION" --extension-state "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state.json" --output-dir "$OFCA_RET001_EXECUTION_ROOT/scenario-results" | tee "$OFCA_RET001_EXECUTION_ROOT/cross-boundary-observation-run.json"
+      - name: Execute RET-001 current companion behavior observations
         run: |
           set -o pipefail
           mkdir -p "$OFCA_RET001_EXECUTION_ROOT/current-behavior"
-          python tools/retention-evidence/execute-ret-001-current-behavior-observations.py \
-            --product-revision "$OFCA_PRODUCT_REVISION" \
-            --output-dir "$OFCA_RET001_EXECUTION_ROOT/current-behavior" \
-            | tee "$OFCA_RET001_EXECUTION_ROOT/current-behavior-companion-run.json"
-
-      - name: Execute RET-001 Phase 4 Extension behavior observations
+          python tools/retention-evidence/execute-ret-001-current-behavior-observations.py --product-revision "$OFCA_PRODUCT_REVISION" --output-dir "$OFCA_RET001_EXECUTION_ROOT/current-behavior" | tee "$OFCA_RET001_EXECUTION_ROOT/current-behavior-companion-run.json"
+      - name: Execute RET-001 current Extension behavior observations
         run: |
           set -o pipefail
-          node tools/retention-evidence/execute-ret-001-extension-current-behavior.mjs \
-            --product-revision "$OFCA_PRODUCT_REVISION" \
-            --output-dir "$OFCA_RET001_EXECUTION_ROOT/current-behavior" \
-            | tee "$OFCA_RET001_EXECUTION_ROOT/current-behavior-extension-run.json"
-
+          node tools/retention-evidence/execute-ret-001-extension-current-behavior.mjs --product-revision "$OFCA_PRODUCT_REVISION" --output-dir "$OFCA_RET001_EXECUTION_ROOT/current-behavior" | tee "$OFCA_RET001_EXECUTION_ROOT/current-behavior-extension-run.json"
       - name: Bind Extension clear to companion survival
         run: |
           set -o pipefail
-          python tools/retention-evidence/execute-ret-001-extension-clear-boundary.py \
-            --product-revision "$OFCA_PRODUCT_REVISION" \
-            --extension-state "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state.json" \
-            --extension-clear-observation "$OFCA_RET001_EXECUTION_ROOT/current-behavior/beh-004-extension-clear-all.json" \
-            --output-dir "$OFCA_RET001_EXECUTION_ROOT/scenario-results" \
-            | tee "$OFCA_RET001_EXECUTION_ROOT/extension-clear-boundary-run.json"
-
+          python tools/retention-evidence/execute-ret-001-extension-clear-boundary.py --product-revision "$OFCA_PRODUCT_REVISION" --extension-state "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state.json" --extension-clear-observation "$OFCA_RET001_EXECUTION_ROOT/current-behavior/beh-004-extension-clear-all.json" --output-dir "$OFCA_RET001_EXECUTION_ROOT/scenario-results" | tee "$OFCA_RET001_EXECUTION_ROOT/extension-clear-boundary-run.json"
+      - name: Execute RET-001 Phase-A deletion capability observation
+        run: |
+          set -o pipefail
+          python tools/retention-evidence/execute-ret-001-deletion-capability.py --product-revision "$OFCA_PRODUCT_REVISION" --output-dir "$OFCA_RET001_EXECUTION_ROOT" | tee "$OFCA_RET001_EXECUTION_ROOT/deletion-capability-run.json"
       - name: Package RET-001 revision-bound evidence views
         run: >
           node tools/retention-evidence/generate-ret-001-views.mjs
           --product-revision "$OFCA_PRODUCT_REVISION"
           --scenario-results-dir "$OFCA_RET001_EXECUTION_ROOT/scenario-results"
           --output-dir "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views"
-
-      - name: Preserve RET-001 execution summaries and Phase 4 observations
+      - name: Preserve RET-001 execution observations
         run: |
-          cp "$OFCA_RET001_EXECUTION_ROOT/companion-observation-run.json" \
-            "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views/companion-observation-run.json"
-          cp "$OFCA_RET001_EXECUTION_ROOT/projection-backup-observation-run.json" \
-            "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views/projection-backup-observation-run.json"
-          cp "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state-run.json" \
-            "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views/extension-replay-state-run.json"
-          cp "$OFCA_RET001_EXECUTION_ROOT/cross-boundary-observation-run.json" \
-            "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views/cross-boundary-observation-run.json"
-          cp "$OFCA_RET001_EXECUTION_ROOT/extension-clear-boundary-run.json" \
-            "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views/extension-clear-boundary-run.json"
-          cp "$OFCA_RET001_EXECUTION_ROOT/current-behavior-companion-run.json" \
-            "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views/current-behavior-companion-run.json"
-          cp "$OFCA_RET001_EXECUTION_ROOT/current-behavior-extension-run.json" \
-            "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views/current-behavior-extension-run.json"
-          mkdir -p "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views/current-behavior"
-          cp "$OFCA_RET001_EXECUTION_ROOT/current-behavior/"*.json \
-            "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views/current-behavior/"
-
+          DEST="artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views"
+          cp "$OFCA_RET001_EXECUTION_ROOT/companion-observation-run.json" "$DEST/companion-observation-run.json"
+          cp "$OFCA_RET001_EXECUTION_ROOT/projection-backup-observation-run.json" "$DEST/projection-backup-observation-run.json"
+          cp "$OFCA_RET001_EXECUTION_ROOT/extension-replay-state-run.json" "$DEST/extension-replay-state-run.json"
+          cp "$OFCA_RET001_EXECUTION_ROOT/cross-boundary-observation-run.json" "$DEST/cross-boundary-observation-run.json"
+          cp "$OFCA_RET001_EXECUTION_ROOT/extension-clear-boundary-run.json" "$DEST/extension-clear-boundary-run.json"
+          cp "$OFCA_RET001_EXECUTION_ROOT/current-behavior-companion-run.json" "$DEST/current-behavior-companion-run.json"
+          cp "$OFCA_RET001_EXECUTION_ROOT/current-behavior-extension-run.json" "$DEST/current-behavior-extension-run.json"
+          cp "$OFCA_RET001_EXECUTION_ROOT/deletion-capability-run.json" "$DEST/deletion-capability-run.json"
+          cp "$OFCA_RET001_EXECUTION_ROOT/phase-a-deletion-capability.json" "$DEST/phase-a-deletion-capability.json"
+          mkdir -p "$DEST/current-behavior"
+          cp "$OFCA_RET001_EXECUTION_ROOT/current-behavior/"*.json "$DEST/current-behavior/"
       - name: Hash complete RET-001 uploaded evidence set
         run: |
           set -euo pipefail
           cd "artifacts/legal/ret-001/$OFCA_PRODUCT_REVISION/phase-2-views"
-          find . -type f ! -name artifact-manifest.sha256 -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            > artifact-manifest.sha256
+          find . -type f ! -name artifact-manifest.sha256 -print0 | sort -z | xargs -0 sha256sum > artifact-manifest.sha256
           test -s artifact-manifest.sha256
-
       - name: Upload RET-001 characterization evidence
         uses: actions/upload-artifact@v5
         with:
