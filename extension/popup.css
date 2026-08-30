@@ -34,10 +34,11 @@ header {
   font-weight: 800;
 }
 
-h1, h2, p { margin-top: 0; }
+h1, h2, h3, p { margin-top: 0; }
 h1 { margin-bottom: 3px; font-size: 17px; line-height: 1.2; }
 h2 { margin-bottom: 6px; font-size: 14px; }
-p { margin-bottom: 0; color: #4c5b66; font-size: 12px; line-height: 1.45; }
+h3 { margin-bottom: 6px; font-size: 13px; }
+p, li, label { color: #4c5b66; font-size: 12px; line-height: 1.45; }
 .status-line { color: #126e73; font-weight: 650; }
 
 section {
@@ -49,7 +50,8 @@ section {
 }
 
 .notice { border-color: #a8d3d4; background: #f2fbfa; }
-.independent { margin-top: 7px; color: #6c5960; font-size: 11px; }
+.warning { border-color: #dfbc74; background: #fff9ea; }
+.independent, .fine-print { margin-top: 7px; color: #6c5960; font-size: 11px; }
 .section-heading { display: flex; justify-content: space-between; gap: 10px; }
 .section-heading p { font-size: 11px; }
 
@@ -72,6 +74,20 @@ section {
 .feedback { min-height: 18px; margin: 0 2px 8px; color: #8b3c31; }
 .actions { display: grid; gap: 8px; }
 
+.check-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+  align-items: start;
+  padding: 7px 0;
+}
+.check-row input { margin-top: 3px; }
+
+.disclosure { padding: 10px 0; border-top: 1px solid #e3e8ea; }
+.disclosure:first-of-type { border-top: 0; }
+.disclosure ul { padding-left: 18px; }
+.disclosure li { margin-bottom: 7px; }
+
 button {
   width: 100%;
   min-height: 38px;
@@ -82,14 +98,15 @@ button {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  margin-top: 6px;
 }
 
 button:focus-visible, a:focus-visible { outline: 3px solid #f4b942; outline-offset: 2px; }
-button:disabled { cursor: wait; opacity: .58; }
+button:disabled { cursor: not-allowed; opacity: .58; }
 .primary { color: #fff; background: #126e73; }
 .secondary { color: #126e73; border-color: #a8d3d4; background: #fff; }
 .danger { color: #8a2d2d; border-color: #d9aaaa; background: #fff7f7; }
-.text-button { width: auto; min-height: auto; padding: 2px 4px; color: #126e73; background: transparent; }
+.text-button { width: auto; min-height: auto; padding: 2px 4px; color: #126e73; background: transparent; margin: 0; }
 .hidden { display: none; }
 
 footer {
@@ -101,5 +118,5 @@ footer {
   font-size: 10px;
 }
 
-footer a { color: #126e73; }
+footer a, a { color: #126e73; }
 footer a[aria-disabled="true"] { color: #7b858b; text-decoration: none; cursor: default; }

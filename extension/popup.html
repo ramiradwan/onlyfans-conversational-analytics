@@ -19,17 +19,109 @@
       <section class="notice" aria-labelledby="notice-title">
         <h2 id="notice-title">Your data stays on this computer</h2>
         <p>
-          Preview reads OnlyFans creator chat activity and stores seven days of aggregate
-          observation counts—never message text. Full analytics also reads normalized chat
-          identities and message text and sends them only to the analytics service running
-          on this computer. The extension sends no telemetry or conversation data to any
-          external service.
-        </p>
-        <p>
-          Requests are made to OnlyFans within the user’s existing authenticated browser
-          session; the extension does not read or export raw passwords or authentication cookies.
+          Preview retains limited seven-day activity counts. Full analytics handles message and
+          participant information and sends it only to the companion analytics service running on
+          this computer.
         </p>
         <p class="independent">Independent software; not affiliated with or endorsed by OnlyFans.</p>
+      </section>
+
+      <section id="legal-unavailable" class="warning hidden">
+        <h2>Activation is not configured for this build</h2>
+        <p>
+          Exact Legal document versions and rendered hashes have not been bound to this Product
+          revision. New Preview/Full activation therefore fails closed.
+        </p>
+      </section>
+
+      <section id="pre-mode" class="hidden" aria-labelledby="activation-title">
+        <h2 id="activation-title">Before activating</h2>
+        <label class="check-row">
+          <input id="terms-accepted" type="checkbox">
+          <span>I agree to the <a id="terms-link" href="#">Software Terms</a>.</span>
+        </label>
+        <label class="check-row">
+          <input id="risk-acknowledged" type="checkbox">
+          <span>
+            I have read the <a id="risk-link" href="#">Creator Platform &amp; Data Risk Disclosure</a>
+            and acknowledge the platform, account, privacy, data-security, and technical risks
+            described in it.
+          </span>
+        </label>
+        <button id="activate-software" class="primary" type="button" disabled>
+          Activate Software
+        </button>
+        <p class="fine-print">
+          Activate Software only advances to mode selection. It does not enable Full analytics.
+        </p>
+      </section>
+
+      <section id="mode-choice" class="hidden" aria-labelledby="mode-choice-title">
+        <h2 id="mode-choice-title">Choose analytics mode</h2>
+
+        <div id="preview-disclosure" class="disclosure">
+          <h3>Preview</h3>
+          <p>Preview watches supported chat and message activity to create limited daily counts.</p>
+          <p>
+            Preview retains limited counts, <strong>never message text</strong>, conversation
+            identifiers, participant identifiers, participant display names, or other message-level
+            identifiers.
+          </p>
+          <p>
+            Preview metrics are kept on a rolling seven-day basis and older records are
+            automatically removed.
+          </p>
+          <p>Preview needs access to the supported platform while it is enabled.</p>
+          <p><a class="extension-privacy-link" href="#">Extension Privacy Notice</a></p>
+          <button id="enable-preview" class="primary" type="button">Enable Preview</button>
+          <button id="not-now-preview" class="secondary" type="button">Not now</button>
+        </div>
+
+        <div id="full-disclosure" class="disclosure">
+          <h3>Full analytics</h3>
+          <p>Full analytics handles substantially more information than Preview.</p>
+          <ul>
+            <li>
+              <strong>Message content:</strong> Full stores supported conversation and participant
+              information, including message text, message and conversation identifiers,
+              participant identifiers and display names, and message timestamps. It can also
+              retrieve supported conversation history when history access is enabled.
+            </li>
+            <li>
+              <strong>Same-computer transfer:</strong> the Extension sends conversation information,
+              including message text, to the companion analytics service running on this computer.
+              This information <strong>leaves the Extension but remains on the same computer</strong>.
+              The normal conversation dataset is not sent to Provider-hosted analytics or storage
+              infrastructure through the Extension’s normal workflow.
+            </li>
+            <li>
+              <strong>Local storage and retention:</strong> Full-mode information is stored locally
+              in Extension storage and in the companion analytics service. No general automatic
+              expiry period currently applies to the main Full-mode conversation data stored in
+              either location.
+            </li>
+            <li>
+              <strong>Deletion boundary:</strong>
+              <strong>
+                Delete all Extension data does not delete conversation information already stored
+                by the companion analytics service. The Extension does not currently provide a
+                complete deletion process for that separately stored companion data.
+              </strong>
+            </li>
+            <li>
+              <strong>Other people’s information:</strong> messages can contain private or sensitive
+              information about people you communicate with. Enabling Full is your choice to
+              activate this Extension data handling; it is
+              <strong>not consent on behalf of those people</strong>.
+            </li>
+          </ul>
+          <p>
+            Read the <a class="extension-privacy-link" href="#"><strong>Extension Privacy Notice</strong></a>
+            for the complete description of Full-mode data handling.
+          </p>
+          <button id="enable-full" class="primary" type="button">Enable Full analytics</button>
+          <button id="full-secondary" class="secondary" type="button">Not now</button>
+        </div>
       </section>
 
       <section aria-labelledby="preview-title">
@@ -60,8 +152,7 @@
       <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
 
       <div class="actions">
-        <button id="enable-preview" class="primary" type="button">Enable activity preview</button>
-        <button id="enable-full" class="secondary" type="button">Connect full analytics</button>
+        <button id="review-full" class="secondary hidden" type="button">Review Full analytics</button>
         <button id="resume" class="primary hidden" type="button">Review and resume</button>
         <button id="pause" class="secondary hidden" type="button">Pause analytics</button>
         <button id="history" class="secondary hidden" type="button">Set up history sync</button>

@@ -114,6 +114,11 @@ function harness({ unregisterFails = false } = {}) {
     async prune() {},
   };
   const bridge = () => ({ register() {}, unregister() {} });
+  const activeModeAuthorization = {
+    async authorizeTransition() { return true; },
+    async authorizeResume() { return true; },
+    async reconcileActiveMode() { return true; },
+  };
   const controller = new ConsentController({
     chromeApi,
     runtime: {
@@ -132,6 +137,7 @@ function harness({ unregisterFails = false } = {}) {
       await chromeApi.storage.local.clear();
       await chromeApi.storage.session.clear();
     },
+    activeModeAuthorization,
     fetchImpl: async () => { throw new Error('not installed'); },
     now: () => new Date('2030-01-08T12:00:00Z'),
   });

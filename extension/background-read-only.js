@@ -13,13 +13,16 @@ import { createProvisioningIdentityBridge } from './transport/provisioning-ident
 import { ConsentController } from './runtime/consent-controller.mjs';
 import { PreviewMetricsStore } from './runtime/preview-metrics.mjs';
 import { clearExtensionLocalData } from './runtime/local-data.mjs';
+import { ActivationEvidenceStore } from './runtime/activation-evidence.mjs';
+import { LegalActivationController } from './runtime/legal-activation-controller.mjs';
+import { LegalConsentAuthorization } from './runtime/legal-consent-authorization.mjs';
+import { legalReleaseBindings } from './runtime/legal-release-bindings.mjs';
 
 export const chromeAdapter = createChromeAdapter();
 export const agentRuntime = createReadOnlyAgentRuntime({
   chromeAdapter,
   signerFactory: (options) => createChromeBrowserSigningProvider(options),
   onStartupError: () => {
-    // Keep diagnostics free of account data, credentials, and captured content.
     console.error('[Conversation Analytics] local Agent startup failed; a later consented wake will retry');
   },
 });
@@ -57,6 +60,13 @@ export const captureMessageBridge = createCaptureMessageBridge({
 export const previewMetrics = new PreviewMetricsStore({
   storage: chrome.storage.local,
 });
+export const activationEvidenceStore = new ActivationEvidenceStore({
+  softwareVersion: chrome.runtime.getManifest().version,
+});
+export const legalConsentAuthorization = new LegalConsentAuthorization({
+  evidenceStore: activationEvidenceStore,
+});
+
 let agentWorkerInstanceId = null;
 
 function runtimeSummary() {
@@ -81,9 +91,28 @@ consentController = new ConsentController({
   provisioningIdentityBridge,
   previewMetrics,
   clearLocalData: () => clearExtensionLocalData(),
+  activeModeAuthorization: legalConsentAuthorization,
   runtimeSummary,
 });
 export { consentController };
+
+export const legalActivationController = new LegalActivationController({
+  chromeApi: chrome,
+  consentController,
+  evidenceStore: activationEvidenceStore,
+  bindings: legalReleaseBindings,
+});
+
+export async function legalActivationAuditSnapshot() {
+  return activationEvidenceStore.exportAuditTrail();
+}
+
+Object.defineProperty(globalThis, '__OFCA_LEGAL_ACTIVATION_AUDIT__', {
+  configurable: false,
+  enumerable: false,
+  value: legalActivationAuditSnapshot,
+  writable: false,
+});
 
 /** Payload-free worker diagnostics used by local health checks and the system E2E harness. */
 export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile') {
@@ -133,8 +162,7 @@ Object.defineProperty(globalThis, '__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__', {
   writable: false,
 });
 
-// Listener registration is synchronous. No Agent identity, content script, or
-// account runtime is created until the stored consent state has been checked.
 captureMessageBridge.register();
+legalActivationController.register();
 consentController.register();
 void consentController.initialize().catch(() => undefined);

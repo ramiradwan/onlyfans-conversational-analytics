@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dipsy User Activation & Legal Choice Evidence Schema",
+  "description": "Schema for recording cryptographic evidence of user contractual assent, risk acknowledgments, and data-handling choices during activation or upgrade.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "occurred_at",
+    "software_version",
+    "selected_mode",
+    "locale",
+    "actions",
+    "presented_instruments"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["2.0"]
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "Strict RFC 4122 UUIDv4 identifier for the activation evidence record"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["initial_activation", "mode_upgrade", "terms_reacceptance", "reauthorization"]
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "software_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "selected_mode": {
+      "type": "string",
+      "enum": ["preview", "full"]
+    },
+    "locale": {
+      "type": "string",
+      "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+      "description": "The language code presented to the user during activation (e.g. en, fi)"
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terms", "risk_disclosure", "extension_data_handling"],
+      "properties": {
+        "terms": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "timestamp"],
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["accepted", "previously_accepted"]
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "risk_disclosure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "timestamp"],
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["acknowledged", "previously_acknowledged"]
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "extension_data_handling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "timestamp"],
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["affirmatively_authorized", "preview_only", "revoked"]
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    },
+    "presented_instruments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terms_of_service", "privacy_policy", "extension_privacy_notice", "risk_disclosure"],
+      "properties": {
+        "terms_of_service": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "rendered_sha256", "public_url", "locale"],
+          "properties": {
+            "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+            "rendered_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "public_url": { "type": "string", "pattern": "^/[a-z0-9_/-]+$" },
+            "locale": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" }
+          }
+        },
+        "privacy_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "rendered_sha256", "public_url", "locale"],
+          "properties": {
+            "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+            "rendered_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "public_url": { "type": "string", "pattern": "^/[a-z0-9_/-]+$" },
+            "locale": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" }
+          }
+        },
+        "extension_privacy_notice": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "rendered_sha256", "public_url", "locale"],
+          "properties": {
+            "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+            "rendered_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "public_url": { "type": "string", "pattern": "^/[a-z0-9_/-]+$" },
+            "locale": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" }
+          }
+        },
+        "risk_disclosure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "rendered_sha256", "public_url", "locale"],
+          "properties": {
+            "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+            "rendered_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "public_url": { "type": "string", "pattern": "^/[a-z0-9_/-]+$" },
+            "locale": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "selected_mode": { "const": "full" }
+        }
+      },
+      "then": {
+        "properties": {
+          "actions": {
+            "properties": {
+              "extension_data_handling": {
+                "properties": {
+                  "action": { "const": "affirmatively_authorized" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
+

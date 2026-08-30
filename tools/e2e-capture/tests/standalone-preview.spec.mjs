@@ -10,7 +10,9 @@ import {
   LOCAL_SERVICE_ORIGIN,
   LOCAL_SERVICE_ORIGIN_PATTERN,
   ONLYFANS_ORIGIN_PATTERN,
-  acceptNativeHostPermissionPrompt,
+  completePreModeLegalActions,
+  configureSyntheticLegalBindings,
+  enablePreviewAnalytics,
   openPopup,
 } from '../lib/consent-ui.mjs';
 import {
@@ -161,13 +163,10 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expectNoOptionalAccess(snapshot);
     });
 
-    await test.step('the popup user action grants only site access and enables preview capture', async () => {
-      await popup.getByRole('button', { name: 'Enable activity preview' }).click();
-      await acceptNativeHostPermissionPrompt(context);
-      await expect.poll(() => worker.evaluate(
-        (origin) => chrome.permissions.contains({ origins: [origin] }),
-        ONLYFANS_ORIGIN_PATTERN,
-      )).toBe(true);
+    await test.step('the Legal activation flow grants only site access and enables preview capture', async () => {
+      await configureSyntheticLegalBindings(worker, popup);
+      await completePreModeLegalActions(popup);
+      await enablePreviewAnalytics(context, popup, worker);
       await expect(popup.locator('#mode-label')).toHaveText('Activity preview enabled');
       await expect.poll(async () => (await extensionState(worker)).capturePhase).toBe('preview');
       const snapshot = await extensionSnapshot(worker);
@@ -235,6 +234,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
         await chrome.storage.session.set({ standalone_e2e_session: true });
       });
       expect((await extensionSnapshot(worker)).databaseNames).toEqual([
+        'ofca_legal_evidence_v1',
         'standalone-e2e-a',
         'standalone-e2e-b',
       ]);

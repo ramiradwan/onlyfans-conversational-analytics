@@ -120,6 +120,7 @@ export class ConsentController {
     provisioningIdentityBridge,
     previewMetrics,
     clearLocalData,
+    activeModeAuthorization,
     runtimeSummary = () => ({}),
     fetchImpl = globalThis.fetch,
     now = () => new Date(),
@@ -145,6 +146,13 @@ export class ConsentController {
     if (typeof clearLocalData !== 'function') {
       throw new Error('Consent controller requires a local data cleaner');
     }
+    if (
+      typeof activeModeAuthorization?.authorizeTransition !== 'function'
+      || typeof activeModeAuthorization?.authorizeResume !== 'function'
+      || typeof activeModeAuthorization?.reconcileActiveMode !== 'function'
+    ) {
+      throw new Error('Consent controller requires explicit active-mode authorization');
+    }
     this.chromeApi = chromeApi;
     this.runtime = runtime;
     this.adapter = adapter;
@@ -152,6 +160,7 @@ export class ConsentController {
     this.provisioningIdentityBridge = provisioningIdentityBridge;
     this.previewMetrics = previewMetrics;
     this.clearLocalData = clearLocalData;
+    this.activeModeAuthorization = activeModeAuthorization;
     this.runtimeSummary = runtimeSummary;
     this.fetchImpl = fetchImpl;
     this.now = now;
@@ -319,8 +328,6 @@ export class ConsentController {
     try {
       await this.#syncContentScripts(scriptMode);
     } catch (error) {
-      // A failed teardown must never leave the message gate in its former active
-      // phase while a stale content-script registration is being retried.
       this.phase = ACTIVE_CONSENT_MODES.has(desired)
         ? (priorPhase === 'booting' ? 'unavailable' : priorPhase)
         : 'unavailable';
@@ -330,6 +337,22 @@ export class ConsentController {
 
   reconcile() {
     const operation = this.transition.then(async () => {
+      if (
+        ACTIVE_CONSENT_MODES.has(this.state.mode)
+        && !await this.activeModeAuthorization.reconcileActiveMode({
+          mode: this.state.mode,
+          state: structuredClone(this.state),
+        })
+      ) {
+        const resumeMode = this.state.mode;
+        this.state = {
+          ...this.state,
+          mode: 'paused',
+          resume_mode: resumeMode,
+          updated_at: this.now().toISOString(),
+        };
+        await this.chromeApi.storage.local.set({ [CONSENT_STORAGE_KEY]: this.state });
+      }
       const desired = await this.#desiredPhase();
       await this.#applyPhase(desired);
     });
@@ -337,8 +360,9 @@ export class ConsentController {
     return operation;
   }
 
-  async setMode(mode) {
+  async setMode(mode, { evidenceEventId = null } = {}) {
     await this.initialize();
+    const currentState = structuredClone(this.state);
     let nextMode = mode;
     let resumeMode = null;
     if (mode === 'pause') {
@@ -352,8 +376,22 @@ export class ConsentController {
         throw new Error('There is no paused consent to resume');
       }
       nextMode = this.state.resume_mode;
+      const authorized = await this.activeModeAuthorization.authorizeResume({
+        resumeMode: nextMode,
+        currentState,
+      });
+      if (!authorized) throw new Error('Active analytics resume requires Legal mode-choice evidence');
     } else if (!['preview', 'full', 'revoked'].includes(mode)) {
       throw new Error('Unsupported consent transition');
+    }
+
+    if (ACTIVE_CONSENT_MODES.has(nextMode) && mode !== 'resume') {
+      const authorized = await this.activeModeAuthorization.authorizeTransition({
+        currentState,
+        requestedMode: nextMode,
+        evidenceEventId,
+      });
+      if (!authorized) throw new Error('Active analytics requires Legal mode-choice evidence');
     }
 
     if (ACTIVE_CONSENT_MODES.has(nextMode) && !await this.#hasOnlyFansPermission()) {
@@ -402,9 +440,6 @@ export class ConsentController {
         failure ??= error;
       }
       try {
-        // The encrypted adapter caches the unsealed account key and Agent
-        // credential for the lifetime of the service worker. Deletion must
-        // invalidate that in-memory authority as well as durable browser data.
         await this.adapter.clearBrainBinding();
       } catch (error) {
         failure ??= error;
