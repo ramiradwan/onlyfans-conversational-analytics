@@ -55,7 +55,14 @@ def test_bootstrap_is_opaque_device_bound_and_account_keys_are_separated() -> No
             sealed,
             expected_extension_id=OTHER_EXTENSION_ID,
         )
-    tampered = sealed[:-1] + ("A" if sealed[-1] != "A" else "B")
+
+    protected = bytearray(
+        base64.urlsafe_b64decode(sealed + "=" * (-len(sealed) % 4))
+    )
+    body_start = protected.index(b"\n") + 1
+    protected[body_start] = ord("A") if protected[body_start] != ord("A") else ord("B")
+    tampered = base64.urlsafe_b64encode(protected).rstrip(b"=").decode("ascii")
+    assert tampered != sealed
     with pytest.raises(LocalDataKeyError):
         open_extension_storage_bootstrap(
             tampered,
