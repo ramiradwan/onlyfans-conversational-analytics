@@ -88,16 +88,27 @@ class _TrackedConnection(sqlite3.Connection):
     _tracked_path: Path | None = None
     _tracking_closed: bool = False
 
-    def close(self) -> None:
-        if not self._tracking_closed and self._tracked_path is not None:
-            with _CONNECTION_COUNTS_LOCK:
-                remaining = _CONNECTION_COUNTS.get(self._tracked_path, 1) - 1
-                if remaining > 0:
-                    _CONNECTION_COUNTS[self._tracked_path] = remaining
-                else:
-                    _CONNECTION_COUNTS.pop(self._tracked_path, None)
-            self._tracking_closed = True
+    def _close_native(self) -> None:
         super().close()
+
+    def close(self) -> None:
+        path = self._tracked_path
+        if path is None:
+            self._close_native()
+            return
+        with _CONNECTION_COUNTS_LOCK:
+            lifecycle = _LIFECYCLE_LOCKS.setdefault(path, RLock())
+        with lifecycle:
+            if self._tracking_closed:
+                return
+            self._close_native()
+            with _CONNECTION_COUNTS_LOCK:
+                remaining = _CONNECTION_COUNTS.get(path, 1) - 1
+                if remaining > 0:
+                    _CONNECTION_COUNTS[path] = remaining
+                else:
+                    _CONNECTION_COUNTS.pop(path, None)
+            self._tracking_closed = True
 
 
 class LocalSQLite:
