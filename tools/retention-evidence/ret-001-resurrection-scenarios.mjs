@@ -1,57 +1,43 @@
 import { validateRet001Registry } from './ret-001-registry.mjs';
 import { buildRet001ReconstructionGraph } from './ret-001-views.mjs';
-import {
-  RET001_RESURRECTION_SCENARIOS as SEED_SCENARIOS,
-  RET001_RESURRECTION_SCENARIO_CATALOG_SCHEMA,
-  RET001_RESURRECTION_SCENARIO_BINDINGS_SCHEMA,
-  RET001_RESURRECTION_SCENARIO_RESULT_SCHEMA,
-} from './ret-001-resurrection-scenarios.seed.mjs';
 
-export {
-  RET001_RESURRECTION_SCENARIO_CATALOG_SCHEMA,
-  RET001_RESURRECTION_SCENARIO_BINDINGS_SCHEMA,
-  RET001_RESURRECTION_SCENARIO_RESULT_SCHEMA,
-};
+export const RET001_RESURRECTION_SCENARIO_CATALOG_SCHEMA =
+  'ofca-ret-001-resurrection-scenario-catalog/v1';
+export const RET001_RESURRECTION_SCENARIO_BINDINGS_SCHEMA =
+  'ofca-ret-001-resurrection-scenario-bindings/v1';
+export const RET001_RESURRECTION_SCENARIO_RESULT_SCHEMA =
+  'ofca-ret-001-resurrection-scenario-result/v1';
 
-const RES010 = Object.freeze({
-  id: 'RES-010-PROJECTION-BACKUP-RESTORE',
-  family: 'projection_backup_restore',
-  title: 'Analytics projection backup restore after live derived-store deletion',
-  question: 'Can a surviving analytics-projections.sqlite3 backup restore linkable analytics information deleted from the live analytics projection store?',
-  execution_status: 'PLANNED_OBSERVATIONAL',
-  production_lifecycle_change_authorized: false,
-  object_ids: Object.freeze(['COMP-ANALYTICS-PROJECTION', 'COMP-BACKUP-PROJECTIONS', 'COMP-RESTORE-TEMP']),
-  deleted_object_ids: Object.freeze(['COMP-ANALYTICS-PROJECTION']),
-  relationship_requirements: Object.freeze([
-    Object.freeze({
-      id: 'RES-010-R1',
-      from: 'COMP-ANALYTICS-PROJECTION',
-      relationship: 'rebuild_or_replay_source',
-      to: 'COMP-BACKUP-PROJECTIONS',
-      purpose: 'Bind the persisted analytics projection to the production projection-backup creation path.',
-    }),
-    Object.freeze({
-      id: 'RES-010-R2',
-      from: 'COMP-BACKUP-PROJECTIONS',
-      relationship: 'rebuild_or_replay_source',
-      to: 'COMP-RESTORE-TEMP',
-      purpose: 'Bind the verified analytics projection backup to restore staging.',
-    }),
-    Object.freeze({
-      id: 'RES-010-R3',
-      from: 'COMP-RESTORE-TEMP',
-      relationship: 'copies_to',
-      to: 'COMP-ANALYTICS-PROJECTION',
-      purpose: 'Bind verified restore staging to republished analytics projection state.',
-    }),
-  ]),
-  model_coverage: 'ANALYTICS_PROJECTION_BACKUP_RESTORE_PATH_DECLARED_AND_EXECUTION_REQUIRED',
-});
-
-export const RET001_RESURRECTION_SCENARIOS = Object.freeze([...SEED_SCENARIOS, RES010]);
-const RESULT_STATUSES = Object.freeze(['OBSERVED_REENTRY', 'NO_REENTRY_OBSERVED', 'INCOMPLETE', 'NOT_APPLICABLE']);
+const RESULT_STATUSES = Object.freeze([
+  'OBSERVED_REENTRY',
+  'NO_REENTRY_OBSERVED',
+  'INCOMPLETE',
+  'NOT_APPLICABLE',
+]);
 const OBSERVATION_STATUSES = Object.freeze(['OBSERVED', 'NOT_OBSERVED', 'INCONCLUSIVE']);
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
+
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const nested of Object.values(value)) deepFreeze(nested);
+  }
+  return value;
+}
+
+export const RET001_RESURRECTION_SCENARIOS = deepFreeze([
+  {"id":"RES-001-EXT-OUTBOX-RETRY","family":"extension_retry_after_companion_deletion","title":"Extension outbox retry after companion-side deletion","question":"Can surviving Extension delivery state reintroduce deleted companion message information?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["EXT-OUTBOX","COMP-RAW-INGEST-EVENTS","COMP-CANONICAL-MESSAGES"],"deleted_object_ids":["COMP-RAW-INGEST-EVENTS","COMP-CANONICAL-MESSAGES"],"relationship_requirements":[{"id":"RES-001-R1","from":"EXT-OUTBOX","relationship":"copies_to","to":"COMP-RAW-INGEST-EVENTS","purpose":"Bind the durable Extension retry source to accepted raw ingest state."},{"id":"RES-001-R2","from":"EXT-OUTBOX","relationship":"rebuild_or_replay_source","to":"COMP-CANONICAL-MESSAGES","purpose":"Bind Extension queued delivery state to the declared canonical-message replay path."}],"model_coverage":"END_TO_END_RELATIONSHIP_PREREQUISITES_DECLARED"},
+  {"id":"RES-002-HISTORY-SNAPSHOT-REPLAY","family":"history_snapshot_replay","title":"History or snapshot replay after companion-side deletion","question":"Can surviving Extension snapshot material reintroduce deleted canonical message information?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["EXT-SNAPSHOT-CHUNKS","COMP-CANONICAL-MESSAGES"],"deleted_object_ids":["COMP-CANONICAL-MESSAGES"],"relationship_requirements":[{"id":"RES-002-R1","from":"EXT-SNAPSHOT-CHUNKS","relationship":"copies_to","to":"COMP-CANONICAL-MESSAGES","purpose":"Bind snapshot material to the declared canonical-message copy path."}],"model_coverage":"DIRECT_RELATIONSHIP_PREREQUISITE_DECLARED"},
+  {"id":"RES-003-PROJECTION-REBUILD","family":"projection_rebuild","title":"Projection rebuild from surviving canonical messages","question":"Can surviving canonical message data recreate deleted Bridge projection message information?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["COMP-CANONICAL-MESSAGES","COMP-BRIDGE-PROJECTION-MESSAGES"],"deleted_object_ids":["COMP-BRIDGE-PROJECTION-MESSAGES"],"relationship_requirements":[{"id":"RES-003-R1","from":"COMP-CANONICAL-MESSAGES","relationship":"rebuild_or_replay_source","to":"COMP-BRIDGE-PROJECTION-MESSAGES","purpose":"Bind the canonical source to the declared Bridge projection rebuild path."}],"model_coverage":"DIRECT_REBUILD_RELATIONSHIP_DECLARED"},
+  {"id":"RES-004-MIGRATION-BACKUP-RESTORE","family":"migration_backup_restore","title":"Migration backup restore after live canonical deletion","question":"Can a surviving pre-migration backup participate in restoring information deleted from the live canonical store?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["COMP-CANONICAL-MESSAGES","COMP-MIGRATION-BACKUP","COMP-RESTORE-TEMP"],"deleted_object_ids":["COMP-CANONICAL-MESSAGES"],"relationship_requirements":[{"id":"RES-004-R1","from":"COMP-CANONICAL-MESSAGES","relationship":"rebuild_or_replay_source","to":"COMP-MIGRATION-BACKUP","purpose":"Bind canonical message state to the declared pre-migration backup creation path."},{"id":"RES-004-R2","from":"COMP-MIGRATION-BACKUP","relationship":"rebuild_or_replay_source","to":"COMP-RESTORE-TEMP","purpose":"Bind the migration backup to restore staging."}],"model_coverage":"RESTORE_STAGING_RELATIONSHIPS_DECLARED_FINAL_PUBLICATION_REQUIRES_SCENARIO_PROOF"},
+  {"id":"RES-005-ORDINARY-BACKUP-RESTORE","family":"ordinary_backup_restore","title":"Ordinary backup restore after live canonical deletion","question":"Can a surviving canonical backup restore message information deleted from the live canonical store?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["COMP-CANONICAL-MESSAGES","COMP-BACKUP-CANONICAL","COMP-RESTORE-TEMP"],"deleted_object_ids":["COMP-CANONICAL-MESSAGES"],"relationship_requirements":[{"id":"RES-005-R1","from":"COMP-CANONICAL-MESSAGES","relationship":"rebuild_or_replay_source","to":"COMP-BACKUP-CANONICAL","purpose":"Bind canonical message state to the declared backup creation path."},{"id":"RES-005-R2","from":"COMP-BACKUP-CANONICAL","relationship":"rebuild_or_replay_source","to":"COMP-RESTORE-TEMP","purpose":"Bind the canonical backup to restore staging."}],"model_coverage":"RESTORE_STAGING_RELATIONSHIPS_DECLARED_FINAL_PUBLICATION_REQUIRES_SCENARIO_PROOF"},
+  {"id":"RES-006-STALE-EXTENSION-AFTER-COMPANION-DELETE","family":"stale_extension_after_companion_deletion","title":"Stale Extension state after companion-side deletion","question":"Can surviving Extension message state cause deleted companion canonical message information to exist again?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["EXT-MESSAGES","COMP-CANONICAL-MESSAGES"],"deleted_object_ids":["COMP-CANONICAL-MESSAGES"],"relationship_requirements":[{"id":"RES-006-R1","from":"EXT-MESSAGES","relationship":"rebuild_or_replay_source","to":"COMP-CANONICAL-MESSAGES","purpose":"Bind surviving Extension message state to the declared canonical replay path."}],"model_coverage":"DIRECT_REPLAY_RELATIONSHIP_DECLARED"},
+  {"id":"RES-007-STALE-COMPANION-AFTER-EXTENSION-DELETE","family":"stale_companion_after_extension_delete_all","title":"Stale companion state after Extension delete-all","question":"What companion message information survives after the Extension-side source is deleted?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["EXT-MESSAGES","COMP-CANONICAL-MESSAGES"],"deleted_object_ids":["EXT-MESSAGES"],"relationship_requirements":[{"id":"RES-007-R1","from":"EXT-MESSAGES","relationship":"copies_to","to":"COMP-CANONICAL-MESSAGES","purpose":"Bind the Extension source to the surviving companion canonical copy."}],"model_coverage":"SURVIVING_DOWNSTREAM_COPY_RELATIONSHIP_DECLARED"},
+  {"id":"RES-008-RECONNECT-AFTER-DISCONNECT","family":"reconnect_after_account_disconnect","title":"Reconnect or reconcile after account disconnect","question":"Can surviving queued Extension state be replayed into companion state after reconnect or reconciliation?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["EXT-OUTBOX","COMP-RAW-INGEST-EVENTS","COMP-CANONICAL-MESSAGES"],"deleted_object_ids":["COMP-CANONICAL-MESSAGES"],"relationship_requirements":[{"id":"RES-008-R1","from":"EXT-OUTBOX","relationship":"copies_to","to":"COMP-RAW-INGEST-EVENTS","purpose":"Bind queued Extension delivery to companion ingest after reconnect."},{"id":"RES-008-R2","from":"COMP-RAW-INGEST-EVENTS","relationship":"copies_to","to":"COMP-CANONICAL-MESSAGES","purpose":"Bind accepted ingest evidence to canonical message reconstruction."}],"model_coverage":"END_TO_END_RELATIONSHIP_PREREQUISITES_DECLARED"},
+  {"id":"RES-009-DERIVED-STORE-REBUILD-AFTER-SOURCE-DELETE","family":"derived_store_rebuild_after_source_deletion","title":"Derived-store behavior after canonical source deletion","question":"After canonical source deletion, what derived message information survives and what can still be rebuilt?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["COMP-CANONICAL-MESSAGES","COMP-BRIDGE-PROJECTION-MESSAGES"],"deleted_object_ids":["COMP-CANONICAL-MESSAGES"],"relationship_requirements":[{"id":"RES-009-R1","from":"COMP-CANONICAL-MESSAGES","relationship":"copies_to","to":"COMP-BRIDGE-PROJECTION-MESSAGES","purpose":"Bind canonical messages to the surviving derived projection copy."}],"model_coverage":"SURVIVING_DERIVED_COPY_RELATIONSHIP_DECLARED"},
+  {"id":"RES-010-PROJECTION-BACKUP-RESTORE","family":"projection_backup_restore","title":"Analytics projection backup restore after live derived-store deletion","question":"Can a surviving analytics-projections.sqlite3 backup restore linkable analytics information deleted from the live analytics projection store?","execution_status":"PLANNED_OBSERVATIONAL","production_lifecycle_change_authorized":false,"object_ids":["COMP-ANALYTICS-PROJECTION","COMP-BACKUP-PROJECTIONS","COMP-RESTORE-TEMP"],"deleted_object_ids":["COMP-ANALYTICS-PROJECTION"],"relationship_requirements":[{"id":"RES-010-R1","from":"COMP-ANALYTICS-PROJECTION","relationship":"rebuild_or_replay_source","to":"COMP-BACKUP-PROJECTIONS","purpose":"Bind the persisted analytics projection to the production projection-backup creation path."},{"id":"RES-010-R2","from":"COMP-BACKUP-PROJECTIONS","relationship":"rebuild_or_replay_source","to":"COMP-RESTORE-TEMP","purpose":"Bind the verified analytics projection backup to restore staging."},{"id":"RES-010-R3","from":"COMP-RESTORE-TEMP","relationship":"copies_to","to":"COMP-ANALYTICS-PROJECTION","purpose":"Bind verified restore staging to republished analytics projection state."}],"model_coverage":"ANALYTICS_PROJECTION_BACKUP_RESTORE_PATH_DECLARED_AND_EXECUTION_REQUIRED"}
+]);
+
 const edgeKey = (from, relationship, to) => `${from}|${relationship}|${to}`;
 const stableUnique = (values) => [...new Set(values)].sort();
 

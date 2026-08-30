@@ -2,10 +2,10 @@ import { readFile } from 'node:fs/promises';
 import {
   RET001_AGGREGATE_SURFACE_OBJECTS,
   RET001_SOURCE_SURFACE_DISPOSITIONS,
-  buildRet001SourceSurfaceAudit as buildSeedAudit,
-  discoverRet001ApplicationSurfaces as discoverSeedSurfaces,
-  assertRet001SourceSurfaceCompleteness as assertSeedCompleteness,
-} from './ret-001-source-surface-audit.seed.mjs';
+  buildRet001SourceSurfaceAudit as buildCoreAudit,
+  discoverRet001ApplicationSurfaces as discoverCoreSurfaces,
+  assertRet001SourceSurfaceCompleteness as assertCoreCompleteness,
+} from './ret-001-source-surface-audit-core.mjs';
 
 export { RET001_AGGREGATE_SURFACE_OBJECTS, RET001_SOURCE_SURFACE_DISPOSITIONS };
 
@@ -29,27 +29,32 @@ async function verifiedTestKeySurface() {
 }
 
 export async function discoverRet001ApplicationSurfaces() {
-  const surfaces = [...await discoverSeedSurfaces(), await verifiedTestKeySurface()];
+  const surfaces = [...await discoverCoreSurfaces(), await verifiedTestKeySurface()];
   surfaces.sort((left, right) => left.id.localeCompare(right.id));
   return Object.freeze(surfaces);
 }
 
 export async function buildRet001SourceSurfaceAudit(registry = null) {
-  const seed = await buildSeedAudit(registry);
+  const core = await buildCoreAudit(registry);
   const extra = await verifiedTestKeySurface();
-  const surfaces = [...seed.surfaces, Object.freeze({ ...extra, coverage_basis: 'explicit_disposition', status: extra.disposition })]
-    .sort((left, right) => left.id.localeCompare(right.id));
-  const counts = { ...seed.disposition_counts, OUTSIDE_RET001_SCOPE: seed.disposition_counts.OUTSIDE_RET001_SCOPE + 1 };
+  const surfaces = [
+    ...core.surfaces,
+    Object.freeze({ ...extra, coverage_basis: 'explicit_disposition', status: extra.disposition }),
+  ].sort((left, right) => left.id.localeCompare(right.id));
+  const counts = {
+    ...core.disposition_counts,
+    OUTSIDE_RET001_SCOPE: core.disposition_counts.OUTSIDE_RET001_SCOPE + 1,
+  };
   return Object.freeze({
-    ...seed,
-    surface_count: seed.surface_count + 1,
-    registered_surface_count: seed.registered_surface_count + 1,
+    ...core,
+    surface_count: core.surface_count + 1,
+    registered_surface_count: core.registered_surface_count + 1,
     disposition_counts: Object.freeze(counts),
     surfaces: Object.freeze(surfaces),
-    outside_scope_surface_ids: Object.freeze([...seed.outside_scope_surface_ids, extra.id].sort()),
+    outside_scope_surface_ids: Object.freeze([...core.outside_scope_surface_ids, extra.id].sort()),
   });
 }
 
 export function assertRet001SourceSurfaceCompleteness(audit) {
-  return assertSeedCompleteness(audit);
+  return assertCoreCompleteness(audit);
 }
