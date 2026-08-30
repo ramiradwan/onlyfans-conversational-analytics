@@ -63,7 +63,12 @@ jobs:
         run: npm run build --prefix frontend
 
       - name: Test backend
-        run: python -m pytest -m "not slow and not windows_production"
+        run: >
+          python -m pytest
+          -m "not slow and not windows_production"
+          -vv
+          --override-ini=faulthandler_timeout=120
+          --durations=30
 
       - name: Test frontend
         run: npm test --prefix frontend
