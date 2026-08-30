@@ -174,11 +174,15 @@ export function createChromeAdapterCore({
   accountDatabaseName,
   encryptedPrefix,
   legacyPrefix,
+  listDatabases = null,
   storageUnsealEndpoint = 'http://bridge.localhost:17871/api/v1/agent/storage/unseal',
   storageRotateEndpoint = 'http://bridge.localhost:17871/api/v1/agent/storage/rotate',
 }) {
   if (!chromeApi?.storage?.local) throw new Error('chrome.storage.local is unavailable');
   if (typeof fetchImpl !== 'function') throw new Error('fetch is unavailable');
+  if (listDatabases !== null && typeof listDatabases !== 'function') {
+    throw new Error('IndexedDB plaintext cleanup enumeration is invalid');
+  }
   const installationStorage = chromeApi.storage.local;
   const sessionStorage = chromeApi.storage.session;
   let cached = null;
@@ -205,13 +209,24 @@ export function createChromeAdapterCore({
     return accountDatabaseName(creatorAccountId, cryptoApi);
   }
 
-  async function deleteLegacyPartition(creatorAccountId) {
-    const encryptedName = await encryptedPartitionName(creatorAccountId);
-    if (!encryptedName.startsWith(`${encryptedPrefix}-`)) {
-      throw new Error('Encrypted account partition name is invalid');
+  async function deleteLegacyPartitions() {
+    const enumerate = listDatabases ?? (async () => {
+      if (typeof indexedDb?.databases !== 'function') {
+        throw new Error('IndexedDB plaintext cleanup enumeration is unavailable');
+      }
+      return indexedDb.databases();
+    });
+    const databases = await enumerate();
+    if (!Array.isArray(databases)) {
+      throw new Error('IndexedDB plaintext cleanup enumeration is invalid');
     }
-    const legacyName = `${legacyPrefix}${encryptedName.slice(encryptedPrefix.length)}`;
-    await deleteDatabase(indexedDb, legacyName);
+    const prefix = `${legacyPrefix}-`;
+    const legacyNames = databases
+      .map((entry) => entry?.name)
+      .filter((name) => typeof name === 'string' && name.startsWith(prefix));
+    for (const legacyName of legacyNames) {
+      await deleteDatabase(indexedDb, legacyName);
+    }
   }
 
   async function scrubGlobalCredentials() {
@@ -329,7 +344,10 @@ export function createChromeAdapterCore({
         }
       }
       try {
-        await deleteLegacyPartition(binding.creatorAccountId);
+        // A pre-release browser may contain plaintext partitions for accounts
+        // other than the account being rebound now. Full mode must not resume
+        // until every legacy plaintext account partition has been removed.
+        await deleteLegacyPartitions();
       } catch (error) {
         cached = null;
         throw error;

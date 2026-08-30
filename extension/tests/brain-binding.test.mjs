@@ -119,6 +119,7 @@ function harness({ module = fullAdapter, onBound, state = null } = {}) {
   const adapter = module.createChromeAdapter(chromeApi, () => 'installation-1', {
     indexedDb,
     fetchImpl: brain.fetch,
+    listDatabases: async () => [...indexedDb.databases.keys()].map((name) => ({ name })),
   });
   let wakes = 0;
   const bridge = module.createBrainBindingBridge({
@@ -198,12 +199,17 @@ test('Brain binding accepts only the exact Bridge origin and persists only a sea
   assert.equal(h.wakes(), 1);
 });
 
-test('binding deletes the exact legacy plaintext partition before enabling Full mode', async () => {
+test('binding deletes every legacy plaintext partition before enabling Full mode', async () => {
   const h = harness();
-  const encryptedName = await accountDatabaseName('creator-account-1');
-  assert.ok(encryptedName.startsWith(`${INGESTION_DATABASE_NAME_PREFIX}-`));
-  const legacyName = `${LEGACY_INGESTION_DATABASE_NAME_PREFIX}${encryptedName.slice(INGESTION_DATABASE_NAME_PREFIX.length)}`;
-  h.indexedDb.databases.set(legacyName, { version: 4, stores: new Map() });
+  const encryptedName1 = await accountDatabaseName('creator-account-1');
+  const encryptedName2 = await accountDatabaseName('creator-account-2');
+  assert.ok(encryptedName1.startsWith(`${INGESTION_DATABASE_NAME_PREFIX}-`));
+  assert.ok(encryptedName2.startsWith(`${INGESTION_DATABASE_NAME_PREFIX}-`));
+  const legacyName1 = `${LEGACY_INGESTION_DATABASE_NAME_PREFIX}${encryptedName1.slice(INGESTION_DATABASE_NAME_PREFIX.length)}`;
+  const legacyName2 = `${LEGACY_INGESTION_DATABASE_NAME_PREFIX}${encryptedName2.slice(INGESTION_DATABASE_NAME_PREFIX.length)}`;
+  h.indexedDb.databases.set(legacyName1, { version: 4, stores: new Map() });
+  h.indexedDb.databases.set(legacyName2, { version: 4, stores: new Map() });
+  h.indexedDb.databases.set('extension-cache', { version: 1, stores: new Map() });
 
   await h.adapter.saveBrainBinding({
     creatorAccountId: 'creator-account-1',
@@ -211,7 +217,9 @@ test('binding deletes the exact legacy plaintext partition before enabling Full 
     storageBootstrap: 'sealed-pairing-1',
   });
 
-  assert.equal(h.indexedDb.databases.has(legacyName), false);
+  assert.equal(h.indexedDb.databases.has(legacyName1), false);
+  assert.equal(h.indexedDb.databases.has(legacyName2), false);
+  assert.equal(h.indexedDb.databases.has('extension-cache'), true);
   assert.equal(h.local[FULL_STORAGE_BOOTSTRAP_KEY], 'sealed-pairing-1');
 });
 
