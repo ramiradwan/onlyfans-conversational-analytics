@@ -149,23 +149,23 @@ jobs:
         run: python -m pytest
 
   windows-browser-e2e:
-    # One of the specs drives a native Chrome permission dialog through
-    # UI Automation, which exists only on Windows. Both specs therefore run on
-    # a Windows runner; test_ci_workflow.py keeps that binding required.
+    # The activation and capture specs drive native Chrome optional-permission
+    # dialogs through UI Automation. Keep them on a Windows runner;
+    # test_ci_workflow.py keeps that binding required.
     runs-on: windows-latest
 
     env:
-      # The harness declares an explicit test key so the databases it derives
-      # do not depend on the runner's user profile. Both variables are
-      # required: the derivation refuses this key outside test mode, and test
-      # mode without it falls back to DPAPI. Job scope so Brain and every
-      # helper subprocess derive the same keys.
       ENVIRONMENT: test
       OFCA_TEST_DATABASE_MASTER_KEY_HEX: "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+      OFCA_PRODUCT_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT: ${{ github.workspace }}\artifacts\legal\execution
+      OFCA_LEGAL_RUNTIME_PROOF_PATH: ${{ github.workspace }}\artifacts\legal\runtime-ui-proof.json
 
     steps:
-      - name: Checkout
+      - name: Checkout proposed Product revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -195,6 +195,19 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
 
+      - name: Run Product #5 evidence scenarios
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results" | Out-Null
+          $output = & node --test `
+            extension/tests/activation-evidence.test.mjs `
+            extension/tests/legal-activation-controller.test.mjs `
+            extension/tests/legal-activation-revocation.test.mjs `
+            extension/tests/legal-activation-crash-recovery.test.mjs 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results\activation-evidence.tap"
+          if ($exitCode -ne 0) { exit $exitCode }
+
       - name: Build and audit deterministic extension artifact
         run: |
           npm run build --prefix extension
@@ -210,6 +223,25 @@ jobs:
         working-directory: tools/e2e-capture
         run: npx playwright install chromium
 
-      - name: Run browser E2E
+      - name: Run browser E2E and preserve output
+        shell: pwsh
         working-directory: tools/e2e-capture
-        run: npm test
+        run: |
+          $output = & npm test 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results\browser-e2e.txt"
+          if ($exitCode -ne 0) { exit $exitCode }
+
+      - name: Generate Product #5 Legal evidence bundle
+        shell: pwsh
+        run: >
+          node tools/legal-evidence/generate-activation-bundle.mjs
+          --execution-root "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT"
+          --runtime-proof "$env:OFCA_LEGAL_RUNTIME_PROOF_PATH"
+
+      - name: Upload Product #5 Legal evidence bundle
+        uses: actions/upload-artifact@v5
+        with:
+          name: legal-activation-v2-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/legal/activation-v2/${{ github.event.pull_request.head.sha || github.sha }}/
+          if-no-files-found: error
