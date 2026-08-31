@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.endpoints import frontend, history, insights, transport_ws, webauthn
+from app.api.endpoints import creator_vault, frontend, history, insights, transport_ws, webauthn
 from app.core.config import settings
 from app.core.broadcast import broadcast
 from app.core.resource_paths import resource_path
@@ -130,6 +130,7 @@ app.include_router(transport_ws.router, tags=["Transport"])
 app.include_router(history.router)
 app.include_router(insights.router)
 app.include_router(webauthn.router)
+app.include_router(creator_vault.router)
 
 # -------------------------------------------------
 # Startup & Shutdown events — manage Broadcast lifecycle

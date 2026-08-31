@@ -19,7 +19,10 @@
   ],
   "frontend": {
     "dist_path": "_internal/app/static/dist",
-    "manifest_paths": ["manifest.json", ".vite/manifest.json"]
+    "manifest_paths": [
+      "manifest.json",
+      ".vite/manifest.json"
+    ]
   },
   "sql_catalogs": [
     {
@@ -30,7 +33,8 @@
         "0003_analytics_projection_activation.sql": "5b36de7eef59fbab16d5c4f5549badb8a803fc18022357f5ba87d74e89c2e3ad",
         "0004_analytics_projection_publication_identity.sql": "a10bcccdbec787fad1bb0713b02fa845dc0171b16c951ed9612ddbe186f8fd18",
         "0005_analytics_projection_writer_capability.sql": "237a12a0a164a5eb30eb772c12050b738b5abb2a834e3c7762d1ad5d11dae93b",
-        "0006_launcher_session_handoff.sql": "73949dc9a268d4e887ae72175d36ba69c1c741fa27725919ef67bbf93265df42"
+        "0006_launcher_session_handoff.sql": "73949dc9a268d4e887ae72175d36ba69c1c741fa27725919ef67bbf93265df42",
+        "0007_creator_vault_and_deletion_barriers.sql": "1b1d34c3921c1c9c9fe375c98762f3142c18cd45ac8fa374159bfc0000c7fc9a"
       }
     },
     {

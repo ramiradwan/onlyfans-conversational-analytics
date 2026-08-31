@@ -11,6 +11,21 @@ from datetime import datetime, timezone
 from threading import RLock
 from typing import Callable, ContextManager, Iterator, Protocol
 
+from contextvars import ContextVar
+from app.analytics.historical_derivation import (
+    HISTORICAL_DERIVATION_SCHEMA,
+    historical_retention_cutoff,
+    source_time_is_authorized,
+    PARTICIPANT_ANALYTICS_MAX_DAYS,
+)
+
+_RETENTION_CUTOFF: ContextVar[datetime | None] = ContextVar(
+    "analytics_retention_cutoff", default=None
+)
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
 from pydantic import ValidationError
 
 from app.analytics.cancellation import CancellationCheck, check_cancelled
@@ -99,6 +114,7 @@ class AnalyticsPipeline:
         enrichment: EnrichmentStage | None = None,
         graph_projector: RelationshipGraphProjector | None = None,
         max_revision_retries: int = 3,
+        clock: Callable[[], datetime] = utc_now,
     ) -> None:
         if max_revision_retries <= 0:
             raise ValueError("max_revision_retries must be positive")
@@ -141,8 +157,9 @@ class AnalyticsPipeline:
         self.enrichment = enrichment or EnrichmentStage()
         self.graph_projector = graph_projector or RelationshipGraphProjector()
         self.max_revision_retries = max_revision_retries
+        self._retention_clock = clock
         self.pipeline_revision = (
-            f"analytics.pipeline.v2+{self.enrichment.revision}+graph.relationship.v1"
+            f"analytics.pipeline.v3+{self.enrichment.revision}+graph.relationship.v1"
         )
         self.pipeline_config_digest = stable_config_digest(
             name="analytics_pipeline",
@@ -151,6 +168,9 @@ class AnalyticsPipeline:
                 "enrichment_config_digest": self.enrichment.config_digest,
                 "graph_projector": "relationship_graph.v1",
                 "timestamp_policy": "aware_utc_stable_source_order",
+                "participant_retention_days": PARTICIPANT_ANALYTICS_MAX_DAYS,
+                "retention_clock": "canonical_message_sent_at",
+                "historical_derivation_provenance": HISTORICAL_DERIVATION_SCHEMA,
             },
         )
         self._account_locks: dict[str, tuple[RLock, int]] = {}
@@ -519,6 +539,27 @@ class AnalyticsPipeline:
         projection_generation: int,
         cancellation_check: CancellationCheck | None = None,
     ) -> RebuildArtifact:
+        token = _RETENTION_CUTOFF.set(
+            historical_retention_cutoff(self._retention_clock())
+        )
+        try:
+            return self._build_inner(
+                creator_account_id,
+                account,
+                projection_generation=projection_generation,
+                cancellation_check=cancellation_check,
+            )
+        finally:
+            _RETENTION_CUTOFF.reset(token)
+
+    def _build_inner(
+        self,
+        creator_account_id: str,
+        account: AccountReadModel,
+        *,
+        projection_generation: int,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> RebuildArtifact:
         check_cancelled(cancellation_check)
         conversations = self._canonical_conversations(
             account,
@@ -606,6 +647,39 @@ class AnalyticsPipeline:
 
     @classmethod
     def _canonical_conversations(
+        cls,
+        account: AccountReadModel,
+        *,
+        cancellation_check: CancellationCheck | None = None,
+    ) -> list[CanonicalConversation]:
+        conversations = cls._canonical_conversations_inner(
+            account,
+            cancellation_check=cancellation_check,
+        )
+        cutoff = _RETENTION_CUTOFF.get()
+        if cutoff is None:
+            return conversations
+        bounded: list[CanonicalConversation] = []
+        for conversation in conversations:
+            messages = [
+                message
+                for message in conversation.messages
+                if source_time_is_authorized(message.sent_at, cutoff=cutoff)
+            ]
+            if not messages:
+                continue
+            bounded.append(
+                conversation.model_copy(
+                    update={
+                        "last_message_at": messages[-1].sent_at,
+                        "messages": messages,
+                    }
+                )
+            )
+        return bounded
+
+    @classmethod
+    def _canonical_conversations_inner(
         cls,
         account: AccountReadModel,
         *,

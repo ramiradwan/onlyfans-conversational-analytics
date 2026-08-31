@@ -9,14 +9,14 @@ from typing import Callable, Literal
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.identity import CanonicalIdentity
 from app.analytics.graph_store import GraphReader, InMemoryGraphRepository
-from app.analytics.resilient_projection_store import (
-    LazySQLiteAnalyticsProjectionStore,
-)
 from app.analytics.projection_store import (
     AnalyticsProjectionStore,
     InMemoryAnalyticsProjectionStore,
 )
-from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
+from app.analytics.retention_store import (
+    RetentionBoundLazySQLiteAnalyticsProjectionStore,
+    RetentionBoundSQLiteAnalyticsProjectionStore,
+)
 from app.persistence.projection_activation import ProjectionActivationRepository
 
 
@@ -73,7 +73,7 @@ def create_analytics_stores(
             "activation and canonical_identity_reader are required for sqlite"
         )
     if lazy:
-        projections = LazySQLiteAnalyticsProjectionStore(
+        projections = RetentionBoundLazySQLiteAnalyticsProjectionStore(
             projections_path,
             activation=activation,
             canonical_identity_reader=canonical_identity_reader,
@@ -90,7 +90,7 @@ def create_analytics_stores(
         projections_path,
         busy_timeout_ms=busy_timeout_ms,
     )
-    projections = SQLiteAnalyticsProjectionStore(
+    projections = RetentionBoundSQLiteAnalyticsProjectionStore(
         database,
         activation=activation,
         canonical_identity_reader=canonical_identity_reader,

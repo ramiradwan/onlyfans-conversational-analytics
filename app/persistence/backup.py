@@ -28,6 +28,7 @@ from app.persistence.database import (
     SQLiteConfigurationError,
     open_encrypted_sqlite,
 )
+from app.persistence.managed_recovery import prune_managed_recovery_files
 from app.persistence.migrations import load_migration_catalog
 from app.persistence.private_files import (
     PrivateFileSecurityError,
@@ -239,6 +240,7 @@ def create_online_backup(
             apply_private_file_security(manifest_path)
             apply_private_file_security(key_path)
             sync_directory(destination_path.parent)
+            prune_managed_recovery_files(destination_path.parent, now=created_at)
             return manifest
     except (
         PrivateFileSecurityError,
@@ -312,7 +314,7 @@ def verify_backup(
                 "canonical_witnesses_json",
                 "created_at",
             }:
-                raise SQLiteBackupError("internal backup metadata is invalid")
+                raise SQLiteBackupError("internal backup manifest is invalid")
             reader = _reader_for_store(manifest.store_name)
             recomputed_high_water = reader(connection)
             recomputed_witnesses = (

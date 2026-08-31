@@ -82,6 +82,9 @@ def open_extension_storage_bootstrap(
             altchars=b"-_",
             validate=True,
         )
+        canonical = base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+        if canonical != bootstrap:
+            raise LocalDataKeyError("extension storage bootstrap encoding is noncanonical")
         plaintext = unprotect_local_secret(raw, purpose=_BOOTSTRAP_PURPOSE)
         candidate = json.loads(plaintext)
     except (UnicodeError, ValueError, json.JSONDecodeError, LocalDataKeyError) as error:
