@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.database import LocalSQLite
+from app.persistence.managed_recovery import prune_managed_recovery_files
 from app.persistence.private_files import (
     PrivateFileSecurityError,
     apply_private_file_security,
@@ -261,7 +262,8 @@ class MigrationRunner:
     ) -> Path:
         self.backups_dir.mkdir(parents=True, exist_ok=True)
         current_version = max(applied, default=0)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        created_at = datetime.now(timezone.utc)
+        timestamp = created_at.strftime("%Y%m%dT%H%M%S%fZ")
         destination = self.backups_dir / (
             f"{self.database.path.name}.schema-v{current_version}-to-v{target_version}."
             f"{timestamp}-{uuid4().hex[:8]}.bak"
@@ -288,6 +290,7 @@ class MigrationRunner:
             os.replace(temporary, destination)
             apply_private_file_security(destination)
             sync_directory(destination.parent)
+            prune_managed_recovery_files(destination.parent, now=created_at)
         except PrivateFileSecurityError as error:
             temporary.unlink(missing_ok=True)
             raise MigrationError(
