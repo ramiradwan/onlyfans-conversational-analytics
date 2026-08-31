@@ -65,21 +65,21 @@ def sync_file(path: str | Path) -> None:
 
 
 def sync_directory(path: str | Path) -> None:
-    """Flush directory metadata where the host exposes a portable directory fd.
+    """Flush directory metadata after an atomic publication.
 
     CPython on Windows does not expose ``O_DIRECTORY`` or a supported directory
-    handle ``fsync`` equivalent. Files are still flushed before atomic replace,
-    but the containing-directory metadata flush cannot be requested there.
+    handle ``fsync`` equivalent. Files are still flushed before atomic replace.
+    Retention policy is intentionally owned by the recovery publication and
+    runtime-maintenance layers rather than this generic durability primitive.
     """
 
     directory_flag = getattr(os, "O_DIRECTORY", None)
-    if directory_flag is None:
-        return
-    descriptor = os.open(path, os.O_RDONLY | directory_flag)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
+    if directory_flag is not None:
+        descriptor = os.open(path, os.O_RDONLY | directory_flag)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 def _sid_string(sid: object, advapi32: object, kernel32: object) -> str:

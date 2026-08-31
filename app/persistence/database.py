@@ -82,22 +82,46 @@ def _configure_connection_cipher(
 _CONNECTION_COUNTS: dict[Path, int] = {}
 _CONNECTION_COUNTS_LOCK = RLock()
 _LIFECYCLE_LOCKS: dict[Path, RLock] = {}
+_CONNECTION_TRANSITION_LOCKS: dict[Path, RLock] = {}
+
+
+def _connection_locks(path: Path) -> tuple[RLock, RLock]:
+    """Return stable per-path locks without holding the registry lock."""
+
+    with _CONNECTION_COUNTS_LOCK:
+        lifecycle = _LIFECYCLE_LOCKS.setdefault(path, RLock())
+        transition = _CONNECTION_TRANSITION_LOCKS.setdefault(path, RLock())
+    return lifecycle, transition
 
 
 class _TrackedConnection(sqlite3.Connection):
     _tracked_path: Path | None = None
+    _transition_lock: RLock | None = None
     _tracking_closed: bool = False
 
-    def close(self) -> None:
-        if not self._tracking_closed and self._tracked_path is not None:
-            with _CONNECTION_COUNTS_LOCK:
-                remaining = _CONNECTION_COUNTS.get(self._tracked_path, 1) - 1
-                if remaining > 0:
-                    _CONNECTION_COUNTS[self._tracked_path] = remaining
-                else:
-                    _CONNECTION_COUNTS.pop(self._tracked_path, None)
-            self._tracking_closed = True
+    def _close_native(self) -> None:
         super().close()
+
+    def close(self) -> None:
+        path = self._tracked_path
+        transition = self._transition_lock
+        if path is None or transition is None:
+            self._close_native()
+            return
+        with transition:
+            if self._tracking_closed:
+                return
+            # Native SQLCipher close must complete before another native open on
+            # the same file can begin, and before lifecycle accounting reports
+            # this connection as gone.
+            self._close_native()
+            with _CONNECTION_COUNTS_LOCK:
+                remaining = _CONNECTION_COUNTS.get(path, 1) - 1
+                if remaining > 0:
+                    _CONNECTION_COUNTS[path] = remaining
+                else:
+                    _CONNECTION_COUNTS.pop(path, None)
+            self._tracking_closed = True
 
 
 class LocalSQLite:
@@ -136,21 +160,22 @@ class LocalSQLite:
             raise SQLiteConfigurationError("SQLite encryption key must contain 32 bytes")
 
     def connect(self) -> sqlite3.Connection:
-        with _CONNECTION_COUNTS_LOCK:
-            lifecycle = _LIFECYCLE_LOCKS.setdefault(self.path, RLock())
+        lifecycle, transition = _connection_locks(self.path)
         with lifecycle:
-            connection = sqlite3.connect(
-                self.path,
-                timeout=self.busy_timeout_ms / 1000,
-                isolation_level=None,
-                check_same_thread=False,
-                factory=_TrackedConnection,
-            )
-            connection._tracked_path = self.path
-            with _CONNECTION_COUNTS_LOCK:
-                _CONNECTION_COUNTS[self.path] = (
-                    _CONNECTION_COUNTS.get(self.path, 0) + 1
+            with transition:
+                connection = sqlite3.connect(
+                    self.path,
+                    timeout=self.busy_timeout_ms / 1000,
+                    isolation_level=None,
+                    check_same_thread=False,
+                    factory=_TrackedConnection,
                 )
+                connection._tracked_path = self.path
+                connection._transition_lock = transition
+                with _CONNECTION_COUNTS_LOCK:
+                    _CONNECTION_COUNTS[self.path] = (
+                        _CONNECTION_COUNTS.get(self.path, 0) + 1
+                    )
         try:
             self._configure_cipher(connection)
             connection.row_factory = sqlite3.Row
@@ -292,9 +317,8 @@ class LocalSQLite:
             target = reject_path_aliases(path)
         except PrivateFileSecurityError as error:
             raise SQLiteConfigurationError("SQLite path is not safe") from error
-        with _CONNECTION_COUNTS_LOCK:
-            lock = _LIFECYCLE_LOCKS.setdefault(target, RLock())
-        with lock:
+        lifecycle, _ = _connection_locks(target)
+        with lifecycle:
             with _CONNECTION_COUNTS_LOCK:
                 if _CONNECTION_COUNTS.get(target, 0):
                     raise SQLiteConfigurationError(
