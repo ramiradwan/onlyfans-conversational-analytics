@@ -1,0 +1,81 @@
+{
+  "domain_rules": {
+    "creator_outward_copy": {
+      "authority": "creator-controlled copy after export delivery",
+      "deletion_behavior": "managed Vault deletion does not claim to erase an independently retained creator copy",
+      "recovery_behavior": "a later explicit import is a new deliberate lifecycle action, not silent recovery",
+      "retention_rule": "outside product-managed retention after delivery"
+    },
+    "managed_recovery": {
+      "authority": "product-managed recovery copy or restore staging state",
+      "deletion_behavior": "not ordinary source authority and cannot silently revive deleted managed Vault state",
+      "recovery_behavior": "restore must reconcile current deletion barriers before restored material becomes active",
+      "retention_rule": "bounded recovery cohort; current maximum is 30 days where no shorter state-bound rule applies"
+    },
+    "operational": {
+      "authority": "state/event-bound runtime, acquisition, security, or coordination state",
+      "deletion_behavior": "purged or invalidated when its governing lifecycle ends or deletion makes it stale",
+      "recovery_behavior": "may support restart/retry but cannot override current deletion barriers",
+      "retention_rule": "bounded by the operational event/state; archive enablement does not make it indefinite"
+    },
+    "vault": {
+      "authority": "authoritative local conversation source state",
+      "deletion_behavior": "creator deletion uses durable deletion barriers and removes managed source/dependent state",
+      "recovery_behavior": "restore and replay must reconcile current deletion barriers before publication",
+      "retention_rule": "bounded working retention unless an explicit Creator Vault policy applies"
+    },
+    "workspace": {
+      "authority": "non-authoritative analytics/read-model state derived from canonical source state",
+      "deletion_behavior": "source-scope deletion invalidates or rebuilds dependent state",
+      "recovery_behavior": "may be discarded/rebuilt; restored copies remain subordinate to canonical deletion authority",
+      "retention_rule": "bounded or disposable; participant-linked analytics remain bounded and no hidden raw archive is permitted"
+    }
+  },
+  "objects": [
+    {"phase_a_object_id": "COMP-ANALYTICS-GRAPH", "phase_b_domain": "workspace"},
+    {"phase_a_object_id": "COMP-ANALYTICS-PROJECTION", "phase_b_domain": "workspace"},
+    {"phase_a_object_id": "COMP-ANALYTICS-PROJECTION-STATE", "phase_b_domain": "workspace"},
+    {"phase_a_object_id": "COMP-AUTH-DATASET-STATE", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-BACKUP-CANONICAL", "phase_b_domain": "managed_recovery"},
+    {"phase_a_object_id": "COMP-BACKUP-PROJECTIONS", "phase_b_domain": "managed_recovery"},
+    {"phase_a_object_id": "COMP-BRIDGE-DERIVED-STATE", "phase_b_domain": "workspace"},
+    {"phase_a_object_id": "COMP-BRIDGE-PROJECTION-MESSAGES", "phase_b_domain": "workspace"},
+    {"phase_a_object_id": "COMP-BRIDGE-PROJECTION-STATE", "phase_b_domain": "workspace"},
+    {"phase_a_object_id": "COMP-CANONICAL-CHATS", "phase_b_domain": "vault"},
+    {"phase_a_object_id": "COMP-CANONICAL-CONTROL-STATE", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-CANONICAL-ENTITY-AUDIT-STATE", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-CANONICAL-MESSAGES", "phase_b_domain": "vault"},
+    {"phase_a_object_id": "COMP-CANONICAL-OPERATIONAL-STATE", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-CANONICAL-PROJECTION-COORDINATION", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-CANONICAL-SNAPSHOT-STAGING", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-CANONICAL-WAL-SHM", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-HISTORY-COVERAGE-STATE", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-LOCAL-KEY-MATERIAL", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-MIGRATION-BACKUP", "phase_b_domain": "managed_recovery"},
+    {"phase_a_object_id": "COMP-RAW-INGEST-EVENTS", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "COMP-RESTORE-TEMP", "phase_b_domain": "managed_recovery"},
+    {"phase_a_object_id": "EXT-ACCOUNT-META", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-BROWSER-BINDING-STATE", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-BROWSER-CONTROL-STATE", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-CHATS", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-COMMAND-RESULTS", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-CONFIG", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-COVERAGE-EVIDENCE", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-CREDENTIALS", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-ENCRYPTION-KEY-CHECK", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-HISTORY-JOBS", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-LEGAL-EVIDENCE", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-MESSAGES", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-OUTBOX", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-SNAPSHOT-CHUNKS", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-SNAPSHOT-MANIFESTS", "phase_b_domain": "operational"},
+    {"phase_a_object_id": "EXT-SNAPSHOT-OVERRIDES", "phase_b_domain": "operational"}
+  ],
+  "schema_version": 1,
+  "source_phase_a": {
+    "commit": "f5526d326031fd1c16469bdb50e9d5c124e5d09d",
+    "object_count": 38,
+    "object_matrix_sha256": "f6e7b29a7e5b65ca1f7b29878c795b20e252953320df692d0f33cfd56f7a404e",
+    "registry_sha256": "d5391d9a86ed88b12d9eb108e0642717d46a50456f7b94719b0a9a9c74c0e770"
+  }
+}
