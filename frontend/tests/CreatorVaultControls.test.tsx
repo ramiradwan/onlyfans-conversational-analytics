@@ -117,6 +117,7 @@ describe('CreatorVaultControls', () => {
       finite_horizon_days: 365,
     }));
     expect(await screen.findByRole('button', { name: 'Disable Vault' })).toBeTruthy();
+    expect(screen.getByText(/normal uninstall removes the program but leaves the product data directory/i)).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Message ID'), {
       target: { value: 'message-42' },
@@ -144,6 +145,46 @@ describe('CreatorVaultControls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Disable Vault' }));
     await waitFor(() => expect(command).toHaveBeenCalledWith({ action: 'disable' }));
     expect(await screen.findByText('Disabled')).toBeTruthy();
+  });
+
+  it('surfaces incomplete managed deletion and retries dependent cleanup', async () => {
+    const incompleteStatus: CreatorVaultStatus = {
+      ...enabled,
+      deletion_operation: {
+        operation_id: 'operation-1',
+        status: 'incomplete',
+        deletion_revision: 2,
+      },
+    };
+    const command = vi.fn(async (input: CreatorVaultCommand) => ({
+      ...result(input, incompleteStatus),
+      deletion_operation: incompleteStatus.deletion_operation,
+    }));
+    const retryDeletion = vi.fn(async () => ({
+      operation_id: 'operation-1',
+      status: 'complete' as const,
+      deletion_revision: 2,
+    }));
+    const api: CreatorVaultApi = {
+      get: vi.fn(async () => enabled),
+      command,
+      retryDeletion,
+      exportDocument: vi.fn(async () => exportDocument),
+    };
+
+    render(
+      <ThemeProvider theme={theme} defaultMode="light">
+        <CreatorVaultControls api={api} onDownload={vi.fn()} />
+      </ThemeProvider>,
+    );
+
+    expect(await screen.findByText('Enabled')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete all Vault data' }));
+    expect(await screen.findByText(/dependent cleanup is still incomplete/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry cleanup' }));
+    await waitFor(() => expect(retryDeletion).toHaveBeenCalledWith('operation-1'));
+    expect(await screen.findByText('The managed Vault deletion completed.')).toBeTruthy();
+    expect(screen.queryByText('Vault cleanup is incomplete')).toBeNull();
   });
 
   it('shows the indefinite option only when the backend capability permits it', async () => {
