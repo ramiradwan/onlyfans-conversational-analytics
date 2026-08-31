@@ -94,7 +94,8 @@ class CreatorVaultRetention:
         gate_open = self._indefinite_gate()
         if policy_type == "indefinite_until_delete" and not gate_open:
             raise RetentionPolicyError("indefinite archive policy production gate is closed")
-        now = _iso(self._clock())
+        current = self._clock()
+        now = _iso(current)
         with self.database.transaction() as connection:
             self._ensure_policy(connection, creator_account_id, now)
             revision = int(connection.execute(
@@ -130,6 +131,8 @@ class CreatorVaultRetention:
                        vault_policy_revision=NULL,updated_at=? WHERE creator_account_id=?""",
                     (now, creator_account_id),
                 )
+            if policy_type == "finite":
+                self._enforce_in_transaction(connection, creator_account_id, current)
             row = connection.execute(
                 "SELECT * FROM archive_policies WHERE creator_account_id=?",
                 (creator_account_id,),
@@ -158,51 +161,56 @@ class CreatorVaultRetention:
         current = now or self._clock()
         if current.tzinfo is None or current.utcoffset() is None:
             raise ValueError("now must be timezone-aware")
-        expired: list[str] = []
         with self.database.transaction() as connection:
-            self._ensure_policy(connection, creator_account_id, _iso(current))
-            row = connection.execute(
-                "SELECT * FROM archive_policies WHERE creator_account_id=?",
-                (creator_account_id,),
-            ).fetchone()
-            assert row is not None
-            policy = self._policy(row)
-            if policy.policy_type == "indefinite_until_delete" and not self._indefinite_gate():
-                raise RetentionPolicyError("indefinite archive policy production gate is closed")
-            messages = connection.execute(
-                """SELECT m.message_id,a.source_event_at,a.working_purpose,a.vault_purpose
-                   FROM archive_membership a JOIN account_messages m
-                   ON m.creator_account_id=a.creator_account_id AND m.message_id=a.message_id
-                   WHERE a.creator_account_id=? AND m.is_deleted=0""",
-                (creator_account_id,),
-            ).fetchall()
-            for message in messages:
-                source_at = datetime.fromisoformat(message["source_event_at"])
-                working_valid = bool(message["working_purpose"]) and (
-                    source_at + timedelta(days=WORKING_RAW_MAX_DAYS) > current
-                )
-                vault_valid = False
-                if bool(message["vault_purpose"]) and policy.enabled:
-                    if policy.policy_type == "indefinite_until_delete":
-                        vault_valid = True
-                    elif policy.policy_type == "finite":
-                        assert policy.finite_horizon_days is not None
-                        vault_valid = source_at + timedelta(days=policy.finite_horizon_days) > current
-                if not working_valid and not vault_valid:
-                    self._record_barrier(connection, creator_account_id, "message",
-                                         str(message["message_id"]), "retention_expiry", current)
-                    self._purge_scope(connection, creator_account_id, "message",
-                                      str(message["message_id"]))
-                    expired.append(str(message["message_id"]))
-            cutoff = _iso(current - timedelta(days=MANAGED_RECOVERY_MAX_DAYS))
-            connection.execute("DELETE FROM raw_ingest_events WHERE creator_account_id=? AND committed_at<?",
-                               (creator_account_id, cutoff))
-            connection.execute("DELETE FROM snapshot_uploads WHERE creator_account_id=? AND created_at<?",
-                               (creator_account_id, cutoff))
-            connection.execute("DELETE FROM committed_snapshots WHERE creator_account_id=? AND committed_at<?",
-                               (creator_account_id, cutoff))
-            if expired:
-                self._queue_reseed(connection, creator_account_id, _iso(current))
+            return self._enforce_in_transaction(connection, creator_account_id, current)
+
+    def _enforce_in_transaction(
+        self, connection: sqlite3.Connection, creator_account_id: str, current: datetime
+    ) -> list[str]:
+        expired: list[str] = []
+        self._ensure_policy(connection, creator_account_id, _iso(current))
+        row = connection.execute(
+            "SELECT * FROM archive_policies WHERE creator_account_id=?",
+            (creator_account_id,),
+        ).fetchone()
+        assert row is not None
+        policy = self._policy(row)
+        if policy.policy_type == "indefinite_until_delete" and not self._indefinite_gate():
+            raise RetentionPolicyError("indefinite archive policy production gate is closed")
+        messages = connection.execute(
+            """SELECT m.message_id,a.source_event_at,a.working_purpose,a.vault_purpose
+               FROM archive_membership a JOIN account_messages m
+               ON m.creator_account_id=a.creator_account_id AND m.message_id=a.message_id
+               WHERE a.creator_account_id=? AND m.is_deleted=0""",
+            (creator_account_id,),
+        ).fetchall()
+        for message in messages:
+            source_at = datetime.fromisoformat(message["source_event_at"])
+            working_valid = bool(message["working_purpose"]) and (
+                source_at + timedelta(days=WORKING_RAW_MAX_DAYS) > current
+            )
+            vault_valid = False
+            if bool(message["vault_purpose"]) and policy.enabled:
+                if policy.policy_type == "indefinite_until_delete":
+                    vault_valid = True
+                elif policy.policy_type == "finite":
+                    assert policy.finite_horizon_days is not None
+                    vault_valid = source_at + timedelta(days=policy.finite_horizon_days) > current
+            if not working_valid and not vault_valid:
+                self._record_barrier(connection, creator_account_id, "message",
+                                     str(message["message_id"]), "retention_expiry", current)
+                self._purge_scope(connection, creator_account_id, "message",
+                                  str(message["message_id"]))
+                expired.append(str(message["message_id"]))
+        cutoff = _iso(current - timedelta(days=MANAGED_RECOVERY_MAX_DAYS))
+        connection.execute("DELETE FROM raw_ingest_events WHERE creator_account_id=? AND committed_at<?",
+                           (creator_account_id, cutoff))
+        connection.execute("DELETE FROM snapshot_uploads WHERE creator_account_id=? AND created_at<?",
+                           (creator_account_id, cutoff))
+        connection.execute("DELETE FROM committed_snapshots WHERE creator_account_id=? AND committed_at<?",
+                           (creator_account_id, cutoff))
+        if expired:
+            self._queue_reseed(connection, creator_account_id, _iso(current))
         return expired
 
     def import_message(self, creator_account_id: str, *, action_ref: str,

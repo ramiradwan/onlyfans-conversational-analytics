@@ -16,6 +16,12 @@ export type CreatorVaultCommandAction =
 
 export type UnlinkArchiveTreatment = 'preserve' | 'delete';
 
+export interface CreatorVaultDeletionOperation {
+  operation_id: string;
+  status: 'pending' | 'incomplete' | 'complete';
+  deletion_revision: number;
+}
+
 export interface CreatorVaultStatus {
   creator_account_id: string;
   policy: {
@@ -31,6 +37,7 @@ export interface CreatorVaultStatus {
     unlink_archive_treatments: UnlinkArchiveTreatment[];
     export: boolean;
   };
+  deletion_operation?: CreatorVaultDeletionOperation | null;
 }
 
 export interface CreatorVaultCommand {
@@ -44,6 +51,7 @@ export interface CreatorVaultCommandResult {
   action: CreatorVaultCommandAction;
   status: CreatorVaultStatus;
   deletion_revision: number | null;
+  deletion_operation?: CreatorVaultDeletionOperation | null;
   unlink_archive_treatment: UnlinkArchiveTreatment | null;
 }
 
@@ -84,6 +92,7 @@ export class CreatorVaultApiError extends Error {
 export interface CreatorVaultApi {
   get(signal?: AbortSignal): Promise<CreatorVaultStatus>;
   command(input: CreatorVaultCommand, signal?: AbortSignal): Promise<CreatorVaultCommandResult>;
+  retryDeletion?(operationId: string, signal?: AbortSignal): Promise<CreatorVaultDeletionOperation>;
   exportDocument(signal?: AbortSignal): Promise<CreatorVaultExportDocument>;
 }
 
@@ -105,6 +114,18 @@ function objectValue(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function parseDeletionOperation(value: unknown): CreatorVaultDeletionOperation {
+  const operation = objectValue(value);
+  if (
+    typeof operation.operation_id !== 'string'
+    || !['pending', 'incomplete', 'complete'].includes(String(operation.status))
+    || typeof operation.deletion_revision !== 'number'
+  ) {
+    throw new CreatorVaultApiError('Brain returned an invalid Creator Vault deletion operation.');
+  }
+  return value as CreatorVaultDeletionOperation;
+}
+
 function parseStatus(value: unknown): CreatorVaultStatus {
   const root = objectValue(value);
   const policy = objectValue(root.policy);
@@ -120,8 +141,16 @@ function parseStatus(value: unknown): CreatorVaultStatus {
     || !Array.isArray(capabilities.deletion_scopes)
     || !Array.isArray(capabilities.unlink_archive_treatments)
     || typeof capabilities.export !== 'boolean'
+    || !(
+      root.deletion_operation === undefined
+      || root.deletion_operation === null
+      || typeof root.deletion_operation === 'object'
+    )
   ) {
     throw new CreatorVaultApiError('Brain returned an invalid Creator Vault status.');
+  }
+  if (root.deletion_operation !== undefined && root.deletion_operation !== null) {
+    parseDeletionOperation(root.deletion_operation);
   }
   return value as CreatorVaultStatus;
 }
@@ -132,6 +161,9 @@ function parseCommandResult(value: unknown): CreatorVaultCommandResult {
     throw new CreatorVaultApiError('Brain returned an invalid Creator Vault command result.');
   }
   parseStatus(root.status);
+  if (root.deletion_operation !== undefined && root.deletion_operation !== null) {
+    parseDeletionOperation(root.deletion_operation);
+  }
   return value as CreatorVaultCommandResult;
 }
 
@@ -175,6 +207,24 @@ export function createCreatorVaultApi(
   const getCsrfToken = options.getCsrfToken ?? defaultCsrfToken;
   const endpoint = `${(options.baseUrl ?? '').replace(/\/$/, '')}/api/v1/settings/creator-vault`;
 
+  const csrfPost = async (url: string, body: string | undefined, signal?: AbortSignal) => {
+    const csrf = await getCsrfToken();
+    if (!csrf) {
+      throw new CreatorVaultApiError('A CSRF token is required to change Creator Vault settings.');
+    }
+    return request(url, {
+      body,
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        [csrfHeaderName]: csrf,
+      },
+      method: 'POST',
+      signal,
+    });
+  };
+
   return {
     async get(signal) {
       return jsonResponse(
@@ -190,24 +240,18 @@ export function createCreatorVaultApi(
     },
 
     async command(input, signal) {
-      const csrf = await getCsrfToken();
-      if (!csrf) {
-        throw new CreatorVaultApiError('A CSRF token is required to change Creator Vault settings.');
-      }
       return jsonResponse(
-        await request(`${endpoint}/commands`, {
-          body: JSON.stringify(input),
-          credentials: 'same-origin',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            [csrfHeaderName]: csrf,
-          },
-          method: 'POST',
-          signal,
-        }),
+        await csrfPost(`${endpoint}/commands`, JSON.stringify(input), signal),
         parseCommandResult,
         'Creator Vault command',
+      );
+    },
+
+    async retryDeletion(operationId, signal) {
+      return jsonResponse(
+        await csrfPost(`${endpoint}/deletions/${encodeURIComponent(operationId)}/retry`, undefined, signal),
+        parseDeletionOperation,
+        'Creator Vault deletion retry',
       );
     },
 

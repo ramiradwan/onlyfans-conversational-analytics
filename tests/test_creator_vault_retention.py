@@ -110,11 +110,26 @@ def test_finite_expiry_uses_original_source_time_and_stale_replay_is_blocked(tmp
     seed_message(db, sent_at=source_time)
     retention = CreatorVaultRetention(db, clock=lambda: NOW)
     retention.set_policy(ACCOUNT, "finite", finite_horizon_days=30, creator_action_ref="finite")
-    assert retention.enforce(ACCOUNT, now=NOW) == ["message-1"]
     assert get_message(db) is None
+    assert retention.enforce(ACCOUNT, now=NOW) == []
     assert seed_message(db, sent_at=source_time) == 0
     assert get_message(db) is None
     assert retention.barriers(ACCOUNT)[0]["provenance"] == "retention_expiry"
+
+
+def test_shortening_finite_policy_enforces_new_boundary_before_return(tmp_path: Path) -> None:
+    db = database(tmp_path / "canonical.sqlite3")
+    seed_message(db, message_id="old", chat_id="old-chat", sent_at=NOW - timedelta(days=120))
+    seed_message(db, message_id="young", chat_id="young-chat", sent_at=NOW - timedelta(days=10))
+    retention = CreatorVaultRetention(db, clock=lambda: NOW)
+    retention.set_policy(ACCOUNT, "finite", finite_horizon_days=365, creator_action_ref="long")
+
+    retention.set_policy(ACCOUNT, "finite", finite_horizon_days=30, creator_action_ref="short")
+
+    assert get_message(db, "old") is None
+    assert get_message(db, "young") is not None
+    assert any(row["scope_key"] == "old" and row["provenance"] == "retention_expiry"
+               for row in retention.barriers(ACCOUNT))
 
 
 @pytest.mark.parametrize(

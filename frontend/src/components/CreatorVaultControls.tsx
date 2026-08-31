@@ -93,17 +93,45 @@ export function CreatorVaultControls({
     try {
       const result = await api.command(command);
       setStatus(result.status);
-      if (command.action.startsWith('delete_')) {
+      if (result.deletion_operation?.status === 'incomplete') {
+        setNotice('Vault source data was deleted, but dependent cleanup is still incomplete.');
+      } else if (result.deletion_operation?.status === 'complete') {
+        setNotice('The managed Vault deletion completed.');
+      } else if (command.action.startsWith('delete_')) {
         setNotice('The managed Vault deletion was recorded.');
       } else if (command.action === 'unlink') {
         setNotice(
           command.unlink_archive_treatment === 'preserve'
-            ? 'Vault preservation was selected for unlink.'
-            : 'Vault deletion was selected for unlink.',
+            ? 'Vault preservation was selected before unlink or uninstall.'
+            : 'Vault deletion was selected before unlink or uninstall.',
         );
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The Creator Vault change failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retryDeletion = async () => {
+    const operation = status?.deletion_operation;
+    if (!operation || !api.retryDeletion) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.retryDeletion(operation.operation_id);
+      setStatus((current) => current === null ? null : {
+        ...current,
+        deletion_operation: result.status === 'complete' ? null : result,
+      });
+      setNotice(
+        result.status === 'complete'
+          ? 'The managed Vault deletion completed.'
+          : 'Dependent cleanup is still incomplete.',
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Creator Vault deletion retry failed.');
     } finally {
       setBusy(false);
     }
@@ -173,6 +201,18 @@ export function CreatorVaultControls({
           </Alert>
         )}
         {notice && <Alert severity="info" role="status">{notice}</Alert>}
+        {status?.deletion_operation && (
+          <Alert severity="warning">
+            <AlertTitle>Vault cleanup is incomplete</AlertTitle>
+            The deletion barrier is active, so ordinary stale data cannot return, but dependent
+            analytics cleanup has not completed yet.
+            {api.retryDeletion && (
+              <Button disabled={busy} onClick={() => void retryDeletion()} size="small">
+                Retry cleanup
+              </Button>
+            )}
+          </Alert>
+        )}
 
         {!loading && status !== null && (
           <>
@@ -277,11 +317,12 @@ export function CreatorVaultControls({
             <Divider />
 
             <Stack spacing={1.5}>
-              <Typography variant="subtitle2">Unlink archive treatment</Typography>
+              <Typography variant="subtitle2">Before unlink or uninstall</Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                Choose what happens to the managed Vault when applying an account-unlink lifecycle
-                event. This control changes Vault treatment; account connectivity is managed
-                separately.
+                A normal uninstall removes the program but leaves the product data directory in
+                place. Preserve the Vault to keep using it after reinstall, export a separate copy,
+                or delete the managed Vault before uninstalling. Account connectivity and the
+                uninstaller are managed separately from this lifecycle choice.
               </Typography>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 <FormControl size="small" sx={{ minWidth: 190 }}>
