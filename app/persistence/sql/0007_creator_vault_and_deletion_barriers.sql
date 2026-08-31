@@ -76,7 +76,7 @@ CREATE TABLE deletion_barriers (
 CREATE INDEX deletion_barriers_account_revision
     ON deletion_barriers (creator_account_id, deletion_revision);
 
--- RET-001 Phase-B: participant deletion is participant-conversation scoped.
+-- Participant deletion is participant-conversation scoped.
 --
 -- Keep only the participant-to-chat deletion identity needed to recognize
 -- stale replay after the canonical chat row is gone. No deleted message text
@@ -90,7 +90,7 @@ CREATE TABLE participant_deletion_chat_scopes (
     PRIMARY KEY (creator_account_id, participant_scope_key, chat_id)
 ) WITHOUT ROWID;
 
--- Recover and finish any participant deletions created before this migration.
+-- Seed participant deletion chat scopes from existing chats.
 INSERT OR REPLACE INTO participant_deletion_chat_scopes(
     creator_account_id,participant_scope_key,chat_id,deletion_revision,deleted_at
 )
@@ -408,9 +408,8 @@ BEGIN
        AND platform_user_id=NEW.scope_key;
 END;
 
--- 0011 had to scrub every stream-message membership for participant barriers
--- because a durable participant-to-chat identity did not yet exist. Narrow the
--- generic trigger; participant chat provenance is now scrubbed above.
+-- Scrub stream-message and stream-chat membership for account, message, and
+-- conversation deletion barriers. Participant chat provenance is scoped above.
 CREATE TRIGGER deletion_barrier_scrub_stream_membership_insert
 AFTER INSERT ON deletion_barriers
 BEGIN
