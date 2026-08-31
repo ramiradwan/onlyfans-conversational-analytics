@@ -10,7 +10,7 @@ const CreatorDashboardView = React.lazy(() => import('../views/CreatorDashboardV
 const OperatorInboxView = React.lazy(() => import('../views/OperatorInboxView'));  
 const AnalyticsView = React.lazy(() => import('../views/AnalyticsView'));  
 const GraphExplorerView = React.lazy(() => import('../views/GraphExplorerView'));  
-const SettingsView = React.lazy(() => import('../views/SettingsView'));
+const SettingsView = React.lazy(() => import('../views/SettingsWithVaultView'));
   
 /**  
  * Role-based routing (Spec 11.2a)  
