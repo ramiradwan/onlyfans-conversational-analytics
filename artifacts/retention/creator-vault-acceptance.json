@@ -1,0 +1,268 @@
+{
+  "coverage_status": "COMPLETE",
+  "criteria": [
+    {
+      "id": "vault-disabled-default",
+      "status": "implemented",
+      "tests": [
+        "test_vault_disabled_by_default"
+      ]
+    },
+    {
+      "id": "vault-enable-separate",
+      "status": "implemented",
+      "tests": [
+        "test_existing_rows_are_working_purpose_until_explicit_vault_enable"
+      ]
+    },
+    {
+      "id": "local-authority",
+      "status": "implemented",
+      "tests": [
+        "test_existing_rows_are_working_purpose_until_explicit_vault_enable"
+      ]
+    },
+    {
+      "id": "finite-policies",
+      "status": "implemented",
+      "tests": [
+        "test_finite_expiry_uses_original_source_time_and_stale_replay_is_blocked"
+      ]
+    },
+    {
+      "id": "source-time-invariance",
+      "status": "implemented",
+      "tests": [
+        "test_finite_expiry_uses_original_source_time_and_stale_replay_is_blocked"
+      ]
+    },
+    {
+      "id": "indefinite-production-gate",
+      "status": "implemented",
+      "tests": [
+        "test_indefinite_policy_fails_closed_and_can_be_exercised_with_explicit_gate"
+      ]
+    },
+    {
+      "id": "workspace-not-second-raw-archive",
+      "status": "implemented",
+      "tests": [
+        "test_pipeline_excludes_messages_at_or_beyond_ninety_days",
+        "test_sqlite_generation_expires_from_original_source_time_without_clock_reset",
+        "test_mixed_age_generation_rebuild_keeps_recent_source_after_oldest_expires",
+        "test_analytics_workspace_persists_no_raw_message_text"
+      ]
+    },
+    {
+      "id": "participant-analytics-90d",
+      "status": "implemented",
+      "tests": [
+        "test_pipeline_excludes_messages_at_or_beyond_ninety_days",
+        "test_sqlite_generation_expires_from_original_source_time_without_clock_reset",
+        "test_pre_bounded_generation_fails_closed_and_is_scrubbed_on_access"
+      ]
+    },
+    {
+      "id": "historical-derived-bounded",
+      "status": "implemented",
+      "tests": [
+        "test_historical_ingestion_of_old_message_does_not_start_new_retention_period",
+        "test_reanalysis_does_not_refresh_source_time_retention_due_at",
+        "test_regeneration_after_projection_loss_uses_only_authorized_source_material"
+      ]
+    },
+    {
+      "id": "selective-delete",
+      "status": "implemented",
+      "tests": [
+        "test_selective_and_delete_all_scopes",
+        "test_participant_delete_removes_whole_participant_conversation_and_fences_replay",
+        "test_participant_barrier_blocks_snapshot_chat_reconstruction",
+        "test_selective_deletion_barrier_scrubs_matching_raw_ingest_only[participant-participant-1-matching_payload2]"
+      ]
+    },
+    {
+      "id": "delete-all",
+      "status": "implemented",
+      "tests": [
+        "test_selective_and_delete_all_scopes"
+      ]
+    },
+    {
+      "id": "durable-deletion-barrier",
+      "status": "implemented",
+      "tests": [
+        "test_barrier_survives_reopen_and_vault_disable_reenable"
+      ]
+    },
+    {
+      "id": "passive-capture-suppression",
+      "status": "implemented",
+      "tests": [
+        "test_passive_delta_after_delete_is_redacted_and_non_resurrecting"
+      ]
+    },
+    {
+      "id": "history-replay-suppression",
+      "status": "implemented",
+      "tests": [
+        "history coordinator emits stale source through the real signer outbox path",
+        "test_history_signer_delta_after_delete_is_redacted_and_non_resurrecting"
+      ]
+    },
+    {
+      "id": "outbox-retry-suppression",
+      "status": "implemented",
+      "tests": [
+        "test_outbox_retry_after_reconnect_remains_non_resurrecting_and_idempotent",
+        "durable outbox retransmits the same unacknowledged events after reconnect"
+      ]
+    },
+    {
+      "id": "snapshot-repair-suppression",
+      "status": "implemented",
+      "tests": [
+        "test_snapshot_repair_drops_barriered_message_before_staging_or_commit"
+      ]
+    },
+    {
+      "id": "reconnect-suppression",
+      "status": "implemented",
+      "tests": [
+        "test_reconnect_replay_uses_new_fence_but_cannot_resurrect_deleted_message"
+      ]
+    },
+    {
+      "id": "reinstall-suppression",
+      "status": "implemented",
+      "tests": [
+        "test_barrier_survives_reopen_and_vault_disable_reenable",
+        "test_fresh_installation_snapshot_cannot_resurrect_deleted_message"
+      ]
+    },
+    {
+      "id": "projection-rebuild-source-suppression",
+      "status": "implemented",
+      "tests": [
+        "test_projection_reseed_after_delete_cannot_rebuild_deleted_source"
+      ]
+    },
+    {
+      "id": "migration-recovery-source-suppression",
+      "status": "implemented",
+      "tests": [
+        "test_stale_migration_recovery_cannot_resurrect_deleted_content"
+      ]
+    },
+    {
+      "id": "canonical-backup-restore-reconciliation",
+      "status": "implemented",
+      "tests": [
+        "test_restore_reconciles_current_deletion_barrier_before_publication"
+      ]
+    },
+    {
+      "id": "analytics-backup-restore-reconciliation",
+      "status": "implemented",
+      "tests": [
+        "test_old_projection_cohort_cannot_resurrect_deleted_workspace_data[message]",
+        "test_old_projection_cohort_cannot_resurrect_deleted_workspace_data[participant]",
+        "test_projection_restore_rejects_source_time_expired_generation",
+        "test_projection_restore_keeps_matching_unexpired_generation"
+      ]
+    },
+    {
+      "id": "explicit-creator-import",
+      "status": "implemented",
+      "tests": [
+        "test_explicit_creator_import_is_a_new_lifecycle"
+      ]
+    },
+    {
+      "id": "creator-export-truthfulness",
+      "status": "implemented",
+      "tests": [
+        "test_active_vault_export_manifest_is_bound_to_exported_archive_state",
+        "test_export_after_creator_deletion_reports_empty_live_vault_without_external_delete_claim",
+        "test_export_disclosure_tracks_actual_product_managed_recovery_state",
+        "test_export_without_recovery_inventory_fails_closed_on_copy_disclosure"
+      ]
+    },
+    {
+      "id": "pause-preserves-vault",
+      "status": "implemented",
+      "tests": [
+        "pause leaves Creator Vault lifecycle untouched"
+      ]
+    },
+    {
+      "id": "downgrade-preserves-vault",
+      "status": "implemented",
+      "tests": [
+        "Full to Preview leaves Creator Vault lifecycle untouched"
+      ]
+    },
+    {
+      "id": "history-revocation-preserves-vault",
+      "status": "implemented",
+      "tests": [
+        "history permission revocation leaves Creator Vault lifecycle untouched"
+      ]
+    },
+    {
+      "id": "unlink-explicit-treatment",
+      "status": "implemented",
+      "tests": [
+        "test_unlink_preserves_or_deletes_archive_when_explicitly_requested",
+        "test_delete_all_and_unlink_require_explicit_archive_treatment"
+      ]
+    },
+    {
+      "id": "vault-disable-reenable-nonresurrection",
+      "status": "implemented",
+      "tests": [
+        "test_barrier_survives_reopen_and_vault_disable_reenable"
+      ]
+    },
+    {
+      "id": "pre-vault-migration-no-silent-opt-in",
+      "status": "implemented",
+      "tests": [
+        "test_existing_rows_are_working_purpose_until_explicit_vault_enable"
+      ]
+    },
+    {
+      "id": "managed-recovery-30d",
+      "status": "implemented",
+      "tests": [
+        "test_managed_recovery_helper_prunes_complete_cohort_after_thirty_days",
+        "test_canonical_backup_publication_prunes_expired_complete_cohort",
+        "test_migration_backup_publication_prunes_cohorts_older_than_thirty_days"
+      ]
+    },
+    {
+      "id": "creator-facing-controls",
+      "status": "implemented",
+      "tests": [
+        "test_creator_vault_commands_are_creator_authorized_and_gate_indefinite",
+        "test_indefinite_control_appears_only_when_production_gate_is_open",
+        "test_selective_delete_commands_call_canonical_retention_authority",
+        "test_delete_all_and_unlink_require_explicit_archive_treatment",
+        "test_delete_all_command_deletes_managed_vault_scope",
+        "CreatorVaultControls exercises finite enable, deletion, unlink treatment, export, and disable through the API",
+        "CreatorVaultControls shows the indefinite option only when the backend capability permits it",
+        "CreatorVaultControls withholds creator-only Vault state and mutations from operators"
+      ]
+    },
+    {
+      "id": "exact-head-evidence",
+      "status": "implemented",
+      "tests": [
+        "Retention Phase-B Evidence workflow"
+      ]
+    }
+  ],
+  "fail_closed": true,
+  "purpose": "Creator Vault and bounded Analytics Workspace implementation coverage",
+  "schema_version": 1
+}
