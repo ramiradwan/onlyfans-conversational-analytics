@@ -1,0 +1,270 @@
+name: Retention Phase-B Supplement
+
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  PHASE_A_SHA: f5526d326031fd1c16469bdb50e9d5c124e5d09d
+  ACCEPTED_PHASE_B_SHA: 64af971a7a8db469d35e0db0a6af5d31fdceba2c
+  ACCEPTED_PHASE_B_ARTIFACT: retention-phase-b-64af971a7a8db469d35e0db0a6af5d31fdceba2c
+  ACCEPTED_PHASE_B_ARTIFACT_SHA256: b44738da429561ba07686caadaea162b01c18d54062865c02ec2740cea8f061b
+  EVIDENCE_DIR: artifacts/retention/phase-b-supplement
+
+jobs:
+  linux-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements-dev.txt
+          npm ci --prefix frontend
+
+      - name: Build frontend
+        run: npm run build --prefix frontend
+
+      - name: Run supplemental backend scenarios
+        run: >
+          python -m pytest
+          tests/test_creator_vault_retention.py
+          tests/test_creator_vault_deletion_operations.py
+          tests/test_upstream_retention_authority.py
+          -vv
+          --junitxml="$EVIDENCE_DIR/backend-junit.xml"
+
+      - name: Run Creator Vault UI scenarios
+        run: >
+          npm test --prefix frontend --
+          tests/CreatorVaultControls.test.tsx
+          --reporter=junit
+          --outputFile=../artifacts/retention/phase-b-supplement/frontend-junit.xml
+
+      - name: Qualify Linux archive scale
+        run: >
+          python tools/qualify-creator-vault-scale.py
+          --source-commit "$PRODUCT_SHA"
+          --output "$EVIDENCE_DIR/linux-scale.json"
+
+      - name: Checkout immutable Phase-A source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PHASE_A_SHA }}
+          path: phase-a
+
+      - name: Validate Phase-A disposition
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C phase-a rev-parse HEAD)" = "$PHASE_A_SHA"
+          python tools/validate-retention-disposition.py \
+            phase-a/tools/retention-evidence \
+            artifacts/retention/phase-b-object-disposition.json \
+            > "$EVIDENCE_DIR/disposition-validation.json"
+
+      - name: Upload Linux supplement evidence
+        uses: actions/upload-artifact@v5
+        with:
+          name: retention-supplement-linux-${{ env.PRODUCT_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}/
+          if-no-files-found: error
+
+  windows-evidence:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements-dev.txt
+          npm ci --prefix frontend
+          npm ci --prefix extension
+
+      - name: Build installer assets
+        run: |
+          npm run build --prefix frontend
+          npm run build --prefix extension
+
+      - name: Qualify Windows archive scale
+        shell: pwsh
+        run: >
+          python tools/qualify-creator-vault-scale.py
+          --source-commit "$env:PRODUCT_SHA"
+          --output "$env:EVIDENCE_DIR/windows-scale.json"
+
+      - name: Verify normal uninstall retains local data
+        run: >
+          python -m pytest
+          tests/test_build_windows.py::test_installer_excludes_agent_and_uninstall_retains_redirected_user_data
+          -vv
+          --junitxml="${{ env.EVIDENCE_DIR }}/windows-uninstall-junit.xml"
+
+      - name: Upload Windows supplement evidence
+        uses: actions/upload-artifact@v5
+        with:
+          name: retention-supplement-windows-${{ env.PRODUCT_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}/
+          if-no-files-found: error
+
+  finalize:
+    needs: [linux-evidence, windows-evidence]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+
+      - name: Download Linux evidence
+        uses: actions/download-artifact@v5
+        with:
+          name: retention-supplement-linux-${{ env.PRODUCT_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}
+
+      - name: Download Windows evidence
+        uses: actions/download-artifact@v5
+        with:
+          name: retention-supplement-windows-${{ env.PRODUCT_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}
+
+      - name: Emit exact-head supplement manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          root = Path(os.environ["EVIDENCE_DIR"])
+          linux = json.loads((root / "linux-scale.json").read_text(encoding="utf-8"))
+          windows = json.loads((root / "windows-scale.json").read_text(encoding="utf-8"))
+          disposition = json.loads((root / "disposition-validation.json").read_text(encoding="utf-8"))
+          product_sha = os.environ["PRODUCT_SHA"]
+
+          assert linux["source_commit"] == product_sha and linux["status"] == "PASS"
+          assert windows["source_commit"] == product_sha and windows["status"] == "PASS"
+          assert linux["runtime"]["platform"] == "Linux"
+          assert windows["runtime"]["platform"] == "Windows"
+          assert disposition == {"mapped_objects": 38, "phase_a_objects": 38, "status": "PASS"}
+
+          def junit(path: Path) -> dict[str, int]:
+              root_node = ET.parse(path).getroot()
+              cases = list(root_node.iter("testcase"))
+              failures = sum(
+                  case.find("failure") is not None or case.find("error") is not None
+                  for case in cases
+              )
+              skipped = sum(case.find("skipped") is not None for case in cases)
+              assert cases and failures == 0 and skipped == 0
+              return {"tests": len(cases), "failures_or_errors": failures, "skipped": skipped}
+
+          suites = {
+              "backend": junit(root / "backend-junit.xml"),
+              "frontend": junit(root / "frontend-junit.xml"),
+              "windows_uninstall": junit(root / "windows-uninstall-junit.xml"),
+          }
+          evidence_files = [
+              "backend-junit.xml",
+              "frontend-junit.xml",
+              "windows-uninstall-junit.xml",
+              "linux-scale.json",
+              "windows-scale.json",
+              "disposition-validation.json",
+          ]
+          digests = {
+              name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+              for name in evidence_files
+          }
+          manifest = {
+              "schema_version": 1,
+              "source_commit": product_sha,
+              "accepted_phase_b_cohort": {
+                  "source_commit": os.environ["ACCEPTED_PHASE_B_SHA"],
+                  "artifact": os.environ["ACCEPTED_PHASE_B_ARTIFACT"],
+                  "artifact_sha256": os.environ["ACCEPTED_PHASE_B_ARTIFACT_SHA256"],
+              },
+              "phase_a_source": {
+                  "source_commit": os.environ["PHASE_A_SHA"],
+                  "object_count": 38,
+              },
+              "criteria": {
+                  "S1_finite_policy_shortening": "PASS",
+                  "S2_partial_deletion_failure": "PASS",
+                  "S3_uninstall_reinstall_treatment": "PASS",
+                  "S4_upstream_state_distinction": "PASS",
+                  "S5_scale_qualification": "PASS",
+                  "S6_phase_a_disposition": "PASS",
+              },
+              "suite_results": suites,
+              "scale": {"linux": linux, "windows": windows},
+              "disposition": disposition,
+              "file_sha256": digests,
+              "closure_ready": True,
+          }
+          (root / "manifest.json").write_text(
+              json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          lines = [
+              f"{hashlib.sha256((root / name).read_bytes()).hexdigest()}  {name}"
+              for name in sorted(evidence_files + ["manifest.json"])
+          ]
+          (root / "SHA256SUMS.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload exact-head supplement
+        uses: actions/upload-artifact@v5
+        with:
+          name: retention-phase-b-supplement-${{ env.PRODUCT_SHA }}
+          path: ${{ env.EVIDENCE_DIR }}/
+          if-no-files-found: error
