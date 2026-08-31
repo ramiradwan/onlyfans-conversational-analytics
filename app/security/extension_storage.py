@@ -24,7 +24,6 @@ from app.security.local_data_key import (
 
 
 BOOTSTRAP_SCHEMA = "ofca-extension-storage-bootstrap/v1"
-UNLOCK_SCHEMA = "ofca-extension-storage-unlock/v1"
 _BOOTSTRAP_PURPOSE = "extension-storage-bootstrap-v1"
 _EXTENSION_ID = re.compile(r"[a-p]{32}")
 _MAX_BOOTSTRAP_BYTES = 16 * 1024
@@ -82,6 +81,9 @@ def open_extension_storage_bootstrap(
             altchars=b"-_",
             validate=True,
         )
+        canonical = base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+        if canonical != bootstrap:
+            raise LocalDataKeyError("extension storage bootstrap encoding is noncanonical")
         plaintext = unprotect_local_secret(raw, purpose=_BOOTSTRAP_PURPOSE)
         candidate = json.loads(plaintext)
     except (UnicodeError, ValueError, json.JSONDecodeError, LocalDataKeyError) as error:

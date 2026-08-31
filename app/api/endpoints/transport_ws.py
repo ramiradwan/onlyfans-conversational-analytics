@@ -39,7 +39,6 @@ from app.protocol import (
 )
 from app.persistence.history import InvariantViolation
 from app.security.extension_storage import (
-    UNLOCK_SCHEMA,
     extension_storage_key_base64,
     open_extension_storage_bootstrap,
     seal_extension_storage_bootstrap,
@@ -804,7 +803,7 @@ async def unseal_agent_storage(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return ExtensionStorageUnlockResponse(
-        schema=UNLOCK_SCHEMA,
+        schema="ofca-extension-storage-unlock/v1",
         creator_account_id=bootstrap.creator_account_id,
         credential_kind=bootstrap.credential_kind,
         auth_ticket=bootstrap.auth_ticket,
