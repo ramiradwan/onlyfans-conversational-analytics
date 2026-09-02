@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import http.server
 import json
@@ -14,9 +15,12 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterator
+from ctypes import wintypes
 from pathlib import Path
 
 import pytest
+
+from app import packaged_entry
 
 import exclusive_resource
 import inno_setup_compiler
@@ -505,7 +509,7 @@ def test_tools_web_request_guard_detects_a_removed_compatibility_switch(
     )
 
     assert _web_commands_without_basic_parsing(tmp_path) == [
-        "tools/packaging-smoke/run.ps1:419"
+        "tools/packaging-smoke/run.ps1:492"
     ]
 
 
@@ -707,6 +711,57 @@ def test_the_real_smoke_cycle_shows_no_window(tmp_path: Path) -> None:
     )
 
 
+def _with_a_no_op_uninstaller(script: str) -> str:
+    """Return the script with an uninstaller that exits cleanly and removes nothing."""
+
+    invocation = (
+        "            $uninstallerProcess = Start-Process"
+        " -FilePath $Installation.UninstallerPath -ArgumentList @(\n"
+        "                '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'\n"
+        "            ) -Wait -PassThru\n"
+    )
+    assert invocation in script
+    script = script.replace(
+        invocation,
+        "            $uninstallerProcess = [pscustomobject]@{ ExitCode = 0 }\n",
+        1,
+    )
+    assert "-TimeoutSeconds 60" in script
+    return script.replace("-TimeoutSeconds 60", "-TimeoutSeconds 1", 1)
+
+
+def test_uninstall_step_fails_when_the_installation_survives(tmp_path: Path) -> None:
+    """The uninstall step measures the end state rather than the exit code.
+
+    An uninstaller exit code of zero reports that removal started, not that it
+    finished.  This drives a real install whose uninstaller removes nothing and
+    reads back the surviving entries the step reports.
+    """
+
+    installer = _build_real_installer(tmp_path)
+    script = tmp_path / "tools" / "packaging-smoke" / "run.ps1"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        _with_a_no_op_uninstaller(SMOKE_SCRIPT.read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
+
+    _result, transcript = _run_smoke(
+        tmp_path, smoke_script=script, artifact_path=installer
+    )
+
+    uninstall = _step(transcript, "uninstall-artifact")
+    assert uninstall["outcome"] == "fail"
+    evidence = uninstall["evidence"]
+    assert evidence["finding"] == "installation_prefix_survived_uninstall"
+    assert evidence["installation_prefix_removed"] is False
+    entries = evidence["surviving_installation_entries"]
+    count = evidence["surviving_installation_entry_count"]
+    assert count >= len(entries) >= 1
+    # The listing is bounded, so a large survivor set cannot flood the transcript.
+    assert len(entries) == min(25, count)
+
+
 def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
     tmp_path: Path,
 ) -> None:
@@ -814,3 +869,409 @@ def test_install_failure_has_a_distinct_exit_code(tmp_path: Path) -> None:
     assert mutated_result.returncode == 41, mutated_result.stdout + mutated_result.stderr
     with pytest.raises(AssertionError):
         _assert_install_failure_exit(mutated_result, mutated_transcript)
+
+
+def _hold_running_application_mutex(name: str) -> int:
+    create_mutex = ctypes.windll.kernel32.CreateMutexW
+    create_mutex.argtypes = (wintypes.LPCVOID, wintypes.BOOL, wintypes.LPCWSTR)
+    create_mutex.restype = wintypes.HANDLE
+    handle = create_mutex(None, False, name)
+    assert handle, "could not publish the running-application mutex"
+    return handle
+
+
+def _installed_entry_count(prefix: Path) -> int:
+    return sum(1 for _ in prefix.rglob("*")) if prefix.exists() else 0
+
+
+def _run_silently(program: Path, *arguments: str) -> int:
+    return subprocess.run(
+        [str(program), *arguments], capture_output=True, text=True, check=False
+    ).returncode
+
+
+def test_uninstall_is_refused_while_the_application_runs(tmp_path: Path) -> None:
+    """A running application blocks uninstall rather than being deleted around.
+
+    The uninstaller cannot delete a running Brain.exe.  Without the guard it
+    removes the rest of the installation and its own unins000.exe around the
+    file it could not touch, leaving an executable nothing can uninstall.
+    """
+
+    installer = _build_real_installer(tmp_path)
+    prefix = tmp_path / "installation"
+    assert (
+        _run_silently(
+            installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DIR={prefix}"
+        )
+        == 0
+    )
+    installed = _installed_entry_count(prefix)
+    uninstaller = prefix / "unins000.exe"
+    assert installed > 1 and uninstaller.is_file()
+
+    handle = _hold_running_application_mutex(
+        packaged_entry.RUNNING_APPLICATION_MUTEX_NAME
+    )
+    try:
+        refused = _run_silently(
+            uninstaller, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+        )
+        # The uninstaller relaunches itself, so settle before reading the tree.
+        time.sleep(3)
+        assert refused != 0
+        assert _installed_entry_count(prefix) == installed
+        assert uninstaller.is_file()
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+    assert (
+        _run_silently(uninstaller, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") == 0
+    )
+    deadline = time.monotonic() + 30
+    while prefix.exists() and time.monotonic() < deadline:
+        time.sleep(0.25)
+    assert not prefix.exists()
+
+
+INSTALLER_SCRIPT = ROOT / "packaging" / "inno" / "brain.iss"
+_PLATFORM_PROVIDER_DECLARATION = (
+    "PlatformProviderName = 'Microsoft Platform Crypto Provider';"
+)
+_PROBE_KEY_PREFIX = "ofca-install-capability-probe."
+# Every outcome ProbePlatformKeyCapability can record.
+_PLATFORM_CAPABILITY_OUTCOMES = frozenset(
+    {
+        "available",
+        "provider_unavailable",
+        "provider_implementation_unreadable",
+        "provider_not_hardware_backed",
+        "key_creation_refused",
+        "export_policy_refused",
+        "key_usage_refused",
+        "key_finalization_refused",
+    }
+)
+
+
+def _compile_installer(
+    tmp_path: Path, script_text: str, *, version: str, payload: Path | None = None
+) -> Path:
+    """Compile the real installer script, or a mutation of it, over a stand-in payload.
+
+    The payload is irrelevant to most of the [Code] section under test, so this
+    compiles the script directly instead of running the full build.
+    """
+
+    compiler = inno_setup_compiler.require_inno_setup_compiler(
+        "Inno Setup is required for installer script falsifiers"
+    )
+    staging = tmp_path / f"stage-{version}"
+    staging.mkdir(parents=True)
+    shutil.copyfile(payload or os.environ["ComSpec"], staging / "Brain.exe")
+    script = tmp_path / f"brain-{version}.iss"
+    script.write_text(script_text, encoding="utf-8")
+    output = tmp_path / f"compiled-{version}"
+    built = subprocess.run(
+        [
+            str(compiler),
+            f"/DStagingRoot={staging}",
+            f"/DOutputRoot={output}",
+            f"/DAppVersion={version}",
+            str(script),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    installers = list(output.glob("*.exe"))
+    assert len(installers) == 1, "the script must compile to one installer"
+    return installers[0]
+
+
+def _without_a_usable_platform_provider(script: str) -> str:
+    """Return the script pointed at a provider name no machine registers."""
+
+    assert _PLATFORM_PROVIDER_DECLARATION in script
+    return script.replace(
+        _PLATFORM_PROVIDER_DECLARATION,
+        "PlatformProviderName = 'No Such Crypto Provider';",
+        1,
+    )
+
+
+def _install_silently(installer: Path, prefix: Path, *arguments: str) -> int:
+    return _run_silently(
+        installer,
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        f"/DIR={prefix}",
+        *arguments,
+    )
+
+
+def _recorded_platform_capability(prefix: Path) -> str | None:
+    marker = prefix / "platform-capability.txt"
+    return marker.read_text(encoding="utf-8").strip() if marker.is_file() else None
+
+
+class _NCryptKeyName(ctypes.Structure):
+    _fields_ = [
+        ("pszName", wintypes.LPWSTR),
+        ("pszAlgid", wintypes.LPWSTR),
+        ("dwLegacyKeySpec", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
+def _persisted_platform_key_names(prefix: str) -> list[str]:
+    """List persisted Platform Crypto Provider key names starting with prefix."""
+
+    library = ctypes.windll.ncrypt
+    open_provider = library.NCryptOpenStorageProvider
+    open_provider.argtypes = (
+        ctypes.POINTER(ctypes.c_size_t),
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+    )
+    enum_keys = library.NCryptEnumKeys
+    enum_keys.argtypes = (
+        ctypes.c_size_t,
+        wintypes.LPCWSTR,
+        ctypes.POINTER(ctypes.POINTER(_NCryptKeyName)),
+        ctypes.POINTER(ctypes.c_void_p),
+        wintypes.DWORD,
+    )
+    free_buffer = library.NCryptFreeBuffer
+    free_buffer.argtypes = (ctypes.c_void_p,)
+    free_object = library.NCryptFreeObject
+    # Handles are pointer-sized; the default int conversion overflows on x64.
+    free_object.argtypes = (ctypes.c_size_t,)
+    provider = ctypes.c_size_t()
+    opened = open_provider(
+        ctypes.byref(provider), "Microsoft Platform Crypto Provider", 0
+    )
+    if opened != 0:
+        pytest.skip("the platform crypto provider is unavailable on this machine")
+    names: list[str] = []
+    state = ctypes.c_void_p()
+    entry = ctypes.POINTER(_NCryptKeyName)()
+    try:
+        while (
+            enum_keys(provider.value, None, ctypes.byref(entry), ctypes.byref(state), 0)
+            == 0
+        ):
+            names.append(entry.contents.pszName)
+            free_buffer(ctypes.cast(entry, ctypes.c_void_p))
+        if state:
+            free_buffer(state)
+    finally:
+        free_object(provider.value)
+    return sorted(name for name in names if name.startswith(prefix))
+
+
+def test_platform_capability_probe_records_its_outcome(tmp_path: Path) -> None:
+    """Every completed install records what the platform key probe found."""
+
+    installer = _compile_installer(
+        tmp_path, INSTALLER_SCRIPT.read_text(encoding="utf-8"), version="1.0.0-probe"
+    )
+    prefix = tmp_path / "installation"
+
+    assert _install_silently(installer, prefix) == 0
+    assert _recorded_platform_capability(prefix) in _PLATFORM_CAPABILITY_OUTCOMES
+
+
+def test_platform_capability_probe_reports_an_unusable_provider(tmp_path: Path) -> None:
+    """A machine that cannot open the provider still installs, and says so.
+
+    Blocking here would refuse every unattended install on a machine without a
+    TPM, so the outcome is recorded rather than enforced.
+    """
+
+    installer = _compile_installer(
+        tmp_path,
+        _without_a_usable_platform_provider(
+            INSTALLER_SCRIPT.read_text(encoding="utf-8")
+        ),
+        version="1.0.0-noprovider",
+    )
+    prefix = tmp_path / "installation"
+
+    assert _install_silently(installer, prefix) == 0
+    assert _recorded_platform_capability(prefix) == "provider_unavailable"
+    assert (prefix / "Brain.exe").is_file()
+
+
+def test_install_is_refused_when_a_required_platform_key_is_unusable(
+    tmp_path: Path,
+) -> None:
+    """/REQUIREPLATFORMKEY turns the recorded outcome into a refusal."""
+
+    installer = _compile_installer(
+        tmp_path,
+        _without_a_usable_platform_provider(
+            INSTALLER_SCRIPT.read_text(encoding="utf-8")
+        ),
+        version="1.0.0-required",
+    )
+    prefix = tmp_path / "installation"
+
+    assert _install_silently(installer, prefix, "/REQUIREPLATFORMKEY") != 0
+    assert _installed_entry_count(prefix) == 0
+
+
+def test_a_required_platform_key_still_installs_where_one_is_usable(
+    tmp_path: Path,
+) -> None:
+    """The refusal above follows from the missing key, not from the switch."""
+
+    installer = _compile_installer(
+        tmp_path, INSTALLER_SCRIPT.read_text(encoding="utf-8"), version="1.0.0-usable"
+    )
+    prefix = tmp_path / "installation"
+
+    outcome = _install_silently(installer, prefix, "/REQUIREPLATFORMKEY")
+
+    if _recorded_platform_capability(prefix) != "available":
+        pytest.skip("this machine has no usable hardware-backed platform key")
+    assert outcome == 0
+
+
+def _write_mutex_holding_executable(tmp_path: Path) -> Path:
+    """Compile a Brain.exe stand-in that publishes the running-application mutex."""
+
+    compiler = Path(r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe")
+    assert compiler.is_file(), "the Windows C# compiler is required for this fixture"
+    source = tmp_path / "mutex_holder.cs"
+    executable = tmp_path / "MutexBrain.exe"
+    source.write_text(
+        f"""
+using System;
+using System.Threading;
+
+public static class MutexHolder {{
+    public static void Main() {{
+        bool created;
+        using (new Mutex(false, "{packaged_entry.RUNNING_APPLICATION_MUTEX_NAME}",
+                         out created)) {{
+            Thread.Sleep(180000);
+        }}
+    }}
+}}
+""".strip()
+        + "\n",
+        encoding="ascii",
+    )
+    built = subprocess.run(
+        [str(compiler), "/nologo", f"/out:{executable}", str(source)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    return executable
+
+
+def _wait_for_running_application_mutex(present: bool, *, timeout: float = 20.0) -> bool:
+    open_mutex = ctypes.windll.kernel32.OpenMutexW
+    open_mutex.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR)
+    open_mutex.restype = wintypes.HANDLE
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        handle = open_mutex(
+            0x00100000, False, packaged_entry.RUNNING_APPLICATION_MUTEX_NAME
+        )
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+        if bool(handle) == present:
+            return True
+        time.sleep(0.25)
+    return False
+
+
+def test_uninstall_closes_the_running_application_when_asked(tmp_path: Path) -> None:
+    """/CLOSEAPP ends the running instance instead of refusing the uninstall.
+
+    The interactive uninstaller offers the same choice through a prompt. This
+    drives the switch because the application it must close has no window.
+    """
+
+    installer = _compile_installer(
+        tmp_path,
+        INSTALLER_SCRIPT.read_text(encoding="utf-8"),
+        version="1.0.0-closeapp",
+        payload=_write_mutex_holding_executable(tmp_path),
+    )
+    prefix = tmp_path / "installation"
+    assert _install_silently(installer, prefix) == 0
+    running = subprocess.Popen([str(prefix / "Brain.exe")])
+    try:
+        assert _wait_for_running_application_mutex(True), "fixture never published it"
+
+        removed = _run_silently(
+            prefix / "unins000.exe",
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/CLOSEAPP",
+        )
+
+        assert removed == 0
+        assert _wait_for_running_application_mutex(False)
+        deadline = time.monotonic() + 30
+        while prefix.exists() and time.monotonic() < deadline:
+            time.sleep(0.25)
+        assert not prefix.exists()
+    finally:
+        if running.poll() is None:
+            running.kill()
+        running.wait()
+
+
+def test_uninstall_still_refuses_a_running_application_without_the_switch(
+    tmp_path: Path,
+) -> None:
+    """The removal above follows from /CLOSEAPP, not from the fixture exiting."""
+
+    installer = _compile_installer(
+        tmp_path,
+        INSTALLER_SCRIPT.read_text(encoding="utf-8"),
+        version="1.0.0-noclose",
+        payload=_write_mutex_holding_executable(tmp_path),
+    )
+    prefix = tmp_path / "installation"
+    assert _install_silently(installer, prefix) == 0
+    installed = _installed_entry_count(prefix)
+    running = subprocess.Popen([str(prefix / "Brain.exe")])
+    try:
+        assert _wait_for_running_application_mutex(True), "fixture never published it"
+
+        refused = _run_silently(
+            prefix / "unins000.exe", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+        )
+
+        time.sleep(3)
+        assert refused != 0
+        assert _installed_entry_count(prefix) == installed
+    finally:
+        if running.poll() is None:
+            running.kill()
+        running.wait()
+
+
+def test_platform_capability_probe_leaves_no_persisted_key(tmp_path: Path) -> None:
+    """The probe deletes the key it creates, so installs do not fill the TPM."""
+
+    before = _persisted_platform_key_names(_PROBE_KEY_PREFIX)
+    installer = _compile_installer(
+        tmp_path, INSTALLER_SCRIPT.read_text(encoding="utf-8"), version="1.0.0-nokey"
+    )
+    prefix = tmp_path / "installation"
+
+    assert _install_silently(installer, prefix) == 0
+    if _recorded_platform_capability(prefix) != "available":
+        pytest.skip("this machine has no usable hardware-backed platform key")
+    assert _persisted_platform_key_names(_PROBE_KEY_PREFIX) == before

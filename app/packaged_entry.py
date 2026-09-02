@@ -14,6 +14,37 @@ PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HANDOFF_TOKEN"
 PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_EXTENSION_ID"
 PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
 
+# The Windows installer reads this name from its AppMutex directive to detect a
+# running instance. Both process modes publish it, and changing it here requires
+# the same change in packaging/inno/brain.iss.
+RUNNING_APPLICATION_MUTEX_NAME = "OnlyFansConversationalAnalyticsBrain"
+
+_running_application_mutex: int | None = None
+
+
+def hold_running_application_mutex() -> bool:
+    """Publish the mutex that tells the installer this application is running.
+
+    The handle is kept for the lifetime of the process and never released, so
+    the mutex disappears only when the process does.
+    """
+    global _running_application_mutex
+    if sys.platform != "win32":
+        return False
+    if _running_application_mutex is not None:
+        return True
+    import ctypes
+    from ctypes import wintypes
+
+    create_mutex = ctypes.windll.kernel32.CreateMutexW
+    create_mutex.argtypes = (wintypes.LPCVOID, wintypes.BOOL, wintypes.LPCWSTR)
+    create_mutex.restype = wintypes.HANDLE
+    handle = create_mutex(None, False, RUNNING_APPLICATION_MUTEX_NAME)
+    if not handle:
+        return False
+    _running_application_mutex = handle
+    return True
+
 
 def select_brain_application(
     data_directory: str | Path | None = None,
@@ -106,6 +137,7 @@ def run_brain() -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     """Start the local launcher or the internal Brain process mode."""
     arguments = tuple(sys.argv[1:] if argv is None else argv)
+    hold_running_application_mutex()
     if arguments == ("--brain",):
         return run_brain()
     if arguments:
