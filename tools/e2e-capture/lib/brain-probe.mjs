@@ -100,6 +100,14 @@ export async function establishBrowserWebAuthnSession(page, authDatabasePath) {
   if (seeded.grant_reference_ids?.length !== (extraCurrentBinding ? 4 : 3)) {
     throw new Error('Verified-grant seeding returned an unexpected authority reference count.');
   }
+  await completeBrowserWebAuthnCeremony(page);
+}
+
+/**
+ * Register a credential on a virtual platform authenticator and authenticate
+ * with it. The caller owns how the store reached its authorized state.
+ */
+export async function completeBrowserWebAuthnCeremony(page) {
   const session = await page.context().newCDPSession(page);
   await session.send('WebAuthn.enable');
   await session.send('WebAuthn.addVirtualAuthenticator', {

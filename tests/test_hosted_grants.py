@@ -128,6 +128,17 @@ class StoredClaimTransport:
         assert method == "POST"
         self.requests.append((path, json_body))
         if path == self.claim.consume_path:
+            # The secret is the only claim field a caller could get wrong while
+            # every other field still parses, so it is checked rather than
+            # echoed.
+            submitted = json_body.get("request")
+            if (
+                not isinstance(submitted, dict)
+                or submitted.get("claim_secret") != self.claim.claim_secret
+            ):
+                return _json_response(
+                    401, {"detail": "installation_claim_secret_rejected"}
+                )
             with self._lock:
                 self.claim_attempts += 1
                 if self._consumed:
@@ -285,6 +296,21 @@ class StoredClaimTransport:
 
 @pytest.fixture
 def bundle() -> SignedBundle:
+    return signed_bundle(iat=1_784_332_800)
+
+
+def signed_bundle(*, iat: int) -> SignedBundle:
+    """Mint one trust set and the grant tuple it verifies, timed from `iat`.
+
+    Grant lifetimes are stated here rather than read from
+    `app.security.grant_verifier`, so a changed profile lifetime shows up as a
+    refused time contract instead of being followed silently.
+    """
+
+    installation_lifetime = 2_592_000
+    creator_binding_lifetime = 604_800
+    membership_lifetime = 86_400
+    license_lifetime = 86_400
     purpose_keys = {
         purpose: ec.generate_private_key(ec.SECP256R1())
         for purpose in ("installation-binding", "membership", "license")
@@ -306,13 +332,13 @@ def bundle() -> SignedBundle:
         "installation_id": _INSTALLATION_ID,
         "installation_key_id": installation_key.installation_key_id,
         "installation_key_jkt": installation_key.installation_key_jkt,
-        "iat": 1_784_332_800,
-        "nbf": 1_784_332_800,
+        "iat": iat,
+        "nbf": iat,
     }
     membership_claims = {
         **common,
         "aud": "urn:bridge-clean:local-brain:membership",
-        "exp": 1_784_419_200,
+        "exp": iat + membership_lifetime,
         "grant_type": "membership_snapshot",
         "jti": "0198a1b2-c3d4-7100-8000-000000000003",
         "membership_id": "0198a1b2-c3d4-7200-8000-000000000002",
@@ -328,7 +354,7 @@ def bundle() -> SignedBundle:
             {
                 **common,
                 "aud": "urn:bridge-clean:local-brain:installation",
-                "exp": 1_786_924_800,
+                "exp": iat + installation_lifetime,
                 "grant_type": "installation_grant",
                 "jti": "0198a1b2-c3d4-7100-8000-000000000001",
                 "sub": f"installation:{_INSTALLATION_ID}",
@@ -348,7 +374,7 @@ def bundle() -> SignedBundle:
                 **common,
                 "aud": "urn:bridge-clean:local-brain:license",
                 "entitlement_id": "0198a1b2-c3d4-7200-8000-000000000003",
-                "exp": 1_784_419_200,
+                "exp": iat + license_lifetime,
                 "features": [
                     "agent-capture",
                     "analytics-processing",
@@ -385,7 +411,7 @@ def bundle() -> SignedBundle:
                 "approval_id": approval_id,
                 "approval_revision": 1,
                 "creator_account_id": account_id,
-                "exp": 1_784_937_600,
+                "exp": iat + creator_binding_lifetime,
                 "grant_type": "creator_account_binding",
                 "jti": grant_id,
                 "sub": f"installation:{_INSTALLATION_ID}:creator:{account_id}",
@@ -414,6 +440,12 @@ def bundle() -> SignedBundle:
 
 @pytest.fixture
 def claim() -> InstallationClaim:
+    return signed_claim()
+
+
+def signed_claim() -> InstallationClaim:
+    """Build the single-use claim `StoredClaimTransport` answers."""
+
     claim_id = "0198a1b2-c3d4-7300-8000-000000000001"
     return InstallationClaim(
         claim_id=claim_id,
@@ -424,6 +456,12 @@ def claim() -> InstallationClaim:
         installation_id=_INSTALLATION_ID,
         consume_path=f"/v1/installation-claims/{claim_id}:consume",
     )
+
+
+def signed_creator_account_ids() -> tuple[str, str]:
+    """The creator accounts `signed_bundle` binds, in membership order."""
+
+    return _ACCOUNT_ID, _SECOND_ACCOUNT_ID
 
 
 @pytest.fixture
