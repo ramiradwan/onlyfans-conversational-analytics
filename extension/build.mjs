@@ -18,13 +18,13 @@ import { validatePackagedSigningRule } from 'local-authenticated-read-connector/
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(ROOT, 'dist');
 const SIGNER_PACKAGE = 'local-authenticated-read-connector';
-const SIGNER_VERSION = '0.2.0-beta.10';
+const SIGNER_VERSION = '0.2.0-beta.11';
 const SIGNER_SPEC =
-  'file:vendor/local-authenticated-read-connector-0.2.0-beta.10.tgz';
+  'file:vendor/local-authenticated-read-connector-0.2.0-beta.11.tgz';
 const SIGNER_TARBALL = path.join(
   ROOT,
   'vendor',
-  'local-authenticated-read-connector-0.2.0-beta.10.tgz',
+  'local-authenticated-read-connector-0.2.0-beta.11.tgz',
 );
 const SIGNER_ENTRY = fileURLToPath(import.meta.resolve(`${SIGNER_PACKAGE}/browser-signing`));
 const SIGNING_RULE_FILE = 'packaged-signing-rule.json';

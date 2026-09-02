@@ -13,7 +13,7 @@
     "qualify:snapshot:ci": "node --expose-gc qualification/snapshot-100k.mjs --messages=10000"
   },
   "dependencies": {
-    "local-authenticated-read-connector": "file:vendor/local-authenticated-read-connector-0.2.0-beta.10.tgz"
+    "local-authenticated-read-connector": "file:vendor/local-authenticated-read-connector-0.2.0-beta.11.tgz"
   },
   "devDependencies": {
     "esbuild": "0.25.6",
