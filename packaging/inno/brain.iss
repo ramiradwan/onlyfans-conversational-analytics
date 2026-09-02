@@ -20,6 +20,11 @@
 AppId={{a860574e-ff86-4305-be8f-93b5c91cde44}
 AppName={#AppName}
 AppVersion={#AppVersion}
+; Both process modes publish this mutex. Without it the uninstaller cannot
+; delete a running Brain.exe, and removes the rest of the installation and
+; itself around it, leaving an executable no uninstaller can reach. The name
+; must match RUNNING_APPLICATION_MUTEX_NAME in app/packaged_entry.py.
+AppMutex=OnlyFansConversationalAnalyticsBrain
 DefaultDirName={localappdata}\Programs\{#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest

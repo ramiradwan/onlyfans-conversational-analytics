@@ -9,6 +9,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 from app import packaged_entry
 from app.core.config import Settings
 
@@ -95,3 +97,75 @@ def test_runtime_configuration_presence_selects_runtime_application(tmp_path, mo
     monkeypatch.setitem(sys.modules, "app.main", main_module)
 
     assert packaged_entry.select_brain_application(tmp_path) is sentinel
+
+
+_RUNNING_MUTEX_PROBE = """\
+import ctypes
+import sys
+from ctypes import wintypes
+
+from app import packaged_entry
+
+if "--hold" in sys.argv:
+    packaged_entry.hold_running_application_mutex()
+
+open_mutex = ctypes.windll.kernel32.OpenMutexW
+open_mutex.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR)
+open_mutex.restype = wintypes.HANDLE
+SYNCHRONIZE = 0x00100000
+handle = open_mutex(
+    SYNCHRONIZE, False, packaged_entry.RUNNING_APPLICATION_MUTEX_NAME
+)
+print(f"published={str(bool(handle)).lower()}")
+"""
+
+
+def _run_mutex_probe(*arguments: str) -> str:
+    result = subprocess.run(
+        [sys.executable, "-c", _RUNNING_MUTEX_PROBE, *arguments],
+        cwd=PRODUCT_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return result.stdout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the mutex is a Windows installer signal")
+def test_running_application_mutex_is_published_only_while_held() -> None:
+    """The installer's running-application signal exists only when the app runs."""
+
+    assert "published=false" in _run_mutex_probe()
+    assert "published=true" in _run_mutex_probe("--hold")
+
+
+def test_main_publishes_the_running_application_mutex(monkeypatch) -> None:
+    """Both process modes reach the mutex before dispatching."""
+
+    published: list[bool] = []
+
+    def record() -> bool:
+        published.append(True)
+        return True
+
+    monkeypatch.setattr(packaged_entry, "hold_running_application_mutex", record)
+    monkeypatch.setattr(packaged_entry, "run_brain", lambda: 0)
+
+    assert packaged_entry.main(["--brain"]) == 0
+    assert published == [True]
+
+
+def test_installer_mutex_directive_matches_the_packaged_name() -> None:
+    """The uninstaller guard is inert if the two names drift apart."""
+
+    script = (PRODUCT_ROOT / "packaging" / "inno" / "brain.iss").read_text(
+        encoding="utf-8"
+    )
+    declared = [
+        line.split("=", 1)[1].strip()
+        for line in script.splitlines()
+        if line.startswith("AppMutex=")
+    ]
+    assert declared == [packaged_entry.RUNNING_APPLICATION_MUTEX_NAME]

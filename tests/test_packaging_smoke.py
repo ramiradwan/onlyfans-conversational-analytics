@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import http.server
 import json
@@ -14,9 +15,12 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterator
+from ctypes import wintypes
 from pathlib import Path
 
 import pytest
+
+from app import packaged_entry
 
 import exclusive_resource
 import inno_setup_compiler
@@ -865,3 +869,66 @@ def test_install_failure_has_a_distinct_exit_code(tmp_path: Path) -> None:
     assert mutated_result.returncode == 41, mutated_result.stdout + mutated_result.stderr
     with pytest.raises(AssertionError):
         _assert_install_failure_exit(mutated_result, mutated_transcript)
+
+
+def _hold_running_application_mutex(name: str) -> int:
+    create_mutex = ctypes.windll.kernel32.CreateMutexW
+    create_mutex.argtypes = (wintypes.LPCVOID, wintypes.BOOL, wintypes.LPCWSTR)
+    create_mutex.restype = wintypes.HANDLE
+    handle = create_mutex(None, False, name)
+    assert handle, "could not publish the running-application mutex"
+    return handle
+
+
+def _installed_entry_count(prefix: Path) -> int:
+    return sum(1 for _ in prefix.rglob("*")) if prefix.exists() else 0
+
+
+def _run_silently(program: Path, *arguments: str) -> int:
+    return subprocess.run(
+        [str(program), *arguments], capture_output=True, text=True, check=False
+    ).returncode
+
+
+def test_uninstall_is_refused_while_the_application_runs(tmp_path: Path) -> None:
+    """A running application blocks uninstall rather than being deleted around.
+
+    The uninstaller cannot delete a running Brain.exe.  Without the guard it
+    removes the rest of the installation and its own unins000.exe around the
+    file it could not touch, leaving an executable nothing can uninstall.
+    """
+
+    installer = _build_real_installer(tmp_path)
+    prefix = tmp_path / "installation"
+    assert (
+        _run_silently(
+            installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/DIR={prefix}"
+        )
+        == 0
+    )
+    installed = _installed_entry_count(prefix)
+    uninstaller = prefix / "unins000.exe"
+    assert installed > 1 and uninstaller.is_file()
+
+    handle = _hold_running_application_mutex(
+        packaged_entry.RUNNING_APPLICATION_MUTEX_NAME
+    )
+    try:
+        refused = _run_silently(
+            uninstaller, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+        )
+        # The uninstaller relaunches itself, so settle before reading the tree.
+        time.sleep(3)
+        assert refused != 0
+        assert _installed_entry_count(prefix) == installed
+        assert uninstaller.is_file()
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+    assert (
+        _run_silently(uninstaller, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") == 0
+    )
+    deadline = time.monotonic() + 30
+    while prefix.exists() and time.monotonic() < deadline:
+        time.sleep(0.25)
+    assert not prefix.exists()
