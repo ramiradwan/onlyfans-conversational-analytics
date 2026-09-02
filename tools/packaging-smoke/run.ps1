@@ -513,6 +513,28 @@ function Invoke-VerifyProvisioningListener {
     return $false
 }
 
+function Invoke-VerifyPlatformCapability {
+    param([Parameter(Mandatory)] [psobject] $Installation)
+
+    $markerPath = Join-Path -Path $Installation.InstallationPrefix -ChildPath 'platform-capability.txt'
+    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+        # The installer records the probe outcome for every install it completes,
+        # so a missing marker means the probe did not run at all.
+        Add-Result -Step 'platform-capability' -Outcome fail -Evidence @{
+            finding = 'platform_capability_marker_missing'
+            path = $markerPath
+        }
+        return
+    }
+    $probeOutcome = (Get-Content -LiteralPath $markerPath -Raw).Trim()
+    # A machine without a hardware-backed provider still installs, so the probe
+    # outcome is recorded rather than enforced. Only /REQUIREPLATFORMKEY enforces.
+    Add-Result -Step 'platform-capability' -Outcome pass -Evidence @{
+        platform_key_probe = $probeOutcome
+        platform_key_available = ($probeOutcome -eq 'available')
+    }
+}
+
 function Invoke-VerifyInstallationKey {
     param([bool] $ListenerReady)
 
@@ -561,6 +583,7 @@ try {
     if ($null -eq $installation) {
         $installationFailed = $true
     } else {
+        Invoke-VerifyPlatformCapability -Installation $installation
         $launcher = Invoke-OpenBridge -Installation $installation
         $listenerReady = Invoke-VerifyProvisioningListener -LauncherProcess $launcher
         Invoke-VerifyInstallationKey -ListenerReady $listenerReady

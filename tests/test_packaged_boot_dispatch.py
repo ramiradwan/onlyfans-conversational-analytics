@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import os
+import re
 import subprocess
 import sys
 import types
@@ -163,9 +164,9 @@ def test_installer_mutex_directive_matches_the_packaged_name() -> None:
     script = (PRODUCT_ROOT / "packaging" / "inno" / "brain.iss").read_text(
         encoding="utf-8"
     )
-    declared = [
-        line.split("=", 1)[1].strip()
-        for line in script.splitlines()
-        if line.startswith("AppMutex=")
-    ]
-    assert declared == [packaged_entry.RUNNING_APPLICATION_MUTEX_NAME]
+    defined = re.findall(r'^#define AppMutexName "([^"]+)"$', script, re.MULTILINE)
+    assert defined == [packaged_entry.RUNNING_APPLICATION_MUTEX_NAME]
+    # The directive and the uninstall-side check both resolve to that one define,
+    # so neither can drift from the name the application publishes.
+    assert "AppMutex={#AppMutexName}" in script
+    assert "OpenRunningApplicationMutex(Synchronize, False, '{#AppMutexName}')" in script
