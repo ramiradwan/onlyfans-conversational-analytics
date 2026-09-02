@@ -505,7 +505,7 @@ def test_tools_web_request_guard_detects_a_removed_compatibility_switch(
     )
 
     assert _web_commands_without_basic_parsing(tmp_path) == [
-        "tools/packaging-smoke/run.ps1:419"
+        "tools/packaging-smoke/run.ps1:492"
     ]
 
 
@@ -705,6 +705,57 @@ def test_the_real_smoke_cycle_shows_no_window(tmp_path: Path) -> None:
         f"the smoke run displayed {displayed}; a default-tier run must not open "
         "a window on the desktop"
     )
+
+
+def _with_a_no_op_uninstaller(script: str) -> str:
+    """Return the script with an uninstaller that exits cleanly and removes nothing."""
+
+    invocation = (
+        "            $uninstallerProcess = Start-Process"
+        " -FilePath $Installation.UninstallerPath -ArgumentList @(\n"
+        "                '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'\n"
+        "            ) -Wait -PassThru\n"
+    )
+    assert invocation in script
+    script = script.replace(
+        invocation,
+        "            $uninstallerProcess = [pscustomobject]@{ ExitCode = 0 }\n",
+        1,
+    )
+    assert "-TimeoutSeconds 60" in script
+    return script.replace("-TimeoutSeconds 60", "-TimeoutSeconds 1", 1)
+
+
+def test_uninstall_step_fails_when_the_installation_survives(tmp_path: Path) -> None:
+    """The uninstall step measures the end state rather than the exit code.
+
+    An uninstaller exit code of zero reports that removal started, not that it
+    finished.  This drives a real install whose uninstaller removes nothing and
+    reads back the surviving entries the step reports.
+    """
+
+    installer = _build_real_installer(tmp_path)
+    script = tmp_path / "tools" / "packaging-smoke" / "run.ps1"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        _with_a_no_op_uninstaller(SMOKE_SCRIPT.read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
+
+    _result, transcript = _run_smoke(
+        tmp_path, smoke_script=script, artifact_path=installer
+    )
+
+    uninstall = _step(transcript, "uninstall-artifact")
+    assert uninstall["outcome"] == "fail"
+    evidence = uninstall["evidence"]
+    assert evidence["finding"] == "installation_prefix_survived_uninstall"
+    assert evidence["installation_prefix_removed"] is False
+    entries = evidence["surviving_installation_entries"]
+    count = evidence["surviving_installation_entry_count"]
+    assert count >= len(entries) >= 1
+    # The listing is bounded, so a large survivor set cannot flood the transcript.
+    assert len(entries) == min(25, count)
 
 
 def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(

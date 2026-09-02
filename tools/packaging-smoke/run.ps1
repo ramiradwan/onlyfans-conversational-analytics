@@ -364,27 +364,100 @@ function Stop-LauncherProcess {
     }
 }
 
+function Get-SurvivingInstallationEntry {
+    param([Parameter(Mandatory)] [string] $InstallationPrefix)
+
+    if (-not (Test-Path -LiteralPath $InstallationPrefix -PathType Container)) {
+        return @()
+    }
+    $prefixLength = (Get-Item -LiteralPath $InstallationPrefix).FullName.Length
+    return @(
+        Get-ChildItem -LiteralPath $InstallationPrefix -Recurse -Force -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $_.FullName.Substring($prefixLength).TrimStart([IO.Path]::DirectorySeparatorChar)
+            } |
+            Sort-Object
+    )
+}
+
+function Wait-InstallationPrefixRemoved {
+    param(
+        [Parameter(Mandatory)] [string] $InstallationPrefix,
+        [Parameter(Mandatory)] [int] $TimeoutSeconds
+    )
+
+    # The uninstaller relaunches itself from a temporary copy, so the process
+    # this harness waited on can exit before removal has finished.
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Test-Path -LiteralPath $InstallationPrefix) -and ((Get-Date) -lt $deadline)) {
+        Start-Sleep -Milliseconds 250
+    }
+    return -not (Test-Path -LiteralPath $InstallationPrefix)
+}
+
+function Remove-TemporaryRunRoot {
+    param([psobject] $Layout)
+
+    if ($null -eq $Layout -or -not (Test-Path -LiteralPath $Layout.RunRoot -PathType Container)) {
+        return $true
+    }
+    Remove-Item -LiteralPath $Layout.RunRoot -Recurse -Force -ErrorAction SilentlyContinue
+    return -not (Test-Path -LiteralPath $Layout.RunRoot)
+}
+
 function Invoke-UninstallArtifact {
     param([psobject] $Installation, [psobject] $Layout)
 
+    $evidence = @{}
     try {
         if ($null -ne $Installation) {
             if (-not (Test-Path -LiteralPath $Installation.UninstallerPath -PathType Leaf)) {
                 throw "installer cleanup cannot find uninstaller: $($Installation.UninstallerPath)"
             }
+            $runtimeDataExisted = Test-Path -LiteralPath $Installation.RuntimeDataDirectory -PathType Container
             $uninstallerProcess = Start-Process -FilePath $Installation.UninstallerPath -ArgumentList @(
                 '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
             ) -Wait -PassThru
+            # A zero exit code reports that the uninstaller started, not that it
+            # removed anything, so the end state is measured rather than assumed.
             if ($uninstallerProcess.ExitCode -ne 0) {
                 throw "uninstaller exited with code $($uninstallerProcess.ExitCode)"
             }
+            $prefixRemoved = Wait-InstallationPrefixRemoved `
+                -InstallationPrefix $Installation.InstallationPrefix -TimeoutSeconds 60
+            $surviving = @(Get-SurvivingInstallationEntry -InstallationPrefix $Installation.InstallationPrefix)
+            $runtimeDataRetained = Test-Path -LiteralPath $Installation.RuntimeDataDirectory -PathType Container
+
+            $evidence['installation_prefix_removed'] = $prefixRemoved
+            $evidence['surviving_installation_entry_count'] = $surviving.Count
+            # Bound the transcript; the count above carries the full extent.
+            $evidence['surviving_installation_entries'] = @($surviving | Select-Object -First 25)
+            $evidence['runtime_data_directory_existed'] = $runtimeDataExisted
+            $evidence['runtime_data_directory_retained'] = $runtimeDataRetained
+
+            if (-not $prefixRemoved) {
+                $evidence['finding'] = 'installation_prefix_survived_uninstall'
+            } elseif ($runtimeDataExisted -and -not $runtimeDataRetained) {
+                # The product data directory outlives the program on purpose, so
+                # an uninstall that removes it is a regression this step catches.
+                $evidence['finding'] = 'runtime_data_directory_removed_by_uninstall'
+            }
         }
-        if ($null -ne $Layout -and (Test-Path -LiteralPath $Layout.RunRoot -PathType Container)) {
-            Remove-Item -LiteralPath $Layout.RunRoot -Recurse -Force
-        }
-        Add-Result -Step 'uninstall-artifact' -Outcome pass -Evidence @{ removed_temporary_installation = $true }
     } catch {
-        Add-Result -Step 'uninstall-artifact' -Outcome fail -Evidence @{ finding = 'uninstall_failed'; exception = $_.Exception.GetType().Name; message = $_.Exception.Message }
+        Add-Result -Step 'uninstall-artifact' -Outcome fail -Evidence @{
+            finding = 'uninstall_failed'
+            exception = $_.Exception.GetType().Name
+            message = $_.Exception.Message
+        }
+        [void] (Remove-TemporaryRunRoot -Layout $Layout)
+        return
+    }
+
+    $evidence['removed_temporary_installation'] = (Remove-TemporaryRunRoot -Layout $Layout)
+    if ($evidence.ContainsKey('finding')) {
+        Add-Result -Step 'uninstall-artifact' -Outcome fail -Evidence $evidence
+    } else {
+        Add-Result -Step 'uninstall-artifact' -Outcome pass -Evidence $evidence
     }
 }
 
