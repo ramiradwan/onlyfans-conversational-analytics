@@ -46,7 +46,10 @@ def _identity_reader(repositories):
 
 
 def _analytics(repositories, path: Path):
-    stores = create_analytics_stores("sqlite", projections_path=path, activation=repositories.projection_activation, canonical_identity_reader=_identity_reader(repositories))
+    # The store measures the retention window against its own clock, so it takes
+    # the same frozen time as the pipeline. Left on wall time, a source time this
+    # file states as an offset from NOW expires once NOW is far enough past.
+    stores = create_analytics_stores("sqlite", projections_path=path, activation=repositories.projection_activation, canonical_identity_reader=_identity_reader(repositories), retention_clock=lambda: NOW)
     pipeline = AnalyticsPipeline(repositories.ingestion, projections=stores.projections, graph=stores.graph, clock=lambda: NOW)
     return stores, pipeline
 
