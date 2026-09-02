@@ -18,6 +18,10 @@ import { HistoryAcquisitionCoordinator } from '../transport/history-coordinator.
 import { HistoryAcquisitionCoordinator as ReadOnlyHistoryAcquisitionCoordinator } from '../transport/read-only-history-coordinator.mjs';
 import { createIndexedDbIngestionStorage } from '../transport/indexeddb-ingestion-storage.mjs';
 import {
+  normalizeSignerConversation as normalizeReadOnlySignerConversation,
+  normalizeSignerMessage as normalizeReadOnlySignerMessage,
+} from '../transport/read-only-signer-normalization.mjs';
+import {
   normalizeSignerConversation,
   normalizeSignerMessage,
 } from '../transport/signer-normalization.mjs';
@@ -1205,4 +1209,71 @@ test('recent_window_days prioritizes recent conversations and a new chat opens a
     .filter((entry) => entry.change.evidence?.type === 'generation.started');
   assert.equal(starts.length, 2);
   assert.equal(inventoryReads, 2);
+});
+
+test('signer records with no timestamp or derivable direction still normalize', () => {
+  // The platform omits the last message on some conversations, leaving no
+  // conversation-scoped timestamp, and a page whose messages all come from the
+  // creator carries no counterparty to derive direction from. Both arrive as
+  // null and are resolved by the extension rather than by the connector.
+  const conversationPage = parseTypedResponse({
+    operation: 'conversations',
+    status: 200,
+    contentType: 'application/json',
+    body: {
+      list: [{ id: 'chat-1', withUser: { id: 'fan-1', name: 'Alex' } }],
+      boundary: 'inventory_end',
+    },
+  });
+  assert.equal(conversationPage.summary.semantic_success, true);
+  assert.equal(conversationPage.data.items[0].updated_at, null);
+
+  const conversationContext = {
+    observedAt: '2026-07-19T09:00:00Z',
+    creatorPlatformId: 'creator-platform-1',
+  };
+  const observedChat = chat({ updated_at: '2026-07-19T09:00:00.000Z' });
+  assert.deepEqual(
+    normalizeSignerConversation(conversationPage.data.items[0], conversationContext),
+    observedChat,
+  );
+  assert.deepEqual(
+    normalizeReadOnlySignerConversation(conversationPage.data.items[0], conversationContext),
+    observedChat,
+  );
+
+  const messagePage = parseTypedResponse({
+    operation: 'message-page',
+    parameters: { conversationId: 'chat-1' },
+    status: 200,
+    contentType: 'application/json',
+    body: {
+      hasMore: false,
+      list: [{
+        id: 'message-1',
+        chatUserId: 'fan-1',
+        fromUser: { id: 'creator-platform-1' },
+        text: 'Hello',
+        createdAt: '2026-07-19T08:01:00Z',
+      }],
+    },
+  });
+  assert.equal(messagePage.summary.semantic_success, true);
+  assert.equal(messagePage.data.items[0].direction, null);
+  assert.equal(messagePage.data.items[0].chat_id, 'chat-1');
+
+  const messageContext = { ...conversationContext, conversationId: 'chat-1' };
+  const observedMessage = message({
+    sender_platform_user_id: 'creator-platform-1',
+    sent_at: '2026-07-19T08:01:00.000Z',
+    direction: 'outbound',
+  });
+  assert.deepEqual(
+    normalizeSignerMessage(messagePage.data.items[0], messageContext),
+    observedMessage,
+  );
+  assert.deepEqual(
+    normalizeReadOnlySignerMessage(messagePage.data.items[0], messageContext),
+    observedMessage,
+  );
 });
