@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -16,6 +17,7 @@ from app.analytics.projection_store import (
 from app.analytics.retention_store import (
     RetentionBoundLazySQLiteAnalyticsProjectionStore,
     RetentionBoundSQLiteAnalyticsProjectionStore,
+    utc_now,
 )
 from app.persistence.projection_activation import ProjectionActivationRepository
 
@@ -42,7 +44,13 @@ def create_analytics_stores(
     rollback_retention: int = 1,
     gc_batch_size: int = 8,
     lazy: bool = False,
+    retention_clock: Callable[[], datetime] = utc_now,
 ) -> AnalyticsStores:
+    """Build the projection stores for one backend.
+
+    ``retention_clock`` reads the time the sqlite stores measure the analytics
+    retention window against. The memory backend binds no window and ignores it.
+    """
     if backend == "memory":
         repository = InMemoryGraphRepository(
             rollback_retention=rollback_retention,
@@ -81,6 +89,7 @@ def create_analytics_stores(
             lease_seconds=lease_seconds,
             rollback_retention=rollback_retention,
             gc_batch_size=gc_batch_size,
+            clock=retention_clock,
         )
         return AnalyticsStores(
             projections=projections,
@@ -97,6 +106,7 @@ def create_analytics_stores(
         lease_seconds=lease_seconds,
         rollback_retention=rollback_retention,
         gc_batch_size=gc_batch_size,
+        clock=retention_clock,
     )
     return AnalyticsStores(
         projections=projections,

@@ -400,6 +400,10 @@ class RetentionBoundLazySQLiteAnalyticsProjectionStore(
 ):
     """Lazy disposable store that opens the retention-aware SQLite implementation."""
 
+    def __init__(self, *args, clock: Callable[[], datetime] = utc_now, **kwargs) -> None:
+        self._retention_clock = clock
+        super().__init__(*args, **kwargs)
+
     def close(self) -> None:
         with self._lock:
             store = self._store
@@ -424,4 +428,5 @@ class RetentionBoundLazySQLiteAnalyticsProjectionStore(
             lease_seconds=self.lease_seconds,
             rollback_retention=self.rollback_retention,
             gc_batch_size=self.gc_batch_size,
+            clock=self._retention_clock,
         )
