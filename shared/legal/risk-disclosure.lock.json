@@ -1,0 +1,26 @@
+{
+  "schema": "ofca-legal-instrument-lock/v1",
+  "source_repository": "ramiradwan/legal",
+  "source_path": "manifest/policy-manifest.json",
+  "manifest_schema_version": "2.0",
+  "document_key": "risk_disclosure",
+  "shipped_asset": "app/provisioning/creator-platform-data-risk-disclosure.html",
+  "recorded_state": {
+    "document_id": "risk-disclosure",
+    "status": "draft",
+    "version": "1.0.0",
+    "effective_at": null,
+    "approved_at": null,
+    "approved_by": null,
+    "public_url": "/legal/creator-risk-disclosure",
+    "canonical_locale": "en",
+    "variant": {
+      "locale": "en",
+      "source_path": "drafts/risk-disclosure/creator-platform-data-risk-disclosure.html",
+      "source_sha256": null,
+      "rendered_sha256": null,
+      "approved_at": null,
+      "approved_by": null
+    }
+  }
+}
