@@ -123,3 +123,25 @@ def test_agent_bundle_rejects_empty_and_self_containing_sources(tmp_path: Path) 
     assert nested_result.returncode != 0
     assert "outside its source directory" in nested_result.stderr
     assert not nested_bundle.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives the PowerShell ZIP writer")
+def test_agent_bundle_refuses_the_store_candidate_filename(tmp_path: Path) -> None:
+    """The same source tree bundles under a development name and never the Store one."""
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "manifest.json").write_text("{}\n", encoding="utf-8")
+    store_candidate = tmp_path / "OnlyFans-Conversational-Analytics-Agent-2.0.0-chrome.zip"
+
+    refused = _run_bundle(source, store_candidate)
+
+    assert refused.returncode != 0
+    assert "must not be named as the Store candidate" in refused.stderr
+    assert not store_candidate.exists()
+
+    development = tmp_path / "agent-development-unpacked-2.0.0.zip"
+    accepted = _run_bundle(source, development)
+
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    assert development.exists()

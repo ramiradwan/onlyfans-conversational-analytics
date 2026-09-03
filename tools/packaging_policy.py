@@ -395,7 +395,11 @@ def _check_agent_artifact(
 def _check_release_declaration(
     relative: str, declared: Any, name: str, findings: list[PackagingFinding]
 ) -> None:
-    """Require a recorded release input: schema, source revision and digest."""
+    """Require a recorded release input: schema, source revision and digest.
+
+    The digest field is named after the declaration it covers, so a reader can
+    tell which document a recorded digest was taken over.
+    """
 
     if declared is None:
         findings.append(
@@ -415,7 +419,7 @@ def _check_release_declaration(
             )
         )
         return
-    for field in ("schema", "source_revision", "sha256"):
+    for field in ("schema", "source_revision", f"{name}_digest"):
         value = declared.get(field)
         if not isinstance(value, str) or not value:
             findings.append(

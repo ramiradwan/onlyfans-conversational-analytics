@@ -20,6 +20,10 @@ tests/fixtures/engineering-attestation-v1-ed25519.json text eol=lf
 # Vendored Legal evidence JSON is integrity-checked as exact source bytes.
 shared/legal/*.json text eol=lf
 
+# A Legal instrument bindings document is stored in its canonical form and is
+# digested as the bytes it is read as, so it is never rewritten on checkout.
+extension/tests/fixtures/legal-instrument-bindings*.json -text
+
 # Fixture cases are generated review noise; manifests, pins, schemas, docs, and
 # loaders remain visible because they define the reviewable contract boundary.
 contracts/grant-profile-v1/*/*/** linguist-generated=true

@@ -38,8 +38,9 @@ def _agent_build_metadata() -> dict:
         "legal_bindings": {
             "schema": bindings["schema"],
             "source_revision": bindings["legal_repository_revision"],
-            "sha256": "sha256:"
-            + hashlib.sha256(LEGAL_BINDINGS_FIXTURE.read_bytes()).hexdigest(),
+            "legal_bindings_digest": hashlib.sha256(
+                LEGAL_BINDINGS_FIXTURE.read_bytes()
+            ).hexdigest(),
         },
     }
 
@@ -583,7 +584,7 @@ def test_empty_legal_binding_declaration_does_not_satisfy_the_rule(tmp_path: Pat
     assert {finding.detail for finding in findings if finding.code == "agent_release_declaration_invalid"} == {
         "legal_bindings.schema is missing or empty",
         "legal_bindings.source_revision is missing or empty",
-        "legal_bindings.sha256 is missing or empty",
+        "legal_bindings.legal_bindings_digest is missing or empty",
     }, "an empty declaration must not pass as a recorded binding"
 
 

@@ -24,7 +24,21 @@ param(
 
     # Optional explicit Inno Setup compiler. When omitted, discovery runs
     # only after the staged artifact has passed every release gate.
-    [string] $InnoSetupCompiler = ""
+    [string] $InnoSetupCompiler = "",
+
+    # The packaged signing rule and the Legal release bindings the Store
+    # candidate is built against. A release requires both; nothing else makes
+    # them optional and there is no discovery, default or environment fallback.
+    [string] $PackagedSigningRule = "",
+    [string] $LegalReleaseBindings = "",
+
+    # Privacy policy URL for the packaged Agent configuration. When it is
+    # omitted the checked-in extension configuration must already carry one.
+    [string] $PrivacyPolicyUrl = "",
+
+    # Development packaging. It publishes a development bundle in place of the
+    # Store candidate and mints no Store candidate at all.
+    [switch] $DevelopmentAgentBundle
 )
 
 Set-StrictMode -Version Latest
@@ -41,8 +55,15 @@ $RuntimePolicyPath = Join-Path $ProjectRoot "packaging\runtime-files.json"
 $InnoScriptPath = Join-Path $ProjectRoot "packaging\inno\brain.iss"
 $DigestScriptPath = Join-Path $ProjectRoot "packaging\write-digests.ps1"
 $AgentBundleScriptPath = Join-Path $ProjectRoot "packaging\new-agent-bundle.ps1"
+$ExtensionRoot = Join-Path $ProjectRoot "extension"
+$ExtensionBuildScript = Join-Path $ExtensionRoot "build.mjs"
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
+
+# The one filename a Chrome Web Store submission is made from. Only the archive
+# extension/build.mjs --package produces is ever copied to it.
+$StoreCandidateSuffix = "-chrome.zip"
+$ReleaseMode = -not $DevelopmentAgentBundle
 
 # Staging directories the installer leaves out; keep in step with the Excludes
 # directive in packaging/inno/brain.iss. A digest file that ships inside the
@@ -74,6 +95,35 @@ if (Test-Path -LiteralPath $OutputRoot) {
     throw "Build output directory already exists; choose a fresh path: $OutputRoot"
 }
 
+function Resolve-ReleaseInput {
+    <#
+        Resolve a release input that a Store candidate may not be built without.
+        It runs before anything is written, so a release missing one of them
+        stops before the build output directory exists.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Value,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        throw "A release build requires -$Name; a Store candidate is never built without it"
+    }
+    $resolved = [IO.Path]::GetFullPath($Value)
+    if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+        throw "The declared $Name does not exist: $resolved"
+    }
+    return $resolved
+}
+
+if (-not (Test-Path -LiteralPath $ExtensionBuildScript -PathType Leaf)) {
+    throw "Extension build script does not exist: $ExtensionBuildScript"
+}
+if ($ReleaseMode) {
+    $PackagedSigningRule = Resolve-ReleaseInput -Value $PackagedSigningRule -Name "PackagedSigningRule"
+    $LegalReleaseBindings = Resolve-ReleaseInput -Value $LegalReleaseBindings -Name "LegalReleaseBindings"
+}
+
 & $BuildPython -c "import struct, sys; sys.exit(0 if struct.calcsize('P') == 8 else 1)"
 if ($LASTEXITCODE -ne 0) {
     throw "Windows Brain builds are x64 only; BuildPython is not 64-bit"
@@ -89,6 +139,120 @@ function Invoke-RequiredCommand {
     & $FilePath @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Command failed ($LASTEXITCODE): $FilePath $($Arguments -join ' ')"
+    }
+}
+
+function Invoke-ExtensionBuild {
+    <#
+        Run extension/build.mjs, the validator for every Agent release input.
+        Legal validation lives there and is never restated here; this reports
+        what it said and refuses the build when it exits non-zero.
+    #>
+    param(
+        [Parameter(Mandatory)] [string[]] $Arguments,
+        [Parameter(Mandatory)] [string] $FailureMessage
+    )
+
+    # The validator reports refusals on standard error. That is diagnostic text
+    # rather than a terminating error here, so the exit code decides.
+    $ErrorActionPreference = "Continue"
+    Push-Location $ExtensionRoot
+    try {
+        $output = & node.exe @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+    $output | Write-Host
+    if ($exitCode -ne 0) {
+        throw "$FailureMessage (exit $exitCode)"
+    }
+}
+
+function Get-ExtensionReleaseArguments {
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Verb)
+
+    $arguments = @($ExtensionBuildScript)
+    if ($Verb) {
+        $arguments += $Verb
+    }
+    if ($PackagedSigningRule) {
+        $arguments += "--packaged-signing-rule=$PackagedSigningRule"
+    }
+    if ($LegalReleaseBindings) {
+        $arguments += "--legal-release-bindings=$LegalReleaseBindings"
+    }
+    if ($PrivacyPolicyUrl) {
+        $arguments += "--privacy-policy-url=$PrivacyPolicyUrl"
+    }
+    return $arguments
+}
+
+function Get-Sha256Digest {
+    <#
+        Hash a file the way packaging/write-digests.ps1 does, so a digest this
+        script compares reads the same as the digest it publishes. The
+        computation is .NET rather than a cmdlet because the release path must
+        not depend on module autoloading.
+    #>
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        return [BitConverter]::ToString(
+            $hasher.ComputeHash([IO.File]::ReadAllBytes($Path))
+        ).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $hasher.Dispose()
+    }
+}
+
+function New-AgentStorePackage {
+    <#
+        Mint the Store candidate with extension/build.mjs --package, the only
+        archive engine a release uses. That step refuses the package when the
+        packaged signing rule, the Legal release bindings or the privacy policy
+        configuration is absent or invalid, it writes the archive only after
+        every one of those checks, and it removes an archive that fails its own
+        audit, so a refusal leaves no archive behind.
+
+        The archive is moved out of the source tree, which keeps the staged
+        Agent directory the unpacked extension the archive was packed from.
+    #>
+    param([Parameter(Mandatory)] [string] $OutputRoot)
+
+    $distRoot = Join-Path $ExtensionRoot "dist"
+    Invoke-ExtensionBuild `
+        -Arguments (Get-ExtensionReleaseArguments -Verb "--package") `
+        -FailureMessage "The Agent Store package was refused"
+
+    $metadata = Get-Content -Raw -LiteralPath (Join-Path $distRoot "build-meta.json") | ConvertFrom-Json
+    foreach ($declaration in @("signing_rule", "legal_bindings")) {
+        if ($null -eq $metadata.$declaration) {
+            throw "The packaged Agent artifact records no $declaration"
+        }
+    }
+    if ($metadata.privacy_policy_configured -ne $true) {
+        throw "The packaged Agent artifact records no privacy policy configuration"
+    }
+
+    $built = Join-Path $distRoot "conversation-analytics-$($metadata.extension_version).zip"
+    if (-not (Test-Path -LiteralPath $built -PathType Leaf)) {
+        throw "The Agent package step produced no archive: $built"
+    }
+    $packageRoot = Join-Path $OutputRoot "agent-package"
+    New-Item -ItemType Directory -Path $packageRoot | Out-Null
+    $archive = Join-Path $packageRoot (Split-Path -Leaf $built)
+    $digest = Get-Sha256Digest -Path $built
+    Move-Item -LiteralPath $built -Destination $archive
+    $moved = Get-Sha256Digest -Path $archive
+    if ($moved -ne $digest) {
+        throw "The Agent archive changed while it left the source tree: $digest then $moved"
+    }
+    return [pscustomobject]@{
+        Archive = $archive
+        Sha256 = $digest
+        ExtensionVersion = $metadata.extension_version
     }
 }
 
@@ -328,11 +492,11 @@ function Get-AgentVersion {
     return $metadata.extension_version
 }
 
-function New-AgentBundle {
+function New-DevelopmentAgentBundle {
     <#
-        Pack the staged Agent directory into the archive a user loads into the
-        browser. It is packed from the staging tree the packaging policy has
-        already accepted, and entry names use forward slashes.
+        Pack the staged Agent directory into a bundle a developer loads into
+        the browser. It is a development artifact: the bundler refuses the
+        Store candidate filename, and no release path calls this.
     #>
     param(
         [Parameter(Mandatory)] [string] $AgentRoot,
@@ -345,8 +509,15 @@ function New-AgentBundle {
 if (-not $SkipAssetBuild) {
     Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("ci", "--prefix", (Join-Path $ProjectRoot "frontend"))
     Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("run", "build", "--prefix", (Join-Path $ProjectRoot "frontend"))
-    Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("ci", "--prefix", (Join-Path $ProjectRoot "extension"))
-    Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("run", "build", "--prefix", (Join-Path $ProjectRoot "extension"))
+    Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("ci", "--prefix", $ExtensionRoot)
+    if (-not $ReleaseMode) {
+        Invoke-ExtensionBuild `
+            -Arguments (Get-ExtensionReleaseArguments -Verb "") `
+            -FailureMessage "The development Agent build failed"
+    }
+}
+if ($ReleaseMode) {
+    $storePackage = New-AgentStorePackage -OutputRoot $OutputRoot
 }
 
 $packagingSource = New-PackagingSourceRoot -BuildPython $BuildPython -OutputRoot $OutputRoot -ProjectRoot $ProjectRoot
@@ -410,12 +581,35 @@ if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
     throw "Inno Setup did not produce the required installer: $installerPath"
 }
 
-# The published artifact set: the installer, the Agent bundle a user loads into
+# The published artifact set: the installer, the Agent archive a user loads into
 # the browser, and a digest file computed over both after they exist.
 $stagedAgentRoot = Join-Path $stagingRoot "Agent"
-$agentBundleName = "OnlyFans-Conversational-Analytics-Agent-$(Get-AgentVersion -AgentRoot $stagedAgentRoot)-chrome.zip"
-New-AgentBundle -AgentRoot $stagedAgentRoot -BundlePath (Join-Path $installerOutput $agentBundleName)
-Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName, $agentBundleName)
-Write-Host "Windows installer ready: $installerPath"
-Write-Host "Agent bundle ready: $(Join-Path $installerOutput $agentBundleName)"
+$agentVersion = Get-AgentVersion -AgentRoot $stagedAgentRoot
+if ($ReleaseMode) {
+    if ($agentVersion -ne $storePackage.ExtensionVersion) {
+        throw "The staged Agent artifact is not the packaged one: $agentVersion against $($storePackage.ExtensionVersion)"
+    }
+    $storeCandidateName = "OnlyFans-Conversational-Analytics-Agent-$agentVersion$StoreCandidateSuffix"
+    $storeCandidate = Join-Path $installerOutput $storeCandidateName
+    Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
+    $storeCandidateDigest = Get-Sha256Digest -Path $storeCandidate
+    if ($storeCandidateDigest -ne $storePackage.Sha256) {
+        Remove-Item -LiteralPath $storeCandidate -Force
+        throw "The Store candidate is not the packaged archive: $($storePackage.Sha256) then $storeCandidateDigest"
+    }
+    Invoke-ExtensionBuild `
+        -Arguments ((Get-ExtensionReleaseArguments -Verb "--audit-package") + "--artifact=$storeCandidate") `
+        -FailureMessage "The published Store candidate failed its package audit"
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName, $storeCandidateName)
+    Write-Host "Windows installer ready: $installerPath"
+    Write-Host "Store candidate ready: $storeCandidate (sha256:$storeCandidateDigest)"
+} else {
+    $developmentOutput = Join-Path $OutputRoot "development"
+    New-Item -ItemType Directory -Path $developmentOutput | Out-Null
+    $developmentBundle = Join-Path $developmentOutput "agent-development-unpacked-$agentVersion.zip"
+    New-DevelopmentAgentBundle -AgentRoot $stagedAgentRoot -BundlePath $developmentBundle
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName)
+    Write-Host "Windows installer ready: $installerPath"
+    Write-Host "Development Agent bundle ready: $developmentBundle"
+}
 Write-Host "Published digests ready: $(Join-Path $installerOutput 'sha256sums.txt')"

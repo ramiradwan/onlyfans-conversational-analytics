@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -22,8 +23,56 @@ from app.core.runtime_paths import runtime_data_directory
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
-EXTENSION_DIST = ROOT / "extension" / "dist"
+EXTENSION_ROOT = ROOT / "extension"
+EXTENSION_DIST = EXTENSION_ROOT / "dist"
 DIGEST_FILE_NAME = "sha256sums.txt"
+STORE_CANDIDATE_SUFFIX = "-chrome.zip"
+SIGNING_RULE_FIXTURE = EXTENSION_ROOT / "tests" / "fixtures" / "packaged-signing-rule.json"
+LEGAL_BINDINGS_FIXTURE = (
+    EXTENSION_ROOT / "tests" / "fixtures" / "legal-instrument-bindings.synthetic.json"
+)
+SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy"
+
+# The publication step a falsifier removes: the byte-preserving copy of the
+# packaged archive to the Store candidate name, its audit, and its digest entry.
+_STORE_PUBLICATION = """\
+    $storeCandidate = Join-Path $installerOutput $storeCandidateName
+    Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
+    $storeCandidateDigest = Get-Sha256Digest -Path $storeCandidate
+    if ($storeCandidateDigest -ne $storePackage.Sha256) {
+        Remove-Item -LiteralPath $storeCandidate -Force
+        throw "The Store candidate is not the packaged archive: $($storePackage.Sha256) then $storeCandidateDigest"
+    }
+    Invoke-ExtensionBuild `
+        -Arguments ((Get-ExtensionReleaseArguments -Verb "--audit-package") + "--artifact=$storeCandidate") `
+        -FailureMessage "The published Store candidate failed its package audit"
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName, $storeCandidateName)
+"""
+_STORE_PUBLICATION_REMOVED = """\
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName)
+"""
+_STORE_COPY = """\
+    Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
+"""
+_STORE_COPY_THAT_CHANGES_BYTES = """\
+    Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
+    Add-Content -LiteralPath $storeCandidate -Value "appended" -Encoding ascii
+"""
+_STORE_DIGEST_CHECK = """\
+    $storeCandidateDigest = Get-Sha256Digest -Path $storeCandidate
+    if ($storeCandidateDigest -ne $storePackage.Sha256) {
+        Remove-Item -LiteralPath $storeCandidate -Force
+        throw "The Store candidate is not the packaged archive: $($storePackage.Sha256) then $storeCandidateDigest"
+    }
+"""
+_STORE_DIGEST_CHECK_REMOVED = """\
+    $storeCandidateDigest = Get-Sha256Digest -Path $storeCandidate
+"""
+_STORE_AUDIT = """\
+    Invoke-ExtensionBuild `
+        -Arguments ((Get-ExtensionReleaseArguments -Verb "--audit-package") + "--artifact=$storeCandidate") `
+        -FailureMessage "The published Store candidate failed its package audit"
+"""
 
 
 @pytest.fixture(autouse=True)
@@ -146,7 +195,17 @@ def _run_build(
     *,
     test_injection: str = "DevelopmentConfiguration",
     inno_setup_compiler: Path | None = None,
+    packaged_signing_rule: Path | None = SIGNING_RULE_FIXTURE,
+    legal_release_bindings: Path | None = LEGAL_BINDINGS_FIXTURE,
+    privacy_policy_url: str | None = SYNTHETIC_PRIVACY_POLICY_URL,
+    development_agent_bundle: bool = False,
 ) -> subprocess.CompletedProcess[str]:
+    """Drive the build script.
+
+    The release inputs default to the checked-in synthetic fixtures because a
+    release build refuses to run without them; passing None omits the switch.
+    """
+
     environment = os.environ | {"BRAIN_PROJECT_ROOT": str(ROOT)}
     command = [
         "powershell.exe",
@@ -167,6 +226,14 @@ def _run_build(
         command.extend(("-InnoSetupCompiler", str(inno_setup_compiler)))
     if test_injection:
         command.extend(("-TestInjection", test_injection))
+    if packaged_signing_rule is not None:
+        command.extend(("-PackagedSigningRule", str(packaged_signing_rule)))
+    if legal_release_bindings is not None:
+        command.extend(("-LegalReleaseBindings", str(legal_release_bindings)))
+    if privacy_policy_url is not None:
+        command.extend(("-PrivacyPolicyUrl", privacy_policy_url))
+    if development_agent_bundle:
+        command.append("-DevelopmentAgentBundle")
     return subprocess.run(
         command,
         cwd=ROOT,
@@ -643,23 +710,12 @@ def test_release_publishes_the_built_agent_extension_bundle(
     )
 
     source = BUILD_SCRIPT.read_text(encoding="utf-8")
-    publication = (
-        "New-AgentBundle -AgentRoot $stagedAgentRoot "
-        "-BundlePath (Join-Path $installerOutput $agentBundleName)\n"
-        "Write-Sha256Sums -Directory $installerOutput "
-        "-RelativePaths @($installerName, $agentBundleName)"
-    )
-    assert publication in source, (
+    assert _STORE_PUBLICATION in source, (
         "the bundle falsifier must remove the real Agent publication step"
     )
     without_bundle = tmp_path / "build-windows-without-agent-bundle.ps1"
     without_bundle.write_text(
-        source.replace(
-            publication,
-            "Write-Sha256Sums -Directory $installerOutput "
-            "-RelativePaths @($installerName)",
-            1,
-        ),
+        source.replace(_STORE_PUBLICATION, _STORE_PUBLICATION_REMOVED, 1),
         encoding="utf-8",
     )
 
@@ -753,3 +809,270 @@ def test_shipped_digest_files_list_only_installed_files(
     finally:
         _run_uninstaller(staged_only_prefix, environment)
     _assert_program_payload_removed(staged_only_prefix)
+
+
+def _extension_version() -> str:
+    """The version the built Agent artifact declares."""
+
+    metadata = json.loads((EXTENSION_DIST / "build-meta.json").read_text(encoding="utf-8"))
+    version = metadata["extension_version"]
+    assert isinstance(version, str) and version
+    return version
+
+
+def _clear_extension_archives() -> None:
+    """Remove any archive an earlier package run left in the extension tree."""
+
+    for archive in EXTENSION_DIST.glob("conversation-analytics-*.zip"):
+        archive.unlink()
+
+
+def _store_candidates(directory: Path) -> list[Path]:
+    if not directory.exists():
+        return []
+    return sorted(directory.rglob(f"*{STORE_CANDIDATE_SUFFIX}"))
+
+
+def _assert_no_store_candidate(output: Path) -> None:
+    """A refused release must leave no Store candidate, not merely fail."""
+
+    published = _store_candidates(output)
+    assert published == [], f"a refused release left a Store candidate: {published}"
+    stranded = sorted(EXTENSION_DIST.glob("conversation-analytics-*.zip"))
+    assert stranded == [], f"a refused release left a packaged archive: {stranded}"
+
+
+def _audit_store_candidate(artifact: Path) -> subprocess.CompletedProcess[str]:
+    """Audit an archive with the validator the release path itself runs."""
+
+    return subprocess.run(
+        [
+            "node.exe",
+            str(EXTENSION_ROOT / "build.mjs"),
+            "--audit-package",
+            f"--artifact={artifact}",
+            f"--packaged-signing-rule={SIGNING_RULE_FIXTURE}",
+            f"--legal-release-bindings={LEGAL_BINDINGS_FIXTURE}",
+        ],
+        cwd=EXTENSION_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_release_without_legal_bindings_leaves_no_store_candidate(tmp_path: Path) -> None:
+    """A release missing its Legal bindings stops before any archive exists."""
+
+    _clear_extension_archives()
+    output = tmp_path / "build"
+
+    refused = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=None,
+    )
+
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    assert "requires -LegalReleaseBindings" in refused.stdout + refused.stderr
+    _assert_no_store_candidate(output)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_release_with_invalid_legal_bindings_leaves_no_store_candidate(
+    tmp_path: Path,
+) -> None:
+    """Bindings that do not validate stop the release before it packages."""
+
+    _clear_extension_archives()
+    bindings = json.loads(LEGAL_BINDINGS_FIXTURE.read_text(encoding="utf-8"))
+    del bindings["instruments"]["risk_disclosure"]
+    incomplete = tmp_path / "incomplete-bindings.json"
+    incomplete.write_text(json.dumps(bindings, indent=2) + "\n", encoding="utf-8")
+    output = tmp_path / "build"
+
+    refused = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=incomplete,
+    )
+
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    combined = refused.stdout + refused.stderr
+    assert "ADR 0022" in combined, combined
+    assert "legal instruments contains unexpected or missing fields" in combined, combined
+    _assert_no_store_candidate(output)
+
+
+@pytest.fixture(scope="module")
+def store_provenance_build(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Run one controlled release with the synthetic inputs and a compiler seam."""
+
+    base = tmp_path_factory.mktemp("store-provenance")
+    _clear_extension_archives()
+    built = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(base),
+        base / "build",
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(base),
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    return base / "build"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_controlled_release_publishes_one_store_candidate(
+    store_provenance_build: Path,
+) -> None:
+    """A valid release publishes exactly one archive under the Store name."""
+
+    candidates = _store_candidates(store_provenance_build)
+
+    assert [candidate.name for candidate in candidates] == [
+        f"OnlyFans-Conversational-Analytics-Agent-{_extension_version()}"
+        f"{STORE_CANDIDATE_SUFFIX}"
+    ]
+    assert candidates[0].parent == store_provenance_build / "installer"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_store_candidate_is_byte_identical_to_the_packaged_archive(
+    store_provenance_build: Path,
+) -> None:
+    """The published Store name carries the packaged archive's own bytes."""
+
+    packaged = sorted((store_provenance_build / "agent-package").glob("*.zip"))
+    assert len(packaged) == 1, f"one packaged archive is expected: {packaged}"
+    candidate = _store_candidates(store_provenance_build)[0]
+    candidate_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+
+    assert hashlib.sha256(packaged[0].read_bytes()).hexdigest() == candidate_digest, (
+        "copying the packaged archive to the Store name must preserve its bytes"
+    )
+
+    entries = _digest_entries(store_provenance_build / "installer" / DIGEST_FILE_NAME)
+    assert entries[candidate.name] == candidate_digest
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_published_store_candidate_passes_its_package_audit(
+    store_provenance_build: Path,
+) -> None:
+    """The audit accepts the archive at the exact path the release publishes."""
+
+    audited = _audit_store_candidate(_store_candidates(store_provenance_build)[0])
+
+    assert audited.returncode == 0, audited.stdout + audited.stderr
+    assert "Chrome archive audit passed" in audited.stdout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_mutated_store_candidate_fails_its_package_audit(
+    store_provenance_build: Path, tmp_path: Path
+) -> None:
+    """One flipped byte in the published archive turns the same audit red."""
+
+    candidate = _store_candidates(store_provenance_build)[0]
+    payload = bytearray(candidate.read_bytes())
+    payload[len(payload) // 2] ^= 0x01
+    mutated = tmp_path / candidate.name
+    mutated.write_bytes(payload)
+    assert mutated.read_bytes() != candidate.read_bytes()
+
+    audited = _audit_store_candidate(mutated)
+
+    assert audited.returncode != 0, audited.stdout + audited.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_development_packaging_publishes_no_store_candidate(
+    store_provenance_build: Path, tmp_path: Path
+) -> None:
+    """Development mode names its bundle so a Store submission cannot use it."""
+
+    output = tmp_path / "build"
+
+    built = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        development_agent_bundle=True,
+    )
+
+    assert built.returncode == 0, built.stdout + built.stderr
+    assert _store_candidates(output) == [], (
+        "development packaging must not produce a Store candidate"
+    )
+    bundles = sorted((output / "development").glob("*.zip"))
+    assert [bundle.name for bundle in bundles] == [
+        f"agent-development-unpacked-{_extension_version()}.zip"
+    ]
+    assert not bundles[0].name.endswith(STORE_CANDIDATE_SUFFIX)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_store_candidate_byte_identity_check_is_load_bearing(tmp_path: Path) -> None:
+    """A publication that changes the bytes reaches the Store name only unchecked.
+
+    Both variants copy through a step that appends to the archive and neither
+    runs the package audit, so the digest comparison is the single difference
+    between them.
+    """
+
+    source = BUILD_SCRIPT.read_text(encoding="utf-8")
+    for fragment in (_STORE_COPY, _STORE_DIGEST_CHECK, _STORE_AUDIT):
+        assert fragment in source, f"the falsifier no longer matches the script: {fragment}"
+    checked_source = source.replace(
+        _STORE_COPY, _STORE_COPY_THAT_CHANGES_BYTES, 1
+    ).replace(_STORE_AUDIT, "", 1)
+    unchecked_source = checked_source.replace(
+        _STORE_DIGEST_CHECK, _STORE_DIGEST_CHECK_REMOVED, 1
+    )
+    assert unchecked_source != checked_source
+    assert checked_source.replace(_STORE_DIGEST_CHECK, "", 1) == unchecked_source.replace(
+        _STORE_DIGEST_CHECK_REMOVED, "", 1
+    ), "the two scripts must differ only in the byte-identity comparison"
+
+    unchecked_script = tmp_path / "build-windows-without-byte-identity.ps1"
+    unchecked_script.write_text(unchecked_source, encoding="utf-8")
+    _clear_extension_archives()
+    unchecked_output = tmp_path / "unchecked"
+    unchecked = _run_build(
+        unchecked_script,
+        _write_pyinstaller_standin(tmp_path),
+        unchecked_output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+    )
+    assert unchecked.returncode == 0, unchecked.stdout + unchecked.stderr
+    published = _store_candidates(unchecked_output)
+    assert len(published) == 1, published
+    packaged = sorted((unchecked_output / "agent-package").glob("*.zip"))
+    assert hashlib.sha256(published[0].read_bytes()).hexdigest() != hashlib.sha256(
+        packaged[0].read_bytes()
+    ).hexdigest(), "the falsifier must actually change the published bytes"
+
+    checked_script = tmp_path / "build-windows-with-byte-identity.ps1"
+    checked_script.write_text(checked_source, encoding="utf-8")
+    _clear_extension_archives()
+    checked_output = tmp_path / "checked"
+    checked = _run_build(
+        checked_script,
+        _write_pyinstaller_standin(tmp_path),
+        checked_output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+    )
+    assert checked.returncode != 0, checked.stdout + checked.stderr
+    assert "is not the packaged archive" in checked.stdout + checked.stderr
+    _assert_no_store_candidate(checked_output)

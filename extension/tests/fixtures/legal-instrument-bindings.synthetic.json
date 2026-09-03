@@ -1,12 +1,1 @@
-{
-  "schema": "ofca-legal-instrument-bindings/v1",
-  "legal_repository_revision": "24467f3d7545fa14e4a3731a55bbbed114579a45",
-  "activation_schema": {"version": "2.0", "blob_sha": "aa550690ae5dbf840826b74864a5fbd0290ab441"},
-  "public_origin": "https://legal-evidence.example.com",
-  "instruments": {
-    "terms_of_service": {"version": "2.0.0", "rendered_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "public_url": "/legal/terms", "locale": "en"},
-    "privacy_policy": {"version": "2.0.0", "rendered_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "public_url": "/legal/privacy", "locale": "en"},
-    "extension_privacy_notice": {"version": "1.0.0", "rendered_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "public_url": "/legal/extension-privacy", "locale": "en"},
-    "risk_disclosure": {"version": "1.0.0", "rendered_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "public_url": "/legal/creator-risk-disclosure", "locale": "en"}
-  }
-}
+{"activation_schema":{"blob_sha":"aa550690ae5dbf840826b74864a5fbd0290ab441","version":"2.0"},"instruments":{"extension_privacy_notice":{"locale":"en","public_url":"/legal/extension-privacy","rendered_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","version":"1.0.0"},"privacy_policy":{"locale":"en","public_url":"/legal/privacy","rendered_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","version":"2.0.0"},"risk_disclosure":{"locale":"en","public_url":"/legal/creator-risk-disclosure","rendered_sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","version":"1.0.0"},"terms_of_service":{"locale":"en","public_url":"/legal/terms","rendered_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","version":"2.0.0"}},"legal_repository_revision":"24467f3d7545fa14e4a3731a55bbbed114579a45","public_origin":"https://legal-evidence.example.com","schema":"ofca-legal-instrument-bindings/v1"}

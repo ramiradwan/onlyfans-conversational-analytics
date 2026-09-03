@@ -84,8 +84,12 @@ const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
 const ZIP_TIMESTAMP = new Date('1980-01-01T00:00:00.000Z');
 
+function sha256Hex(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 function sha256(value) {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+  return `sha256:${sha256Hex(value)}`;
 }
 
 function sha512Integrity(value) {
@@ -94,6 +98,50 @@ function sha512Integrity(value) {
 
 function stableJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+/** Escape a JSON string so the result carries ASCII code points only. */
+function asciiJsonString(text) {
+  return JSON.stringify(text).replace(
+    /[\u007f-\uffff]/g,
+    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+}
+
+/**
+ * Serialize a Legal instrument bindings document the way the Legal release
+ * bindings contract defines it: object member names sorted lexicographically,
+ * array order preserved, compact separators, non-ASCII code points escaped,
+ * UTF-8, and no insignificant whitespace, byte order mark or trailing newline.
+ *
+ * This is not stableJson. stableJson keeps authored member order and
+ * pretty-prints with a trailing newline, and it stays the serialization for the
+ * packaged signing rule and for build metadata. The two must not be swapped.
+ *
+ * A document carrying a duplicate member name or a non-standard numeric cannot
+ * round-trip through this function, so a caller that compares the result with
+ * the bytes it parsed rejects both.
+ */
+export function canonicalLegalBindingsJson(value) {
+  if (value === null) return 'null';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new Error(`canonical JSON has no representation for ${value}`);
+    }
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'string') return asciiJsonString(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalLegalBindingsJson(item)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const members = Object.keys(value)
+      .sort()
+      .map((name) => `${asciiJsonString(name)}:${canonicalLegalBindingsJson(value[name])}`);
+    return `{${members.join(',')}}`;
+  }
+  throw new Error(`canonical JSON has no representation for ${typeof value}`);
 }
 
 export function deriveExtensionId(manifestKey) {
@@ -216,9 +264,11 @@ async function verifyLegalReleaseBindings({ required }) {
     return null;
   }
   const resolved = path.resolve(filename);
+  let fetched;
   let document;
   try {
-    document = await readJson(resolved);
+    fetched = await readFile(resolved);
+    document = JSON.parse(fetched.toString('utf8'));
   } catch (error) {
     throw new Error(`Legal release bindings are unreadable at ${resolved}: ${error.message}`);
   }
@@ -231,9 +281,19 @@ async function verifyLegalReleaseBindings({ required }) {
       `${prefix}Legal release bindings at ${resolved} are invalid: ${error.message}`,
     );
   }
+  // The recorded digest covers the document as fetched, so a second party
+  // recomputes it from the file alone and it does not move when the validator
+  // changes. The stored bytes must already be the contract's canonical form,
+  // which is what makes the two computations agree.
+  const canonicalBytes = TEXT_ENCODER.encode(canonicalLegalBindingsJson(document));
+  assert.equal(
+    Buffer.compare(fetched, Buffer.from(canonicalBytes)),
+    0,
+    `Legal release bindings at ${resolved} are not canonical JSON`,
+  );
   return Object.freeze({
     document: bindings,
-    digest: sha256(TEXT_ENCODER.encode(stableJson(bindings))),
+    digest: sha256Hex(canonicalBytes),
   });
 }
 
@@ -243,7 +303,7 @@ function legalBindingsMetadata(legalBindings) {
   return {
     schema: legalBindings.document.schema,
     source_revision: legalBindings.document.legal_repository_revision,
-    sha256: legalBindings.digest,
+    legal_bindings_digest: legalBindings.digest,
   };
 }
 
@@ -634,10 +694,15 @@ async function auditArtifactView(view, {
     );
     assert.deepEqual(
       Object.keys(metadata.legal_bindings).sort(),
-      ['schema', 'sha256', 'source_revision'],
+      ['legal_bindings_digest', 'schema', 'source_revision'],
       'recorded Legal bindings must carry schema, source revision and digest',
     );
     assert.equal(metadata.legal_bindings.schema, LEGAL_INSTRUMENT_BINDINGS_SCHEMA);
+    assert.match(
+      metadata.legal_bindings.legal_bindings_digest,
+      /^[0-9a-f]{64}$/,
+      'the recorded Legal bindings digest must be bare lowercase hexadecimal',
+    );
   }
   if (requireLegalBindings) {
     assert.notEqual(
@@ -883,7 +948,15 @@ async function main() {
   });
   if (packageRequested) {
     const filename = await writeChromeArchive(metadata);
-    const result = await auditChromeArchive(filename, signingRule, legalBindings);
+    // An archive that fails its own audit is removed, so a refused package
+    // leaves nothing a release path could mistake for a Store candidate.
+    let result;
+    try {
+      result = await auditChromeArchive(filename, signingRule, legalBindings);
+    } catch (error) {
+      await rm(filename, { force: true });
+      throw error;
+    }
     process.stdout.write(`Chrome package created: ${filename} (${result.digest}).\n`);
     return;
   }
