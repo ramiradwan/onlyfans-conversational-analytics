@@ -35,6 +35,7 @@ const SIGNER_TARBALL = path.join(
 const SIGNER_ENTRY = fileURLToPath(import.meta.resolve(`${SIGNER_PACKAGE}/browser-signing`));
 const SIGNING_RULE_FILE = 'packaged-signing-rule.json';
 const BUILD_METADATA_FILE = 'build-meta.json';
+const BUILD_METADATA_SCHEMA = 'ofca-extension-build/v4';
 const EXPECTED_EXTENSION_ID = 'mldllkjpnnjhdccpofhebhlhigpefcba';
 const READ_ONLY_CAPABILITIES = Object.freeze([
   'capture.chats',
@@ -195,7 +196,9 @@ export function validateLegalReleaseBindingsDocument(document) {
  *
  * Only a production package requires them; the Extension already fails closed
  * without a binding. A supplied document is validated by the runtime validator
- * in every mode, and the build verifies it without embedding it.
+ * in every mode, and the build verifies it without embedding it. The return
+ * value carries the digest of the canonical document so the artifact can record
+ * which bindings were verified without carrying any instrument value.
  */
 async function verifyLegalReleaseBindings({ required }) {
   const filename = argumentValue(LEGAL_RELEASE_BINDINGS_ARGUMENT);
@@ -219,14 +222,29 @@ async function verifyLegalReleaseBindings({ required }) {
   } catch (error) {
     throw new Error(`Legal release bindings are unreadable at ${resolved}: ${error.message}`);
   }
+  let bindings;
   try {
-    return validateLegalReleaseBindingsDocument(document);
+    bindings = validateLegalReleaseBindingsDocument(document);
   } catch (error) {
     const prefix = required ? `${LEGAL_RELEASE_BINDINGS_RULE} ` : '';
     throw new Error(
       `${prefix}Legal release bindings at ${resolved} are invalid: ${error.message}`,
     );
   }
+  return Object.freeze({
+    document: bindings,
+    digest: sha256(TEXT_ENCODER.encode(stableJson(bindings))),
+  });
+}
+
+/** Reduce verified bindings to the release state the artifact records. */
+function legalBindingsMetadata(legalBindings) {
+  if (legalBindings === null) return null;
+  return {
+    schema: legalBindings.document.schema,
+    source_revision: legalBindings.document.legal_repository_revision,
+    sha256: legalBindings.digest,
+  };
 }
 
 export function signerWrapperSource(signingRule) {
@@ -562,14 +580,16 @@ async function jsonFromView(view, filename) {
 
 async function auditArtifactView(view, {
   expectedSigningRule = null,
+  expectedLegalBindings = null,
   requirePrivacyPolicy = false,
   requireSigningRule = false,
+  requireLegalBindings = false,
 }) {
   const manifest = await jsonFromView(view, 'manifest.json');
   auditManifest(manifest);
 
   const metadata = await jsonFromView(view, BUILD_METADATA_FILE);
-  assert.equal(metadata.schema, 'ofca-extension-build/v3');
+  assert.equal(metadata.schema, BUILD_METADATA_SCHEMA);
   assert.equal(metadata.signer, `${SIGNER_PACKAGE}@${SIGNER_VERSION}`);
   assert.equal(metadata.signer_tarball, sha256(await readFile(SIGNER_TARBALL)));
   assert.equal(metadata.extension_id, EXPECTED_EXTENSION_ID);
@@ -602,6 +622,32 @@ async function auditArtifactView(view, {
     assert.notEqual(artifactSigningRule, null);
     assert.equal(artifactSigningRule.digest, expectedSigningRule.digest);
     assert.deepEqual(artifactSigningRule.document, expectedSigningRule.document);
+  }
+
+  // The bindings are verified, never embedded, so the artifact records only
+  // which document was verified and the audit compares that state.
+  if (metadata.legal_bindings !== null) {
+    assert.equal(
+      typeof metadata.legal_bindings,
+      'object',
+      'recorded Legal bindings must be an object',
+    );
+    assert.deepEqual(
+      Object.keys(metadata.legal_bindings).sort(),
+      ['schema', 'sha256', 'source_revision'],
+      'recorded Legal bindings must carry schema, source revision and digest',
+    );
+    assert.equal(metadata.legal_bindings.schema, LEGAL_INSTRUMENT_BINDINGS_SCHEMA);
+  }
+  if (requireLegalBindings) {
+    assert.notEqual(
+      metadata.legal_bindings,
+      null,
+      `${LEGAL_RELEASE_BINDINGS_RULE} The artifact records none.`,
+    );
+  }
+  if (expectedLegalBindings !== null) {
+    assert.deepEqual(metadata.legal_bindings, legalBindingsMetadata(expectedLegalBindings));
   }
 
   for (const filename of SCRIPT_FILES) {
@@ -667,28 +713,38 @@ async function auditArtifactView(view, {
 
 async function auditDirectory(
   expectedSigningRule = null,
-  { requirePrivacyPolicy = false } = {},
+  { requirePrivacyPolicy = false, expectedLegalBindings = null } = {},
 ) {
   await auditDependencyLock();
-  return auditArtifactView(directoryView(), { expectedSigningRule, requirePrivacyPolicy });
+  return auditArtifactView(directoryView(), {
+    expectedSigningRule,
+    expectedLegalBindings,
+    requirePrivacyPolicy,
+  });
 }
 
-export async function auditChromeArchive(filename, expectedSigningRule) {
+export async function auditChromeArchive(
+  filename,
+  expectedSigningRule,
+  expectedLegalBindings = null,
+) {
   await auditDependencyLock();
   assert.notEqual(expectedSigningRule, null, 'archive audit requires an expected signing rule');
   const bytes = await readFile(filename);
   const view = archiveView(unzipSync(bytes));
   const metadata = await auditArtifactView(view, {
     expectedSigningRule,
+    expectedLegalBindings,
     requirePrivacyPolicy: true,
     requireSigningRule: true,
+    requireLegalBindings: true,
   });
   const expectedNames = [...Object.keys(metadata.outputs), BUILD_METADATA_FILE].sort();
   assert.deepEqual(view.names, expectedNames, 'archive contains missing or unexpected files');
   return { metadata, digest: sha256(bytes) };
 }
 
-async function writeArtifact(compiled, signingRule, extensionConfig) {
+async function writeArtifact(compiled, signingRule, extensionConfig, legalBindings) {
   const sourceManifest = await readJson(path.join(ROOT, 'manifest.json'));
   auditManifest(sourceManifest);
   await rm(DIST, { force: true, recursive: true });
@@ -741,7 +797,7 @@ async function writeArtifact(compiled, signingRule, extensionConfig) {
     outputs[filename] = sha256(await readFile(path.join(DIST, filename)));
   }
   const metadata = {
-    schema: 'ofca-extension-build/v3',
+    schema: BUILD_METADATA_SCHEMA,
     extension_version: sourceManifest.version,
     extension_id: deriveExtensionId(sourceManifest.key),
     signer: `${SIGNER_PACKAGE}@${SIGNER_VERSION}`,
@@ -751,6 +807,7 @@ async function writeArtifact(compiled, signingRule, extensionConfig) {
       source_revision: signingRule.document.source_revision,
       sha256: signingRule.digest,
     },
+    legal_bindings: legalBindingsMetadata(legalBindings),
     target: 'chrome116',
     determinism_verified: true,
     privacy_policy_configured: extensionConfig.privacy_policy_url !== '',
@@ -774,47 +831,59 @@ async function writeChromeArchive(metadata) {
   return filename;
 }
 
-async function buildArtifact(signingRule, extensionConfig, { requirePrivacyPolicy }) {
+async function buildArtifact(
+  signingRule,
+  extensionConfig,
+  legalBindings,
+  { requirePrivacyPolicy },
+) {
   const first = await compileOnce(signingRule);
   const second = await compileOnce(signingRule);
   verifyIdenticalBuilds(first, second);
-  const metadata = await writeArtifact(first, signingRule, extensionConfig);
-  await auditDirectory(signingRule, { requirePrivacyPolicy });
+  const metadata = await writeArtifact(first, signingRule, extensionConfig, legalBindings);
+  await auditDirectory(signingRule, {
+    requirePrivacyPolicy,
+    expectedLegalBindings: legalBindings,
+  });
   return metadata;
 }
 
 async function main() {
   if (process.argv.includes('--audit-package')) {
     const signingRule = await loadSigningRule({ required: true });
-    await verifyLegalReleaseBindings({ required: true });
+    const legalBindings = await verifyLegalReleaseBindings({ required: true });
     const artifactArgument = argumentValue('--artifact');
     if (artifactArgument === null || artifactArgument.length === 0) {
       throw new Error('Chrome archive audit requires --artifact=<path>.');
     }
-    const result = await auditChromeArchive(path.resolve(artifactArgument), signingRule);
+    const result = await auditChromeArchive(
+      path.resolve(artifactArgument),
+      signingRule,
+      legalBindings,
+    );
     process.stdout.write(`Chrome archive audit passed (${result.digest}).\n`);
     return;
   }
   if (process.argv.includes('--audit')) {
     const signingRule = await loadSigningRule({ required: false });
-    await verifyLegalReleaseBindings({ required: false });
-    await auditDirectory(signingRule);
+    const legalBindings = await verifyLegalReleaseBindings({ required: false });
+    await auditDirectory(signingRule, { expectedLegalBindings: legalBindings });
     process.stdout.write('Extension artifact audit passed.\n');
     return;
   }
 
   const packageRequested = process.argv.includes('--package');
   const signingRule = await loadSigningRule({ required: packageRequested });
-  await verifyLegalReleaseBindings({ required: packageRequested });
+  const legalBindings = await verifyLegalReleaseBindings({ required: packageRequested });
   const extensionConfig = await loadExtensionConfig({
     requirePrivacyPolicy: packageRequested,
   });
-  const metadata = await buildArtifact(signingRule, extensionConfig, {
+  const metadata = await buildArtifact(signingRule, extensionConfig, legalBindings, {
     requirePrivacyPolicy: packageRequested,
   });
   if (packageRequested) {
     const filename = await writeChromeArchive(metadata);
-    const result = await auditChromeArchive(filename, signingRule);
+    const result = await auditChromeArchive(filename, signingRule, legalBindings);
     process.stdout.write(`Chrome package created: ${filename} (${result.digest}).\n`);
     return;
   }

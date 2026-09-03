@@ -92,7 +92,7 @@ def _chrome_zip(
         "manifest.json": (json.dumps(manifest, sort_keys=True) + "\n").encode(),
     }
     metadata = {
-        "schema": "ofca-extension-build/v3",
+        "schema": producer.EXTENSION_BUILD_SCHEMA,
         "extension_version": "2.0.0",
         "extension_id": producer.EXPECTED_EXTENSION_ID,
         "determinism_verified": True,
@@ -492,6 +492,32 @@ def test_qualified_actions_artifact_binds_exact_inner_chrome_zip() -> None:
     assert qualified.bytes == chrome_zip
     assert qualified.sha256 == hashlib.sha256(chrome_zip).hexdigest()
     assert qualified.size_bytes == len(chrome_zip)
+
+
+def test_superseded_extension_build_schema_is_refused() -> None:
+    assert producer.EXTENSION_BUILD_SCHEMA == "ofca-extension-build/v4"
+
+    _, chrome_zip = _chrome_zip()
+    with zipfile.ZipFile(io.BytesIO(chrome_zip)) as source:
+        entries = {entry: source.read(entry) for entry in source.namelist()}
+    metadata = json.loads(entries["build-meta.json"])
+    metadata["schema"] = "ofca-extension-build/v3"
+    entries["build-meta.json"] = (
+        json.dumps(metadata, sort_keys=True) + "\n"
+    ).encode()
+    superseded_zip = _zip_bytes(entries)
+    superseded_archive, superseded_server_digest = _actions_artifact(
+        chrome_zip=superseded_zip
+    )
+
+    with pytest.raises(
+        producer.ContractError, match="schema is not ofca-extension-build/v4"
+    ):
+        producer.qualify_downloaded_artifact(
+            superseded_archive,
+            expected_server_digest=superseded_server_digest,
+            release_tag="v2.0.0",
+        )
 
 
 def test_manifest_public_key_derives_the_pinned_extension_identity() -> None:

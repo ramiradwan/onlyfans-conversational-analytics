@@ -39,6 +39,7 @@ SIGNER_ID = "product-engineering-attestation-ed25519-v1"
 ALGORITHM = "ed25519"
 PRODUCT_DEFAULT_BRANCH = "main"
 EXPECTED_EXTENSION_ID = "mldllkjpnnjhdccpofhebhlhigpefcba"
+EXTENSION_BUILD_SCHEMA = "ofca-extension-build/v4"
 FIXED_ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 PUBLIC_KEY_RELATIVE_PATH = (
     "attestation/signers/"
@@ -1055,8 +1056,10 @@ def qualify_downloaded_artifact(
     metadata = load_json_strict(inner["build-meta.json"], label="extension build metadata")
     if not isinstance(manifest, dict) or not isinstance(metadata, dict):
         raise ContractError("Chrome manifest and build metadata must be objects")
-    if metadata.get("schema") != "ofca-extension-build/v3":
-        raise ContractError("extension build metadata schema is not v3")
+    if metadata.get("schema") != EXTENSION_BUILD_SCHEMA:
+        raise ContractError(
+            f"extension build metadata schema is not {EXTENSION_BUILD_SCHEMA}"
+        )
     if metadata.get("determinism_verified") is not True:
         raise ContractError("extension build metadata does not assert determinism")
     derived_extension_id = extension_id_from_manifest_key(manifest.get("key"))
