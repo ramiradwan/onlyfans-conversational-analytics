@@ -15,6 +15,12 @@ import { build } from 'esbuild';
 import { unzipSync, zipSync } from 'fflate';
 import { validatePackagedSigningRule } from 'local-authenticated-read-connector/browser-signing';
 
+import {
+  LEGAL_INSTRUMENT_BINDINGS_SCHEMA,
+  LEGAL_INSTRUMENT_NAMES,
+  validateLegalInstrumentBindings,
+} from './runtime/legal-instruments.mjs';
+
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(ROOT, 'dist');
 const SIGNER_PACKAGE = 'local-authenticated-read-connector';
@@ -173,6 +179,54 @@ async function loadSigningRule({ required }) {
     bytes,
     digest: sha256(bytes),
   });
+}
+
+const LEGAL_RELEASE_BINDINGS_ARGUMENT = '--legal-release-bindings';
+
+const LEGAL_RELEASE_BINDINGS_RULE = 'ADR 0022: a production package must not be created '
+  + 'without valid Legal release bindings.';
+
+export function validateLegalReleaseBindingsDocument(document) {
+  return validateLegalInstrumentBindings(document);
+}
+
+/**
+ * Resolve the Legal instrument bindings named on the command line.
+ *
+ * Only a production package requires them; the Extension already fails closed
+ * without a binding. A supplied document is validated by the runtime validator
+ * in every mode, and the build verifies it without embedding it.
+ */
+async function verifyLegalReleaseBindings({ required }) {
+  const filename = argumentValue(LEGAL_RELEASE_BINDINGS_ARGUMENT);
+  if (filename === null || filename.length === 0) {
+    if (required) {
+      throw new Error(
+        `${LEGAL_RELEASE_BINDINGS_RULE} Supply `
+        + `${LEGAL_RELEASE_BINDINGS_ARGUMENT}=<path> naming an `
+        + `${LEGAL_INSTRUMENT_BINDINGS_SCHEMA} document that carries the controlling `
+        + 'Legal revision, the activation schema blob, the HTTPS public origin, and the '
+        + 'version, rendered SHA-256, public route and locale of '
+        + `${LEGAL_INSTRUMENT_NAMES.join(', ')}.`,
+      );
+    }
+    return null;
+  }
+  const resolved = path.resolve(filename);
+  let document;
+  try {
+    document = await readJson(resolved);
+  } catch (error) {
+    throw new Error(`Legal release bindings are unreadable at ${resolved}: ${error.message}`);
+  }
+  try {
+    return validateLegalReleaseBindingsDocument(document);
+  } catch (error) {
+    const prefix = required ? `${LEGAL_RELEASE_BINDINGS_RULE} ` : '';
+    throw new Error(
+      `${prefix}Legal release bindings at ${resolved} are invalid: ${error.message}`,
+    );
+  }
 }
 
 export function signerWrapperSource(signingRule) {
@@ -732,6 +786,7 @@ async function buildArtifact(signingRule, extensionConfig, { requirePrivacyPolic
 async function main() {
   if (process.argv.includes('--audit-package')) {
     const signingRule = await loadSigningRule({ required: true });
+    await verifyLegalReleaseBindings({ required: true });
     const artifactArgument = argumentValue('--artifact');
     if (artifactArgument === null || artifactArgument.length === 0) {
       throw new Error('Chrome archive audit requires --artifact=<path>.');
@@ -742,6 +797,7 @@ async function main() {
   }
   if (process.argv.includes('--audit')) {
     const signingRule = await loadSigningRule({ required: false });
+    await verifyLegalReleaseBindings({ required: false });
     await auditDirectory(signingRule);
     process.stdout.write('Extension artifact audit passed.\n');
     return;
@@ -749,6 +805,7 @@ async function main() {
 
   const packageRequested = process.argv.includes('--package');
   const signingRule = await loadSigningRule({ required: packageRequested });
+  await verifyLegalReleaseBindings({ required: packageRequested });
   const extensionConfig = await loadExtensionConfig({
     requirePrivacyPolicy: packageRequested,
   });
