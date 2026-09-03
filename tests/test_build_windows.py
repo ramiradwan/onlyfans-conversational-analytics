@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import http.server
 import json
 import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -1076,3 +1080,191 @@ def test_store_candidate_byte_identity_check_is_load_bearing(tmp_path: Path) -> 
     assert checked.returncode != 0, checked.stdout + checked.stderr
     assert "is not the packaged archive" in checked.stdout + checked.stderr
     _assert_no_store_candidate(checked_output)
+
+
+RELEASE_GATE = ROOT / "tools" / "legal-release-bindings" / "verify.mjs"
+GATE_PRODUCT_REVISION = "9988776655443322110000ffeeddccbbaa998877"
+GATE_FETCH_REVISION = "1f0d2c3b4a596877665544332211ffeeddccbbaa"
+GATE_DOCUMENT_PATH = "compliance/cws/releases/2.0.1/legal-release-bindings.json"
+GATE_REPOSITORY = "test-owner/test-legal"
+GATE_INSTALLATION_TOKEN = "ghs-synthetic-installation-token"
+
+
+def _synthetic_signing_key() -> str:
+    """A per-run key. The gate signs a real assertion, so it needs a real key,
+    and no credential of any kind is checked in for it."""
+
+    minted = subprocess.run(
+        [
+            "node.exe",
+            "-e",
+            "const {generateKeyPairSync}=require('node:crypto');"
+            "const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});"
+            "process.stdout.write(privateKey.export({type:'pkcs8',format:'pem'}))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return base64.b64encode(minted.stdout.encode("ascii")).decode("ascii")
+
+
+@contextmanager
+def _legal_repository(document: bytes, source_revision: str) -> Iterator[str]:
+    """A loopback stand-in for the Legal repository routes the gate reads."""
+
+    contents_prefix = f"/repos/{GATE_REPOSITORY}/contents/"
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_: object) -> None:
+            return
+
+        def _respond(self, status: int, body: bytes) -> None:
+            self.send_response(status)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self) -> None:  # noqa: N802 - http.server's interface
+            if self.path.endswith("/access_tokens"):
+                self._respond(201, json.dumps({"token": GATE_INSTALLATION_TOKEN}).encode())
+                return
+            self._respond(404, b"{}")
+
+        def do_GET(self) -> None:  # noqa: N802 - http.server's interface
+            path, _, query = self.path.partition("?")
+            if path == f"/repos/{GATE_REPOSITORY}/commits/{source_revision}":
+                self._respond(200, json.dumps({"sha": source_revision}).encode())
+                return
+            authorized = (
+                self.headers.get("authorization") == f"Bearer {GATE_INSTALLATION_TOKEN}"
+            )
+            held = path == f"{contents_prefix}{GATE_DOCUMENT_PATH}"
+            if authorized and held and query == f"ref={GATE_FETCH_REVISION}":
+                self._respond(200, document)
+                return
+            self._respond(404, b"{}")
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _run_release_gate(
+    base_url: str,
+    staged: Path,
+    runner_temp: Path,
+    *,
+    source_revision: str,
+    expected_digest: str,
+    without: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    environment = os.environ | {
+        "RUNNER_TEMP": str(runner_temp),
+        "PRODUCT_REVISION": GATE_PRODUCT_REVISION,
+        "GITHUB_SHA": GATE_PRODUCT_REVISION,
+        "LEGAL_BINDINGS_API_BASE_URL": base_url,
+        "LEGAL_BINDINGS_REPOSITORY": GATE_REPOSITORY,
+        "LEGAL_BINDINGS_APP_ID": "1234",
+        "LEGAL_BINDINGS_APP_PRIVATE_KEY_B64": _synthetic_signing_key(),
+        "LEGAL_BINDINGS_INSTALLATION_ID": "424242",
+        "LEGAL_BINDINGS_PATH": GATE_DOCUMENT_PATH,
+        "LEGAL_BINDINGS_REPOSITORY_REVISION": GATE_FETCH_REVISION,
+        "LEGAL_REPOSITORY_REVISION": source_revision,
+        "LEGAL_BINDINGS_DIGEST": expected_digest,
+    }
+    environment.pop("GITHUB_WORKSPACE", None)
+    if without is not None:
+        environment.pop(without)
+    return subprocess.run(
+        ["node.exe", str(RELEASE_GATE), f"--output={staged}"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_a_declared_digest_decides_whether_a_store_candidate_exists(
+    tmp_path: Path,
+) -> None:
+    """The workflow's own order, run end to end: the gate verifies the declared
+    coordinates and only then does packaging read what it staged.
+
+    Each refused run differs from the accepted one in a single element - an
+    absent retrieval credential, or one character of the declared digest - and
+    must leave packaging no bindings document to read and therefore no Store
+    candidate. The accepted run must produce exactly one."""
+
+    document = LEGAL_BINDINGS_FIXTURE.read_bytes()
+    source_revision = json.loads(document.decode("utf-8"))["legal_repository_revision"]
+    digest = hashlib.sha256(document).hexdigest()
+    wrong = digest[:63] + ("b" if digest.endswith("a") else "a")
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    staged = runner_temp / "legal-release-bindings" / "legal-release-bindings.json"
+
+    refusals = (
+        # An unconfigured retrieval credential, and a digest that does not
+        # describe the document held at the declared coordinates.
+        ("uncredentialed", 3, {"without": "LEGAL_BINDINGS_APP_PRIVATE_KEY_B64"}),
+        ("undeclared", 6, {"expected_digest": wrong}),
+    )
+
+    with _legal_repository(document, source_revision) as base_url:
+        for label, code, changed in refusals:
+            arguments = {
+                "source_revision": source_revision,
+                "expected_digest": digest,
+            } | changed
+            refused = _run_release_gate(base_url, staged, runner_temp, **arguments)
+            assert refused.returncode == code, refused.stdout + refused.stderr
+            assert not staged.exists(), "a refused gate staged a document for packaging"
+
+            _clear_extension_archives()
+            unbuilt = tmp_path / f"{label}-build"
+            stopped = _run_build(
+                BUILD_SCRIPT,
+                _write_pyinstaller_standin(tmp_path),
+                unbuilt,
+                test_injection="",
+                inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+                legal_release_bindings=staged,
+            )
+            assert stopped.returncode != 0, stopped.stdout + stopped.stderr
+            assert "does not exist" in stopped.stdout + stopped.stderr
+            _assert_no_store_candidate(unbuilt)
+
+        accepted = _run_release_gate(
+            base_url,
+            staged,
+            runner_temp,
+            source_revision=source_revision,
+            expected_digest=digest,
+        )
+
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    assert staged.read_bytes() == document
+
+    _clear_extension_archives()
+    built = tmp_path / "accepted-build"
+    published = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        built,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=staged,
+    )
+
+    assert published.returncode == 0, published.stdout + published.stderr
+    assert len(_store_candidates(built)) == 1, _store_candidates(built)

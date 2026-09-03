@@ -1,8 +1,34 @@
 name: Windows package
 
+# A Store candidate is built from declared coordinates alone. Every input below
+# is required, carries no default, and names something that cannot move: a
+# commit revision, an exact repository path, or a content digest. Nothing here
+# is read from a branch head, a repository variable, or the current state of the
+# Legal repository, so a rerun of the same inputs builds against the same Legal
+# state however either repository has moved since.
 on:
-  push:
-    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      product_revision:
+        description: Full 40-character commit revision of the Product tree to build
+        required: true
+        type: string
+      legal_repository_revision:
+        description: Full 40-character Legal revision the bindings are approved at
+        required: true
+        type: string
+      legal_bindings_repository_revision:
+        description: Full 40-character Legal revision holding the bindings document
+        required: true
+        type: string
+      legal_bindings_path:
+        description: Exact path of the release bindings document in the Legal repository
+        required: true
+        type: string
+      legal_bindings_digest:
+        description: Expected canonical SHA-256 of that document, bare lowercase 64-hex
+        required: true
+        type: string
 
 jobs:
   build:
@@ -10,10 +36,42 @@ jobs:
     runs-on: windows-2022
     permissions:
       contents: read
+    env:
+      # Ephemeral runner storage, outside the workspace and outside any cache.
+      # The verified document is staged here and removed when the job ends.
+      LEGAL_BINDINGS_DOCUMENT: ${{ runner.temp }}/legal-release-bindings-${{ github.run_id }}-${{ github.run_attempt }}/legal-release-bindings.json
 
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.product_revision }}
+          persist-credentials: false
+
+      - name: Setup Node.js for the release gate
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      # The gate refuses the release unless the document held at the declared
+      # Legal fetch revision and path canonicalizes to the declared digest and
+      # carries the declared source revision. It runs before any dependency is
+      # installed and before anything is built, and it stages the verified
+      # document only once all of that holds, so a refusal leaves the packaging
+      # step no bindings file to read.
+      - name: Verify the Legal release bindings
+        shell: pwsh
+        env:
+          PRODUCT_REVISION: ${{ inputs.product_revision }}
+          LEGAL_REPOSITORY_REVISION: ${{ inputs.legal_repository_revision }}
+          LEGAL_BINDINGS_REPOSITORY_REVISION: ${{ inputs.legal_bindings_repository_revision }}
+          LEGAL_BINDINGS_PATH: ${{ inputs.legal_bindings_path }}
+          LEGAL_BINDINGS_DIGEST: ${{ inputs.legal_bindings_digest }}
+          LEGAL_BINDINGS_REPOSITORY: ${{ secrets.LEGAL_BINDINGS_REPOSITORY }}
+          LEGAL_BINDINGS_APP_ID: ${{ secrets.LEGAL_BINDINGS_APP_ID }}
+          LEGAL_BINDINGS_APP_PRIVATE_KEY_B64: ${{ secrets.LEGAL_BINDINGS_APP_PRIVATE_KEY_B64 }}
+          LEGAL_BINDINGS_INSTALLATION_ID: ${{ secrets.LEGAL_BINDINGS_INSTALLATION_ID }}
+        run: node tools/legal-release-bindings/verify.mjs --output="$env:LEGAL_BINDINGS_DOCUMENT"
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -49,7 +107,8 @@ jobs:
         run: |
           .\packaging\build-windows.ps1 `
             -BuildPython .\.build-venv\Scripts\python.exe `
-            -OutputRoot "$env:RUNNER_TEMP\windows-package"
+            -OutputRoot "$env:RUNNER_TEMP\windows-package" `
+            -LegalReleaseBindings "$env:LEGAL_BINDINGS_DOCUMENT"
 
       # A packaged build that cannot complete a first run must not reach the
       # artifact. This freezes a real installer with the build environment
@@ -70,6 +129,19 @@ jobs:
         with:
           name: windows-package-unsigned-${{ github.ref_name }}
           path: ${{ runner.temp }}\windows-package\installer\
+
+      # The bindings document never leaves the runner: it is not in the
+      # workspace, not in the uploaded artifact, and not in a cache. Removing it
+      # here bounds its life to the job even when the job fails.
+      - name: Remove the staged Legal release bindings
+        if: always()
+        shell: pwsh
+        run: |
+          $staged = Split-Path -Parent $env:LEGAL_BINDINGS_DOCUMENT
+          if (-not $staged.StartsWith((Join-Path $env:RUNNER_TEMP "legal-release-bindings-"))) {
+            throw "Refusing to clean an unexpected temporary path"
+          }
+          Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
 
   sign:
     # The federated credential is scoped to a job, not to a step, so this job

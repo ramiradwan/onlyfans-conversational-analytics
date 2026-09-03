@@ -79,6 +79,9 @@ jobs:
       - name: Test provisioning page module
         run: node --test app/provisioning/provisioning.test.mjs
 
+      - name: Test the release bindings gate
+        run: node --test tools/legal-release-bindings/verify.test.mjs
+
       - name: Build and audit deterministic extension artifact
         run: |
           npm run build --prefix extension
