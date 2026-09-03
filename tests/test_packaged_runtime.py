@@ -36,6 +36,12 @@ _PROVISIONING_EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
 SMOKE_SCRIPT = ROOT / "tools" / "packaging-smoke" / "run.ps1"
+# Release inputs a Store candidate is never built without. They are resolved
+# against the tree being built, which a falsifier may stage as a copy.
+FIXTURE_DIRECTORY = Path("extension") / "tests" / "fixtures"
+SIGNING_RULE_FIXTURE = FIXTURE_DIRECTORY / "packaged-signing-rule.json"
+LEGAL_BINDINGS_FIXTURE = FIXTURE_DIRECTORY / "legal-instrument-bindings.synthetic.json"
+SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy"
 _RUNTIME_CONFIGURATION = """\
 ENVIRONMENT="production"
 WEBSOCKET_AUTH_MODE="local_session"
@@ -323,6 +329,12 @@ def _build_real_installer(
             str(build_python),
             "-OutputRoot",
             str(output_root),
+            "-PackagedSigningRule",
+            str(project_root / SIGNING_RULE_FIXTURE),
+            "-LegalReleaseBindings",
+            str(project_root / LEGAL_BINDINGS_FIXTURE),
+            "-PrivacyPolicyUrl",
+            SYNTHETIC_PRIVACY_POLICY_URL,
         ],
         cwd=project_root,
         env=os.environ | {"BRAIN_PROJECT_ROOT": str(project_root)},
