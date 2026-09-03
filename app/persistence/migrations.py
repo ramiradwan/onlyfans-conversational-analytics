@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -53,6 +54,32 @@ class Migration:
     name: str
     sql: str
     checksum: str
+
+
+_PROCESS_MIGRATION_MUTEXES: dict[str, threading.Lock] = {}
+_PROCESS_MIGRATION_MUTEXES_GUARD = threading.Lock()
+
+
+def process_migration_mutex(lock_path: str | Path) -> threading.Lock:
+    """Return the process-wide mutex covering one installation lock path.
+
+    The installation lock excludes other processes and reports contention as a
+    refusal. Threads of one process share that single lock file, so they are
+    serialized here first and reach the file lock one at a time.
+    """
+
+    path = Path(lock_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # The same file reaches callers under different spellings: short 8.3
+    # components, unresolved links, and mixed case. Key on the resolved name so
+    # every spelling selects one mutex.
+    key = os.path.normcase(str(path.parent.resolve() / path.name))
+    with _PROCESS_MIGRATION_MUTEXES_GUARD:
+        mutex = _PROCESS_MIGRATION_MUTEXES.get(key)
+        if mutex is None:
+            mutex = threading.Lock()
+            _PROCESS_MIGRATION_MUTEXES[key] = mutex
+    return mutex
 
 
 class InstallationMigrationLock:
@@ -187,7 +214,7 @@ class MigrationRunner:
 
     def run(self) -> list[int]:
         catalog = self._load_catalog()
-        with InstallationMigrationLock(
+        with process_migration_mutex(self.lock_path), InstallationMigrationLock(
             self.lock_path, timeout_seconds=self.lock_timeout_seconds
         ):
             with self.database.read() as connection:

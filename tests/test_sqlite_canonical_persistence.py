@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -330,6 +332,52 @@ def test_installation_migration_lock_excludes_a_second_runner(tmp_path: Path) ->
     with InstallationMigrationLock(runner.lock_path):
         with pytest.raises(MigrationLockError):
             runner.run()
+
+
+def test_a_second_runner_in_one_process_waits_for_the_first(tmp_path: Path) -> None:
+    migration_dir = tmp_path / "migrations"
+    write_migration(
+        migration_dir,
+        "0001_initial.sql",
+        "CREATE TABLE stable (id INTEGER PRIMARY KEY);",
+    )
+    holding = MigrationRunner(
+        CanonicalSQLite(tmp_path / "canonical.sqlite3"), migrations_dir=migration_dir
+    )
+    inside = threading.Event()
+    validate = holding._validate_database
+
+    def hold(connection) -> None:
+        inside.set()
+        time.sleep(0.5)
+        validate(connection)
+
+    holding._validate_database = hold
+    escaped: list[BaseException] = []
+
+    def run_holding() -> None:
+        try:
+            holding.run()
+        except BaseException as error:
+            escaped.append(error)
+
+    thread = threading.Thread(target=run_holding, name="holding-migration-runner")
+    thread.start()
+    try:
+        assert inside.wait(timeout=10.0)
+        # An uncollapsed parent component names the lock file the holding
+        # thread owns under a second spelling, which must select one mutex.
+        waiting = MigrationRunner(
+            CanonicalSQLite(tmp_path / "canonical.sqlite3"),
+            migrations_dir=migration_dir,
+            lock_path=migration_dir / ".." / ".bridge-installation-migration.lock",
+        )
+        assert waiting.lock_path != holding.lock_path
+        assert waiting.run() == []
+    finally:
+        thread.join(timeout=30.0)
+    assert escaped == []
+    assert not thread.is_alive()
 
 
 def test_configuration_publication_rolls_back_document_if_required_update_fails(
