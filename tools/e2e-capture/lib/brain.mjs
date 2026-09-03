@@ -56,13 +56,24 @@ async function waitForExit(child, timeoutMs) {
 }
 
 export class BrainProcess {
-  constructor({ authDatabasePath, canonicalDatabasePath, extensionId, projectionDatabasePath }) {
+  constructor({
+    authDatabasePath,
+    canonicalDatabasePath,
+    extensionId,
+    projectionDatabasePath,
+    // Values a provisioned installation already decided. They replace the
+    // harness defaults below so the runtime boots on the configuration
+    // provisioning wrote rather than on one this class invents.
+    environmentOverrides = {},
+  }) {
     this.authDatabasePath = authDatabasePath;
     this.canonicalDatabasePath = canonicalDatabasePath;
     this.extensionId = extensionId;
-    this.localSessionBootstrapToken = randomBytes(32).toString('base64url');
-    this.localPrincipalId = 'e2e-local-principal';
+    this.localSessionBootstrapToken = environmentOverrides.LOCAL_SESSION_BOOTSTRAP_TOKEN
+      ?? randomBytes(32).toString('base64url');
+    this.localPrincipalId = environmentOverrides.LOCAL_PRINCIPAL_ID ?? 'e2e-local-principal';
     this.projectionDatabasePath = projectionDatabasePath;
+    this.environmentOverrides = environmentOverrides;
     this.child = null;
     this.output = [];
   }
@@ -111,6 +122,7 @@ export class BrainProcess {
           LOCAL_BRIDGE_ROLE: 'creator',
           AGENT_HEARTBEAT_INTERVAL_SECONDS: '1',
           AGENT_LEASE_TIMEOUT_SECONDS: '3',
+          ...this.environmentOverrides,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
