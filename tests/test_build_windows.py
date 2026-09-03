@@ -38,7 +38,9 @@ LEGAL_BINDINGS_FIXTURE = (
 SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy"
 
 # The publication step a falsifier removes: the byte-preserving copy of the
-# packaged archive to the Store candidate name, its audit, and its digest entry.
+# packaged archive to the Store candidate name, its audit, its digest entry and
+# its announcement. The block spans every line that reads $storeCandidate, so
+# the mutated script stays valid under Set-StrictMode.
 _STORE_PUBLICATION = """\
     $storeCandidate = Join-Path $installerOutput $storeCandidateName
     Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
@@ -51,9 +53,12 @@ _STORE_PUBLICATION = """\
         -Arguments ((Get-ExtensionReleaseArguments -Verb "--audit-package") + "--artifact=$storeCandidate") `
         -FailureMessage "The published Store candidate failed its package audit"
     Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName, $storeCandidateName)
+    Write-Host "Windows installer ready: $installerPath"
+    Write-Host "Store candidate ready: $storeCandidate (sha256:$storeCandidateDigest)"
 """
 _STORE_PUBLICATION_REMOVED = """\
     Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName)
+    Write-Host "Windows installer ready: $installerPath"
 """
 _STORE_COPY = """\
     Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
@@ -717,11 +722,13 @@ def test_release_publishes_the_built_agent_extension_bundle(
     assert _STORE_PUBLICATION in source, (
         "the bundle falsifier must remove the real Agent publication step"
     )
-    without_bundle = tmp_path / "build-windows-without-agent-bundle.ps1"
-    without_bundle.write_text(
-        source.replace(_STORE_PUBLICATION, _STORE_PUBLICATION_REMOVED, 1),
-        encoding="utf-8",
+    mutated = source.replace(_STORE_PUBLICATION, _STORE_PUBLICATION_REMOVED, 1)
+    assert mutated.count("$storeCandidate") == mutated.count("$storeCandidateName"), (
+        "the mutated build script still reads a variable the excision removed; "
+        "under Set-StrictMode it aborts before the assertion under test is reached"
     )
+    without_bundle = tmp_path / "build-windows-without-agent-bundle.ps1"
+    without_bundle.write_text(mutated, encoding="utf-8")
 
     output = tmp_path / "build"
     built = _run_build(
