@@ -7,7 +7,7 @@
  * rather than the exit code asserted non-zero.
  *
  * The signer repository is replaced by a loopback server that speaks the same
- * two routes. No credential and no production rule reaches this suite: the
+ * three routes. No credential and no production rule reaches this suite: the
  * signing key is generated per run and the document is the checked-in synthetic
  * fixture, re-serialized so a working tree with either line ending measures the
  * same bytes the repository holds.
@@ -37,9 +37,15 @@ const EXIT_NOT_CANONICAL = 5;
 const EXIT_DIGEST_MISMATCH = 6;
 const EXIT_SOURCE_REVISION_MISMATCH = 7;
 const EXIT_SCHEMA_REJECTED = 9;
+const EXIT_ASSET_ABSENT = 10;
 
-const FETCH_REVISION = '2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c';
-const DOCUMENT_PATH = 'rules/2026-08/packaged-signing-rule.json';
+const RELEASE_TAG = 'packaged-signing-rule-2026-08';
+const ASSET_ID = '918273645';
+// An asset the release under the declared tag does not publish. The suite holds
+// the correct rule under it, so only the tag-to-asset cross-check can refuse a
+// release that declares it; a gate that fetched by identifier alone would
+// accept these bytes and match the declared digest.
+const UNPUBLISHED_ASSET_ID = '111222333';
 const REPOSITORY = 'test-owner/test-signer';
 const INSTALLATION_ID = '515151';
 const APPLICATION_ID = '4321';
@@ -59,34 +65,51 @@ function packagedBytes(document) {
   return Buffer.from(`${JSON.stringify(document, null, 2)}\n`, 'utf8');
 }
 
-/** A loopback stand-in for the two signer repository routes the gate uses. */
+/** A loopback stand-in for the three signer repository routes the gate uses. */
 async function withSignerRepository(state, body) {
   const requests = [];
   const server = createServer((request, response) => {
     requests.push(request.url);
     const url = new URL(request.url, 'http://127.0.0.1');
+    const notFound = () => {
+      response.writeHead(404, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ message: 'Not Found' }));
+    };
     if (request.method === 'POST' && url.pathname.endsWith('/access_tokens')) {
       response.writeHead(201, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ token: INSTALLATION_TOKEN }));
       return;
     }
-    const contents = url.pathname.startsWith(`/repos/${REPOSITORY}/contents/`)
-      ? url.pathname.slice(`/repos/${REPOSITORY}/contents/`.length)
-      : null;
     const authorized = request.headers.authorization === `Bearer ${INSTALLATION_TOKEN}`;
-    if (request.method === 'GET' && contents !== null && authorized) {
-      const held = state.documents[`${url.searchParams.get('ref')}:${decodeURI(contents)}`];
-      if (held === undefined) {
-        response.writeHead(404, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({ message: 'Not Found' }));
+    if (request.method !== 'GET' || !authorized) {
+      notFound();
+      return;
+    }
+    const tagPrefix = `/repos/${REPOSITORY}/releases/tags/`;
+    if (url.pathname.startsWith(tagPrefix)) {
+      // The API answers with numeric identifiers, so the gate is exercised
+      // against the coercion it has to make rather than against strings.
+      const published = state.releases[decodeURIComponent(url.pathname.slice(tagPrefix.length))];
+      if (published === undefined) {
+        notFound();
         return;
       }
-      response.writeHead(200, { 'content-type': 'application/vnd.github.raw' });
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ assets: published.map((id) => ({ id: Number(id) })) }));
+      return;
+    }
+    const assetPrefix = `/repos/${REPOSITORY}/releases/assets/`;
+    if (url.pathname.startsWith(assetPrefix)) {
+      const held = state.assets[url.pathname.slice(assetPrefix.length)];
+      if (held === undefined) {
+        notFound();
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'application/octet-stream' });
       response.end(held);
       return;
     }
-    response.writeHead(404, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ message: 'Not Found' }));
+    notFound();
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const directory = await mkdtemp(path.join(tmpdir(), 'ofca-signing-rule-'));
@@ -113,8 +136,8 @@ function environmentFor(context, overrides = {}) {
     SIGNING_RULE_APP_ID: APPLICATION_ID,
     SIGNING_RULE_APP_PRIVATE_KEY_B64: PRIVATE_KEY_B64,
     SIGNING_RULE_INSTALLATION_ID: INSTALLATION_ID,
-    SIGNING_RULE_PATH: DOCUMENT_PATH,
-    SIGNING_RULE_REPOSITORY_REVISION: FETCH_REVISION,
+    SIGNING_RULE_RELEASE_TAG: RELEASE_TAG,
+    SIGNING_RULE_RELEASE_ASSET_ID: ASSET_ID,
     ...overrides,
   };
 }
@@ -149,8 +172,15 @@ async function rule(overrides = {}) {
   return { document, bytes, digest: sha256Hex(bytes) };
 }
 
+/**
+ * A signer repository publishing the rule as the declared asset, and holding
+ * the same bytes under an asset the release does not publish.
+ */
 function heldAt(bytes) {
-  return { documents: { [`${FETCH_REVISION}:${DOCUMENT_PATH}`]: bytes } };
+  return {
+    releases: { [RELEASE_TAG]: [ASSET_ID] },
+    assets: { [ASSET_ID]: bytes, [UNPUBLISHED_ASSET_ID]: bytes },
+  };
 }
 
 function coordinatesFor(held) {
@@ -275,21 +305,25 @@ test('an absent retrieval credential stops before the gate reaches the repositor
   }
 });
 
-test('a coordinate that can move is rejected before any retrieval', async () => {
+test('a coordinate the schema cannot carry is rejected before any retrieval', async () => {
   const held = await rule();
-  const movable = [
-    ['SIGNING_RULE_REPOSITORY_REVISION', 'main'],
-    ['SIGNING_RULE_REPOSITORY_REVISION', FETCH_REVISION.slice(0, 12)],
-    ['SIGNING_RULE_PATH', ''],
-    ['SIGNING_RULE_PATH', 'rules/current'],
-    ['SIGNING_RULE_PATH', '../packaged-signing-rule.json'],
+  const rejected = [
+    ['SIGNING_RULE_RELEASE_TAG', ''],
+    ['SIGNING_RULE_RELEASE_TAG', '../another-release'],
+    ['SIGNING_RULE_RELEASE_TAG', '-leading-dash'],
+    ['SIGNING_RULE_RELEASE_TAG', 'a release with spaces'],
+    ['SIGNING_RULE_RELEASE_TAG', 'x'.repeat(256)],
+    // An asset name is what an operator reaches for first, and it is exactly
+    // the coordinate that can be reused across releases.
+    ['SIGNING_RULE_RELEASE_ASSET_ID', ''],
+    ['SIGNING_RULE_RELEASE_ASSET_ID', 'packaged-signing-rule.json'],
     ['SIGNING_RULE_DIGEST', ''],
     ['SIGNING_RULE_DIGEST', `sha256:${held.digest}`],
     ['SIGNING_RULE_SOURCE_REVISION', ''],
     ['SIGNING_RULE_SOURCE_REVISION', 'x'.repeat(129)],
   ];
   await withSignerRepository(heldAt(held.bytes), async (context) => {
-    for (const [name, value] of movable) {
+    for (const [name, value] of rejected) {
       const refused = await runGate(context, { ...coordinatesFor(held), [name]: value });
       assert.equal(refused.code, EXIT_COORDINATE_REJECTED, `${name}=${value}: ${refused.output}`);
       await assertNothingStaged(context);
@@ -298,17 +332,56 @@ test('a coordinate that can move is rejected before any retrieval', async () => 
   });
 });
 
-test('a fetch revision that does not hold the rule stages nothing', async () => {
+test('a tag publishing no release stages nothing', async () => {
   const held = await rule();
   await withSignerRepository(heldAt(held.bytes), async (context) => {
     const refused = await runGate(context, {
       ...coordinatesFor(held),
-      SIGNING_RULE_REPOSITORY_REVISION: '00112233445566778899aabbccddeeff00112233',
+      SIGNING_RULE_RELEASE_TAG: 'packaged-signing-rule-2026-09',
     });
     assert.equal(refused.code, EXIT_RETRIEVAL_FAILED, refused.output);
-    assert.match(refused.output, /not retrievable at the declared/);
+    assert.match(refused.output, /no release holding the .* is published under the declared tag/);
     await assertNothingStaged(context);
   });
+});
+
+test('an asset the declared release does not publish stages nothing', async () => {
+  const held = await rule();
+  await withSignerRepository(heldAt(held.bytes), async (context) => {
+    // The rule is retrievable under this identifier and matches the declared
+    // digest, so every check except the tag-to-asset cross-check would pass it.
+    const refused = await runGate(context, {
+      ...coordinatesFor(held),
+      SIGNING_RULE_RELEASE_ASSET_ID: UNPUBLISHED_ASSET_ID,
+    });
+    assert.equal(refused.code, EXIT_ASSET_ABSENT, refused.output);
+    assert.match(refused.output, /does not carry the declared asset/);
+    assert.equal(
+      context.requests.some((url) => url.includes(`/releases/assets/${UNPUBLISHED_ASSET_ID}`)),
+      false,
+      'the gate fetched an asset the resolved release does not publish',
+    );
+    await assertNothingStaged(context);
+
+    const accepted = await runGate(context, coordinatesFor(held));
+    assert.equal(accepted.code, 0, accepted.output);
+  });
+});
+
+test('an asset identifier no release publishes stages nothing', async () => {
+  const held = await rule();
+  await withSignerRepository(
+    { releases: { [RELEASE_TAG]: ['424242'] }, assets: {} },
+    async (context) => {
+      const refused = await runGate(context, {
+        ...coordinatesFor(held),
+        SIGNING_RULE_RELEASE_ASSET_ID: '424242',
+      });
+      assert.equal(refused.code, EXIT_RETRIEVAL_FAILED, refused.output);
+      assert.match(refused.output, /not retrievable as the declared release asset/);
+      await assertNothingStaged(context);
+    },
+  );
 });
 
 test('the verified rule is stageable only on ephemeral runner storage', async () => {
@@ -355,7 +428,7 @@ test('a refusal prints no coordinate value and no rule content', async () => {
     });
     assert.notEqual(refused.code, 0);
     for (const secret of [
-      DOCUMENT_PATH,
+      RELEASE_TAG,
       REPOSITORY,
       INSTALLATION_TOKEN,
       held.document.static_param,

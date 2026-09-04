@@ -31,8 +31,8 @@ REQUIRED_INPUTS = (
     FETCH_REVISION_INPUT,
     "legal_bindings_path",
     "legal_bindings_digest",
-    "signing_rule_repository_revision",
-    "signing_rule_path",
+    "signing_rule_release_tag",
+    "signing_rule_release_asset_id",
     "signing_rule_digest",
     "signing_rule_source_revision",
 )

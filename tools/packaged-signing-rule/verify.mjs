@@ -4,14 +4,25 @@
  * against, and stage the verified document on ephemeral runner storage.
  *
  * The production rule is held in a private repository and is never checked in
- * here. It reaches a release the way the Legal release bindings do: as declared
- * coordinates, retrieved over the one authenticated path at an exact revision,
- * and verified before the build reads it.
+ * here. It reaches a release as declared coordinates, retrieved over the one
+ * authenticated path and verified before the build reads it.
  *
- *   SIGNING_RULE_REPOSITORY_REVISION   the revision the document is fetched from
- *   SIGNING_RULE_PATH                  the exact path in the signer repository
+ *   SIGNING_RULE_RELEASE_TAG           the release publishing the rule
+ *   SIGNING_RULE_RELEASE_ASSET_ID      the immutable identifier of that asset
  *   SIGNING_RULE_DIGEST                the expected SHA-256 of the document
  *   SIGNING_RULE_SOURCE_REVISION       the platform revision the rule reproduces
+ *
+ * Unlike the Legal bindings document, the rule is retrieved as a release asset
+ * rather than at a repository path and revision. It is emitted from a private
+ * configuration into a working directory the signer repository refuses to
+ * commit from, so no revision holds it and there is no path to declare. A
+ * release asset is retrievable and digest-pinned without entering a repository
+ * history, which is what keeps the sequence of rules a release has shipped out
+ * of a permanent record.
+ *
+ * The tag and the asset identifier are a pair. A tag can be repointed, so the
+ * gate refuses unless the release the tag resolves to publishes exactly the
+ * declared asset; the identifier is the coordinate that cannot move.
  *
  * The source revision is not a commit. It is the platform revision the rule
  * signs for, which the rule carries as its own ``source_revision`` and which the
@@ -36,19 +47,23 @@ import {
   GateRefusal,
   argumentValue,
   environmentValue,
-  fetchDocument,
+  fetchAssetBytes,
+  fetchReleaseAssets,
   installationToken,
   refuse,
   resolveApiBaseUrl,
   resolveCredentials,
   resolveOutputPath,
-  validateDocumentPath,
+  validateAssetIdentifier,
   validateExpectedDigest,
-  validateRevision,
+  validateReleaseTag,
 } from '../release-retrieval/github-document.mjs';
 
 /** A retrieved document that is not a packaged signing rule at all. */
 export const EXIT_SCHEMA_REJECTED = 9;
+
+/** A declared asset the release under the declared tag does not publish. */
+export const EXIT_ASSET_ABSENT = 10;
 
 const SUBJECT = 'signing rule';
 const DOCUMENT = 'packaged signing rule';
@@ -70,8 +85,8 @@ const FORMAT_MEMBERS = Object.freeze([
 const SOURCE_REVISION_LIMIT = 128;
 
 const COORDINATE_VARIABLES = Object.freeze([
-  'SIGNING_RULE_REPOSITORY_REVISION',
-  'SIGNING_RULE_PATH',
+  'SIGNING_RULE_RELEASE_TAG',
+  'SIGNING_RULE_RELEASE_ASSET_ID',
   'SIGNING_RULE_DIGEST',
   'SIGNING_RULE_SOURCE_REVISION',
 ]);
@@ -97,12 +112,12 @@ export function validateSourceRevision(name, value) {
 
 /** Read the four release coordinates. None of them carries a default. */
 export function resolveCoordinates(environment) {
-  const [fetchRevision, documentPath, expectedDigest, sourceRevision] = COORDINATE_VARIABLES.map(
+  const [releaseTag, assetId, expectedDigest, sourceRevision] = COORDINATE_VARIABLES.map(
     (name) => environmentValue(environment, name),
   );
   return Object.freeze({
-    fetchRevision: validateRevision('SIGNING_RULE_REPOSITORY_REVISION', fetchRevision),
-    documentPath: validateDocumentPath('SIGNING_RULE_PATH', documentPath),
+    releaseTag: validateReleaseTag('SIGNING_RULE_RELEASE_TAG', releaseTag),
+    assetId: validateAssetIdentifier('SIGNING_RULE_RELEASE_ASSET_ID', assetId),
     expectedDigest: validateExpectedDigest('SIGNING_RULE_DIGEST', expectedDigest),
     sourceRevision: validateSourceRevision('SIGNING_RULE_SOURCE_REVISION', sourceRevision),
   });
@@ -183,12 +198,31 @@ export async function run(argv, environment) {
   const baseUrl = resolveApiBaseUrl(environment, 'SIGNING_RULE_API_BASE_URL');
 
   const token = await installationToken(baseUrl, credentials, environment, SUBJECT);
-  const fetched = await fetchDocument({
+  // The tag locates a release; the asset identifier names the document. Reading
+  // the release first is what makes the pair a cross-check: an identifier the
+  // resolved release does not publish is refused here rather than fetched and
+  // left for the digest to catch, so a tag and an asset naming two different
+  // releases cannot produce a build.
+  const published = await fetchReleaseAssets({
     baseUrl,
     credentials,
     token,
-    documentPath: coordinates.documentPath,
-    fetchRevision: coordinates.fetchRevision,
+    releaseTag: coordinates.releaseTag,
+    subject: SUBJECT,
+    document: DOCUMENT,
+  });
+  if (!published.includes(coordinates.assetId)) {
+    refuse(
+      EXIT_ASSET_ABSENT,
+      `the release published under the declared tag does not carry the declared `
+      + 'asset, so the two coordinates name different releases',
+    );
+  }
+  const fetched = await fetchAssetBytes({
+    baseUrl,
+    credentials,
+    token,
+    assetId: coordinates.assetId,
     subject: SUBJECT,
     document: DOCUMENT,
   });

@@ -1,6 +1,11 @@
 /**
- * Authenticated retrieval of one document held in a private repository at a
- * declared commit revision.
+ * Authenticated retrieval of one document held in a private repository.
+ *
+ * A document reaches a release one of two ways, and both are here because the
+ * two private repositories keep their documents differently. A document that is
+ * committed is fetched at a declared commit revision. A document that is never
+ * committed is published as a release asset and fetched by the immutable
+ * identifier the API assigns it.
  *
  * This is the single retrieval path a release build uses. The Legal release
  * bindings gate and the packaged signing rule gate are verifiers built on it:
@@ -32,6 +37,8 @@ export const COMMIT_REVISION = /^[0-9a-f]{40}$/;
 const CANONICAL_DIGEST = /^[0-9a-f]{64}$/;
 const REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const NUMERIC_IDENTIFIER = /^[0-9]+$/;
+const RELEASE_TAG = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+const RELEASE_TAG_LIMIT = 255;
 const PUBLIC_API_BASE_URL = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
 const USER_AGENT = 'release-retrieval-gate';
@@ -129,6 +136,50 @@ export function validateExpectedDigest(name, value) {
   }
   if (!CANONICAL_DIGEST.test(value)) {
     refuse(EXIT_COORDINATE_REJECTED, `${name} must be bare lowercase 64-hex`);
+  }
+  return value;
+}
+
+/**
+ * A release tag. Unlike a commit revision this is a locator and not an
+ * identity: a tag can be repointed at another release after a coordinate is
+ * declared. A gate that reads one pairs it with the immutable identifier of the
+ * asset it expects and refuses unless the release the tag resolves to publishes
+ * exactly that asset, so a moved tag names a release that does not carry the
+ * asset rather than substituting a different document.
+ */
+export function validateReleaseTag(name, value) {
+  if (value === '') {
+    refuse(EXIT_COORDINATE_REJECTED, `${name} is required and has no default`);
+  }
+  if (value.length > RELEASE_TAG_LIMIT) {
+    refuse(EXIT_COORDINATE_REJECTED, `${name} is longer than a release tag can be`);
+  }
+  if (!RELEASE_TAG.test(value) || value.includes('..')) {
+    refuse(
+      EXIT_COORDINATE_REJECTED,
+      `${name} must be a release tag: an alphanumeric first character followed `
+      + 'by letters, digits and . _ - / with no relative segment',
+    );
+  }
+  return value;
+}
+
+/**
+ * A release asset identifier. The API assigns it, never reuses it, and never
+ * moves it to another asset, so it is the fixed coordinate in a pair whose tag
+ * is not.
+ */
+export function validateAssetIdentifier(name, value) {
+  if (value === '') {
+    refuse(EXIT_COORDINATE_REJECTED, `${name} is required and has no default`);
+  }
+  if (!NUMERIC_IDENTIFIER.test(value)) {
+    refuse(
+      EXIT_COORDINATE_REJECTED,
+      `${name} must be the numeric identifier of one release asset; `
+      + 'an asset name is not a fixed coordinate',
+    );
   }
   return value;
 }
@@ -264,8 +315,9 @@ export async function installationToken(baseUrl, credentials, environment, subje
   return token;
 }
 
-function encodeRepositoryPath(documentPath) {
-  return documentPath.split('/').map(encodeURIComponent).join('/');
+/** Encode a value into URL path segments, leaving its separators as separators. */
+function encodePathSegments(value) {
+  return value.split('/').map(encodeURIComponent).join('/');
 }
 
 /**
@@ -277,7 +329,7 @@ export async function fetchDocument({
   baseUrl, credentials, token, documentPath, fetchRevision, subject, document,
 }) {
   const url = `${baseUrl}/repos/${credentials.repository}/contents/`
-    + `${encodeRepositoryPath(documentPath)}`
+    + `${encodePathSegments(documentPath)}`
     + `?ref=${fetchRevision}`;
   const response = await requestJson(
     url,
@@ -289,6 +341,65 @@ export async function fetchDocument({
       EXIT_RETRIEVAL_FAILED,
       `the ${document} was not retrievable at the declared path and fetch `
       + `revision (HTTP ${response.status})`,
+    );
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
+/**
+ * List the identifiers of the assets published by the release under an exact
+ * tag.
+ *
+ * Only identifiers are returned. The caller owns the refusal for an identifier
+ * it cannot find, because which coordinate is missing is the caller's to say,
+ * and an asset's name is not something a refusal needs in order to say it.
+ */
+export async function fetchReleaseAssets({
+  baseUrl, credentials, token, releaseTag, subject, document,
+}) {
+  const url = `${baseUrl}/repos/${credentials.repository}/releases/tags/`
+    + `${encodePathSegments(releaseTag)}`;
+  const response = await requestJson(
+    url,
+    requestHeaders(token, 'application/vnd.github+json'),
+    subject,
+  );
+  if (!response.ok) {
+    refuse(
+      EXIT_RETRIEVAL_FAILED,
+      `no release holding the ${document} is published under the declared tag `
+      + `(HTTP ${response.status})`,
+    );
+  }
+  const body = await response.json().catch(() => ({}));
+  const assets = Array.isArray(body.assets) ? body.assets : [];
+  return Object.freeze(assets.map((asset) => String(asset?.id ?? '')));
+}
+
+/**
+ * Fetch one release asset by its immutable identifier.
+ *
+ * The API answers with a redirect to storage whose URL carries its own
+ * credential, and the redirect is followed. Two things make that safe. Fetch
+ * removes the authorization header on a cross-origin redirect, so the
+ * installation token does not reach the storage host. And the caller verifies
+ * the returned bytes against a declared digest, so a redirect that answered
+ * with anything else is refused rather than packaged.
+ */
+export async function fetchAssetBytes({
+  baseUrl, credentials, token, assetId, subject, document,
+}) {
+  const url = `${baseUrl}/repos/${credentials.repository}/releases/assets/${assetId}`;
+  const response = await requestJson(
+    url,
+    requestHeaders(token, 'application/octet-stream'),
+    subject,
+  );
+  if (!response.ok) {
+    refuse(
+      EXIT_RETRIEVAL_FAILED,
+      `the ${document} was not retrievable as the declared release asset `
+      + `(HTTP ${response.status})`,
     );
   }
   return Buffer.from(await response.arrayBuffer());

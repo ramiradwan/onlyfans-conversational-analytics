@@ -1,12 +1,14 @@
 name: Windows package
 
 # A Store candidate is built from declared coordinates alone. Every input below
-# is required, carries no default, and names something that cannot move: a
-# commit revision, an exact repository path, a content digest, or the platform
-# revision a signing rule reproduces and carries. Nothing here is read from a
-# branch head, a repository variable, or the current state of either private
-# repository, so a rerun of the same inputs builds against the same Legal and
-# signer state however any of them has moved since.
+# is required and carries no default. All but one name something that cannot
+# move: a commit revision, an exact repository path, a release asset identifier,
+# a content digest, or the platform revision a signing rule reproduces and
+# carries. The exception is the signer release tag, which can be repointed and
+# is therefore paired with the asset identifier and cross-checked against it.
+# Nothing here is read from a branch head, a repository variable, or the current
+# state of either private repository, so a rerun of the same inputs builds
+# against the same Legal and signer state however any of them has moved since.
 #
 # The privacy policy URL is deliberately absent: it is derived from the Legal
 # bindings document the gate verifies, so it cannot be declared into
@@ -34,12 +36,12 @@ on:
         description: Expected canonical SHA-256 of that document, bare lowercase 64-hex
         required: true
         type: string
-      signing_rule_repository_revision:
-        description: Full 40-character signer revision holding the packaged signing rule
+      signing_rule_release_tag:
+        description: Signer release tag publishing the packaged signing rule asset
         required: true
         type: string
-      signing_rule_path:
-        description: Exact path of the packaged signing rule in the signer repository
+      signing_rule_release_asset_id:
+        description: Numeric identifier of the release asset holding that rule
         required: true
         type: string
       signing_rule_digest:
@@ -101,14 +103,17 @@ jobs:
       # The packaged signing rule is held in the private signer repository and is
       # never checked in here, so it reaches the build the same way: declared
       # coordinates, the one authenticated retrieval path, and verification
-      # before anything reads it. The rule must already be stored in the
-      # serialization the package writes, so the declared digest is the digest of
-      # the rule that ships.
+      # before anything reads it. It is retrieved as a release asset rather than
+      # at a path and revision, because the signer repository emits the rule
+      # from a private configuration and does not commit it, so no revision
+      # holds it. The rule must already be stored in the serialization the
+      # package writes, so the declared digest is the digest of the rule that
+      # ships.
       - name: Verify the packaged signing rule
         shell: pwsh
         env:
-          SIGNING_RULE_REPOSITORY_REVISION: ${{ inputs.signing_rule_repository_revision }}
-          SIGNING_RULE_PATH: ${{ inputs.signing_rule_path }}
+          SIGNING_RULE_RELEASE_TAG: ${{ inputs.signing_rule_release_tag }}
+          SIGNING_RULE_RELEASE_ASSET_ID: ${{ inputs.signing_rule_release_asset_id }}
           SIGNING_RULE_DIGEST: ${{ inputs.signing_rule_digest }}
           SIGNING_RULE_SOURCE_REVISION: ${{ inputs.signing_rule_source_revision }}
           SIGNING_RULE_REPOSITORY: ${{ secrets.SIGNING_RULE_REPOSITORY }}
