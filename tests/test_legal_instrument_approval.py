@@ -226,10 +226,15 @@ def test_served_disclosure_matches_the_upstream_source_it_is_taken_from() -> Non
     manifest_path = upstream_manifest_path()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     state = manifest_state(manifest, lock["document_key"])
-    if approval(state) != UNAPPROVED:
+    verdict = approval(state)
+    # Approval moves which upstream file governs, not whether one does: an
+    # approved variant's source_sha256 binds the same served bytes its
+    # rendered_sha256 does, so the comparison holds on both sides of approval
+    # and only a retired or incoherent record leaves nothing to compare.
+    if verdict not in {UNAPPROVED, APPROVED}:
         pytest.skip(
-            f"{lock['document_key']} is {state['status']!r} upstream, so the draft "
-            "source no longer governs the served bytes"
+            f"{lock['document_key']} is {state['status']!r} upstream, so no "
+            "recorded variant governs the served bytes"
         )
     source = upstream_root(lock, manifest_path) / state["variant"]["source_path"]
     recorded = state["variant"]["source_sha256"]
