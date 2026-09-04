@@ -123,6 +123,7 @@ GATE_EXIT_STEPS = {
     6: STEP_LEGAL_DIGEST,
     7: STEP_LEGAL_DIGEST,
     8: STEP_LEGAL_RETRIEVAL,
+    9: STEP_PRIVACY_POLICY,
 }
 
 HEX_40 = re.compile(r"^[a-f0-9]{40}$")

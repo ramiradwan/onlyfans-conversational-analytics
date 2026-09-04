@@ -158,6 +158,7 @@ jobs:
             tools/engineering_attestation.py
             tools/legal-release-bindings/verify.mjs
             tools/legal-release-bindings/canonical-json.mjs
+            tools/release-retrieval/github-document.mjs
             attestation/signers/product-engineering-attestation-ed25519-v1.pem
             tests/fixtures/engineering-attestation-v1-ed25519.json
           sparse-checkout-cone-mode: false

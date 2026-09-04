@@ -31,6 +31,10 @@ REQUIRED_INPUTS = (
     FETCH_REVISION_INPUT,
     "legal_bindings_path",
     "legal_bindings_digest",
+    "signing_rule_repository_revision",
+    "signing_rule_path",
+    "signing_rule_digest",
+    "signing_rule_source_revision",
 )
 
 # Each coordinate reaches the gate under its own name, so no two of them can
@@ -213,6 +217,12 @@ def _assert_no_upload_carries_the_staged_document(workflow: dict[str, Any]) -> N
             )
             assert "legal-release-bindings" not in path, (
                 f"an artifact upload carries the Legal bindings document: {path}"
+            )
+            assert "PACKAGED_SIGNING_RULE" not in path, (
+                f"an artifact upload carries the packaged signing rule: {path}"
+            )
+            assert "packaged-signing-rule" not in path, (
+                f"an artifact upload carries the packaged signing rule: {path}"
             )
 
 

@@ -42,6 +42,7 @@ const EXIT_NOT_CANONICAL = 5;
 const EXIT_DIGEST_MISMATCH = 6;
 const EXIT_SOURCE_REVISION_MISMATCH = 7;
 const EXIT_SOURCE_REVISION_ABSENT = 8;
+const EXIT_INSTRUMENT_REJECTED = 9;
 
 // A fetch revision distinct from every document's embedded source revision.
 // The Legal contract keeps the two independent, so the suite never supplies a
@@ -136,15 +137,15 @@ function environmentFor(context, overrides = {}) {
   };
 }
 
-async function runGate(context, overrides = {}, output = context.output) {
+async function runGate(context, overrides = {}, output = context.output, environmentFile = '') {
   const environment = environmentFor(context, overrides);
   for (const [name, value] of Object.entries(environment)) {
     if (value === undefined) delete environment[name];
   }
+  const argv = [GATE, `--output=${output}`];
+  if (environmentFile !== '') argv.push(`--environment-file=${environmentFile}`);
   try {
-    const { stdout, stderr } = await run(process.execPath, [GATE, `--output=${output}`], {
-      env: environment,
-    });
+    const { stdout, stderr } = await run(process.execPath, argv, { env: environment });
     return { code: 0, output: stdout + stderr };
   } catch (error) {
     return { code: error.code ?? 1, output: (error.stdout ?? '') + (error.stderr ?? '') };
@@ -516,5 +517,155 @@ test('a refusal prints no coordinate value and no document content', async () =>
     ]) {
       assert.equal(refused.output.includes(secret), false, `the refusal printed ${secret}`);
     }
+  });
+});
+
+/** The same world, with one member of the verified document changed. */
+async function heldVariant(mutate) {
+  const base = await bindings();
+  const document = mutate(structuredClone(base.document));
+  const bytes = Buffer.from(canonicalLegalBindingsJson(document), 'utf8');
+  return {
+    held: { document, bytes, digest: sha256Hex(bytes) },
+    state: {
+      commits: [document.legal_repository_revision, FETCH_REVISION],
+      documents: { [`${FETCH_REVISION}:${DOCUMENT_PATH}`]: bytes },
+    },
+  };
+}
+
+function coordinatesFor(held) {
+  return {
+    LEGAL_REPOSITORY_REVISION: held.document.legal_repository_revision,
+    LEGAL_BINDINGS_DIGEST: held.digest,
+  };
+}
+
+test('the release privacy policy URL is read out of the verified document', async () => {
+  // The packaging step is handed this value instead of declaring one, so what
+  // matters is that it moves with the document: a different instrument route in
+  // the same release yields a different published URL.
+  const routes = ['/legal/privacy', '/en/legal/privacy-policy'];
+  for (const route of routes) {
+    const { held, state } = await heldVariant((document) => {
+      document.instruments.privacy_policy.public_url = route;
+      return document;
+    });
+    await withLegalRepository(state, async (context) => {
+      const file = path.join(context.runnerTemp, 'github-env');
+      const result = await runGate(context, coordinatesFor(held), context.output, file);
+      assert.equal(result.code, 0, result.output);
+      const published = await readFile(file, 'utf8');
+      const expected = `${held.document.public_origin.replace(/\/+$/, '')}${route}`;
+      assert.equal(published, `RELEASE_PRIVACY_POLICY_URL=${expected}\n`);
+      // The extension packages new URL(value).href and the attestation compares
+      // the origin joined to the route; the published value is both at once.
+      assert.equal(new URL(expected).href, expected);
+      assert.equal(result.output.includes(expected), false, 'the gate printed the derived URL');
+    });
+  }
+});
+
+test('a document that names no privacy policy instrument stages nothing', async () => {
+  const { held, state } = await heldVariant((document) => {
+    delete document.instruments.privacy_policy;
+    return document;
+  });
+  await withLegalRepository(state, async (context) => {
+    const file = path.join(context.runnerTemp, 'github-env');
+    const refused = await runGate(context, coordinatesFor(held), context.output, file);
+    assert.equal(refused.code, EXIT_INSTRUMENT_REJECTED, refused.output);
+    assert.match(refused.output, /carries no privacy policy instrument/);
+    await assertNothingStaged(context);
+    await assert.rejects(stat(file), (error) => error.code === 'ENOENT');
+  });
+});
+
+test('an instrument the build could not package as attested is refused', async () => {
+  // Each of these joins into a URL the extension build would reject, or would
+  // package as a string the attestation's own join does not reproduce. Refusing
+  // here stops the release before an artifact exists to refuse.
+  const rejected = [
+    ['legal/privacy', 'https://legal-evidence.example.com'],
+    ['/legal/privacy', 'http://legal-evidence.example.com'],
+    ['/legal/privacy', 'https://legal-evidence.invalid'],
+    ['/legal/../legal/privacy', 'https://legal-evidence.example.com'],
+    ['/legal/privacy policy', 'https://legal-evidence.example.com'],
+    ['/legal/privacy', 'legal-evidence.example.com'],
+  ];
+  for (const [route, origin] of rejected) {
+    const { held, state } = await heldVariant((document) => {
+      document.public_origin = origin;
+      document.instruments.privacy_policy.public_url = route;
+      return document;
+    });
+    await withLegalRepository(state, async (context) => {
+      const file = path.join(context.runnerTemp, 'github-env');
+      const refused = await runGate(context, coordinatesFor(held), context.output, file);
+      assert.equal(
+        refused.code,
+        EXIT_INSTRUMENT_REJECTED,
+        `${origin}${route}: ${refused.output}`,
+      );
+      await assertNothingStaged(context);
+      await assert.rejects(stat(file), (error) => error.code === 'ENOENT');
+    });
+  }
+});
+
+test('a trailing separator on the public origin joins the way the attestation joins', async () => {
+  const { held, state } = await heldVariant((document) => {
+    document.public_origin = `${document.public_origin}//`;
+    return document;
+  });
+  await withLegalRepository(state, async (context) => {
+    const file = path.join(context.runnerTemp, 'github-env');
+    const result = await runGate(context, coordinatesFor(held), context.output, file);
+    assert.equal(result.code, 0, result.output);
+    const route = held.document.instruments.privacy_policy.public_url;
+    // Python's str.rstrip('/') strips every trailing separator, not one.
+    const attested = `${held.document.public_origin.replace(/\/+$/, '')}${route}`;
+    assert.equal(await readFile(file, 'utf8'), `RELEASE_PRIVACY_POLICY_URL=${attested}\n`);
+  });
+});
+
+test('the gate publishes nothing when no environment file is named', async () => {
+  // The attestation producer runs this same gate without the flag, and must not
+  // acquire a file, an exported value, or a different exit code by doing so.
+  const { held, state } = await heldState();
+  await withLegalRepository(state, async (context) => {
+    const result = await runGate(context, {
+      LEGAL_REPOSITORY_REVISION: held.sourceRevision,
+      LEGAL_BINDINGS_DIGEST: held.digest,
+    });
+    assert.equal(result.code, 0, result.output);
+    assert.equal(Buffer.compare(await readFile(context.output), held.bytes), 0);
+    assert.equal(
+      result.output.includes(held.document.instruments.privacy_policy.public_url),
+      false,
+      'the gate printed the derived route',
+    );
+  });
+});
+
+test('the environment file may not be written inside the workspace', async () => {
+  const { held, state } = await heldState();
+  await withLegalRepository(state, async (context) => {
+    const workspace = path.join(context.runnerTemp, 'workspace');
+    const file = path.join(workspace, 'github-env');
+    const refused = await runGate(
+      context,
+      {
+        LEGAL_REPOSITORY_REVISION: held.sourceRevision,
+        LEGAL_BINDINGS_DIGEST: held.digest,
+        GITHUB_WORKSPACE: workspace,
+      },
+      context.output,
+      file,
+    );
+    assert.equal(refused.code, EXIT_COORDINATE_REJECTED, refused.output);
+    assert.match(refused.output, /--environment-file must not resolve inside the workspace/);
+    await assertNothingStaged(context);
+    await assert.rejects(stat(file), (error) => error.code === 'ENOENT');
   });
 });

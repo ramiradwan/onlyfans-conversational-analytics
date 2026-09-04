@@ -2,10 +2,15 @@ name: Windows package
 
 # A Store candidate is built from declared coordinates alone. Every input below
 # is required, carries no default, and names something that cannot move: a
-# commit revision, an exact repository path, or a content digest. Nothing here
-# is read from a branch head, a repository variable, or the current state of the
-# Legal repository, so a rerun of the same inputs builds against the same Legal
-# state however either repository has moved since.
+# commit revision, an exact repository path, a content digest, or the platform
+# revision a signing rule reproduces and carries. Nothing here is read from a
+# branch head, a repository variable, or the current state of either private
+# repository, so a rerun of the same inputs builds against the same Legal and
+# signer state however any of them has moved since.
+#
+# The privacy policy URL is deliberately absent: it is derived from the Legal
+# bindings document the gate verifies, so it cannot be declared into
+# disagreement with what the release attestation recomputes.
 on:
   workflow_dispatch:
     inputs:
@@ -29,6 +34,22 @@ on:
         description: Expected canonical SHA-256 of that document, bare lowercase 64-hex
         required: true
         type: string
+      signing_rule_repository_revision:
+        description: Full 40-character signer revision holding the packaged signing rule
+        required: true
+        type: string
+      signing_rule_path:
+        description: Exact path of the packaged signing rule in the signer repository
+        required: true
+        type: string
+      signing_rule_digest:
+        description: Expected SHA-256 of the packaged signing rule, bare lowercase 64-hex
+        required: true
+        type: string
+      signing_rule_source_revision:
+        description: Platform revision that rule reproduces, as it carries it itself
+        required: true
+        type: string
 
 jobs:
   build:
@@ -38,8 +59,9 @@ jobs:
       contents: read
     env:
       # Ephemeral runner storage, outside the workspace and outside any cache.
-      # The verified document is staged here and removed when the job ends.
+      # The verified documents are staged here and removed when the job ends.
       LEGAL_BINDINGS_DOCUMENT: ${{ runner.temp }}/legal-release-bindings-${{ github.run_id }}-${{ github.run_attempt }}/legal-release-bindings.json
+      PACKAGED_SIGNING_RULE: ${{ runner.temp }}/packaged-signing-rule-${{ github.run_id }}-${{ github.run_attempt }}/packaged-signing-rule.json
 
     steps:
       - name: Checkout
@@ -71,7 +93,29 @@ jobs:
           LEGAL_BINDINGS_APP_ID: ${{ secrets.LEGAL_BINDINGS_APP_ID }}
           LEGAL_BINDINGS_APP_PRIVATE_KEY_B64: ${{ secrets.LEGAL_BINDINGS_APP_PRIVATE_KEY_B64 }}
           LEGAL_BINDINGS_INSTALLATION_ID: ${{ secrets.LEGAL_BINDINGS_INSTALLATION_ID }}
-        run: node tools/legal-release-bindings/verify.mjs --output="$env:LEGAL_BINDINGS_DOCUMENT"
+        run: >
+          node tools/legal-release-bindings/verify.mjs
+          --output="$env:LEGAL_BINDINGS_DOCUMENT"
+          --environment-file="$env:GITHUB_ENV"
+
+      # The packaged signing rule is held in the private signer repository and is
+      # never checked in here, so it reaches the build the same way: declared
+      # coordinates, the one authenticated retrieval path, and verification
+      # before anything reads it. The rule must already be stored in the
+      # serialization the package writes, so the declared digest is the digest of
+      # the rule that ships.
+      - name: Verify the packaged signing rule
+        shell: pwsh
+        env:
+          SIGNING_RULE_REPOSITORY_REVISION: ${{ inputs.signing_rule_repository_revision }}
+          SIGNING_RULE_PATH: ${{ inputs.signing_rule_path }}
+          SIGNING_RULE_DIGEST: ${{ inputs.signing_rule_digest }}
+          SIGNING_RULE_SOURCE_REVISION: ${{ inputs.signing_rule_source_revision }}
+          SIGNING_RULE_REPOSITORY: ${{ secrets.SIGNING_RULE_REPOSITORY }}
+          SIGNING_RULE_APP_ID: ${{ secrets.SIGNING_RULE_APP_ID }}
+          SIGNING_RULE_APP_PRIVATE_KEY_B64: ${{ secrets.SIGNING_RULE_APP_PRIVATE_KEY_B64 }}
+          SIGNING_RULE_INSTALLATION_ID: ${{ secrets.SIGNING_RULE_INSTALLATION_ID }}
+        run: node tools/packaged-signing-rule/verify.mjs --output="$env:PACKAGED_SIGNING_RULE"
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -103,12 +147,18 @@ jobs:
       - name: Install the test dependencies
         run: python -m pip install -r requirements-dev.txt
 
+      # Every release input the script demands is passed from a verified
+      # coordinate: the two staged documents, and the privacy policy URL the
+      # bindings gate derived from the document it verified. None of them is
+      # written down here, so none of them can drift from what was attested.
       - name: Build package
         run: |
           .\packaging\build-windows.ps1 `
             -BuildPython .\.build-venv\Scripts\python.exe `
             -OutputRoot "$env:RUNNER_TEMP\windows-package" `
-            -LegalReleaseBindings "$env:LEGAL_BINDINGS_DOCUMENT"
+            -LegalReleaseBindings "$env:LEGAL_BINDINGS_DOCUMENT" `
+            -PackagedSigningRule "$env:PACKAGED_SIGNING_RULE" `
+            -PrivacyPolicyUrl "$env:RELEASE_PRIVACY_POLICY_URL"
 
       # A packaged build that cannot complete a first run must not reach the
       # artifact. This freezes a real installer with the build environment
@@ -130,18 +180,24 @@ jobs:
           name: windows-package-unsigned-${{ github.ref_name }}
           path: ${{ runner.temp }}\windows-package\installer\
 
-      # The bindings document never leaves the runner: it is not in the
-      # workspace, not in the uploaded artifact, and not in a cache. Removing it
-      # here bounds its life to the job even when the job fails.
-      - name: Remove the staged Legal release bindings
+      # Neither staged document leaves the runner: neither is in the workspace,
+      # in the uploaded artifact, or in a cache. Removing them here bounds their
+      # life to the job even when the job fails.
+      - name: Remove the staged release documents
         if: always()
         shell: pwsh
         run: |
-          $staged = Split-Path -Parent $env:LEGAL_BINDINGS_DOCUMENT
-          if (-not $staged.StartsWith((Join-Path $env:RUNNER_TEMP "legal-release-bindings-"))) {
-            throw "Refusing to clean an unexpected temporary path"
+          $staged = @{
+            "legal-release-bindings-" = $env:LEGAL_BINDINGS_DOCUMENT
+            "packaged-signing-rule-" = $env:PACKAGED_SIGNING_RULE
           }
-          Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue
+          foreach ($prefix in $staged.Keys) {
+            $directory = Split-Path -Parent $staged[$prefix]
+            if (-not $directory.StartsWith((Join-Path $env:RUNNER_TEMP $prefix))) {
+              throw "Refusing to clean an unexpected temporary path"
+            }
+            Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
   sign:
     # The federated credential is scoped to a job, not to a step, so this job

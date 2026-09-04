@@ -32,8 +32,10 @@ param(
     [string] $PackagedSigningRule = "",
     [string] $LegalReleaseBindings = "",
 
-    # Privacy policy URL for the packaged Agent configuration. When it is
-    # omitted the checked-in extension configuration must already carry one.
+    # Privacy policy URL for the packaged Agent configuration. A release
+    # requires it too, derived from the same Legal bindings document above. A
+    # development bundle may omit it, and then the checked-in extension
+    # configuration must already carry one.
     [string] $PrivacyPolicyUrl = "",
 
     # Development packaging. It publishes a development bundle in place of the
@@ -116,12 +118,32 @@ function Resolve-ReleaseInput {
     return $resolved
 }
 
+function Resolve-ReleaseUrl {
+    <#
+        Resolve a release input that names a URL rather than a file. It is
+        required for the same reason the file inputs are, and it is checked here
+        rather than only where it is consumed so a release missing it stops
+        before the build output directory exists. Its shape stays the concern of
+        extension/build.mjs, which packages only a URL it accepts.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Value,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        throw "A release build requires -$Name; a Store candidate is never built without it"
+    }
+    return $Value
+}
+
 if (-not (Test-Path -LiteralPath $ExtensionBuildScript -PathType Leaf)) {
     throw "Extension build script does not exist: $ExtensionBuildScript"
 }
 if ($ReleaseMode) {
     $PackagedSigningRule = Resolve-ReleaseInput -Value $PackagedSigningRule -Name "PackagedSigningRule"
     $LegalReleaseBindings = Resolve-ReleaseInput -Value $LegalReleaseBindings -Name "LegalReleaseBindings"
+    $PrivacyPolicyUrl = Resolve-ReleaseUrl -Value $PrivacyPolicyUrl -Name "PrivacyPolicyUrl"
 }
 
 & $BuildPython -c "import struct, sys; sys.exit(0 if struct.calcsize('P') == 8 else 1)"

@@ -82,6 +82,9 @@ jobs:
       - name: Test the release bindings gate
         run: node --test tools/legal-release-bindings/verify.test.mjs
 
+      - name: Test the packaged signing rule gate
+        run: node --test tools/packaged-signing-rule/verify.test.mjs
+
       - name: Build and audit deterministic extension artifact
         run: |
           npm run build --prefix extension

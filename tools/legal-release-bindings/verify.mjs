@@ -14,34 +14,70 @@
  * A and B are distinct coordinates. The document is fetched at B and its
  * embedded A is validated separately; nothing here requires them to be equal.
  *
- * Every coordinate and credential arrives in the environment rather than on the
- * command line. The document is written only after all four coordinates agree,
- * so a refusal leaves the packaging step no input to read.
+ * Retrieval itself is tools/release-retrieval/github-document.mjs, the one
+ * authenticated path a release uses. Every coordinate and credential arrives in
+ * the environment rather than on the command line. The document is written only
+ * after all four coordinates agree, so a refusal leaves the packaging step no
+ * input to read.
+ *
+ * The verified document also carries the privacy policy instrument the packaged
+ * Agent configures, so the release privacy policy URL is derived here and
+ * emitted for the packaging step rather than declared a second time.
  */
 
-import { createHash, createSign } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { canonicalLegalBindingsJson } from './canonical-json.mjs';
+import {
+  COMMIT_REVISION,
+  EXIT_COORDINATE_REJECTED,
+  EXIT_CREDENTIAL_ABSENT,
+  EXIT_DIGEST_MISMATCH,
+  EXIT_NOT_CANONICAL,
+  EXIT_RETRIEVAL_FAILED,
+  EXIT_SOURCE_REVISION_ABSENT,
+  EXIT_SOURCE_REVISION_MISMATCH,
+  GateRefusal,
+  argumentValue,
+  commitExists,
+  contains,
+  environmentValue,
+  fetchDocument,
+  installationToken,
+  refuse,
+  resolveApiBaseUrl,
+  resolveCredentials as resolveRetrievalCredentials,
+  resolveOutputPath,
+  validateDocumentPath,
+  validateExpectedDigest,
+  validateRevision,
+} from '../release-retrieval/github-document.mjs';
 
-export const EXIT_COORDINATE_REJECTED = 2;
-export const EXIT_CREDENTIAL_ABSENT = 3;
-export const EXIT_RETRIEVAL_FAILED = 4;
-export const EXIT_NOT_CANONICAL = 5;
-export const EXIT_DIGEST_MISMATCH = 6;
-export const EXIT_SOURCE_REVISION_MISMATCH = 7;
-export const EXIT_SOURCE_REVISION_ABSENT = 8;
+export {
+  EXIT_COORDINATE_REJECTED,
+  EXIT_CREDENTIAL_ABSENT,
+  EXIT_DIGEST_MISMATCH,
+  EXIT_NOT_CANONICAL,
+  EXIT_RETRIEVAL_FAILED,
+  EXIT_SOURCE_REVISION_ABSENT,
+  EXIT_SOURCE_REVISION_MISMATCH,
+  GateRefusal,
+  resolveOutputPath,
+};
 
-const COMMIT_REVISION = /^[0-9a-f]{40}$/;
-const CANONICAL_DIGEST = /^[0-9a-f]{64}$/;
-const REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
-const NUMERIC_IDENTIFIER = /^[0-9]+$/;
-const PUBLIC_API_BASE_URL = 'https://api.github.com';
-const API_VERSION = '2022-11-28';
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+/** A verified document that cannot yield the release privacy policy URL. */
+export const EXIT_INSTRUMENT_REJECTED = 9;
+
+const SUBJECT = 'Legal';
+const DOCUMENT = 'Legal release bindings document';
+const PRIVACY_POLICY_INSTRUMENT = 'privacy_policy';
+
+/** The name the derived URL is emitted under for the packaging step to read. */
+export const PRIVACY_POLICY_URL_VARIABLE = 'RELEASE_PRIVACY_POLICY_URL';
 
 // The coordinates and credentials this gate reads, named so a failure says
 // which one to supply without printing any value.
@@ -58,95 +94,6 @@ const CREDENTIAL_VARIABLES = Object.freeze([
   'LEGAL_BINDINGS_INSTALLATION_ID',
 ]);
 
-/** A refusal carrying the exit code that names which check refused. */
-export class GateRefusal extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = 'GateRefusal';
-    this.code = code;
-  }
-}
-
-function refuse(code, message) {
-  throw new GateRefusal(code, message);
-}
-
-function environmentValue(environment, name) {
-  const value = environment[name];
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-/**
- * Resolve the API origin. The public origin is the only non-loopback value the
- * gate accepts, so the override is a test seam and cannot redirect a release to
- * a third party.
- */
-function resolveApiBaseUrl(environment) {
-  const declared = environmentValue(environment, 'LEGAL_BINDINGS_API_BASE_URL');
-  if (declared === '') return PUBLIC_API_BASE_URL;
-  let parsed;
-  try {
-    parsed = new URL(declared);
-  } catch {
-    refuse(EXIT_COORDINATE_REJECTED, 'LEGAL_BINDINGS_API_BASE_URL is not a URL');
-  }
-  if (!LOOPBACK_HOSTS.has(parsed.hostname.replace(/^\[|\]$/g, ''))) {
-    refuse(
-      EXIT_COORDINATE_REJECTED,
-      'LEGAL_BINDINGS_API_BASE_URL may only name a loopback address',
-    );
-  }
-  return parsed.origin;
-}
-
-/** A repository path: relative, JSON, and free of traversal or separators. */
-function validateDocumentPath(value) {
-  if (value === '') {
-    refuse(EXIT_COORDINATE_REJECTED, 'LEGAL_BINDINGS_PATH is required and has no default');
-  }
-  if (value.startsWith('/') || value.includes('\\') || value.includes('//')) {
-    refuse(EXIT_COORDINATE_REJECTED, 'LEGAL_BINDINGS_PATH must be a relative repository path');
-  }
-  const segments = value.split('/');
-  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
-    refuse(EXIT_COORDINATE_REJECTED, 'LEGAL_BINDINGS_PATH must not contain an empty or relative segment');
-  }
-  if (!value.endsWith('.json')) {
-    refuse(EXIT_COORDINATE_REJECTED, 'LEGAL_BINDINGS_PATH must name a JSON document');
-  }
-  return value;
-}
-
-function validateRevision(name, value) {
-  if (value === '') {
-    refuse(EXIT_COORDINATE_REJECTED, `${name} is required and has no default`);
-  }
-  if (!COMMIT_REVISION.test(value)) {
-    refuse(
-      EXIT_COORDINATE_REJECTED,
-      `${name} must be a full 40-character lowercase commit revision; `
-      + 'a branch name, tag or abbreviated revision is not a fixed coordinate',
-    );
-  }
-  return value;
-}
-
-function validateExpectedDigest(value) {
-  if (value === '') {
-    refuse(EXIT_COORDINATE_REJECTED, 'LEGAL_BINDINGS_DIGEST is required and has no default');
-  }
-  if (value.startsWith('sha256:')) {
-    refuse(
-      EXIT_COORDINATE_REJECTED,
-      'LEGAL_BINDINGS_DIGEST is bare lowercase 64-hex, not the sha256:-prefixed form',
-    );
-  }
-  if (!CANONICAL_DIGEST.test(value)) {
-    refuse(EXIT_COORDINATE_REJECTED, 'LEGAL_BINDINGS_DIGEST must be bare lowercase 64-hex');
-  }
-  return value;
-}
-
 /** Read the four release coordinates. None of them carries a default. */
 export function resolveCoordinates(environment) {
   const [sourceRevision, fetchRevision, documentPath, expectedDigest] = COORDINATE_VARIABLES.map(
@@ -155,8 +102,8 @@ export function resolveCoordinates(environment) {
   return Object.freeze({
     sourceRevision: validateRevision('LEGAL_REPOSITORY_REVISION', sourceRevision),
     fetchRevision: validateRevision('LEGAL_BINDINGS_REPOSITORY_REVISION', fetchRevision),
-    documentPath: validateDocumentPath(documentPath),
-    expectedDigest: validateExpectedDigest(expectedDigest),
+    documentPath: validateDocumentPath('LEGAL_BINDINGS_PATH', documentPath),
+    expectedDigest: validateExpectedDigest('LEGAL_BINDINGS_DIGEST', expectedDigest),
   });
 }
 
@@ -195,163 +142,11 @@ export function assertProductRevision(environment) {
  * degrading to an unauthenticated or a skipped fetch.
  */
 export function resolveCredentials(environment) {
-  const absent = CREDENTIAL_VARIABLES.filter((name) => environmentValue(environment, name) === '');
-  if (absent.length > 0) {
-    refuse(
-      EXIT_CREDENTIAL_ABSENT,
-      'the Legal retrieval credential is not configured, so the release bindings '
-      + `cannot be verified: ${absent.join(', ')}`,
-    );
-  }
-  const repository = environmentValue(environment, 'LEGAL_BINDINGS_REPOSITORY');
-  const applicationId = environmentValue(environment, 'LEGAL_BINDINGS_APP_ID');
-  const installationId = environmentValue(environment, 'LEGAL_BINDINGS_INSTALLATION_ID');
-  if (!REPOSITORY.test(repository)) {
-    refuse(EXIT_CREDENTIAL_ABSENT, 'LEGAL_BINDINGS_REPOSITORY must be owner/name');
-  }
-  for (const [name, value] of [
-    ['LEGAL_BINDINGS_APP_ID', applicationId],
-    ['LEGAL_BINDINGS_INSTALLATION_ID', installationId],
-  ]) {
-    if (!NUMERIC_IDENTIFIER.test(value)) {
-      refuse(EXIT_CREDENTIAL_ABSENT, `${name} must be a numeric identifier`);
-    }
-  }
-  let privateKey;
-  try {
-    privateKey = Buffer.from(
-      environmentValue(environment, 'LEGAL_BINDINGS_APP_PRIVATE_KEY_B64'),
-      'base64',
-    ).toString('utf8');
-  } catch {
-    privateKey = '';
-  }
-  if (!privateKey.includes('PRIVATE KEY')) {
-    refuse(
-      EXIT_CREDENTIAL_ABSENT,
-      'LEGAL_BINDINGS_APP_PRIVATE_KEY_B64 must be a base64-encoded PEM private key',
-    );
-  }
-  return Object.freeze({ repository, applicationId, installationId, privateKey });
-}
-
-function base64Url(value) {
-  return Buffer.from(value).toString('base64url');
-}
-
-/** Mint the short-lived application assertion the token exchange requires. */
-function applicationAssertion({ applicationId, privateKey }, now = Math.floor(Date.now() / 1000)) {
-  const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const payload = base64Url(
-    JSON.stringify({ iat: now - 60, exp: now + 480, iss: applicationId }),
-  );
-  const signer = createSign('RSA-SHA256');
-  signer.update(`${header}.${payload}`);
-  signer.end();
-  return `${header}.${payload}.${signer.sign(privateKey, 'base64url')}`;
-}
-
-/** Hide a runtime secret from the job log before it can reach one. */
-function mask(value, environment) {
-  if (environment.GITHUB_ACTIONS === 'true') {
-    process.stdout.write(`::add-mask::${value}\n`);
-  }
-}
-
-async function requestJson(url, headers) {
-  let response;
-  try {
-    response = await fetch(url, { headers });
-  } catch (error) {
-    refuse(EXIT_RETRIEVAL_FAILED, `the Legal repository is unreachable: ${error.message}`);
-  }
-  return response;
-}
-
-/**
- * Exchange the application assertion for an installation token. The token is a
- * runtime secret: it is masked, never written down, and never returned to a
- * caller that outlives the fetch.
- */
-async function installationToken(baseUrl, credentials, environment) {
-  const assertion = applicationAssertion(credentials);
-  let response;
-  try {
-    response = await fetch(`${baseUrl}/app/installations/${credentials.installationId}/access_tokens`, {
-      method: 'POST',
-      headers: {
-        accept: 'application/vnd.github+json',
-        authorization: `Bearer ${assertion}`,
-        'x-github-api-version': API_VERSION,
-        'user-agent': 'release-bindings-gate',
-      },
-    });
-  } catch (error) {
-    refuse(EXIT_RETRIEVAL_FAILED, `the Legal retrieval credential could not be exchanged: ${error.message}`);
-  }
-  if (response.status !== 201) {
-    refuse(
-      EXIT_RETRIEVAL_FAILED,
-      `the Legal retrieval credential was rejected (HTTP ${response.status})`,
-    );
-  }
-  const body = await response.json().catch(() => ({}));
-  const token = typeof body.token === 'string' ? body.token : '';
-  if (token === '') {
-    refuse(EXIT_RETRIEVAL_FAILED, 'the Legal retrieval credential exchange returned no token');
-  }
-  mask(token, environment);
-  return token;
-}
-
-function contentHeaders(token, accept) {
-  return {
-    accept,
-    authorization: `Bearer ${token}`,
-    'x-github-api-version': API_VERSION,
-    'user-agent': 'release-bindings-gate',
-  };
-}
-
-function encodeRepositoryPath(documentPath) {
-  return documentPath.split('/').map(encodeURIComponent).join('/');
-}
-
-/**
- * Fetch the document bytes at the declared fetch revision. The revision is a
- * commit, so the response cannot follow a branch that has moved since the
- * coordinate was declared.
- */
-async function fetchBindingsDocument(baseUrl, credentials, coordinates, token) {
-  const url = `${baseUrl}/repos/${credentials.repository}/contents/`
-    + `${encodeRepositoryPath(coordinates.documentPath)}`
-    + `?ref=${coordinates.fetchRevision}`;
-  const response = await requestJson(url, contentHeaders(token, 'application/vnd.github.raw'));
-  if (!response.ok) {
-    refuse(
-      EXIT_RETRIEVAL_FAILED,
-      'the Legal release bindings document was not retrievable at the declared '
-      + `path and fetch revision (HTTP ${response.status})`,
-    );
-  }
-  return Buffer.from(await response.arrayBuffer());
-}
-
-/**
- * Confirm the declared source revision names a commit in the Legal repository.
- * This reads the source coordinate on its own; it never compares it with the
- * fetch revision, which the Legal contract keeps independent.
- */
-async function assertSourceRevisionExists(baseUrl, credentials, coordinates, token) {
-  const url = `${baseUrl}/repos/${credentials.repository}/commits/${coordinates.sourceRevision}`;
-  const response = await requestJson(url, contentHeaders(token, 'application/vnd.github+json'));
-  if (!response.ok) {
-    refuse(
-      EXIT_SOURCE_REVISION_ABSENT,
-      'the declared source revision does not name a commit in the Legal '
-      + `repository (HTTP ${response.status})`,
-    );
-  }
+  return resolveRetrievalCredentials(environment, {
+    variables: CREDENTIAL_VARIABLES,
+    subject: SUBJECT,
+    object: 'the release bindings',
+  });
 }
 
 /**
@@ -367,102 +162,162 @@ export function verifyDocumentBytes(fetched, coordinates) {
   try {
     document = JSON.parse(fetched.toString('utf8'));
   } catch (error) {
-    refuse(EXIT_NOT_CANONICAL, `the Legal release bindings document is not JSON: ${error.message}`);
+    refuse(EXIT_NOT_CANONICAL, `the ${DOCUMENT} is not JSON: ${error.message}`);
   }
   let canonical;
   try {
     canonical = Buffer.from(canonicalLegalBindingsJson(document), 'utf8');
   } catch (error) {
-    refuse(EXIT_NOT_CANONICAL, `the Legal release bindings document is not canonical JSON: ${error.message}`);
+    refuse(EXIT_NOT_CANONICAL, `the ${DOCUMENT} is not canonical JSON: ${error.message}`);
   }
   if (Buffer.compare(fetched, canonical) !== 0) {
     refuse(
       EXIT_NOT_CANONICAL,
-      'the Legal release bindings document is not stored in its canonical form, '
+      `the ${DOCUMENT} is not stored in its canonical form, `
       + 'so its digest is not the identity the contract defines',
     );
   }
   const digest = createHash('sha256').update(canonical).digest('hex');
   if (digest !== coordinates.expectedDigest) {
-    refuse(
-      EXIT_DIGEST_MISMATCH,
-      'the Legal release bindings document does not match the declared digest',
-    );
+    refuse(EXIT_DIGEST_MISMATCH, `the ${DOCUMENT} does not match the declared digest`);
   }
   const embedded = document.legal_repository_revision;
   if (typeof embedded !== 'string' || !COMMIT_REVISION.test(embedded)) {
-    refuse(
-      EXIT_SOURCE_REVISION_MISMATCH,
-      'the Legal release bindings document carries no source revision',
-    );
+    refuse(EXIT_SOURCE_REVISION_MISMATCH, `the ${DOCUMENT} carries no source revision`);
   }
   if (embedded !== coordinates.sourceRevision) {
     refuse(
       EXIT_SOURCE_REVISION_MISMATCH,
-      'the Legal release bindings document was approved at a source revision '
-      + 'other than the declared one',
+      `the ${DOCUMENT} was approved at a source revision other than the declared one`,
     );
   }
-  return Object.freeze({ digest, bytes: canonical });
+  return Object.freeze({ digest, bytes: canonical, document });
 }
 
 /**
- * Resolve where the verified document is staged. It must sit under the
- * runner's own temporary directory: not in the workspace, not in an artifact,
- * and not in a cache.
+ * Derive the privacy policy URL the packaged Agent configures, by joining the
+ * verified document's public origin with the privacy policy instrument's public
+ * route.
+ *
+ * The join is the one the release attestation recomputes from the same document
+ * and compares against the packaged configuration, so it is written the same
+ * way: trailing separators trimmed from the origin, the absolute route
+ * appended, and nothing else. The checks are the conditions under which the
+ * packaged URL and the attested URL are the same string, plus the two the
+ * extension build imposes on anything it packages. No origin, route or locale
+ * is written down here; a document that declares none yields no URL and the
+ * release stops.
  */
-export function resolveOutputPath(environment, declared) {
-  if (declared === '') {
-    refuse(EXIT_COORDINATE_REJECTED, '--output=<path> is required');
+export function deriveReleasePrivacyPolicyUrl(document) {
+  const origin = document?.public_origin;
+  const route = document?.instruments?.[PRIVACY_POLICY_INSTRUMENT]?.public_url;
+  if (typeof origin !== 'string' || typeof route !== 'string' || route === '') {
+    refuse(
+      EXIT_INSTRUMENT_REJECTED,
+      `the ${DOCUMENT} carries no privacy policy instrument`,
+    );
   }
-  const runnerTemp = environmentValue(environment, 'RUNNER_TEMP');
-  if (runnerTemp === '') {
-    refuse(EXIT_COORDINATE_REJECTED, 'RUNNER_TEMP is required; the document is staged there alone');
+  if (!route.startsWith('/')) {
+    refuse(
+      EXIT_INSTRUMENT_REJECTED,
+      'the privacy policy instrument does not carry an absolute public route',
+    );
   }
+  const url = `${origin.replace(/\/+$/, '')}${route}`;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    refuse(EXIT_INSTRUMENT_REJECTED, `the ${DOCUMENT} public origin is not a URL`);
+  }
+  if (parsed.protocol !== 'https:') {
+    refuse(
+      EXIT_INSTRUMENT_REJECTED,
+      'the privacy policy instrument does not resolve over HTTPS',
+    );
+  }
+  if (parsed.hostname.endsWith('.invalid')) {
+    refuse(
+      EXIT_INSTRUMENT_REJECTED,
+      'the privacy policy instrument does not resolve to a production-capable hostname',
+    );
+  }
+  if (parsed.href !== url) {
+    refuse(
+      EXIT_INSTRUMENT_REJECTED,
+      'the privacy policy route does not join the public origin into its own '
+      + 'parsed form, so the packaged URL and the attested URL would differ',
+    );
+  }
+  return url;
+}
+
+/**
+ * Resolve where the derived release values are emitted. The path is optional
+ * and names the job's environment file, which is never in the workspace.
+ */
+export function resolveEnvironmentFilePath(environment, declared) {
+  if (declared === '') return '';
+  const resolved = path.resolve(declared);
   const workspace = environmentValue(environment, 'GITHUB_WORKSPACE');
-  const temporaryRoot = path.resolve(runnerTemp);
-  const output = path.resolve(declared);
-  if (workspace !== '' && contains(path.resolve(workspace), temporaryRoot)) {
-    refuse(EXIT_COORDINATE_REJECTED, 'RUNNER_TEMP must not resolve inside the workspace');
+  if (workspace !== '' && contains(path.resolve(workspace), resolved)) {
+    refuse(EXIT_COORDINATE_REJECTED, '--environment-file must not resolve inside the workspace');
   }
-  if (!contains(temporaryRoot, output)) {
-    refuse(EXIT_COORDINATE_REJECTED, '--output must resolve inside RUNNER_TEMP');
-  }
-  return output;
-}
-
-function contains(root, candidate) {
-  const relative = path.relative(root, candidate);
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
-}
-
-function argumentValue(argv, name) {
-  const prefix = `${name}=`;
-  const inline = argv.find((argument) => argument.startsWith(prefix));
-  if (inline !== undefined) return inline.slice(prefix.length).trim();
-  const index = argv.indexOf(name);
-  if (index === -1) return '';
-  const next = argv[index + 1];
-  return typeof next === 'string' ? next.trim() : '';
+  return resolved;
 }
 
 export async function run(argv, environment) {
   const output = resolveOutputPath(environment, argumentValue(argv, '--output'));
+  const environmentFile = resolveEnvironmentFilePath(
+    environment,
+    argumentValue(argv, '--environment-file'),
+  );
   assertProductRevision(environment);
   const coordinates = resolveCoordinates(environment);
   const credentials = resolveCredentials(environment);
-  const baseUrl = resolveApiBaseUrl(environment);
+  const baseUrl = resolveApiBaseUrl(environment, 'LEGAL_BINDINGS_API_BASE_URL');
 
-  const token = await installationToken(baseUrl, credentials, environment);
-  const fetched = await fetchBindingsDocument(baseUrl, credentials, coordinates, token);
+  const token = await installationToken(baseUrl, credentials, environment, SUBJECT);
+  const fetched = await fetchDocument({
+    baseUrl,
+    credentials,
+    token,
+    documentPath: coordinates.documentPath,
+    fetchRevision: coordinates.fetchRevision,
+    subject: SUBJECT,
+    document: DOCUMENT,
+  });
   const verified = verifyDocumentBytes(fetched, coordinates);
-  await assertSourceRevisionExists(baseUrl, credentials, coordinates, token);
+  const privacyPolicyUrl = deriveReleasePrivacyPolicyUrl(verified.document);
+  // The declared source revision is read on its own; it is never compared with
+  // the fetch revision, which the Legal contract keeps independent.
+  const source = await commitExists({
+    baseUrl,
+    credentials,
+    token,
+    revision: coordinates.sourceRevision,
+    subject: SUBJECT,
+  });
+  if (!source.ok) {
+    refuse(
+      EXIT_SOURCE_REVISION_ABSENT,
+      'the declared source revision does not name a commit in the Legal '
+      + `repository (HTTP ${source.status})`,
+    );
+  }
 
   await mkdir(path.dirname(output), { recursive: true });
   await writeFile(output, verified.bytes);
   const staged = await readFile(output);
   if (Buffer.compare(staged, verified.bytes) !== 0) {
-    refuse(EXIT_NOT_CANONICAL, 'the staged Legal release bindings document changed as it was written');
+    refuse(EXIT_NOT_CANONICAL, `the staged ${DOCUMENT} changed as it was written`);
+  }
+  if (environmentFile !== '') {
+    await appendFile(
+      environmentFile,
+      `${PRIVACY_POLICY_URL_VARIABLE}=${privacyPolicyUrl}\n`,
+      'utf8',
+    );
   }
   return verified.digest;
 }
