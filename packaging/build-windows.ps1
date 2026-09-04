@@ -59,6 +59,12 @@ $DigestScriptPath = Join-Path $ProjectRoot "packaging\write-digests.ps1"
 $AgentBundleScriptPath = Join-Path $ProjectRoot "packaging\new-agent-bundle.ps1"
 $ExtensionRoot = Join-Path $ProjectRoot "extension"
 $ExtensionBuildScript = Join-Path $ExtensionRoot "build.mjs"
+
+# The Legal instrument this package serves from disk, and the bindings field
+# naming the approved rendering of it. packaging/runtime-files.json stages the
+# same file under _internal/; tests hold the two in step.
+$DisclosureAssetPath = Join-Path $ProjectRoot "app\provisioning\creator-platform-data-risk-disclosure.html"
+$DisclosureInstrument = "risk_disclosure"
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 
@@ -227,6 +233,55 @@ function Get-Sha256Digest {
     } finally {
         $hasher.Dispose()
     }
+}
+
+function Assert-DisclosureIsTheBoundInstrument {
+    <#
+        Refuse a release whose served Legal instrument is not the rendering the
+        bindings name. The Agent records acknowledgment against
+        instruments.<name>.rendered_sha256, while this package serves the
+        instrument from disk, and nothing else relates the two: a package built
+        from bindings naming a different rendering would record acknowledgment
+        of a document the reader was never shown.
+
+        This runs before the Store candidate is minted, so a mismatch leaves no
+        archive. The bindings document is already validated by
+        extension/build.mjs and that is not restated here; this reads one field
+        out of it and compares one file against it.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $BindingsPath,
+        [Parameter(Mandatory)] [string] $AssetPath,
+        [Parameter(Mandatory)] [string] $Instrument
+    )
+
+    if (-not (Test-Path -LiteralPath $AssetPath -PathType Leaf)) {
+        throw "The $Instrument asset does not exist: $AssetPath"
+    }
+    # Every hop is read defensively: this runs under Windows PowerShell with
+    # Set-StrictMode, where reading an absent property is a terminating error
+    # whose message would say less than the ones below.
+    $bindings = Get-Content -Raw -LiteralPath $BindingsPath | ConvertFrom-Json
+    $bound = $null
+    if ($bindings.PSObject.Properties.Name -contains "instruments") {
+        $instruments = $bindings.instruments
+        if ($instruments -and ($instruments.PSObject.Properties.Name -contains $Instrument)) {
+            # Not $instrument: variable names are case-insensitive here, so that
+            # would overwrite the $Instrument parameter the messages below name.
+            $bindingEntry = $instruments.$Instrument
+            if ($bindingEntry -and ($bindingEntry.PSObject.Properties.Name -contains "rendered_sha256")) {
+                $bound = $bindingEntry.rendered_sha256
+            }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($bound)) {
+        throw "The Legal release bindings name no rendered $Instrument to serve"
+    }
+    $served = Get-Sha256Digest -Path $AssetPath
+    if ($served -cne $bound) {
+        throw "The served $Instrument is $served, but the bindings name $bound"
+    }
+    Write-Host "Served $Instrument matches the bound rendering: $served"
 }
 
 function New-AgentStorePackage {
@@ -539,6 +594,10 @@ if (-not $SkipAssetBuild) {
     }
 }
 if ($ReleaseMode) {
+    Assert-DisclosureIsTheBoundInstrument `
+        -BindingsPath $LegalReleaseBindings `
+        -AssetPath $DisclosureAssetPath `
+        -Instrument $DisclosureInstrument
     $storePackage = New-AgentStorePackage -OutputRoot $OutputRoot
 }
 

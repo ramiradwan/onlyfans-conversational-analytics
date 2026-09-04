@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -39,13 +40,26 @@ BODY = {
     "detected_creator_account_id": ACCOUNT_ID,
     "reported_platform_creator_id": REPORTED_PLATFORM_ID,
 }
+ROOT = Path(__file__).resolve().parents[1]
 DISCLOSURE_ASSET = (
-    Path(__file__).resolve().parents[1]
-    / "app"
-    / "provisioning"
-    / "creator-platform-data-risk-disclosure.html"
+    ROOT / "app" / "provisioning" / "creator-platform-data-risk-disclosure.html"
 )
-DISCLOSURE_SHA256 = "3fe0ab83b27d9e638a753b53a7ce5a1a7399851fed3f4413a7c22d58d00a3630"
+DISCLOSURE_INSTRUMENT = "risk_disclosure"
+# The rendering the Agent binds acknowledgment to. Taking the expected digest
+# from the bindings rather than repeating it here means a disclosure edited
+# without its binding fails, which is the pairing the release itself requires.
+LEGAL_BINDINGS = (
+    ROOT
+    / "extension"
+    / "tests"
+    / "fixtures"
+    / "legal-instrument-bindings.synthetic.json"
+)
+
+
+def bound_disclosure_sha256() -> str:
+    bindings = json.loads(LEGAL_BINDINGS.read_text(encoding="utf-8"))
+    return bindings["instruments"][DISCLOSURE_INSTRUMENT]["rendered_sha256"]
 
 
 class ProvisioningMarkup(HTMLParser):
@@ -254,7 +268,7 @@ def test_shell_links_to_session_bound_frozen_disclosure() -> None:
     assert disclosure.headers["content-type"].startswith("text/html")
     assert disclosure.headers["cache-control"] == "no-store"
     assert disclosure.content == DISCLOSURE_ASSET.read_bytes()
-    assert hashlib.sha256(disclosure.content).hexdigest() == DISCLOSURE_SHA256
+    assert hashlib.sha256(disclosure.content).hexdigest() == bound_disclosure_sha256()
     assert anonymous.get(PROVISIONING_DISCLOSURE_PATH).status_code == 401
 
 

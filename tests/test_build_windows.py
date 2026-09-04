@@ -901,7 +901,9 @@ def test_release_with_invalid_legal_bindings_leaves_no_store_candidate(
 
     _clear_extension_archives()
     bindings = json.loads(LEGAL_BINDINGS_FIXTURE.read_text(encoding="utf-8"))
-    del bindings["instruments"]["risk_disclosure"]
+    # An instrument the earlier disclosure check does not read, so the refusal
+    # here is the one extension/build.mjs raises rather than that check's.
+    del bindings["instruments"]["terms_of_service"]
     incomplete = tmp_path / "incomplete-bindings.json"
     incomplete.write_text(json.dumps(bindings, indent=2) + "\n", encoding="utf-8")
     output = tmp_path / "build"
@@ -919,6 +921,103 @@ def test_release_with_invalid_legal_bindings_leaves_no_store_candidate(
     combined = refused.stdout + refused.stderr
     assert "ADR 0022" in combined, combined
     assert "legal instruments contains unexpected or missing fields" in combined, combined
+    _assert_no_store_candidate(output)
+
+
+DISCLOSURE_INSTRUMENT = "risk_disclosure"
+DISCLOSURE_ASSET = ROOT / "app" / "provisioning" / "creator-platform-data-risk-disclosure.html"
+
+
+def _bindings_with_disclosure(tmp_path: Path, rendered: str | None) -> Path:
+    """Write the release bindings with the bound rendering replaced or removed."""
+
+    bindings = json.loads(LEGAL_BINDINGS_FIXTURE.read_text(encoding="utf-8"))
+    instrument = bindings["instruments"][DISCLOSURE_INSTRUMENT]
+    if rendered is None:
+        del instrument["rendered_sha256"]
+    else:
+        instrument["rendered_sha256"] = rendered
+    path = tmp_path / "rebound-bindings.json"
+    path.write_text(json.dumps(bindings, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def test_the_bound_rendering_is_the_disclosure_this_package_serves() -> None:
+    """The fixture names the asset, so the release tests below can only pass honestly."""
+
+    bindings = json.loads(LEGAL_BINDINGS_FIXTURE.read_text(encoding="utf-8"))
+    bound = bindings["instruments"][DISCLOSURE_INSTRUMENT]["rendered_sha256"]
+    assert bound == hashlib.sha256(DISCLOSURE_ASSET.read_bytes()).hexdigest()
+
+
+def test_the_build_and_the_packaging_policy_name_one_disclosure() -> None:
+    """The script's asset path and the staged path cannot drift apart silently."""
+
+    relative = DISCLOSURE_ASSET.relative_to(ROOT).as_posix()
+    windows_literal = '"' + relative.replace("/", "\\") + '"'
+    assert windows_literal in BUILD_SCRIPT.read_text(encoding="utf-8"), windows_literal
+
+    policy = json.loads(
+        (ROOT / "packaging" / "runtime-files.json").read_text(encoding="utf-8")
+    )
+    staged = [
+        entry
+        for entry in policy["required_files"]
+        if entry.endswith(DISCLOSURE_ASSET.name)
+    ]
+    assert staged == [f"_internal/{relative}"], staged
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_release_serving_an_unbound_disclosure_leaves_no_store_candidate(
+    tmp_path: Path,
+) -> None:
+    """A disclosure that is not the bound rendering stops before any archive exists.
+
+    Without this the package would serve one document while the Agent recorded
+    acknowledgment of another, and every other check would still pass.
+    """
+
+    _clear_extension_archives()
+    served = hashlib.sha256(DISCLOSURE_ASSET.read_bytes()).hexdigest()
+    other = ("b" if served.startswith("a") else "a") + served[1:]
+    output = tmp_path / "build"
+
+    refused = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=_bindings_with_disclosure(tmp_path, other),
+    )
+
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    combined = refused.stdout + refused.stderr
+    assert served in combined, combined
+    assert other in combined, combined
+    _assert_no_store_candidate(output)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_release_binding_no_rendering_leaves_no_store_candidate(tmp_path: Path) -> None:
+    """Bindings naming no rendering are refused rather than read as agreement."""
+
+    _clear_extension_archives()
+    output = tmp_path / "build"
+
+    refused = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=_bindings_with_disclosure(tmp_path, None),
+    )
+
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    combined = refused.stdout + refused.stderr
+    assert f"name no rendered {DISCLOSURE_INSTRUMENT}" in combined, combined
     _assert_no_store_candidate(output)
 
 
