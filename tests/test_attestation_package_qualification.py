@@ -744,10 +744,15 @@ def test_a_duplicated_member_in_the_legal_document_is_refused(
     assert "not stored in its canonical form" in str(refusal.value)
 
 
-def test_the_signed_payload_binds_every_release_coordinate(
+def test_the_signed_payload_binds_the_qualified_artifact_and_nothing_more(
     packaged_release: dict[str, Any], tmp_path: Path
 ) -> None:
-    """The payload is signed with a key minted here and discarded with the test."""
+    """The payload is signed with a key minted here and discarded with the test.
+
+    The release coordinates below are asserted against the qualified release
+    rather than the document: the consumer's v1 schema defines no member for
+    them, so they gate the signature instead of travelling inside it.
+    """
 
     chrome_zip = _qualified_zip(packaged_release)
     with _legal_repository(
@@ -771,14 +776,6 @@ def test_the_signed_payload_binds_every_release_coordinate(
         artifact_server_digest="sha256:" + "c" * 64,
         archive_download_url="https://api.github.com/artifact/91",
     )
-    qualification = producer.PackageQualification(
-        workflow=producer.PRODUCER_WORKFLOW,
-        job=producer.QUALIFICATION_JOB_NAME,
-        job_id=7001,
-        run_id=99,
-        run_attempt=1,
-        conclusion="success",
-    )
     projection = producer.ReviewProjection(
         source_commit="e" * 40,
         current_commit="f" * 40,
@@ -788,36 +785,28 @@ def test_the_signed_payload_binds_every_release_coordinate(
     attestation = producer.build_attestation_document(
         source=source,
         release=release,
-        qualification=qualification,
         projection=projection,
         attestation_id="chrome-extension-99-1",
         signed_at="2026-01-01T00:00:00Z",
     )
 
+    assert set(attestation) <= producer.ATTESTATION_V1_MEMBERS
     assert attestation["commit_hash"] == SOURCE_COMMIT
     assert attestation["artifact"]["filename"] == packaged_release["filename"]
     assert attestation["artifact"]["sha256"] == hashlib.sha256(
         packaged_release["bytes"]
     ).hexdigest()
-    bindings = attestation["legal_bindings"]
-    assert bindings["schema"] == producer.LEGAL_BINDINGS_SCHEMA
-    assert bindings["legal_repository_revision"] == (
-        packaged_release["legal_source_revision"]
-    )
-    assert bindings["legal_bindings_repository_revision"] == FETCH_REVISION
-    assert bindings["legal_repository_revision"] != (
-        bindings["legal_bindings_repository_revision"]
-    )
-    assert bindings["legal_bindings_path"] == LEGAL_DOCUMENT_PATH
-    assert bindings["legal_bindings_digest"] == packaged_release["legal_digest"]
-    assert attestation["packaged_signing_rule"]["sha256"] == (
+    bindings = release.legal_bindings
+    assert bindings.schema == producer.LEGAL_BINDINGS_SCHEMA
+    assert bindings.source_revision == packaged_release["legal_source_revision"]
+    assert bindings.fetch_revision == FETCH_REVISION
+    assert bindings.source_revision != bindings.fetch_revision
+    assert bindings.document_path == LEGAL_DOCUMENT_PATH
+    assert bindings.digest == packaged_release["legal_digest"]
+    assert release.signing_rule.sha256 == (
         chrome_zip.metadata["signing_rule"]["sha256"]
     )
-    assert attestation["release_privacy_policy"]["url"] == PRIVACY_POLICY_URL
-    assert attestation["package_qualification"]["conclusion"] == "success"
-    assert attestation["package_qualification"]["job"] == (
-        producer.QUALIFICATION_JOB_NAME
-    )
+    assert release.privacy_policy.url == PRIVACY_POLICY_URL
 
     openssl = _openssl_executable()
     private_key, public_key = _ephemeral_signer(tmp_path)

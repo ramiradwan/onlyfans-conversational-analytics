@@ -45,6 +45,26 @@ PRODUCER_WORKFLOW = ".github/workflows/engineering-attestation.yml"
 TARGET = "chrome-extension"
 SIGNER_ID = "product-engineering-attestation-ed25519-v1"
 ALGORITHM = "ed25519"
+
+# Every member the v1 attestation schema defines. The consumer sets
+# additionalProperties to false, so a document carrying anything outside this
+# set is rejected at evidence intake rather than at signing time.
+ATTESTATION_V1_MEMBERS = frozenset(
+    {
+        "schema_version",
+        "attestation_id",
+        "created_at",
+        "repository",
+        "commit_hash",
+        "workflow",
+        "target",
+        "artifact",
+        "engineering_facts",
+        "legal_projection",
+        "provenance",
+    }
+)
+
 PRODUCT_DEFAULT_BRANCH = "main"
 EXPECTED_EXTENSION_ID = "mldllkjpnnjhdccpofhebhlhigpefcba"
 EXTENSION_BUILD_SCHEMA = "ofca-extension-build/v4"
@@ -1233,7 +1253,12 @@ def resolve_legal_bindings_coordinates(
     document_path: str,
     expected_digest: str,
 ) -> LegalBindingsCoordinates:
-    """Validate the declared coordinates before anything is retrieved."""
+    """Validate the declared coordinates before anything is retrieved.
+
+    The two revisions are independent inputs. The Legal contract forbids
+    requiring them to agree, so each is checked on its own and they are never
+    compared with each other or collapsed into one value.
+    """
     if not HEX_40.fullmatch(source_revision):
         refuse(
             STEP_LEGAL_COORDINATES,
@@ -2588,12 +2613,17 @@ def build_attestation_document(
     *,
     source: QualifiedSource,
     release: QualifiedStoreRelease,
-    qualification: PackageQualification,
     projection: ReviewProjection,
     attestation_id: str,
     signed_at: str,
 ) -> dict[str, Any]:
-    """Assemble the attestation from values this run verified for itself."""
+    """Assemble the attestation from values this run verified for itself.
+
+    The v1 contract defines no member for the bindings, signing rule, privacy
+    policy and qualification job this run also verifies, and closes the document
+    to members it does not define. Those checks gate the signature rather than
+    appear in it, so each one refuses before this is reached.
+    """
     chrome_zip = release.chrome_zip
     return {
         "schema_version": "1.0",
@@ -2609,37 +2639,6 @@ def build_attestation_document(
             "size_bytes": chrome_zip.size_bytes,
             "version": chrome_zip.version,
             "media_type": "application/zip",
-        },
-        # Revision A and revision B are bound as two values. The Legal contract
-        # forbids requiring them to agree, so they are never compared with each
-        # other and never collapsed into one field.
-        "legal_bindings": {
-            "schema": release.legal_bindings.schema,
-            "legal_repository_revision": release.legal_bindings.source_revision,
-            "legal_bindings_repository_revision": (
-                release.legal_bindings.fetch_revision
-            ),
-            "legal_bindings_path": release.legal_bindings.document_path,
-            "legal_bindings_digest": release.legal_bindings.digest,
-        },
-        "packaged_signing_rule": {
-            "schema": release.signing_rule.schema,
-            "source_revision": release.signing_rule.source_revision,
-            "sha256": release.signing_rule.sha256,
-        },
-        "release_privacy_policy": {
-            "url": release.privacy_policy.url,
-            "version": release.privacy_policy.version,
-            "rendered_sha256": release.privacy_policy.rendered_sha256,
-            "locale": release.privacy_policy.locale,
-        },
-        "package_qualification": {
-            "workflow": qualification.workflow,
-            "job": qualification.job,
-            "job_id": qualification.job_id,
-            "run_id": qualification.run_id,
-            "run_attempt": qualification.run_attempt,
-            "conclusion": qualification.conclusion,
         },
         "legal_projection": projection.value,
         "provenance": {
@@ -2740,7 +2739,9 @@ def command_sign_and_handoff(args: argparse.Namespace) -> int:
             temporary_root=temporary_root,
             audit_package=False,
         )
-        qualification = require_package_qualification(product_client)
+        # Called for its refusal. The v1 document records no qualification job,
+        # so this gates the signature without appearing in what is signed.
+        require_package_qualification(product_client)
 
         private_key_path = temporary_root / "attestation-private-key.pem"
         app_private_key_path = temporary_root / "review-app-private-key.pem"
@@ -2800,7 +2801,6 @@ def command_sign_and_handoff(args: argparse.Namespace) -> int:
         attestation: dict[str, Any] = build_attestation_document(
             source=source,
             release=release,
-            qualification=qualification,
             projection=projection,
             attestation_id=(
                 f"chrome-extension-{_required_environment('GITHUB_RUN_ID')}-"
