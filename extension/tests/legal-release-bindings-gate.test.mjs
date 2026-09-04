@@ -179,6 +179,56 @@ test('a production package is created with valid Legal release bindings', async 
   });
 });
 
+async function readBuiltBackground() {
+  return readFile(path.join(EXTENSION_ROOT, 'dist', 'background.js'), 'utf8');
+}
+
+test('a packaged build binds the runtime to the verified instruments', async () => {
+  await withScratchDirectory(async ({ signingRule }) => {
+    const result = await runBuild([
+      '--package',
+      `--packaged-signing-rule=${signingRule}`,
+      `--privacy-policy-url=${PRIVACY_POLICY_URL}`,
+      `--legal-release-bindings=${SYNTHETIC_BINDINGS}`,
+    ]);
+    assert.equal(result.code, 0, result.output);
+
+    const source = await readBuiltBackground();
+    const bindings = await readSyntheticBindings();
+    assert.doesNotMatch(
+      source,
+      /__OFCA_TEST_LEGAL_RELEASE_BINDINGS__/,
+      'the packaged background must not read the unbound test seam',
+    );
+    assert.ok(source.includes(bindings.legal_repository_revision));
+    assert.ok(source.includes(bindings.public_origin));
+    for (const instrument of Object.values(bindings.instruments)) {
+      for (const field of ['version', 'rendered_sha256', 'public_url', 'locale']) {
+        assert.ok(
+          source.includes(instrument[field]),
+          `the packaged background must carry ${field}`,
+        );
+      }
+    }
+  });
+});
+
+test('a development build leaves the runtime unbound', async () => {
+  await withScratchDirectory(async () => {
+    const result = await runBuild([]);
+    assert.equal(result.code, 0, result.output);
+
+    const source = await readBuiltBackground();
+    const bindings = await readSyntheticBindings();
+    assert.match(
+      source,
+      /__OFCA_TEST_LEGAL_RELEASE_BINDINGS__/,
+      'an unbound build must compile the fail-closed module verbatim',
+    );
+    assert.ok(!source.includes(bindings.legal_repository_revision));
+  });
+});
+
 test('the recorded digest is the digest of the bindings file as fetched', async () => {
   await withScratchDirectory(async ({ signingRule }) => {
     const result = await runBuild([

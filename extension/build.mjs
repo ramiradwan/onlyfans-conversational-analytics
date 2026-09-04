@@ -207,9 +207,9 @@ export function validateLegalReleaseBindingsDocument(document) {
  *
  * Only a production package requires them; the Extension already fails closed
  * without a binding. A supplied document is validated by the runtime validator
- * in every mode, and the build verifies it without embedding it. The return
- * value carries the digest of the canonical document so the artifact can record
- * which bindings were verified without carrying any instrument value.
+ * in every mode. The return value carries the canonical bytes the digest was
+ * taken over, so the bytes the build embeds in the runtime module are the same
+ * bytes it verified and recorded.
  */
 async function verifyLegalReleaseBindings({ required }) {
   const filename = argumentValue(LEGAL_RELEASE_BINDINGS_ARGUMENT);
@@ -248,7 +248,8 @@ async function verifyLegalReleaseBindings({ required }) {
   // recomputes it from the file alone and it does not move when the validator
   // changes. The stored bytes must already be the contract's canonical form,
   // which is what makes the two computations agree.
-  const canonicalBytes = TEXT_ENCODER.encode(canonicalLegalBindingsJson(document));
+  const canonical = canonicalLegalBindingsJson(document);
+  const canonicalBytes = TEXT_ENCODER.encode(canonical);
   assert.equal(
     Buffer.compare(fetched, Buffer.from(canonicalBytes)),
     0,
@@ -256,6 +257,7 @@ async function verifyLegalReleaseBindings({ required }) {
   );
   return Object.freeze({
     document: bindings,
+    canonical,
     digest: sha256Hex(canonicalBytes),
   });
 }
@@ -296,6 +298,41 @@ export function signerWrapperSource(signingRule) {
     '}',
     '',
   ].join('\n');
+}
+
+const LEGAL_BINDINGS_MODULE = /(^|[\\/])runtime[\\/]legal-release-bindings\.mjs$/;
+
+/**
+ * Source of the runtime binding module the background service worker imports.
+ *
+ * ADR 0022 makes the runtime bindings a release input, so a build that supplies
+ * a verified document replaces the checked-in module, which returns null and
+ * fails activation closed. The embedded text is the canonical document the
+ * digest was taken over, so the two compilations of the determinism check agree
+ * and the bytes that ship are the bytes that were verified. The activation
+ * controller validates the document again on read.
+ */
+export function legalBindingsModuleSource(legalBindings) {
+  return [
+    `const BINDINGS = Object.freeze(JSON.parse(${JSON.stringify(legalBindings.canonical)}));`,
+    `export const LEGAL_RELEASE_BINDINGS_SHA256 = ${JSON.stringify(legalBindings.digest)};`,
+    'export function legalReleaseBindings() {',
+    '  return BINDINGS;',
+    '}',
+    '',
+  ].join('\n');
+}
+
+function legalBindingsPlugin(legalBindings) {
+  return {
+    name: 'legal-release-bindings',
+    setup(context) {
+      context.onLoad(
+        { filter: LEGAL_BINDINGS_MODULE },
+        () => ({ contents: legalBindingsModuleSource(legalBindings), loader: 'js' }),
+      );
+    },
+  };
 }
 
 function packagedSignerPlugin(signingRule) {
@@ -354,7 +391,12 @@ export function auditReadOnlyModuleGraph(inputNames) {
   return Object.freeze([...normalized].sort());
 }
 
-async function compileOnce(signingRule) {
+async function compileOnce(signingRule, legalBindings) {
+  // An unbound build compiles the checked-in module verbatim, so the path that
+  // fails activation closed is the one development actually exercises.
+  const plugins = legalBindings === null
+    ? [packagedSignerPlugin(signingRule)]
+    : [packagedSignerPlugin(signingRule), legalBindingsPlugin(legalBindings)];
   const common = {
     bundle: true,
     charset: 'utf8',
@@ -363,7 +405,7 @@ async function compileOnce(signingRule) {
     metafile: true,
     minify: false,
     platform: 'browser',
-    plugins: [packagedSignerPlugin(signingRule)],
+    plugins,
     sourcemap: false,
     target: ['chrome116'],
     treeShaking: true,
@@ -647,8 +689,9 @@ async function auditArtifactView(view, {
     assert.deepEqual(artifactSigningRule.document, expectedSigningRule.document);
   }
 
-  // The bindings are verified, never embedded, so the artifact records only
-  // which document was verified and the audit compares that state.
+  // The artifact records which document was verified rather than the instrument
+  // values; the values themselves are read back out of the built background
+  // below, because a recorded digest does not prove the runtime is bound.
   if (metadata.legal_bindings !== null) {
     assert.equal(
       typeof metadata.legal_bindings,
@@ -686,6 +729,20 @@ async function auditArtifactView(view, {
     auditReadOnlyExecutable(filename, source);
     if (filename === 'background.js') {
       auditReadOnlyBackground(source);
+      if (expectedLegalBindings !== null) {
+        // A verified document that never reaches the bundle leaves every
+        // activation action refusing, so this reads the built background
+        // instead of trusting the recorded state.
+        assert.doesNotMatch(
+          source,
+          /__OFCA_TEST_LEGAL_RELEASE_BINDINGS__/,
+          'the built background carries the unbound Legal release bindings module',
+        );
+        assert.ok(
+          source.includes(expectedLegalBindings.document.legal_repository_revision),
+          'the built background does not carry the verified Legal release bindings',
+        );
+      }
       assert.match(source, /createChromeBrowserSigningProvider/);
       assert.match(source, /signer-state/);
       assert.match(source, /browser-signing-read\/v1/);
@@ -865,8 +922,8 @@ async function buildArtifact(
   legalBindings,
   { requirePrivacyPolicy },
 ) {
-  const first = await compileOnce(signingRule);
-  const second = await compileOnce(signingRule);
+  const first = await compileOnce(signingRule, legalBindings);
+  const second = await compileOnce(signingRule, legalBindings);
   verifyIdenticalBuilds(first, second);
   const metadata = await writeArtifact(first, signingRule, extensionConfig, legalBindings);
   await auditDirectory(signingRule, {
