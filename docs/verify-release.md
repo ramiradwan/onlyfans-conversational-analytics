@@ -2,11 +2,11 @@
 
 # Verify a release
 
-Use these checks to confirm that downloaded Windows package files match the artifact produced by the tagged package workflow.
+Use these checks to confirm that downloaded Windows package files match the artifact the Windows package workflow produced for that release tag.
 
 ## Published files
 
-The tagged Windows package workflow publishes an artifact containing:
+The Windows package workflow publishes an artifact containing:
 
 - `OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe` — the installer;
 - `OnlyFans-Conversational-Analytics-Agent-<extension version>-chrome.zip` — the Agent extension bundle;
@@ -14,7 +14,7 @@ The tagged Windows package workflow publishes an artifact containing:
 
 ## Verify the installer signature
 
-The tagged Windows package workflow signs the installer with Authenticode and requires a valid timestamped signature before publishing the signed package artifact.
+The Windows package workflow signs the installer with Authenticode and requires a valid timestamped signature before publishing the signed package artifact.
 
 In PowerShell, inspect the installer signature:
 

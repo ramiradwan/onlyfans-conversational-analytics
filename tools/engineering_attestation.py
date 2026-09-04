@@ -838,8 +838,13 @@ def qualify_windows_package_source(
     if not isinstance(workflow_id, int) or workflow_id <= 0:
         raise ContractError("Windows package run has no positive workflow ID")
     workflow_path = str(run.get("path", "")).split("@", 1)[0]
+    # A Store candidate is dispatched against an immutable release tag, not
+    # produced by repository movement, so the qualifying event is the dispatch.
+    # What binds the run to that tag is not the event but the three checks
+    # below it: the run sits on the release tag, in this repository, and the
+    # tag peels to the commit the run was built from.
     expected = {
-        "event": "push",
+        "event": "workflow_dispatch",
         "status": "completed",
         "conclusion": "success",
     }

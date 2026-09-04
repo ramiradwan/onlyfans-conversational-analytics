@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "windows-package.yml"
 GATE_SCRIPT = "tools/legal-release-bindings/verify.mjs"
 PACKAGE_BUILD_COMMAND = ".\\packaging\\build-windows.ps1"
+SIGNING_ACTION = "azure/trusted-signing-action@"
 
 # The two Legal coordinates are independent: the document is fetched at one and
 # carries the other. Requiring them to be equal would refuse a valid release.
@@ -52,6 +53,15 @@ COORDINATE_ENVIRONMENT = {
     ),
     "LEGAL_BINDINGS_PATH": "${{ inputs.legal_bindings_path }}",
     "LEGAL_BINDINGS_DIGEST": "${{ inputs.legal_bindings_digest }}",
+}
+
+# The dispatch ref and the declared revision reach the guard under their own
+# names, so the guard compares the two the attestation later compares.
+DISPATCH_ENVIRONMENT = {
+    "REF_TYPE": "${{ github.ref_type }}",
+    "REF_NAME": "${{ github.ref_name }}",
+    "REF_COMMIT": "${{ github.sha }}",
+    "PRODUCT_REVISION": "${{ inputs.product_revision }}",
 }
 
 # Credentials that do not exist yet. Absence must stop the release at the gate,
@@ -153,6 +163,86 @@ def _assert_a_store_candidate_needs_a_dispatch(workflow: dict[str, Any]) -> None
     assert set(triggers) == {"workflow_dispatch"}, (
         "a Store candidate must be built from declared coordinates, not from a "
         f"repository event: {sorted(triggers)}"
+    )
+
+
+def _signing_job(workflow: dict[str, Any]) -> dict[str, Any]:
+    """The job is identified by the credential it holds, not by its name."""
+
+    names = sorted(
+        name
+        for name, job in _jobs(workflow).items()
+        if any(SIGNING_ACTION in str(step.get("uses") or "") for step in _steps(job))
+    )
+    assert len(names) == 1, f"exactly one job must run {SIGNING_ACTION}: {names}"
+    return _jobs(workflow)[names[0]]
+
+
+def _dispatch_guard_index(job: dict[str, Any]) -> int:
+    guards = [
+        index
+        for index, step in enumerate(_steps(job))
+        if "REF_TYPE" in str(step.get("run") or "")
+    ]
+    assert len(guards) == 1, (
+        f"exactly one step may qualify the dispatch ref, found {len(guards)}"
+    )
+    return guards[0]
+
+
+def _assert_the_dispatch_ref_is_the_declared_release_tag(
+    workflow: dict[str, Any],
+) -> None:
+    """A dispatch is only a release when it sits on the tag it declares.
+
+    A branch dispatch checks out the declared revision and packages it, so
+    nothing downstream of the build would notice; what it produces is an
+    artifact named for a branch, off a run the attestation refuses on its
+    coordinates after the installer is already signed. This refuses it first.
+    """
+
+    job = _build_job(workflow)
+    index = _dispatch_guard_index(job)
+    assert index == 0, (
+        "the dispatch ref must be qualified before anything is retrieved, built "
+        f"or signed, but the guard runs as step {index}"
+    )
+    guard = _steps(job)[index]
+    environment = guard.get("env") or {}
+    assert environment == DISPATCH_ENVIRONMENT, (
+        f"the guard must read the dispatch ref and the declared revision: {environment}"
+    )
+
+    body = str(guard.get("run") or "")
+    assert "$env:REF_TYPE -cne" in body, (
+        f"the guard must refuse a ref that is not a tag: {body}"
+    )
+    assert "$env:REF_NAME -cnotmatch" in body, (
+        f"the guard must refuse a tag outside the v* grammar: {body}"
+    )
+    assert "$env:PRODUCT_REVISION -cne $env:REF_COMMIT" in body, (
+        "the guard must refuse a declared revision that is not the commit the "
+        f"release tag carries: {body}"
+    )
+
+
+def _assert_the_signing_job_reads_the_declared_revision(
+    workflow: dict[str, Any],
+) -> None:
+    """The job holding the signing credential must not follow the run's ref."""
+
+    checkouts = [
+        step
+        for step in _steps(_signing_job(workflow))
+        if str(step.get("uses", "")).startswith("actions/checkout@")
+    ]
+    assert len(checkouts) == 1, (
+        f"the signing job must check out exactly once: {len(checkouts)}"
+    )
+    ref = (checkouts[0].get("with") or {}).get("ref")
+    assert ref == "${{ inputs.product_revision }}", (
+        "the signature verification scripts must come from the declared Product "
+        f"revision, not from the ref the run happens to sit on: {ref!r}"
     )
 
 
@@ -266,6 +356,57 @@ def test_a_repository_event_can_no_longer_produce_a_store_candidate() -> None:
     tagged[True] = {**_triggers(tagged), "push": {"tags": ["v*"]}}
     with pytest.raises(AssertionError, match="not from a repository event"):
         _assert_a_store_candidate_needs_a_dispatch(tagged)
+
+
+def test_a_dispatch_off_the_declared_release_tag_never_reaches_the_build() -> None:
+    """Moving, loosening or unanchoring the guard turns the named check red."""
+
+    workflow = _workflow_document()
+    _assert_the_dispatch_ref_is_the_declared_release_tag(workflow)
+
+    late = deepcopy(workflow)
+    steps = _build_job(late)["steps"]
+    steps.insert(1, steps.pop(0))
+    with pytest.raises(AssertionError, match="before anything is retrieved"):
+        _assert_the_dispatch_ref_is_the_declared_release_tag(late)
+
+    unanchored = deepcopy(workflow)
+    guard = _steps(_build_job(unanchored))[0]
+    guard["run"] = guard["run"].replace(
+        "$env:PRODUCT_REVISION -cne $env:REF_COMMIT", "$false"
+    )
+    with pytest.raises(AssertionError, match="the commit the release tag carries"):
+        _assert_the_dispatch_ref_is_the_declared_release_tag(unanchored)
+
+    # PowerShell compares strings case-insensitively unless told otherwise, and
+    # the attestation reads the same two values as exact lowercase.
+    insensitive = deepcopy(workflow)
+    guard = _steps(_build_job(insensitive))[0]
+    guard["run"] = guard["run"].replace("$env:REF_TYPE -cne", "$env:REF_TYPE -ne")
+    with pytest.raises(AssertionError, match="a ref that is not a tag"):
+        _assert_the_dispatch_ref_is_the_declared_release_tag(insensitive)
+
+    blind = deepcopy(workflow)
+    _steps(_build_job(blind))[0]["env"].pop("REF_COMMIT")
+    with pytest.raises(AssertionError, match="the dispatch ref and the declared"):
+        _assert_the_dispatch_ref_is_the_declared_release_tag(blind)
+
+
+def test_the_signing_job_reads_the_revision_the_build_packaged() -> None:
+    """Letting the signing job follow the run's ref turns the named check red."""
+
+    workflow = _workflow_document()
+    _assert_the_signing_job_reads_the_declared_revision(workflow)
+
+    floating = deepcopy(workflow)
+    checkout = next(
+        step
+        for step in _steps(_signing_job(floating))
+        if str(step.get("uses", "")).startswith("actions/checkout@")
+    )
+    del checkout["with"]["ref"]
+    with pytest.raises(AssertionError, match="declared Product revision"):
+        _assert_the_signing_job_reads_the_declared_revision(floating)
 
 
 def test_every_release_coordinate_is_required_and_carries_no_default() -> None:

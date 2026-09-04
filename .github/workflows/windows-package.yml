@@ -61,6 +61,33 @@ jobs:
       contents: read
 
     steps:
+      # A Store candidate is produced only by a dispatch against an immutable v*
+      # tag whose commit is the declared revision. Both hold before any document
+      # is retrieved, any dependency is installed, anything is built and anything
+      # is signed, so a dispatch from a branch head, or one whose declared
+      # revision is not the tagged commit, leaves no artifact to sign and no run
+      # for the release attestation to read. The tag grammar and the case-
+      # sensitive comparisons are the ones the attestation applies to the same
+      # two values, so a run this step admits cannot be one the attestation
+      # refuses on its coordinates.
+      - name: Require the dispatch ref to be the declared release tag
+        shell: pwsh
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_COMMIT: ${{ github.sha }}
+          PRODUCT_REVISION: ${{ inputs.product_revision }}
+        run: |
+          if ($env:REF_TYPE -cne "tag") {
+            throw "A Store candidate is built from a release tag, not from a $env:REF_TYPE"
+          }
+          if ($env:REF_NAME -cnotmatch '^v[0-9A-Za-z][0-9A-Za-z._-]*$') {
+            throw "A Store candidate is built from a v* release tag, not from $env:REF_NAME"
+          }
+          if ($env:PRODUCT_REVISION -cne $env:REF_COMMIT) {
+            throw "product_revision is not the commit release tag $env:REF_NAME carries"
+          }
+
       # Ephemeral runner storage, outside the workspace and outside any cache.
       # The verified documents are staged here and removed when the job ends.
       # The runner context carrying that location is not available to a job
@@ -231,10 +258,12 @@ jobs:
       - name: Check out the release scripts
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ inputs.product_revision }}
           sparse-checkout: |
             packaging/verify-signatures.ps1
             packaging/write-digests.ps1
           sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       - name: Download the unsigned package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

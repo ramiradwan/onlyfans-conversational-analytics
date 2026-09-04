@@ -645,7 +645,7 @@ class _SourceApi:
         self.run: dict[str, Any] = {
             "workflow_id": 77,
             "path": producer.WINDOWS_PACKAGE_WORKFLOW,
-            "event": "push",
+            "event": "workflow_dispatch",
             "status": "completed",
             "conclusion": "success",
             "head_branch": "v0.7.5",
@@ -971,10 +971,12 @@ def test_review_configuration_has_no_defaults_and_rejects_unsafe_paths(
     ("field", "value", "message"),
     [
         ("event", "pull_request", "event"),
+        ("event", "push", "event"),
         ("conclusion", "failure", "conclusion"),
         ("path", ".github/workflows/other.yml", "path"),
         ("workflow_id", 0, "workflow ID"),
         ("head_branch", "v0.7.4", "head branch"),
+        ("head_branch", producer.PRODUCT_DEFAULT_BRANCH, "head branch"),
         ("head_sha", "not-a-sha", "source commit"),
     ],
 )

@@ -859,7 +859,7 @@ class _ProducerApi:
         self.run: dict[str, Any] = {
             "workflow_id": 77,
             "path": producer.WINDOWS_PACKAGE_WORKFLOW,
-            "event": "push",
+            "event": "workflow_dispatch",
             "status": "completed",
             "conclusion": "success",
             "head_branch": release_tag,
