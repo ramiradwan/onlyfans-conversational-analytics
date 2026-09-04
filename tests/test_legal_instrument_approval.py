@@ -193,18 +193,25 @@ def test_recorded_state_is_a_reference_and_not_a_copy_of_the_served_bytes() -> N
     lock = read_lock()
     state = lock["recorded_state"]
     served = served_digest()
-    without_rendering = {
+    # Both recorded digests bind the served bytes once the instrument is
+    # approved, so both are blanked here. What the assertion still refutes is a
+    # copy of those bytes reaching any other field of the lock.
+    without_recorded_digests = {
         **lock,
         "recorded_state": {
             **state,
-            "variant": {**state["variant"], "rendered_sha256": None},
+            "variant": {
+                **state["variant"],
+                "rendered_sha256": None,
+                "source_sha256": None,
+            },
         },
     }
     rendered = state["variant"]["rendered_sha256"]
 
     assert ROOT / lock["shipped_asset"] == _DISCLOSURE_ASSET
     assert approval(state) in {APPROVED, UNAPPROVED, RETIRED}
-    assert served not in json.dumps(without_rendering)
+    assert served not in json.dumps(without_recorded_digests)
     assert SEMVER.match(state["version"])
     assert PUBLIC_ROUTE.match(state["public_url"])
     assert rendered is None or SHA256.match(rendered)
