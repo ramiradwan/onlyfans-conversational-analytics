@@ -59,13 +59,22 @@ jobs:
     runs-on: windows-2022
     permissions:
       contents: read
-    env:
-      # Ephemeral runner storage, outside the workspace and outside any cache.
-      # The verified documents are staged here and removed when the job ends.
-      LEGAL_BINDINGS_DOCUMENT: ${{ runner.temp }}/legal-release-bindings-${{ github.run_id }}-${{ github.run_attempt }}/legal-release-bindings.json
-      PACKAGED_SIGNING_RULE: ${{ runner.temp }}/packaged-signing-rule-${{ github.run_id }}-${{ github.run_attempt }}/packaged-signing-rule.json
 
     steps:
+      # Ephemeral runner storage, outside the workspace and outside any cache.
+      # The verified documents are staged here and removed when the job ends.
+      # The runner context carrying that location is not available to a job
+      # environment, only to a step, so the two paths are declared once here and
+      # enter the job environment from the first step.
+      - name: Declare the staged release document paths
+        shell: pwsh
+        run: |
+          $stem = "${{ github.run_id }}-${{ github.run_attempt }}"
+          $bindings = Join-Path (Join-Path $env:RUNNER_TEMP "legal-release-bindings-$stem") "legal-release-bindings.json"
+          $rule = Join-Path (Join-Path $env:RUNNER_TEMP "packaged-signing-rule-$stem") "packaged-signing-rule.json"
+          "LEGAL_BINDINGS_DOCUMENT=$bindings" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PACKAGED_SIGNING_RULE=$rule" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
