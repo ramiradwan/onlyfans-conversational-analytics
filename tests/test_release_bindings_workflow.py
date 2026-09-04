@@ -7,6 +7,7 @@ that no mutation turns red.
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,10 @@ PACKAGE_BUILD_COMMAND = ".\\packaging\\build-windows.ps1"
 # carries the other. Requiring them to be equal would refuse a valid release.
 SOURCE_REVISION_INPUT = "legal_repository_revision"
 FETCH_REVISION_INPUT = "legal_bindings_repository_revision"
+
+# A name published into the job environment file, as the assignment a step
+# writes there rather than as the variable a later step reads back.
+ENVIRONMENT_FILE_WRITE = re.compile(r'"(?P<name>[A-Z][A-Z0-9_]*)=[^"\n]*"')
 
 REQUIRED_INPUTS = (
     "product_revision",
@@ -96,6 +101,30 @@ def _build_job(workflow: dict[str, Any]) -> dict[str, Any]:
     )
     assert len(names) == 1, f"exactly one job must run {PACKAGE_BUILD_COMMAND}: {names}"
     return _jobs(workflow)[names[0]]
+
+
+def _declaring_step(job: dict[str, Any], variable: str) -> str:
+    """The run block of the step that publishes ``variable`` to the whole job.
+
+    A job environment cannot read the runner context, so a path on ephemeral
+    runner storage is written into the job environment file by a step. That
+    step is what decides where the document is staged.
+    """
+
+    runs = [
+        run
+        for run in (str(step.get("run") or "") for step in _steps(job))
+        if "GITHUB_ENV" in run
+        and any(
+            match.group("name") == variable
+            for match in ENVIRONMENT_FILE_WRITE.finditer(run)
+        )
+    ]
+    assert len(runs) == 1, (
+        f"exactly one step must publish {variable} into the job environment, "
+        f"found {len(runs)}"
+    )
+    return runs[0]
 
 
 def _step_indexes(job: dict[str, Any], fragment: str) -> list[int]:
@@ -183,11 +212,12 @@ def _assert_packaging_reads_only_the_verified_document(workflow: dict[str, Any])
     assert "$env:LEGAL_BINDINGS_DOCUMENT" in command, (
         "the packaging step must read the document the gate staged, not another path"
     )
-    staged = str((job.get("env") or {}).get("LEGAL_BINDINGS_DOCUMENT", ""))
-    assert staged.startswith("${{ runner.temp }}/"), (
+    staged = _declaring_step(job, "LEGAL_BINDINGS_DOCUMENT")
+    assert "RUNNER_TEMP" in staged, (
         f"the verified document must be staged on ephemeral runner storage: {staged!r}"
     )
     assert "github.workspace" not in staged, staged
+    assert "GITHUB_WORKSPACE" not in staged, staged
 
 
 def _assert_the_checked_out_tree_is_the_declared_revision(
@@ -337,11 +367,24 @@ def test_packaging_reads_the_document_the_gate_staged() -> None:
         _assert_packaging_reads_only_the_verified_document(unbound)
 
     checked_in = deepcopy(workflow)
-    _build_job(checked_in)["env"]["LEGAL_BINDINGS_DOCUMENT"] = (
-        "${{ github.workspace }}/legal-release-bindings.json"
-    )
+    for step in _steps(_build_job(checked_in)):
+        run = str(step.get("run") or "")
+        if "GITHUB_ENV" in run and "LEGAL_BINDINGS_DOCUMENT" in run:
+            step["run"] = run.replace("$env:RUNNER_TEMP", "$env:GITHUB_WORKSPACE")
     with pytest.raises(AssertionError, match="ephemeral runner storage"):
         _assert_packaging_reads_only_the_verified_document(checked_in)
+
+    unpublished = deepcopy(workflow)
+    for step in _steps(_build_job(unpublished)):
+        run = str(step.get("run") or "")
+        if "GITHUB_ENV" in run:
+            step["run"] = "\n".join(
+                line
+                for line in run.splitlines()
+                if '"LEGAL_BINDINGS_DOCUMENT=' not in line
+            )
+    with pytest.raises(AssertionError, match="publish LEGAL_BINDINGS_DOCUMENT"):
+        _assert_packaging_reads_only_the_verified_document(unpublished)
 
 
 def test_the_build_packages_the_declared_product_revision() -> None:

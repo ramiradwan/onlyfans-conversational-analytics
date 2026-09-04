@@ -54,6 +54,10 @@ EXPORTED_URL_VARIABLE = re.compile(
 )
 ENVIRONMENT_REFERENCE = re.compile(r'^"?\$env:(?P<name>[A-Za-z_][A-Za-z0-9_]*)"?$')
 
+# A name published into the job environment file, as the assignment a step
+# writes there rather than as the variable a later step reads back.
+ENVIRONMENT_FILE_WRITE = re.compile(r'"(?P<name>[A-Z][A-Z0-9_]*)=[^"\n]*"')
+
 # Values a release input may never be written down as in the workflow itself.
 LITERAL_URL = re.compile(r"https?://", re.IGNORECASE)
 
@@ -170,6 +174,23 @@ def _demanded_parameters(script: str) -> set[str]:
     return {name for name, mandatory in declared.items() if mandatory} | _release_inputs(script)
 
 
+def _published_names(job: dict[str, Any]) -> set[str]:
+    """Names a step writes into the job environment file.
+
+    A job environment cannot read the runner context, so a path on ephemeral
+    runner storage reaches the packaging step this way rather than from a
+    job-level declaration.
+    """
+
+    published: set[str] = set()
+    for step in _steps(job):
+        run = str(step.get("run") or "")
+        if "GITHUB_ENV" not in run:
+            continue
+        published |= {match.group("name") for match in ENVIRONMENT_FILE_WRITE.finditer(run)}
+    return published
+
+
 def _exported_url_variable() -> str:
     match = EXPORTED_URL_VARIABLE.search(LEGAL_GATE.read_text(encoding="utf-8"))
     assert match is not None, f"{LEGAL_GATE} names no derived privacy policy variable"
@@ -239,7 +260,7 @@ def _assert_no_release_input_is_written_down(
 
     job = _build_job(workflow)
     arguments = _passed_arguments(_package_command(workflow))
-    staged = set(job.get("env") or {})
+    staged = set(job.get("env") or {}) | _published_names(job)
     derived = {_exported_url_variable()}
     for name in sorted(_release_inputs(script)):
         value = arguments.get(name, "")
@@ -341,7 +362,14 @@ def test_no_release_input_is_written_down_in_the_workflow() -> None:
         _assert_no_release_input_is_written_down(hard_coded, script)
 
     unstaged = deepcopy(workflow)
-    del _build_job(unstaged)["env"]["PACKAGED_SIGNING_RULE"]
+    for step in _steps(_build_job(unstaged)):
+        run = str(step.get("run") or "")
+        if "GITHUB_ENV" in run:
+            step["run"] = "\n".join(
+                line
+                for line in run.splitlines()
+                if '"PACKAGED_SIGNING_RULE=' not in line
+            )
     with pytest.raises(AssertionError, match="which no gate in this job stages"):
         _assert_no_release_input_is_written_down(unstaged, script)
 
