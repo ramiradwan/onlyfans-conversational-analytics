@@ -7,20 +7,20 @@
   "shipped_asset": "app/provisioning/creator-platform-data-risk-disclosure.html",
   "recorded_state": {
     "document_id": "risk-disclosure",
-    "status": "draft",
+    "status": "approved",
     "version": "1.0.0",
-    "effective_at": null,
-    "approved_at": null,
-    "approved_by": null,
+    "effective_at": "2026-09-04",
+    "approved_at": "2026-09-04",
+    "approved_by": "ramiradwan",
     "public_url": "/legal/creator-risk-disclosure",
     "canonical_locale": "en",
     "variant": {
       "locale": "en",
-      "source_path": "drafts/risk-disclosure/creator-platform-data-risk-disclosure.html",
-      "source_sha256": null,
-      "rendered_sha256": null,
-      "approved_at": null,
-      "approved_by": null
+      "source_path": "published/risk-disclosure/en.html",
+      "source_sha256": "3532abcaa51189102aaa3e8fc762cf1af06f0564bb1c115bb28ded6c41831246",
+      "rendered_sha256": "3532abcaa51189102aaa3e8fc762cf1af06f0564bb1c115bb28ded6c41831246",
+      "approved_at": "2026-09-04",
+      "approved_by": "ramiradwan"
     }
   }
 }
