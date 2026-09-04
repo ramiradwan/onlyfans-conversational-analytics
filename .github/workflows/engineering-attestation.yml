@@ -19,6 +19,22 @@ on:
         description: Canonical SHA-256 of the reviewed projection
         required: true
         type: string
+      legal_repository_revision:
+        description: Legal revision the bindings document was approved at
+        required: true
+        type: string
+      legal_bindings_repository_revision:
+        description: Legal revision the bindings document is read at
+        required: true
+        type: string
+      legal_bindings_path:
+        description: Repository-relative path of the Legal bindings document
+        required: true
+        type: string
+      legal_bindings_digest:
+        description: Contract-defined digest of the Legal bindings document
+        required: true
+        type: string
 
 permissions: {}
 
@@ -67,9 +83,65 @@ jobs:
             --windows-package-run-id "$WINDOWS_PACKAGE_RUN_ID" \
             --release-tag "$RELEASE_TAG"
 
+  # The controlled package audit needs the extension toolchain, which must not
+  # exist in the environment that holds the signing key. It runs here instead,
+  # resolves and downloads the artifact itself rather than accepting bytes or
+  # conclusions from another job, and its own conclusion is read back from the
+  # Actions API by the signer.
+  qualify-package:
+    name: Qualify the exact Store package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out the committed producer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js for the package audit
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install the extension audit dependencies
+        run: npm ci --prefix extension
+
+      - name: Audit the exact Store package against the exact bindings
+        id: qualify
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PRODUCER_CONTROL_BASELINE_SHA: ${{ vars.PRODUCER_CONTROL_BASELINE_SHA }}
+          PRODUCER_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          PRODUCT_REVISION: ${{ github.sha }}
+          LEGAL_BINDINGS_REPOSITORY: ${{ secrets.LEGAL_BINDINGS_REPOSITORY }}
+          LEGAL_BINDINGS_APP_ID: ${{ secrets.LEGAL_BINDINGS_APP_ID }}
+          LEGAL_BINDINGS_APP_PRIVATE_KEY_B64: ${{ secrets.LEGAL_BINDINGS_APP_PRIVATE_KEY_B64 }}
+          LEGAL_BINDINGS_INSTALLATION_ID: ${{ secrets.LEGAL_BINDINGS_INSTALLATION_ID }}
+          TMPDIR: ${{ runner.temp }}
+          WINDOWS_PACKAGE_RUN_ID: ${{ inputs.windows_package_run_id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          LEGAL_REPOSITORY_REVISION_INPUT: ${{ inputs.legal_repository_revision }}
+          LEGAL_BINDINGS_REPOSITORY_REVISION_INPUT: ${{ inputs.legal_bindings_repository_revision }}
+          LEGAL_BINDINGS_PATH_INPUT: ${{ inputs.legal_bindings_path }}
+          LEGAL_BINDINGS_DIGEST_INPUT: ${{ inputs.legal_bindings_digest }}
+        run: |
+          python3 tools/engineering_attestation.py qualify-package \
+            --windows-package-run-id "$WINDOWS_PACKAGE_RUN_ID" \
+            --release-tag "$RELEASE_TAG" \
+            --legal-repository-revision "$LEGAL_REPOSITORY_REVISION_INPUT" \
+            --legal-bindings-repository-revision "$LEGAL_BINDINGS_REPOSITORY_REVISION_INPUT" \
+            --legal-bindings-path "$LEGAL_BINDINGS_PATH_INPUT" \
+            --legal-bindings-digest "$LEGAL_BINDINGS_DIGEST_INPUT"
+
   sign-and-handoff:
     name: Sign and privately hand off evidence
-    needs: resolve-source
+    needs:
+      - resolve-source
+      - qualify-package
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: engineering-attestation-production
@@ -84,6 +156,8 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             tools/engineering_attestation.py
+            tools/legal-release-bindings/verify.mjs
+            tools/legal-release-bindings/canonical-json.mjs
             attestation/signers/product-engineering-attestation-ed25519-v1.pem
             tests/fixtures/engineering-attestation-v1-ed25519.json
           sparse-checkout-cone-mode: false
@@ -91,6 +165,7 @@ jobs:
       - name: Record protected runner tools
         run: |
           python3 --version
+          node --version
           openssl version -a
 
       - name: Independently qualify, sign, and hand off
@@ -117,6 +192,15 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           LEGAL_PROJECTION_SOURCE_COMMIT: ${{ inputs.legal_projection_source_commit }}
           LEGAL_PROJECTION_CANONICAL_SHA256: ${{ inputs.legal_projection_canonical_sha256 }}
+          PRODUCT_REVISION: ${{ github.sha }}
+          LEGAL_BINDINGS_REPOSITORY: ${{ secrets.LEGAL_BINDINGS_REPOSITORY }}
+          LEGAL_BINDINGS_APP_ID: ${{ secrets.LEGAL_BINDINGS_APP_ID }}
+          LEGAL_BINDINGS_APP_PRIVATE_KEY_B64: ${{ secrets.LEGAL_BINDINGS_APP_PRIVATE_KEY_B64 }}
+          LEGAL_BINDINGS_INSTALLATION_ID: ${{ secrets.LEGAL_BINDINGS_INSTALLATION_ID }}
+          LEGAL_REPOSITORY_REVISION_INPUT: ${{ inputs.legal_repository_revision }}
+          LEGAL_BINDINGS_REPOSITORY_REVISION_INPUT: ${{ inputs.legal_bindings_repository_revision }}
+          LEGAL_BINDINGS_PATH_INPUT: ${{ inputs.legal_bindings_path }}
+          LEGAL_BINDINGS_DIGEST_INPUT: ${{ inputs.legal_bindings_digest }}
         run: |
           set +x
           ulimit -c 0
@@ -124,6 +208,10 @@ jobs:
           python3 tools/engineering_attestation.py sign-and-handoff \
             --windows-package-run-id "$WINDOWS_PACKAGE_RUN_ID" \
             --release-tag "$RELEASE_TAG" \
+            --legal-repository-revision "$LEGAL_REPOSITORY_REVISION_INPUT" \
+            --legal-bindings-repository-revision "$LEGAL_BINDINGS_REPOSITORY_REVISION_INPUT" \
+            --legal-bindings-path "$LEGAL_BINDINGS_PATH_INPUT" \
+            --legal-bindings-digest "$LEGAL_BINDINGS_DIGEST_INPUT" \
             --legal-projection-source-commit "$LEGAL_PROJECTION_SOURCE_COMMIT" \
             --legal-projection-canonical-sha256 "$LEGAL_PROJECTION_CANONICAL_SHA256"
 
