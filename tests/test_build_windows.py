@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import http.server
+import json
 import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -22,8 +27,61 @@ from app.core.runtime_paths import runtime_data_directory
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
-EXTENSION_DIST = ROOT / "extension" / "dist"
+EXTENSION_ROOT = ROOT / "extension"
+EXTENSION_DIST = EXTENSION_ROOT / "dist"
 DIGEST_FILE_NAME = "sha256sums.txt"
+STORE_CANDIDATE_SUFFIX = "-chrome.zip"
+SIGNING_RULE_FIXTURE = EXTENSION_ROOT / "tests" / "fixtures" / "packaged-signing-rule.json"
+LEGAL_BINDINGS_FIXTURE = (
+    EXTENSION_ROOT / "tests" / "fixtures" / "legal-instrument-bindings.synthetic.json"
+)
+SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy"
+
+# The publication step a falsifier removes: the byte-preserving copy of the
+# packaged archive to the Store candidate name, its audit, its digest entry and
+# its announcement. The block spans every line that reads $storeCandidate, so
+# the mutated script stays valid under Set-StrictMode.
+_STORE_PUBLICATION = """\
+    $storeCandidate = Join-Path $installerOutput $storeCandidateName
+    Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
+    $storeCandidateDigest = Get-Sha256Digest -Path $storeCandidate
+    if ($storeCandidateDigest -ne $storePackage.Sha256) {
+        Remove-Item -LiteralPath $storeCandidate -Force
+        throw "The Store candidate is not the packaged archive: $($storePackage.Sha256) then $storeCandidateDigest"
+    }
+    Invoke-ExtensionBuild `
+        -Arguments ((Get-ExtensionReleaseArguments -Verb "--audit-package") + "--artifact=$storeCandidate") `
+        -FailureMessage "The published Store candidate failed its package audit"
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName, $storeCandidateName)
+    Write-Host "Windows installer ready: $installerPath"
+    Write-Host "Store candidate ready: $storeCandidate (sha256:$storeCandidateDigest)"
+"""
+_STORE_PUBLICATION_REMOVED = """\
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName)
+    Write-Host "Windows installer ready: $installerPath"
+"""
+_STORE_COPY = """\
+    Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
+"""
+_STORE_COPY_THAT_CHANGES_BYTES = """\
+    Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
+    Add-Content -LiteralPath $storeCandidate -Value "appended" -Encoding ascii
+"""
+_STORE_DIGEST_CHECK = """\
+    $storeCandidateDigest = Get-Sha256Digest -Path $storeCandidate
+    if ($storeCandidateDigest -ne $storePackage.Sha256) {
+        Remove-Item -LiteralPath $storeCandidate -Force
+        throw "The Store candidate is not the packaged archive: $($storePackage.Sha256) then $storeCandidateDigest"
+    }
+"""
+_STORE_DIGEST_CHECK_REMOVED = """\
+    $storeCandidateDigest = Get-Sha256Digest -Path $storeCandidate
+"""
+_STORE_AUDIT = """\
+    Invoke-ExtensionBuild `
+        -Arguments ((Get-ExtensionReleaseArguments -Verb "--audit-package") + "--artifact=$storeCandidate") `
+        -FailureMessage "The published Store candidate failed its package audit"
+"""
 
 
 @pytest.fixture(autouse=True)
@@ -146,7 +204,17 @@ def _run_build(
     *,
     test_injection: str = "DevelopmentConfiguration",
     inno_setup_compiler: Path | None = None,
+    packaged_signing_rule: Path | None = SIGNING_RULE_FIXTURE,
+    legal_release_bindings: Path | None = LEGAL_BINDINGS_FIXTURE,
+    privacy_policy_url: str | None = SYNTHETIC_PRIVACY_POLICY_URL,
+    development_agent_bundle: bool = False,
 ) -> subprocess.CompletedProcess[str]:
+    """Drive the build script.
+
+    The release inputs default to the checked-in synthetic fixtures because a
+    release build refuses to run without them; passing None omits the switch.
+    """
+
     environment = os.environ | {"BRAIN_PROJECT_ROOT": str(ROOT)}
     command = [
         "powershell.exe",
@@ -167,6 +235,14 @@ def _run_build(
         command.extend(("-InnoSetupCompiler", str(inno_setup_compiler)))
     if test_injection:
         command.extend(("-TestInjection", test_injection))
+    if packaged_signing_rule is not None:
+        command.extend(("-PackagedSigningRule", str(packaged_signing_rule)))
+    if legal_release_bindings is not None:
+        command.extend(("-LegalReleaseBindings", str(legal_release_bindings)))
+    if privacy_policy_url is not None:
+        command.extend(("-PrivacyPolicyUrl", privacy_policy_url))
+    if development_agent_bundle:
+        command.append("-DevelopmentAgentBundle")
     return subprocess.run(
         command,
         cwd=ROOT,
@@ -643,25 +719,16 @@ def test_release_publishes_the_built_agent_extension_bundle(
     )
 
     source = BUILD_SCRIPT.read_text(encoding="utf-8")
-    publication = (
-        "New-AgentBundle -AgentRoot $stagedAgentRoot "
-        "-BundlePath (Join-Path $installerOutput $agentBundleName)\n"
-        "Write-Sha256Sums -Directory $installerOutput "
-        "-RelativePaths @($installerName, $agentBundleName)"
-    )
-    assert publication in source, (
+    assert _STORE_PUBLICATION in source, (
         "the bundle falsifier must remove the real Agent publication step"
     )
-    without_bundle = tmp_path / "build-windows-without-agent-bundle.ps1"
-    without_bundle.write_text(
-        source.replace(
-            publication,
-            "Write-Sha256Sums -Directory $installerOutput "
-            "-RelativePaths @($installerName)",
-            1,
-        ),
-        encoding="utf-8",
+    mutated = source.replace(_STORE_PUBLICATION, _STORE_PUBLICATION_REMOVED, 1)
+    assert mutated.count("$storeCandidate") == mutated.count("$storeCandidateName"), (
+        "the mutated build script still reads a variable the excision removed; "
+        "under Set-StrictMode it aborts before the assertion under test is reached"
     )
+    without_bundle = tmp_path / "build-windows-without-agent-bundle.ps1"
+    without_bundle.write_text(mutated, encoding="utf-8")
 
     output = tmp_path / "build"
     built = _run_build(
@@ -753,3 +820,557 @@ def test_shipped_digest_files_list_only_installed_files(
     finally:
         _run_uninstaller(staged_only_prefix, environment)
     _assert_program_payload_removed(staged_only_prefix)
+
+
+def _extension_version() -> str:
+    """The version the built Agent artifact declares."""
+
+    metadata = json.loads((EXTENSION_DIST / "build-meta.json").read_text(encoding="utf-8"))
+    version = metadata["extension_version"]
+    assert isinstance(version, str) and version
+    return version
+
+
+def _clear_extension_archives() -> None:
+    """Remove any archive an earlier package run left in the extension tree."""
+
+    for archive in EXTENSION_DIST.glob("conversation-analytics-*.zip"):
+        archive.unlink()
+
+
+def _store_candidates(directory: Path) -> list[Path]:
+    if not directory.exists():
+        return []
+    return sorted(directory.rglob(f"*{STORE_CANDIDATE_SUFFIX}"))
+
+
+def _assert_no_store_candidate(output: Path) -> None:
+    """A refused release must leave no Store candidate, not merely fail."""
+
+    published = _store_candidates(output)
+    assert published == [], f"a refused release left a Store candidate: {published}"
+    stranded = sorted(EXTENSION_DIST.glob("conversation-analytics-*.zip"))
+    assert stranded == [], f"a refused release left a packaged archive: {stranded}"
+
+
+def _audit_store_candidate(artifact: Path) -> subprocess.CompletedProcess[str]:
+    """Audit an archive with the validator the release path itself runs."""
+
+    return subprocess.run(
+        [
+            "node.exe",
+            str(EXTENSION_ROOT / "build.mjs"),
+            "--audit-package",
+            f"--artifact={artifact}",
+            f"--packaged-signing-rule={SIGNING_RULE_FIXTURE}",
+            f"--legal-release-bindings={LEGAL_BINDINGS_FIXTURE}",
+        ],
+        cwd=EXTENSION_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_release_without_legal_bindings_leaves_no_store_candidate(tmp_path: Path) -> None:
+    """A release missing its Legal bindings stops before any archive exists."""
+
+    _clear_extension_archives()
+    output = tmp_path / "build"
+
+    refused = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=None,
+    )
+
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    assert "requires -LegalReleaseBindings" in refused.stdout + refused.stderr
+    _assert_no_store_candidate(output)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_release_with_invalid_legal_bindings_leaves_no_store_candidate(
+    tmp_path: Path,
+) -> None:
+    """Bindings that do not validate stop the release before it packages."""
+
+    _clear_extension_archives()
+    bindings = json.loads(LEGAL_BINDINGS_FIXTURE.read_text(encoding="utf-8"))
+    # An instrument the earlier disclosure check does not read, so the refusal
+    # here is the one extension/build.mjs raises rather than that check's.
+    del bindings["instruments"]["terms_of_service"]
+    incomplete = tmp_path / "incomplete-bindings.json"
+    incomplete.write_text(json.dumps(bindings, indent=2) + "\n", encoding="utf-8")
+    output = tmp_path / "build"
+
+    refused = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=incomplete,
+    )
+
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    combined = refused.stdout + refused.stderr
+    assert "ADR 0022" in combined, combined
+    assert "legal instruments contains unexpected or missing fields" in combined, combined
+    _assert_no_store_candidate(output)
+
+
+DISCLOSURE_INSTRUMENT = "risk_disclosure"
+DISCLOSURE_ASSET = ROOT / "app" / "provisioning" / "creator-platform-data-risk-disclosure.html"
+
+
+def _bindings_with_disclosure(tmp_path: Path, rendered: str | None) -> Path:
+    """Write the release bindings with the bound rendering replaced or removed."""
+
+    bindings = json.loads(LEGAL_BINDINGS_FIXTURE.read_text(encoding="utf-8"))
+    instrument = bindings["instruments"][DISCLOSURE_INSTRUMENT]
+    if rendered is None:
+        del instrument["rendered_sha256"]
+    else:
+        instrument["rendered_sha256"] = rendered
+    path = tmp_path / "rebound-bindings.json"
+    path.write_text(json.dumps(bindings, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def test_the_bound_rendering_is_the_disclosure_this_package_serves() -> None:
+    """The fixture names the asset, so the release tests below can only pass honestly."""
+
+    bindings = json.loads(LEGAL_BINDINGS_FIXTURE.read_text(encoding="utf-8"))
+    bound = bindings["instruments"][DISCLOSURE_INSTRUMENT]["rendered_sha256"]
+    assert bound == hashlib.sha256(DISCLOSURE_ASSET.read_bytes()).hexdigest()
+
+
+def test_the_build_and_the_packaging_policy_name_one_disclosure() -> None:
+    """The script's asset path and the staged path cannot drift apart silently."""
+
+    relative = DISCLOSURE_ASSET.relative_to(ROOT).as_posix()
+    windows_literal = '"' + relative.replace("/", "\\") + '"'
+    assert windows_literal in BUILD_SCRIPT.read_text(encoding="utf-8"), windows_literal
+
+    policy = json.loads(
+        (ROOT / "packaging" / "runtime-files.json").read_text(encoding="utf-8")
+    )
+    staged = [
+        entry
+        for entry in policy["required_files"]
+        if entry.endswith(DISCLOSURE_ASSET.name)
+    ]
+    assert staged == [f"_internal/{relative}"], staged
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_release_serving_an_unbound_disclosure_leaves_no_store_candidate(
+    tmp_path: Path,
+) -> None:
+    """A disclosure that is not the bound rendering stops before any archive exists.
+
+    Without this the package would serve one document while the Agent recorded
+    acknowledgment of another, and every other check would still pass.
+    """
+
+    _clear_extension_archives()
+    served = hashlib.sha256(DISCLOSURE_ASSET.read_bytes()).hexdigest()
+    other = ("b" if served.startswith("a") else "a") + served[1:]
+    output = tmp_path / "build"
+
+    refused = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=_bindings_with_disclosure(tmp_path, other),
+    )
+
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    combined = refused.stdout + refused.stderr
+    assert served in combined, combined
+    assert other in combined, combined
+    _assert_no_store_candidate(output)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_release_binding_no_rendering_leaves_no_store_candidate(tmp_path: Path) -> None:
+    """Bindings naming no rendering are refused rather than read as agreement."""
+
+    _clear_extension_archives()
+    output = tmp_path / "build"
+
+    refused = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=_bindings_with_disclosure(tmp_path, None),
+    )
+
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    combined = refused.stdout + refused.stderr
+    assert f"name no rendered {DISCLOSURE_INSTRUMENT}" in combined, combined
+    _assert_no_store_candidate(output)
+
+
+@pytest.fixture(scope="module")
+def store_provenance_build(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Run one controlled release with the synthetic inputs and a compiler seam."""
+
+    base = tmp_path_factory.mktemp("store-provenance")
+    _clear_extension_archives()
+    built = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(base),
+        base / "build",
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(base),
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    return base / "build"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_controlled_release_publishes_one_store_candidate(
+    store_provenance_build: Path,
+) -> None:
+    """A valid release publishes exactly one archive under the Store name."""
+
+    candidates = _store_candidates(store_provenance_build)
+
+    assert [candidate.name for candidate in candidates] == [
+        f"OnlyFans-Conversational-Analytics-Agent-{_extension_version()}"
+        f"{STORE_CANDIDATE_SUFFIX}"
+    ]
+    assert candidates[0].parent == store_provenance_build / "installer"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_store_candidate_is_byte_identical_to_the_packaged_archive(
+    store_provenance_build: Path,
+) -> None:
+    """The published Store name carries the packaged archive's own bytes."""
+
+    packaged = sorted((store_provenance_build / "agent-package").glob("*.zip"))
+    assert len(packaged) == 1, f"one packaged archive is expected: {packaged}"
+    candidate = _store_candidates(store_provenance_build)[0]
+    candidate_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+
+    assert hashlib.sha256(packaged[0].read_bytes()).hexdigest() == candidate_digest, (
+        "copying the packaged archive to the Store name must preserve its bytes"
+    )
+
+    entries = _digest_entries(store_provenance_build / "installer" / DIGEST_FILE_NAME)
+    assert entries[candidate.name] == candidate_digest
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_published_store_candidate_passes_its_package_audit(
+    store_provenance_build: Path,
+) -> None:
+    """The audit accepts the archive at the exact path the release publishes."""
+
+    audited = _audit_store_candidate(_store_candidates(store_provenance_build)[0])
+
+    assert audited.returncode == 0, audited.stdout + audited.stderr
+    assert "Chrome archive audit passed" in audited.stdout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_mutated_store_candidate_fails_its_package_audit(
+    store_provenance_build: Path, tmp_path: Path
+) -> None:
+    """One flipped byte in the published archive turns the same audit red."""
+
+    candidate = _store_candidates(store_provenance_build)[0]
+    payload = bytearray(candidate.read_bytes())
+    payload[len(payload) // 2] ^= 0x01
+    mutated = tmp_path / candidate.name
+    mutated.write_bytes(payload)
+    assert mutated.read_bytes() != candidate.read_bytes()
+
+    audited = _audit_store_candidate(mutated)
+
+    assert audited.returncode != 0, audited.stdout + audited.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_development_packaging_publishes_no_store_candidate(
+    store_provenance_build: Path, tmp_path: Path
+) -> None:
+    """Development mode names its bundle so a Store submission cannot use it."""
+
+    output = tmp_path / "build"
+
+    built = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        development_agent_bundle=True,
+    )
+
+    assert built.returncode == 0, built.stdout + built.stderr
+    assert _store_candidates(output) == [], (
+        "development packaging must not produce a Store candidate"
+    )
+    bundles = sorted((output / "development").glob("*.zip"))
+    assert [bundle.name for bundle in bundles] == [
+        f"agent-development-unpacked-{_extension_version()}.zip"
+    ]
+    assert not bundles[0].name.endswith(STORE_CANDIDATE_SUFFIX)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_store_candidate_byte_identity_check_is_load_bearing(tmp_path: Path) -> None:
+    """A publication that changes the bytes reaches the Store name only unchecked.
+
+    Both variants copy through a step that appends to the archive and neither
+    runs the package audit, so the digest comparison is the single difference
+    between them.
+    """
+
+    source = BUILD_SCRIPT.read_text(encoding="utf-8")
+    for fragment in (_STORE_COPY, _STORE_DIGEST_CHECK, _STORE_AUDIT):
+        assert fragment in source, f"the falsifier no longer matches the script: {fragment}"
+    checked_source = source.replace(
+        _STORE_COPY, _STORE_COPY_THAT_CHANGES_BYTES, 1
+    ).replace(_STORE_AUDIT, "", 1)
+    unchecked_source = checked_source.replace(
+        _STORE_DIGEST_CHECK, _STORE_DIGEST_CHECK_REMOVED, 1
+    )
+    assert unchecked_source != checked_source
+    assert checked_source.replace(_STORE_DIGEST_CHECK, "", 1) == unchecked_source.replace(
+        _STORE_DIGEST_CHECK_REMOVED, "", 1
+    ), "the two scripts must differ only in the byte-identity comparison"
+
+    unchecked_script = tmp_path / "build-windows-without-byte-identity.ps1"
+    unchecked_script.write_text(unchecked_source, encoding="utf-8")
+    _clear_extension_archives()
+    unchecked_output = tmp_path / "unchecked"
+    unchecked = _run_build(
+        unchecked_script,
+        _write_pyinstaller_standin(tmp_path),
+        unchecked_output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+    )
+    assert unchecked.returncode == 0, unchecked.stdout + unchecked.stderr
+    published = _store_candidates(unchecked_output)
+    assert len(published) == 1, published
+    packaged = sorted((unchecked_output / "agent-package").glob("*.zip"))
+    assert hashlib.sha256(published[0].read_bytes()).hexdigest() != hashlib.sha256(
+        packaged[0].read_bytes()
+    ).hexdigest(), "the falsifier must actually change the published bytes"
+
+    checked_script = tmp_path / "build-windows-with-byte-identity.ps1"
+    checked_script.write_text(checked_source, encoding="utf-8")
+    _clear_extension_archives()
+    checked_output = tmp_path / "checked"
+    checked = _run_build(
+        checked_script,
+        _write_pyinstaller_standin(tmp_path),
+        checked_output,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+    )
+    assert checked.returncode != 0, checked.stdout + checked.stderr
+    assert "is not the packaged archive" in checked.stdout + checked.stderr
+    _assert_no_store_candidate(checked_output)
+
+
+RELEASE_GATE = ROOT / "tools" / "legal-release-bindings" / "verify.mjs"
+GATE_PRODUCT_REVISION = "9988776655443322110000ffeeddccbbaa998877"
+GATE_FETCH_REVISION = "1f0d2c3b4a596877665544332211ffeeddccbbaa"
+GATE_DOCUMENT_PATH = "compliance/cws/releases/2.0.1/legal-release-bindings.json"
+GATE_REPOSITORY = "test-owner/test-legal"
+GATE_INSTALLATION_TOKEN = "ghs-synthetic-installation-token"
+
+
+def _synthetic_signing_key() -> str:
+    """A per-run key. The gate signs a real assertion, so it needs a real key,
+    and no credential of any kind is checked in for it."""
+
+    minted = subprocess.run(
+        [
+            "node.exe",
+            "-e",
+            "const {generateKeyPairSync}=require('node:crypto');"
+            "const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});"
+            "process.stdout.write(privateKey.export({type:'pkcs8',format:'pem'}))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return base64.b64encode(minted.stdout.encode("ascii")).decode("ascii")
+
+
+@contextmanager
+def _legal_repository(document: bytes, source_revision: str) -> Iterator[str]:
+    """A loopback stand-in for the Legal repository routes the gate reads."""
+
+    contents_prefix = f"/repos/{GATE_REPOSITORY}/contents/"
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_: object) -> None:
+            return
+
+        def _respond(self, status: int, body: bytes) -> None:
+            self.send_response(status)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self) -> None:  # noqa: N802 - http.server's interface
+            if self.path.endswith("/access_tokens"):
+                self._respond(201, json.dumps({"token": GATE_INSTALLATION_TOKEN}).encode())
+                return
+            self._respond(404, b"{}")
+
+        def do_GET(self) -> None:  # noqa: N802 - http.server's interface
+            path, _, query = self.path.partition("?")
+            if path == f"/repos/{GATE_REPOSITORY}/commits/{source_revision}":
+                self._respond(200, json.dumps({"sha": source_revision}).encode())
+                return
+            authorized = (
+                self.headers.get("authorization") == f"Bearer {GATE_INSTALLATION_TOKEN}"
+            )
+            held = path == f"{contents_prefix}{GATE_DOCUMENT_PATH}"
+            if authorized and held and query == f"ref={GATE_FETCH_REVISION}":
+                self._respond(200, document)
+                return
+            self._respond(404, b"{}")
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _run_release_gate(
+    base_url: str,
+    staged: Path,
+    runner_temp: Path,
+    *,
+    source_revision: str,
+    expected_digest: str,
+    without: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    environment = os.environ | {
+        "RUNNER_TEMP": str(runner_temp),
+        "PRODUCT_REVISION": GATE_PRODUCT_REVISION,
+        "GITHUB_SHA": GATE_PRODUCT_REVISION,
+        "LEGAL_BINDINGS_API_BASE_URL": base_url,
+        "LEGAL_BINDINGS_REPOSITORY": GATE_REPOSITORY,
+        "LEGAL_BINDINGS_APP_ID": "1234",
+        "LEGAL_BINDINGS_APP_PRIVATE_KEY_B64": _synthetic_signing_key(),
+        "LEGAL_BINDINGS_INSTALLATION_ID": "424242",
+        "LEGAL_BINDINGS_PATH": GATE_DOCUMENT_PATH,
+        "LEGAL_BINDINGS_REPOSITORY_REVISION": GATE_FETCH_REVISION,
+        "LEGAL_REPOSITORY_REVISION": source_revision,
+        "LEGAL_BINDINGS_DIGEST": expected_digest,
+    }
+    environment.pop("GITHUB_WORKSPACE", None)
+    if without is not None:
+        environment.pop(without)
+    return subprocess.run(
+        ["node.exe", str(RELEASE_GATE), f"--output={staged}"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="drives build-windows.ps1 via powershell.exe")
+def test_a_declared_digest_decides_whether_a_store_candidate_exists(
+    tmp_path: Path,
+) -> None:
+    """The workflow's own order, run end to end: the gate verifies the declared
+    coordinates and only then does packaging read what it staged.
+
+    Each refused run differs from the accepted one in a single element - an
+    absent retrieval credential, or one character of the declared digest - and
+    must leave packaging no bindings document to read and therefore no Store
+    candidate. The accepted run must produce exactly one."""
+
+    document = LEGAL_BINDINGS_FIXTURE.read_bytes()
+    source_revision = json.loads(document.decode("utf-8"))["legal_repository_revision"]
+    digest = hashlib.sha256(document).hexdigest()
+    wrong = digest[:63] + ("b" if digest.endswith("a") else "a")
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    staged = runner_temp / "legal-release-bindings" / "legal-release-bindings.json"
+
+    refusals = (
+        # An unconfigured retrieval credential, and a digest that does not
+        # describe the document held at the declared coordinates.
+        ("uncredentialed", 3, {"without": "LEGAL_BINDINGS_APP_PRIVATE_KEY_B64"}),
+        ("undeclared", 6, {"expected_digest": wrong}),
+    )
+
+    with _legal_repository(document, source_revision) as base_url:
+        for label, code, changed in refusals:
+            arguments = {
+                "source_revision": source_revision,
+                "expected_digest": digest,
+            } | changed
+            refused = _run_release_gate(base_url, staged, runner_temp, **arguments)
+            assert refused.returncode == code, refused.stdout + refused.stderr
+            assert not staged.exists(), "a refused gate staged a document for packaging"
+
+            _clear_extension_archives()
+            unbuilt = tmp_path / f"{label}-build"
+            stopped = _run_build(
+                BUILD_SCRIPT,
+                _write_pyinstaller_standin(tmp_path),
+                unbuilt,
+                test_injection="",
+                inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+                legal_release_bindings=staged,
+            )
+            assert stopped.returncode != 0, stopped.stdout + stopped.stderr
+            assert "does not exist" in stopped.stdout + stopped.stderr
+            _assert_no_store_candidate(unbuilt)
+
+        accepted = _run_release_gate(
+            base_url,
+            staged,
+            runner_temp,
+            source_revision=source_revision,
+            expected_digest=digest,
+        )
+
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    assert staged.read_bytes() == document
+
+    _clear_extension_archives()
+    built = tmp_path / "accepted-build"
+    published = _run_build(
+        BUILD_SCRIPT,
+        _write_pyinstaller_standin(tmp_path),
+        built,
+        test_injection="",
+        inno_setup_compiler=_write_inno_setup_standin(tmp_path),
+        legal_release_bindings=staged,
+    )
+
+    assert published.returncode == 0, published.stdout + published.stderr
+    assert len(_store_candidates(built)) == 1, _store_candidates(built)

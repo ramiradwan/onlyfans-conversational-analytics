@@ -17,12 +17,42 @@ from tools.packaging_policy import load_runtime_policy, verify_runtime_files
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "packaging" / "runtime-files.json"
+LEGAL_BINDINGS_FIXTURE = (
+    ROOT / "extension" / "tests" / "fixtures" / "legal-instrument-bindings.synthetic.json"
+)
+AGENT_BUILD_METADATA = "Agent/build-meta.json"
 SQL_CATALOGS = (
     "app/persistence/sql",
     "app/persistence/auth_sql",
     "app/persistence/projection_sql",
     "app/analytics/sql",
 )
+
+
+def _agent_build_metadata() -> dict:
+    """Build metadata declaring the release inputs a packaged Agent records."""
+
+    bindings = json.loads(LEGAL_BINDINGS_FIXTURE.read_text(encoding="utf-8"))
+    return {
+        "schema": load_runtime_policy(POLICY_PATH)["agent_artifact"]["schema"],
+        "legal_bindings": {
+            "schema": bindings["schema"],
+            "source_revision": bindings["legal_repository_revision"],
+            "legal_bindings_digest": hashlib.sha256(
+                LEGAL_BINDINGS_FIXTURE.read_bytes()
+            ).hexdigest(),
+        },
+    }
+
+
+def _write_agent_build_metadata(stage: Path, metadata: dict | None) -> None:
+    """Replace the staged Agent build metadata, or remove it when None."""
+
+    target = stage / AGENT_BUILD_METADATA
+    if metadata is None:
+        target.unlink()
+        return
+    target.write_text(json.dumps(metadata, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _stage_runtime_tree(tmp_path: Path) -> Path:
@@ -35,6 +65,9 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
     (stage / "release-manifest.json").write_text("{}", encoding="utf-8")
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", stage / "THIRD_PARTY_NOTICES.md")
     (stage / "Agent").mkdir()
+    (stage / AGENT_BUILD_METADATA).write_text(
+        json.dumps(_agent_build_metadata(), sort_keys=True) + "\n", encoding="utf-8"
+    )
     shutil.copytree(ROOT / "app" / "templates", internal / "app" / "templates")
     provisioning = internal / "app" / "provisioning"
     provisioning.mkdir()
@@ -136,7 +169,7 @@ def test_required_files_cover_the_provisioning_page_assets(tmp_path: Path) -> No
 
 def test_required_paths_checker_reports_a_missing_required_directory(tmp_path: Path) -> None:
     stage = _stage_runtime_tree(tmp_path)
-    (stage / "Agent").rmdir()
+    shutil.rmtree(stage / "Agent")
 
     findings = verify_runtime_files(stage)
 
@@ -504,6 +537,55 @@ def test_missing_manifest_referenced_frontend_asset_is_reported(tmp_path: Path) 
     (stage / "_internal" / "app" / "static" / "dist" / asset).unlink()
 
     assert "frontend_asset_missing" in _codes(verify_runtime_files(stage))
+
+
+def test_agent_artifact_declaring_no_legal_bindings_is_rejected(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    metadata = _agent_build_metadata() | {"legal_bindings": None}
+    _write_agent_build_metadata(stage, metadata)
+
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "agent_release_declaration_absent"
+        and finding.path == AGENT_BUILD_METADATA
+        and finding.detail == "staged Agent artifact declares no legal_bindings"
+        for finding in findings
+    ), "an Agent artifact built without Legal bindings must be rejected"
+
+
+def test_agent_artifact_without_build_metadata_fails_closed(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    _write_agent_build_metadata(stage, None)
+
+    findings = verify_runtime_files(stage)
+
+    assert any(
+        finding.code == "agent_build_metadata_missing"
+        and finding.path == AGENT_BUILD_METADATA
+        for finding in findings
+    ), "an Agent artifact carrying no build metadata must fail closed"
+
+
+def test_agent_artifact_on_a_superseded_build_schema_is_rejected(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    metadata = _agent_build_metadata() | {"schema": "ofca-extension-build/v3"}
+    _write_agent_build_metadata(stage, metadata)
+
+    assert "agent_build_metadata_schema_unexpected" in _codes(verify_runtime_files(stage))
+
+
+def test_empty_legal_binding_declaration_does_not_satisfy_the_rule(tmp_path: Path) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    _write_agent_build_metadata(stage, _agent_build_metadata() | {"legal_bindings": {}})
+
+    findings = verify_runtime_files(stage)
+
+    assert {finding.detail for finding in findings if finding.code == "agent_release_declaration_invalid"} == {
+        "legal_bindings.schema is missing or empty",
+        "legal_bindings.source_revision is missing or empty",
+        "legal_bindings.legal_bindings_digest is missing or empty",
+    }, "an empty declaration must not pass as a recorded binding"
 
 
 def test_missing_staging_root_returns_a_finding(tmp_path: Path) -> None:

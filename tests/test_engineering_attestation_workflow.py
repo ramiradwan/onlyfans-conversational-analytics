@@ -72,6 +72,34 @@ def test_manual_interface_and_workflow_permissions_are_closed() -> None:
                     "required": True,
                     "type": "string",
                 },
+                "legal_repository_revision": {
+                    "description": (
+                        "Legal revision the bindings document was approved at"
+                    ),
+                    "required": True,
+                    "type": "string",
+                },
+                "legal_bindings_repository_revision": {
+                    "description": (
+                        "Legal revision the bindings document is read at"
+                    ),
+                    "required": True,
+                    "type": "string",
+                },
+                "legal_bindings_path": {
+                    "description": (
+                        "Repository-relative path of the Legal bindings document"
+                    ),
+                    "required": True,
+                    "type": "string",
+                },
+                "legal_bindings_digest": {
+                    "description": (
+                        "Contract-defined digest of the Legal bindings document"
+                    ),
+                    "required": True,
+                    "type": "string",
+                },
             }
         }
     }
@@ -103,9 +131,34 @@ def test_resolver_is_unprivileged_and_emits_metadata_only() -> None:
     assert "${{ inputs." not in resolve_step["run"]
 
 
+def test_package_audit_runs_unprivileged_and_hands_nothing_to_the_signer() -> None:
+    qualifier = _jobs()["qualify-package"]
+    assert "environment" not in qualifier
+    assert qualifier["runs-on"] == "ubuntu-24.04"
+    assert qualifier["permissions"] == {"actions": "read", "contents": "read"}
+    # The audit needs the extension toolchain, which is why it cannot live in
+    # the protected job; it must therefore hand the signer no values at all.
+    assert "outputs" not in qualifier
+    serialized = yaml.safe_dump(qualifier)
+    assert "ENGINEERING_ATTESTATION_PRIVATE_KEY_B64" not in serialized
+    assert "REVIEW_APP_PRIVATE_KEY_B64" not in serialized
+    assert "actions/download-artifact" not in serialized
+    assert "actions/upload-artifact" not in serialized
+    assert "needs." not in serialized
+
+    qualify_step = next(
+        step for step in _steps(qualifier) if step.get("id") == "qualify"
+    )
+    assert "qualify-package" in qualify_step["run"]
+    assert "${{ inputs." not in qualify_step["run"]
+
+    signer = yaml.safe_dump(_jobs()["sign-and-handoff"])
+    assert "needs.qualify-package" not in signer
+
+
 def test_signer_repeats_qualification_inside_the_protected_environment() -> None:
     signer = _jobs()["sign-and-handoff"]
-    assert signer["needs"] == "resolve-source"
+    assert signer["needs"] == ["resolve-source", "qualify-package"]
     assert signer["environment"] == "engineering-attestation-production"
     assert signer["runs-on"] == "ubuntu-24.04"
     assert signer["permissions"] == {"actions": "read", "contents": "read"}

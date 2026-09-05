@@ -22,6 +22,14 @@ pytestmark = pytest.mark.skipif(
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
+# Release inputs a Store candidate is never built without. They are taken from
+# the tree being built, so a project copy supplies its own checked-in fixtures.
+FIXTURE_DIRECTORY = Path("extension") / "tests" / "fixtures"
+SIGNING_RULE_FIXTURE = FIXTURE_DIRECTORY / "packaged-signing-rule.json"
+LEGAL_BINDINGS_FIXTURE = (
+    FIXTURE_DIRECTORY / "legal-instrument-bindings.synthetic.json"
+)
+SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy"
 
 
 def _write_pyinstaller_standin(tmp_path: Path) -> Path:
@@ -92,8 +100,14 @@ output.mkdir(parents=True, exist_ok=True)
     return command
 
 
-def _project_copy_with_manifest_key(tmp_path: Path, key: str) -> Path:
-    project_copy = tmp_path / "project-copy"
+def _project_copy(tmp_path: Path, name: str, *, manifest_key: str | None = None) -> Path:
+    """Copy the project so a build's side effects stay inside the test.
+
+    ``manifest_key`` replaces the packaged Agent's manifest key; omitting it
+    leaves the reserved identity the repository ships with.
+    """
+
+    project_copy = tmp_path / name
     shutil.copytree(
         ROOT,
         project_copy,
@@ -102,10 +116,17 @@ def _project_copy_with_manifest_key(tmp_path: Path, key: str) -> Path:
             "__pycache__", "node_modules"
         ),
     )
-    manifest_path = project_copy / "extension" / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["key"] = key
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    # A release build packages the Agent from this copy, so the Agent build
+    # dependencies have to come with it. The frontend ones stay excluded.
+    shutil.copytree(
+        ROOT / "extension" / "node_modules",
+        project_copy / "extension" / "node_modules",
+    )
+    if manifest_key is not None:
+        manifest_path = project_copy / "extension" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["key"] = manifest_key
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     return project_copy
 
 
@@ -123,6 +144,9 @@ def _run_build(
         str(script), "-BuildPython", sys.executable, "-PyInstallerExecutable",
         str(pyinstaller), "-InnoSetupCompiler", str(compiler), "-OutputRoot", str(output),
         "-SkipAssetBuild",
+        "-PackagedSigningRule", str(project_root / SIGNING_RULE_FIXTURE),
+        "-LegalReleaseBindings", str(project_root / LEGAL_BINDINGS_FIXTURE),
+        "-PrivacyPolicyUrl", SYNTHETIC_PRIVACY_POLICY_URL,
     ]
     if test_injection:
         command.extend(("-TestInjection", test_injection))
@@ -148,19 +172,52 @@ def _assert_embedded_identity_mismatch_is_rejected(
     )
 
 
-def test_build_embeds_the_current_manifest_identity_and_rejects_a_mismatch(
+def test_release_refuses_a_manifest_key_the_package_does_not_reserve(
     tmp_path: Path,
 ) -> None:
-    """A changed manifest drives the package value; a stale value blocks the build."""
+    """The packaged identity is derived from the manifest, not restated elsewhere.
+
+    A release is built only against the reserved Store identity. Planting a
+    different manifest key is therefore refused, and the refusal names the
+    identity derived from the planted key: a build that restated the identity
+    instead of deriving it would have accepted the planted key silently.
+    """
 
     changed_key = base64.b64encode(b"different pinned extension key for test").decode(
         "ascii"
     )
-    project_copy = _project_copy_with_manifest_key(tmp_path, changed_key)
-    manifest_path = project_copy / "extension" / "manifest.json"
-    expected_identity = extension_identity_from_manifest(manifest_path)
-    assert expected_identity != extension_identity_from_manifest(
+    project_copy = _project_copy(tmp_path, "changed-key", manifest_key=changed_key)
+    planted_identity = extension_identity_from_manifest(
+        project_copy / "extension" / "manifest.json"
+    )
+    reserved_identity = extension_identity_from_manifest(
         ROOT / "extension" / "manifest.json"
+    )
+    assert planted_identity != reserved_identity
+    pyinstaller = _write_pyinstaller_standin(tmp_path)
+    compiler = _write_inno_setup_standin(tmp_path)
+
+    refused = _run_build(
+        BUILD_SCRIPT, pyinstaller, compiler, tmp_path / "refused", project_copy
+    )
+
+    output = refused.stdout + refused.stderr
+    assert refused.returncode != 0, output
+    assert planted_identity in output, output
+    assert reserved_identity in output, output
+    assert not (tmp_path / "refused" / "installer").exists(), (
+        "a refused identity must stop before an installer is produced"
+    )
+
+
+def test_build_embeds_the_reserved_manifest_identity_and_rejects_a_stale_value(
+    tmp_path: Path,
+) -> None:
+    """The manifest drives the package value; a stale value blocks the build."""
+
+    project_copy = _project_copy(tmp_path, "reserved-key")
+    expected_identity = extension_identity_from_manifest(
+        project_copy / "extension" / "manifest.json"
     )
     pyinstaller = _write_pyinstaller_standin(tmp_path)
     compiler = _write_inno_setup_standin(tmp_path)

@@ -51,6 +51,7 @@ def verify_runtime_files(
     _check_sql_catalogs(root, effective_policy, findings)
     _check_contracts(root, effective_policy, findings)
     _check_frontend_closure(root, effective_policy, findings)
+    _check_agent_artifact(root, effective_policy, findings)
     return tuple(findings)
 
 
@@ -320,6 +321,114 @@ def _check_frontend_closure(
                     findings.append(PackagingFinding("frontend_manifest_invalid", key, f"{field} contains a non-string"))
                 else:
                     pending.append(reference)
+
+
+def _check_agent_artifact(
+    root: Path, policy: Mapping[str, Any], findings: list[PackagingFinding]
+) -> None:
+    """Reject a staged Agent artifact that declares no Legal release bindings.
+
+    The staged build metadata records which bindings the extension build
+    verified, never their contents, so this reads the declaration only.
+    """
+
+    declaration = policy.get("agent_artifact")
+    if not isinstance(declaration, Mapping):
+        findings.append(
+            PackagingFinding("policy_invalid", "agent_artifact", "declaration is not an object")
+        )
+        return
+    relative = declaration.get("build_metadata_path")
+    schema = declaration.get("schema")
+    names = declaration.get("release_declarations")
+    if (
+        not isinstance(relative, str)
+        or not relative
+        or not isinstance(schema, str)
+        or not schema
+        or not isinstance(names, list)
+        or not names
+        or not all(isinstance(name, str) and name for name in names)
+    ):
+        findings.append(
+            PackagingFinding(
+                "policy_invalid",
+                "agent_artifact",
+                "declaration requires build_metadata_path, schema and release_declarations",
+            )
+        )
+        return
+
+    candidate = root / relative
+    if not candidate.is_file():
+        findings.append(
+            PackagingFinding(
+                "agent_build_metadata_missing",
+                relative,
+                "staged Agent artifact carries no build metadata",
+            )
+        )
+        return
+    try:
+        metadata = json.loads(candidate.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        findings.append(PackagingFinding("agent_build_metadata_invalid", relative, str(error)))
+        return
+    if not isinstance(metadata, Mapping):
+        findings.append(
+            PackagingFinding("agent_build_metadata_invalid", relative, "metadata is not an object")
+        )
+        return
+    if metadata.get("schema") != schema:
+        findings.append(
+            PackagingFinding(
+                "agent_build_metadata_schema_unexpected",
+                relative,
+                f"build metadata schema is not {schema}",
+            )
+        )
+        return
+    for name in names:
+        _check_release_declaration(relative, metadata.get(name), name, findings)
+
+
+def _check_release_declaration(
+    relative: str, declared: Any, name: str, findings: list[PackagingFinding]
+) -> None:
+    """Require a recorded release input: schema, source revision and digest.
+
+    The digest field is named after the declaration it covers, so a reader can
+    tell which document a recorded digest was taken over.
+    """
+
+    if declared is None:
+        findings.append(
+            PackagingFinding(
+                "agent_release_declaration_absent",
+                relative,
+                f"staged Agent artifact declares no {name}",
+            )
+        )
+        return
+    if not isinstance(declared, Mapping):
+        findings.append(
+            PackagingFinding(
+                "agent_release_declaration_invalid",
+                relative,
+                f"{name} is not an object",
+            )
+        )
+        return
+    for field in ("schema", "source_revision", f"{name}_digest"):
+        value = declared.get(field)
+        if not isinstance(value, str) or not value:
+            findings.append(
+                PackagingFinding(
+                    "agent_release_declaration_invalid",
+                    relative,
+                    f"{name}.{field} is missing or empty",
+                )
+            )
 
 
 def _check_frontend_file(dist_root: Path, staging_root: Path, relative: Any, findings: list[PackagingFinding]) -> None:

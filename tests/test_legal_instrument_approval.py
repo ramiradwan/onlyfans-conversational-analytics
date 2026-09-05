@@ -193,18 +193,25 @@ def test_recorded_state_is_a_reference_and_not_a_copy_of_the_served_bytes() -> N
     lock = read_lock()
     state = lock["recorded_state"]
     served = served_digest()
-    without_rendering = {
+    # Both recorded digests bind the served bytes once the instrument is
+    # approved, so both are blanked here. What the assertion still refutes is a
+    # copy of those bytes reaching any other field of the lock.
+    without_recorded_digests = {
         **lock,
         "recorded_state": {
             **state,
-            "variant": {**state["variant"], "rendered_sha256": None},
+            "variant": {
+                **state["variant"],
+                "rendered_sha256": None,
+                "source_sha256": None,
+            },
         },
     }
     rendered = state["variant"]["rendered_sha256"]
 
     assert ROOT / lock["shipped_asset"] == _DISCLOSURE_ASSET
     assert approval(state) in {APPROVED, UNAPPROVED, RETIRED}
-    assert served not in json.dumps(without_rendering)
+    assert served not in json.dumps(without_recorded_digests)
     assert SEMVER.match(state["version"])
     assert PUBLIC_ROUTE.match(state["public_url"])
     assert rendered is None or SHA256.match(rendered)
@@ -226,10 +233,15 @@ def test_served_disclosure_matches_the_upstream_source_it_is_taken_from() -> Non
     manifest_path = upstream_manifest_path()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     state = manifest_state(manifest, lock["document_key"])
-    if approval(state) != UNAPPROVED:
+    verdict = approval(state)
+    # Approval moves which upstream file governs, not whether one does: an
+    # approved variant's source_sha256 binds the same served bytes its
+    # rendered_sha256 does, so the comparison holds on both sides of approval
+    # and only a retired or incoherent record leaves nothing to compare.
+    if verdict not in {UNAPPROVED, APPROVED}:
         pytest.skip(
-            f"{lock['document_key']} is {state['status']!r} upstream, so the draft "
-            "source no longer governs the served bytes"
+            f"{lock['document_key']} is {state['status']!r} upstream, so no "
+            "recorded variant governs the served bytes"
         )
     source = upstream_root(lock, manifest_path) / state["variant"]["source_path"]
     recorded = state["variant"]["source_sha256"]

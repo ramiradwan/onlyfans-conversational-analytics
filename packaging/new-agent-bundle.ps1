@@ -1,5 +1,9 @@
 <#
-    Create the exact Chrome extension ZIP handed to release consumers.
+    Create a development Chrome extension ZIP from a staged Agent tree.
+
+    This is not the release archive engine. The Store candidate is the archive
+    extension/build.mjs --package produces, and this script refuses the Store
+    candidate filename so a development bundle can never take its place.
 
     ZIP metadata is normalized so rebuilding the same staged Agent tree with
     the same runtime produces the same bytes. Archive names are treated as a
@@ -29,6 +33,9 @@ if (($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
 
 $sourceRoot = [IO.Path]::GetFullPath($SourceDirectory).TrimEnd('\', '/')
 $bundleFullPath = [IO.Path]::GetFullPath($BundlePath)
+if ((Split-Path -Leaf $bundleFullPath).EndsWith("-chrome.zip", [StringComparison]::OrdinalIgnoreCase)) {
+    throw "A development Agent bundle must not be named as the Store candidate: $bundleFullPath"
+}
 $bundleParent = Split-Path -Parent $bundleFullPath
 if (-not (Test-Path -LiteralPath $bundleParent -PathType Container)) {
     throw "Agent bundle destination directory does not exist: $bundleParent"

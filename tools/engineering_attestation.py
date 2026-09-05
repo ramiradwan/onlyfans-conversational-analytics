@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """Produce and privately hand off a signed engineering attestation.
 
-The protected command intentionally uses only the Python standard library and
-OpenSSL supplied by the pinned runner image. It never builds product code and
-never trusts qualification conclusions emitted by the unprivileged job.
+The protected command intentionally uses only the Python standard library,
+OpenSSL supplied by the pinned runner image, and the dependency-free Legal
+release bindings gate. It never builds product code and never trusts
+qualification conclusions emitted by the unprivileged jobs.
+
+Attestation is an independent qualification boundary. It resolves the Legal
+binding coordinates, retrieves the document itself, recomputes the
+contract-defined digest, requires the exact Store ZIP to have passed the
+controlled package audit, and recomputes the ZIP digest, before any key
+material is decoded. Each precondition refuses with its own exit code so a
+refusal names the step that refused.
 """
 
 from __future__ import annotations
@@ -25,7 +33,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -37,8 +45,29 @@ PRODUCER_WORKFLOW = ".github/workflows/engineering-attestation.yml"
 TARGET = "chrome-extension"
 SIGNER_ID = "product-engineering-attestation-ed25519-v1"
 ALGORITHM = "ed25519"
+
+# Every member the v1 attestation schema defines. The consumer sets
+# additionalProperties to false, so a document carrying anything outside this
+# set is rejected at evidence intake rather than at signing time.
+ATTESTATION_V1_MEMBERS = frozenset(
+    {
+        "schema_version",
+        "attestation_id",
+        "created_at",
+        "repository",
+        "commit_hash",
+        "workflow",
+        "target",
+        "artifact",
+        "engineering_facts",
+        "legal_projection",
+        "provenance",
+    }
+)
+
 PRODUCT_DEFAULT_BRANCH = "main"
 EXPECTED_EXTENSION_ID = "mldllkjpnnjhdccpofhebhlhigpefcba"
+EXTENSION_BUILD_SCHEMA = "ofca-extension-build/v4"
 FIXED_ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 PUBLIC_KEY_RELATIVE_PATH = (
     "attestation/signers/"
@@ -58,6 +87,63 @@ REQUIRED_PRODUCT_CI_JOB_NAMES = {
     "build-and-test",
     "windows-browser-e2e",
     "windows-tests",
+}
+
+PRODUCER_ROOT = Path(__file__).resolve().parent.parent
+LEGAL_BINDINGS_GATE = PRODUCER_ROOT / "tools" / "legal-release-bindings" / "verify.mjs"
+EXTENSION_ROOT = PRODUCER_ROOT / "extension"
+EXTENSION_BUILD_SCRIPT = EXTENSION_ROOT / "build.mjs"
+
+LEGAL_BINDINGS_SCHEMA = "ofca-legal-instrument-bindings/v1"
+LEGAL_BINDINGS_KEYS = ("legal_bindings_digest", "schema", "source_revision")
+SIGNING_RULE_KEYS = ("schema", "sha256", "source_revision")
+SIGNING_RULE_FILE = "packaged-signing-rule.json"
+EXTENSION_CONFIG_FILE = "extension-config.json"
+BACKGROUND_FILE = "background.js"
+BUILD_METADATA_FILE = "build-meta.json"
+PRIVACY_POLICY_INSTRUMENT = "privacy_policy"
+
+RESOLVER_JOB_NAME = "Resolve unprivileged source metadata"
+QUALIFICATION_JOB_NAME = "Qualify the exact Store package"
+SIGNING_JOB_NAME = "Sign and privately hand off evidence"
+PRODUCER_JOB_NAMES = {
+    RESOLVER_JOB_NAME,
+    QUALIFICATION_JOB_NAME,
+    SIGNING_JOB_NAME,
+}
+
+# Each precondition refuses with its own exit code so a refusal at one step is
+# distinguishable in the output from a refusal at any other.
+STEP_LEGAL_COORDINATES = "legal-coordinates"
+STEP_LEGAL_RETRIEVAL = "legal-retrieval"
+STEP_LEGAL_DIGEST = "legal-digest"
+STEP_SIGNING_RULE = "signing-rule"
+STEP_PRIVACY_POLICY = "privacy-policy"
+STEP_PACKAGE_AUDIT = "package-audit"
+STEP_ARTIFACT_DIGEST = "artifact-digest"
+STEP_PACKAGE_QUALIFICATION = "package-qualification"
+QUALIFICATION_EXIT_CODES = {
+    STEP_LEGAL_COORDINATES: 10,
+    STEP_LEGAL_RETRIEVAL: 11,
+    STEP_LEGAL_DIGEST: 12,
+    STEP_PACKAGE_AUDIT: 13,
+    STEP_ARTIFACT_DIGEST: 14,
+    STEP_PACKAGE_QUALIFICATION: 15,
+    STEP_SIGNING_RULE: 16,
+    STEP_PRIVACY_POLICY: 17,
+}
+
+# tools/legal-release-bindings/verify.mjs refusal codes, mapped onto the step
+# that owns them. Anything unlisted is treated as a retrieval failure.
+GATE_EXIT_STEPS = {
+    2: STEP_LEGAL_COORDINATES,
+    3: STEP_LEGAL_RETRIEVAL,
+    4: STEP_LEGAL_RETRIEVAL,
+    5: STEP_LEGAL_DIGEST,
+    6: STEP_LEGAL_DIGEST,
+    7: STEP_LEGAL_DIGEST,
+    8: STEP_LEGAL_RETRIEVAL,
+    9: STEP_PRIVACY_POLICY,
 }
 
 HEX_40 = re.compile(r"^[a-f0-9]{40}$")
@@ -91,6 +177,22 @@ class ContractError(RuntimeError):
 
 class ReviewBaseAdvancedError(ContractError):
     """The protected review branch advanced during PR creation."""
+
+
+class QualificationError(ContractError):
+    """A qualification precondition refused, naming the step that refused."""
+
+    def __init__(self, step: str, message: str) -> None:
+        super().__init__(message)
+        self.step = step
+
+    @property
+    def exit_code(self) -> int:
+        return QUALIFICATION_EXIT_CODES[self.step]
+
+
+def refuse(step: str, message: str) -> None:
+    raise QualificationError(step, message)
 
 
 class DuplicateJsonKeyError(ValueError):
@@ -756,8 +858,13 @@ def qualify_windows_package_source(
     if not isinstance(workflow_id, int) or workflow_id <= 0:
         raise ContractError("Windows package run has no positive workflow ID")
     workflow_path = str(run.get("path", "")).split("@", 1)[0]
+    # A Store candidate is dispatched against an immutable release tag, not
+    # produced by repository movement, so the qualifying event is the dispatch.
+    # What binds the run to that tag is not the event but the three checks
+    # below it: the run sits on the release tag, in this repository, and the
+    # tag peels to the commit the run was built from.
     expected = {
-        "event": "push",
+        "event": "workflow_dispatch",
         "status": "completed",
         "conclusion": "success",
     }
@@ -1011,6 +1118,8 @@ class QualifiedChromeZip:
     size_bytes: int
     bytes: bytes
     actions_archive_sha256: str
+    entries: Mapping[str, bytes] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 def qualify_downloaded_artifact(
@@ -1055,8 +1164,10 @@ def qualify_downloaded_artifact(
     metadata = load_json_strict(inner["build-meta.json"], label="extension build metadata")
     if not isinstance(manifest, dict) or not isinstance(metadata, dict):
         raise ContractError("Chrome manifest and build metadata must be objects")
-    if metadata.get("schema") != "ofca-extension-build/v3":
-        raise ContractError("extension build metadata schema is not v3")
+    if metadata.get("schema") != EXTENSION_BUILD_SCHEMA:
+        raise ContractError(
+            f"extension build metadata schema is not {EXTENSION_BUILD_SCHEMA}"
+        )
     if metadata.get("determinism_verified") is not True:
         raise ContractError("extension build metadata does not assert determinism")
     derived_extension_id = extension_id_from_manifest_key(manifest.get("key"))
@@ -1114,6 +1225,622 @@ def qualify_downloaded_artifact(
         size_bytes=len(chrome_zip),
         bytes=chrome_zip,
         actions_archive_sha256=archive_sha256,
+        entries=inner,
+        metadata=metadata,
+    )
+
+
+@dataclass(frozen=True)
+class LegalBindingsCoordinates:
+    """Where the Legal binding document is, and what it must digest to.
+
+    ``source_revision`` is revision A, the approval revision the document
+    declares. ``fetch_revision`` is revision B, the revision the document is
+    read at. The Legal contract forbids requiring A == B, so they stay two
+    values here and in the signed payload.
+    """
+
+    source_revision: str
+    fetch_revision: str
+    document_path: str
+    expected_digest: str
+
+
+def resolve_legal_bindings_coordinates(
+    *,
+    source_revision: str,
+    fetch_revision: str,
+    document_path: str,
+    expected_digest: str,
+) -> LegalBindingsCoordinates:
+    """Validate the declared coordinates before anything is retrieved.
+
+    The two revisions are independent inputs. The Legal contract forbids
+    requiring them to agree, so each is checked on its own and they are never
+    compared with each other or collapsed into one value.
+    """
+    if not HEX_40.fullmatch(source_revision):
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            "the Legal repository revision is not a 40-character lowercase commit",
+        )
+    if not HEX_40.fullmatch(fetch_revision):
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            "the Legal bindings repository revision is not a 40-character lowercase commit",
+        )
+    if not HEX_64.fullmatch(expected_digest):
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            "the Legal bindings digest must be bare lowercase 64-hex",
+        )
+    segments = document_path.split("/")
+    if (
+        not document_path
+        or document_path != document_path.strip()
+        or document_path.startswith("/")
+        or "\\" in document_path
+        or not document_path.endswith(".json")
+        or any(segment in ("", ".", "..") for segment in segments)
+    ):
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            "the Legal bindings path is not a repository-relative JSON document",
+        )
+    return LegalBindingsCoordinates(
+        source_revision=source_revision,
+        fetch_revision=fetch_revision,
+        document_path=document_path,
+        expected_digest=expected_digest,
+    )
+
+
+@dataclass(frozen=True)
+class EmbeddedLegalBindings:
+    """The Legal binding state the artifact declares about itself."""
+
+    schema: str
+    source_revision: str
+    digest: str
+
+
+def read_embedded_legal_bindings(
+    metadata: Mapping[str, Any],
+) -> EmbeddedLegalBindings:
+    """Read the artifact's own declaration, which is compared, never trusted.
+
+    A release artifact records exactly three members. The development path
+    records ``null`` here, so a development-mode artifact refuses before any
+    retrieval and can never qualify.
+    """
+    if "legal_bindings" not in metadata:
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            "extension build metadata declares no legal_bindings member",
+        )
+    block = metadata["legal_bindings"]
+    if block is None:
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            "the artifact records no Legal bindings, so it is not a release artifact",
+        )
+    if not isinstance(block, dict):
+        refuse(STEP_LEGAL_COORDINATES, "recorded Legal bindings are not an object")
+    if tuple(sorted(block)) != LEGAL_BINDINGS_KEYS:
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            f"recorded Legal bindings carry {sorted(block)} "
+            f"rather than {list(LEGAL_BINDINGS_KEYS)}",
+        )
+    schema = block["schema"]
+    source_revision = block["source_revision"]
+    digest = block["legal_bindings_digest"]
+    if schema != LEGAL_BINDINGS_SCHEMA:
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            f"recorded Legal bindings schema is not {LEGAL_BINDINGS_SCHEMA}",
+        )
+    if not isinstance(source_revision, str) or not HEX_40.fullmatch(source_revision):
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            "the recorded Legal source revision is not a 40-character commit",
+        )
+    if not isinstance(digest, str) or not HEX_64.fullmatch(digest):
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            "the recorded Legal bindings digest is not bare lowercase 64-hex",
+        )
+    return EmbeddedLegalBindings(
+        schema=schema,
+        source_revision=source_revision,
+        digest=digest,
+    )
+
+
+@dataclass(frozen=True)
+class PackagedSigningRule:
+    """The packaged signing rule identity recomputed from artifact bytes."""
+
+    schema: str
+    source_revision: str
+    sha256: str
+
+
+def qualify_packaged_signing_rule(
+    chrome_zip: QualifiedChromeZip,
+) -> PackagedSigningRule:
+    """Recompute the packaged signing rule identity from the ZIP itself."""
+    declared = chrome_zip.metadata.get("signing_rule")
+    if declared is None:
+        refuse(
+            STEP_SIGNING_RULE,
+            "the artifact records no packaged signing rule, "
+            "so it is not a release artifact",
+        )
+    if not isinstance(declared, dict) or tuple(sorted(declared)) != SIGNING_RULE_KEYS:
+        refuse(
+            STEP_SIGNING_RULE,
+            "the recorded packaged signing rule has unexpected members",
+        )
+    rule_bytes = chrome_zip.entries.get(SIGNING_RULE_FILE)
+    if rule_bytes is None:
+        refuse(
+            STEP_SIGNING_RULE,
+            f"the Chrome ZIP does not carry {SIGNING_RULE_FILE}",
+        )
+    document = load_json_strict(rule_bytes, label="packaged signing rule")
+    if not isinstance(document, dict):
+        refuse(STEP_SIGNING_RULE, "the packaged signing rule is not an object")
+    digest = f"sha256:{sha256_bytes(rule_bytes)}"
+    if declared["sha256"] != digest:
+        refuse(
+            STEP_SIGNING_RULE,
+            "the recorded packaged signing rule digest is not the digest of the "
+            "packaged rule",
+        )
+    if declared["schema"] != document.get("schema") or declared[
+        "source_revision"
+    ] != document.get("source_revision"):
+        refuse(
+            STEP_SIGNING_RULE,
+            "the recorded packaged signing rule identity is not the packaged "
+            "rule's own identity",
+        )
+    background = chrome_zip.entries.get(BACKGROUND_FILE)
+    if background is None:
+        refuse(STEP_SIGNING_RULE, f"the Chrome ZIP does not carry {BACKGROUND_FILE}")
+    source = background.decode("utf-8", errors="replace")
+    rule_base64 = base64.b64encode(rule_bytes).decode("ascii")
+    if source.count(rule_base64) != 1 or source.count(digest) != 1:
+        refuse(
+            STEP_SIGNING_RULE,
+            "the packaged signing rule is not bound exactly once into "
+            f"{BACKGROUND_FILE}",
+        )
+    return PackagedSigningRule(
+        schema=declared["schema"],
+        source_revision=declared["source_revision"],
+        sha256=digest,
+    )
+
+
+@dataclass(frozen=True)
+class ReleasePrivacyPolicy:
+    """The privacy policy coordinate the shipped artifact resolves to."""
+
+    url: str
+    version: str
+    rendered_sha256: str
+    locale: str
+
+
+def qualify_release_privacy_policy(
+    chrome_zip: QualifiedChromeZip,
+    document: Mapping[str, Any],
+) -> ReleasePrivacyPolicy:
+    """Bind the packaged privacy policy URL to the verified Legal instrument."""
+    if chrome_zip.metadata.get("privacy_policy_configured") is not True:
+        refuse(
+            STEP_PRIVACY_POLICY,
+            "the artifact declares no configured release privacy policy",
+        )
+    config_bytes = chrome_zip.entries.get(EXTENSION_CONFIG_FILE)
+    if config_bytes is None:
+        refuse(
+            STEP_PRIVACY_POLICY,
+            f"the Chrome ZIP does not carry {EXTENSION_CONFIG_FILE}",
+        )
+    config = load_json_strict(config_bytes, label="extension configuration")
+    if not isinstance(config, dict):
+        refuse(STEP_PRIVACY_POLICY, "the extension configuration is not an object")
+    packaged_url = config.get("privacy_policy_url")
+    if not isinstance(packaged_url, str) or not packaged_url:
+        refuse(
+            STEP_PRIVACY_POLICY,
+            "the packaged extension configures no privacy policy URL",
+        )
+    origin = document.get("public_origin")
+    instruments = document.get("instruments")
+    instrument = (
+        instruments.get(PRIVACY_POLICY_INSTRUMENT)
+        if isinstance(instruments, dict)
+        else None
+    )
+    if not isinstance(origin, str) or not isinstance(instrument, dict):
+        refuse(
+            STEP_PRIVACY_POLICY,
+            "the verified Legal bindings carry no privacy policy instrument",
+        )
+    route = instrument.get("public_url")
+    version = instrument.get("version")
+    rendered = instrument.get("rendered_sha256")
+    locale = instrument.get("locale")
+    coordinates = (route, version, rendered, locale)
+    if not all(isinstance(value, str) and value for value in coordinates):
+        refuse(
+            STEP_PRIVACY_POLICY,
+            "the privacy policy instrument coordinates are malformed",
+        )
+    if not route.startswith("/"):
+        refuse(
+            STEP_PRIVACY_POLICY,
+            "the privacy policy route is not an absolute public route",
+        )
+    expected_url = f"{origin.rstrip('/')}{route}"
+    if packaged_url != expected_url:
+        refuse(
+            STEP_PRIVACY_POLICY,
+            "the packaged privacy policy URL is not the verified Legal instrument's "
+            "public route",
+        )
+    return ReleasePrivacyPolicy(
+        url=packaged_url,
+        version=version,
+        rendered_sha256=rendered,
+        locale=locale,
+    )
+
+
+def stage_legal_bindings_document(
+    coordinates: LegalBindingsCoordinates,
+    *,
+    output: Path,
+    runner_temp: Path,
+    environment: Mapping[str, str] | None = None,
+) -> bytes:
+    """Retrieve the Legal binding document through the release gate.
+
+    The gate at ``tools/legal-release-bindings/verify.mjs`` is the one
+    authenticated retrieval path; attestation reuses it rather than opening a
+    second one. Its refusal codes are mapped onto the step that owns them so a
+    retrieval failure stays distinguishable from a digest failure.
+    """
+    if not LEGAL_BINDINGS_GATE.is_file():
+        refuse(
+            STEP_LEGAL_RETRIEVAL,
+            f"the Legal release bindings gate is missing at {LEGAL_BINDINGS_GATE}",
+        )
+    values = dict(os.environ if environment is None else environment)
+    values.update(
+        {
+            "LEGAL_REPOSITORY_REVISION": coordinates.source_revision,
+            "LEGAL_BINDINGS_REPOSITORY_REVISION": coordinates.fetch_revision,
+            "LEGAL_BINDINGS_PATH": coordinates.document_path,
+            "LEGAL_BINDINGS_DIGEST": coordinates.expected_digest,
+            "RUNNER_TEMP": str(runner_temp),
+        }
+    )
+    completed = subprocess.run(
+        ["node", str(LEGAL_BINDINGS_GATE), f"--output={output}"],
+        cwd=str(PRODUCER_ROOT),
+        env=values,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        step = GATE_EXIT_STEPS.get(completed.returncode, STEP_LEGAL_RETRIEVAL)
+        detail = (completed.stderr or completed.stdout).strip().splitlines()
+        refuse(
+            step,
+            "the Legal release bindings gate refused with exit "
+            f"{completed.returncode}: {detail[-1] if detail else 'no detail'}",
+        )
+    if not output.is_file():
+        refuse(
+            STEP_LEGAL_RETRIEVAL,
+            "the Legal release bindings gate staged no document",
+        )
+    return output.read_bytes()
+
+
+@dataclass(frozen=True)
+class QualifiedLegalBindings:
+    """A Legal binding document retrieved and digested by attestation itself."""
+
+    schema: str
+    source_revision: str
+    fetch_revision: str
+    document_path: str
+    digest: str
+    document: Mapping[str, Any]
+    path: Path
+
+
+def qualify_legal_bindings(
+    chrome_zip: QualifiedChromeZip,
+    coordinates: LegalBindingsCoordinates,
+    *,
+    output: Path,
+    runner_temp: Path,
+    environment: Mapping[str, str] | None = None,
+) -> QualifiedLegalBindings:
+    """Retrieve, recompute and reconcile the Legal bindings for this ZIP.
+
+    The gate already compares the fetched bytes against the canonical
+    serialization, which is what rejects a duplicated member name; the digest
+    is recomputed here as well, over the bytes that were actually staged, and
+    reconciled with both the declared coordinate and the artifact's own
+    embedded block. Disagreement is a provenance failure, not a warning.
+    """
+    embedded = read_embedded_legal_bindings(chrome_zip.metadata)
+    if embedded.source_revision != coordinates.source_revision:
+        refuse(
+            STEP_LEGAL_COORDINATES,
+            "the artifact was packaged against Legal source revision "
+            f"{embedded.source_revision}, not {coordinates.source_revision}",
+        )
+    staged = stage_legal_bindings_document(
+        coordinates,
+        output=output,
+        runner_temp=runner_temp,
+        environment=environment,
+    )
+    digest = hashlib.sha256(staged).hexdigest()
+    if digest != coordinates.expected_digest:
+        refuse(
+            STEP_LEGAL_DIGEST,
+            "the retrieved Legal bindings digest to "
+            f"{digest}, not the declared {coordinates.expected_digest}",
+        )
+    if digest != embedded.digest:
+        refuse(
+            STEP_LEGAL_DIGEST,
+            "the artifact was packaged against Legal bindings digest "
+            f"{embedded.digest}, not the {digest} recomputed here",
+        )
+    document = load_json_strict(staged, label="Legal release bindings")
+    if not isinstance(document, dict):
+        refuse(STEP_LEGAL_DIGEST, "the Legal release bindings are not an object")
+    if document.get("schema") != LEGAL_BINDINGS_SCHEMA:
+        refuse(
+            STEP_LEGAL_DIGEST,
+            f"the Legal release bindings schema is not {LEGAL_BINDINGS_SCHEMA}",
+        )
+    # Revision A is read out of the retrieved document rather than taken from
+    # the dispatch input, so the signed value is the document's own approval
+    # revision and the input only has to agree with it.
+    approval_revision = document.get("legal_repository_revision")
+    if approval_revision != coordinates.source_revision:
+        refuse(
+            STEP_LEGAL_DIGEST,
+            "the retrieved Legal bindings declare a different source revision",
+        )
+    return QualifiedLegalBindings(
+        schema=LEGAL_BINDINGS_SCHEMA,
+        source_revision=approval_revision,
+        fetch_revision=coordinates.fetch_revision,
+        document_path=coordinates.document_path,
+        digest=digest,
+        document=document,
+        path=output,
+    )
+
+
+def run_package_audit(
+    *,
+    artifact: Path,
+    signing_rule: Path,
+    legal_bindings: Path,
+) -> str:
+    """Require the exact Store ZIP to pass the exact-binding package audit."""
+    if not EXTENSION_BUILD_SCRIPT.is_file():
+        refuse(
+            STEP_PACKAGE_AUDIT,
+            f"the extension build script is missing at {EXTENSION_BUILD_SCRIPT}",
+        )
+    completed = subprocess.run(
+        [
+            "node",
+            str(EXTENSION_BUILD_SCRIPT),
+            "--audit-package",
+            f"--artifact={artifact}",
+            f"--packaged-signing-rule={signing_rule}",
+            f"--legal-release-bindings={legal_bindings}",
+        ],
+        cwd=str(EXTENSION_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = f"{completed.stdout}{completed.stderr}".strip()
+    if completed.returncode != 0:
+        detail = output.splitlines()
+        refuse(
+            STEP_PACKAGE_AUDIT,
+            f"the package audit refused the Store ZIP with exit "
+            f"{completed.returncode}: {detail[-1] if detail else 'no detail'}",
+        )
+    if "Chrome archive audit passed" not in output:
+        refuse(
+            STEP_PACKAGE_AUDIT,
+            "the package audit exited zero without reporting a passing audit",
+        )
+    return output
+
+
+def recompute_store_zip_digest(path: Path, *, expected: str) -> str:
+    """Recompute the Store ZIP digest from the bytes the audit ran against."""
+    digester = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digester.update(block)
+    digest = digester.hexdigest()
+    if digest != expected:
+        refuse(
+            STEP_ARTIFACT_DIGEST,
+            f"the audited Store ZIP digests to {digest}, not {expected}",
+        )
+    return digest
+
+
+@dataclass(frozen=True)
+class PackageQualification:
+    """The controlled package audit this producer run performed."""
+
+    workflow: str
+    job: str
+    job_id: int
+    run_id: int
+    run_attempt: int
+    conclusion: str
+
+
+def require_package_qualification(client: GitHubApi) -> PackageQualification:
+    """Require this run's own qualification job to have concluded successfully.
+
+    The conclusion is read from the Actions API for this run rather than from
+    an output the unprivileged job wrote, and the producer workflow definition
+    that decides what that job does is already pinned by
+    ``require_current_producer_ref``.
+    """
+    run_id = _positive_integer(
+        _required_environment("GITHUB_RUN_ID"), "GITHUB_RUN_ID"
+    )
+    run_attempt = _positive_integer(
+        _required_environment("GITHUB_RUN_ATTEMPT"), "GITHUB_RUN_ATTEMPT"
+    )
+    payload = client.get(
+        f"/repos/{PRODUCT_REPOSITORY}/actions/runs/{run_id}"
+        f"/attempts/{run_attempt}/jobs?per_page=100"
+    )
+    jobs = payload.get("jobs")
+    if not isinstance(jobs, list) or not jobs:
+        refuse(
+            STEP_PACKAGE_QUALIFICATION,
+            "the producer run reports no jobs",
+        )
+    names = {job.get("name") for job in jobs}
+    if names != PRODUCER_JOB_NAMES:
+        refuse(
+            STEP_PACKAGE_QUALIFICATION,
+            f"the producer run runs {sorted(str(name) for name in names)} "
+            f"rather than {sorted(PRODUCER_JOB_NAMES)}",
+        )
+    matched = [job for job in jobs if job.get("name") == QUALIFICATION_JOB_NAME]
+    if len(matched) != 1:
+        refuse(
+            STEP_PACKAGE_QUALIFICATION,
+            f"the producer run has {len(matched)} {QUALIFICATION_JOB_NAME!r} jobs",
+        )
+    qualification = matched[0]
+    if (
+        qualification.get("status") != "completed"
+        or qualification.get("conclusion") != "success"
+    ):
+        refuse(
+            STEP_PACKAGE_QUALIFICATION,
+            "the controlled package qualification did not conclude successfully",
+        )
+    if qualification.get("run_id") != run_id or (
+        qualification.get("run_attempt") != run_attempt
+    ):
+        refuse(
+            STEP_PACKAGE_QUALIFICATION,
+            "the qualification job belongs to a different run or attempt",
+        )
+    if qualification.get("head_sha") != _required_environment("GITHUB_SHA"):
+        refuse(
+            STEP_PACKAGE_QUALIFICATION,
+            "the qualification job ran from a different producer revision",
+        )
+    job_id = qualification.get("id")
+    if not isinstance(job_id, int) or job_id <= 0:
+        refuse(
+            STEP_PACKAGE_QUALIFICATION,
+            "the qualification job carries no job identifier",
+        )
+    return PackageQualification(
+        workflow=PRODUCER_WORKFLOW,
+        job=QUALIFICATION_JOB_NAME,
+        job_id=job_id,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        conclusion="success",
+    )
+
+
+@dataclass(frozen=True)
+class QualifiedStoreRelease:
+    """Everything the precondition chain established about one Store ZIP."""
+
+    chrome_zip: QualifiedChromeZip
+    legal_bindings: QualifiedLegalBindings
+    signing_rule: PackagedSigningRule
+    privacy_policy: ReleasePrivacyPolicy
+    artifact_path: Path
+    artifact_sha256: str
+
+
+def qualify_store_release(
+    chrome_zip: QualifiedChromeZip,
+    coordinates: LegalBindingsCoordinates,
+    *,
+    temporary_root: Path,
+    audit_package: bool,
+    environment: Mapping[str, str] | None = None,
+) -> QualifiedStoreRelease:
+    """Run the precondition chain against the exact downloaded Store ZIP.
+
+    The chain is ordered, not a set of independent checks: the coordinates
+    decide before anything is retrieved, retrieval and the recomputed digest
+    decide before the artifact is read for its own bindings, and the ZIP digest
+    is recomputed last, over the bytes the audit ran against. Any refusal
+    raises out of this function, so a caller that signs only after it returns
+    cannot sign past a failed precondition.
+    """
+    staged_document = temporary_root / "legal-release-bindings.json"
+    legal_bindings = qualify_legal_bindings(
+        chrome_zip,
+        coordinates,
+        output=staged_document,
+        runner_temp=temporary_root,
+        environment=environment,
+    )
+    signing_rule = qualify_packaged_signing_rule(chrome_zip)
+    privacy_policy = qualify_release_privacy_policy(
+        chrome_zip, legal_bindings.document
+    )
+    artifact_path = temporary_root / chrome_zip.filename
+    artifact_path.write_bytes(chrome_zip.bytes)
+    if audit_package:
+        rule_path = temporary_root / SIGNING_RULE_FILE
+        rule_path.write_bytes(chrome_zip.entries[SIGNING_RULE_FILE])
+        run_package_audit(
+            artifact=artifact_path,
+            signing_rule=rule_path,
+            legal_bindings=staged_document,
+        )
+    artifact_sha256 = recompute_store_zip_digest(
+        artifact_path, expected=chrome_zip.sha256
+    )
+    return QualifiedStoreRelease(
+        chrome_zip=chrome_zip,
+        legal_bindings=legal_bindings,
+        signing_rule=signing_rule,
+        privacy_policy=privacy_policy,
+        artifact_path=artifact_path,
+        artifact_sha256=artifact_sha256,
     )
 
 
@@ -1882,6 +2609,96 @@ def command_resolve(args: argparse.Namespace) -> int:
     return 0
 
 
+def build_attestation_document(
+    *,
+    source: QualifiedSource,
+    release: QualifiedStoreRelease,
+    projection: ReviewProjection,
+    attestation_id: str,
+    signed_at: str,
+) -> dict[str, Any]:
+    """Assemble the attestation from values this run verified for itself.
+
+    The v1 contract defines no member for the bindings, signing rule, privacy
+    policy and qualification job this run also verifies, and closes the document
+    to members it does not define. Those checks gate the signature rather than
+    appear in it, so each one refuses before this is reached.
+    """
+    chrome_zip = release.chrome_zip
+    return {
+        "schema_version": "1.0",
+        "attestation_id": attestation_id,
+        "created_at": signed_at,
+        "repository": PRODUCT_REPOSITORY,
+        "commit_hash": source.source_commit,
+        "workflow": PRODUCER_WORKFLOW,
+        "target": TARGET,
+        "artifact": {
+            "filename": chrome_zip.filename,
+            "sha256": release.artifact_sha256,
+            "size_bytes": chrome_zip.size_bytes,
+            "version": chrome_zip.version,
+            "media_type": "application/zip",
+        },
+        "legal_projection": projection.value,
+        "provenance": {
+            "algorithm": ALGORITHM,
+            "signed_at": signed_at,
+            "signer_id": SIGNER_ID,
+        },
+    }
+
+
+def _legal_coordinates(args: argparse.Namespace) -> LegalBindingsCoordinates:
+    return resolve_legal_bindings_coordinates(
+        source_revision=args.legal_repository_revision,
+        fetch_revision=args.legal_bindings_repository_revision,
+        document_path=args.legal_bindings_path,
+        expected_digest=args.legal_bindings_digest,
+    )
+
+
+def command_qualify_package(args: argparse.Namespace) -> int:
+    """Audit the exact Store ZIP under the controlled package qualification."""
+    api_url = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+    client = GitHubApi(_required_environment("GITHUB_TOKEN"), api_url=api_url)
+    require_current_producer_ref(client)
+    source = qualify_windows_package_source(
+        client,
+        run_id=args.windows_package_run_id,
+        release_tag=args.release_tag,
+        baseline_sha=load_producer_control_baseline(),
+        workflow_sha=_required_environment("PRODUCER_WORKFLOW_SHA"),
+    )
+    coordinates = _legal_coordinates(args)
+    with tempfile.TemporaryDirectory(prefix="attestation-qualification-") as temporary:
+        temporary_root = Path(temporary)
+        actions_archive_path = temporary_root / "windows-package.zip"
+        client.download(
+            f"{_repo_path(PRODUCT_REPOSITORY)}/actions/artifacts/"
+            f"{source.artifact_id}/zip",
+            actions_archive_path,
+        )
+        chrome_zip = qualify_downloaded_artifact(
+            actions_archive_path.read_bytes(),
+            expected_server_digest=source.artifact_server_digest,
+            release_tag=args.release_tag,
+        )
+        release = qualify_store_release(
+            chrome_zip,
+            coordinates,
+            temporary_root=temporary_root,
+            audit_package=True,
+        )
+        print(
+            "Store package qualified: "
+            f"artifact={release.chrome_zip.filename} "
+            f"artifact_sha256={release.artifact_sha256} "
+            f"legal_bindings_digest={release.legal_bindings.digest}"
+        )
+    return 0
+
+
 def command_sign_and_handoff(args: argparse.Namespace) -> int:
     api_url = os.environ.get("GITHUB_API_URL", "https://api.github.com")
     product_client = GitHubApi(_required_environment("GITHUB_TOKEN"), api_url=api_url)
@@ -1914,6 +2731,17 @@ def command_sign_and_handoff(args: argparse.Namespace) -> int:
             expected_server_digest=source.artifact_server_digest,
             release_tag=args.release_tag,
         )
+        # Every precondition runs before any key material is decoded, so a
+        # refusal cannot reach a signature.
+        release = qualify_store_release(
+            chrome_zip,
+            _legal_coordinates(args),
+            temporary_root=temporary_root,
+            audit_package=False,
+        )
+        # Called for its refusal. The v1 document records no qualification job,
+        # so this gates the signature without appearing in what is signed.
+        require_package_qualification(product_client)
 
         private_key_path = temporary_root / "attestation-private-key.pem"
         app_private_key_path = temporary_root / "review-app-private-key.pem"
@@ -1970,31 +2798,16 @@ def command_sign_and_handoff(args: argparse.Namespace) -> int:
 
         require_current_producer_ref(product_client)
         signed_at = _utc_timestamp()
-        attestation: dict[str, Any] = {
-            "schema_version": "1.0",
-            "attestation_id": (
+        attestation: dict[str, Any] = build_attestation_document(
+            source=source,
+            release=release,
+            projection=projection,
+            attestation_id=(
                 f"chrome-extension-{_required_environment('GITHUB_RUN_ID')}-"
                 f"{_required_environment('GITHUB_RUN_ATTEMPT')}"
             ),
-            "created_at": signed_at,
-            "repository": PRODUCT_REPOSITORY,
-            "commit_hash": source.source_commit,
-            "workflow": PRODUCER_WORKFLOW,
-            "target": TARGET,
-            "artifact": {
-                "filename": chrome_zip.filename,
-                "sha256": chrome_zip.sha256,
-                "size_bytes": chrome_zip.size_bytes,
-                "version": chrome_zip.version,
-                "media_type": "application/zip",
-            },
-            "legal_projection": projection.value,
-            "provenance": {
-                "algorithm": ALGORITHM,
-                "signed_at": signed_at,
-                "signer_id": SIGNER_ID,
-            },
-        }
+            signed_at=signed_at,
+        )
         payload = attestation_signing_payload(attestation)
         signature = sign_ed25519(payload, private_key_path)
         attestation["provenance"]["signature"] = base64.b64encode(signature).decode(
@@ -2085,11 +2898,19 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name, handler in (
         ("resolve-source", command_resolve),
+        ("qualify-package", command_qualify_package),
         ("sign-and-handoff", command_sign_and_handoff),
     ):
         command = subparsers.add_parser(name)
         command.add_argument("--windows-package-run-id", required=True, type=int)
         command.add_argument("--release-tag", required=True)
+        if name != "resolve-source":
+            command.add_argument("--legal-repository-revision", required=True)
+            command.add_argument(
+                "--legal-bindings-repository-revision", required=True
+            )
+            command.add_argument("--legal-bindings-path", required=True)
+            command.add_argument("--legal-bindings-digest", required=True)
         if name == "sign-and-handoff":
             command.add_argument("--legal-projection-source-commit", required=True)
             command.add_argument(
@@ -2104,6 +2925,9 @@ def main(argv: Iterable[str] | None = None) -> int:
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
         return int(args.handler(args))
+    except QualificationError as exc:
+        print(f"ERROR [{exc.step}]: {exc}", file=sys.stderr)
+        return exc.exit_code
     except ContractError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

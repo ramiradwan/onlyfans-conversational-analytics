@@ -27,6 +27,6 @@ python -m venv .build-venv
 
 The build stages and verifies the runtime files, freezes Brain, builds the Agent bundle, compiles the installer, and writes SHA-256 digest files. The package is written under `installer\` in the output root.
 
-`build-windows.ps1` produces an unsigned installer. For tagged releases, the Windows package workflow signs the installer, verifies that its Authenticode signature is valid and timestamped, then recomputes the published digests.
+`build-windows.ps1` produces an unsigned installer. For a release, the Windows package workflow signs the installer, verifies that its Authenticode signature is valid and timestamped, then recomputes the published digests. That workflow is dispatched against an immutable `v*` tag and refuses any other ref, so it is not a way to build the current state of a branch.
 
 To test a built installer on a clean Windows guest, see [Run Windows acceptance](installation-and-acceptance.md).

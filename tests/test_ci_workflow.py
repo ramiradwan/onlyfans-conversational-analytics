@@ -2,9 +2,10 @@
 
 `pytest.ini` carries no OS selection: tests guarded with
 `@pytest.mark.skipif(os.name != "nt", ...)` only execute where a job actually
-runs on a Windows runner. `windows-package.yml` triggers on `v*` tags alone, so
-it never runs on a push or pull request; `ci.yml` is the only workflow that
-does, and it must itself contain a job that runs pytest on a Windows runner.
+runs on a Windows runner. `windows-package.yml` runs only on an explicit
+dispatch, so it never runs on a push or pull request; `ci.yml` is the only
+workflow that does, and it must itself contain a job that runs pytest on a
+Windows runner.
 
 Jobs are matched by what a step collects rather than by an exact command
 string, because marker selection still collects every test path and must not

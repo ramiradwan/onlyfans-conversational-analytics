@@ -2,7 +2,7 @@
 
 <!-- CODE-VERIFY: Check .github/workflows/engineering-attestation.yml, tools/engineering_attestation.py, packaging/new-agent-bundle.ps1, and attestation/signers/README.md before changing workflow inputs, trust values, artifact rules, or activation steps. -->
 
-The engineering-attestation workflow signs the exact Chrome ZIP from a successful tagged Windows-package run and privately submits the same bytes for review. Version 1 proves producer identity, artifact provenance, and binding to a signed review-state projection. The v1 wire member carrying that projection is `legal_projection`.
+The engineering-attestation workflow signs the exact Chrome ZIP from a successful Windows-package run and privately submits the same bytes for review. Version 1 proves producer identity, artifact provenance, and binding to a signed review-state projection. The v1 wire member carrying that projection is `legal_projection`.
 
 It does not detect changes to permissions, hosts, network destinations, storage, retained authentication values, data categories, write behavior, retention, deletion, or telemetry. Those changes require human review before the `engineering_facts` profile is versioned.
 
@@ -27,12 +27,13 @@ The required Product environment, variables, and secrets are listed in [the sign
 
 Use a fresh candidate from a commit after the producer control baseline and a new immutable `v*` tag. Do not reuse a pre-control package.
 
-1. Confirm the source commit has a completed, successful Product CI `push` run on `main` with the exact three required jobs, and that the tagged Windows-package run is green. Pull-request CI does not qualify a source package.
-2. Complete a clean-install rehearsal for the exact packaged installer on a machine with no repository checkout.
-3. Obtain the reviewed projection source commit and its canonical SHA-256.
-4. Dispatch `.github/workflows/engineering-attestation.yml` with the Windows-package run ID, release tag, projection source commit, and projection digest.
-5. Approve the `engineering-attestation-production` environment.
-6. Review the App-created evidence PR after the protected scope and strict-verifier checks report success.
+1. Dispatch `.github/workflows/windows-package.yml` from the release tag itself: select the `v*` tag under **Use workflow from**, and pass `product_revision` as the exact 40-character commit that tag names. The workflow refuses any other dispatch ref before it retrieves a document or builds anything, and the attestation refuses a run whose head branch is not the release tag.
+2. Confirm the source commit has a completed, successful Product CI `push` run on `main` with the exact three required jobs, and that the Windows-package run is green. Pull-request CI does not qualify a source package.
+3. Complete a clean-install rehearsal for the exact packaged installer on a machine with no repository checkout.
+4. Obtain the reviewed projection source commit and its canonical SHA-256.
+5. Dispatch `.github/workflows/engineering-attestation.yml` with the Windows-package run ID, release tag, projection source commit, and projection digest.
+6. Approve the `engineering-attestation-production` environment.
+7. Review the App-created evidence PR after the protected scope and strict-verifier checks report success.
 
 The resolver only qualifies run metadata. The protected job independently repeats the Product CI and Windows-package qualification, downloads the Actions artifact by numeric ID, checks the outer package and inner ZIP, signs the attestation, rechecks the current projection digest, and creates the evidence PR. It does not install dependencies or build product code.
 

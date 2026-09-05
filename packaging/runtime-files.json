@@ -24,6 +24,13 @@
       ".vite/manifest.json"
     ]
   },
+  "agent_artifact": {
+    "build_metadata_path": "Agent/build-meta.json",
+    "schema": "ofca-extension-build/v4",
+    "release_declarations": [
+      "legal_bindings"
+    ]
+  },
   "sql_catalogs": [
     {
       "path": "_internal/app/persistence/sql",
