@@ -37,6 +37,7 @@ DEFAULT_NON_PRODUCTION_PREFIXES = (
     ".github/",
     ".pytest_temp/",
     ".pytest_cache/",
+    "extension/test-fixtures/",
 )
 
 DEFAULT_ROOT_METADATA_FILES = frozenset(

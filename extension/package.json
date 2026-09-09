@@ -4,6 +4,7 @@
   "version": "2.0.1",
   "scripts": {
     "test": "node --test",
+    "check:architecture": "depcruise --config .dependency-cruiser.cjs capture protocol transport runtime",
     "build": "node build.mjs",
     "audit": "node build.mjs --audit",
     "package:chrome": "node build.mjs --package",
@@ -16,6 +17,7 @@
     "local-authenticated-read-connector": "file:vendor/local-authenticated-read-connector-0.2.0-beta.11.tgz"
   },
   "devDependencies": {
+    "dependency-cruiser": "18.2.0",
     "esbuild": "0.25.6",
     "fflate": "0.8.2"
   },

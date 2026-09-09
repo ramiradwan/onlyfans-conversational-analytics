@@ -70,7 +70,7 @@ The following twenty-four modules partition the repository's production namespac
 Repository paths outside the classified production modules are governed by explicit non-production policies in `docs/architecture-boundaries.json`:
 
 - **External vendored contracts (`contracts/**`)**: Upstream schema and contract snapshots tracked for compatibility verification, isolated from internal architecture modules.
-- **Development and test namespaces (`tests/**`, `tools/**`, `docs/**`, `.husky/**`, `.git/**`, `.github/**`)**: Test suites, maintenance tools, verification scripts, and documentation harnesses not included in production runtime deliverables.
+- **Development and test namespaces (`tests/**`, `tools/**`, `docs/**`, `.husky/**`, `.git/**`, `.github/**`, `extension/test-fixtures/**`)**: Test suites, maintenance tools, verification scripts, and documentation harnesses not included in production runtime deliverables.
 - **Root metadata files (`README.md`, `LICENSE`, `pyproject.toml`, etc.)**: Repository root configuration and project metadata.
 
 Any untracked or unclassified path that is not in a production module and not covered by an explicit non-production exclusion fails closed during architectural validation.
@@ -106,13 +106,13 @@ The machine manifest defines twenty-two protected architectural invariants that 
 
 ## Enforced and documented dependency rules
 
-The repository specifies ten architectural boundary rules governing cross-module dependencies:
+The repository specifies eleven architectural boundary rules governing cross-module dependencies:
 
 | Rule ID | Type | Enforcement | Source modules | Target modules | Description |
 |---|---|---|---|---|---|
 | `rule-canonical-persistence-no-upward` | Forbidden | Enforced | `canonical-persistence` | `analytics-semantic-foundation`, `analytics-analyzers-metrics`, `application-services`, `brain-api-presentation`, `provisioning-surface`, `brain-transport` | Core canonical persistence modules (history, database, migrations, deletion_operations) must not import feature, API, provisioning, transport, or analytics orchestration modules. |
 | `rule-canonical-history-gateway` | Protected | Enforced | `analytics-analyzers-metrics` | `canonical-persistence` | Only approved gateway modules may depend directly on app.persistence.history; ordinary analytics must use canonical read source. |
-| `rule-agent-capture-isolation` | Forbidden | Documented | `agent-capture` | `agent-runtime` | Agent capture modules must produce observations only and not import transport, outbox publication, or command execution. |
+| `rule-agent-capture-isolation` | Forbidden | Enforced | `agent-capture` | `agent-runtime` | Agent capture modules must produce observations only and not import transport, outbox publication, or command execution. |
 | `rule-persistence-factory-no-analytics` | Forbidden | Documented | `persistence-factory` | `analytics-semantic-foundation` | Persistence factory must not construct or depend on analytics-facing adapters; recorded under temporary exception until Task 7B. |
 | `rule-projection-coordination-boundary` | Boundary | Documented | `persistence-projection-coordination` | `analytics-semantic-foundation` | Projection activation coordination between canonical revisions and analytics projection publication is an entangled composition seam recorded under current design. |
 | `rule-no-service-to-transport` | Forbidden | Documented | `application-services` | `brain-transport` | Application services must not discover transport infrastructure, except under declared exception for insights_service until Task 7A. |
@@ -120,6 +120,7 @@ The repository specifies ten architectural boundary rules governing cross-module
 | `rule-bridge-no-canonical-writes` | Forbidden | Documented | `bridge-presentation`, `bridge-orchestration` | `canonical-persistence` | Bridge frontend components and stores consume Brain state and must not act as an ingestion or canonical write proxy. |
 | `rule-runtime-policy-confinement` | Protected | Enforced | `brain-api-presentation`, `application-services` | `security-trust` | Runtime policy and role authorization decisions are confined to the security kernel. |
 | `rule-grant-licence-admission-confinement` | Forbidden | Enforced | `security-trust` | `provisioning-surface` | Grant and licence authorization modules must not resolve or reference capability permit admission markers. |
+| `rule-agent-protected-acyclic` | Forbidden | Enforced | `agent-runtime`, `protocol-core` | `agent-runtime`, `protocol-core` | Protected Agent protocol, transport, and runtime kernel modules must remain acyclic; phase-one structural protection does not prove correct dependency direction. |
 
 ## Normal feature development lane
 

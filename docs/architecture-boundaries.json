@@ -12,7 +12,8 @@
       "docs/**",
       ".husky/**",
       ".git/**",
-      ".github/**"
+      ".github/**",
+      "extension/test-fixtures/**"
     ],
     "root_metadata_files": [
       ".gitattributes",
@@ -197,6 +198,7 @@
         "extension/page-hook*.js",
         "extension/manifest.json",
         "extension/build.mjs",
+        "extension/.dependency-cruiser.cjs",
         "extension/vendor/**",
         "extension/icons/**",
         "extension/extension-config.json",
@@ -730,9 +732,9 @@
       ],
       "type": "forbidden",
       "enforcement": {
-        "status": "documented",
+        "status": "enforced",
         "enforced_by": [
-          "planned:Task-3-dependency-cruiser"
+          "extension/tests/architecture-boundaries.test.mjs"
         ]
       }
     },
@@ -856,6 +858,25 @@
         "status": "enforced",
         "enforced_by": [
           "tests/test_architecture_admission.py::test_no_grant_or_licence_authorization_module_resolves_permit_admission"
+        ]
+      }
+    },
+    {
+      "id": "rule-agent-protected-acyclic",
+      "description": "Protected Agent protocol, transport, and runtime kernel modules must remain acyclic; phase-one structural protection does not prove correct dependency direction.",
+      "source_modules": [
+        "agent-runtime",
+        "protocol-core"
+      ],
+      "target_modules": [
+        "agent-runtime",
+        "protocol-core"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "extension/tests/architecture-boundaries.test.mjs"
         ]
       }
     }

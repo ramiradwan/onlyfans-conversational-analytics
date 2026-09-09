@@ -65,6 +65,10 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
 
+      - name: Check Agent architecture boundary contracts
+        working-directory: extension
+        run: npm run check:architecture
+
       - name: Build frontend
         run: npm run build --prefix frontend
 
