@@ -1,0 +1,26 @@
+{
+  "scenario": "enforced_rule_with_planned_control",
+  "description": "Enforced rule attempting to reference a planned future control",
+  "expected_diagnostic": "executable reference cannot be planned",
+  "mutation": {
+    "op": "append",
+    "target": "rules",
+    "item": {
+      "id": "rule-test-enforced-planned",
+      "description": "Test rule with planned control",
+      "source_modules": [
+        "canonical-persistence"
+      ],
+      "target_modules": [
+        "security-trust"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "planned:Task-2-import-linter"
+        ]
+      }
+    }
+  }
+}

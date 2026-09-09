@@ -1,0 +1,12 @@
+{
+  "scenario": "exception_without_reason",
+  "description": "Architecture exception missing rationale reason",
+  "expected_diagnostic": "missing or empty reason",
+  "mutation": {
+    "op": "set",
+    "target": "exceptions",
+    "index": 0,
+    "field": "reason",
+    "value": ""
+  }
+}

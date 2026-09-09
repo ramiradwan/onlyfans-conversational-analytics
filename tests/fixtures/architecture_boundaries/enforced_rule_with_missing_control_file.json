@@ -1,0 +1,26 @@
+{
+  "scenario": "enforced_rule_with_missing_control_file",
+  "description": "Enforced rule referencing non-existent control file",
+  "expected_diagnostic": "referenced file does not exist",
+  "mutation": {
+    "op": "append",
+    "target": "rules",
+    "item": {
+      "id": "rule-test-enforced-missing-file",
+      "description": "Test rule with non-existent file",
+      "source_modules": [
+        "canonical-persistence"
+      ],
+      "target_modules": [
+        "security-trust"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/non_existent_control_file.py::test_something"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "scenario": "exception_missing_tracking_issue",
+  "description": "Exception missing tracking_issue key entirely",
+  "expected_diagnostic": "missing or empty tracking_issue",
+  "mutation": {
+    "op": "delete",
+    "target": "exceptions",
+    "index": 0,
+    "field": "tracking_issue"
+  }
+}

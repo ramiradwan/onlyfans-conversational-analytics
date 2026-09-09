@@ -1,0 +1,10 @@
+{
+  "scenario": "duplicate_invariant_id",
+  "description": "Manifest containing duplicate semantic invariant identifier",
+  "expected_diagnostic": "duplicate semantic invariant id",
+  "mutation": {
+    "op": "duplicate",
+    "target": "semantic_invariants",
+    "index": 0
+  }
+}

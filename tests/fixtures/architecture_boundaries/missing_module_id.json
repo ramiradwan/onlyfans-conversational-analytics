@@ -1,0 +1,12 @@
+{
+  "scenario": "missing_module_id",
+  "description": "Module with empty identifier",
+  "expected_diagnostic": "missing or empty id",
+  "mutation": {
+    "op": "set",
+    "target": "modules",
+    "index": 0,
+    "field": "id",
+    "value": ""
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "scenario": "unclassified_production_namespace",
+  "description": "Manifest with canonical-persistence module removed",
+  "expected_diagnostic": "UnclassifiedProductionPathError",
+  "mutation": {
+    "op": "remove_item",
+    "target": "modules",
+    "match": {
+      "id": "canonical-persistence"
+    }
+  }
+}

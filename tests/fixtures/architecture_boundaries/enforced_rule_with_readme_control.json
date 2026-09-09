@@ -1,0 +1,26 @@
+{
+  "scenario": "enforced_rule_with_readme_control",
+  "description": "Enforced rule referencing non-executable README.md file",
+  "expected_diagnostic": "non-executable",
+  "mutation": {
+    "op": "append",
+    "target": "rules",
+    "item": {
+      "id": "rule-test-enforced-readme-control",
+      "description": "Test rule with non-executable control reference",
+      "source_modules": [
+        "canonical-persistence"
+      ],
+      "target_modules": [
+        "security-trust"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "README.md"
+        ]
+      }
+    }
+  }
+}

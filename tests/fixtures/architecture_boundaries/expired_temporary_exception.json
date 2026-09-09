@@ -1,0 +1,12 @@
+{
+  "scenario": "expired_temporary_exception",
+  "description": "Temporary exception whose expiry date is in the past",
+  "expected_diagnostic": "temporary exception expired",
+  "mutation": {
+    "op": "set",
+    "target": "exceptions",
+    "index": 0,
+    "field": "expires",
+    "value": "2020-01-01"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "scenario": "invalid_authority",
+  "description": "Module with invalid authority classification",
+  "expected_diagnostic": "invalid authority",
+  "mutation": {
+    "op": "set",
+    "target": "modules",
+    "index": 0,
+    "field": "authority",
+    "value": "untrusted"
+  }
+}
