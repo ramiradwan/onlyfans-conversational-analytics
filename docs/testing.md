@@ -10,6 +10,7 @@ From the repository root:
 
 ```powershell
 python -m pytest
+lint-imports
 npm test --prefix frontend
 npm test --prefix extension
 npm run build --prefix frontend
@@ -21,7 +22,7 @@ Install backend development dependencies from `requirements-dev.txt` and JavaScr
 
 ## CI coverage
 
-GitHub Actions uses Python 3.11 and Node.js 22. In addition to the common checks, CI runs contract-integrity tests, the provisioning-page module test, the 10,000-message Agent snapshot qualification, the backend suite on Windows, and capture end-to-end tests.
+GitHub Actions uses Python 3.11 and Node.js 22. In addition to the common checks, CI runs architecture boundary manifest validation, Python architecture boundary checks (`lint-imports`), contract-integrity tests, the provisioning-page module test, the 10,000-message Agent snapshot qualification, the backend suite on Windows, and capture end-to-end tests.
 
 See [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) for the current commands and job matrix.
 

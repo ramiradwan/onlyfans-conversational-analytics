@@ -43,6 +43,7 @@ DEFAULT_ROOT_METADATA_FILES = frozenset(
     {
         ".gitattributes",
         ".gitignore",
+        ".importlinter",
         "AI-instructions.md",
         "CONTRIBUTING.md",
         "LICENSE",

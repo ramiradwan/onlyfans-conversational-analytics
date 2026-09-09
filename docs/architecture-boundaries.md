@@ -110,8 +110,8 @@ The repository specifies ten architectural boundary rules governing cross-module
 
 | Rule ID | Type | Enforcement | Source modules | Target modules | Description |
 |---|---|---|---|---|---|
-| `rule-canonical-persistence-no-upward` | Forbidden | Documented | `canonical-persistence` | `analytics-semantic-foundation`, `analytics-analyzers-metrics`, `application-services`, `brain-api-presentation`, `provisioning-surface`, `brain-transport` | Core canonical persistence modules (history, database, migrations, deletion_operations) must not import feature, API, provisioning, transport, or analytics orchestration modules. |
-| `rule-canonical-history-gateway` | Protected | Documented | `analytics-analyzers-metrics` | `canonical-persistence` | Only approved gateway modules may depend directly on app.persistence.history; ordinary analytics must use canonical read source. |
+| `rule-canonical-persistence-no-upward` | Forbidden | Enforced | `canonical-persistence` | `analytics-semantic-foundation`, `analytics-analyzers-metrics`, `application-services`, `brain-api-presentation`, `provisioning-surface`, `brain-transport` | Core canonical persistence modules (history, database, migrations, deletion_operations) must not import feature, API, provisioning, transport, or analytics orchestration modules. |
+| `rule-canonical-history-gateway` | Protected | Enforced | `analytics-analyzers-metrics` | `canonical-persistence` | Only approved gateway modules may depend directly on app.persistence.history; ordinary analytics must use canonical read source. |
 | `rule-agent-capture-isolation` | Forbidden | Documented | `agent-capture` | `agent-runtime` | Agent capture modules must produce observations only and not import transport, outbox publication, or command execution. |
 | `rule-persistence-factory-no-analytics` | Forbidden | Documented | `persistence-factory` | `analytics-semantic-foundation` | Persistence factory must not construct or depend on analytics-facing adapters; recorded under temporary exception until Task 7B. |
 | `rule-projection-coordination-boundary` | Boundary | Documented | `persistence-projection-coordination` | `analytics-semantic-foundation` | Projection activation coordination between canonical revisions and analytics projection publication is an entangled composition seam recorded under current design. |
@@ -168,7 +168,7 @@ Architectural rules are enforced by static checkers and automated test suites:
 
 - **Manifest validation**: `tools/validate_architecture_boundaries.py` and `tests/test_architecture_boundaries.py` verify manifest schema, zone validity, exception expiration, executable control references, and production path classification.
 - **Fail-closed path classification**: Every production file must match a declared module pattern. Unclassified production paths cause immediate validation failure.
-- **Dependency boundaries**: Executable Python AST controls verify forbidden import directions.
+- **Dependency boundaries**: Import Linter module-granularity contracts and executable tests verify forbidden import directions and approved gateway access.
 - **Permanent negative fixtures**: `tests/fixtures/architecture_boundaries/` maintains invalid manifest fixtures to prove that validators reject misconfigurations.
 - **Documentation consistency**: Automated checks ensure that `docs/architecture-boundaries.md` and `docs/architecture-boundaries.json` remain synchronized.
 
@@ -183,3 +183,40 @@ Under the progressive qualification rule:
 - Task 1 (PR 1) establishes the architecture contract with invariants in the `documented` state.
 - Tasks 5 and 6 advance implemented ingestion and rebuild invariants to `qualified`.
 - Task 9 requires all claimed invariants to be fully `qualified`.
+
+## Pre-implementation import census (Task 2)
+
+Prior to activating module-level dependency contracts, a pre-implementation import census was performed for the four protected canonical persistence modules and all direct importers of `app.persistence.history`.
+
+### Protected persistence core imports
+
+| Module | Imported module/symbol | Classification | Rationale |
+|---|---|---|---|
+| `app.persistence.history` | `sqlite_api` | Implementation | Database driver abstraction. |
+| `app.persistence.history` | `app.persistence.database` (`PROJECTION_KEY_SCOPE`, `CanonicalSQLite`, `LocalSQLite`, `ProjectionsSQLite`) | Contract/value type and composition/runtime | Connection handle classes and key scope constant within persistence. |
+| `app.persistence.history` | `app.persistence.migrations` (`MigrationChecksumError`, `MigrationRunner`) | Contract/value type and implementation | Migration execution and checksum validation within persistence. |
+| `app.persistence.history` | `app.persistence.projection_pipeline` (`CanonicalProjectionConversation`, `CanonicalProjectionMessage`, `DeterministicProjectionPipeline`, `ProjectionPipeline`) | Contract/value type and implementation | Projection data structures and pipeline runner within persistence. |
+| `app.persistence.database` | `sqlite_api` | Implementation | Database driver abstraction. |
+| `app.persistence.database` | `app.persistence.private_files` (`PrivateFileSecurityError`, `apply_private_file_security`, `reject_path_aliases`) | Contract/value type and implementation | File permissions and alias validation within persistence. |
+| `app.persistence.database` | `app.security.local_data_key` (`LocalDataKeyError`, `database_key`, `protect_local_secret`) | Contract/value type and implementation | Device-bound database key derivation from security kernel. |
+| `app.persistence.migrations` | `sqlite_api` | Implementation | Database driver abstraction. |
+| `app.persistence.migrations` | `app.persistence.database` (`LocalSQLite`) | Implementation | Connection handle within persistence. |
+| `app.persistence.migrations` | `app.persistence.managed_recovery` (`prune_managed_recovery_files`) | Implementation | Migration recovery cleanup within persistence. |
+| `app.persistence.migrations` | `app.persistence.private_files` (`PrivateFileSecurityError`, `apply_private_file_security`, `sync_directory`, `sync_file`) | Contract/value type and implementation | File synchronization within persistence. |
+| `app.persistence.deletion_operations` | `app.persistence.database` (`CanonicalSQLite`) | Implementation | Connection handle within persistence. |
+
+None of the four protected modules import `app.analytics`, `app.services`, `app.api`, `app.provisioning`, or `app.transport`. Module-level fencing for Contract A requires no refactoring of neutral types.
+
+### Direct importers of app.persistence.history
+
+| Importing module | Imported symbols | Classification | Status under Contract B |
+|---|---|---|---|
+| `app.analytics.canonical_source` | `HistoryRepository` | Implementation | Approved gateway module. Wraps canonical history into the read-only `CanonicalReadModelSource` interface. |
+| `app.analytics.rebuild` | `HistoryRepository` | Composition/runtime | Approved gateway/integration module. Iterates canonical history to rebuild projections. |
+| `app.transport.manager` | `IngestResult`, `InvariantViolation`, `StreamKey` | Contract/value type | Transport ingestion dispatch admitting Agent frames to `HistoryRepository`. Outside analytics. |
+| `app.api.endpoints.history` | `ProjectionCursorStale` | Contract/value type | Exception type handling stale cursor responses. Outside analytics. |
+| `app.api.endpoints.transport_ws` | `InvariantViolation` | Contract/value type | Exception type handling WebSocket error frames. Outside analytics. |
+| `app.persistence.factory` | `HistoryRepository`, `ProjectionRepository` | Composition/runtime | Legacy persistence composition seam. Outside protected core; tracked under temporary exception for Task 7B. |
+| `app.persistence.projection_activation` | `HistoryRepository` | Composition/runtime | Projection publication coordination seam. Outside protected core; tracked under current design exception. |
+
+Ordinary analytics modules (metrics, analyzers, feature modules, and graph projections) are excluded from importing `app.persistence.history` directly and must consume canonical data through `app.analytics.canonical_source`.

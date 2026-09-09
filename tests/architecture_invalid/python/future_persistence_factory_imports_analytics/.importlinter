@@ -1,0 +1,11 @@
+[importlinter]
+root_packages =
+    app
+
+[importlinter:contract:contract-d-persistence-factory-no-analytics]
+name = Contract D: Persistence factory must not import analytics
+type = forbidden
+source_modules =
+    app.persistence.factory
+forbidden_modules =
+    app.analytics

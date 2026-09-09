@@ -17,6 +17,7 @@
     "root_metadata_files": [
       ".gitattributes",
       ".gitignore",
+      ".importlinter",
       "AI-instructions.md",
       "CONTRIBUTING.md",
       "LICENSE",
@@ -695,9 +696,9 @@
       ],
       "type": "forbidden",
       "enforcement": {
-        "status": "documented",
+        "status": "enforced",
         "enforced_by": [
-          "planned:Task-2-import-linter"
+          "tests/test_architecture_contracts.py::test_canonical_persistence_no_upward_contract"
         ]
       }
     },
@@ -712,9 +713,9 @@
       ],
       "type": "protected",
       "enforcement": {
-        "status": "documented",
+        "status": "enforced",
         "enforced_by": [
-          "planned:Task-2-import-linter"
+          "tests/test_architecture_contracts.py::test_canonical_history_gateway_contract"
         ]
       }
     },

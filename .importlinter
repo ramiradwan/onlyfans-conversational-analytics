@@ -1,0 +1,51 @@
+[importlinter]
+root_packages =
+    app
+
+[importlinter:contract:contract-a-canonical-persistence-no-upward]
+name = Contract A: Canonical persistence core cannot depend upward or into transport
+type = forbidden
+source_modules =
+    app.persistence.history
+    app.persistence.database
+    app.persistence.migrations
+    app.persistence.deletion_operations
+forbidden_modules =
+    app.analytics
+    app.services
+    app.api
+    app.provisioning
+    app.transport
+
+[importlinter:contract:contract-b-canonical-history-gateway]
+name = Contract B: Only approved gateway modules may import app.persistence.history
+type = forbidden
+source_modules =
+    app.analytics
+forbidden_modules =
+    app.persistence.history
+ignore_imports =
+    app.analytics.canonical_source -> app.persistence.history
+    app.analytics.rebuild -> app.persistence.history
+allow_indirect_imports = True
+
+# ------------------------------------------------------------------------------
+# Future Contracts (Planned for subsequent tasks; not enabled against current source)
+# ------------------------------------------------------------------------------
+# Future Contract C (Task 7A - Extract analytics runtime composition from insights_service):
+# [importlinter:contract:contract-c-service-transport-separation]
+# name = Contract C: Application services must not import transport
+# type = forbidden
+# source_modules =
+#     app.services.insights_service
+# forbidden_modules =
+#     app.transport
+#
+# Future Contract D (Task 7B - Remove analytics construction from persistence factory):
+# [importlinter:contract:contract-d-persistence-factory-no-analytics]
+# name = Contract D: Persistence factory must not import analytics
+# type = forbidden
+# source_modules =
+#     app.persistence.factory
+# forbidden_modules =
+#     app.analytics

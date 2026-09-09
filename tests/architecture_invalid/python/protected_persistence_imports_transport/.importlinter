@@ -1,0 +1,18 @@
+[importlinter]
+root_packages =
+    app
+
+[importlinter:contract:contract-a-canonical-persistence-no-upward]
+name = Contract A: Canonical persistence core cannot depend upward or into transport
+type = forbidden
+source_modules =
+    app.persistence.history
+    app.persistence.database
+    app.persistence.migrations
+    app.persistence.deletion_operations
+forbidden_modules =
+    app.analytics
+    app.services
+    app.api
+    app.provisioning
+    app.transport

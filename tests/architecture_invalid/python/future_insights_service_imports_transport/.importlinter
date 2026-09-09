@@ -1,0 +1,11 @@
+[importlinter]
+root_packages =
+    app
+
+[importlinter:contract:contract-c-service-transport-separation]
+name = Contract C: Application services must not import transport
+type = forbidden
+source_modules =
+    app.services.insights_service
+forbidden_modules =
+    app.transport

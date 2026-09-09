@@ -1,0 +1,2 @@
+class HistoryRepository:
+    pass
