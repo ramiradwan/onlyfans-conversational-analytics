@@ -302,7 +302,7 @@ def test_negative_control_insights_service_imports_transport() -> None:
 
 
 def test_negative_control_persistence_factory_imports_analytics() -> None:
-    """Prove rejection of app.persistence.factory importing app.analytics under future post-7B Contract D."""
+    """Prove Contract D rejects persistence-factory imports of analytics."""
     fixture_dir = FIXTURES_ROOT / "future_persistence_factory_imports_analytics"
     config_path = fixture_dir / ".importlinter"
     assert config_path.is_file(), f"Fixture config missing: {config_path}"

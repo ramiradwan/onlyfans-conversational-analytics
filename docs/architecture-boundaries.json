@@ -813,7 +813,7 @@
       "enforcement": {
         "status": "documented",
         "enforced_by": [
-          "planned:Task-6-contract"
+          "planned:projection-coordination-boundary-control"
         ]
       }
     },
@@ -867,7 +867,7 @@
       "enforcement": {
         "status": "documented",
         "enforced_by": [
-          "planned:Task-4-dependency-cruiser"
+          "planned:bridge-canonical-write-boundary-control"
         ]
       }
     },
@@ -908,7 +908,7 @@
     },
     {
       "id": "rule-agent-protected-acyclic",
-      "description": "Protected Agent protocol, transport, and runtime kernel modules must remain acyclic; phase-one structural protection does not prove correct dependency direction.",
+      "description": "Protected Agent protocol, transport, and runtime kernel modules must remain acyclic. This rule enforces acyclicity; separate rules govern dependency direction.",
       "source_modules": [
         "agent-runtime",
         "protocol-core"
@@ -927,7 +927,7 @@
     },
     {
       "id": "rule-bridge-protected-acyclic",
-      "description": "Protected Bridge protocol, store, and service kernel modules must remain acyclic; phase-one structural protection does not prove correct dependency direction.",
+      "description": "Protected Bridge protocol, store, and service kernel modules must remain acyclic. This rule enforces acyclicity; separate rules govern dependency direction.",
       "source_modules": [
         "bridge-orchestration",
         "protocol-core"
@@ -1027,7 +1027,7 @@
           "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion",
           "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
         ],
-        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
       }
     },
     {
@@ -1087,7 +1087,7 @@
       "id": "persistence-analytics-separation",
       "owner": "Brain persistence and analytics",
       "severity": "medium",
-      "requirement_or_scenario": "Canonical persistence does not construct analytics-facing adapters or depend on analytics modules. (Section 3, Task 7B)",
+      "requirement_or_scenario": "Canonical persistence does not construct analytics-facing adapters or depend on analytics modules. (Architecture composition model)",
       "assurance": {
         "status": "documented",
         "evidence": [
@@ -1127,7 +1127,7 @@
       "id": "derived-state-determinism",
       "owner": "Brain analytics pipeline",
       "severity": "high",
-      "requirement_or_scenario": "Clean rebuilds of analytics metrics and graph from identical canonical state produce identical semantic outputs within ReproducibilityContext. (Section 6, Task 6A)",
+      "requirement_or_scenario": "Clean rebuilds of analytics metrics and graph from identical canonical state produce identical semantic outputs within ReproducibilityContext. (Rebuild equivalence contract)",
       "assurance": {
         "status": "qualified",
         "evidence": [
@@ -1140,7 +1140,7 @@
       "id": "graph-semantic-reproducibility",
       "owner": "Brain analytics knowledge graph",
       "severity": "high",
-      "requirement_or_scenario": "Knowledge graph structure and semantic edges are reproducible across rebuilds within ReproducibilityContext. (Task 6A)",
+      "requirement_or_scenario": "Knowledge graph structure and semantic edges are reproducible across rebuilds within ReproducibilityContext. (Rebuild equivalence contract)",
       "assurance": {
         "status": "qualified",
         "evidence": [
@@ -1153,21 +1153,21 @@
       "id": "projection-reproducibility",
       "owner": "Brain analytics and projection store",
       "severity": "high",
-      "requirement_or_scenario": "Incremental projection computation achieves semantic and provenance equivalence with a clean rebuild from canonical head under identical ReproducibilityContext, excluding explicitly documented transient fields. (Task 6B)",
+      "requirement_or_scenario": "Incremental projection computation achieves semantic and provenance equivalence with a clean rebuild from canonical head under identical ReproducibilityContext, excluding explicitly documented transient fields. (Rebuild equivalence contract)",
       "assurance": {
         "status": "qualified",
         "evidence": [
           "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence",
           "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
         ],
-        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
       }
     },
     {
       "id": "projection-publication-revision",
       "owner": "Brain analytics publication",
       "severity": "critical",
-      "requirement_or_scenario": "Projections refuse publication if their source revision does not match the authoritative canonical revision; qualified Task 6B active projection and graph material matches canonical head under ReproducibilityContext. (ADR 0020, Section 5)",
+      "requirement_or_scenario": "Projections refuse publication if their source revision does not match the authoritative canonical revision; active projection and graph material matches canonical head under ReproducibilityContext. (ADR 0020, rebuild equivalence contract)",
       "assurance": {
         "status": "qualified",
         "evidence": [
@@ -1181,13 +1181,13 @@
       "id": "derived-referential-closure",
       "owner": "Brain analytics and projection store",
       "severity": "high",
-      "requirement_or_scenario": "Every referenced entity in derived projections resolves to an allowed extant derived entity or canonical entity. (Task 6B)",
+      "requirement_or_scenario": "Every referenced entity in derived projections resolves to an allowed extant derived entity or canonical entity. (Rebuild equivalence contract)",
       "assurance": {
         "status": "qualified",
         "evidence": [
           "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
         ],
-        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
       }
     },
     {
@@ -1201,7 +1201,7 @@
           "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence",
           "tests/stateful/test_analytics_equivalence.py::test_stale_candidate_is_rejected_and_active_publication_stays_current"
         ],
-        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
       }
     },
     {

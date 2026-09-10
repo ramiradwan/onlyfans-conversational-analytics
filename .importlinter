@@ -30,7 +30,7 @@ ignore_imports =
 allow_indirect_imports = True
 
 # ------------------------------------------------------------------------------
-# Contract C (Task 7A) and future Contract D (Task 7B)
+# Service/transport and persistence/analytics composition contracts
 # ------------------------------------------------------------------------------
 [importlinter:contract:contract-c-service-transport-separation]
 name = Contract C: Application services must not import transport

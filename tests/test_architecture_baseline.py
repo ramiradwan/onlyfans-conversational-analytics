@@ -1,7 +1,7 @@
-"""Task 9 closure controls for the machine architecture baseline.
+"""Controls for the machine-readable architecture assurance baseline.
 
 The assertions here are intentionally structural.  They bind the published
-closure report to the authoritative manifest and to the permanent controls
+assurance report to the authoritative manifest and to the permanent controls
 which prove the controls can still reject a violation.  They do not turn a
 local generated measurement into hosted-runner or release evidence.
 """
@@ -25,8 +25,8 @@ from tools.validate_architecture_boundaries import (
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = DEFAULT_MANIFEST_PATH
-CLOSURE_REPORT = ROOT / "docs" / "architecture-hardening-closure.md"
-TASK5_6_QUALIFIED_INVARIANTS = frozenset(
+ASSURANCE_REPORT = ROOT / "docs" / "architecture-assurance.md"
+QUALIFIED_INGESTION_ANALYTICS_INVARIANTS = frozenset(
     {
         "atomic-canonical-commit",
         "snapshot-integrity",
@@ -79,8 +79,8 @@ RULE_NEGATIVE_CONTROLS = {
 }
 
 # The report is deliberately keyed by its published labels. This makes an
-# added, omitted, renamed, or stale row fail the repository closure check.
-CLOSURE_COUNT_LABELS = {
+# added, omitted, renamed, or stale row fail the repository assurance check.
+ASSURANCE_COUNT_LABELS = {
     "Modules": "modules",
     "Semantic invariants": "semantic_invariants",
     "Qualified semantic invariants": "qualified_semantic_invariants",
@@ -106,10 +106,10 @@ REQUIRED_CI_CONTROLS = (
     "windows-browser-e2e",
     "Run Brain Tier A general state machine",
     "Run Agent Tier A general state machine",
-    "Run Task 6A deterministic clean rebuilds",
-    "Run Task 6B incremental convergence",
-    "Run Task 6B derived deletion closure",
-    "Run Task 6B permanent falsifiers",
+    "Run deterministic analytics rebuilds",
+    "Run incremental analytics convergence",
+    "Run derived deletion closure",
+    "Run analytics oracle falsifiers",
     "Build and audit deterministic extension artifact",
     "Qualify bounded 10k-message snapshot repair",
     "Run Product #5 evidence scenarios",
@@ -128,7 +128,7 @@ def _invariants(manifest: dict) -> dict[str, dict]:
 
 
 def baseline_counts(manifest: dict | None = None) -> dict[str, int]:
-    """Compute Task 9 baseline counts from authoritative repository inputs."""
+    """Compute baseline counts from authoritative repository inputs."""
 
     manifest = manifest or _manifest()
     qualified = [
@@ -176,7 +176,7 @@ def baseline_counts(manifest: dict | None = None) -> dict[str, int]:
     }
 
 
-def closure_report_counts(path: Path = CLOSURE_REPORT) -> dict[str, int]:
+def assurance_report_counts(path: Path = ASSURANCE_REPORT) -> dict[str, int]:
     """Parse the report's computed-count table without treating it as prose."""
 
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -186,7 +186,7 @@ def closure_report_counts(path: Path = CLOSURE_REPORT) -> dict[str, int]:
         if lines[index].strip() == "| Measure | Count |":
             separator = lines[index + 1].strip()
             assert separator == "| --- | ---: |", (
-                "Closure report computed-count table has an invalid separator"
+                "Assurance report computed-count table has an invalid separator"
             )
             rows: dict[str, int] = {}
             for row in lines[index + 2 :]:
@@ -194,16 +194,16 @@ def closure_report_counts(path: Path = CLOSURE_REPORT) -> dict[str, int]:
                     break
                 cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
                 assert len(cells) == 2, (
-                    f"Closure report computed-count row must have two cells: {row!r}"
+                    f"Assurance report computed-count row must have two cells: {row!r}"
                 )
                 label, raw_count = cells
-                assert label not in rows, f"Duplicate closure report count label: {label}"
+                assert label not in rows, f"Duplicate assurance report count label: {label}"
                 assert raw_count.isdecimal(), (
-                    f"Closure report count must be a non-negative integer: {row!r}"
+                    f"Assurance report count must be a non-negative integer: {row!r}"
                 )
                 rows[label] = int(raw_count)
             return rows
-    raise AssertionError("Closure report is missing its computed-count table")
+    raise AssertionError("Assurance report is missing its computed-count table")
 
 
 def test_machine_authority_consumers_and_classification_are_consistent() -> None:
@@ -244,10 +244,10 @@ def test_enforced_rules_have_executable_controls_and_permanent_negative_controls
         )
 
 
-def test_task5_and_task6_assurance_entries_are_qualified_and_falsifiable() -> None:
+def test_ingestion_and_analytics_assurance_entries_are_qualified_and_falsifiable() -> None:
     invariants = _invariants(_manifest())
-    assert TASK5_6_QUALIFIED_INVARIANTS <= set(invariants)
-    for invariant_id in TASK5_6_QUALIFIED_INVARIANTS:
+    assert QUALIFIED_INGESTION_ANALYTICS_INVARIANTS <= set(invariants)
+    for invariant_id in QUALIFIED_INGESTION_ANALYTICS_INVARIANTS:
         invariant = invariants[invariant_id]
         assurance = invariant["assurance"]
         assert assurance["status"] == "qualified", invariant_id
@@ -264,7 +264,7 @@ def test_task5_and_task6_assurance_entries_are_qualified_and_falsifiable() -> No
         )
 
 
-def test_task5_task6_contracts_and_runtime_evidence_keep_their_scope() -> None:
+def test_contracts_and_runtime_evidence_keep_their_scope() -> None:
     ingestion_contract = (ROOT / "docs/architecture/ingestion-state-contract.md").read_text(
         encoding="utf-8"
     )
@@ -274,7 +274,7 @@ def test_task5_task6_contracts_and_runtime_evidence_keep_their_scope() -> None:
     for required in (
         "Brain independent reference model",
         "Agent independent reference model",
-        "Persistent backend qualification requirements",
+        "Persistent-backend qualification requirements",
         "shrink",
     ):
         assert required.lower() in ingestion_contract.lower()
@@ -288,31 +288,31 @@ def test_task5_task6_contracts_and_runtime_evidence_keep_their_scope() -> None:
     ):
         assert required.lower() in rebuild_contract.lower()
 
-    task5b = json.loads(
-        (ROOT / "docs/architecture/task5b-agent-local-evidence.json").read_text(
+    agent_delivery = json.loads(
+        (ROOT / "docs/architecture/agent-delivery-local-evidence.json").read_text(
             encoding="utf-8"
         )
     )
-    task5c = json.loads(
-        (ROOT / "docs/architecture/task5c-local-runtime-evidence.json").read_text(
+    persistent_ingestion = json.loads(
+        (ROOT / "docs/architecture/persistent-ingestion-local-evidence.json").read_text(
             encoding="utf-8"
         )
     )
-    task6b = json.loads(
-        (ROOT / "docs/architecture/task6b-local-evidence.json").read_text(
+    analytics_convergence = json.loads(
+        (ROOT / "docs/architecture/analytics-convergence-local-evidence.json").read_text(
             encoding="utf-8"
         )
     )
-    assert task5b["falsifier_probe"]["detected"] is True
-    assert task5b["falsifier_probe"]["minimized_failure_record"].startswith("tests/")
-    assert task5c["qualification_claim"].endswith("not production-equivalent")
-    assert task5c["status"] == "blocked_unfixed_runtime"
-    assert task5c["benchmark"]["pr_runner_baseline_status"]["status"] == "pending"
-    assert task5c["connection_model"] and task5c["checkpoint_behavior"]
-    assert {"sqlite", "sqlcipher", "python", "os"} <= set(task5c["runner"])
-    assert task5c["advisories"]
-    assert task6b["limitations"][0] == "Local timing is not PR-runner p95 or Task 9 performance closure."
-    assert task6b["deliberate_falsifier"]["measured"]["status"].startswith(
+    assert agent_delivery["falsifier_probe"]["detected"] is True
+    assert agent_delivery["falsifier_probe"]["minimized_failure_record"].startswith("tests/")
+    assert persistent_ingestion["qualification_claim"].endswith("not production-equivalent")
+    assert persistent_ingestion["status"] == "blocked_unfixed_runtime"
+    assert persistent_ingestion["benchmark"]["pr_runner_baseline_status"]["status"] == "pending"
+    assert persistent_ingestion["connection_model"] and persistent_ingestion["checkpoint_behavior"]
+    assert {"sqlite", "sqlcipher", "python", "os"} <= set(persistent_ingestion["runner"])
+    assert persistent_ingestion["advisories"]
+    assert analytics_convergence["limitations"][0] == "Local timing is not hosted-runner p95 evidence."
+    assert analytics_convergence["deliberate_falsifier"]["measured"]["status"].startswith(
         "expected_failure"
     )
 
@@ -328,9 +328,9 @@ def test_composition_census_fences_governance_and_ci_remain_closed() -> None:
     assert "HistoryAnalyticsSource" in bootstrap
 
     boundaries = (ROOT / "docs/architecture-boundaries.md").read_text(encoding="utf-8")
-    assert "Pre-implementation import census (Task 2)" in boundaries
+    assert "Canonical persistence import census" in boundaries
     assert "None of the four protected modules import" in boundaries
-    assert "phase-one structural protection" in boundaries
+    assert "This rule enforces acyclicity" in boundaries
 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     for required in REQUIRED_CI_CONTROLS:
@@ -366,12 +366,12 @@ def test_computed_task9_baseline_counts_are_stable() -> None:
     }
 
 
-def test_closure_report_computed_table_matches_baseline_counts() -> None:
+def test_assurance_report_computed_table_matches_baseline_counts() -> None:
     expected = baseline_counts()
-    reported = closure_report_counts()
+    reported = assurance_report_counts()
 
-    assert set(reported) == set(CLOSURE_COUNT_LABELS)
+    assert set(reported) == set(ASSURANCE_COUNT_LABELS)
     assert reported == {
         label: expected[count_key]
-        for label, count_key in CLOSURE_COUNT_LABELS.items()
+        for label, count_key in ASSURANCE_COUNT_LABELS.items()
     }

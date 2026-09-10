@@ -1,4 +1,4 @@
-"""Task 6B: real incremental analytics converges with a clean rebuild.
+"""Verify that real incremental analytics converges with a clean rebuild.
 
 Each command goes through ``HistoryRepository.commit_delta``.  After every
 delivery the same live ``AnalyticsPipeline`` takes its normal incremental
@@ -68,7 +68,7 @@ from tests.state_models.analytics_oracle import (
 
 
 EVALUATION_CLOCK = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
-CREATOR_ID = "task6b-synthetic-creator"
+CREATOR_ID = "analytics_convergence-synthetic-creator"
 CONNECTION_ID = UUID("71000000-0000-4000-8000-000000000001")
 INSTALLATION_ID = UUID("72000000-0000-4000-8000-000000000001")
 STREAM_ID = UUID("73000000-0000-4000-8000-000000000001")
@@ -91,15 +91,15 @@ TEXTS = (
 
 
 for profile, examples in (
-    # Every example contains every operation family.  The fast counts are the
-    # measured local CI calibration; the research-gate 30/20 breadth remains
-    # available as explicit stress profiles for fuller offline calibration.
-    ("task6b_convergence_fast", 6),
-    ("task6b_convergence_stress", 30),
-    ("task6b_convergence_dev", 2),
-    ("task6_deletion_fast", 4),
-    ("task6_deletion_stress", 20),
-    ("task6_deletion_dev", 2),
+    # Every example contains every operation family. The fast counts are the
+    # measured CI calibration; explicit stress profiles provide broader local
+    # exploration without increasing the required pull-request path.
+    ("analytics_convergence_fast", 6),
+    ("analytics_convergence_stress", 30),
+    ("analytics_convergence_dev", 2),
+    ("analytics_deletion_fast", 4),
+    ("analytics_deletion_stress", 20),
+    ("analytics_deletion_dev", 2),
 ):
     settings.register_profile(
         profile,
@@ -107,7 +107,7 @@ for profile, examples in (
         deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
     )
-settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "task6b_convergence_dev"))
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "analytics_convergence_dev"))
 
 
 def _runtime_metadata() -> dict[str, str]:
@@ -128,22 +128,22 @@ def _runtime_metadata() -> dict[str, str]:
     }
 
 
-def _read_task6b_metrics() -> tuple[Path, dict[str, Any]] | None:
-    raw_path = os.environ.get("TASK6B_METRICS_PATH")
+def _read_analytics_convergence_metrics() -> tuple[Path, dict[str, Any]] | None:
+    raw_path = os.environ.get("ANALYTICS_CONVERGENCE_METRICS_PATH")
     if not raw_path:
         return None
     path = Path(raw_path)
     if path.exists():
         return path, json.loads(path.read_text(encoding="utf-8"))
     return path, {
-        "schema_version": "task6b-runtime-metrics.v1",
+        "schema_version": "analytics_convergence-runtime-metrics.v1",
         "runtime": _runtime_metadata(),
         "runs": {},
         "deliberate_falsifier": None,
     }
 
 
-def _write_task6b_metrics(path: Path, document: dict[str, Any]) -> None:
+def _write_analytics_convergence_metrics(path: Path, document: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -159,7 +159,7 @@ def _record_generated_history(
 ) -> None:
     """Persist actual generated work only when an opted-in run passes."""
 
-    target = _read_task6b_metrics()
+    target = _read_analytics_convergence_metrics()
     if target is None:
         return
     path, document = target
@@ -211,7 +211,7 @@ def _record_generated_history(
         "alternative_order_history_count"
     ]
     run["history_wall_clock_seconds"].append(round(wall_clock_seconds, 6))
-    _write_task6b_metrics(path, document)
+    _write_analytics_convergence_metrics(path, document)
 
 
 def _record_deliberate_falsifier(
@@ -221,7 +221,7 @@ def _record_deliberate_falsifier(
 ) -> None:
     """Record the actual expected-failure invocation without phase invention."""
 
-    target = _read_task6b_metrics()
+    target = _read_analytics_convergence_metrics()
     if target is None:
         return
     path, document = target
@@ -238,11 +238,11 @@ def _record_deliberate_falsifier(
         "shrink_phase_seconds": None,
         "shrink_phase_reason": unavailable,
     }
-    _write_task6b_metrics(path, document)
+    _write_analytics_convergence_metrics(path, document)
 
 
 def _uuid(label: str) -> UUID:
-    return uuid5(NAMESPACE_URL, f"ofca-task6b:{label}")
+    return uuid5(NAMESPACE_URL, f"ofca-analytics_convergence:{label}")
 
 
 def _at(days: int, seconds: int = 0) -> datetime:
@@ -305,7 +305,7 @@ def _delete_chat(conversation_id: str) -> ChatDeleteChange:
 def _payload(sequence: int, label: str, change: Any) -> IngestDeltaPayload:
     return IngestDeltaPayload(
         connection_id=CONNECTION_ID,
-        fencing_token="task6b-fencing-token",
+        fencing_token="analytics_convergence-fencing-token",
         creator_account_id=CREATOR_ID,
         agent_installation_id=INSTALLATION_ID,
         event_id=_uuid(label),
@@ -321,10 +321,10 @@ def _initialize_canonical_stream(
 ) -> None:
     """Establish the real snapshot-required stream before delivering deltas."""
 
-    snapshot_id = _uuid("task6b-empty-canonical-baseline")
+    snapshot_id = _uuid("analytics_convergence-empty-canonical-baseline")
     identity = {
         "connection_id": CONNECTION_ID,
-        "fencing_token": "task6b-fencing-token",
+        "fencing_token": "analytics_convergence-fencing-token",
         "creator_account_id": CREATOR_ID,
         "agent_installation_id": INSTALLATION_ID,
         "agent_stream_id": STREAM_ID,
@@ -1001,7 +1001,7 @@ class TestAnalyticsDeletionConvergence:
 
 
 @pytest.mark.stateful_tier_a
-def test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults() -> None:
+def test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults() -> None:
     """Every named negative control fails through the shared canonical oracle."""
 
     incremental, rebuilt, context, _, before_chat_delete, repositories = _run_deletion(
@@ -1156,8 +1156,8 @@ def test_active_publication_oracle_rejects_stale_deleted_material_with_current_w
     assert active is not None
     active_artifact = RebuildArtifact(projection=active, nodes=nodes, edges=edges)
 
-    # This is the accepted adversarial case: a copied active projection keeps
-    # its current witness while retaining a deleted-message metric contribution.
+    # The adversarial projection keeps its current witness while retaining a
+    # deleted-message metric contribution.
     stale_metric = BrokenDerivedDeletionAdapter.apply(active_artifact)
     with pytest.raises(AnalyticsOracleMismatch, match="canonical semantic mismatch"):
         assert_active_publication_witness(
@@ -1296,7 +1296,7 @@ def test_changed_analyzer_context_is_not_treated_as_equivalent() -> None:
     )
 
     class AlternateSentiment(RuleBasedSentimentAnalyzer):
-        revision = "sentiment.rules.task6b-config.v1"
+        revision = "sentiment.rules.analytics_convergence-config.v1"
 
     changed = AnalyticsPipeline(
         history_source_for(repositories),
@@ -1314,10 +1314,10 @@ def test_changed_analyzer_context_is_not_treated_as_equivalent() -> None:
 
 
 def test_profile_calibration_and_oracle_independence_are_explicit() -> None:
-    assert settings.get_profile("task6b_convergence_fast").max_examples == 6
-    assert settings.get_profile("task6b_convergence_stress").max_examples == 30
-    assert settings.get_profile("task6_deletion_fast").max_examples == 4
-    assert settings.get_profile("task6_deletion_stress").max_examples == 20
+    assert settings.get_profile("analytics_convergence_fast").max_examples == 6
+    assert settings.get_profile("analytics_convergence_stress").max_examples == 30
+    assert settings.get_profile("analytics_deletion_fast").max_examples == 4
+    assert settings.get_profile("analytics_deletion_stress").max_examples == 20
     source = Path(__file__).parents[1] / "state_models" / "analytics_oracle.py"
     imports = {
         node.module

@@ -1,6 +1,6 @@
 """Deliberately broken adapters acting as permanent negative controls.
 
-Used by test_falsifiers.py to prove the Task 5 transition oracle actively
+Used by test_falsifiers.py to prove the ingestion transition oracle actively
 detects invariant violations across:
 1. BrokenGapAdapter: advances checkpoint on a gap.
 2. BrokenDuplicateAdapter: mutates revision/state on exact duplicate.

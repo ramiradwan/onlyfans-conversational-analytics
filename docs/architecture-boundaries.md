@@ -109,14 +109,14 @@ The machine manifest defines twenty-two protected architectural invariants that 
 | `protocol-compatibility` | Protocol schema and validator runtimes | High | Documented | Protocol v2 schemas and shared golden fixtures evaluate equivalently in Python, Agent JS, and Bridge TS validators. (ADR 0006, ADR 0010) |
 | `capture-control-separation` | Agent capture architecture | High | Documented | Observation and normalization modules have no direct control over outbox publication, consent, or transport. (ADR 0001, ADR 0022) |
 | `transport-analytics-separation` | Brain transport and services | Medium | Documented | Transport admission routes into persistence without directly constructing or invoking analytics pipelines. (Section 3) |
-| `persistence-analytics-separation` | Brain persistence and analytics | Medium | Documented | Canonical persistence does not construct analytics-facing adapters or depend on analytics modules. (Section 3, Task 7B) |
+| `persistence-analytics-separation` | Brain persistence and analytics | Medium | Documented | Canonical persistence does not construct analytics-facing adapters or depend on analytics modules. (Architecture composition model) |
 | `persistence-transport-separation` | Brain persistence and transport | Medium | Documented | Persistence modules do not import transport or WebSocket connection management. (Section 3) |
 | `graph-identity` | Brain analytics and knowledge graph | High | Qualified | Graph entities and participant/message IDs are deterministically derived from canonical IDs without ambiguous collision. (Section 5, app/analytics/identity.py) |
-| `derived-state-determinism` | Brain analytics pipeline | High | Qualified | Clean rebuilds of analytics metrics and graph from identical canonical state produce identical semantic outputs within ReproducibilityContext. (Section 6, Task 6A) |
-| `graph-semantic-reproducibility` | Brain analytics knowledge graph | High | Qualified | Knowledge graph structure and semantic edges are reproducible across rebuilds within ReproducibilityContext. (Task 6A) |
-| `projection-reproducibility` | Brain analytics and projection store | High | Qualified | Incremental projection computation achieves semantic and provenance equivalence with a clean rebuild from canonical head under identical ReproducibilityContext, excluding explicitly documented transient fields. (Task 6B) |
-| `projection-publication-revision` | Brain analytics publication | Critical | Qualified | Projections refuse publication if their source revision does not match the authoritative canonical revision; qualified Task 6B active projection and graph material matches canonical head under ReproducibilityContext. (ADR 0020, Section 5) |
-| `derived-referential-closure` | Brain analytics and projection store | High | Qualified | Every referenced entity in derived projections resolves to an allowed extant derived entity or canonical entity. (Task 6B) |
+| `derived-state-determinism` | Brain analytics pipeline | High | Qualified | Clean rebuilds of analytics metrics and graph from identical canonical state produce identical semantic outputs within ReproducibilityContext. (Rebuild equivalence contract) |
+| `graph-semantic-reproducibility` | Brain analytics knowledge graph | High | Qualified | Knowledge graph structure and semantic edges are reproducible across rebuilds within ReproducibilityContext. (Rebuild equivalence contract) |
+| `projection-reproducibility` | Brain analytics and projection store | High | Qualified | Incremental projection computation achieves semantic and provenance equivalence with a clean rebuild from canonical head under identical ReproducibilityContext, excluding explicitly documented transient fields. (Rebuild equivalence contract) |
+| `projection-publication-revision` | Brain analytics publication | Critical | Qualified | Projections refuse publication if their source revision does not match the authoritative canonical revision; active projection and graph material matches canonical head under ReproducibilityContext. (ADR 0020, rebuild equivalence contract) |
+| `derived-referential-closure` | Brain analytics and projection store | High | Qualified | Every referenced entity in derived projections resolves to an allowed extant derived entity or canonical entity. (Rebuild equivalence contract) |
 | `provenance-integrity` | Brain analytics pipeline | Medium | Qualified | Published analytics generations carry canonical revision, content digests, and pipeline identity witnesses. (ADR 0020, Section 5) |
 | `consent-authorization` | Agent consent and Brain security | Critical | Documented | Full capture and telemetry operate only under valid creator consent; revocation immediately ceases capture. (ADR 0021, ADR 0022) |
 | `provisioning-trust` | Brain provisioning and security | Critical | Documented | First-run provisioning validates signed claim packages and creator association before local runtime activation. (ADR 0008, ADR 0019) |
@@ -139,8 +139,8 @@ The repository specifies thirteen architectural boundary rules governing cross-m
 | `rule-bridge-no-canonical-writes` | Forbidden | Documented | `bridge-presentation`, `bridge-orchestration` | `canonical-persistence` | Bridge frontend components and stores consume Brain state and must not act as an ingestion or canonical write proxy. |
 | `rule-runtime-policy-confinement` | Protected | Enforced | `brain-api-presentation`, `application-services` | `security-trust` | Runtime policy and role authorization decisions are confined to the security kernel. |
 | `rule-grant-licence-admission-confinement` | Forbidden | Enforced | `security-trust` | `provisioning-surface` | Grant and licence authorization modules must not resolve or reference capability permit admission markers. |
-| `rule-agent-protected-acyclic` | Forbidden | Enforced | `agent-runtime`, `protocol-core` | `agent-runtime`, `protocol-core` | Protected Agent protocol, transport, and runtime kernel modules must remain acyclic; phase-one structural protection does not prove correct dependency direction. |
-| `rule-bridge-protected-acyclic` | Forbidden | Enforced | `bridge-orchestration`, `protocol-core` | `bridge-orchestration`, `protocol-core` | Protected Bridge protocol, store, and service kernel modules must remain acyclic; phase-one structural protection does not prove correct dependency direction. |
+| `rule-agent-protected-acyclic` | Forbidden | Enforced | `agent-runtime`, `protocol-core` | `agent-runtime`, `protocol-core` | Protected Agent protocol, transport, and runtime kernel modules must remain acyclic. This rule enforces acyclicity; separate rules govern dependency direction. |
+| `rule-bridge-protected-acyclic` | Forbidden | Enforced | `bridge-orchestration`, `protocol-core` | `bridge-orchestration`, `protocol-core` | Protected Bridge protocol, store, and service kernel modules must remain acyclic. This rule enforces acyclicity; separate rules govern dependency direction. |
 
 ## Normal feature development lane
 
@@ -198,14 +198,15 @@ Semantic invariants progress through an auditable lifecycle:
 - **`documented`**: Requirement or scenario reference is documented. Evidence and falsifiers may be planned.
 - **`qualified`**: Automated tests execute property checks against production-equivalent runtimes, and a permanent oracle falsifier proves detection capability.
 
-Under the progressive qualification rule:
-- Task 1 (PR 1) establishes the architecture contract with invariants in the `documented` state.
-- Tasks 5 and 6 advance implemented ingestion and rebuild invariants to `qualified`.
-- Task 9 requires all claimed invariants to be fully `qualified`.
+Assurance status has a strict meaning:
 
-## Pre-implementation import census (Task 2)
+- New invariants start in the `documented` state.
+- An invariant becomes `qualified` only when executable evidence and a permanent falsifier are implemented and referenced.
+- Public assurance claims must match the status recorded in the manifest.
 
-Prior to activating module-level dependency contracts, a pre-implementation import census was performed for the four protected canonical persistence modules and all direct importers of `app.persistence.history`.
+## Canonical persistence import census
+
+The following census records dependencies of the four protected canonical persistence modules and all direct importers of `app.persistence.history`. It explains the scope of the Import Linter contracts and must be updated when those imports change.
 
 ### Protected persistence core imports
 

@@ -2,26 +2,26 @@
 
 # Rebuild equivalence contract
 
-This document defines the research-gate contract for Task 6 of the architectural hardening plan (PR 5R, governing subsequent execution in PR 6A and PR 6B). It is derived from the executable specifications in `app/analytics/pipeline.py`, `app/analytics/canonical_source.py`, `app/analytics/historical_derivation.py`, `app/analytics/metrics.py`, `app/analytics/analyzers.py`, `app/analytics/enrichment.py`, `app/analytics/graph_projection.py`, `app/analytics/graph_identity.py`, `app/analytics/opaque_refs.py`, `app/models/analytics.py`, `app/models/insights.py`, `app/analytics/sqlite_projection_store.py`, `app/analytics/sqlite_graph_store.py`, `app/persistence/projection_activation.py`, and accepted architecture decision records (ADR 0001, ADR 0004, ADR 0006, ADR 0008, ADR 0009, ADR 0010, ADR 0019, ADR 0020, ADR 0021, and ADR 0022). Proposed ADR 0012 is explicitly not promoted or assumed.
+This contract defines deterministic analytics rebuilds and equivalence between incremental and clean projection state. It is derived from the executable specifications in `app/analytics/pipeline.py`, `app/analytics/canonical_source.py`, `app/analytics/historical_derivation.py`, `app/analytics/metrics.py`, `app/analytics/analyzers.py`, `app/analytics/enrichment.py`, `app/analytics/graph_projection.py`, `app/analytics/graph_identity.py`, `app/analytics/opaque_refs.py`, `app/models/analytics.py`, `app/models/insights.py`, `app/analytics/sqlite_projection_store.py`, `app/analytics/sqlite_graph_store.py`, `app/persistence/projection_activation.py`, and accepted architecture decision records (ADR 0001, ADR 0004, ADR 0006, ADR 0008, ADR 0009, ADR 0010, ADR 0019, ADR 0020, ADR 0021, and ADR 0022). Proposed ADR 0012 is not assumed.
 
-The contract establishes the dual-objective invariant definitions, the explicit `ReproducibilityContext` tuple, the derived field taxonomy, the 19-row invariant and oracle matrix, the deletion-focused equivalence profile, permanent oracle falsifier designs, persistent SQLite store qualification requirements, CI shrinking benchmark specifications, and gate blocker criteria that govern implementation in Task 6A (deterministic rebuild oracle) and Task 6B (incremental-versus-clean-rebuild convergence).
+It establishes the dual-objective invariant definitions, the explicit `ReproducibilityContext` tuple, the derived-field taxonomy, the 19-row invariant and oracle matrix, the deletion-focused equivalence profile, permanent oracle falsifiers, persistent SQLite-store qualification requirements, and CI shrinking benchmarks.
 
 ## 1. Operating context and authority boundaries
 
 The conversational analytics plane is a disposable derived projection of authoritative canonical persistence. It guarantees two foundational correctness properties:
 
-1. **Property 6A — Derived-State Determinism:**
+1. **Property A — Derived-State Determinism:**
    Given the same canonical input state and an identical `ReproducibilityContext`, two independent clean builds produce semantically equivalent derived projections and knowledge graphs.
    $$\text{Build}(C, R_1) \equiv_{\text{sem}} \text{Build}(C, R_2) \quad \text{where } R_1 = R_2$$
-2. **Property 6B — Incremental-versus-Rebuild Convergence:**
+2. **Property B — Incremental-versus-Rebuild Convergence:**
    Given any valid sequence of canonical mutations applied incrementally to live derived stores, a subsequent clean rebuild from the final canonical snapshot under the same `ReproducibilityContext` produces identical semantic state and provenance.
    $$\text{Incremental}(C_0 \xrightarrow{\Delta^*} C_n, R) \equiv_{\text{sem}} \text{Rebuild}(C_n, R)$$
 
 ### 1.1 Rationale for the dual-objective split
 
 This two-tier separation is deliberate:
-- If **Property 6A** fails, the analytics engine is intrinsically non-deterministic (e.g., relying on unfrozen wall-clock time, non-deterministic graph identifier generation, or unrecorded configuration drift).
-- If **Property 6A** passes but **Property 6B** fails, the incremental maintenance logic is defective (e.g., stale caches, missed edge retractions upon message deletion, metric accumulation skew across deltas, or divergent aggregation between streaming and batch paths).
+- If **Property A** fails, the analytics engine is intrinsically non-deterministic (e.g., relying on unfrozen wall-clock time, non-deterministic graph identifier generation, or unrecorded configuration drift).
+- If **Property A** passes but **Property B** fails, the incremental maintenance logic is defective (e.g., stale caches, missed edge retractions upon message deletion, metric accumulation skew across deltas, or divergent aggregation between streaming and batch paths).
 
 ### 1.2 Architectural authority
 
@@ -59,7 +59,7 @@ Deterministic rebuild equivalence requires an explicit, closed reproducibility c
 
 ### 3.1 Context tuple specification and implementation mapping
 
-The explicit `ReproducibilityContext` tuple is proposed Task 6 test and oracle vocabulary. Its fields map directly to existing production attributes and parameters as follows:
+The explicit `ReproducibilityContext` tuple is the shared test and oracle vocabulary. Its fields map directly to existing production attributes and parameters as follows:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -162,7 +162,7 @@ Every attribute of derived analytics models (`AnalyticsProjection`, `RebuildArti
 
 ## 5. Invariant and oracle matrix
 
-The Task 6 test harness implements nineteen mandatory testable invariants, split across Task 6A (derived-state determinism) and Task 6B (incremental-versus-rebuild convergence).
+The analytics test harness implements nineteen mandatory invariants across deterministic clean rebuilds and incremental-versus-rebuild convergence.
 
 | # | Invariant | Testable Assertion | Verification Method | Falsifier Trigger |
 |---|---|---|---|---|
@@ -223,10 +223,10 @@ Following a canonical deletion event (chat tombstone, message deletion, or accou
 
 ## 7. Permanent oracle falsifiers
 
-To prevent test suite regression and prove that the Task 6 oracle has real fault-detection power, four permanent, deliberately broken test doubles must be implemented in the test harness.
+To prove that the oracle has real fault-detection power, the test harness includes four permanent, deliberately broken test doubles.
 
 ```
-       Task 6 Permanent Falsifiers
+       Permanent Analytics Falsifiers
        ├── BrokenAnalyticsAdapter (omits one edge on incremental path)
        ├── BrokenProvenanceAdapter (publishes under incorrect digest/revision)
        ├── BrokenIdentityAdapter (introduces non-deterministic graph/message IDs)
@@ -238,7 +238,7 @@ To prevent test suite regression and prove that the Task 6 oracle has real fault
 1. **`BrokenAnalyticsAdapter`:**
    - *Fault Injected:* Omits exactly one semantic graph edge (or introduces an extraneous edge) only on the incremental update path, while producing correct output on clean rebuild.
    - *Target Invariant:* Invariant 12 (Graph edges) and Invariant 14 (Graph digest).
-   - *Expected Oracle Behavior:* Task 6B convergence suite fails with assertion error highlighting the missing/extraneous edge.
+   - *Expected Oracle Behavior:* The convergence suite fails with an assertion identifying the missing or extraneous edge.
 2. **`BrokenProvenanceAdapter`:**
    - *Fault Injected:* Publishes derived projection candidates with a manipulated `canonical_content_digest` or stale `source_revision`.
    - *Target Invariant:* Invariant 1 (Canonical witness), Invariant 2 (Canonical digest), and Invariant 16 (Publication freshness).
@@ -246,7 +246,7 @@ To prevent test suite regression and prove that the Task 6 oracle has real fault
 3. **`BrokenIdentityAdapter`:**
    - *Fault Injected:* Generates node IDs or edge IDs using process-local sequence counters or non-canonical dictionary iteration order rather than stable semantic identity functions.
    - *Target Invariant:* Invariant 5 (Message identity) and Invariant 13 (Graph identity).
-   - *Expected Oracle Behavior:* Task 6A determinism suite fails because two clean builds from the same input yield different node/edge IDs.
+   - *Expected Oracle Behavior:* The determinism suite fails because two clean builds from the same input yield different node or edge IDs.
 4. **`BrokenDerivedDeletionAdapter`:**
    - *Fault Injected:* Upon canonical message or chat deletion, correctly updates metrics but leaves the deleted message node or its `PRECEDES` edge in the graph store.
    - *Target Invariant:* Invariant 11 (Graph nodes), Invariant 12 (Graph edges), Invariant 15 (Referential closure), and Deletion Equivalence.
@@ -304,7 +304,7 @@ Publication of a rebuild artifact into the file-backed store does not update an 
 
 Exceptions: Stale canonical revision or content digest mismatches raise `ProjectionActivationConflict` or `CanonicalRevisionChanged`. Corrupted row reproduction raises `ProjectionValidationError` or `ProjectionReconciliationError`.
 
-### 8.3 Upstream SQLite durability advisory research and qualification status
+### 8.3 Upstream SQLite durability advisory evaluation and qualification status
 
 - **Dated Local Observation (2026-09-09):** Local environment probe records Python 3.13.6, `sqlcipher3==0.6.2`, SQLite 3.51.1, and SQLCipher 4.12.0 community.
 - **Upstream Advisory Evaluation:**
@@ -313,61 +313,48 @@ Exceptions: Stale canonical revision or content digest mismatches raise `Project
   - SQLCipher 4.14.0 incorporates SQLite 3.51.3 and strongly recommends that all WAL-mode applications upgrade: [SQLCipher 4.14.0 Release](https://github.com/sqlcipher/sqlcipher/releases/tag/v4.14.0).
   - In the current codebase, `app/persistence/database.py` enforces WAL mode (`PRAGMA journal_mode = WAL`) and synchronous FULL (`PRAGMA synchronous = FULL`), opening fresh `check_same_thread=False` connections per read or transaction. In-process `_connection_locks` serialize native open/close transitions and exclusive lifecycle changes, but individual transaction `BEGIN IMMEDIATE` and commit operations execute outside those locks. While SQLite `BEGIN IMMEDIATE` provides writer serialization, multiple concurrent application connections/threads and active SQLite checkpoint behavior remain relevant and unexcluded.
   - Consequently, the local development profile cannot be qualified as unaffected by the upstream advisory. (No claim is made that corruption has occurred).
-- **Production Qualification Requirement:**
-  - Actual native runtime versions on PR runners and packaged Windows Store binaries must be measured dynamically during Task 5C / PR 5B.
-  - Declaring file-backed Tier B storage production-equivalent remains blocked until an upgrade to a fixed runtime (SQLite $\ge 3.51.3$ / SQLCipher $\ge 4.14.0$) and/or a rigorous proof of trigger exclusion is established.
-  - Specific version numbers and advisory ranges are dated observations and must not be encoded as timeless architecture policy; current upstream advisories must be re-evaluated against the deployed runtime at implementation time.
+- **Fixed runtime and hosted qualification:**
+  - `packaging/sqlcipher/` builds a checksum-pinned Windows wheel with SQLCipher 4.17.0 and SQLite 3.53.3. Runtime probes verify encrypted readback, wrong-key rejection, integrity checks, and the native versions loaded by Python and the frozen executable.
+  - Hosted Windows CI and release-package runs must build and probe that wheel and retain its provenance before file-backed analytics stores are considered production-equivalent.
+  - Version numbers and advisory ranges are dated observations. Re-evaluate current upstream advisories against every deployed runtime.
 
 ## 9. CI shrinking benchmark design
 
-Task 6 generated property-based tests (Hypothesis) must operate within strict time and resource budgets to ensure PR CI remains fast and responsive.
+Generated property-based analytics tests must operate within strict time and resource budgets so pull-request CI remains responsive.
 
 ### 9.1 Named benchmark profiles
 
-Repository-owned named profiles must be used instead of library defaults. These counts represent **initial calibration starting points**, not permanent normative values:
+Repository-owned named profiles must be used instead of library defaults. The table records the current required profiles; broader stress profiles may be run separately for local calibration.
 
 | Profile Name | Target Suite | Starting Examples | Canonical Mutations / Example | Clean Rebuild Passes | Backend | Purpose |
 |---|---|---:|---:|---:|---|---|
-| `task6a_determinism_fast` | Task 6A | 30 | 12–15 | 2 clean builds / example | In-memory | Broad determinism exploration |
-| `task6b_convergence_fast` | Task 6B | 30 | 12–15 | 2–4 rebuilds / example | In-memory | Incremental / clean rebuild convergence |
-| `task6_deletion_fast` | Deletion Equivalence | 20 | 10–12 | Post-delete + final rebuild | In-memory | Deletion retraction & referential closure |
-| `task6_persistent_tier_b` | Tasks 6A + 6B | 10 | 8–10 | Rebuild + reopen verification | File SQLite | Persistent store & restart qualification |
+| `analytics_determinism_fast` | Clean rebuild determinism | 30 | 12–15 | 2 clean builds / example | In-memory | Broad determinism exploration |
+| `analytics_convergence_fast` | Incremental convergence | 6 | 14 | Incremental updates + final clean rebuild | In-memory analytics stores | Incremental / clean rebuild convergence |
+| `analytics_deletion_fast` | Deletion equivalence | 4 | 11 | Post-delete + final clean rebuild | In-memory analytics stores | Deletion retraction and referential closure |
 
 ### 9.2 CI performance budget and response measure
 
-- **Critical-Path Budget:** Tasks 5 and 6 combined must add $\le 5\%$ to the p95 PR critical-path duration.
+- **Critical-Path Budget:** Generated ingestion and analytics assurance must add $\le 5\%$ to the p95 pull-request critical-path duration.
 - **Hard Review Threshold:** Any addition $> 10\%$ requires an explicit architectural performance trade-off review. If budget pressure arises, the example count must be scaled down before reducing transition coverage or removing invariant assertions.
-- **Provisional Historical Baseline:** A provisional sample of 15 first-attempt successful PR workflow runs from 2026-09-02 through 2026-09-04 exhibited a p95 elapsed duration of 1704.7 seconds, with Windows execution on the critical path (only 6 of these runs matched the exact current workflow revision; this is provisional historical context, not closure evidence).
 - **Shrinking Benchmark:** The benchmark harness must measure both clean passing runs and deliberately failing runs (using falsifiers) to benchmark Hypothesis shrinking duration and reproducer trace minimization.
 - **Dynamic Version Measurement:** Python version, SQLite runtime version, SQLCipher version, and Hypothesis version must be captured dynamically from the executing environment rather than hard-coded into architecture contracts.
 
-## 10. Normative discrepancy ledger and gate readiness ledger
+## 10. Known discrepancies and verification
 
 ### 10.1 Identified normative discrepancies
 
-| # | Seam / File | Observed Code Behavior | Normative Architecture Requirement | Hardening Plan Disposition |
+| # | Seam / File | Observed Code Behavior | Normative Architecture Requirement | Disposition |
 |---|---|---|---|---|
-| D01 | `app/canonical/read_models.py` | `AccountReadModel` is canonically owned and imported directly by analytics, persistence, and transport. | Canonical read models have explicit canonical ownership without a transport dependency. | Resolved by Task 7C (canonical ownership of `AccountReadModel`). |
-| D02 | `app/bootstrap.py` | Bootstrap uses `create_canonical_repositories` to construct persistence-owned resources, creates one `HistoryAnalyticsSource` over the `HistoryRepository`, passes repositories to transport, and injects the independent read source into analytics. | Transport does not receive or hold analytics read sources, and persistence returns persistence-owned resources only. | Resolved by Task 7B (bootstrap-owned canonical analytics adapter composition). |
+| D01 | `app/canonical/read_models.py` | `AccountReadModel` is canonically owned and imported directly by analytics, persistence, and transport. | Canonical read models have explicit canonical ownership without a transport dependency. | Resolved: `AccountReadModel` is owned by the canonical namespace. |
+| D02 | `app/bootstrap.py` | Bootstrap uses `create_canonical_repositories` to construct persistence-owned resources, creates one `HistoryAnalyticsSource` over the `HistoryRepository`, passes repositories to transport, and injects the independent read source into analytics. | Transport does not receive or hold analytics read sources, and persistence returns persistence-owned resources only. | Resolved: bootstrap owns canonical analytics-adapter composition. |
 | D03 | `app/analytics/pipeline.py` | `AnalyticsPipeline.__init__` accepts `clock: Callable[[], datetime] = utc_now`. When omitted, derivation uses wall-clock time for 90-day retention cutoff. | Rebuild determinism requires identical time bounds. Rebuilds without explicit frozen clock risk non-deterministic message exclusion at 90-day boundary. | Rebuild contract mandates that `ReproducibilityContext.evaluation_clock` be explicitly passed to `AnalyticsPipeline` in all equivalence and determinism tests. |
 | D04 | `app/analytics/metrics.py` | Division-by-zero handling in metrics calculators (e.g. `response_coverage`, `average_response_seconds`) returns `None` or `0.0`. | Derived metrics must have strict deterministic sentinels to avoid IEEE-754 NaN/inf values. | `AnalyticsModel` forbids `allow_inf_nan=False`. Contract codifies `None` as absent indicator and `0.0` as zero value. |
 
-### 10.2 PR 5R research gate closure criteria
+### 10.2 Executable verification
 
-PR 5R is a research and specification gate. It closes when:
+- `tests/stateful/test_analytics_determinism.py` compares two clean builds under one frozen `ReproducibilityContext`.
+- `tests/stateful/test_analytics_equivalence.py` compares incremental projection state with a clean rebuild and exercises deletion closure.
+- `tests/state_models/analytics_oracle.py` independently computes semantic values, provenance, identities, graph structure, and referential closure.
+- `tests/hardening/falsifiers/analytics_falsifiers.py` proves that metric, provenance, identity, graph, deletion, and publication faults are detected.
 
-1. [x] **Transition Catalogue Structure & Completeness:** Ingestion transition catalogue (S01–S03, D01–D09, A01–A14, N01–N20, AG01–AG08, exactly 54 entries) is established with all required specification fields present.
-2. [x] **Rebuild Equivalence Contract Specification:** Rebuild equivalence contract established with explicit `ReproducibilityContext` (distinguishing existing vs proposed fields), derived field taxonomy, 19-row invariant matrix, deletion profile, and permanent falsifiers.
-3. [x] **Zero Documentation & Style Violations:** Documentation checks (`tools/check_docs.py`) pass cleanly on all Markdown files.
-4. [x] **Static & Structural Contract Verification:** Static and structural verification tooling confirms that cited file paths, selected AST symbols, tables, and schema constants exist in the codebase, required contract structures and counts are present, and banned fabricated patterns are absent. (Full semantic and source truth requires human architectural review and downstream executable Task 5 and Task 6 oracles; static checks do not assert complete semantic equivalence).
-5. [x] **SQLite Durability Advisory Evaluation:** Dated advisory evaluation (2026-09-09) and qualification requirements documented.
-
-### 10.3 Downstream implementation and qualification readiness ledger
-
-The following deliverables are downstream tasks authorized by PR 5R; they do not block PR 5R research gate closure:
-
-- **Task 6A (PR 6A) Readiness:** Deterministic rebuild oracle (`tests/stateful/test_analytics_determinism.py`, `tests/state_models/analytics_oracle.py`).
-- **Task 6B (PR 6B) Readiness:** Incremental-versus-clean-rebuild convergence suite (`tests/stateful/test_analytics_equivalence.py`, falsifiers).
-- **Task 5A (PR 5A) Readiness:** Brain independent reference model and Tier A state machine.
-- **Task 5C (PR 5B) Readiness:** File-backed persistent Brain qualification and benchmark calibration.
-- **Packaged Runtime Qualification:** Required before declaring file-backed Tier B storage production-equivalent in Task 5C / PR 5B and closing Task 9; does not block Task 5A or Task 6A design.
+Local in-memory and file-backed results do not replace hosted performance measurements or packaged Windows runtime qualification. Those environments must report their own versions, timing, and retained runtime evidence.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit and statically verify Task 5 and Task 6 research contracts.
+"""Audit the ingestion and rebuild contracts against repository source.
 
 Performs static AST inspection of codebase symbols, constants, and pragmas
 without importing application modules or triggering settings/environment errors.
@@ -552,17 +552,19 @@ def verify_ingestion_contract_structure() -> list[tuple[bool, str]]:
         )
     )
 
-    # 8. Gate semantics: PR 5R research gate vs downstream readiness ledger
+    # 8. Implementation status and executable verification
     checks.append(
-        ("PR 5R research gate closure criteria" in text, "Section 8.2 defines PR 5R research gate closure criteria")
+        ("## 8. Implementation status and qualification limits" in text,
+         "Section 8 states implementation status and qualification limits")
     )
     checks.append(
-        ("Downstream implementation and qualification readiness ledger" in text,
-         "Section 8.3 defines downstream readiness ledger (Task 5A/5B/5C/6A/6B)")
+        ("### 8.2 Executable verification" in text,
+         "Section 8.2 identifies executable verification")
     )
     checks.append(
-        ("PR 5R accepted" not in text.lower() and "pr 5r is accepted" not in text.lower(),
-         "Document does not falsely claim PR 5R is accepted")
+        ("tests/hardening/falsifiers/test_falsifiers.py" in text
+         and "hosted Windows runners" in text,
+         "Document identifies permanent falsifiers and hosted qualification")
     )
 
     return checks
@@ -669,21 +671,23 @@ def verify_rebuild_contract_structure() -> list[tuple[bool, str]]:
         ("3.7.0 through 3.51.2" in text and "3.51.3" in text, "Rebuild contract cites advisory version span (3.7.0..3.51.2 -> 3.51.3)")
     )
 
-    # 9. Gate semantics: PR 5R research gate vs downstream readiness ledger
+    # 9. Known discrepancies and executable verification
     checks.append(
-        ("PR 5R research gate closure criteria" in text, "Section 10.2 defines PR 5R research gate closure criteria")
+        ("## 10. Known discrepancies and verification" in text,
+         "Section 10 records known discrepancies and verification")
     )
     checks.append(
-        ("Downstream implementation and qualification readiness ledger" in text,
-         "Section 10.3 defines downstream readiness ledger (Task 6A/6B/5A/5C)")
+        ("### 10.2 Executable verification" in text,
+         "Section 10.2 identifies executable verification")
     )
     checks.append(
         ("D02" in text and "create_canonical_repositories" in text,
          "Section 10.1 correctly describes D02 factory composition")
     )
     checks.append(
-        ("PR 5R accepted" not in text.lower() and "pr 5r is accepted" not in text.lower(),
-         "Document does not falsely claim PR 5R is accepted")
+        ("tests/stateful/test_analytics_equivalence.py" in text
+         and "hosted performance measurements" in text,
+         "Document identifies convergence controls and hosted qualification")
     )
 
     return checks
@@ -696,7 +700,7 @@ def verify_rebuild_contract_structure() -> list[tuple[bool, str]]:
 
 def main() -> int:
     print("=" * 75)
-    print("Task 5R Research Gate: Static & Structural Contract Verification Audit")
+    print("Ingestion and Rebuild Contract Verification")
     print("=" * 75)
 
     codebase_checks = verify_referenced_codebase()
@@ -705,8 +709,8 @@ def main() -> int:
 
     suites = [
         ("Codebase Grounding (AST & Static Pragmas)", codebase_checks),
-        ("Task 5 Ingestion State Contract Structure & Semantics", ingestion_checks),
-        ("Task 6 Rebuild Equivalence Contract Structure & Matrix", rebuild_checks),
+        ("Ingestion State Contract Structure & Semantics", ingestion_checks),
+        ("Rebuild Equivalence Contract Structure & Matrix", rebuild_checks),
     ]
 
     failed_total = 0
@@ -736,11 +740,11 @@ def main() -> int:
         return 1
 
     print("\nScope Note:")
-    print("  These 178 checks establish that cited file paths, selected AST symbols,")
+    print("  These checks establish that cited file paths, selected AST symbols,")
     print("  tables, and schema constants exist in the codebase, required contract")
     print("  structures/counts are present, and banned fabricated patterns are absent.")
-    print("  Full semantic and source truth requires human review and later executable")
-    print("  Task 5 and Task 6 oracles.")
+    print("  Full semantic and source truth requires human review and executable")
+    print("  ingestion and analytics oracles.")
     print(f"\nAudit PASSED: {passed_total}/{passed_total} static and structural checks passed.")
     return 0
 

@@ -4,7 +4,7 @@ module.exports = {
     {
       name: 'rule-bridge-protected-acyclic',
       comment:
-        'Reject circular dependency chains passing through protocol, store, or services. Phase-one structural protection; does not prove correct dependency direction.',
+        'Reject circular dependency chains through protected protocol, store, or service modules. This rule enforces acyclicity; separate rules govern dependency direction.',
       severity: 'error',
       from: {},
       to: {

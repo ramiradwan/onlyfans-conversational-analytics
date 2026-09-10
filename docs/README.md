@@ -22,6 +22,7 @@ Use these pages to find the instructions or reference material for a specific ta
 ## Understand the system
 
 - [Architecture boundaries](architecture-boundaries.md)
+- [Architecture assurance baseline](architecture-assurance.md)
 - [Architecture decisions](adr/README.md)
 - [Communication overview](../communication-spec.md)
 - [Brain](../app/README.md)

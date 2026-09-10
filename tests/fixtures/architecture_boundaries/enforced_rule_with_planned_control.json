@@ -18,7 +18,7 @@
       "enforcement": {
         "status": "enforced",
         "enforced_by": [
-          "planned:Task-2-import-linter"
+        "planned:unimplemented-import-control"
         ]
       }
     }

@@ -49,7 +49,7 @@
   },
   "checkpoint_behavior": "SQLite automatic WAL checkpoint at default threshold and last-close checkpoint; no trigger exclusion claimed",
   "connection_model": "fresh check_same_thread=False SQLCipher connections; BEGIN IMMEDIATE writer transactions",
-  "kind": "task5c-local-tier-b-runtime-probe",
+  "kind": "persistent-ingestion-local-runtime-probe",
   "profile": {
     "busy_timeout_ms": 5000,
     "cipher_memory_security": "0",

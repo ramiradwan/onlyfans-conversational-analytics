@@ -1,4 +1,4 @@
-"""Collect measured local evidence for the Task 5B Agent state machines."""
+"""Collect measured local evidence for the Agent delivery state machines."""
 from __future__ import annotations
 
 import json
@@ -14,7 +14,7 @@ import hypothesis
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "docs" / "architecture" / "task5b-agent-local-evidence.json"
+OUTPUT = ROOT / "docs" / "architecture" / "agent-delivery-local-evidence.json"
 FAILURE_RECORD = ROOT / "tests" / "fixtures" / "agent-delivery-minimized-frame-failure.json"
 TARGETS = {
     "general": "tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral",
@@ -29,7 +29,7 @@ def read_metrics(path: Path) -> list[dict[str, int]]:
 
 
 def run_profile(profile: str, target: str) -> dict[str, object]:
-    with tempfile.TemporaryDirectory(prefix="task5b-agent-") as directory:
+    with tempfile.TemporaryDirectory(prefix="agent_delivery-agent-") as directory:
         metrics_path = Path(directory) / "histories.jsonl"
         environment = {
             **os.environ,
@@ -102,7 +102,7 @@ def main() -> None:
     deletion_histories = next(profile["histories_executed"] for profile in profiles if profile["profile"] == "deletion")
     evidence = {
         "schema_version": 2,
-        "scope": "Task 5B local Agent durable-delivery evidence",
+        "scope": "Local Agent durable-delivery evidence",
         "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "runner": {
             "os": platform.platform(),

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* JSON-lines test-only boundary for Task 5B.  It contains no delivery rules. */
+/* JSON-lines test boundary around the production outbox; contains no delivery rules. */
 import readline from 'node:readline';
 import { DurableIngestOutbox, INGESTION_STORES } from '../transport/durable-outbox.mjs';
 import { createIndexedDbIngestionStorage } from '../transport/indexeddb-ingestion-storage.mjs';

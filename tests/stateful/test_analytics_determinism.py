@@ -1,8 +1,8 @@
-"""Task 6A: clean derived-state builds are deterministic under one context.
+"""Clean derived-state builds are deterministic under one frozen context.
 
 The property operates on immutable canonical read models, the same production
 read boundary supplied to analytics after canonical persistence.  It does not
-exercise incremental maintenance; that is deliberately reserved for Task 6B.
+exercise incremental maintenance; the convergence suite covers that behavior.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from tests.state_models.analytics_oracle import (
 
 
 EVALUATION_CLOCK = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
-CREATOR_ID = "task6a-synthetic-creator"
+CREATOR_ID = "analytics_determinism-synthetic-creator"
 TEXTS = (
     "hello and thank you",
     "price is $25 #support",
@@ -41,8 +41,8 @@ TEXTS = (
 
 
 for profile, examples in (
-    ("task6a_determinism_fast", 30),
-    ("task6a_determinism_dev", 6),
+    ("analytics_determinism_fast", 30),
+    ("analytics_determinism_dev", 6),
 ):
     settings.register_profile(
         profile,
@@ -50,7 +50,7 @@ for profile, examples in (
         deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
     )
-settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "task6a_determinism_dev"))
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "analytics_determinism_dev"))
 
 
 class StaticCanonicalSource:
@@ -283,8 +283,8 @@ def test_oracle_falsifiers_reject_each_6a_family() -> None:
 
 
 def test_profile_calibration_is_explicit() -> None:
-    assert settings.get_profile("task6a_determinism_fast").max_examples == 30
-    assert settings.get_profile("task6a_determinism_dev").max_examples == 6
+    assert settings.get_profile("analytics_determinism_fast").max_examples == 30
+    assert settings.get_profile("analytics_determinism_dev").max_examples == 6
 
 
 def test_oracle_does_not_import_production_identity_or_digest_helpers() -> None:

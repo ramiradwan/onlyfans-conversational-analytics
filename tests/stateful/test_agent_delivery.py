@@ -1,4 +1,4 @@
-"""Task 5B semantic qualification for the real durable Agent delivery path."""
+"""Semantic qualification for the production durable Agent delivery path."""
 from __future__ import annotations
 
 from contextlib import contextmanager

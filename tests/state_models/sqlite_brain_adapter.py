@@ -2,7 +2,7 @@
 
 This deliberately contains no merge logic.  Each reopen builds fresh production
 repository objects over the same encrypted canonical file and delegates every
-ingest operation and observation to the accepted Task 5A adapter.
+ingest operation and observation to the shared production adapter.
 """
 
 from __future__ import annotations

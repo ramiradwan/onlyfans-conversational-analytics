@@ -12,9 +12,9 @@
     "process_wall_clock_seconds": 4.721508,
     "target": "tests/stateful/test_analytics_equivalence.py::test_deliberate_falsifier_failure_configures_hypothesis_shrink_phase"
   },
-  "evidence_origin": "tools/qualify_task6b_convergence.py",
+  "evidence_origin": "tools/qualify_analytics_convergence.py",
   "limitations": [
-    "Local timing is not PR-runner p95 or Task 9 performance closure.",
+    "Local timing is not hosted-runner p95 evidence.",
     "Temporary canonical SQLCipher files do not qualify shipped fixed-runtime persistence.",
     "Fresh in-memory derived stores do not qualify persistent projection/graph restart behavior.",
     "No live creator data, external enrichment, or production traffic trace was used."
@@ -29,7 +29,7 @@
     "research_contract_general_to_deletion_ratio": 1.5
   },
   "profiles": {
-    "task6_deletion_fast": {
+    "analytics_deletion_fast": {
       "measured": {
         "actual_accepted_deletion_count": 8,
         "actual_alternative_order_history_count": 4,
@@ -45,12 +45,12 @@
           2.972682,
           2.865465
         ],
-        "hypothesis_profile": "task6_deletion_fast"
+        "hypothesis_profile": "analytics_deletion_fast"
       },
       "process_wall_clock_seconds": 13.856238,
       "target": "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
     },
-    "task6b_convergence_fast": {
+    "analytics_convergence_fast": {
       "measured": {
         "actual_accepted_deletion_count": 6,
         "actual_alternative_order_history_count": 6,
@@ -68,7 +68,7 @@
           3.438548,
           4.036818
         ],
-        "hypothesis_profile": "task6b_convergence_fast"
+        "hypothesis_profile": "analytics_convergence_fast"
       },
       "process_wall_clock_seconds": 24.313967,
       "target": "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence"
@@ -82,7 +82,7 @@
     "sqlcipher_version": "4.12.0 community",
     "sqlite_runtime_version": "3.51.1"
   },
-  "schema_version": "task6b-local-evidence.v2",
+  "schema_version": "analytics-convergence-local-evidence.v2",
   "scope": {
     "canonical_authority": "temporary file-backed SQLCipher canonical and repository projection databases created by create_canonical_repositories('memory') and exercised through HistoryRepository",
     "derived_stores": "fresh in-process InMemoryAnalyticsProjectionStore and InMemoryGraphRepository for each incremental or clean pipeline"

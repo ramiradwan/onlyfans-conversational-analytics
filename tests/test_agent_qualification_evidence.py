@@ -1,11 +1,11 @@
-"""Guard the checked-in Task 5B local-evidence schema against empty claims."""
+"""Guard the checked-in Agent-delivery evidence against empty claims."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 
-EVIDENCE = Path(__file__).resolve().parents[1] / "docs" / "architecture" / "task5b-agent-local-evidence.json"
+EVIDENCE = Path(__file__).resolve().parents[1] / "docs" / "architecture" / "agent-delivery-local-evidence.json"
 
 
 def test_agent_local_evidence_has_real_profile_counts_and_no_invented_percentiles() -> None:

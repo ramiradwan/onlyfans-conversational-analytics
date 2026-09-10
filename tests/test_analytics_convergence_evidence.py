@@ -1,4 +1,4 @@
-"""Integrity checks for the generated Task 6B local evidence artifact."""
+"""Integrity checks for the generated analytics-convergence evidence."""
 
 from __future__ import annotations
 
@@ -7,23 +7,23 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = ROOT / "docs" / "architecture" / "task6b-local-evidence.json"
-QUALIFIER = ROOT / "tools" / "qualify_task6b_convergence.py"
+EVIDENCE = ROOT / "docs" / "architecture" / "analytics-convergence-local-evidence.json"
+QUALIFIER = ROOT / "tools" / "qualify_analytics_convergence.py"
 HARNESS = ROOT / "tests" / "stateful" / "test_analytics_equivalence.py"
 
 
-def test_task6b_evidence_is_from_runtime_instrumentation() -> None:
+def test_analytics_convergence_evidence_is_from_runtime_instrumentation() -> None:
     """Reject an artifact that cannot account for its measured executions."""
 
     evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
-    assert evidence["schema_version"] == "task6b-local-evidence.v2"
-    assert evidence["evidence_origin"] == "tools/qualify_task6b_convergence.py"
+    assert evidence["schema_version"] == "analytics-convergence-local-evidence.v2"
+    assert evidence["evidence_origin"] == "tools/qualify_analytics_convergence.py"
     assert "file-backed SQLCipher" in evidence["scope"]["canonical_authority"]
     assert "InMemoryAnalyticsProjectionStore" in evidence["scope"]["derived_stores"]
     assert all(evidence["runtime"].values())
 
-    general = evidence["profiles"]["task6b_convergence_fast"]["measured"]
-    deletion = evidence["profiles"]["task6_deletion_fast"]["measured"]
+    general = evidence["profiles"]["analytics_convergence_fast"]["measured"]
+    deletion = evidence["profiles"]["analytics_deletion_fast"]["measured"]
     for run, deliveries_per_history, rebuilds_per_history in (
         (general, 14, 2),
         (deletion, 11, 3),
@@ -62,8 +62,8 @@ def test_task6b_evidence_is_from_runtime_instrumentation() -> None:
 
     qualifier = QUALIFIER.read_text(encoding="utf-8")
     harness = HARNESS.read_text(encoding="utf-8")
-    assert "TASK6B_METRICS_PATH" in qualifier
+    assert "ANALYTICS_CONVERGENCE_METRICS_PATH" in qualifier
     assert "subprocess.run" in qualifier
-    assert "TASK6B_METRICS_PATH" in harness
+    assert "ANALYTICS_CONVERGENCE_METRICS_PATH" in harness
     assert "_record_generated_history" in harness
     assert "_record_deliberate_falsifier" in harness

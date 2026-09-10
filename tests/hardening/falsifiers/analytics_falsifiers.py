@@ -1,4 +1,4 @@
-"""Deliberately broken Task 6B adapters used only by the convergence oracle."""
+"""Deliberately broken adapters used only to verify the convergence oracle."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from app.models.analytics import RebuildArtifact
 
 def _valid_graph_id(label: str) -> str:
     return "g1:" + hashlib.sha256(
-        b"task6b-falsifier-identity\0" + label.encode("utf-8")
+        b"analytics_convergence-falsifier-identity\0" + label.encode("utf-8")
     ).hexdigest()
 
 

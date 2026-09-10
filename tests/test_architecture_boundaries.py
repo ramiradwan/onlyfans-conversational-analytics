@@ -366,7 +366,7 @@ def test_resolve_executable_reference_safety() -> None:
         assert any("escapes repository root" in e or "cannot be absolute" in e for e in errs), f"Expected escape rejection for {escaping}: {errs}"
 
     # Planned reference rejected for executable check
-    errors = resolve_executable_reference("planned:Task-2-import-linter", ROOT, "test")
+    errors = resolve_executable_reference("planned:unimplemented-import-control", ROOT, "test")
     assert any("cannot be planned" in e for e in errors)
 
     # Non-string reference rejected

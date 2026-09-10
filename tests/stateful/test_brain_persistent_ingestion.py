@@ -36,7 +36,7 @@ if os.environ.get("HYPOTHESIS_PROFILE", "").startswith(("tier_b_", "windows_pers
 
 
 def stable_uuid(label: str) -> UUID:
-    return uuid5(NAMESPACE_URL, f"ofca-task5c/{label}")
+    return uuid5(NAMESPACE_URL, f"ofca-persistent_ingestion/{label}")
 
 
 def chat_record(chat_id: str) -> dict[str, Any]:
@@ -68,7 +68,7 @@ def _key_from_json(value: dict[str, str]) -> ModelStreamKey:
 
 
 def _record_metric(name: str) -> None:
-    path = os.environ.get("TASK5C_METRICS_PATH")
+    path = os.environ.get("PERSISTENT_INGESTION_METRICS_PATH")
     if not path:
         return
     target = Path(path)
@@ -106,7 +106,7 @@ class PersistentHarness:
 
     def __init__(self, root: Path, label: str, adapter_type: type[SQLiteBrainAdapter] = SQLiteBrainAdapter) -> None:
         self.label, self.root = label, root
-        self.account = f"task5c-{label}"
+        self.account = f"persistent_ingestion-{label}"
         self.key = self.stream("main")
         self.model = PureBrainIngestionModel(self.account)
         self.adapter = adapter_type(root / "canonical.sqlite3", connection_id=stable_uuid(f"{label}/connection"))
@@ -156,13 +156,13 @@ class PersistentHarness:
                   "recent_window_days": 30, "page_size": 100, "pages_per_wake": 2,
                   "request_interval_ms": 500, "retry_limit": 3}
         saved = self.adapter.history.update_history_settings(self.account, expected_revision=0, values=values)
-        self.adapter.history.bind_history_config(self.account, settings_revision=int(saved["settings_revision"]), config_revision="task5c")
-        self.adapter.history.mark_history_config_applied(self.account, "task5c")
+        self.adapter.history.bind_history_config(self.account, settings_revision=int(saved["settings_revision"]), config_revision="persistent_ingestion")
+        self.adapter.history.mark_history_config_applied(self.account, "persistent_ingestion")
         self.trace.append({"operation": "configure_coverage", "stream_key": _key_json(self.key), "command": values, "requirements": []})
 
 
 def replay_json_trace(trace: list[dict[str, Any]], harness: PersistentHarness) -> None:
-    """Replay the complete Task 5A logical command vocabulary from JSON data."""
+    """Replay the complete logical ingestion command vocabulary from JSON data."""
     for entry in json.loads(json.dumps(trace)):
         operation = entry["operation"]
         if operation == "close_and_reopen":
@@ -193,7 +193,7 @@ def test_file_backed_reopen_preserves_duplicate_gap_recovery_and_trace_replay(tm
     assert replay.adapter.observe_state(replay.key) == harness.adapter.observe_state(harness.key)
 
 
-def test_full_task5a_vocabulary_json_trace_round_trips_to_new_persistent_database(tmp_path: Path) -> None:
+def test_full_brain_ingestion_vocabulary_json_trace_round_trips_to_new_persistent_database(tmp_path: Path) -> None:
     source = PersistentHarness(tmp_path / "source", "full-trace")
     source.seed()
     source.frame(ModelChatUpsertCommand(source.new_id("event"), 2, "parent", "full", "fan-parent", "parent", "2026-09-10T10:00:00+00:00"), "commit_delta")
@@ -245,7 +245,7 @@ def test_persistent_broken_reopen_adapter_is_rejected_by_shared_oracle(tmp_path:
 class PersistentGeneralMachine(RuleBasedStateMachine):
     @initialize()
     def start(self) -> None:
-        self.directory = TemporaryDirectory(prefix="task5c-general-")
+        self.directory = TemporaryDirectory(prefix="persistent_ingestion-general-")
         self.harness = PersistentHarness(Path(self.directory.name), "tier-b-general")
         self.harness.seed()
         _record_metric("histories")
@@ -296,7 +296,7 @@ class PersistentGeneralMachine(RuleBasedStateMachine):
 class PersistentDeletionMachine(RuleBasedStateMachine):
     @initialize()
     def start(self) -> None:
-        self.directory = TemporaryDirectory(prefix="task5c-deletion-")
+        self.directory = TemporaryDirectory(prefix="persistent_ingestion-deletion-")
         self.harness = PersistentHarness(Path(self.directory.name), "tier-b-deletion")
         self.harness.seed()
         self.message = ModelMessageUpsertCommand(self.harness.new_id("event"), 2, "deleted-message", "base", "fan-base", "deleted-message", "2026-09-10T10:01:00+00:00", "inbound")

@@ -39,8 +39,8 @@ TIER_A_TARGETS = {
     "tier_a_general": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",
     "tier_a_deletion": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion",
 }
-TASK6A_TARGET = "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
-TASK6A_PROFILE = "task6a_determinism_fast"
+ANALYTICS_DETERMINISM_TARGET = "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
+ANALYTICS_DETERMINISM_PROFILE = "analytics_determinism_fast"
 TIER_B_TARGETS = {
     "tier_b_general": "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral",
     "tier_b_deletion": "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion",
@@ -50,16 +50,16 @@ AGENT_TIER_A_TARGETS = {
     "agent_tier_a_general": "tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral",
     "agent_tier_a_deletion": "tests/stateful/test_agent_delivery.py::TestAgentDeliveryDeletion",
 }
-TASK6B_TARGETS = {
-    "task6b_convergence_fast": (
+ANALYTICS_CONVERGENCE_TARGETS = {
+    "analytics_convergence_fast": (
         "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence"
     ),
-    "task6_deletion_fast": (
+    "analytics_deletion_fast": (
         "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
     ),
 }
-TASK6B_FALSIFIER_TARGETS = (
-    "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults",
+ANALYTICS_CONVERGENCE_FALSIFIER_TARGETS = (
+    "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults",
     "tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_forged_topic_or_entity_graph_in_both_artifacts",
     "tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_stale_deleted_message_metric_in_both_artifacts",
     "tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness",
@@ -297,11 +297,11 @@ def _assert_windows_tier_b_qualification(workflow: dict[str, Any]) -> None:
     evidence = [
         step
         for step in steps
-        if step.get("name") == "Retain Windows Task 5C evidence"
+        if step.get("name") == "Retain Windows persistence evidence"
     ]
-    assert len(evidence) == 1, "Windows CI must retain Task 5C runner evidence"
+    assert len(evidence) == 1, "Windows CI must retain persistence runner evidence"
     evidence_with = evidence[0].get("with", {})
-    assert evidence_with.get("name") == "task5c-windows-evidence-${{ github.sha }}"
+    assert evidence_with.get("name") == "windows-persistence-evidence-${{ github.sha }}"
     assert evidence_with.get("if-no-files-found") == "error"
     evidence_paths = str(evidence_with.get("path", ""))
     assert "fixed-sqlcipher-runtime-evidence.json" in evidence_paths
@@ -574,41 +574,41 @@ def test_brain_tier_a_profiles_run_once_in_the_required_linux_job() -> None:
         _assert_tier_a_profiles_are_required_once(missing)
 
 
-def _assert_task6a_determinism_profile(workflow: dict[str, Any]) -> None:
+def _assert_analytics_determinism_profile(workflow: dict[str, Any]) -> None:
     matches = [
         (job_name, step)
         for job_name, job in _jobs(workflow).items()
         for step in _steps(job)
-        if isinstance(step.get("run"), str) and TASK6A_TARGET in step["run"]
+        if isinstance(step.get("run"), str) and ANALYTICS_DETERMINISM_TARGET in step["run"]
     ]
-    assert len(matches) == 1, "Task 6A must run in exactly one explicit CI step"
+    assert len(matches) == 1, "analytics determinism must run in exactly one explicit CI step"
     job_name, step = matches[0]
     assert not _runs_on_windows(_jobs(workflow)[job_name])
-    assert step.get("env", {}).get("HYPOTHESIS_PROFILE") == TASK6A_PROFILE
+    assert step.get("env", {}).get("HYPOTHESIS_PROFILE") == ANALYTICS_DETERMINISM_PROFILE
     assert "--override-ini=addopts=" in step["run"]
 
 
-def test_task6a_determinism_profile_runs_once_in_the_required_linux_job() -> None:
-    """Task 6A is explicit CI evidence, not an accidental default rerun."""
+def test_analytics_determinism_profile_runs_once_in_the_required_linux_job() -> None:
+    """Analytics determinism is explicit CI evidence, not a default rerun."""
 
     workflow = _workflow_document()
-    _assert_task6a_determinism_profile(workflow)
+    _assert_analytics_determinism_profile(workflow)
 
     missing = deepcopy(workflow)
     job_name, _ = [
         (name, step)
         for name, job in _jobs(missing).items()
         for step in _steps(job)
-        if isinstance(step.get("run"), str) and TASK6A_TARGET in step["run"]
+        if isinstance(step.get("run"), str) and ANALYTICS_DETERMINISM_TARGET in step["run"]
     ][0]
     job = _jobs(missing)[job_name]
     job["steps"] = [
         candidate
         for candidate in job["steps"]
-        if not (isinstance(candidate.get("run"), str) and TASK6A_TARGET in candidate["run"])
+        if not (isinstance(candidate.get("run"), str) and ANALYTICS_DETERMINISM_TARGET in candidate["run"])
     ]
-    with pytest.raises(AssertionError, match="Task 6A must run"):
-        _assert_task6a_determinism_profile(missing)
+    with pytest.raises(AssertionError, match="analytics determinism must run"):
+        _assert_analytics_determinism_profile(missing)
 
 
 def test_agent_tier_a_profiles_run_once_and_default_backend_excludes_them() -> None:
@@ -625,20 +625,20 @@ def test_agent_tier_a_profiles_run_once_and_default_backend_excludes_them() -> N
                 assert f"not {STATEFUL_AGENT_TIER_A_MARKER}" in expression
 
 
-def _task6b_steps(workflow: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+def _analytics_convergence_steps(workflow: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     return [
         (job_name, step)
         for job_name, job in _jobs(workflow).items()
         for step in _steps(job)
         if isinstance(step.get("run"), str)
-        and any(target in step["run"] for target in TASK6B_TARGETS.values())
+        and any(target in step["run"] for target in ANALYTICS_CONVERGENCE_TARGETS.values())
     ]
 
 
-def _assert_task6b_profiles_are_required_once(workflow: dict[str, Any]) -> None:
-    matches = _task6b_steps(workflow)
-    assert len(matches) == 2, "Task 6B must run two explicit CI profiles"
-    for profile, target in TASK6B_TARGETS.items():
+def _assert_analytics_convergence_profiles_are_required_once(workflow: dict[str, Any]) -> None:
+    matches = _analytics_convergence_steps(workflow)
+    assert len(matches) == 2, "analytics convergence must run two explicit CI profiles"
+    for profile, target in ANALYTICS_CONVERGENCE_TARGETS.items():
         selected = [item for item in matches if target in item[1]["run"]]
         assert len(selected) == 1, f"{target} must run exactly once"
         job_name, step = selected[0]
@@ -647,20 +647,20 @@ def _assert_task6b_profiles_are_required_once(workflow: dict[str, Any]) -> None:
         assert "--override-ini=addopts=" in step["run"]
 
 
-def test_task6b_convergence_and_deletion_profiles_run_once_in_linux_ci() -> None:
+def test_analytics_convergence_and_deletion_profiles_run_once_in_linux_ci() -> None:
     """The two expensive profiles need explicit execution, not default collection."""
 
     workflow = _workflow_document()
-    _assert_task6b_profiles_are_required_once(workflow)
+    _assert_analytics_convergence_profiles_are_required_once(workflow)
 
     missing = deepcopy(workflow)
-    job_name, step = _task6b_steps(missing)[0]
+    job_name, step = _analytics_convergence_steps(missing)[0]
     _jobs(missing)[job_name]["steps"].remove(step)
-    with pytest.raises(AssertionError, match="Task 6B must run two explicit"):
-        _assert_task6b_profiles_are_required_once(missing)
+    with pytest.raises(AssertionError, match="analytics convergence must run two explicit"):
+        _assert_analytics_convergence_profiles_are_required_once(missing)
 
 
-def _assert_task6b_falsifiers_required_once(workflow: dict[str, Any]) -> None:
+def _assert_analytics_convergence_falsifiers_required_once(workflow: dict[str, Any]) -> None:
     """Require one Linux invocation of both marker-excluded falsifiers."""
 
     matches = [
@@ -668,19 +668,19 @@ def _assert_task6b_falsifiers_required_once(workflow: dict[str, Any]) -> None:
         for job_name, job in _jobs(workflow).items()
         for step in _steps(job)
         if isinstance(step.get("run"), str)
-        and TASK6B_FALSIFIER_TARGETS[0] in step["run"]
+        and ANALYTICS_CONVERGENCE_FALSIFIER_TARGETS[0] in step["run"]
     ]
-    assert len(matches) == 1, "Task 6B permanent falsifiers must run exactly once"
+    assert len(matches) == 1, "analytics oracle falsifiers must run exactly once"
     job_name, step = matches[0]
     assert not _runs_on_windows(_jobs(workflow)[job_name])
-    assert all(target in step["run"] for target in TASK6B_FALSIFIER_TARGETS)
+    assert all(target in step["run"] for target in ANALYTICS_CONVERGENCE_FALSIFIER_TARGETS)
 
 
-def test_task6b_permanent_falsifiers_run_once_in_linux_ci() -> None:
+def test_analytics_convergence_permanent_falsifiers_run_once_in_linux_ci() -> None:
     """The ordinary suite excludes these expensive negative controls."""
 
     workflow = _workflow_document()
-    _assert_task6b_falsifiers_required_once(workflow)
+    _assert_analytics_convergence_falsifiers_required_once(workflow)
 
     missing = deepcopy(workflow)
     job_name, step = next(
@@ -688,11 +688,11 @@ def test_task6b_permanent_falsifiers_run_once_in_linux_ci() -> None:
         for candidate_job, job in _jobs(missing).items()
         for candidate_step in _steps(job)
         if isinstance(candidate_step.get("run"), str)
-        and TASK6B_FALSIFIER_TARGETS[0] in candidate_step["run"]
+        and ANALYTICS_CONVERGENCE_FALSIFIER_TARGETS[0] in candidate_step["run"]
     )
     _jobs(missing)[job_name]["steps"].remove(step)
-    with pytest.raises(AssertionError, match="Task 6B permanent falsifiers"):
-        _assert_task6b_falsifiers_required_once(missing)
+    with pytest.raises(AssertionError, match="analytics oracle falsifiers"):
+        _assert_analytics_convergence_falsifiers_required_once(missing)
 
 
 def test_ordinary_backend_suites_exclude_explicit_tier_a_tests() -> None:

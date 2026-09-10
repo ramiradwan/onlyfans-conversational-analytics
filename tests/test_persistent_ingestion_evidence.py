@@ -1,4 +1,4 @@
-"""Schema guard for the generated, explicitly local Task 5C evidence file."""
+"""Schema guard for the generated local persistent-ingestion evidence."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 
-EVIDENCE = Path(__file__).resolve().parents[1] / "docs" / "architecture" / "task5c-local-runtime-evidence.json"
+EVIDENCE = Path(__file__).resolve().parents[1] / "docs" / "architecture" / "persistent-ingestion-local-evidence.json"
 
 
 def test_tier_b_runtime_evidence_has_required_local_benchmark_fields() -> None:

@@ -1,4 +1,4 @@
-"""Independent semantic comparison vocabulary for Task 6A rebuilds.
+"""Independent semantic comparison vocabulary for analytics rebuilds.
 
 This module deliberately does not call the pipeline's digest or comparison
 helpers.  It classifies the public rebuild artifact according to the checked-in
@@ -27,12 +27,12 @@ from app.canonical.read_models import AccountReadModel
 
 
 class AnalyticsOracleMismatch(AssertionError):
-    """A directly classified Task 6A semantic/provenance mismatch."""
+    """A directly classified analytics semantic or provenance mismatch."""
 
 
 @dataclass(frozen=True, slots=True)
 class ReproducibilityContext:
-    """Closed context actually consumed or witnessed by a Task 6A build."""
+    """Closed context consumed or witnessed by a deterministic rebuild."""
 
     canonical_account_ref: str
     canonical_view_revision: int
@@ -62,7 +62,7 @@ def context_for(
     evaluation_clock: datetime,
     deterministic_seed: int | None,
 ) -> ReproducibilityContext:
-    """Record every Task 6 contract input for one frozen clean rebuild."""
+    """Record every contract input for one frozen clean rebuild."""
 
     if evaluation_clock.tzinfo is None or evaluation_clock.utcoffset() is None:
         raise ValueError("evaluation_clock must be timezone-aware")
@@ -130,7 +130,7 @@ def _sorted_models(values: list[Any], *keys: str) -> list[dict[str, Any]]:
 
 
 def normalize_artifact(artifact: RebuildArtifact) -> dict[str, Any]:
-    """Return all supported Task 6A fields, excluding only lifecycle fields.
+    """Return all supported semantic fields, excluding lifecycle fields.
 
     `projection_generation`, publication epochs, staged generation ids, lease
     ownership, and execution timestamps are intentionally absent: none are part
@@ -168,9 +168,9 @@ def normalize_artifact(artifact: RebuildArtifact) -> dict[str, Any]:
             "creator_metrics": _model(projection.creator_metrics),
             "graph": _model(projection.graph),
             "graph_digest": projection.graph_digest,
-            # Fresh Task 6A stores both allocate generation 1, so the
-            # composite digest is comparable here.  Task 6B must instead use
-            # projection_without_lifecycle when generations may differ.
+            # Two fresh stores both allocate generation 1, so the composite
+            # digest is comparable. Convergence checks remove lifecycle data
+            # because incremental and rebuilt generations may differ.
             "projection_digest": projection.projection_digest,
             "projection_without_lifecycle": projection_document,
         },
@@ -1170,7 +1170,7 @@ def assert_deterministic_rebuilds(
     *,
     expected_refs: dict[str, set[str]] | None = None,
 ) -> None:
-    """Assert the full supported 6A matrix across two fresh clean builds."""
+    """Assert the full deterministic-rebuild matrix across two fresh builds."""
 
     _assert_context(first, context)
     _assert_context(second, context)
@@ -1186,16 +1186,16 @@ def assert_deterministic_rebuilds(
     for field in ("canonical_witness", "pipeline_provenance", "semantic_projection", "graph"):
         if left[field] != right[field]:
             raise AnalyticsOracleMismatch(
-                f"Task 6A mismatch in {field}: left={left[field]!r}, right={right[field]!r}"
+                f"Analytics rebuild mismatch in {field}: left={left[field]!r}, right={right[field]!r}"
             )
 
 
 def normalize_convergence_artifact(artifact: RebuildArtifact) -> dict[str, Any]:
-    """Normalize a 6B result, excluding only documented lifecycle material.
+    """Normalize convergence output, excluding documented lifecycle material.
 
     A live incremental store allocates later projection generations than a
     clean store.  Its composite projection digest legitimately includes that
-    generation, so Task 6B compares the public projection shape with the
+    generation, so convergence compares the public projection shape with the
     lifecycle field removed rather than treating a digest mismatch as a
     semantic difference.  The graph digest remains included because it is a
     documented semantic digest.
@@ -1216,7 +1216,7 @@ def assert_incremental_rebuild_convergence(
 ) -> None:
     """Compare live incremental publication with a clean production rebuild.
 
-    This reuses the Task 6A field taxonomy, but intentionally does not compare
+    This reuses the clean-rebuild field taxonomy but does not compare
     projection-generation-dependent composite digests.  It compares all
     semantic and provenance records directly, then separately validates the
     graph digest and graph referential closure for both paths.
@@ -1239,7 +1239,7 @@ def assert_incremental_rebuild_convergence(
     for field in ("canonical_witness", "pipeline_provenance", "semantic_projection", "graph"):
         if left[field] != right[field]:
             raise AnalyticsOracleMismatch(
-                f"Task 6B convergence mismatch in {field}: "
+                f"Analytics convergence mismatch in {field}: "
                 f"incremental={left[field]!r}, rebuilt={right[field]!r}"
             )
 

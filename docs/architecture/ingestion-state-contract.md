@@ -2,9 +2,9 @@
 
 # Ingestion state contract
 
-This document defines the research-gate contract for Task 5 (PR 5R) of the architectural hardening plan. It is derived from the executable specification in `app/protocol/payloads.py`, `app/protocol/common.py`, `app/transport/ingestion.py`, `app/transport/manager.py`, `app/persistence/history.py`, `extension/transport/durable-outbox.mjs`, `extension/transport/entity-merge.mjs`, `extension/transport/agent-websocket.mjs`, the shared protocol fixtures under `shared/fixtures/protocol/v2/`, and accepted architecture decision records (ADR 0001, ADR 0002, ADR 0003, ADR 0004, ADR 0005, ADR 0006, ADR 0008, ADR 0009, ADR 0010, ADR 0019, ADR 0020, ADR 0021, and ADR 0022). Proposed ADR 0012 is not promoted or assumed.
+This contract defines canonical ingestion and durable Agent-delivery behavior. It is derived from the executable specification in `app/protocol/payloads.py`, `app/protocol/common.py`, `app/transport/ingestion.py`, `app/transport/manager.py`, `app/persistence/history.py`, `extension/transport/durable-outbox.mjs`, `extension/transport/entity-merge.mjs`, `extension/transport/agent-websocket.mjs`, the shared protocol fixtures under `shared/fixtures/protocol/v2/`, and accepted architecture decision records (ADR 0001, ADR 0002, ADR 0003, ADR 0004, ADR 0005, ADR 0006, ADR 0008, ADR 0009, ADR 0010, ADR 0019, ADR 0020, ADR 0021, and ADR 0022). Proposed ADR 0012 is not assumed.
 
-The contract establishes the state transition catalogue, quality scenarios, independent model scopes, per-transition oracle assertions, persistent backend qualification requirements, CI benchmark calibrations, and gate blocker criteria that govern implementation in Task 5A (independent reference model and state machine), Task 5C / PR 5B (persistent Brain qualification), and Task 5B / PR 5C (real JavaScript Agent harness).
+It establishes the state-transition catalogue, quality scenarios, independent model scopes, per-transition oracle assertions, persistent-backend qualification requirements, and CI calibration rules for the Python reference model, file-backed Brain tests, and JavaScript Agent harness.
 
 ## 1. Operating context and authority boundaries
 
@@ -648,7 +648,7 @@ The six mandatory quality scenarios from Section 11 are defined with explicit st
 
 ## 4. Independent reference models
 
-To prevent circular reasoning, Task 5 requires independent reference models that do not import production persistence or merge code.
+To prevent circular reasoning, the assurance suites use independent reference models that do not import production persistence or merge code.
 
 ### 4.1 Brain independent reference model (`tests/state_models/brain_ingestion_model.py`)
 
@@ -742,9 +742,9 @@ PRAGMA cipher_plaintext_header_size = 0;
 
 - Local Python execution in development uses Python 3.13.6, `sqlcipher3==0.6.2`, linked to SQLite 3.51.1 with SQLCipher 4.12.0 community (dated local probe: 2026-09-09).
 - The production shipped product is packaged via PyInstaller on Windows using Python 3.11 as specified in `.github/workflows/ci.yml` and `packaging/build-windows.ps1`.
-- Local Python test runs qualify algorithmic state machine transitions; they do not constitute release qualification of the packaged Windows Store binary. Actual packaged Windows and PR-runner native versions must be measured dynamically during Task 5C / PR 5B.
+- Local Python test runs qualify algorithmic state-machine transitions; they do not constitute release qualification of the packaged Windows Store binary. Packaged Windows and hosted-runner native versions must be measured dynamically in their actual environments.
 
-### 6.3 SQLite durability advisory research and qualification status
+### 6.3 SQLite durability advisory evaluation and qualification status
 
 - **Dated Local Observation (2026-09-09):** Local environment probe records Python 3.13.6, `sqlcipher3==0.6.2`, SQLite 3.51.1, and SQLCipher 4.12.0 community.
 - **Upstream Advisory Evaluation:**
@@ -753,9 +753,10 @@ PRAGMA cipher_plaintext_header_size = 0;
   - SQLCipher 4.14.0 incorporates SQLite 3.51.3 and strongly recommends that all WAL-mode applications upgrade: [SQLCipher 4.14.0 Release](https://github.com/sqlcipher/sqlcipher/releases/tag/v4.14.0).
   - In the current codebase, `app/persistence/database.py` enforces WAL mode (`PRAGMA journal_mode = WAL`) and synchronous FULL (`PRAGMA synchronous = FULL`), opening fresh `check_same_thread=False` connections per read or transaction. In-process `_connection_locks` guard connection transition accounting and exclusive lifecycle phases, but individual transaction `BEGIN IMMEDIATE` and commit operations execute outside those locks. While SQLite `BEGIN IMMEDIATE` provides writer serialization, multiple concurrent application connections/threads and active SQLite checkpoint behavior remain relevant and unexcluded.
   - Consequently, the local development profile cannot be qualified as unaffected by the upstream advisory. (No claim is made that corruption has occurred).
-- **Production Qualification Requirement:**
-  - Declaring file-backed Tier B storage production-equivalent remains blocked until an upgrade to a fixed runtime (SQLite $\ge 3.51.3$ / SQLCipher $\ge 4.14.0$) and/or a rigorous proof of trigger exclusion is established.
-  - Specific version numbers and advisory ranges are dated observations and must not be encoded as timeless architecture policy; current upstream advisories must be re-evaluated against the deployed runtime at implementation time.
+- **Fixed runtime and hosted qualification:**
+  - `packaging/sqlcipher/` builds a checksum-pinned Windows wheel with SQLCipher 4.17.0 and SQLite 3.53.3. Runtime probes verify encrypted readback, wrong-key rejection, integrity checks, and the native versions loaded by Python and the frozen executable.
+  - Hosted Windows CI and release-package runs must build and probe that wheel and retain its provenance before the shipped runtime is considered production-equivalent.
+  - Version numbers and advisory ranges are dated observations. Re-evaluate current upstream advisories against every deployed runtime.
 
 ---
 
@@ -763,12 +764,12 @@ PRAGMA cipher_plaintext_header_size = 0;
 
 ### 7.1 Named calibration profiles
 
-To avoid uncontrolled CI runtime expansion, named profiles are defined for stateful Hypothesis generation. These counts represent **initial starting calibration inputs**, not permanent normative values:
+Named profiles keep stateful Hypothesis generation within a controlled CI budget. The table records the current required profiles; broader stress profiles may be run separately for local calibration.
 
 | Profile | Suite | Target examples × steps | Backend | Focus |
 |---|---|---:|---|---|
-| **Tier A General** | Brain Ingestion | 90 × 40 | In-memory | Broad state-space exploration |
-| **Tier A Deletion** | Brain Ingestion | 60 × 30 | In-memory | Tombstone and resurrection stress |
+| **Tier A General** | Brain Ingestion | 15 × 20 | In-memory | Broad state-space exploration |
+| **Tier A Deletion** | Brain Ingestion | 10 × 20 | In-memory | Tombstone and resurrection stress |
 | **Agent Tier A General** | Agent Outbox | 5 × 10 (locally calibrated) | Persistent Node harness | Durable outbox and framing semantics |
 | **Agent Tier A Deletion** | Agent Outbox | 4 × 10 (locally calibrated) | Persistent Node harness | Deletion, reconnect, and snapshot stress |
 | **Tier B General** | Brain SQLite | 15 × 25 | File-backed SQLCipher | Transaction, reopen, and durability |
@@ -777,11 +778,9 @@ To avoid uncontrolled CI runtime expansion, named profiles are defined for state
 
 If CI budget pressure requires tuning, example counts must be reduced before removing critical transition families or invariant assertions.
 
-**Task 5A local calibration (2026-09-09):** The initial 90 x 40 Brain general profile did not complete within 568.15 seconds on the local Windows development host and was interrupted. The implemented always-on profiles therefore use 15 x 20 general and 10 x 20 deletion histories while retaining every transition family and every per-transition oracle assertion. The 10 deletion histories are 40% of the combined 25 generated histories. These are current repository settings, not PR-runner p95 qualification; Task 5C and Task 9 must measure the required runner and tune further if necessary.
-
 ### 7.2 Deletion profile guarantee
 
-Informal transition probability is insufficient to stress deletion boundaries. At least **40% of generated PR histories** must run under dedicated deletion-focused profiles, where entity creation is forced early followed by adversarial replay, stale delta delivery, snapshot re-ingestion, and restart cut points.
+Informal transition probability is insufficient to stress deletion boundaries. At least **40% of generated CI histories** must run under dedicated deletion-focused profiles, where entity creation is forced early followed by adversarial replay, stale delta delivery, snapshot re-ingestion, and restart cut points.
 
 ### 7.3 Shrinking benchmark protocol
 
@@ -792,14 +791,13 @@ When a stateful invariant fails, Hypothesis shrinks the operation trace to a min
 
 ### 7.4 Response measure and budget thresholds
 
-- **Target:** State machine suites (Tasks 5 and 6 combined) must add $\le 5\%$ to the p95 PR critical-path duration on standard runners.
-- **Hard review threshold:** $> 10\%$ added p95 PR duration requires explicit engineering trade-off review and profile downsizing.
-- **Provisional Historical Baseline:** A provisional sample of 15 first-attempt successful PR workflow runs from 2026-09-02 through 2026-09-04 exhibited a p95 elapsed duration of 1704.7 seconds, with Windows execution on the critical path (only 6 of these runs matched the exact current workflow revision; this is provisional historical context, not closure evidence).
+- **Target:** Generated ingestion and analytics assurance must add $\le 5\%$ to the p95 pull-request critical-path duration on standard runners.
+- **Hard review threshold:** $> 10\%$ added p95 pull-request duration requires explicit engineering trade-off review and profile downsizing.
 - **Dynamic Measurement:** Execution duration, example counts, transitions executed, SQLite reopens, failure shrink durations, runner OS, and Python/SQLite/Hypothesis versions must be captured dynamically from the runner environment.
 
 ---
 
-## 8. Unresolved normative discrepancies and gate readiness ledger
+## 8. Implementation status and qualification limits
 
 ### 8.1 Discrepancy between in-memory `IngestionService` and authoritative `HistoryRepository`
 
@@ -809,23 +807,11 @@ When a stateful invariant fails, Hypothesis shrinks the operation trace to a min
 
 *Disposition:* `HistoryRepository` is the sole canonical persistence authority. `IngestionService` is a legacy in-memory helper and must not be used as the reference oracle for canonical persistence.
 
-### 8.2 PR 5R research gate closure criteria
+### 8.2 Executable verification
 
-PR 5R is a research and specification gate. It closes when:
+- `tests/state_models/brain_ingestion_model.py` and `tests/stateful/test_brain_ingestion.py` verify the in-memory reference model and canonical-ingestion state machine.
+- `tests/state_models/sqlite_brain_adapter.py` and `tests/stateful/test_brain_persistent_ingestion.py` repeat the contract through fresh repository objects over one encrypted canonical file.
+- `extension/qualification/ingestion-model-harness.mjs` drives the production durable outbox and encrypted IndexedDB adapter through reconnect, restart, snapshot, and deletion histories.
+- `tests/hardening/falsifiers/test_falsifiers.py` proves that the shared oracle rejects gap, duplicate, deletion, staging, reopen, and split-commit faults.
 
-1. [x] **Ingestion State Transition Catalogue Established:** Ingestion transition catalogue (S01–S03, D01–D09, A01–A14, N01–N20, AG01–AG08, exactly 54 entries) is established with all required specification fields present.
-2. [x] **Quality Scenarios Defined:** Scenarios QS-1 to QS-6 map explicitly to catalogue transition paths and independent reference model boundaries.
-3. [x] **Oracle Falsifier Specifications Complete:** Permanent broken adapters (`BrokenGapAdapter`, `BrokenDuplicateAdapter`, `BrokenDeletionAdapter`, `BrokenReopenAdapter`) are specified.
-4. [x] **Persistent Runtime Qualification Designed:** SQLite production configuration profile and dated durability advisory status (2026-09-09) are documented.
-5. [x] **CI Shrinking Benchmark Designed:** Named calibration profiles, $\le 5\%$ p95 budget target, and failure shrinking protocols are specified.
-6. [x] **Static and Structural Verification Passed:** Verification tooling confirms that cited file paths, selected AST symbols, tables, and schema constants exist in the codebase, required contract structures and counts are present, and banned fabricated patterns are absent. (Static checks verify structural and AST existence; full semantic and source truth requires human architectural review and downstream executable Task 5 and Task 6 oracles).
-
-### 8.3 Downstream implementation and qualification readiness ledger
-
-The following deliverables are downstream tasks authorized by PR 5R; they do not block PR 5R research gate closure:
-
-- **Task 5A (PR 5A) Readiness:** Brain independent reference model (`tests/state_models/brain_ingestion_model.py`) and Tier A state machine implementation (`tests/stateful/test_brain_ingestion.py`).
-- **Task 5C (PR 5B) Local Evidence:** File-backed persistent Brain qualification (`tests/state_models/sqlite_brain_adapter.py`) reopens fresh `HistoryRepository` objects over the same encrypted canonical file and checks checkpoint, staging, retry, and tombstone behavior through the Task 5A oracle. `tools/qualify_tier_b_runtime.py` writes dated local profile/runtime evidence.
-  *Qualification status:* **blocked from production-equivalent claim.** The local `sqlcipher3==0.6.2` runtime reports SQLite 3.51.1 / SQLCipher 4.12.0, which predates the fixed SQLite WAL-reset runtime. SQLite's official advisory requires 3.51.3 or later and this application's concurrent connection/checkpoint pattern is not excluded. `packaging/sqlcipher/` defines a checksum-pinned SQLCipher 4.17.0 Windows wheel build and frozen-runtime probe, but the gate remains blocked until that wheel and the actual PyInstaller executable pass on the production runner and retain their provenance. Local file-backed results do not qualify derived projection/graph deletion closure or packaged Windows behavior.
-- **Task 5B (PR 5C) Local Evidence:** `extension/qualification/ingestion-model-harness.mjs` keeps a real `DurableIngestOutbox` and encrypted IndexedDB storage adapter alive per generated Python history. The harness reconstructs the outbox against one FakeIndexedDb, observes exact stored material, and drives reconnect/session replay through `AgentWebSocketClient` with deterministic fake sockets. This establishes bounded local Agent delivery evidence only; it does not qualify derived deletion closure, runtime composition, or Task 9 closure.
-- **Tasks 6A / 6B Readiness:** Analytics determinism and rebuild convergence implementation.
+The local file-backed evidence does not qualify the packaged Windows runtime. Production-equivalent qualification requires the checksum-pinned fixed SQLCipher wheel and frozen executable to pass on hosted Windows runners with retained provenance. Derived projection and graph deletion behavior is covered separately by the rebuild equivalence contract.

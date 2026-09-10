@@ -66,7 +66,7 @@ CATALOGUE_SCENARIOS: dict[str, frozenset[str]] = {
 
 
 def stable_uuid(label: str) -> UUID:
-    return uuid5(NAMESPACE_URL, f"ofca-task5a/{label}")
+    return uuid5(NAMESPACE_URL, f"ofca-brain_ingestion/{label}")
 
 
 def chat_record(chat_id: str, *, name: str | None = None) -> dict[str, Any]:
@@ -126,7 +126,7 @@ class Harness:
     label: str
 
     def __post_init__(self) -> None:
-        self.account = f"task5a-{self.label}"
+        self.account = f"brain_ingestion-{self.label}"
         self.key = self.stream("main")
         self.repos = create_canonical_repositories("memory")
         self.history = self.repos.history
@@ -270,9 +270,9 @@ class Harness:
         self.history.bind_history_config(
             self.account,
             settings_revision=int(saved["settings_revision"]),
-            config_revision="task5a-coverage",
+            config_revision="brain_ingestion-coverage",
         )
-        self.history.mark_history_config_applied(self.account, "task5a-coverage")
+        self.history.mark_history_config_applied(self.account, "brain_ingestion-coverage")
         self.coverage_configured = True
         self.trace.append(
             {
@@ -896,7 +896,7 @@ def _normalized_state(harness: Harness) -> tuple[Any, ...]:
 
 
 def test_metamorphic_retry_and_in_memory_reconstruction() -> None:
-    """Clean == lost-ACK retry == repository reconstruction; disk reopen is Task 5C."""
+    """Clean, lost-ACK retry, and repository reconstruction are equivalent."""
     clean = Harness("metamorphic"); retried = Harness("metamorphic"); reconstructed = Harness("metamorphic")
     command = clean.chat("metamorphic-chat")
     clean.frame(command, "commit_delta", "D01")

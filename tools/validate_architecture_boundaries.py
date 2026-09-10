@@ -117,7 +117,7 @@ def load_manifest(path: Path | str) -> dict[str, Any]:
 
 
 def validate_protected_impact_mappings(manifest: dict[str, Any]) -> list[str]:
-    """Validate the manifest-owned narrow mappings used by PR impact review."""
+    """Validate manifest-owned mappings used by pull-request impact review."""
 
     errors: list[str] = []
     protected_impact = manifest.get("protected_impact")

@@ -21,7 +21,7 @@ module.exports = {
     {
       name: 'rule-agent-protected-acyclic',
       comment:
-        'Rule B: Reject circular dependency paths passing through protocol, transport, or runtime. Phase-one structural protection; does not prove correct dependency direction.',
+        'Reject circular dependency paths through protected protocol, transport, or runtime modules. This rule enforces acyclicity; separate rules govern dependency direction.',
       severity: 'error',
       from: {},
       to: {

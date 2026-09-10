@@ -169,6 +169,6 @@ test('Rule B positive control: circular dependencies outside protected kernel ar
   assert.equal(
     result.output.summary.violations.length,
     0,
-    'Cycles outside protected kernel must not trigger phase-one protected acyclicity rule'
+    'Cycles outside the protected kernel must not trigger its acyclicity rule'
   );
 });

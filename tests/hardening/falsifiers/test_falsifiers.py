@@ -1,4 +1,4 @@
-"""Executable verification proving the oracle rejects Task 5 falsifiers.
+"""Executable verification proving the ingestion oracle rejects known faults.
 
 Falsifiers tested:
 1. BrokenGapAdapter: advances checkpoint on a gap -> catches checkpoint-monotonicity violation.
@@ -257,7 +257,7 @@ def test_broken_reopen_adapter() -> None:
     snap_before = adapter.observe_state(key)
     assert snap_before.checkpoint == 1
 
-    # This is intentional corruption, not Task 5C file-backed close/reopen evidence.
+    # This isolates oracle detection; file-backed close/reopen is tested separately.
     adapter.drop_committed_state_before_reconstruction(key)
     snap_after = adapter.observe_state(key)
 

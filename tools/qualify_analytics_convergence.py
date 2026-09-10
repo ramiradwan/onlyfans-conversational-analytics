@@ -1,4 +1,4 @@
-"""Generate measured local evidence for the Task 6B convergence harness.
+"""Generate measured local evidence for the analytics convergence harness.
 
 The artifact is deliberately limited to a temporary file-backed canonical
 authority with disposable in-process derived stores.  It does not repeat Task
@@ -20,8 +20,8 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERAL_PROFILE = "task6b_convergence_fast"
-DELETION_PROFILE = "task6_deletion_fast"
+GENERAL_PROFILE = "analytics_convergence_fast"
+DELETION_PROFILE = "analytics_deletion_fast"
 RESEARCH_GENERAL_EXAMPLES = 30
 RESEARCH_DELETION_EXAMPLES = 20
 GENERAL_TARGET = (
@@ -44,10 +44,10 @@ def _run_target(
 ) -> tuple[dict[str, Any], float]:
     """Run one selected test and return its test-owned, runtime metrics."""
 
-    with TemporaryDirectory(prefix=f"task6b-{name}-") as directory:
+    with TemporaryDirectory(prefix=f"analytics_convergence-{name}-") as directory:
         root = Path(directory)
         metrics = root / "metrics.json"
-        environment = dict(os.environ, TASK6B_METRICS_PATH=str(metrics))
+        environment = dict(os.environ, ANALYTICS_CONVERGENCE_METRICS_PATH=str(metrics))
         if profile is not None:
             environment["HYPOTHESIS_PROFILE"] = profile
         started = perf_counter()
@@ -82,10 +82,10 @@ def _measured_profile(
     document: dict[str, Any], suite: str) -> dict[str, Any]:
     run = document["runs"].get(suite)
     if not isinstance(run, dict) or int(run.get("actual_history_count", 0)) <= 0:
-        raise RuntimeError(f"missing measured Task 6B {suite} history data")
+        raise RuntimeError(f"missing measured {suite} convergence history data")
     histories = int(run["actual_history_count"])
     if len(run["history_wall_clock_seconds"]) != histories:
-        raise RuntimeError(f"Task 6B {suite} timing count is incomplete")
+        raise RuntimeError(f"{suite} convergence timing count is incomplete")
     return run
 
 
@@ -107,19 +107,19 @@ def collect() -> dict[str, Any]:
     if not isinstance(falsifier, dict) or int(
         falsifier.get("actual_generated_call_count", 0)
     ) <= 0:
-        raise RuntimeError("deliberate Task 6B falsifier did not record generated work")
+        raise RuntimeError("deliberate convergence falsifier did not record generated work")
     if general_document["runtime"] != deletion_document["runtime"]:
-        raise RuntimeError("runtime changed between Task 6B profile measurements")
+        raise RuntimeError("runtime changed between convergence profile measurements")
 
     actual_ratio = general["actual_history_count"] / deletion["actual_history_count"]
     research_contract_ratio = RESEARCH_GENERAL_EXAMPLES / RESEARCH_DELETION_EXAMPLES
     if actual_ratio != research_contract_ratio:
         raise RuntimeError(
-            "actual Task 6B CI profile ratio differs from the 30:20 research contract"
+            "actual convergence CI profile ratio differs from the configured 30:20 ratio"
         )
     return {
-        "schema_version": "task6b-local-evidence.v2",
-        "evidence_origin": "tools/qualify_task6b_convergence.py",
+        "schema_version": "analytics-convergence-local-evidence.v2",
+        "evidence_origin": "tools/qualify_analytics_convergence.py",
         "measured_at": datetime.now(timezone.utc).isoformat(),
         "scope": {
             "canonical_authority": (
@@ -159,7 +159,7 @@ def collect() -> dict[str, Any]:
             "measured": falsifier,
         },
         "limitations": [
-            "Local timing is not PR-runner p95 or Task 9 performance closure.",
+            "Local timing is not hosted-runner p95 evidence.",
             "Temporary canonical SQLCipher files do not qualify shipped fixed-runtime persistence.",
             "Fresh in-memory derived stores do not qualify persistent projection/graph restart behavior.",
             "No live creator data, external enrichment, or production traffic trace was used.",

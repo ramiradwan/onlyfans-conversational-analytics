@@ -1,6 +1,6 @@
 """Executable independence verification for the Brain canonical reference model.
 
-Enforces Task 5A independence requirement:
+Enforces the ingestion oracle's independence requirements:
 The pure reference model MUST NOT import or delegate decisions to HistoryRepository,
 production merge functions, canonical SQL, production fingerprint/hash helpers,
 analytics normalization code, or production transition results.

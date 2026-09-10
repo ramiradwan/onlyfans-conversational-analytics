@@ -91,9 +91,9 @@ jobs:
           tests/stateful/test_agent_delivery.py::TestAgentDeliveryDeletion
           -vv
 
-      - name: Run Task 6A deterministic clean rebuilds
+      - name: Run deterministic analytics rebuilds
         env:
-          HYPOTHESIS_PROFILE: task6a_determinism_fast
+          HYPOTHESIS_PROFILE: analytics_determinism_fast
         run: >
           python -m pytest
           --override-ini=addopts=
@@ -101,9 +101,9 @@ jobs:
           -vv
           --hypothesis-show-statistics
 
-      - name: Run Task 6B incremental convergence
+      - name: Run incremental analytics convergence
         env:
-          HYPOTHESIS_PROFILE: task6b_convergence_fast
+          HYPOTHESIS_PROFILE: analytics_convergence_fast
         run: >
           python -m pytest
           --override-ini=addopts=
@@ -111,9 +111,9 @@ jobs:
           -vv
           --hypothesis-show-statistics
 
-      - name: Run Task 6B derived deletion closure
+      - name: Run derived deletion closure
         env:
-          HYPOTHESIS_PROFILE: task6_deletion_fast
+          HYPOTHESIS_PROFILE: analytics_deletion_fast
         run: >
           python -m pytest
           --override-ini=addopts=
@@ -121,11 +121,11 @@ jobs:
           -vv
           --hypothesis-show-statistics
 
-      - name: Run Task 6B permanent falsifiers
+      - name: Run analytics oracle falsifiers
         run: >
           python -m pytest
           --override-ini=addopts=
-          tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults
+          tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults
           tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_forged_topic_or_entity_graph_in_both_artifacts
           tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_stale_deleted_message_metric_in_both_artifacts
           tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness
@@ -308,9 +308,8 @@ jobs:
       - name: Test Windows production boot
         run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
 
-      # Task 5C stays on the required Windows path. Its dated local evidence
-      # measured 65.283443s general, 48.628686s deletion, and 10.400190s
-      # smoke; CI captures runner timing before any profile reduction.
+      # File-backed qualification stays on the required Windows path because
+      # local evidence cannot qualify the packaged runtime or hosted runner.
       - name: Test Windows persistent SQLCipher general profile
         env:
           HYPOTHESIS_PROFILE: tier_b_general
@@ -341,10 +340,10 @@ jobs:
           --junitxml="$env:RUNNER_TEMP\tier-b-smoke-junit.xml"
           -vv
 
-      - name: Retain Windows Task 5C evidence
+      - name: Retain Windows persistence evidence
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: task5c-windows-evidence-${{ github.sha }}
+          name: windows-persistence-evidence-${{ github.sha }}
           path: |
             ${{ runner.temp }}\fixed-sqlcipher-runtime-evidence.json
             ${{ runner.temp }}\tier-b-general-junit.xml

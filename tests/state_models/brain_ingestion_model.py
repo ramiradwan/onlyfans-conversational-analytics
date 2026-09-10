@@ -1,9 +1,8 @@
 """Independent pure reference model for Brain canonical ingestion.
 
 This module provides a pure in-memory reference model of the Brain canonical
-ingestion and persistence state machine. In compliance with the Task 5
-architectural hardening specification and the PR 5R research gate
-(docs/architecture/ingestion-state-contract.md):
+ingestion and persistence state machine. To keep the oracle independent from
+production behavior (see docs/architecture/ingestion-state-contract.md):
 
 1. This model is deliberately small and pure.
 2. It MUST NOT import or delegate decisions to HistoryRepository, production

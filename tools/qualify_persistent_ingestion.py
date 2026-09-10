@@ -41,11 +41,11 @@ def _measure_broken_reopen_shrink() -> dict[str, object]:
     so the two phases must remain explicitly unavailable instead of assigning
     the same total duration to both.
     """
-    with TemporaryDirectory(prefix="task5c-shrink-") as directory:
+    with TemporaryDirectory(prefix="persistent_ingestion-shrink-") as directory:
         class BrokenReopenMachine(RuleBasedStateMachine):
             @initialize()
             def start(self) -> None:
-                self.case_directory = TemporaryDirectory(prefix="task5c-shrink-case-")
+                self.case_directory = TemporaryDirectory(prefix="persistent_ingestion-shrink-case-")
                 self.harness = PersistentHarness(Path(self.case_directory.name), "benchmark-broken", BrokenReopenAdapter)
                 self.harness.seed()
 
@@ -81,10 +81,10 @@ def _measure_broken_reopen_shrink() -> dict[str, object]:
 
 
 def _run_profile(profile: str, target: str) -> dict[str, object]:
-    with TemporaryDirectory(prefix=f"task5c-{profile}-") as directory:
+    with TemporaryDirectory(prefix=f"persistent_ingestion-{profile}-") as directory:
         root = Path(directory)
         metrics = root / "metrics.json"
-        env = dict(os.environ, HYPOTHESIS_PROFILE=profile, TASK5C_METRICS_PATH=str(metrics))
+        env = dict(os.environ, HYPOTHESIS_PROFILE=profile, PERSISTENT_INGESTION_METRICS_PATH=str(metrics))
         started = perf_counter()
         result = subprocess.run([sys.executable, "-m", "pytest", "--basetemp", str(root / "pytest"), "--override-ini=addopts=", target, "-q"], cwd=ROOT, env=env, capture_output=True, text=True)
         if result.returncode:
@@ -98,7 +98,7 @@ def collect() -> dict[str, object]:
     general = _run_profile("tier_b_general", "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral")
     deletion = _run_profile("tier_b_deletion", "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion")
     smoke = _run_profile("windows_persistence_smoke", "tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke")
-    with TemporaryDirectory(prefix="task5c-runtime-") as directory:
+    with TemporaryDirectory(prefix="persistent_ingestion-runtime-") as directory:
         database = CanonicalSQLite(Path(directory) / "canonical.sqlite3")
         with database.read() as connection:
             profile = {
@@ -112,7 +112,7 @@ def collect() -> dict[str, object]:
             cipher = connection.execute("PRAGMA cipher_version").fetchone()[0]
     return {
         "schema_version": 1,
-        "kind": "task5c-local-tier-b-runtime-probe",
+        "kind": "persistent-ingestion-local-runtime-probe",
         "status": "blocked_unfixed_runtime",
         "qualification_claim": "file-backed semantic evidence only; not production-equivalent",
         "wall_clock_seconds": round(perf_counter() - started, 6),
