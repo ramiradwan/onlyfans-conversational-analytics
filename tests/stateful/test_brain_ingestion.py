@@ -1,9 +1,4 @@
-"""Tier A model-based assurance for the authoritative HistoryRepository seam.
-
-The repository-level catalogue contains 42 entries: D01-D09, A01-A14, and
-N01-N12/N14-N20. S01-S03 belong to transport admission and N13 belongs to
-protocol parsing, so this suite does not claim them.
-"""
+"""Verify HistoryRepository ingestion against the reference model."""
 
 from __future__ import annotations
 

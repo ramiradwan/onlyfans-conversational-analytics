@@ -364,13 +364,7 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
 
 
 async def _schedule_analytics_rebuild(account_id: str) -> None:
-    """Rebuild derived analytics projections after a canonical commit.
-
-    Fire-and-forget and defensive: the derived-analytics coordinator must never
-    fail or slow the canonical ingestion path. The ingest.ack has already been
-    sent by the time this runs, so the awaited scheduling only enqueues a
-    coalesced rebuild and returns.
-    """
+    """Queue a coalesced analytics rebuild after acknowledgement."""
 
     from app.analytics.runtime import request_projection_rebuild
 

@@ -9,10 +9,7 @@ from app.provisioning.progress_reporting import configured_runtime_onboarding_pr
 from app.transport.manager import InMemoryTransportManager
 
 
-# Cross-subsystem construction occurs here, above the resources being
-# connected. Persistence owns repository construction only; transport receives
-# the persistence resources it uses; analytics receives its canonical read
-# adapter independently.
+# Compose persistence, transport, and analytics at the application boundary.
 repositories = create_canonical_repositories(
     settings.canonical_persistence_backend,
     canonical_path=(

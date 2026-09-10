@@ -139,17 +139,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Start the local launcher or the internal Brain process mode."""
     arguments = tuple(sys.argv[1:] if argv is None else argv)
     if arguments == ("--sqlcipher-runtime-report",):
-        # This is a diagnostic probe used by the package qualification job. It
-        # does not select an application, open a configured store, or start a
-        # listener, so it cannot change normal runtime behavior.
+        # Report the packaged SQLCipher runtime without starting the service.
         import json
 
         from app.persistence.sqlcipher_runtime import qualification_report
 
         rendered_report = json.dumps(qualification_report(), sort_keys=True)
-        # Brain.exe is a Windows GUI executable, so its stdout is not a
-        # dependable test channel. The package qualifier supplies this path
-        # and reads the exact bytes emitted by the frozen process instead.
+        # Write to a file because the Windows GUI executable has no stable stdout.
         report_path = os.environ.get(SQLCIPHER_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE)
         if report_path:
             Path(report_path).write_text(rendered_report + "\n", encoding="utf-8")

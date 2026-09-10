@@ -1,10 +1,4 @@
-"""Thin test adapter translating independent model commands to production calls.
-
-Drives HistoryRepository.begin_snapshot, add_snapshot_chunk, commit_snapshot,
-and commit_delta, the exact canonical authority invoked by transport manager.
-Normalizes results and InvariantViolation exceptions into a standard outcome.
-Provides an observation seam over canonical SQLite for invariant verification.
-"""
+"""Translate ingestion-model commands into HistoryRepository calls."""
 
 from __future__ import annotations
 

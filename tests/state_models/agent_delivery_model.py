@@ -134,8 +134,7 @@ class AgentDeliveryModel:
     fence: str | None = None
     sync_required: bool = False
     replay: list[int] = field(default_factory=list)
-    # This is deliberately a declarative build plan.  It is not a storage cursor
-    # or a reproduction of the implementation's scan fields.
+    # This declarative plan is independent of the storage cursor.
     snapshot_kinds_remaining: list[str] = field(default_factory=list)
 
     def _preserve_override(self, kind: str, entity_id: str, previous: dict[str, Any] | None) -> None:
@@ -221,9 +220,7 @@ class AgentDeliveryModel:
         kind = self.snapshot_kinds_remaining.pop(0)
         store = {"chat": self.chats, "message": self.messages, "coverage_evidence": self.coverage}[kind]
         records = []
-        # Contract semantics define a chunk as a bounded entity collection; the
-        # storage cursor order is observed and normalized by the adapter, rather
-        # than copied into this independent model.
+        # Chunk semantics do not depend on storage cursor order.
         keys = sorted(store)
         for entity_id in keys:
             value = store[entity_id]; override = self.overrides.get(f"{kind}:{entity_id}")

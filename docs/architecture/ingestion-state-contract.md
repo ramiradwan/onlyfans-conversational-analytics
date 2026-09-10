@@ -2,28 +2,20 @@
 
 # Ingestion state contract
 
-This contract defines canonical ingestion and durable Agent-delivery behavior. It is derived from the executable specification in `app/protocol/payloads.py`, `app/protocol/common.py`, `app/transport/ingestion.py`, `app/transport/manager.py`, `app/persistence/history.py`, `extension/transport/durable-outbox.mjs`, `extension/transport/entity-merge.mjs`, `extension/transport/agent-websocket.mjs`, the shared protocol fixtures under `shared/fixtures/protocol/v2/`, and accepted architecture decision records (ADR 0001, ADR 0002, ADR 0003, ADR 0004, ADR 0005, ADR 0006, ADR 0008, ADR 0009, ADR 0010, ADR 0019, ADR 0020, ADR 0021, and ADR 0022). Proposed ADR 0012 is not assumed.
-
-It establishes the state-transition catalogue, quality scenarios, independent model scopes, per-transition oracle assertions, persistent-backend qualification requirements, and CI calibration rules for the Python reference model, file-backed Brain tests, and JavaScript Agent harness.
+This contract defines canonical ingestion and durable Agent delivery. It covers transitions, reference models, oracle checks, persistent-backend qualification requirements, and CI profiles. The `CODE-VERIFY` header identifies primary implementation sources.
 
 ## 1. Operating context and authority boundaries
 
-The production ingestion pipeline spans two distinct runtime components separated by loopback WebSocket transport:
+Ingestion crosses two local runtime components:
 
-1. **Agent (`extension/`):** Sole producer of raw observations under creator consent. It maintains account-partitioned durable state (`INGESTION_STORES` in IndexedDB), detects semantic no-ops, sequences outbound changes monotonically (`last_source_seq`), stages bounded snapshot chunks, and tracks transport acknowledgement (`acknowledged_source_seq`).
-2. **Brain (`app/`):** Authoritative local service. Admission and fencing occur in `app/transport/manager.py`. Authoritative canonical persistence commits strictly through `HistoryRepository` in `app/persistence/history.py`. Read-only canonical state is exposed to downstream analytics through `HistoryAnalyticsSource` in `app/analytics/canonical_source.py`.
+1. **Agent (`extension/`):** Captures consented observations, stores an account-scoped IndexedDB outbox, assigns source sequences, stages snapshots, and tracks acknowledgements.
+2. **Brain (`app/`):** Admits and fences sessions, commits through `HistoryRepository`, and exposes canonical reads through `HistoryAnalyticsSource`.
 
 In-memory sequencing in `app/transport/ingestion.py` provides a copy-on-write model used in selected unit tests. The authoritative commit point for all acknowledged source effects is `HistoryRepository`.
 
 ## 2. Ingestion state transition catalogue
 
-Every entry in this catalogue is classified under one of four normative categories:
-- **`normative behavior`:** Invariant required by protocol, persistence authority, or accepted ADRs.
-- **`implementation detail`:** Internal execution mechanism subject to refactoring without altering semantics.
-- **`existing regression evidence`:** Invariant verified by existing deterministic tests in the repository.
-- **`measurement/calibration input`:** Empirical property used for test distribution tuning or CI budget profiling.
-
-Each entry specifies: stimulus, precondition, expected disposition, expected state mutation, expected non-mutation, retryability, persistent/restart expectation, and protected invariant.
+Catalogue classifications are `normative behavior`, `implementation detail`, `existing regression evidence`, and `measurement/calibration input`. Each entry states its input, precondition, result, mutations, retry behavior, restart behavior, and protected invariant.
 
 ### 2.1 Stream admission and session fencing
 
@@ -648,7 +640,7 @@ The six mandatory quality scenarios from Section 11 are defined with explicit st
 
 ## 4. Independent reference models
 
-To prevent circular reasoning, the assurance suites use independent reference models that do not import production persistence or merge code.
+Reference models do not import production persistence or merge code.
 
 ### 4.1 Brain independent reference model (`tests/state_models/brain_ingestion_model.py`)
 
@@ -705,7 +697,7 @@ $$\text{CleanHistory} \equiv \text{History} + \text{DuplicateFrames} \equiv \tex
 
 ### 5.3 Permanent oracle falsifiers
 
-The test suite must include four permanent broken test doubles/adapters proving that the oracle actively catches violations:
+Permanent faulty adapters verify that the oracle detects each violation:
 
 1. **`BrokenGapAdapter`:** Advances the stream checkpoint upon receiving a sequence gap.
    - *Target failure:* Catches improper sequence advancement on non-contiguous frames.
@@ -734,9 +726,8 @@ PRAGMA cipher_plaintext_header_size = 0;
 ```
 
 - **Encryption:** SQLCipher 256-bit AES encryption with 32-byte device-bound key managed by `LocalDataKey` / DPAPI.
-- **Concurrency & Writer Serialization:** `app/persistence/database.py` only shows in-process `_connection_locks` around connection open/close transitions and accounting, alongside an exclusive lock during schema migrations and lifecycle changes. Individual transaction execution (`BEGIN IMMEDIATE` / `COMMIT`) occurs outside those locks on fresh `check_same_thread=False` connections, relying on SQLite's internal `BEGIN IMMEDIATE` writer serialization.
-- **Multi-connection & Checkpoint Profile:** Multiple concurrent application connections/threads and active SQLite WAL checkpoint behavior operate concurrently and remain relevant, active, and unexcluded from the runtime profile.
-- **Connection Model:** Native connections are wrapped in `_TrackedConnection` to maintain reference counts and enforce transition accounting.
+- **Concurrency:** Fresh `check_same_thread=False` connections use SQLite `BEGIN IMMEDIATE` writer serialization. `_connection_locks` protect connection accounting and lifecycle changes, not transaction execution.
+- **Connection model:** `_TrackedConnection` records active connections. WAL checkpoints may overlap application connections.
 
 ### 6.2 Distinction between local development and shipped package
 
@@ -780,7 +771,7 @@ If CI budget pressure requires tuning, example counts must be reduced before rem
 
 ### 7.2 Deletion profile guarantee
 
-Informal transition probability is insufficient to stress deletion boundaries. At least **40% of generated CI histories** must run under dedicated deletion-focused profiles, where entity creation is forced early followed by adversarial replay, stale delta delivery, snapshot re-ingestion, and restart cut points.
+At least **40% of generated CI histories** use deletion profiles. They create entities before replay, stale delivery, snapshot re-ingestion, and restart operations.
 
 ### 7.3 Shrinking benchmark protocol
 
@@ -814,4 +805,4 @@ When a stateful invariant fails, Hypothesis shrinks the operation trace to a min
 - `extension/qualification/ingestion-model-harness.mjs` drives the production durable outbox and encrypted IndexedDB adapter through reconnect, restart, snapshot, and deletion histories.
 - `tests/hardening/falsifiers/test_falsifiers.py` proves that the shared oracle rejects gap, duplicate, deletion, staging, reopen, and split-commit faults.
 
-The local file-backed evidence does not qualify the packaged Windows runtime. Production-equivalent qualification requires the checksum-pinned fixed SQLCipher wheel and frozen executable to pass on hosted Windows runners with retained provenance. Derived projection and graph deletion behavior is covered separately by the rebuild equivalence contract.
+Packaged-runtime evidence requires hosted Windows runners to probe the pinned SQLCipher wheel and frozen executable. The rebuild equivalence contract covers derived-state deletion.

@@ -1,9 +1,4 @@
-"""Clean derived-state builds are deterministic under one frozen context.
-
-The property operates on immutable canonical read models, the same production
-read boundary supplied to analytics after canonical persistence.  It does not
-exercise incremental maintenance; the convergence suite covers that behavior.
-"""
+"""Verify deterministic clean builds under a frozen context."""
 
 from __future__ import annotations
 
@@ -73,12 +68,7 @@ class StaticCanonicalSource:
 
 @st.composite
 def canonical_accounts(draw: st.DrawFn) -> AccountReadModel:
-    """Canonical finals with order, retention-boundary, and deletion coverage.
-
-    A `deleted` command in the recorded canonical trace is represented by the
-    final canonical read model omitting that record, as the production read
-    boundary does for tombstoned rows.
-    """
+    """Generate canonical states covering order, retention, and deletion."""
 
     conversation_count = draw(st.integers(min_value=0, max_value=3))
     conversations: dict[str, dict[str, Any]] = {}

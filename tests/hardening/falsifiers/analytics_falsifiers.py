@@ -66,8 +66,7 @@ class BrokenIdentityAdapter:
 
     @staticmethod
     def apply(artifact: RebuildArtifact) -> RebuildArtifact:
-        # This deliberately depends on a mutable traversal position, rather
-        # than canonical account/conversation/message identity.
+        # Use traversal position to create unstable identity.
         position = len(artifact.projection.message_enrichments) - 1
         selected = artifact.projection.message_enrichments[position].model_copy(
             update={

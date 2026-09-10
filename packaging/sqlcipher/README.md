@@ -1,19 +1,10 @@
 # Fixed SQLCipher Windows wheel
 
-`sqlcipher3==0.6.2+ofca.1` is a local-version wheel retaining the upstream
-`sqlcipher3.dbapi2` API. It replaces only the binding's vendored SQLCipher
-amalgamation with SQLCipher 4.17.0, built from the exact source commit and
-checksums in [fixed-runtime-sources.json](fixed-runtime-sources.json).
+`sqlcipher3==0.6.2+ofca.1` retains the upstream `sqlcipher3.dbapi2` API and uses SQLCipher 4.17.0. [fixed-runtime-sources.json](fixed-runtime-sources.json) pins source commits and checksums.
 
-The builder uses the Windows x64 MSVC tools, generates the SQLCipher
-amalgamation with the upstream `Makefile.msc`, and links it with the static
-`x64-windows-static-md` OpenSSL port resolved by the exact vcpkg commit. That
-triplet keeps the native OpenSSL library on CPython's `/MD` runtime. No compiled wheel, DLL, or
-credential is checked into this repository. The wheelhouse contains both the
-wheel SHA-256 and `sqlcipher3-0.6.2+ofca.1.provenance.json`, which must be
-retained with a release's build record.
+The builder uses Windows x64 MSVC and the pinned vcpkg OpenSSL `x64-windows-static-md` port. It writes the wheel SHA-256 and `sqlcipher3-0.6.2+ofca.1.provenance.json` beside the wheel. Retain both with the release build record. Compiled artifacts and credentials are not tracked.
 
-On a Windows development machine, run this before installing dependencies:
+Build and install on Windows:
 
 ```powershell
 .\packaging\sqlcipher\build-fixed-wheel.ps1 `
@@ -22,18 +13,8 @@ On a Windows development machine, run this before installing dependencies:
 python -m pip install --find-links "$env:TEMP\ofca-sqlcipher-wheelhouse" -r requirements-dev.txt
 ```
 
-The package workflow builds a new wheel from these exact inputs for every
-release candidate and installs only that wheel into the isolated PyInstaller
-environment. The normal Windows CI job follows the same path. Uploading the
-wheelhouse is evidence retention only; releases never consume a mutable
-previous-run artifact or dependency cache.
+Windows CI and the package workflow build from the pinned inputs. Release builds install the new wheel into an isolated PyInstaller environment. Uploaded wheelhouses retain evidence and are not reused as release inputs.
 
-The source bundle retains the SQLCipher Community Edition license files and
-the binding license. The release's `THIRD_PARTY_NOTICES.md` names both. A
-successful build alone is not a production-equivalent qualification: the
-runtime probe and frozen executable probe must both report SQLite >= 3.51.3
-and SQLCipher >= 4.14.0, and their evidence must be preserved.
-The probe treats `PRAGMA cipher_integrity_check` according to SQLCipher's
-documented result contract: no rows means the encrypted database is externally
-consistent, while every returned row is an integrity error that fails
-qualification.
+The source bundle includes SQLCipher Community Edition and binding licenses. `THIRD_PARTY_NOTICES.md` identifies both.
+
+Release evidence must include runtime and frozen-executable probes reporting SQLite 3.51.3 or later and SQLCipher 4.14.0 or later. `PRAGMA cipher_integrity_check` passes only when it returns no rows.

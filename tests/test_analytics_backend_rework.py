@@ -305,12 +305,7 @@ async def seed(
 
 
 async def seed_default(name: str) -> FixtureSnapshot:
-    """Seed the shared default runtime's canonical history and schedule its build.
-
-    Canonical commits do not yet self-schedule an analytics rebuild in
-    production (see the report accompanying this port); tests drive the
-    scheduler explicitly the way a future post-commit hook would.
-    """
+    """Seed canonical history and build the default analytics projection."""
     payload = snapshot(name)
     seed_canonical_snapshot(transport_manager.history, payload)
     account = HistoryAnalyticsSource(transport_manager.history).account_read_model(
@@ -746,16 +741,8 @@ async def test_get_is_read_only_and_preserves_revision_tagged_failure(
     assert await runtime.scheduler.close(timeout=1)
 
 
-# The signer-v2 canonical commit path now drives a post-commit analytics
-# rebuild: app/api/endpoints/transport_ws.py acks the commit, schedules the
-# durable read-model projection, then calls
-# analytics_runtime.request_projection_rebuild(account_id), which coalesces a
-# scheduler-owned rebuild for the committed view_revision. This closes the gap
-# that the former IngestionService.set_projection_scheduler seam covered before
-# the in-memory ingestion cache was retired. The two tests below pin the new
-# contract: the request targets the committed revision, and it stays a no-op on
-# the non-sqlite default backend so memory-backed flows keep the startup-only
-# behavior and never spin the coordinator on the ingestion hot path.
+# Post-commit rebuild requests target the committed revision and are disabled
+# for the in-memory backend.
 
 
 @pytest.mark.asyncio

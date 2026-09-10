@@ -1,10 +1,4 @@
-"""Controls for the machine-readable architecture assurance baseline.
-
-The assertions here are intentionally structural.  They bind the published
-assurance report to the authoritative manifest and to the permanent controls
-which prove the controls can still reject a violation.  They do not turn a
-local generated measurement into hosted-runner or release evidence.
-"""
+"""Verify the machine-readable architecture baseline and its controls."""
 
 from __future__ import annotations
 
@@ -37,9 +31,7 @@ QUALIFIED_INGESTION_ANALYTICS_INVARIANTS = frozenset(
     }
 )
 
-# Each enforced rule has a named fixture or deliberately invalid input.  These
-# controls are kept separate from the production check so a passing production
-# graph cannot mask a detector that has stopped detecting violations.
+# Negative controls verify that each enforced rule rejects violations.
 RULE_NEGATIVE_CONTROLS = {
     "rule-canonical-read-model-ownership": (
         "tests/test_architecture_contracts.py::"
@@ -78,8 +70,7 @@ RULE_NEGATIVE_CONTROLS = {
     "rule-bridge-protected-acyclic": "frontend/tests/architecture-boundaries.test.ts",
 }
 
-# The report is deliberately keyed by its published labels. This makes an
-# added, omitted, renamed, or stale row fail the repository assurance check.
+# Published labels are part of the checked report contract.
 ASSURANCE_COUNT_LABELS = {
     "Modules": "modules",
     "Semantic invariants": "semantic_invariants",
@@ -348,7 +339,7 @@ def test_composition_census_fences_governance_and_ci_remain_closed() -> None:
     assert exception[0]["target"] == "app.analytics"
 
 
-def test_computed_task9_baseline_counts_are_stable() -> None:
+def test_computed_baseline_counts_are_stable() -> None:
     assert baseline_counts() == {
         "modules": 25,
         "semantic_invariants": 22,

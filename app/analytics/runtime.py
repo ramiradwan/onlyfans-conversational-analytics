@@ -1,4 +1,4 @@
-"""Explicitly configured process-local lifecycle for derived analytics."""
+"""Process-local lifecycle for derived analytics."""
 
 from __future__ import annotations
 
@@ -61,13 +61,7 @@ def configure_default_analytics_runtime(
     activation: ProjectionActivationRepository | None = None,
     post_commit_rebuild_enabled: bool | None = None,
 ) -> AnalyticsRuntime:
-    """Register bootstrap-owned dependencies for the default analytics runtime.
-
-    This module deliberately does not look up transport, persistence settings,
-    or activation state.  The application bootstrap supplies those dependencies
-    in construction order and this runtime owns only the derived pipeline and
-    scheduler built from them.
-    """
+    """Configure the default runtime from bootstrap-owned dependencies."""
 
     if backend not in {"memory", "sqlite"}:
         raise ValueError(f"Unsupported analytics backend {backend!r}")
@@ -122,7 +116,7 @@ def configure_default_analytics_runtime(
 def analytics_runtime(
     source: CanonicalReadModelSource | None = None,
 ) -> AnalyticsRuntime:
-    """Return the registered default or an explicit-source analytics runtime."""
+    """Return the default runtime or one built from an explicit source."""
 
     with _RUNTIME_LOCK:
         configuration: _DefaultRuntimeConfiguration | None = None
@@ -198,7 +192,7 @@ def projection_scheduler(
 
 
 async def start_default_analytics_runtime() -> InProcessProjectionScheduler:
-    """Start only the configured analytics scheduler and recover projections."""
+    """Start the configured scheduler and recover projections."""
 
     scheduler = projection_scheduler()
     await scheduler.start(recover=True)
@@ -206,7 +200,7 @@ async def start_default_analytics_runtime() -> InProcessProjectionScheduler:
 
 
 def launch_default_analytics_runtime() -> asyncio.Task[None]:
-    """Launch derived recovery without coordinating another subsystem lifecycle."""
+    """Launch derived-state recovery."""
 
     global _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     scheduler = projection_scheduler()
@@ -241,7 +235,7 @@ async def request_projection_rebuild(
     *,
     source: CanonicalReadModelSource | None = None,
 ) -> bool:
-    """Request a coalesced derived rebuild after an accepted canonical commit."""
+    """Request a coalesced rebuild after a canonical commit."""
 
     if source is None:
         with _RUNTIME_LOCK:
@@ -263,7 +257,7 @@ async def request_projection_rebuild(
 
 
 async def shutdown_default_analytics_runtime(*, timeout: float = 5.0) -> bool:
-    """Close only the default analytics scheduler and await its owned work."""
+    """Close the default scheduler and await its work."""
 
     with _RUNTIME_LOCK:
         configuration = _DEFAULT_CONFIGURATION
@@ -288,7 +282,7 @@ async def shutdown_default_analytics_runtime(*, timeout: float = 5.0) -> bool:
 
 
 def reset_analytics_runtimes() -> None:
-    """Clear derived process state while preserving explicit bootstrap wiring."""
+    """Clear derived process state and bootstrap configuration."""
 
     global _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     with _RUNTIME_LOCK:

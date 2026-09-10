@@ -1,9 +1,4 @@
-"""Generate measured local evidence for the analytics convergence harness.
-
-The artifact is deliberately limited to a temporary file-backed canonical
-authority with disposable in-process derived stores.  It does not repeat Task
-5C's persistence qualification or make a production-equivalent claim.
-"""
+"""Record local analytics-convergence evidence as JSON."""
 
 from __future__ import annotations
 
@@ -42,7 +37,7 @@ def _run_target(
     target: str,
     profile: str | None,
 ) -> tuple[dict[str, Any], float]:
-    """Run one selected test and return its test-owned, runtime metrics."""
+    """Run one test and return its runtime metrics."""
 
     with TemporaryDirectory(prefix=f"analytics_convergence-{name}-") as directory:
         root = Path(directory)
@@ -90,7 +85,7 @@ def _measured_profile(
 
 
 def collect() -> dict[str, Any]:
-    """Measure both explicit CI profiles and the expected-failure harness."""
+    """Measure CI profiles and the expected-failure check."""
 
     general_document, general_process_seconds = _run_target(
         name="general", target=GENERAL_TARGET, profile=GENERAL_PROFILE

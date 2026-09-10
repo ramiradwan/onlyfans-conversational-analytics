@@ -1,10 +1,4 @@
-"""Build the fixed Windows sqlcipher3 wheel from checksum-pinned sources.
-
-This script deliberately has no checked-in native artifact.  It constructs the
-amalgamation from the pinned SQLCipher Community Edition source, links the
-existing DB-API binding against the pinned vcpkg OpenSSL port, and records the
-resulting wheel digest.  It must run on Windows from an x64 MSVC environment.
-"""
+"""Build and verify a Windows sqlcipher3 wheel from pinned sources."""
 
 from __future__ import annotations
 
@@ -94,9 +88,7 @@ def _vcvars64() -> Path:
 
 
 def _cmd_with_msvc(vcvars: Path, body: str) -> str:
-    # subprocess's Windows argv conversion makes `cmd /c call "..."` pass
-    # literal quote characters to call. Let the Windows shell parse the one
-    # reviewed command string so vcvars64 works from paths containing spaces.
+    # Pass one command string so cmd.exe handles quoted vcvars64 paths.
     return f'call "{vcvars}" && {body}'
 
 
@@ -191,7 +183,7 @@ def _build(
     _rewrite_binding_version(binding, sources["binding"]["local_version"])
     vcvars = _vcvars64()
     _run(_cmd_with_msvc(vcvars, "nmake /nologo /f Makefile.msc sqlite3.c"), cwd=cipher)
-    # Validate the generated amalgamation before it becomes a binding input.
+    # Validate the amalgamation before compiling the binding.
     amalgamation_sha256 = _assert_generated_runtime(cipher / "sqlite3.c")
     for name in ("sqlite3.c", "sqlite3.h"):
         generated = cipher / name
@@ -206,8 +198,7 @@ def _build(
         raise RuntimeError("the reviewed static vcpkg OpenSSL layout is unavailable")
     compiler_version = _msvc_compiler_version(vcvars)
     openssl_port_version = _openssl_port_version(installed)
-    # vcvars64 establishes its own INCLUDE/LIB values, so add vcpkg after it
-    # rather than relying on an inherited environment to survive that call.
+    # Add vcpkg after vcvars64 replaces INCLUDE and LIB.
     body = (
         f'set "INCLUDE={openssl_include};%INCLUDE%" && '
         f'set "LIB={openssl_lib};%LIB%" && '
@@ -283,8 +274,7 @@ def main() -> int:
             python_executable=python_executable,
             sources=sources,
         )
-    # CI/local default builds need no debug tree after producing a wheel and
-    # provenance record. Keep an explicit --work-root intact for diagnosis.
+    # Preserve explicit work roots for diagnosis; remove temporary defaults.
     with tempfile.TemporaryDirectory(prefix="ofca-fixed-sqlcipher-") as temporary:
         return _build(
             root=Path(temporary).resolve(),

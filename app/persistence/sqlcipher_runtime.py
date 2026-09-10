@@ -80,9 +80,7 @@ def encryption_fail_closed_probe() -> dict[str, bool | str]:
         try:
             connection.execute(f"PRAGMA key = \"x'{key}'\"")
             readback = connection.execute("SELECT value FROM probe").fetchone()[0]
-            # SQLCipher emits one row for each external consistency error. An
-            # empty result is the successful outcome documented for this
-            # pragma; any row is retained as a qualification failure.
+            # cipher_integrity_check passes only when it returns no rows.
             integrity_errors = connection.execute("PRAGMA cipher_integrity_check").fetchall()
         finally:
             connection.close()

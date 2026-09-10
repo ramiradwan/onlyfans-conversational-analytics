@@ -1,12 +1,4 @@
-"""
-Main entry point for the OnlyFans Conversational Analytics API.
-
-This FastAPI app exposes:
-- authenticated protocol-v2 ingestion, settings, and message-page routes
-- Agent and Bridge WebSocket transports
-- Frontend React app (built with Vite) served via Jinja2 templates
-- Static assets (JS/CSS) from the Vite build
-"""
+"""FastAPI application for ingestion, analytics, Agent, and Bridge traffic."""
 
 import logging
 
@@ -38,11 +30,7 @@ _installation_key_reference: InstallationKeyReference | None = None
 
 
 def configure_analytics_runtime():
-    """Compose the derived runtime from already constructed application resources.
-
-    Bootstrap owns the canonical read adapter and connects it to the derived
-    runtime. Transport receives its persistence resources independently.
-    """
+    """Build the analytics runtime from application-owned resources."""
 
     return analytics_runtime.configure_default_analytics_runtime(
         history_source,
@@ -56,19 +44,12 @@ def configure_analytics_runtime():
     )
 
 
-# Register explicit bootstrap wiring at application construction time so
-# request handlers and isolated tests never make service code discover it.
+# Register dependencies before handlers request the default runtime.
 configure_analytics_runtime()
 
 
 def initialize_installation_key() -> InstallationKeyReference:
-    """Ready the TPM-backed installation key for this installation.
-
-    A test runtime adopts a key that is already active, because its durable
-    store outlives the process while the provider that produced the key need
-    not be one this host can open. Every other runtime proves the key through
-    the provider authority, and a test runtime holding no active key does too.
-    """
+    """Load or create the TPM-backed installation key."""
     global _installation_key_authority, _installation_key_reference
     store = SQLiteAuthenticationStore(settings.auth_database_path)
     if settings.environment.lower() == "test":
@@ -164,9 +145,7 @@ async def startup_event():
     activate_runtime()
     await broadcast.connect()
     await transport_manager.start()
-    # Settings and persistence paths are bootstrap inputs, not analytics-service
-    # discoveries. Reconfigure here so a fresh process lifecycle uses its
-    # current explicitly constructed transport/canonical resources.
+    # Use resources created for this application lifecycle.
     configure_analytics_runtime()
     # Recover every canonical account's analytics projection in the
     # background; readiness must not wait on this potentially slow replay.

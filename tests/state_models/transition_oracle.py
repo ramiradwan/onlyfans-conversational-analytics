@@ -1,10 +1,4 @@
-"""Transition-by-transition oracle comparing pure model and production.
-
-Asserts equality of disposition, error code, retryability, checkpoints,
-canonical revisions, active entities, tombstones, and staging isolation.
-Enforces non-mutation on duplicate, gap, and rejected transitions.
-Formats failures as structured, replayable command traces.
-"""
+"""Compare each production ingestion transition with the pure model."""
 
 from __future__ import annotations
 

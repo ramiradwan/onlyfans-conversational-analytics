@@ -1429,7 +1429,7 @@
       "source": "app/persistence/projection_activation.py",
       "target": "app.analytics",
       "rule": "rule-projection-coordination-boundary",
-      "reason": "Projection activation coordinates canonical revision and analytics projection publication identity; entangled with active publication state and intentionally preserved in current design.",
+      "reason": "Projection activation coordinates canonical revisions with analytics publication identity.",
       "status": "current_design",
       "introduced_by": "ADR 0020",
       "tracking_issue": "DESIGN-PROJECTION-ACTIVATION-IDENTITY",

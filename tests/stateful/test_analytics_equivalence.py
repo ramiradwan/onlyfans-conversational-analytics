@@ -1,10 +1,4 @@
-"""Verify that real incremental analytics converges with a clean rebuild.
-
-Each command goes through ``HistoryRepository.commit_delta``.  After every
-delivery the same live ``AnalyticsPipeline`` takes its normal incremental
-publication path.  Clean comparisons always use fresh in-memory derived
-stores over the final committed canonical witness.
-"""
+"""Verify incremental analytics against a clean rebuild."""
 
 from __future__ import annotations
 
@@ -91,9 +85,7 @@ TEXTS = (
 
 
 for profile, examples in (
-    # Every example contains every operation family. The fast counts are the
-    # measured CI calibration; explicit stress profiles provide broader local
-    # exploration without increasing the required pull-request path.
+    # Every profile covers each operation family.
     ("analytics_convergence_fast", 6),
     ("analytics_convergence_stress", 30),
     ("analytics_convergence_dev", 2),
@@ -1021,9 +1013,7 @@ def test_analytics_convergence_falsifiers_reject_metric_provenance_identity_grap
     expected_semantics = expected_semantic_from_canonical(
         CREATOR_ID, history_source_for(repositories).account_read_model(CREATOR_ID), context
     )
-    # The generated profiles additionally compare the full independent active
-    # identity map.  These are direct semantic faults, so the context check
-    # itself detects the provenance case before structural comparison.
+    # Generated profiles compare the full independent identity map.
     with pytest.raises(AnalyticsOracleMismatch, match="semantic_projection"):
         assert_incremental_rebuild_convergence(
             BrokenMetricAdapter.apply(incremental), rebuilt, context,

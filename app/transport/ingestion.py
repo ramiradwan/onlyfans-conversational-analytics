@@ -1,10 +1,4 @@
-"""Durable-ingestion sequencing and the replaceable repository boundary.
-
-The in-memory repository is intentionally the only class that owns storage
-mutation. Sequencing and validation live in :class:`IngestionService`, so a
-database-backed repository can replace it without moving protocol rules into
-the WebSocket endpoint.
-"""
+"""Durable-ingestion sequencing and repository interfaces."""
 
 from __future__ import annotations
 

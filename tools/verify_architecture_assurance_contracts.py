@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Audit the ingestion and rebuild contracts against repository source.
-
-Performs static AST inspection of codebase symbols, constants, and pragmas
-without importing application modules or triggering settings/environment errors.
-Verifies the complete structural and semantic integrity of:
-- docs/architecture/ingestion-state-contract.md
-- docs/architecture/rebuild-equivalence-contract.md
-"""
+"""Verify architecture contracts against repository source."""
 
 from __future__ import annotations
 

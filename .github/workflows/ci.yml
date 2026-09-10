@@ -211,9 +211,7 @@ jobs:
           path: extension/dist/
 
   fixed-sqlcipher-wheel:
-    # One immutable same-run wheel feeds both Windows test jobs. This avoids
-    # compiling OpenSSL twice while never letting a release consume a mutable
-    # cross-run artifact; windows-package.yml rebuilds independently.
+    # Both Windows test jobs use this run's wheel.
     runs-on: windows-latest
 
     steps:
@@ -259,9 +257,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
 
-      # The Windows marker in requirements.txt deliberately names an internal
-      # local-version wheel. Consume only the immutable output from this
-      # workflow run's pinned-source build job before pip resolves it.
+      # Install this run's pinned Windows wheel before resolving requirements.
       - name: Retrieve fixed SQLCipher wheel
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:

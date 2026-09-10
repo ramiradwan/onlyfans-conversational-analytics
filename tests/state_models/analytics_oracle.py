@@ -1,10 +1,4 @@
-"""Independent semantic comparison vocabulary for analytics rebuilds.
-
-This module deliberately does not call the pipeline's digest or comparison
-helpers.  It classifies the public rebuild artifact according to the checked-in
-rebuild-equivalence contract, then compares normalized semantic and provenance
-surfaces directly.
-"""
+"""Independent semantic oracle for analytics rebuilds."""
 
 from __future__ import annotations
 
@@ -130,14 +124,7 @@ def _sorted_models(values: list[Any], *keys: str) -> list[dict[str, Any]]:
 
 
 def normalize_artifact(artifact: RebuildArtifact) -> dict[str, Any]:
-    """Return all supported semantic fields, excluding lifecycle fields.
-
-    `projection_generation`, publication epochs, staged generation ids, lease
-    ownership, and execution timestamps are intentionally absent: none are part
-    of `RebuildArtifact` semantic output.  `projection_digest` is normalized
-    with its lifecycle generation removed, matching the contract's composite
-    digest rule.
-    """
+    """Return semantic fields without projection lifecycle values."""
 
     projection = artifact.projection
     projection_document = _model(projection)
@@ -168,9 +155,7 @@ def normalize_artifact(artifact: RebuildArtifact) -> dict[str, Any]:
             "creator_metrics": _model(projection.creator_metrics),
             "graph": _model(projection.graph),
             "graph_digest": projection.graph_digest,
-            # Two fresh stores both allocate generation 1, so the composite
-            # digest is comparable. Convergence checks remove lifecycle data
-            # because incremental and rebuilt generations may differ.
+            # Fresh stores share a generation; convergence removes this field.
             "projection_digest": projection.projection_digest,
             "projection_without_lifecycle": projection_document,
         },
@@ -265,9 +250,7 @@ def expected_active_refs(
     return {"conversations": conversations, "participants": participants, "messages": messages}
 
 
-# This vocabulary is intentionally owned by the oracle.  It mirrors the
-# public baseline specification rather than importing analyzer, metric, graph,
-# identity, digest, or projection-normalization production helpers.
+# Keep oracle vocabulary independent of production analytics helpers.
 _TOKEN_RE = re.compile(r"[\w']+", flags=re.UNICODE)
 _POSITIVE_TERMS = frozenset(
     {
@@ -1191,15 +1174,7 @@ def assert_deterministic_rebuilds(
 
 
 def normalize_convergence_artifact(artifact: RebuildArtifact) -> dict[str, Any]:
-    """Normalize convergence output, excluding documented lifecycle material.
-
-    A live incremental store allocates later projection generations than a
-    clean store.  Its composite projection digest legitimately includes that
-    generation, so convergence compares the public projection shape with the
-    lifecycle field removed rather than treating a digest mismatch as a
-    semantic difference.  The graph digest remains included because it is a
-    documented semantic digest.
-    """
+    """Normalize convergence output without lifecycle fields."""
 
     normalized = normalize_artifact(artifact)
     normalized["semantic_projection"].pop("projection_digest", None)
@@ -1214,13 +1189,7 @@ def assert_incremental_rebuild_convergence(
     expected_refs: dict[str, set[str]] | None = None,
     expected_semantics: dict[str, Any] | None = None,
 ) -> None:
-    """Compare live incremental publication with a clean production rebuild.
-
-    This reuses the clean-rebuild field taxonomy but does not compare
-    projection-generation-dependent composite digests.  It compares all
-    semantic and provenance records directly, then separately validates the
-    graph digest and graph referential closure for both paths.
-    """
+    """Compare incremental publication with a clean rebuild."""
 
     _assert_context(incremental, context)
     _assert_context(rebuilt, context)
@@ -1277,9 +1246,7 @@ def assert_active_publication_witness(
             f"expected={expected!r}, observed={observed!r}, "
             f"active_graph_revision={active_graph_revision!r}"
         )
-    # The live store is independently materialized as a complete artifact.
-    # Metadata alone cannot reject a stale, internally valid projection that
-    # retained a deleted message contribution after a correct publication.
+    # Materialize content to detect stale projections with current metadata.
     assert_artifact_matches_canonical_semantics(
         RebuildArtifact(
             projection=active_projection,
@@ -1305,18 +1272,9 @@ def assert_deleted_material_absent(
     removed_conversations: tuple[str, ...] = (),
     removed_participants: tuple[str, ...] = (),
 ) -> None:
-    """Assert tombstoned material is gone from every applicable derived surface.
+    """Assert that tombstoned material is absent from derived state."""
 
-    The independent identity calculation permits direct absence checks for
-    message, conversation, participant, affect, and engagement graph nodes.
-    Topic/entity nodes are intentionally not asserted absent: an active message
-    can legitimately share those semantic nodes with a deleted message.
-    """
-
-    # Exact final-canonical semantic derivation checks metrics, enrichments,
-    # topic/entity rows, nodes, edges, graph digest, and all incident edges.
-    # It therefore rejects stale rows that remain internally referentially
-    # valid, which a dangling-edge-only assertion would miss.
+    # Compare complete derived content to detect valid but stale rows.
     assert_artifact_matches_canonical_semantics(artifact, expected_semantics)
     account = artifact.projection.account_ref
     message_refs = {

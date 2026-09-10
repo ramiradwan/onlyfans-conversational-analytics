@@ -2,13 +2,11 @@
 
 # Rebuild equivalence contract
 
-This contract defines deterministic analytics rebuilds and equivalence between incremental and clean projection state. It is derived from the executable specifications in `app/analytics/pipeline.py`, `app/analytics/canonical_source.py`, `app/analytics/historical_derivation.py`, `app/analytics/metrics.py`, `app/analytics/analyzers.py`, `app/analytics/enrichment.py`, `app/analytics/graph_projection.py`, `app/analytics/graph_identity.py`, `app/analytics/opaque_refs.py`, `app/models/analytics.py`, `app/models/insights.py`, `app/analytics/sqlite_projection_store.py`, `app/analytics/sqlite_graph_store.py`, `app/persistence/projection_activation.py`, and accepted architecture decision records (ADR 0001, ADR 0004, ADR 0006, ADR 0008, ADR 0009, ADR 0010, ADR 0019, ADR 0020, ADR 0021, and ADR 0022). Proposed ADR 0012 is not assumed.
-
-It establishes the dual-objective invariant definitions, the explicit `ReproducibilityContext` tuple, the derived-field taxonomy, the 19-row invariant and oracle matrix, the deletion-focused equivalence profile, permanent oracle falsifiers, persistent SQLite-store qualification requirements, and CI shrinking benchmarks.
+This contract defines deterministic analytics rebuilds and equivalence between incremental and clean state. It covers context, field classification, invariants, deletion, faulty controls, SQLite storage, and CI profiles. The `CODE-VERIFY` header identifies primary implementation sources.
 
 ## 1. Operating context and authority boundaries
 
-The conversational analytics plane is a disposable derived projection of authoritative canonical persistence. It guarantees two foundational correctness properties:
+Analytics is derived from canonical persistence and must satisfy two properties:
 
 1. **Property A — Derived-State Determinism:**
    Given the same canonical input state and an identical `ReproducibilityContext`, two independent clean builds produce semantically equivalent derived projections and knowledge graphs.
@@ -19,13 +17,11 @@ The conversational analytics plane is a disposable derived projection of authori
 
 ### 1.1 Rationale for the dual-objective split
 
-This two-tier separation is deliberate:
-- If **Property A** fails, the analytics engine is intrinsically non-deterministic (e.g., relying on unfrozen wall-clock time, non-deterministic graph identifier generation, or unrecorded configuration drift).
-- If **Property A** passes but **Property B** fails, the incremental maintenance logic is defective (e.g., stale caches, missed edge retractions upon message deletion, metric accumulation skew across deltas, or divergent aggregation between streaming and batch paths).
+Property A detects unstable clean builds. Property B detects differences between incremental updates and clean rebuilds.
 
 ### 1.2 Architectural authority
 
-The analytics plane is strictly subordinate to canonical persistence:
+Canonical persistence owns source data; analytics owns rebuildable output:
 - **Canonical Authority:** `HistoryRepository` (`app/persistence/history.py`) is the sole system of record for account entities and events.
 - **Canonical Bridge:** `HistoryAnalyticsSource` (`app/analytics/canonical_source.py`) reads committed, non-deleted canonical entities (`WHERE is_deleted=0`) and provides an immutable, sorted `AccountReadModel`.
 - **Derived Authority:** `AnalyticsPipeline` (`app/analytics/pipeline.py`) coordinates enrichment, metric calculation, graph projection, and multi-stage publication into `AnalyticsProjectionStore` and `GraphReader`/`GraphGenerationWriter`.
@@ -34,7 +30,7 @@ The analytics plane is strictly subordinate to canonical persistence:
 
 ## 2. Audited seams and codebase inventory
 
-The following components were audited to construct this contract:
+The contract covers these components:
 
 | Component / File | Role in Rebuild Equivalence | Key Classes / Functions |
 |---|---|---|
@@ -55,11 +51,11 @@ The following components were audited to construct this contract:
 
 ## 3. ReproducibilityContext definition
 
-Deterministic rebuild equivalence requires an explicit, closed reproducibility context. Derivation outputs are reproducible only when all parameters of this context are identical.
+Equivalent builds require identical `ReproducibilityContext` values.
 
 ### 3.1 Context tuple specification and implementation mapping
 
-The explicit `ReproducibilityContext` tuple is the shared test and oracle vocabulary. Its fields map directly to existing production attributes and parameters as follows:
+`ReproducibilityContext` maps test inputs to production values:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -99,9 +95,9 @@ $$\begin{aligned}
 &\implies \text{Semantically Equivalent Derived State}
 \end{aligned}$$
 
-- **Cross-Version Non-Claim:** The system does not claim cross-version reproducibility across different `pipeline_revision` or `analyzer_revision` versions. A modification to an analyzer or metric formula produces a distinct, traceable configuration digest and pipeline identity digest.
-- **Frozen Time Requirement:** Because `AnalyticsPipeline` bounds historical conversations using `historical_retention_cutoff(evaluation_clock)` (retaining only messages where `sent_at > evaluation_clock - 90 days`), an unfrozen clock will cause silent exclusion of messages crossing the 90-day boundary between runs. The evaluation clock must be strictly frozen during equivalence tests.
-- **External Model Calls:** Standard analytics derivations must remain purely local, offline, and rule-based. Zero live external API calls or non-deterministic ML inferences are permitted. If external enrichment is introduced, it must be staged as immutable canonical input with explicit provenance.
+- Reproducibility applies only within the same pipeline and analyzer revisions.
+- Equivalence tests freeze `evaluation_clock` because the 90-day cutoff excludes `sent_at <= evaluation_clock - 90 days`.
+- Derivation is local and deterministic. External enrichment must enter as immutable canonical input with provenance.
 
 ## 4. Field taxonomy and inventory
 
@@ -223,7 +219,7 @@ Following a canonical deletion event (chat tombstone, message deletion, or accou
 
 ## 7. Permanent oracle falsifiers
 
-To prove that the oracle has real fault-detection power, the test harness includes four permanent, deliberately broken test doubles.
+Four faulty test doubles verify the oracle's detection paths.
 
 ```
        Permanent Analytics Falsifiers
@@ -254,11 +250,11 @@ To prove that the oracle has real fault-detection power, the test harness includ
 
 ### 7.2 Execution rule
 
-These falsifiers are implemented as dedicated test doubles under `tests/hardening/falsifiers/` (or equivalent test directory). **Production source code must never be mutated in CI to achieve falsification.**
+Faulty controls live under `tests/hardening/falsifiers/`. CI does not modify production code.
 
 ## 8. Persistent SQLite store qualification
 
-Before declaring file-backed SQLite stores (`app/analytics/sqlite_projection_store.py` and `app/analytics/sqlite_graph_store.py`) production-equivalent in Tier B testing, their runtime parameters and durability behaviors must be qualified.
+Packaged-runtime evidence for the SQLite projection and graph stores must include their configuration and durability checks.
 
 ### 8.1 SQLite configuration profile
 
@@ -279,7 +275,7 @@ Integrity Checks:   PRAGMA integrity_check == "ok"; PRAGMA foreign_key_check emp
 
 ### 8.2 Publication lifecycle and atomic witness protocol
 
-Publication of a rebuild artifact into the file-backed store does not update an in-place metadata row via naive SQL. It follows a multi-stage lifecycle protocol across two SQLite databases:
+Publication uses this lifecycle across canonical and projection databases:
 
 1. **Stage Inactive Generation:** `SQLiteAnalyticsProjectionStore.stage_artifact` persists a new generation record into `projection_generations` with status `'building'`, validates artifact shape and digests, populates `safe_nodes` and `safe_edges` via `SQLiteGraphGenerationWriter`, and transitions status to `'validated'`.
 2. **Canonical Witness Reservation:** `publish_generation` validates that the generation identity matches the current canonical identity via `canonical_identity_reader(creator_account_id)`. It calls `ProjectionActivationRepository.reserve(...)` on the authoritative canonical database, creating a `ProjectionActivationIntent` with state `'reserved'`, recording `witness_sequence`, `generation_id`, `canonical_revision`, and `canonical_content_digest`.
@@ -320,11 +316,11 @@ Exceptions: Stale canonical revision or content digest mismatches raise `Project
 
 ## 9. CI shrinking benchmark design
 
-Generated property-based analytics tests must operate within strict time and resource budgets so pull-request CI remains responsive.
+Generated analytics tests use bounded CI profiles.
 
 ### 9.1 Named benchmark profiles
 
-Repository-owned named profiles must be used instead of library defaults. The table records the current required profiles; broader stress profiles may be run separately for local calibration.
+CI uses the named profiles below. Stress profiles are available for local runs.
 
 | Profile Name | Target Suite | Starting Examples | Canonical Mutations / Example | Clean Rebuild Passes | Backend | Purpose |
 |---|---|---:|---:|---:|---|---|
@@ -336,7 +332,7 @@ Repository-owned named profiles must be used instead of library defaults. The ta
 
 - **Critical-Path Budget:** Generated ingestion and analytics assurance must add $\le 5\%$ to the p95 pull-request critical-path duration.
 - **Hard Review Threshold:** Any addition $> 10\%$ requires an explicit architectural performance trade-off review. If budget pressure arises, the example count must be scaled down before reducing transition coverage or removing invariant assertions.
-- **Shrinking Benchmark:** The benchmark harness must measure both clean passing runs and deliberately failing runs (using falsifiers) to benchmark Hypothesis shrinking duration and reproducer trace minimization.
+- **Shrinking Benchmark:** Measure passing runs and falsifier failures, including Hypothesis shrinking and minimized traces.
 - **Dynamic Version Measurement:** Python version, SQLite runtime version, SQLCipher version, and Hypothesis version must be captured dynamically from the executing environment rather than hard-coded into architecture contracts.
 
 ## 10. Known discrepancies and verification
@@ -357,4 +353,4 @@ Repository-owned named profiles must be used instead of library defaults. The ta
 - `tests/state_models/analytics_oracle.py` independently computes semantic values, provenance, identities, graph structure, and referential closure.
 - `tests/hardening/falsifiers/analytics_falsifiers.py` proves that metric, provenance, identity, graph, deletion, and publication faults are detected.
 
-Local in-memory and file-backed results do not replace hosted performance measurements or packaged Windows runtime qualification. Those environments must report their own versions, timing, and retained runtime evidence.
+Local results do not replace hosted performance measurements. Hosted and packaged Windows checks record their own versions, timings, and runtime evidence.

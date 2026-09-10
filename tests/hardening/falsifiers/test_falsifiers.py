@@ -1,13 +1,4 @@
-"""Executable verification proving the ingestion oracle rejects known faults.
-
-Falsifiers tested:
-1. BrokenGapAdapter: advances checkpoint on a gap -> catches checkpoint-monotonicity violation.
-2. BrokenDuplicateAdapter: mutates revision on duplicate -> catches replay-idempotency violation.
-3. BrokenDeletionAdapter: resurrects tombstoned entity -> catches deletion-closure violation.
-4. BrokenReopenAdapter: corrupts state before reconstruction -> catches state-loss divergence.
-5. BrokenStagedMaterialAdapter: corrupts acknowledged staging -> catches staging divergence.
-6. BrokenAtomicCommitAdapter: leaves snapshot bookkeeping stale after canonical state is visible.
-"""
+"""Verify that the ingestion oracle rejects known faults."""
 
 from __future__ import annotations
 

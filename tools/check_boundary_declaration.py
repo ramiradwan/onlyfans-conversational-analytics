@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed when a pull request omits a required protected-impact declaration.
-
-The architecture manifest is the only source for path classification, invariant
-mapping, enforced-rule definitions, and exception-ledger entries.  This script
-does not call the GitHub API: CI supplies the checked-out diff and event payload
-and local callers may provide the same inputs explicitly.
-"""
+"""Validate protected architecture-impact declarations for a local diff."""
 
 from __future__ import annotations
 

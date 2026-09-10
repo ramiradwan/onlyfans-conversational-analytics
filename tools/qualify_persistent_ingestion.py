@@ -1,8 +1,4 @@
-"""Capture dated Tier B SQLite/SQLCipher runtime evidence as JSON.
-
-This records local evidence only.  It intentionally never labels a run
-production-equivalent: that requires a reproducible shipped fixed runtime.
-"""
+"""Record local persistent-ingestion evidence as JSON."""
 
 from __future__ import annotations
 
@@ -34,13 +30,7 @@ from tests.state_models.sqlite_brain_adapter import BrokenReopenAdapter
 
 
 def _measure_broken_reopen_shrink() -> dict[str, object]:
-    """Exercise the falsifier through Hypothesis without inventing shrink timing.
-
-    ``run_state_machine_as_test`` exposes only the whole invocation.  It does
-    not publish a first-failure callback or a post-first-failure shrink timer,
-    so the two phases must remain explicitly unavailable instead of assigning
-    the same total duration to both.
-    """
+    """Run the falsifier and record measured results."""
     with TemporaryDirectory(prefix="persistent_ingestion-shrink-") as directory:
         class BrokenReopenMachine(RuleBasedStateMachine):
             @initialize()

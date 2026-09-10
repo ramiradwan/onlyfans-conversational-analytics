@@ -31,8 +31,7 @@ function observedFrames() {
 async function connect(fence, committed, resumeAction='resume', pendingSnapshotId=null, nextExpectedChunkIndex=0) {
   const identity=outbox.identityState();
   // Each qualification `connect` models a newly constructed worker/client.
-  // Stop the previous client and discard validation errors from intentionally
-  // rejected commands before opening the next independent session.
+  // Stop the previous client before opening the next session.
   client?.stop();
   transportErrors=[];
   client=new AgentWebSocketClient({ creatorAccountId:ACCOUNT, authTicket:'ticket', outbox,
@@ -82,10 +81,7 @@ async function run(command) {
   switch (command.operation) {
     case 'capture': return await outbox.enqueue(command.change, command.event_id ?? id(), command.origin ?? 'passive');
     case 'capture_message_parent': {
-      // The production convenience API obtains both IDs from its injected factory.
-      // The qualification boundary supplies those factory values so a replay can
-      // compare the complete emitted delta envelope, including event_id, without
-      // changing the production API or its transaction semantics.
+      // Supply stable IDs so replay can compare complete delta envelopes.
       const supplied = Array.isArray(command.event_ids) ? [...command.event_ids] : null;
       if (supplied === null) return await outbox.enqueueMessageWithParent(command.message, command.parent, command.origin ?? 'passive');
       const originalFactory = outbox.idFactory;
@@ -99,8 +95,7 @@ async function run(command) {
       const pendingBefore=outbox.identityState().pending_snapshot;
       const frameCountBefore=observedFrames().length;
       socket.receive({type:'ingest.ack',protocol_version:'2',message_id:id(),payload:{connection_id:client.session.connection_id,creator_account_id:ACCOUNT,agent_stream_id:outbox.identityState().agent_stream_id,snapshot_id:command.snapshot_id??null,committed_source_seq:command.committed_source_seq,snapshot_progress:command.snapshot_progress??null}});
-      // Dispatch is intentionally asynchronous in AgentWebSocketClient; wait
-      // until the real durable acknowledgement transaction has settled.
+      // Wait for the asynchronous acknowledgement transaction.
       for (let turn=0; turn<20; turn+=1) {
         const durable=outbox.identityState().acknowledged_source_seq>=command.committed_source_seq;
         const trimmed=(await outbox.entries()).every((item)=>item.source_seq>command.committed_source_seq);
@@ -120,7 +115,7 @@ async function run(command) {
     case 'snapshot_build': return await outbox.buildNextSnapshotChunk();
     case 'snapshot_prepare': return await outbox.prepareSnapshot(command.snapshot_id ?? id());
     case 'restart': client?.stop(); client=null; socket=null; transportErrors=[]; scheduledCallbacks=[]; transport={connected:false,fence:null,sync_required:false,replay:[],frames:[],connection_id:null,scheduled_callbacks:0}; await start(); return outbox.identityState();
-    // Transport state is intentionally observed separately from parser/protocol rejection.
+    // Observe transport state separately from protocol rejection.
     case 'connect': return await connect(command.fence, command.committed_source_seq, command.resume_action ?? 'resume', command.pending_snapshot_id ?? null, command.next_expected_chunk_index ?? 0);
     case 'same_client_reconnect': return await reconnectSameClient(command.fence, command.committed_source_seq);
     case 'disconnect': socket?.close(); transport = { ...transport, connected: false }; return transport;

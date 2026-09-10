@@ -63,12 +63,7 @@ def event_id(number: int) -> str:
 
 
 def normalize_state(value: dict) -> dict:
-    """Keep opaque production-generated event IDs out of semantic equality only.
-
-    Event IDs produced inside `enqueueMessageWithParent` are deliberately opaque;
-    every comparison still includes sequence, origin, change material, entities,
-    tombstones, coverage, manifests, chunks, overrides and transport state.
-    """
+    """Compare semantic state while excluding opaque production event IDs."""
     normalized = deepcopy(value)
     for item in normalized["outbox"]:
         item.pop("event_id", None)
@@ -77,9 +72,7 @@ def normalize_state(value: dict) -> dict:
     normalized["messages"].sort(key=lambda item: item["message_id"])
     normalized["coverage"].sort(key=lambda item: item["evidence_key"])
     for manifest in normalized["manifests"]:
-        # Storage resumption cursors and the formatted storage chunk key are
-        # implementation layout.  The contract exposes snapshot identity,
-        # through sequence, lifecycle, logical chunk index/count and material.
+        # Exclude storage layout while preserving snapshot semantics.
         manifest.pop("scan_kind_index", None)
         manifest.pop("scan_after_key", None)
         manifest.pop("next_chunk_index", None)
@@ -88,9 +81,7 @@ def normalize_state(value: dict) -> dict:
         chunk.pop("key", None)
     normalized["chunks"].sort(key=lambda item: item["chunk_index"])
     for chunk in normalized["chunks"]:
-        # Snapshot records are a keyed set inside each bounded immutable chunk;
-        # FakeIndexedDb's cursor insertion order is not a semantic transport
-        # guarantee. Preserve chunk index/count and normalize only record set order.
+        # Record order is not part of chunk semantics.
         chunk["records"].sort(key=lambda item: json.dumps(item, sort_keys=True))
     normalized["overrides"].sort(key=lambda item: item["key"])
     transport = normalized["transport"]
@@ -598,9 +589,7 @@ def test_snapshot_bounded_oracle_handles_zero_small_101_and_oversize_records() -
         assert all(0 < len(chunk["records"]) <= 100 for chunk in chunks)
         assert all(len(json.dumps({"records": chunk["records"]}).encode("utf-8")) <= 524_288 for chunk in chunks)
     with harness() as node:
-        # This is intentionally below the protocol's 512 KiB frame ceiling but
-        # above the 448 KiB packing target, so byte packing (not record count)
-        # must create a second bounded chunk.
+        # This size crosses the packing target without exceeding the frame limit.
         for number in range(51):
             reply = node.command("capture", change=message(number + 200, text="x" * 9_000), event_id=event_id(30_000 + number))
             assert reply["ok"]
@@ -722,9 +711,7 @@ def test_agent_model_is_independent_of_production_helpers() -> None:
     source = Path("tests/state_models/agent_delivery_model.py").read_text(encoding="utf-8")
     imports = [node.module or "" for node in ast.walk(ast.parse(source)) if isinstance(node, ast.ImportFrom)]
     assert all(not module.startswith(("extension", "app")) for module in imports)
-    # The model expresses contract invariants.  These are production storage
-    # cursor/layout helper names and limits, so their presence would signal a
-    # second implementation rather than an independent oracle.
+    # Reject production storage details from the independent model.
     forbidden = (
         "scan_kind_index", "scan_after_key", "snapshotChunkKey", "SNAPSHOT_TARGET_BYTES",
         "SNAPSHOT_MAX_RECORD_BYTES", "SNAPSHOT_MAX_RECORDS", "mergeChat", "mergeMessage",

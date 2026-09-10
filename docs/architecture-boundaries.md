@@ -1,10 +1,10 @@
 # Architecture boundaries
 
-`docs/architecture-boundaries.json` is the authoritative machine-readable architecture baseline. This document is the human-readable description of repository architecture, authority boundaries, safety zones, protected invariants, dependency rules, and declared exceptions.
+`docs/architecture-boundaries.json` is the authoritative machine-readable architecture baseline. It defines modules, authority, safety zones, invariants, dependency rules, and exceptions.
 
 ## System components
 
-The repository comprises three runtime subsystems, release packaging, attestation materials, governance manifests, and shared cross-runtime contracts:
+The repository contains three runtime components and supporting release controls:
 
 - **Brain (`app/`)**: Local Python backend running on the creator's machine. It hosts the local HTTP and WebSocket endpoints, authenticates sessions, coordinates first-run provisioning, commits canonical conversation state to SQLite, and runs derived analytics. There is no standalone `brain/` directory.
 - **Agent (`extension/`)**: Chrome Manifest V3 extension responsible for creator-visible observation and durable delivery. It normalizes browser events, manages an IndexedDB outbox, evaluates consent, and delivers validated frames to Brain.
@@ -16,16 +16,16 @@ The repository comprises three runtime subsystems, release packaging, attestatio
 
 ## Authority classifications
 
-Every module in `docs/architecture-boundaries.json` has an assigned authority class:
+Each module has one authority class:
 
-- **Authoritative**: Subsystems that own primary state of record, security gates, or release qualification. Mutations to authoritative state must be atomic and initiated only through approved ingress interfaces, subject to authoritative deletion and retention lifecycle policies. Examples include canonical persistence (`canonical-persistence`), persistence coordination (`persistence-coordination`), Agent acquisition outbox (`agent-runtime`), security policies (`security-trust`), protocol definitions (`protocol-core`), vault APIs (`brain-vault-api`), authentication APIs (`brain-auth-api`), packaging release tools (`packaging-release`), attestation verification (`attestation-verification`), and governance manifests (`architecture-governance`).
-- **Derived**: Subsystems computing rebuildable or secondary state from authoritative sources. These can be regenerated from scratch from canonical history. Examples include analytics pipelines, graph projections, and enrichment analyzers (`analytics-semantic-foundation`, `analytics-analyzers-metrics`, `application-services`).
-- **Presentation**: Subsystems formatting and displaying state to the user without owning durable business truth. Examples include Bridge views and components (`bridge-presentation`), client stores (`bridge-orchestration`), and non-authoritative REST presentations (`brain-api-presentation`).
-- **Composition**: Factory and bootstrap entrypoints that assemble and connect subsystems from above without implementing business domain logic. Examples include application entrypoints (`brain-runtime-bootstrap`) and temporary composition seams (`persistence-factory`, `persistence-projection-coordination`).
+- **Authoritative**: Owns a system of record, security gate, or release control. Writes use approved ingress interfaces and preserve atomicity, deletion, and retention rules.
+- **Derived**: Computes rebuildable state from authoritative sources.
+- **Presentation**: Displays state without owning durable business data.
+- **Composition**: Builds and connects subsystems without owning domain behavior.
 
 ## Change-safety zones
 
-Zones describe the architectural blast radius of file modifications. A safety zone provides informational review context; it does not alone determine mandatory governance ceremony.
+Zones indicate the risk of a change. A zone alone does not require architecture evidence.
 
 | Zone | Blast radius | Scope and modules |
 |---|---|---|
@@ -36,20 +36,9 @@ Zones describe the architectural blast radius of file modifications. A safety zo
 
 ## Protected-impact pull-request review
 
-The safety zone is always reported as review context; it does not itself require
-architecture evidence. The manifest's `protected_impact.invariant_path_mappings`
-contains the narrow semantic paths that require a PR author to disposition a
-potentially affected invariant as `affected` or `not affected` with a rationale.
-This mapping is deliberately narrower than module ownership: for example, an
-Agent icon remains Red context but does not by itself claim a durable-delivery
-change.
+The gate reports the safety zone for context. Paths in `protected_impact.invariant_path_mappings` require an `affected` or `not affected` invariant disposition with a rationale. The mapping is narrower than module ownership.
 
-Changes to an enforced rule definition, an exception-ledger entry, or an
-authority/trust declaration are protected governance impact. They require an
-architecture rationale, an actual invariant or boundary declaration, and safety
-evidence. `tools/check_boundary_declaration.py` compares the checked-out base
-and head manifest and parses one exact `## Architecture impact` section from the
-pull-request body without calling a network API.
+Changes to enforced rules, exceptions, or authority relationships require a rationale, named boundary, and safety evidence. `tools/check_boundary_declaration.py` checks the local diff and the pull-request `## Architecture impact` section.
 
 ## Classified architectural modules
 
@@ -206,7 +195,7 @@ Assurance status has a strict meaning:
 
 ## Canonical persistence import census
 
-The following census records dependencies of the four protected canonical persistence modules and all direct importers of `app.persistence.history`. It explains the scope of the Import Linter contracts and must be updated when those imports change.
+This census defines the Import Linter scope. Update it when protected imports change.
 
 ### Protected persistence core imports
 

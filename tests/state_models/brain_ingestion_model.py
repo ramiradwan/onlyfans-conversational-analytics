@@ -1,17 +1,4 @@
-"""Independent pure reference model for Brain canonical ingestion.
-
-This module provides a pure in-memory reference model of the Brain canonical
-ingestion and persistence state machine. To keep the oracle independent from
-production behavior (see docs/architecture/ingestion-state-contract.md):
-
-1. This model is deliberately small and pure.
-2. It MUST NOT import or delegate decisions to HistoryRepository, production
-   merge functions, canonical SQL, production fingerprint/hash helpers,
-   analytics normalization code, or production transition results.
-3. It models canonical semantics independently: stream checkpoints, canonical
-   revision, active chats and messages, deletion barriers/tombstones, event
-   identity and deduplication, and bounded snapshot staging.
-"""
+"""Independent pure model of canonical ingestion state."""
 
 from __future__ import annotations
 
@@ -237,7 +224,7 @@ class ModelTransitionOutcome:
 
 
 class PureBrainIngestionModel:
-    """Deliberately independent reference model for Brain canonical ingestion."""
+    """Reference model for canonical ingestion."""
 
     def __init__(self, account_id: str) -> None:
         self.account_id = account_id

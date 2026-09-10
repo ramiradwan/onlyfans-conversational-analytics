@@ -1,13 +1,4 @@
-"""Deliberately broken adapters acting as permanent negative controls.
-
-Used by test_falsifiers.py to prove the ingestion transition oracle actively
-detects invariant violations across:
-1. BrokenGapAdapter: advances checkpoint on a gap.
-2. BrokenDuplicateAdapter: mutates revision/state on exact duplicate.
-3. BrokenDeletionAdapter: permits tombstoned material to return.
-4. BrokenReopenAdapter: simulates committed-state loss before reconstruction.
-5. BrokenAtomicCommitAdapter: simulates an interrupted split snapshot commit.
-"""
+"""Faulty adapters used as permanent ingestion-oracle controls."""
 
 from __future__ import annotations
 
@@ -136,15 +127,7 @@ class BrokenStagedMaterialAdapter(ProductionBrainAdapter):
 
 
 class BrokenAtomicCommitAdapter(ProductionBrainAdapter):
-    """Leave snapshot commit bookkeeping split from its visible canonical state.
-
-    The real commit is used to establish the canonical row and account-head
-    state.  The deliberate second transaction then models an interrupted split
-    commit: the checkpoint is restored to the snapshot's starting value, the
-    committed-snapshot marker is removed, the upload is returned to staging
-    despite its already-cleared staged records, and stream membership is
-    removed.  It does not copy the production transition implementation.
-    """
+    """Split snapshot bookkeeping from visible canonical state."""
 
     SPLIT_COMMIT_DIVERGENCES = (
         "canonical rows and account-head revision remain committed",
