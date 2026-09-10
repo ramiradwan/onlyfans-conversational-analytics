@@ -282,6 +282,90 @@ def test_windows_ci_builds_the_fixed_wheel_before_resolving_requirements() -> No
         assert isinstance(removed_job, dict) and len(_fixed_sqlcipher_build_indexes(removed_job)) == 1, "CI must construct exactly one fixed SQLCipher wheel"
 
 
+def _assert_fixed_sqlcipher_native_cache(workflow: dict[str, Any]) -> None:
+    job = _jobs(workflow)["fixed-sqlcipher-wheel"]
+    steps = _steps(job)
+    build = steps[_fixed_sqlcipher_build_indexes(job)[0]]
+    prepare = next(step for step in steps if step.get("id") == "native-cache")
+    cache = next(step for step in steps if step.get("id") == "vcpkg-cache")
+    assert "if" not in job and "if" not in build, "every run must build a fresh wheel"
+    assert steps.index(prepare) < steps.index(cache) < steps.index(build)
+    action, _, revision = cache["uses"].partition("@")
+    assert action == "actions/cache" and len(revision) == 40
+    assert all(character in "0123456789abcdef" for character in revision)
+    cache_inputs = cache["with"]
+    assert "restore-keys" not in cache_inputs, "native cache must use exact inputs"
+    expected_path = r"${{ runner.temp }}\ofca-vcpkg-cache"
+    assert cache_inputs["path"] == expected_path, "cache only native dependency archives"
+    assert build.get("env", {}).get("VCPKG_BINARY_SOURCES") == (
+        f"clear;files,{expected_path},readwrite"
+    ), "vcpkg must use only the dedicated cached directory"
+    for scope in (workflow, job):
+        assert "VCPKG_BINARY_SOURCES" not in scope.get("env", {}), "scope the cache to the wheel build"
+    for required in (
+        "${{ runner.os }}",
+        "${{ runner.arch }}",
+        "${{ steps.native-cache.outputs.image-version }}",
+    ):
+        assert required in cache_inputs["key"], f"cache key must include {required}"
+    hashed_inputs = cache_inputs["key"].partition("hashFiles(")[2].partition(")")[0]
+    for required in (
+        "'packaging/sqlcipher/fixed-runtime-sources.json'",
+        "'packaging/sqlcipher/build-fixed-wheel.py'",
+        "'packaging/sqlcipher/build-fixed-wheel.ps1'",
+    ):
+        assert required in hashed_inputs, f"cache key must include {required} in hashFiles"
+
+
+@pytest.mark.parametrize(
+    "omitted",
+    [
+        "${{ runner.os }}",
+        "${{ runner.arch }}",
+        "${{ steps.native-cache.outputs.image-version }}",
+        "'packaging/sqlcipher/fixed-runtime-sources.json'",
+        "'packaging/sqlcipher/build-fixed-wheel.py'",
+        "'packaging/sqlcipher/build-fixed-wheel.ps1'",
+    ],
+)
+def test_native_dependency_cache_invalidates_all_build_inputs(omitted: str) -> None:
+    workflow = _workflow_document()
+    _assert_fixed_sqlcipher_native_cache(workflow)
+    changed = deepcopy(workflow)
+    cache = next(
+        step for step in _steps(_jobs(changed)["fixed-sqlcipher-wheel"])
+        if step.get("id") == "vcpkg-cache"
+    )
+    cache["with"]["key"] = cache["with"]["key"].replace(omitted, "", 1)
+    with pytest.raises(AssertionError, match="cache key must include"):
+        _assert_fixed_sqlcipher_native_cache(changed)
+
+
+@pytest.mark.parametrize("mutation", ["skip-wheel", "different-path", "fallback-source", "restore-prefix"])
+def test_native_dependency_cache_cannot_replace_or_redirect_the_wheel_build(mutation: str) -> None:
+    workflow = _workflow_document()
+    _assert_fixed_sqlcipher_native_cache(workflow)
+    changed = deepcopy(workflow)
+    job = _jobs(changed)["fixed-sqlcipher-wheel"]
+    steps = _steps(job)
+    build = steps[_fixed_sqlcipher_build_indexes(job)[0]]
+    cache = next(step for step in steps if step.get("id") == "vcpkg-cache")
+    if mutation == "skip-wheel":
+        build["if"] = "steps.vcpkg-cache.outputs.cache-hit != 'true'"
+        expected = "every run must build a fresh wheel"
+    elif mutation == "different-path":
+        cache["with"]["path"] = r"${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse"
+        expected = "cache only native dependency archives"
+    elif mutation == "fallback-source":
+        build["env"]["VCPKG_BINARY_SOURCES"] = build["env"]["VCPKG_BINARY_SOURCES"].removeprefix("clear;")
+        expected = "vcpkg must use only the dedicated cached directory"
+    else:
+        cache["with"]["restore-keys"] = "ofca-vcpkg-v1-"
+        expected = "native cache must use exact inputs"
+    with pytest.raises(AssertionError, match=expected):
+        _assert_fixed_sqlcipher_native_cache(changed)
+
+
 def _tier_b_steps(workflow: dict[str, Any]) -> list[tuple[str, int, dict[str, Any]]]:
     return [
         (job_name, index, step)

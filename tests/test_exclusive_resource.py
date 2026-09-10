@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -92,3 +93,98 @@ def test_the_claim_is_released_for_the_next_holder() -> None:
     holder = _hold_lock(name, 0.1)
     holder.wait(timeout=30)
     assert holder.returncode == 0
+
+
+@pytest.mark.parametrize("address", ["127.0.0.1", "0.0.0.0"])
+@pytest.mark.parametrize("reuse_address", [False, True])
+def test_a_listener_remains_occupied_until_it_closes(
+    address: str, reuse_address: bool
+) -> None:
+    """A same-user wildcard or reusable listener cannot be reserved over."""
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        if reuse_address:
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind((address, 0))
+        port = listener.getsockname()[1]
+        listener.listen()
+        assert not exclusive_resource.port_is_free(port)
+        assert not exclusive_resource.wait_for_port_release(port, timeout_seconds=0)
+
+    assert exclusive_resource.wait_for_port_release(port, timeout_seconds=0)
+
+
+@pytest.mark.skipif(not socket.has_dualstack_ipv6(), reason="dual-stack IPv6 is unavailable")
+@pytest.mark.parametrize("reservation_supported", [False, True])
+def test_a_dual_stack_listener_is_not_reported_free(
+    monkeypatch: pytest.MonkeyPatch, reservation_supported: bool
+) -> None:
+    """An IPv6 wildcard listener can also own the IPv4 provisioning port."""
+
+    with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as listener:
+        listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        listener.bind(("::", 0))
+        port = listener.getsockname()[1]
+        listener.listen()
+        monkeypatch.setattr(socket, "has_dualstack_ipv6", lambda: reservation_supported)
+        assert not exclusive_resource.port_is_free(port)
+
+    assert exclusive_resource.port_is_free(port)
+
+
+def test_a_failed_reservation_still_checks_whether_the_listener_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reservation error neither skips the listener check nor pins the port busy."""
+
+    def cannot_reserve(_sock: socket.socket, _address: tuple[str, int]) -> None:
+        raise OSError("the port cannot be reserved")
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        listener.listen()
+        monkeypatch.setattr(socket.socket, "bind", cannot_reserve)
+        assert not exclusive_resource.port_is_free(port)
+
+    assert exclusive_resource.port_is_free(port)
+
+
+@pytest.mark.parametrize(
+    "fixture_name", ["non_listening_installer", "healthy_listener_installer"]
+)
+def test_shared_installer_builds_wait_for_other_resource_holders(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+    fixture_name: str,
+) -> None:
+    """Module fixtures must claim shared build outputs before invoking the builder."""
+
+    import test_packaging_smoke
+
+    name = _unique_lock_name()
+    monkeypatch.setattr(exclusive_resource, "PROVISIONING_RESOURCE_MUTEX", name)
+    build_started_at: list[float] = []
+
+    def build_installer(root: Path, *, serves_health: bool = False) -> Path:
+        build_started_at.append(time.monotonic())
+        return root / ("healthy.exe" if serves_health else "non-listening.exe")
+
+    monkeypatch.setattr(test_packaging_smoke, "_build_real_installer", build_installer)
+    fixture = getattr(test_packaging_smoke, fixture_name)
+    holder = _hold_lock(name, _HOLD_SECONDS)
+    try:
+        started_at = time.monotonic()
+        installer = fixture.__wrapped__(tmp_path_factory)
+    finally:
+        holder.wait(timeout=30)
+
+    assert len(build_started_at) == 1
+    waited_seconds = build_started_at[0] - started_at
+    assert waited_seconds >= _HOLD_SECONDS * 0.8, (
+        f"{fixture_name} started building after {waited_seconds:.2f}s "
+        f"while another process still held {name}"
+    )
+    assert installer.name == (
+        "healthy.exe" if fixture_name == "healthy_listener_installer" else "non-listening.exe"
+    )

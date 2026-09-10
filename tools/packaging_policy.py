@@ -105,9 +105,15 @@ def _check_forbidden_material(
         for path in root.rglob("*")
         if path.is_file() or path.is_dir()
     )
+    # Keep one bucket per declaration, including invalid and duplicate rules,
+    # so scanning each file once preserves the declaration-first output order.
+    declaration_findings: list[list[PackagingFinding]] = []
+    compiled_rules: list[tuple[str, re.Pattern[str], list[PackagingFinding]]] = []
     for declaration in declarations:
+        bucket: list[PackagingFinding] = []
+        declaration_findings.append(bucket)
         if not isinstance(declaration, Mapping):
-            findings.append(
+            bucket.append(
                 PackagingFinding(
                     "policy_invalid",
                     "forbidden_material",
@@ -118,7 +124,7 @@ def _check_forbidden_material(
         name = declaration.get("name")
         pattern = declaration.get("pattern")
         if not isinstance(name, str) or not name or not isinstance(pattern, str) or not pattern:
-            findings.append(
+            bucket.append(
                 PackagingFinding(
                     "policy_invalid",
                     "forbidden_material",
@@ -129,20 +135,27 @@ def _check_forbidden_material(
         try:
             matcher = re.compile(pattern)
         except re.error as error:
-            findings.append(PackagingFinding("policy_invalid", name, str(error)))
+            bucket.append(PackagingFinding("policy_invalid", name, str(error)))
             continue
+        compiled_rules.append((name, matcher, bucket))
+
+    if compiled_rules:
         for path, relative in staged_paths:
-            matches_path = matcher.search(relative) is not None
             contents = _read_utf8_text(path) if path.is_file() else None
-            matches_contents = contents is not None and matcher.search(contents) is not None
-            if matches_path or matches_contents:
-                findings.append(
-                    PackagingFinding(
-                        "forbidden_material_present",
-                        relative,
-                        f"matches forbidden material declaration: {name}",
+            for name, matcher, bucket in compiled_rules:
+                if matcher.search(relative) is not None or (
+                    contents is not None and matcher.search(contents) is not None
+                ):
+                    bucket.append(
+                        PackagingFinding(
+                            "forbidden_material_present",
+                            relative,
+                            f"matches forbidden material declaration: {name}",
+                        )
                     )
-                )
+
+    for bucket in declaration_findings:
+        findings.extend(bucket)
 
 
 def _read_utf8_text(path: Path) -> str | None:

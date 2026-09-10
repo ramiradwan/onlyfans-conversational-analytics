@@ -401,6 +401,29 @@ def _build_real_installer(tmp_path: Path, *, serves_health: bool = False) -> Pat
     return installers[0]
 
 
+@pytest.fixture(scope="module")
+def non_listening_installer(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Share only the immutable installer; each smoke run installs its own copy."""
+
+    # Module fixtures run before the per-test lock; builds also share Agent output.
+    with exclusive_resource.machine_wide_lock(
+        exclusive_resource.PROVISIONING_RESOURCE_MUTEX
+    ):
+        return _build_real_installer(tmp_path_factory.mktemp("smoke-no-listener"))
+
+
+@pytest.fixture(scope="module")
+def healthy_listener_installer(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Build the attributed health-listener payload once for independent runs."""
+
+    with exclusive_resource.machine_wide_lock(
+        exclusive_resource.PROVISIONING_RESOURCE_MUTEX
+    ):
+        return _build_real_installer(
+            tmp_path_factory.mktemp("smoke-health"), serves_health=True
+        )
+
+
 # Every run installs beneath a run root carrying this prefix, so a window the
 # installer or the launcher opens names it in the title or in the owning image.
 _SMOKE_RUN_TOKEN = "ofca-packaging-smoke-"
@@ -440,6 +463,22 @@ def _assert_launcher_was_installed(transcript: dict) -> None:
     assert launcher.is_relative_to(prefix), (
         f"launcher {launcher} was not installed beneath harness prefix {prefix}"
     )
+
+
+def _assert_listener_was_owned_and_stopped(transcript: dict) -> None:
+    listener = _step(transcript, "provisioning-listener")
+    assert listener["outcome"] == "pass"
+    evidence = listener["evidence"]
+    assert evidence["status_code"] == 200
+    assert evidence["status"] == "ok"
+    assert evidence["listener_ownership"] == "launcher_descendant"
+    listener_process_id = evidence["listener_process_id"]
+    assert listener_process_id in evidence["launcher_family_process_ids"]
+
+    close_bridge = _step(transcript, "close-bridge")
+    assert close_bridge["outcome"] == "pass"
+    assert listener_process_id in close_bridge["evidence"]["stopped_process_ids"]
+    assert close_bridge["evidence"]["port_released"] is True
 
 
 def _assert_install_failure_exit(result: subprocess.CompletedProcess[str], transcript: dict) -> None:
@@ -665,15 +704,19 @@ def test_listener_port_preflight_has_a_distinct_exit_code(tmp_path: Path) -> Non
 
 def test_harness_launches_the_executable_its_real_installer_placed(
     tmp_path: Path,
+    non_listening_installer: Path,
 ) -> None:
     """A fixed external launcher makes the containment assertion red."""
 
-    installer = _build_real_installer(tmp_path)
+    installer = non_listening_installer
     result, transcript = _run_smoke(tmp_path, artifact_path=installer)
 
     assert result.returncode == 41, result.stdout + result.stderr
     _assert_launcher_was_installed(transcript)
     assert _step(transcript, "provisioning-listener")["outcome"] == "fail"
+    assert _step(transcript, "provisioning-listener")["evidence"]["finding"] == (
+        "provisioning_listener_unavailable"
+    )
     installation = _step(transcript, "install-artifact")
     assert not Path(installation["evidence"]["installation_prefix"]).parent.exists()
 
@@ -689,11 +732,18 @@ def test_harness_launches_the_executable_its_real_installer_placed(
     )
 
     assert mutated_result.returncode == 41, mutated_result.stdout + mutated_result.stderr
+    assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "fail"
+    assert _step(mutated_transcript, "provisioning-listener")["evidence"]["finding"] == (
+        "provisioning_listener_unavailable"
+    )
     with pytest.raises(AssertionError, match="was not installed beneath"):
         _assert_launcher_was_installed(mutated_transcript)
 
 
-def test_the_real_smoke_cycle_shows_no_window(tmp_path: Path) -> None:
+def test_the_real_smoke_cycle_shows_no_window(
+    tmp_path: Path,
+    healthy_listener_installer: Path,
+) -> None:
     """A default-tier install, launch and uninstall never takes desktop focus.
 
     Inno Setup displays its progress window under /SILENT, and Start-Process
@@ -701,15 +751,17 @@ def test_the_real_smoke_cycle_shows_no_window(tmp_path: Path) -> None:
     real installer and reads back every top-level window the run opened.
     """
 
-    installer = _build_real_installer(tmp_path)
     with visible_windows.recording_windows(_opened_by_a_smoke_run) as observed:
-        result, transcript = _run_smoke(tmp_path, artifact_path=installer)
+        result, transcript = _run_smoke(
+            tmp_path, artifact_path=healthy_listener_installer
+        )
 
     # The transcript establishes that a real install, launch and uninstall ran,
     # so an empty window recording means silence rather than an absent step.
-    assert result.returncode == 41, result.stdout + result.stderr
+    assert result.returncode == 40, result.stdout + result.stderr
     assert _step(transcript, "install-artifact")["outcome"] == "pass"
     assert _step(transcript, "open-bridge")["outcome"] == "pass"
+    _assert_listener_was_owned_and_stopped(transcript)
     assert _step(transcript, "uninstall-artifact")["outcome"] == "pass"
 
     displayed = sorted(
@@ -742,7 +794,10 @@ def _with_a_no_op_uninstaller(script: str) -> str:
     return script.replace("-TimeoutSeconds 60", "-TimeoutSeconds 1", 1)
 
 
-def test_uninstall_step_fails_when_the_installation_survives(tmp_path: Path) -> None:
+def test_uninstall_step_fails_when_the_installation_survives(
+    tmp_path: Path,
+    healthy_listener_installer: Path,
+) -> None:
     """The uninstall step measures the end state rather than the exit code.
 
     An uninstaller exit code of zero reports that removal started, not that it
@@ -750,7 +805,6 @@ def test_uninstall_step_fails_when_the_installation_survives(tmp_path: Path) -> 
     reads back the surviving entries the step reports.
     """
 
-    installer = _build_real_installer(tmp_path)
     script = tmp_path / "tools" / "packaging-smoke" / "run.ps1"
     script.parent.mkdir(parents=True)
     script.write_text(
@@ -758,10 +812,14 @@ def test_uninstall_step_fails_when_the_installation_survives(tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    _result, transcript = _run_smoke(
-        tmp_path, smoke_script=script, artifact_path=installer
+    result, transcript = _run_smoke(
+        tmp_path, smoke_script=script, artifact_path=healthy_listener_installer
     )
 
+    assert result.returncode == 41, result.stdout + result.stderr
+    _assert_launcher_was_installed(transcript)
+    assert _step(transcript, "open-bridge")["outcome"] == "pass"
+    _assert_listener_was_owned_and_stopped(transcript)
     uninstall = _step(transcript, "uninstall-artifact")
     assert uninstall["outcome"] == "fail"
     evidence = uninstall["evidence"]
@@ -776,10 +834,11 @@ def test_uninstall_step_fails_when_the_installation_survives(tmp_path: Path) -> 
 
 def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
     tmp_path: Path,
+    non_listening_installer: Path,
 ) -> None:
     """A 200 from an externally-owned listener is not launcher readiness."""
 
-    installer = _build_real_installer(tmp_path)
+    installer = non_listening_installer
     original = SMOKE_SCRIPT.read_text(encoding="utf-8")
     binding_script = tmp_path / "run-without-port-preflight.ps1"
     binding_script.write_text(_without_port_preflight(original), encoding="utf-8")
@@ -820,23 +879,17 @@ def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
         assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "fail"
 
 
-def test_installed_listener_is_attributed_to_the_launcher_family(tmp_path: Path) -> None:
+def test_installed_listener_is_attributed_to_the_launcher_family(
+    tmp_path: Path,
+    healthy_listener_installer: Path,
+) -> None:
     """A real installer passes only when its listener is attributed and stopped."""
 
-    installer = _build_real_installer(tmp_path, serves_health=True)
+    installer = healthy_listener_installer
     result, transcript = _run_smoke(tmp_path, artifact_path=installer)
 
-    listener = _step(transcript, "provisioning-listener")
-    listener_process_id = listener["evidence"]["listener_process_id"]
     assert result.returncode == 40, result.stdout + result.stderr
-    assert listener["outcome"] == "pass"
-    assert listener["evidence"]["listener_ownership"] == "launcher_descendant"
-    assert listener_process_id in listener["evidence"]["launcher_family_process_ids"]
-
-    close_bridge = _step(transcript, "close-bridge")
-    assert close_bridge["outcome"] == "pass"
-    assert listener_process_id in close_bridge["evidence"]["stopped_process_ids"]
-    assert close_bridge["evidence"]["port_released"] is True
+    _assert_listener_was_owned_and_stopped(transcript)
 
     mutated_script = tmp_path / "run-with-unrelated-attribution.ps1"
     original = SMOKE_SCRIPT.read_text(encoding="utf-8")
@@ -902,7 +955,10 @@ def _run_silently(program: Path, *arguments: str) -> int:
     ).returncode
 
 
-def test_uninstall_is_refused_while_the_application_runs(tmp_path: Path) -> None:
+def test_uninstall_is_refused_while_the_application_runs(
+    tmp_path: Path,
+    non_listening_installer: Path,
+) -> None:
     """A running application blocks uninstall rather than being deleted around.
 
     The uninstaller cannot delete a running Brain.exe.  Without the guard it
@@ -910,7 +966,7 @@ def test_uninstall_is_refused_while_the_application_runs(tmp_path: Path) -> None
     file it could not touch, leaving an executable nothing can uninstall.
     """
 
-    installer = _build_real_installer(tmp_path)
+    installer = non_listening_installer
     prefix = tmp_path / "installation"
     assert (
         _run_silently(
