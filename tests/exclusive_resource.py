@@ -87,6 +87,25 @@ def machine_wide_lock(
 
 
 def port_is_free(port: int = PROVISIONING_PORT) -> bool:
+    if sys.platform == "win32" and socket.has_dualstack_ipv6():
+        # Refused Windows connects can take two seconds. An exclusive wildcard
+        # reservation proves the port is unused without waiting for a refusal.
+        # Binding only loopback could coexist with a non-exclusive wildcard
+        # listener owned by the same user, so the wildcard is essential here.
+        # A dual-stack listener can own IPv4 traffic while still allowing an
+        # IPv4-only bind, so use this shortcut only when both can be reserved.
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as reservation:
+            reservation.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            reservation.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            try:
+                reservation.bind(("::", port))
+            except OSError:
+                # A recently closed connection can prevent rebinding after its
+                # listener has gone. Keep the existing connection check for
+                # that case; a failed reservation alone never proves freedom.
+                pass
+            else:
+                return True
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         return probe.connect_ex(("127.0.0.1", port)) != 0
 

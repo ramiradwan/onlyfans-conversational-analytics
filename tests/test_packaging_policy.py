@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
 from fastapi.staticfiles import StaticFiles
 
-from tools.packaging_policy import load_runtime_policy, verify_runtime_files
+from tools import packaging_policy
+from tools.packaging_policy import PackagingFinding, load_runtime_policy, verify_runtime_files
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -355,6 +358,134 @@ def test_binary_payload_is_not_scanned_but_its_forbidden_path_is_rejected(tmp_pa
         and finding.detail == "matches forbidden material declaration: forbidden_binary_path"
         for finding in findings
     ), "an undecodable binary must still be rejected when its staged path matches"
+
+
+def test_material_scan_reads_each_file_once_and_preserves_declaration_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    (stage / "alpha.txt").write_text("needle", encoding="utf-8")
+    (stage / "beta.txt").write_text("another needle", encoding="utf-8")
+    (stage / "blocked-native.pyd").write_bytes(b"\xffneedle")
+    (stage / "blocked-directory").mkdir()
+    path_order = [path.name for path in stage.iterdir()]
+    policy = load_runtime_policy(POLICY_PATH)
+    repeated_rule = {"name": "payload", "pattern": "needle"}
+    policy["forbidden_material"] = [
+        repeated_rule,
+        None,
+        {"name": "broken_regex", "pattern": "["},
+        {"name": "missing_pattern"},
+        {"name": "path", "pattern": "blocked"},
+        repeated_rule,
+    ]
+    reads: Counter[Path] = Counter()
+    original_reader = packaging_policy._read_utf8_text
+
+    def counted_reader(path: Path) -> str | None:
+        reads[path] += 1
+        return original_reader(path)
+
+    monkeypatch.setattr(packaging_policy, "_read_utf8_text", counted_reader)
+    findings = verify_runtime_files(stage, policy)
+    material_findings = [
+        finding
+        for finding in findings
+        if finding.code in {"forbidden_material_present", "policy_invalid"}
+    ]
+    payload_findings = [
+        PackagingFinding(
+            "forbidden_material_present",
+            name,
+            "matches forbidden material declaration: payload",
+        )
+        for name in path_order
+        if name in {"alpha.txt", "beta.txt"}
+    ]
+    path_findings = [
+        PackagingFinding(
+            "forbidden_material_present",
+            name,
+            "matches forbidden material declaration: path",
+        )
+        for name in path_order
+        if name in {"blocked-native.pyd", "blocked-directory"}
+    ]
+    with pytest.raises(re.error) as regex_error:
+        re.compile("[")
+    assert material_findings == [
+        *payload_findings,
+        PackagingFinding(
+            "policy_invalid", "forbidden_material", "declaration is not an object"
+        ),
+        PackagingFinding("policy_invalid", "broken_regex", str(regex_error.value)),
+        PackagingFinding(
+            "policy_invalid",
+            "forbidden_material",
+            "declaration requires nonempty name and pattern",
+        ),
+        *path_findings,
+        *payload_findings,
+    ]
+    assert reads == Counter(
+        {
+            stage / "alpha.txt": 1,
+            stage / "beta.txt": 1,
+            stage / "blocked-native.pyd": 1,
+        }
+    )
+
+
+def test_material_scan_rereads_mutated_files_on_every_verification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    material = stage / "material.txt"
+    policy = load_runtime_policy(POLICY_PATH)
+    policy["forbidden_material"] = [
+        {"name": "payload", "pattern": "needle"},
+        {"name": "unmatched", "pattern": "unused"},
+    ]
+    reads: list[Path] = []
+    original_reader = packaging_policy._read_utf8_text
+
+    def counted_reader(path: Path) -> str | None:
+        reads.append(path)
+        return original_reader(path)
+
+    monkeypatch.setattr(packaging_policy, "_read_utf8_text", counted_reader)
+    for contents, matches in (
+        (b"clean", False),
+        (b"needle", True),
+        (b"\xffneedle", False),
+        (b"needle-again", True),
+    ):
+        material.write_bytes(contents)
+        material_findings = [
+            finding
+            for finding in verify_runtime_files(stage, policy)
+            if finding.code == "forbidden_material_present"
+        ]
+        expected = (
+            [
+                PackagingFinding(
+                    "forbidden_material_present",
+                    "material.txt",
+                    "matches forbidden material declaration: payload",
+                )
+            ]
+            if matches
+            else []
+        )
+        assert material_findings == expected
+    material.unlink()
+    assert not any(
+        finding.code == "forbidden_material_present"
+        for finding in verify_runtime_files(stage, policy)
+    )
+    assert reads == [material] * 4
 
 
 def test_per_user_material_declarations_cover_every_required_category() -> None:

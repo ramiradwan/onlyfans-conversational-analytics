@@ -150,7 +150,7 @@ def _verification_context(document: dict[str, Any]) -> GrantVerificationContext:
 
 
 def _admit(
-    grant_type: str, case: str, *, verified_at: datetime
+    grant_type: str, case: str, *, verified_at: datetime, trust_set_json: str
 ) -> VerifiedGrantReference:
     """Verify one contract vector and build the reference an admission records.
 
@@ -162,9 +162,7 @@ def _admit(
     result = verify_grant(
         vector["token"],
         context=_verification_context(vector["context"]),
-        trust_set=load_pinned_trust_set(
-            FIXTURE_TRUST_SET_PATH, environment="development"
-        ),
+        trust_set=json.loads(trust_set_json),
     )
     if not result.valid:
         raise GrantAdmissionRefused(result.result)
@@ -349,6 +347,18 @@ def now() -> datetime:
     return VECTOR_INSTANT
 
 
+@pytest.fixture(scope="module")
+def verified_fixture_trust_json() -> str:
+    """Verify fixture trust once; admissions decode independent mutable copies.
+
+    Activation conditions still load and verify their own production trust.
+    """
+
+    return json.dumps(
+        load_pinned_trust_set(FIXTURE_TRUST_SET_PATH, environment="development")
+    )
+
+
 @pytest.fixture
 def installation_private_key() -> ec.EllipticCurvePrivateKey:
     return ec.generate_private_key(ec.SECP256R1())
@@ -366,6 +376,8 @@ def _provisioned_store(
     now: datetime,
     installation_private_key: ec.EllipticCurvePrivateKey,
     grant_types: tuple[str, ...],
+    *,
+    trust_set_json: str,
 ) -> SQLiteAuthenticationStore:
     """Build a store with an activated installation key and the named grants."""
 
@@ -403,7 +415,12 @@ def _provisioned_store(
     )
     for grant_type in grant_types:
         store.record_verified_grant(
-            _admit(grant_type, "valid-current", verified_at=now - timedelta(minutes=1))
+            _admit(
+                grant_type,
+                "valid-current",
+                verified_at=now - timedelta(minutes=1),
+                trust_set_json=trust_set_json,
+            )
         )
     return store
 
@@ -413,11 +430,16 @@ def store(
     tmp_path: Path,
     now: datetime,
     installation_private_key: ec.EllipticCurvePrivateKey,
+    verified_fixture_trust_json: str,
 ) -> SQLiteAuthenticationStore:
     """A provisioned store: an activated installation key and every grant."""
 
     return _provisioned_store(
-        tmp_path / "auth.sqlite3", now, installation_private_key, RECORDED_GRANT_TYPES
+        tmp_path / "auth.sqlite3",
+        now,
+        installation_private_key,
+        RECORDED_GRANT_TYPES,
+        trust_set_json=verified_fixture_trust_json,
     )
 
 
@@ -426,6 +448,7 @@ def unauthorized_store(
     tmp_path: Path,
     now: datetime,
     installation_private_key: ec.EllipticCurvePrivateKey,
+    verified_fixture_trust_json: str,
 ) -> SQLiteAuthenticationStore:
     """An installation during setup: valid identity and no account grant."""
 
@@ -434,6 +457,7 @@ def unauthorized_store(
         now,
         installation_private_key,
         ACTIVATION_GRANT_TYPES,
+        trust_set_json=verified_fixture_trust_json,
     )
 
 
@@ -522,7 +546,7 @@ def test_a_development_runtime_is_outside_the_production_posture(
 
 @pytest.mark.contract_integrity
 def test_activation_refuses_a_tampered_grant(
-    inputs: ActivationInputs, now: datetime
+    inputs: ActivationInputs, now: datetime, verified_fixture_trust_json: str
 ) -> None:
     """A tampered grant is never admitted, so activation has no valid reference."""
 
@@ -530,7 +554,12 @@ def test_activation_refuses_a_tampered_grant(
     assert isinstance(store, SQLiteAuthenticationStore)
 
     with pytest.raises(GrantAdmissionRefused) as refusal:
-        _admit("installation_grant", "tampered-payload", verified_at=now)
+        _admit(
+            "installation_grant",
+            "tampered-payload",
+            verified_at=now,
+            trust_set_json=verified_fixture_trust_json,
+        )
     decision = evaluate_activation(
         replace(inputs, store=_StaticStore(store, _without(store, "installation_grant")))
     )
