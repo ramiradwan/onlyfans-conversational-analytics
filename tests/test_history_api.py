@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from app.api.security import AuthContext, csrf_token, get_runtime_policy
+from app.bootstrap import transport_manager
 from app.core.config import settings
 from app.main import app
 from app.persistence.history import StreamKey
@@ -23,7 +24,6 @@ from app.transport.manager import (
     DEV_BRIDGE_AUTH_TICKET,
     DEV_PRINCIPAL_ID,
     AgentLease,
-    transport_manager,
 )
 
 

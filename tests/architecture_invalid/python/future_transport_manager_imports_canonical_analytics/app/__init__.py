@@ -1,0 +1,1 @@
+"""Invalid-import fixture package."""

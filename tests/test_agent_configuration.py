@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.bootstrap import transport_manager
 from app.main import app
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.services.agent_configuration import (
@@ -20,7 +21,7 @@ from app.services.agent_configuration import (
     InMemoryAgentConfigRepository,
     config_document_digest,
 )
-from app.transport import DEV_ACCOUNT_ID, DEV_AGENT_AUTH_TICKET, transport_manager
+from app.transport import DEV_ACCOUNT_ID, DEV_AGENT_AUTH_TICKET
 
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"

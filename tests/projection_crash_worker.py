@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from app.analytics.identity import canonical_identity
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
 from app.persistence.factory import create_canonical_repositories
@@ -22,11 +23,12 @@ def main() -> None:
         canonical_path=canonical_path,
         projection_path=canonical_path.with_name("history-projections.sqlite3"),
     )
+    history_source = HistoryAnalyticsSource(repositories.history)
 
     def identity_reader(account_id: str):
-        if not repositories.ingestion.account_exists(account_id):
+        if not history_source.account_exists(account_id):
             return None
-        return canonical_identity(repositories.ingestion.account_read_model(account_id))
+        return canonical_identity(history_source.account_read_model(account_id))
 
     def terminate(observed: str, generation_id: str) -> None:
         del generation_id
@@ -45,7 +47,7 @@ def main() -> None:
         lease_seconds=5.0,
     )
     AnalyticsPipeline(
-        repositories.ingestion,
+        history_source,
         projections=store,
         graph=store.graph,
     ).project_account("account-a")

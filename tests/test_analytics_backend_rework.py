@@ -56,6 +56,7 @@ from app.analytics.resilient_projection_store import (
 )
 from app.analytics.provenance import stable_config_digest
 from app.analytics import rebuild as rebuild_module
+from app.bootstrap import transport_manager
 from app.analytics.rebuild import (
     ReadOnlyCanonicalDatabase,
     RebuildFailure,
@@ -92,12 +93,17 @@ from app.protocol.payloads import (
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from app.services import insights_service
 from app.transport.manager import DEV_AGENT_AUTH_TICKET
-from app.transport import transport_manager
 from app.transport.ingestion import AccountReadModel
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 REPOSITORY_ROOT = Path(__file__).parents[1]
+
+
+def history_source_for(repositories: CanonicalRepositories) -> HistoryAnalyticsSource:
+    """Explicit test composition of the canonical analytics read boundary."""
+
+    return HistoryAnalyticsSource(repositories.history)
 
 
 @contextmanager
@@ -307,7 +313,7 @@ async def seed_default(name: str) -> FixtureSnapshot:
     """
     payload = snapshot(name)
     seed_canonical_snapshot(transport_manager.history, payload)
-    account = transport_manager.ingestion.account_read_model(
+    account = HistoryAnalyticsSource(transport_manager.history).account_read_model(
         payload.creator_account_id
     )
     scheduler = analytics_runtime.projection_scheduler()
@@ -535,12 +541,13 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
     repositories = create_canonical_repositories(
         "sqlite", canonical_path=canonical_path
     )
+    history_source = history_source_for(repositories)
     payload = await seed(repositories, "creator-beta")
 
     def read_identity(account_id: str):
-        if not repositories.ingestion.account_exists(account_id):
+        if not history_source.account_exists(account_id):
             return None
-        return canonical_identity(repositories.ingestion.account_read_model(account_id))
+        return canonical_identity(history_source.account_read_model(account_id))
 
     stores = create_analytics_stores(
         "sqlite",
@@ -552,7 +559,7 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
     )
     assert isinstance(stores.projections, LazySQLiteAnalyticsProjectionStore)
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source,
         projections=stores.projections,
         graph=stores.graph,
     )
@@ -560,7 +567,7 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         pipeline, worker_count=2, queue_capacity=4
     )
     runtime = insights_service.AnalyticsRuntime(
-        source=repositories.ingestion,
+        source=history_source,
         pipeline=pipeline,
         scheduler=scheduler,
     )
@@ -639,7 +646,7 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         )
         assert all(str(projection_path) not in response.text for response in responses)
 
-        account = repositories.ingestion.account_read_model(
+        account = history_source.account_read_model(
             payload.creator_account_id
         )
         recovery_state = await asyncio.wait_for(
@@ -914,7 +921,8 @@ from app.protocol.payloads import (
     IngestSnapshotCommitPayload,
     SnapshotRecordCounts,
 )
-from app.transport import DEV_ACCOUNT_ID, transport_manager
+from app.bootstrap import transport_manager
+from app.transport import DEV_ACCOUNT_ID
 
 async def run():
     await main_module.startup_event()
@@ -1490,7 +1498,7 @@ async def test_projection_build_coordination_is_per_account(
     repositories = create_canonical_repositories("memory")
     alpha = await seed(repositories, "creator-alpha")
     beta = await seed(repositories, "creator-beta")
-    pipeline = AnalyticsPipeline(repositories.ingestion)
+    pipeline = AnalyticsPipeline(history_source_for(repositories))
     original_build = pipeline._build
     concurrent_builds = threading.Barrier(2)
 
@@ -1641,7 +1649,7 @@ async def test_analyzer_config_digest_invalidates_same_revision_projection() -> 
     )
     graph = projections.graph
     first_pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=projections,
         graph=graph,
     )
@@ -1655,7 +1663,7 @@ async def test_analyzer_config_digest_invalidates_same_revision_projection() -> 
         )
 
     changed_pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=projections,
         graph=graph,
         enrichment=EnrichmentStage(sentiment=ChangedSentimentConfig()),
@@ -1761,7 +1769,7 @@ async def test_aware_timestamps_and_equal_time_source_order_survive_sqlite(
         "sqlite", canonical_path=database_path
     )
     seed_canonical_snapshot(repositories.history, ordered_payload)
-    run = AnalyticsPipeline(repositories.ingestion).project_account(
+    run = AnalyticsPipeline(history_source_for(repositories)).project_account(
         ordered_payload.creator_account_id
     )
     projection = run.artifact.projection
@@ -1805,12 +1813,12 @@ async def test_aware_timestamps_and_equal_time_source_order_survive_sqlite(
     restarted = create_canonical_repositories(
         "sqlite", canonical_path=database_path
     )
-    restarted_account = restarted.ingestion.account_read_model(
+    restarted_account = history_source_for(restarted).account_read_model(
         ordered_payload.creator_account_id
     )
     restarted_messages = restarted_account.conversations[chat["chat_id"]]["messages"]
     assert [item["source_ordinal"] for item in restarted_messages] == [0, 1]
-    restarted_projection = AnalyticsPipeline(restarted.ingestion).project_account(
+    restarted_projection = AnalyticsPipeline(history_source_for(restarted)).project_account(
         ordered_payload.creator_account_id
     ).artifact.projection
     assert [
@@ -1878,13 +1886,13 @@ async def test_analytics_surfaces_store_only_domain_separated_opaque_references(
         canonical_path=canonical_path,
         activation=repositories.projection_activation,
         canonical_identity_reader=lambda account_id: (
-            canonical_identity(repositories.ingestion.account_read_model(account_id))
-            if repositories.ingestion.account_exists(account_id)
+            canonical_identity(history_source_for(repositories).account_read_model(account_id))
+            if history_source_for(repositories).account_exists(account_id)
             else None
         ),
     )
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=stores.projections,
         graph=stores.graph,
     )
@@ -1929,7 +1937,7 @@ async def test_analytics_surfaces_store_only_domain_separated_opaque_references(
     )
 
     seed_canonical_snapshot(transport_manager.history, private_payload)
-    default_account = transport_manager.ingestion.account_read_model(account_marker)
+    default_account = HistoryAnalyticsSource(transport_manager.history).account_read_model(account_marker)
     default_scheduler = analytics_runtime.projection_scheduler()
     await default_scheduler.schedule(account_marker, default_account.view_revision)
     await default_scheduler.wait(account_marker)
@@ -2147,7 +2155,7 @@ async def test_range_and_baseline_provenance_are_explicit_on_every_full_slice() 
 async def test_zero_denominators_are_unavailable_instead_of_fabricated() -> None:
     repositories = create_canonical_repositories("memory")
     payload = await seed(repositories, "creator-alpha")
-    projection = AnalyticsPipeline(repositories.ingestion).project_account(
+    projection = AnalyticsPipeline(history_source_for(repositories)).project_account(
         payload.creator_account_id
     ).artifact.projection
     outbound = next(

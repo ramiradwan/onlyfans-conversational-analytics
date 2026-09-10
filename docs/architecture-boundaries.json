@@ -259,7 +259,7 @@
       "path_patterns": [
         "app/persistence/factory.py"
       ],
-      "role": "Legacy persistence assembly module that constructs repositories and bridges into analytics; recorded under temporary exception until Task 7B.",
+      "role": "Persistence assembly module that constructs and returns persistence-owned repositories only.",
       "authority": "composition",
       "zone": "red",
       "protected_invariants": [
@@ -271,7 +271,8 @@
       ],
       "permitted_outputs": [
         "HistoryRepository instances",
-        "HistoryAnalyticsSource instances"
+        "ProjectionRepository instances",
+        "persistence configuration and command repositories"
       ]
     },
     {
@@ -482,6 +483,7 @@
       "id": "brain-runtime-bootstrap",
       "path_patterns": [
         "app/main.py",
+        "app/bootstrap.py",
         "app/launcher.py",
         "app/packaged_entry.py",
         "app/core/**",
@@ -745,7 +747,7 @@
     },
     {
       "id": "rule-persistence-factory-no-analytics",
-      "description": "Persistence factory must not construct or depend on analytics-facing adapters; recorded under temporary exception until Task 7B.",
+      "description": "Persistence factory must not construct or depend on analytics-facing adapters.",
       "source_modules": [
         "persistence-factory"
       ],
@@ -754,10 +756,10 @@
       ],
       "type": "forbidden",
       "enforcement": {
-        "status": "documented",
+        "status": "enforced",
         "enforced_by": [
-          "planned:Task-2-import-linter",
-          "planned:Task-7B"
+          "tests/test_architecture_contracts.py::test_persistence_factory_analytics_separation_contract",
+          "tests/test_architecture_contracts.py::test_negative_control_persistence_factory_imports_analytics"
         ]
       }
     },
@@ -807,9 +809,10 @@
       ],
       "type": "forbidden",
       "enforcement": {
-        "status": "documented",
+        "status": "enforced",
         "enforced_by": [
-          "planned:Task-2-import-linter"
+          "tests/test_architecture_contracts.py::test_transport_manager_canonical_analytics_source_separation_contract",
+          "tests/test_architecture_contracts.py::test_negative_control_transport_manager_imports_canonical_analytics_source"
         ]
       }
     },
@@ -1204,17 +1207,6 @@
     }
   ],
   "exceptions": [
-    {
-      "source": "app/persistence/factory.py",
-      "target": "app.analytics.canonical_source",
-      "rule": "rule-persistence-factory-no-analytics",
-      "reason": "Factory constructs HistoryAnalyticsSource over HistoryRepository as a legacy composition seam; to be relocated to explicit bootstrap in Task 7B.",
-      "status": "temporary_exception",
-      "introduced_by": "legacy-bootstrap",
-      "tracking_issue": "TASK-7B-PERSISTENCE-FACTORY-DECOUPLING",
-      "expires": "2027-06-30",
-      "removal_task": "7B"
-    },
     {
       "source": "app/persistence/projection_activation.py",
       "target": "app.analytics",

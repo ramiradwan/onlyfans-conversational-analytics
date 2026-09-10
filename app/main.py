@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.endpoints import creator_vault, frontend, history, insights, transport_ws, webauthn
 from app.analytics import runtime as analytics_runtime
+from app.bootstrap import history_source, transport_manager
 from app.core.config import settings
 from app.core.broadcast import broadcast
 from app.core.resource_paths import resource_path
@@ -29,7 +30,6 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
 )
-from app.transport import transport_manager
 
 logger = logging.getLogger(__name__)
 
@@ -40,15 +40,12 @@ _installation_key_reference: InstallationKeyReference | None = None
 def configure_analytics_runtime():
     """Compose the derived runtime from already constructed application resources.
 
-    The current canonical read adapter remains transport's ``ingestion`` field
-    until Task 7B moves HistoryAnalyticsSource construction out of persistence.
-    This bootstrap is nevertheless the only place that connects it, analytics
-    persistence configuration, and projection activation to the analytics
-    runtime.
+    Bootstrap owns the canonical read adapter and connects it to the derived
+    runtime. Transport receives its persistence resources independently.
     """
 
     return analytics_runtime.configure_default_analytics_runtime(
-        transport_manager.ingestion,
+        history_source,
         backend=settings.canonical_persistence_backend,
         projections_path=settings.analytics_projection_database_path,
         canonical_path=settings.canonical_database_path,

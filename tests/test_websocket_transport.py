@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from starlette.websockets import WebSocketDisconnect
 
 from app.core.config import Settings, settings
+from app.bootstrap import transport_manager
 from app.main import app
 from app.persistence.auth import (
     AuthorizedAccountBinding,
@@ -23,7 +24,8 @@ from app.persistence.auth import (
     SQLiteAuthenticationStore,
     VerifiedGrantReference,
 )
-from app.transport import DEV_ACCOUNT_ID, DEV_AGENT_AUTH_TICKET, transport_manager
+from app.persistence.factory import create_canonical_repositories
+from app.transport import DEV_ACCOUNT_ID, DEV_AGENT_AUTH_TICKET
 from app.transport.manager import (
     HEARTBEAT_INTERVAL_SECONDS,
     LEASE_EXPIRED_CLOSE_CODE,
@@ -574,7 +576,7 @@ class RecordingWebSocket:
 
 @pytest.mark.asyncio
 async def test_hard_lease_expiry_closes_then_broadcasts_disconnected() -> None:
-    manager = InMemoryTransportManager()
+    manager = InMemoryTransportManager(create_canonical_repositories("memory"))
     events: list[tuple] = []
     bridge = RecordingWebSocket("bridge", events)
     await manager.bind_bridge(
@@ -619,7 +621,7 @@ async def test_hard_lease_expiry_closes_then_broadcasts_disconnected() -> None:
 
 @pytest.mark.asyncio
 async def test_hard_expiry_does_not_retire_a_lease_refreshed_while_waiting() -> None:
-    manager = InMemoryTransportManager()
+    manager = InMemoryTransportManager(create_canonical_repositories("memory"))
     events: list[tuple] = []
     agent = RecordingWebSocket("agent", events)
     lease = await manager.bind_agent(
@@ -653,7 +655,7 @@ async def test_hard_expiry_does_not_retire_a_lease_refreshed_while_waiting() -> 
 
 @pytest.mark.asyncio
 async def test_expiry_sweeper_does_not_resurrect_a_disconnected_socket() -> None:
-    manager = InMemoryTransportManager()
+    manager = InMemoryTransportManager(create_canonical_repositories("memory"))
     events: list[tuple] = []
     agent = RecordingWebSocket("agent", events)
     lease = await manager.bind_agent(

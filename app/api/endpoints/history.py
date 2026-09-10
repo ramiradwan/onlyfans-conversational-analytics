@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 
 from app.api.activation import require_activated_runtime
+from app.bootstrap import transport_manager
 from app.api.security import (
     get_authenticated_runtime_policy,
     require_creator,
@@ -30,7 +31,6 @@ from app.services.paging_cursor import (
     MessageCursor,
     MessageCursorCodec,
 )
-from app.transport.manager import transport_manager
 
 
 router = APIRouter(

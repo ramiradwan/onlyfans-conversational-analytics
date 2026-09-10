@@ -22,6 +22,7 @@ from fastapi import (
 from pydantic import ValidationError
 
 from app.api.activation import require_activated_runtime
+from app.bootstrap import transport_manager
 from app.core.config import settings
 from app.models.extension_storage import (
     ExtensionStorageRotateRequest,
@@ -54,7 +55,6 @@ from app.transport.manager import (
     AuthenticationError,
     AuthorizationError,
     BridgeBinding,
-    transport_manager,
     utc_now,
 )
 

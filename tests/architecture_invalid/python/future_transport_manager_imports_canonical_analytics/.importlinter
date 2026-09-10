@@ -1,0 +1,11 @@
+[importlinter]
+root_packages =
+    app
+
+[importlinter:contract:contract-e-transport-manager-no-canonical-analytics-source]
+name = Contract E: Transport manager must not import canonical analytics source
+type = forbidden
+source_modules =
+    app.transport.manager
+forbidden_modules =
+    app.analytics.canonical_source

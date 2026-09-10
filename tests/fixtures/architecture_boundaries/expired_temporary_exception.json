@@ -3,10 +3,18 @@
   "description": "Temporary exception whose expiry date is in the past",
   "expected_diagnostic": "temporary exception expired",
   "mutation": {
-    "op": "set",
+    "op": "append",
     "target": "exceptions",
-    "index": 0,
-    "field": "expires",
-    "value": "2020-01-01"
+    "item": {
+      "source": "app/persistence/factory.py",
+      "target": "app.analytics",
+      "rule": "rule-persistence-factory-no-analytics",
+      "reason": "Permanent negative-fixture coverage for expired temporary exceptions.",
+      "status": "temporary_exception",
+      "introduced_by": "test fixture",
+      "tracking_issue": "TEST-EXPIRED-TEMPORARY-EXCEPTION",
+      "expires": "2020-01-01",
+      "removal_task": "TEST-EXPIRED-TEMPORARY-EXCEPTION"
+    }
   }
 }

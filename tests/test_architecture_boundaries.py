@@ -180,15 +180,15 @@ def test_markdown_consistency_detects_altered_exception(tmp_path: Path) -> None:
     manifest = load_manifest(DEFAULT_MANIFEST_PATH)
     original_md = DEFAULT_MARKDOWN_PATH.read_text(encoding="utf-8")
     mutated_md = original_md.replace(
-        "| `app/persistence/factory.py` | `app.analytics.canonical_source` | `rule-persistence-factory-no-analytics` | `temporary_exception` | 2027-06-30 | `TASK-7B-PERSISTENCE-FACTORY-DECOUPLING` |",
-        "| `app/persistence/factory.py` | `app.analytics.canonical_source` | `rule-persistence-factory-no-analytics` | `current_design` | 2027-06-30 | `TASK-7B-PERSISTENCE-FACTORY-DECOUPLING` |",
+        "| `app/persistence/projection_activation.py` | `app.analytics` | `rule-projection-coordination-boundary` | `current_design` | None | `DESIGN-PROJECTION-ACTIVATION-IDENTITY` |",
+        "| `app/persistence/projection_activation.py` | `app.analytics` | `rule-projection-coordination-boundary` | `temporary_exception` | None | `DESIGN-PROJECTION-ACTIVATION-IDENTITY` |",
     )
     temp_md = tmp_path / "architecture-boundaries.md"
     temp_md.write_text(mutated_md, encoding="utf-8")
 
     errors = check_manifest_markdown_consistency(manifest, temp_md)
     assert len(errors) > 0, "Expected error when exception status was mutated"
-    assert any("app/persistence/factory.py" in err for err in errors), errors
+    assert any("app/persistence/projection_activation.py" in err for err in errors), errors
 
 
 def test_markdown_consistency_detects_empty_exceptions_discrepancy() -> None:

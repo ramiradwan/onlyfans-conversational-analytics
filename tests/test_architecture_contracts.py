@@ -6,10 +6,13 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import fields
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_ROOT = ROOT / "tests" / "architecture_invalid" / "python"
+
+from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 
 
 def _get_lint_imports_command() -> list[str]:
@@ -84,11 +87,43 @@ def test_service_transport_separation_contract() -> None:
     assert "Contract C: Application services must not import transport KEPT" in result.stdout
 
 
+def test_persistence_factory_analytics_separation_contract() -> None:
+    """Contract D: persistence assembly cannot import analytics adapters."""
+
+    result = run_import_linter(
+        ROOT / ".importlinter",
+        cwd=ROOT,
+        contract="contract-d-persistence-factory-no-analytics",
+    )
+    assert result.returncode == 0, f"Contract D violated in production:\n{result.stdout}"
+    assert "Contract D: Persistence factory must not import analytics KEPT" in result.stdout
+
+
+def test_transport_manager_canonical_analytics_source_separation_contract() -> None:
+    """Contract E: transport cannot construct the canonical analytics adapter."""
+
+    result = run_import_linter(
+        ROOT / ".importlinter",
+        cwd=ROOT,
+        contract="contract-e-transport-manager-no-canonical-analytics-source",
+    )
+    assert result.returncode == 0, f"Contract E violated in production:\n{result.stdout}"
+    assert "Contract E: Transport manager must not import canonical analytics source KEPT" in result.stdout
+
+
+def test_canonical_repositories_exposes_persistence_resources_only() -> None:
+    """The removed analytics adapter cannot silently return through the factory."""
+
+    assert "ingestion" not in {field.name for field in fields(CanonicalRepositories)}
+    repositories = create_canonical_repositories("memory")
+    assert not hasattr(repositories, "ingestion")
+
+
 def test_production_import_linter_all_contracts() -> None:
     """Full production Import Linter run must pass with all contracts kept."""
     result = run_import_linter(ROOT / ".importlinter", cwd=ROOT)
     assert result.returncode == 0, f"Production lint-imports failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-    assert "Contracts: 3 kept, 0 broken." in result.stdout
+    assert "Contracts: 5 kept, 0 broken." in result.stdout
 
 
 # ------------------------------------------------------------------------------
@@ -153,3 +188,14 @@ def test_negative_control_persistence_factory_imports_analytics() -> None:
     assert result.returncode == 1, f"Expected rejection, but check passed:\n{result.stdout}"
     assert "Contract D: Persistence factory must not import analytics BROKEN" in result.stdout
     assert "app.persistence.factory -> app.analytics" in result.stdout
+
+
+def test_negative_control_transport_manager_imports_canonical_analytics_source() -> None:
+    """Prove Contract E rejects canonical analytics construction in transport."""
+
+    fixture_dir = FIXTURES_ROOT / "future_transport_manager_imports_canonical_analytics"
+    config_path = fixture_dir / ".importlinter"
+    result = run_import_linter(config_path, cwd=fixture_dir)
+    assert result.returncode == 1, f"Expected rejection, but check passed:\n{result.stdout}"
+    assert "Contract E: Transport manager must not import canonical analytics source BROKEN" in result.stdout
+    assert "app.transport.manager -> app.analytics.canonical_source" in result.stdout

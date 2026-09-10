@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.bootstrap import transport_manager
 from app.main import app
 from app.security.extension_storage import (
     extension_storage_key,
@@ -14,7 +15,7 @@ from app.security.extension_storage import (
     seal_extension_storage_bootstrap,
 )
 from app.security.local_data_key import LocalDataKeyError
-from app.transport.manager import DEV_ACCOUNT_ID, DEV_PRINCIPAL_ID, transport_manager
+from app.transport.manager import DEV_ACCOUNT_ID, DEV_PRINCIPAL_ID
 
 
 EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"

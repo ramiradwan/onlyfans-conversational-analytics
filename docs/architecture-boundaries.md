@@ -49,7 +49,7 @@ The following twenty-four modules partition the repository's production namespac
 | `protocol-core` | Red | Authoritative | Cross-runtime protocol v2 schema definitions, golden fixtures, and bidirectional frame validation (`app/protocol/**`, `extension/protocol/**`, `frontend/src/protocol/**`, `shared/fixtures/protocol/**`). |
 | `agent-runtime` | Red | Authoritative | Agent durable delivery, WebSocket connection management, outbox persistence, signing/history coordination, preview UI, and MV3 service worker runtime (`extension/**` excluding `capture/` and `protocol/`). |
 | `brain-transport` | Red | Authoritative | Brain network admission, WebSocket connection lifecycle, protocol framing, and session dispatch to canonical persistence (`app/transport/**`, `app/api/endpoints/transport_ws.py`). |
-| `persistence-factory` | Red | Composition | Legacy persistence assembly module that constructs repositories and bridges into analytics (`app/persistence/factory.py`). |
+| `persistence-factory` | Red | Composition | Persistence assembly module that constructs and returns persistence-owned repositories only (`app/persistence/factory.py`). |
 | `persistence-projection-coordination` | Orange | Composition | Coordination between canonical revisions and projection publication activation (`app/persistence/projection_activation.py`). |
 | `canonical-persistence` | Red | Authoritative | Core authoritative canonical conversation storage, SQLite database lifecycle and SQLCipher runtime qualification, schema migrations, and irreversible deletion closure (`app/persistence/history.py`, `app/persistence/database.py`, `app/persistence/migrations/**`, `app/persistence/deletion_operations.py`, `app/persistence/auth.py`, `app/persistence/private_files.py`, `app/persistence/sqlite_api.py`, `app/persistence/sqlcipher_runtime.py`). |
 | `persistence-coordination` | Red | Authoritative | Repository aggregation, backup coordination, and retention restore operations bridging persistence with service, transport, and analytics concerns (`app/persistence/repositories.py`, `app/persistence/backup.py`, `app/persistence/retention_restore.py`). |
@@ -58,7 +58,7 @@ The following twenty-four modules partition the repository's production namespac
 | `brain-vault-api` | Red | Authoritative | Creator vault REST endpoints governing hard deletion closure, vault lifecycle, and authenticated consent actions (`app/api/endpoints/creator_vault.py`). |
 | `brain-auth-api` | Red | Authoritative | WebAuthn ceremony endpoints and local device authentication flows (`app/api/endpoints/webauthn.py`). |
 | `brain-api-presentation` | Yellow | Presentation | HTTP REST endpoints exposing read models, setup routes, and compiled Bridge static asset delivery (`app/api/**`, `app/static/**`, `app/templates/**`). |
-| `brain-runtime-bootstrap` | Red | Composition | Top-level application assembly, FastAPI application lifecycle, CLI entrypoints, core shared models/utilities, and bootstrap composition (`app/main.py`, `app/launcher.py`, `app/core/**`). |
+| `brain-runtime-bootstrap` | Red | Composition | Top-level application assembly, FastAPI application lifecycle, CLI entrypoints, core shared models/utilities, and bootstrap composition (`app/main.py`, `app/bootstrap.py`, `app/launcher.py`, `app/core/**`). |
 | `application-services` | Orange | Derived | Application workflow orchestration for analytics read services, configuration, command execution, and retention maintenance (`app/services/**`). |
 | `analytics-semantic-foundation` | Orange | Derived | Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime (`app/analytics/canonical_source.py`, `app/analytics/pipeline.py`, `app/analytics/runtime.py`). |
 | `analytics-analyzers-metrics` | Orange | Derived | Derived feature analytics, metrics calculations, and enrichment analyzers consuming canonical read models or graph projections (`app/analytics/analyzers/**`, `app/analytics/metrics/**`). |
@@ -113,10 +113,10 @@ The repository specifies twelve architectural boundary rules governing cross-mod
 | `rule-canonical-persistence-no-upward` | Forbidden | Enforced | `canonical-persistence` | `analytics-semantic-foundation`, `analytics-analyzers-metrics`, `application-services`, `brain-api-presentation`, `provisioning-surface`, `brain-transport` | Core canonical persistence modules (history, database, migrations, deletion_operations) must not import feature, API, provisioning, transport, or analytics orchestration modules. |
 | `rule-canonical-history-gateway` | Protected | Enforced | `analytics-analyzers-metrics` | `canonical-persistence` | Only approved gateway modules may depend directly on app.persistence.history; ordinary analytics must use canonical read source. |
 | `rule-agent-capture-isolation` | Forbidden | Enforced | `agent-capture` | `agent-runtime` | Agent capture modules must produce observations only and not import transport, outbox publication, or command execution. |
-| `rule-persistence-factory-no-analytics` | Forbidden | Documented | `persistence-factory` | `analytics-semantic-foundation` | Persistence factory must not construct or depend on analytics-facing adapters; recorded under temporary exception until Task 7B. |
+| `rule-persistence-factory-no-analytics` | Forbidden | Enforced | `persistence-factory` | `analytics-semantic-foundation` | Persistence factory must not construct or depend on analytics-facing adapters. |
 | `rule-projection-coordination-boundary` | Boundary | Documented | `persistence-projection-coordination` | `analytics-semantic-foundation` | Projection activation coordination between canonical revisions and analytics projection publication is an entangled composition seam recorded under current design. |
 | `rule-no-service-to-transport` | Forbidden | Enforced | `application-services` | `brain-transport` | app.services.insights_service must not directly import or discover app.transport; bootstrap injects the canonical read source into app.analytics.runtime. Contract C checks direct imports only while Task 7C removes remaining transitive canonical-read type ownership. |
-| `rule-transport-analytics-separation` | Forbidden | Documented | `brain-transport` | `analytics-semantic-foundation` | Transport layer must not construct analytics-facing adapters or directly invoke analytics pipelines. |
+| `rule-transport-analytics-separation` | Forbidden | Enforced | `brain-transport` | `analytics-semantic-foundation` | Transport layer must not construct analytics-facing adapters or directly invoke analytics pipelines. |
 | `rule-bridge-no-canonical-writes` | Forbidden | Documented | `bridge-presentation`, `bridge-orchestration` | `canonical-persistence` | Bridge frontend components and stores consume Brain state and must not act as an ingestion or canonical write proxy. |
 | `rule-runtime-policy-confinement` | Protected | Enforced | `brain-api-presentation`, `application-services` | `security-trust` | Runtime policy and role authorization decisions are confined to the security kernel. |
 | `rule-grant-licence-admission-confinement` | Forbidden | Enforced | `security-trust` | `provisioning-surface` | Grant and licence authorization modules must not resolve or reference capability permit admission markers. |
@@ -156,11 +156,10 @@ Changes that touch any of the following require explicit architectural rationale
 
 ## Declared architectural exceptions
 
-The repository acknowledges two specific legacy composition seams. Each is tracked in `docs/architecture-boundaries.json`:
+The repository acknowledges one current-design composition seam tracked in `docs/architecture-boundaries.json`:
 
 | Source | Target | Rule | Status | Expires | Tracking Issue |
 |---|---|---|---|---|---|
-| `app/persistence/factory.py` | `app.analytics.canonical_source` | `rule-persistence-factory-no-analytics` | `temporary_exception` | 2027-06-30 | `TASK-7B-PERSISTENCE-FACTORY-DECOUPLING` |
 | `app/persistence/projection_activation.py` | `app.analytics` | `rule-projection-coordination-boundary` | `current_design` | None | `DESIGN-PROJECTION-ACTIVATION-IDENTITY` |
 
 ## Enforcement mechanisms
@@ -217,7 +216,7 @@ None of the four protected modules import `app.analytics`, `app.services`, `app.
 | `app.transport.manager` | `IngestResult`, `InvariantViolation`, `StreamKey` | Contract/value type | Transport ingestion dispatch admitting Agent frames to `HistoryRepository`. Outside analytics. |
 | `app.api.endpoints.history` | `ProjectionCursorStale` | Contract/value type | Exception type handling stale cursor responses. Outside analytics. |
 | `app.api.endpoints.transport_ws` | `InvariantViolation` | Contract/value type | Exception type handling WebSocket error frames. Outside analytics. |
-| `app.persistence.factory` | `HistoryRepository`, `ProjectionRepository` | Composition/runtime | Legacy persistence composition seam. Outside protected core; tracked under temporary exception for Task 7B. |
+| `app.persistence.factory` | `HistoryRepository`, `ProjectionRepository` | Composition/runtime | Persistence-owned repository assembly. It returns canonical resources only; bootstrap composes the analytics read adapter. |
 | `app.persistence.projection_activation` | `HistoryRepository` | Composition/runtime | Projection publication coordination seam. Outside protected core; tracked under current design exception. |
 
 Ordinary analytics modules (metrics, analyzers, feature modules, and graph projections) are excluded from importing `app.persistence.history` directly and must consume canonical data through `app.analytics.canonical_source`.

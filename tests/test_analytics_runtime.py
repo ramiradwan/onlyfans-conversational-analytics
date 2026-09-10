@@ -82,9 +82,10 @@ async def test_reconfiguring_bootstrap_source_cancels_prior_startup_task(
         main_module.configure_analytics_runtime()
 
 
-def test_bootstrap_registers_the_transport_owned_read_source_without_service_discovery() -> None:
+def test_bootstrap_registers_the_explicit_read_source_without_service_discovery() -> None:
     analytics_runtime.reset_analytics_runtimes()
     configured = main_module.configure_analytics_runtime()
 
-    assert configured.source is main_module.transport_manager.ingestion
+    assert configured.source is main_module.history_source
+    assert not hasattr(main_module.transport_manager, "ingestion")
     assert analytics_runtime.analytics_runtime() is configured

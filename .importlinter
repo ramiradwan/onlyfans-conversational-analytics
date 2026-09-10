@@ -41,11 +41,20 @@ forbidden_modules =
     app.transport
 allow_indirect_imports = True
 
-# Future Contract D (Task 7B - Remove analytics construction from persistence factory):
-# [importlinter:contract:contract-d-persistence-factory-no-analytics]
-# name = Contract D: Persistence factory must not import analytics
-# type = forbidden
-# source_modules =
-#     app.persistence.factory
-# forbidden_modules =
-#     app.analytics
+[importlinter:contract:contract-d-persistence-factory-no-analytics]
+name = Contract D: Persistence factory must not import analytics
+type = forbidden
+source_modules =
+    app.persistence.factory
+forbidden_modules =
+    app.analytics
+allow_indirect_imports = True
+
+[importlinter:contract:contract-e-transport-manager-no-canonical-analytics-source]
+name = Contract E: Transport manager must not import canonical analytics source
+type = forbidden
+source_modules =
+    app.transport.manager
+forbidden_modules =
+    app.analytics.canonical_source
+allow_indirect_imports = True

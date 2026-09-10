@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.activation import require_activated_runtime
+from app.bootstrap import transport_manager
 from app.api.security import (
     get_authenticated_runtime_policy,
     require_creator,
@@ -26,7 +27,6 @@ from app.persistence.retention import (
     production_indefinite_gate_open,
 )
 from app.security.runtime_policy import RuntimePolicy
-from app.transport.manager import transport_manager
 
 
 router = APIRouter(

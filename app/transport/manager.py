@@ -35,11 +35,10 @@ from app.services.command_execution import (
     CommandService,
 )
 from app.persistence.auth import SQLiteAuthenticationStore
-from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
+from app.persistence.factory import CanonicalRepositories
 from app.persistence.history import IngestResult, InvariantViolation, StreamKey
 from app.provisioning.progress_reporting import (
     OnboardingProgressCoordinator,
-    configured_runtime_onboarding_progress,
 )
 from app.security.account_bindings import eligible_accounts
 from app.security.activation_gate import runtime_is_activated
@@ -149,11 +148,10 @@ class InMemoryTransportManager:
 
     def __init__(
         self,
-        repositories: CanonicalRepositories | None = None,
+        repositories: CanonicalRepositories,
         *,
         onboarding_progress: OnboardingProgressCoordinator | None = None,
     ) -> None:
-        repositories = repositories or create_canonical_repositories("memory")
         # Retain the repository aggregate so its disposable TemporaryDirectory
         # remains alive for the full manager lifetime in isolated tests.
         self._repositories = repositories
@@ -165,7 +163,6 @@ class InMemoryTransportManager:
         self._agent_config_grants: dict[str, AgentConfigGrant] = {}
         self.history = repositories.history
         self.projection = repositories.projection
-        self.ingestion = repositories.ingestion
         self.projection_activation = repositories.projection_activation
         self.config_authority = AgentConfigurationAuthority(
             repositories.configuration, authorized_accounts=authorized_account_ids
@@ -1443,21 +1440,3 @@ class InMemoryTransportManager:
         await self.signal_config_available(account_id)
         await self.broadcast_agent_state(account_id)
         return document
-
-
-transport_manager = InMemoryTransportManager(
-    create_canonical_repositories(
-        settings.canonical_persistence_backend,
-        canonical_path=(
-            settings.canonical_database_path
-            if settings.canonical_persistence_backend == "sqlite"
-            else None
-        ),
-        projection_path=(
-            settings.projection_database_path
-            if settings.canonical_persistence_backend == "sqlite"
-            else None
-        ),
-    ),
-    onboarding_progress=configured_runtime_onboarding_progress(),
-)

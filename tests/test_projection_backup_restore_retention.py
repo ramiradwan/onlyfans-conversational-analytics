@@ -8,6 +8,7 @@ import pytest
 from app.analytics.factory import create_analytics_stores
 from app.analytics.identity import canonical_identity
 from app.analytics.opaque_refs import message_ref
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.pipeline import AnalyticsPipeline
 from app.persistence.backup import backup_canonical_database, backup_projections_database
 from app.persistence.factory import create_canonical_repositories
@@ -37,11 +38,17 @@ def _seed_account(path: Path, *, sent_at: datetime = NOW - timedelta(days=2)):
     return repositories
 
 
+def _history_source(repositories) -> HistoryAnalyticsSource:
+    return HistoryAnalyticsSource(repositories.history)
+
+
 def _identity_reader(repositories):
+    history_source = _history_source(repositories)
+
     def read(account_id: str):
-        if not repositories.ingestion.account_exists(account_id):
+        if not history_source.account_exists(account_id):
             return None
-        return canonical_identity(repositories.ingestion.account_read_model(account_id))
+        return canonical_identity(history_source.account_read_model(account_id))
     return read
 
 
@@ -50,7 +57,7 @@ def _analytics(repositories, path: Path):
     # the same frozen time as the pipeline. Left on wall time, a source time this
     # file states as an offset from NOW expires once NOW is far enough past.
     stores = create_analytics_stores("sqlite", projections_path=path, activation=repositories.projection_activation, canonical_identity_reader=_identity_reader(repositories), retention_clock=lambda: NOW)
-    pipeline = AnalyticsPipeline(repositories.ingestion, projections=stores.projections, graph=stores.graph, clock=lambda: NOW)
+    pipeline = AnalyticsPipeline(_history_source(repositories), projections=stores.projections, graph=stores.graph, clock=lambda: NOW)
     return stores, pipeline
 
 

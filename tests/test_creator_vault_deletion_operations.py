@@ -6,9 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.security import AuthContext, csrf_token, get_runtime_policy
+from app.bootstrap import transport_manager
 from app.main import app
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
-from app.transport.manager import DEV_ACCOUNT_ID, DEV_PRINCIPAL_ID, transport_manager
+from app.transport.manager import DEV_ACCOUNT_ID, DEV_PRINCIPAL_ID
 
 NOW = datetime(2026, 9, 1, 0, 0, tzinfo=timezone.utc)
 

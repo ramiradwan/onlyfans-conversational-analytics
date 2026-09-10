@@ -101,7 +101,7 @@ async def start_default_retention_maintenance() -> asyncio.Task[None]:
     """Run one fail-closed sweep, then keep bounded lifecycles enforced."""
 
     global _DEFAULT_TASK
-    from app.transport import transport_manager
+    from app.bootstrap import transport_manager
 
     maintenance = RetentionMaintenance(
         transport_manager.canonical_database,

@@ -73,6 +73,14 @@ CONNECTION_ID = UUID("71000000-0000-4000-8000-000000000001")
 INSTALLATION_ID = UUID("72000000-0000-4000-8000-000000000001")
 STREAM_ID = UUID("73000000-0000-4000-8000-000000000001")
 STREAM = StreamKey(CREATOR_ID, INSTALLATION_ID, STREAM_ID)
+
+
+def history_source_for(repositories: CanonicalRepositories) -> HistoryAnalyticsSource:
+    """Construct the canonical analytics adapter at this test composition seam."""
+
+    return HistoryAnalyticsSource(repositories.history)
+
+
 TEXTS = (
     "hello, thank you",
     "the price is $25 #support",
@@ -469,7 +477,7 @@ def _generated_failure_reproduction(
             context = _context(pipeline, seed=int(history["seed"]))
             if repositories is not None:
                 rebuilt = AnalyticsPipeline(
-                    repositories.ingestion, clock=lambda: EVALUATION_CLOCK
+                    history_source_for(repositories), clock=lambda: EVALUATION_CLOCK
                 ).rebuild_account(CREATOR_ID).artifact
         except Exception as capture_error:
             capture_error_text = repr(capture_error)
@@ -533,8 +541,9 @@ def _clean_compare(
     """Build fresh derived stores and compare them with the active live path."""
 
     context = _context(incremental, seed=seed)
-    account = repositories.ingestion.account_read_model(CREATOR_ID)
-    clean = AnalyticsPipeline(repositories.ingestion, clock=lambda: EVALUATION_CLOCK)
+    history_source = history_source_for(repositories)
+    account = history_source.account_read_model(CREATOR_ID)
+    clean = AnalyticsPipeline(history_source, clock=lambda: EVALUATION_CLOCK)
     rebuilt = clean.rebuild_account(CREATOR_ID).artifact
     expected_semantics = expected_semantic_from_canonical(
         CREATOR_ID, account, context
@@ -577,7 +586,7 @@ def _apply(
     outcome = repositories.history.commit_delta(STREAM, payload)
     assert outcome.status in {"accepted", "duplicate"}
     run = pipeline.project_account(CREATOR_ID)
-    account = repositories.ingestion.account_read_model(CREATOR_ID)
+    account = pipeline.source.account_read_model(CREATOR_ID)
     assert run.artifact.projection.source_revision == account.view_revision
     trace.append(
         {
@@ -665,7 +674,7 @@ def _run_general(
     history: dict[str, Any], *, state: dict[str, Any] | None = None
 ) -> tuple[Any, Any, ReproducibilityContext, list[dict[str, Any]]]:
     repositories = create_canonical_repositories("memory")
-    incremental = AnalyticsPipeline(repositories.ingestion, clock=lambda: EVALUATION_CLOCK)
+    incremental = AnalyticsPipeline(history_source_for(repositories), clock=lambda: EVALUATION_CLOCK)
     trace: list[dict[str, Any]] = []
     _initialize_canonical_stream(repositories, trace)
     if state is not None:
@@ -800,7 +809,7 @@ def _run_deletion(
     history: dict[str, Any], *, state: dict[str, Any] | None = None
 ) -> tuple[Any, Any, ReproducibilityContext, list[dict[str, Any]], Any, CanonicalRepositories]:
     repositories = create_canonical_repositories("memory")
-    incremental = AnalyticsPipeline(repositories.ingestion, clock=lambda: EVALUATION_CLOCK)
+    incremental = AnalyticsPipeline(history_source_for(repositories), clock=lambda: EVALUATION_CLOCK)
     trace: list[dict[str, Any]] = []
     _initialize_canonical_stream(repositories, trace)
     if state is not None:
@@ -862,7 +871,7 @@ def _run_deletion(
             )
             expected_semantics = expected_semantic_from_canonical(
                 CREATOR_ID,
-                repositories.ingestion.account_read_model(CREATOR_ID),
+                history_source_for(repositories).account_read_model(CREATOR_ID),
                 context,
             )
             if state is not None:
@@ -885,7 +894,7 @@ def _run_deletion(
             )
             expected_semantics = expected_semantic_from_canonical(
                 CREATOR_ID,
-                repositories.ingestion.account_read_model(CREATOR_ID),
+                history_source_for(repositories).account_read_model(CREATOR_ID),
                 context,
             )
             if state is not None:
@@ -952,7 +961,7 @@ def _run_deletion(
     )
     expected_semantics = expected_semantic_from_canonical(
         CREATOR_ID,
-        repositories.ingestion.account_read_model(CREATOR_ID),
+        history_source_for(repositories).account_read_model(CREATOR_ID),
         context,
     )
     if state is not None:
@@ -1010,7 +1019,7 @@ def test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_
         }
     )
     expected_semantics = expected_semantic_from_canonical(
-        CREATOR_ID, repositories.ingestion.account_read_model(CREATOR_ID), context
+        CREATOR_ID, history_source_for(repositories).account_read_model(CREATOR_ID), context
     )
     # The generated profiles additionally compare the full independent active
     # identity map.  These are direct semantic faults, so the context check
@@ -1084,7 +1093,7 @@ def _deletion_counterexample_case() -> tuple[Any, Any, ReproducibilityContext, d
         rebuilt,
         context,
         expected_semantic_from_canonical(
-            CREATOR_ID, repositories.ingestion.account_read_model(CREATOR_ID), context
+            CREATOR_ID, history_source_for(repositories).account_read_model(CREATOR_ID), context
         ),
     )
 
@@ -1193,7 +1202,7 @@ def test_deliberate_falsifier_failure_configures_hypothesis_shrink_phase() -> No
         }
     )
     expected_semantics = expected_semantic_from_canonical(
-        CREATOR_ID, repositories.ingestion.account_read_model(CREATOR_ID), context
+        CREATOR_ID, history_source_for(repositories).account_read_model(CREATOR_ID), context
     )
 
     generated_calls = 0
@@ -1231,7 +1240,7 @@ def test_stale_candidate_is_rejected_and_active_publication_stays_current() -> N
     """A real stale publication candidate cannot become active after a mutation."""
 
     repositories = create_canonical_repositories("memory")
-    pipeline = AnalyticsPipeline(repositories.ingestion, clock=lambda: EVALUATION_CLOCK)
+    pipeline = AnalyticsPipeline(history_source_for(repositories), clock=lambda: EVALUATION_CLOCK)
     trace: list[dict[str, Any]] = []
     _initialize_canonical_stream(repositories, trace)
     _, _ = _apply(
@@ -1258,7 +1267,7 @@ def test_stale_candidate_is_rejected_and_active_publication_stays_current() -> N
         context,
         expected_semantic_from_canonical(
             CREATOR_ID,
-            repositories.ingestion.account_read_model(CREATOR_ID),
+            history_source_for(repositories).account_read_model(CREATOR_ID),
             context,
         ),
     )
@@ -1268,7 +1277,7 @@ def test_changed_analyzer_context_is_not_treated_as_equivalent() -> None:
     """A pipeline configuration change must produce distinct provenance."""
 
     repositories = create_canonical_repositories("memory")
-    baseline = AnalyticsPipeline(repositories.ingestion, clock=lambda: EVALUATION_CLOCK)
+    baseline = AnalyticsPipeline(history_source_for(repositories), clock=lambda: EVALUATION_CLOCK)
     trace: list[dict[str, Any]] = []
     _initialize_canonical_stream(repositories, trace)
     _apply(
@@ -1290,7 +1299,7 @@ def test_changed_analyzer_context_is_not_treated_as_equivalent() -> None:
         revision = "sentiment.rules.task6b-config.v1"
 
     changed = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         enrichment=EnrichmentStage(sentiment=AlternateSentiment()),
         clock=lambda: EVALUATION_CLOCK,
     )

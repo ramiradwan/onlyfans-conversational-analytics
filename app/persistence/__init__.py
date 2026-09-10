@@ -35,13 +35,8 @@ _REPOSITORY_NAMES = {
 
 
 def __getattr__(name: str) -> Any:
-    # app.persistence.factory imports app.analytics.canonical_source, which
-    # imports app.persistence.history, which imports this very package.
-    # Re-exporting it eagerly here made any module that reaches
-    # app.persistence.history before app.analytics.canonical_source has
-    # finished loading (for example running `python -m app.analytics.rebuild`
-    # directly) fail with a circular ImportError. Deferring the factory
-    # import to first attribute access breaks that cycle.
+    # Factory exports remain lazy so importing persistence history does not
+    # construct repositories or load runtime configuration as a side effect.
     if name in _FACTORY_NAMES:
         from app.persistence import factory
 
