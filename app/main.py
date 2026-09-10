@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.endpoints import creator_vault, frontend, history, insights, transport_ws, webauthn
+from app.analytics import runtime as analytics_runtime
 from app.core.config import settings
 from app.core.broadcast import broadcast
 from app.core.resource_paths import resource_path
@@ -28,13 +29,39 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
 )
-from app.services import insights_service
 from app.transport import transport_manager
 
 logger = logging.getLogger(__name__)
 
 _installation_key_authority: InstallationKeyAuthority | None = None
 _installation_key_reference: InstallationKeyReference | None = None
+
+
+def configure_analytics_runtime():
+    """Compose the derived runtime from already constructed application resources.
+
+    The current canonical read adapter remains transport's ``ingestion`` field
+    until Task 7B moves HistoryAnalyticsSource construction out of persistence.
+    This bootstrap is nevertheless the only place that connects it, analytics
+    persistence configuration, and projection activation to the analytics
+    runtime.
+    """
+
+    return analytics_runtime.configure_default_analytics_runtime(
+        transport_manager.ingestion,
+        backend=settings.canonical_persistence_backend,
+        projections_path=settings.analytics_projection_database_path,
+        canonical_path=settings.canonical_database_path,
+        activation=transport_manager.projection_activation,
+        post_commit_rebuild_enabled=(
+            settings.canonical_persistence_backend == "sqlite"
+        ),
+    )
+
+
+# Register explicit bootstrap wiring at application construction time so
+# request handlers and isolated tests never make service code discover it.
+configure_analytics_runtime()
 
 
 def initialize_installation_key() -> InstallationKeyReference:
@@ -140,14 +167,18 @@ async def startup_event():
     activate_runtime()
     await broadcast.connect()
     await transport_manager.start()
+    # Settings and persistence paths are bootstrap inputs, not analytics-service
+    # discoveries. Reconfigure here so a fresh process lifecycle uses its
+    # current explicitly constructed transport/canonical resources.
+    configure_analytics_runtime()
     # Recover every canonical account's analytics projection in the
     # background; readiness must not wait on this potentially slow replay.
-    insights_service.launch_default_projection_scheduler()
+    analytics_runtime.launch_default_analytics_runtime()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await transport_manager.stop()
-    drained = await insights_service.shutdown_default_projection_scheduler(
+    drained = await analytics_runtime.shutdown_default_analytics_runtime(
         timeout=5.0
     )
     if not drained:

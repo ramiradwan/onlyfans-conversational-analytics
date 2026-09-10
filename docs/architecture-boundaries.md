@@ -59,8 +59,8 @@ The following twenty-four modules partition the repository's production namespac
 | `brain-auth-api` | Red | Authoritative | WebAuthn ceremony endpoints and local device authentication flows (`app/api/endpoints/webauthn.py`). |
 | `brain-api-presentation` | Yellow | Presentation | HTTP REST endpoints exposing read models, setup routes, and compiled Bridge static asset delivery (`app/api/**`, `app/static/**`, `app/templates/**`). |
 | `brain-runtime-bootstrap` | Red | Composition | Top-level application assembly, FastAPI application lifecycle, CLI entrypoints, core shared models/utilities, and bootstrap composition (`app/main.py`, `app/launcher.py`, `app/core/**`). |
-| `application-services` | Orange | Derived | Application workflow orchestration across analytics, insights, configuration, command execution, and retention maintenance (`app/services/**`). |
-| `analytics-semantic-foundation` | Orange | Derived | Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, and projection stores (`app/analytics/canonical_source.py`, `app/analytics/pipeline.py`). |
+| `application-services` | Orange | Derived | Application workflow orchestration for analytics read services, configuration, command execution, and retention maintenance (`app/services/**`). |
+| `analytics-semantic-foundation` | Orange | Derived | Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime (`app/analytics/canonical_source.py`, `app/analytics/pipeline.py`, `app/analytics/runtime.py`). |
 | `analytics-analyzers-metrics` | Orange | Derived | Derived feature analytics, metrics calculations, and enrichment analyzers consuming canonical read models or graph projections (`app/analytics/analyzers/**`, `app/analytics/metrics/**`). |
 | `bridge-presentation` | Green | Presentation | User-facing React presentation components, views, layouts, design system elements, and visual harnesses (`frontend/src/components/**`, `frontend/src/views/**`). |
 | `bridge-orchestration` | Yellow | Presentation | Bridge client-side state management, WebSocket session synchronization, authenticated REST API integration, test suites, and build tooling (`frontend/src/store/**`, `frontend/src/services/**`). |
@@ -115,7 +115,7 @@ The repository specifies twelve architectural boundary rules governing cross-mod
 | `rule-agent-capture-isolation` | Forbidden | Enforced | `agent-capture` | `agent-runtime` | Agent capture modules must produce observations only and not import transport, outbox publication, or command execution. |
 | `rule-persistence-factory-no-analytics` | Forbidden | Documented | `persistence-factory` | `analytics-semantic-foundation` | Persistence factory must not construct or depend on analytics-facing adapters; recorded under temporary exception until Task 7B. |
 | `rule-projection-coordination-boundary` | Boundary | Documented | `persistence-projection-coordination` | `analytics-semantic-foundation` | Projection activation coordination between canonical revisions and analytics projection publication is an entangled composition seam recorded under current design. |
-| `rule-no-service-to-transport` | Forbidden | Documented | `application-services` | `brain-transport` | Application services must not discover transport infrastructure, except under declared exception for insights_service until Task 7A. |
+| `rule-no-service-to-transport` | Forbidden | Enforced | `application-services` | `brain-transport` | app.services.insights_service must not directly import or discover app.transport; bootstrap injects the canonical read source into app.analytics.runtime. Contract C checks direct imports only while Task 7C removes remaining transitive canonical-read type ownership. |
 | `rule-transport-analytics-separation` | Forbidden | Documented | `brain-transport` | `analytics-semantic-foundation` | Transport layer must not construct analytics-facing adapters or directly invoke analytics pipelines. |
 | `rule-bridge-no-canonical-writes` | Forbidden | Documented | `bridge-presentation`, `bridge-orchestration` | `canonical-persistence` | Bridge frontend components and stores consume Brain state and must not act as an ingestion or canonical write proxy. |
 | `rule-runtime-policy-confinement` | Protected | Enforced | `brain-api-presentation`, `application-services` | `security-trust` | Runtime policy and role authorization decisions are confined to the security kernel. |
@@ -142,7 +142,7 @@ Composition must occur above the components being composed:
 - Persistence modules must not construct analytics-facing adapters.
 - Transport modules must not construct analytics-facing adapters.
 - Analytics services must not discover transport infrastructure.
-- Explicit bootstrap code (`app/main.py` or dedicated composition wiring) creates subsystems and injects dependencies downward.
+- Explicit bootstrap code (`app/main.py` or dedicated composition wiring) registers the canonical read source, analytics storage configuration, and projection activation with the analytics runtime.
 
 ## Paths requiring escalation
 
@@ -156,12 +156,11 @@ Changes that touch any of the following require explicit architectural rationale
 
 ## Declared architectural exceptions
 
-The repository acknowledges three specific legacy composition seams. Each is tracked in `docs/architecture-boundaries.json`:
+The repository acknowledges two specific legacy composition seams. Each is tracked in `docs/architecture-boundaries.json`:
 
 | Source | Target | Rule | Status | Expires | Tracking Issue |
 |---|---|---|---|---|---|
 | `app/persistence/factory.py` | `app.analytics.canonical_source` | `rule-persistence-factory-no-analytics` | `temporary_exception` | 2027-06-30 | `TASK-7B-PERSISTENCE-FACTORY-DECOUPLING` |
-| `app/services/insights_service.py` | `app.transport.manager` | `rule-no-service-to-transport` | `temporary_exception` | 2027-06-30 | `TASK-7A-SERVICE-TRANSPORT-DECOUPLING` |
 | `app/persistence/projection_activation.py` | `app.analytics` | `rule-projection-coordination-boundary` | `current_design` | None | `DESIGN-PROJECTION-ACTIVATION-IDENTITY` |
 
 ## Enforcement mechanisms

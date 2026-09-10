@@ -513,7 +513,7 @@
       "path_patterns": [
         "app/services/**"
       ],
-      "role": "Application workflow orchestration across analytics, insights, configuration, command execution, and retention maintenance.",
+      "role": "Application workflow orchestration for analytics read services, configuration, command execution, and retention maintenance.",
       "authority": "derived",
       "zone": "orange",
       "protected_invariants": [
@@ -523,12 +523,10 @@
       ],
       "permitted_inputs": [
         "canonical read models",
-        "analytics projections",
-        "transport and runtime configuration"
+        "analytics projections"
       ],
       "permitted_outputs": [
         "service response models",
-        "scheduled analytics jobs",
         "command execution results"
       ]
     },
@@ -543,6 +541,7 @@
         "app/analytics/retention_store.py",
         "app/analytics/provenance.py",
         "app/analytics/scheduling.py",
+        "app/analytics/runtime.py",
         "app/analytics/rebuild.*",
         "app/analytics/identity.py",
         "app/analytics/ownership.py",
@@ -558,7 +557,7 @@
         "app/analytics/__init__.py",
         "app/analytics/README.md"
       ],
-      "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, and projection stores.",
+      "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",
       "zone": "orange",
       "protected_invariants": [
@@ -574,7 +573,8 @@
       "permitted_inputs": [
         "canonical history via canonical_source.py",
         "canonical revision identity",
-        "pipeline configuration"
+        "pipeline configuration",
+        "bootstrap-injected canonical read source, storage paths, and projection activation"
       ],
       "permitted_outputs": [
         "rebuildable graph and projection stores",
@@ -780,7 +780,7 @@
     },
     {
       "id": "rule-no-service-to-transport",
-      "description": "Application services must not discover transport infrastructure, except under declared exception for insights_service until Task 7A.",
+      "description": "app.services.insights_service must not directly import or discover app.transport; bootstrap injects the canonical read source into app.analytics.runtime. Contract C checks direct imports only while Task 7C removes remaining transitive canonical-read type ownership.",
       "source_modules": [
         "application-services"
       ],
@@ -789,10 +789,10 @@
       ],
       "type": "forbidden",
       "enforcement": {
-        "status": "documented",
+        "status": "enforced",
         "enforced_by": [
-          "planned:Task-2-import-linter",
-          "planned:Task-7A"
+          "tests/test_architecture_contracts.py::test_service_transport_separation_contract",
+          "tests/test_architecture_contracts.py::test_negative_control_insights_service_imports_transport"
         ]
       }
     },
@@ -1214,17 +1214,6 @@
       "tracking_issue": "TASK-7B-PERSISTENCE-FACTORY-DECOUPLING",
       "expires": "2027-06-30",
       "removal_task": "7B"
-    },
-    {
-      "source": "app/services/insights_service.py",
-      "target": "app.transport.manager",
-      "rule": "rule-no-service-to-transport",
-      "reason": "InsightsService resolves default canonical source from transport_manager when no source is explicitly injected; to be extracted in Task 7A.",
-      "status": "temporary_exception",
-      "introduced_by": "legacy-default-runtime",
-      "tracking_issue": "TASK-7A-SERVICE-TRANSPORT-DECOUPLING",
-      "expires": "2027-06-30",
-      "removal_task": "7A"
     },
     {
       "source": "app/persistence/projection_activation.py",

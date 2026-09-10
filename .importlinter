@@ -30,17 +30,17 @@ ignore_imports =
 allow_indirect_imports = True
 
 # ------------------------------------------------------------------------------
-# Future Contracts (Planned for subsequent tasks; not enabled against current source)
+# Contract C (Task 7A) and future Contract D (Task 7B)
 # ------------------------------------------------------------------------------
-# Future Contract C (Task 7A - Extract analytics runtime composition from insights_service):
-# [importlinter:contract:contract-c-service-transport-separation]
-# name = Contract C: Application services must not import transport
-# type = forbidden
-# source_modules =
-#     app.services.insights_service
-# forbidden_modules =
-#     app.transport
-#
+[importlinter:contract:contract-c-service-transport-separation]
+name = Contract C: Application services must not import transport
+type = forbidden
+source_modules =
+    app.services.insights_service
+forbidden_modules =
+    app.transport
+allow_indirect_imports = True
+
 # Future Contract D (Task 7B - Remove analytics construction from persistence factory):
 # [importlinter:contract:contract-d-persistence-factory-no-analytics]
 # name = Contract D: Persistence factory must not import analytics

@@ -372,10 +372,10 @@ async def _schedule_analytics_rebuild(account_id: str) -> None:
     coalesced rebuild and returns.
     """
 
-    from app.services import insights_service
+    from app.analytics.runtime import request_projection_rebuild
 
     try:
-        await insights_service.request_projection_rebuild(account_id)
+        await request_projection_rebuild(account_id)
     except Exception:
         logger.exception(
             "[ANALYTICS] post-commit projection rebuild scheduling failed"

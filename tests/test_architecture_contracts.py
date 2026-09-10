@@ -73,11 +73,22 @@ def test_canonical_history_gateway_contract() -> None:
     assert "Contract B: Only approved gateway modules may import app.persistence.history KEPT" in result.stdout
 
 
+def test_service_transport_separation_contract() -> None:
+    """Contract C: insights_service cannot discover transport infrastructure."""
+    result = run_import_linter(
+        ROOT / ".importlinter",
+        cwd=ROOT,
+        contract="contract-c-service-transport-separation",
+    )
+    assert result.returncode == 0, f"Contract C violated in production:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    assert "Contract C: Application services must not import transport KEPT" in result.stdout
+
+
 def test_production_import_linter_all_contracts() -> None:
     """Full production Import Linter run must pass with all contracts kept."""
     result = run_import_linter(ROOT / ".importlinter", cwd=ROOT)
     assert result.returncode == 0, f"Production lint-imports failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-    assert "Contracts: 2 kept, 0 broken." in result.stdout
+    assert "Contracts: 3 kept, 0 broken." in result.stdout
 
 
 # ------------------------------------------------------------------------------
@@ -121,7 +132,7 @@ def test_negative_control_protected_persistence_imports_transport() -> None:
 
 
 def test_negative_control_insights_service_imports_transport() -> None:
-    """Prove rejection of app.services.insights_service importing app.transport under future post-7A Contract C."""
+    """Prove rejection of app.services.insights_service importing app.transport."""
     fixture_dir = FIXTURES_ROOT / "future_insights_service_imports_transport"
     config_path = fixture_dir / ".importlinter"
     assert config_path.is_file(), f"Fixture config missing: {config_path}"

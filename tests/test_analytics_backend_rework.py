@@ -24,6 +24,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 import app.main as main_module
+from app.analytics import runtime as analytics_runtime
 from app.analytics.analyzers import RuleBasedSentimentAnalyzer
 from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.enrichment import EnrichmentStage
@@ -309,7 +310,7 @@ async def seed_default(name: str) -> FixtureSnapshot:
     account = transport_manager.ingestion.account_read_model(
         payload.creator_account_id
     )
-    scheduler = insights_service.projection_scheduler()
+    scheduler = analytics_runtime.projection_scheduler()
     await scheduler.schedule(payload.creator_account_id, account.view_revision)
     await scheduler.wait(payload.creator_account_id)
     return payload
@@ -398,12 +399,12 @@ def test_protected_analytics_openapi_requires_auth_and_structured_errors() -> No
 @pytest.fixture(autouse=True)
 def isolated_default_runtime():
     transport_manager.reset()
-    insights_service.reset_analytics_runtimes()
+    analytics_runtime.reset_analytics_runtimes()
     app.dependency_overrides.clear()
     yield
     app.dependency_overrides.clear()
     transport_manager.reset()
-    insights_service.reset_analytics_runtimes()
+    analytics_runtime.reset_analytics_runtimes()
 
 
 @pytest.mark.asyncio
@@ -709,7 +710,7 @@ async def test_get_is_read_only_and_preserves_revision_tagged_failure(
 ) -> None:
     account_id = "synthetic-read-only-account"
     source = MutableCanonicalSource({account_id: 1})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     calls = 0
 
     def fail_projection(*args, **kwargs):
@@ -741,7 +742,7 @@ async def test_get_is_read_only_and_preserves_revision_tagged_failure(
 # The signer-v2 canonical commit path now drives a post-commit analytics
 # rebuild: app/api/endpoints/transport_ws.py acks the commit, schedules the
 # durable read-model projection, then calls
-# insights_service.request_projection_rebuild(account_id), which coalesces a
+# analytics_runtime.request_projection_rebuild(account_id), which coalesces a
 # scheduler-owned rebuild for the committed view_revision. This closes the gap
 # that the former IngestionService.set_projection_scheduler seam covered before
 # the in-memory ingestion cache was retired. The two tests below pin the new
@@ -756,7 +757,7 @@ async def test_request_projection_rebuild_schedules_recovery_for_committed_revis
 ) -> None:
     account_id = "post-commit-rebuild-account"
     source = MutableCanonicalSource({account_id: 7})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     recorded: list[tuple[str, int]] = []
 
     async def spy_request_recovery(
@@ -768,7 +769,7 @@ async def test_request_projection_rebuild_schedules_recovery_for_committed_revis
         runtime.scheduler, "request_recovery", spy_request_recovery
     )
 
-    requested = await insights_service.request_projection_rebuild(
+    requested = await analytics_runtime.request_projection_rebuild(
         account_id, source=source
     )
     assert requested is True
@@ -781,15 +782,23 @@ async def test_request_projection_rebuild_schedules_recovery_for_committed_revis
 async def test_request_projection_rebuild_is_noop_for_non_sqlite_default_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.core import config
-
+    previous_backend = main_module.settings.canonical_persistence_backend
     monkeypatch.setattr(
-        config.settings, "canonical_persistence_backend", "memory"
+        main_module.settings, "canonical_persistence_backend", "memory"
     )
-    # No explicit source => the guard consults the backend and skips the request
-    # so the coordinator is never touched on memory-backed deployments/tests.
-    requested = await insights_service.request_projection_rebuild("any-account")
-    assert requested is False
+    try:
+        main_module.configure_analytics_runtime()
+        # No explicit source => bootstrap's explicit backend configuration skips
+        # the request so the coordinator is never touched on memory deployments.
+        requested = await analytics_runtime.request_projection_rebuild("any-account")
+        assert requested is False
+    finally:
+        monkeypatch.setattr(
+            main_module.settings,
+            "canonical_persistence_backend",
+            previous_backend,
+        )
+        main_module.configure_analytics_runtime()
 
 
 @pytest.mark.asyncio
@@ -813,8 +822,8 @@ async def test_app_shutdown_awaits_scheduler_and_logs_fixed_timeout(
 
     monkeypatch.setattr(main_module.transport_manager, "stop", stop_transport)
     monkeypatch.setattr(
-        main_module.insights_service,
-        "shutdown_default_projection_scheduler",
+        main_module.analytics_runtime,
+        "shutdown_default_analytics_runtime",
         close_scheduler,
     )
     monkeypatch.setattr(
@@ -858,8 +867,8 @@ async def test_app_readiness_does_not_wait_for_projection_recovery(
     monkeypatch.setattr(main_module.broadcast, "connect", connect_broadcast)
     monkeypatch.setattr(main_module.transport_manager, "start", start_transport)
     monkeypatch.setattr(
-        main_module.insights_service,
-        "launch_default_projection_scheduler",
+        main_module.analytics_runtime,
+        "launch_default_analytics_runtime",
         launch_recovery,
     )
 
@@ -1323,7 +1332,7 @@ async def test_projection_get_keeps_event_loop_responsive_during_canonical_read(
             return super().account_read_model(creator_account_id)
 
     source = BlockingCanonicalSource({account_id: 1})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     runtime.pipeline.project_account(account_id)
     source.delay = 0.2
 
@@ -1399,7 +1408,7 @@ async def test_bootstrap_retries_from_one_complete_projection_generation(
 ) -> None:
     account_id = "synthetic-bootstrap-generation-account"
     source = MutableCanonicalSource({account_id: 1})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     runtime.pipeline.project_account(account_id)
     original = insights_service._conversations_from_snapshot
     calls = 0
@@ -1448,7 +1457,7 @@ async def test_bootstrap_generation_retry_is_strictly_bounded(
 ) -> None:
     account_id = "synthetic-bootstrap-moving-account"
     source = MutableCanonicalSource({account_id: 1})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     runtime.pipeline.project_account(account_id)
     original = insights_service._conversations_from_snapshot
     calls = 0
@@ -1921,7 +1930,7 @@ async def test_analytics_surfaces_store_only_domain_separated_opaque_references(
 
     seed_canonical_snapshot(transport_manager.history, private_payload)
     default_account = transport_manager.ingestion.account_read_model(account_marker)
-    default_scheduler = insights_service.projection_scheduler()
+    default_scheduler = analytics_runtime.projection_scheduler()
     await default_scheduler.schedule(account_marker, default_account.view_revision)
     await default_scheduler.wait(account_marker)
     # /api/v1/frontend/bootstrap (the old ticket-era JSON bootstrap envelope)
