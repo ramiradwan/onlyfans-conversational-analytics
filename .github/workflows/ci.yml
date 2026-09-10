@@ -62,6 +62,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
+      - name: Check Bridge architecture boundary contracts
+        working-directory: frontend
+        run: npm run check:architecture
+
       - name: Install extension dependencies
         run: npm ci --prefix extension
 

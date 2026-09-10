@@ -106,7 +106,7 @@ The machine manifest defines twenty-two protected architectural invariants that 
 
 ## Enforced and documented dependency rules
 
-The repository specifies eleven architectural boundary rules governing cross-module dependencies:
+The repository specifies twelve architectural boundary rules governing cross-module dependencies:
 
 | Rule ID | Type | Enforcement | Source modules | Target modules | Description |
 |---|---|---|---|---|---|
@@ -121,6 +121,7 @@ The repository specifies eleven architectural boundary rules governing cross-mod
 | `rule-runtime-policy-confinement` | Protected | Enforced | `brain-api-presentation`, `application-services` | `security-trust` | Runtime policy and role authorization decisions are confined to the security kernel. |
 | `rule-grant-licence-admission-confinement` | Forbidden | Enforced | `security-trust` | `provisioning-surface` | Grant and licence authorization modules must not resolve or reference capability permit admission markers. |
 | `rule-agent-protected-acyclic` | Forbidden | Enforced | `agent-runtime`, `protocol-core` | `agent-runtime`, `protocol-core` | Protected Agent protocol, transport, and runtime kernel modules must remain acyclic; phase-one structural protection does not prove correct dependency direction. |
+| `rule-bridge-protected-acyclic` | Forbidden | Enforced | `bridge-orchestration`, `protocol-core` | `bridge-orchestration`, `protocol-core` | Protected Bridge protocol, store, and service kernel modules must remain acyclic; phase-one structural protection does not prove correct dependency direction. |
 
 ## Normal feature development lane
 

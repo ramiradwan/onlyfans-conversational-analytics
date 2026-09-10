@@ -13,7 +13,9 @@
       ".husky/**",
       ".git/**",
       ".github/**",
-      "extension/test-fixtures/**"
+      "extension/test-fixtures/**",
+      "frontend/.dependency-cruiser.cjs",
+      "frontend/test-fixtures/**"
     ],
     "root_metadata_files": [
       ".gitattributes",
@@ -877,6 +879,25 @@
         "status": "enforced",
         "enforced_by": [
           "extension/tests/architecture-boundaries.test.mjs"
+        ]
+      }
+    },
+    {
+      "id": "rule-bridge-protected-acyclic",
+      "description": "Protected Bridge protocol, store, and service kernel modules must remain acyclic; phase-one structural protection does not prove correct dependency direction.",
+      "source_modules": [
+        "bridge-orchestration",
+        "protocol-core"
+      ],
+      "target_modules": [
+        "bridge-orchestration",
+        "protocol-core"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "frontend/tests/architecture-boundaries.test.ts"
         ]
       }
     }
