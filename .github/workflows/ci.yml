@@ -267,6 +267,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Keep temporary test files on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-tests"
+          New-Item -ItemType Directory -Force $testTemp | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
