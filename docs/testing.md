@@ -22,6 +22,33 @@ npm run audit --prefix extension
 
 Install backend development dependencies from `requirements-dev.txt` and JavaScript dependencies with `npm ci` in the relevant package before running these commands.
 
+## Stateful property-based ingestion tests
+
+Task 5A provides model-based state machine tests and falsifier harnesses for Brain canonical ingestion assurance (`checkpoint-monotonicity` and `replay-idempotency`):
+
+The suite covers the 42 HistoryRepository-level catalogue entries (D01-D09, A01-A14, N01-N12, and N14-N20). Transport admission S01-S03 and parser validation N13 retain their separate seams. The two generated profiles run explicitly in the required Linux job and are excluded from ordinary backend collection to avoid a second dev-profile run.
+
+```powershell
+# Run independent model AST checks and subprocess isolation
+python -m pytest tests/state_models/test_brain_ingestion_model_independence.py
+
+# Run five permanent falsifiers proving oracle detection
+python -m pytest tests/hardening/falsifiers/test_falsifiers.py
+
+# Run deterministic catalogue, liveness, and metamorphic checks (Tier A classes are marker-excluded here)
+python -m pytest tests/stateful/test_brain_ingestion.py
+
+# Run the always-on PR profiles explicitly (15x20 general; 10x20 deletion)
+$env:HYPOTHESIS_PROFILE="tier_a_general"; python -m pytest --override-ini=addopts= tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral
+$env:HYPOTHESIS_PROFILE="tier_a_deletion"; python -m pytest --override-ini=addopts= tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion
+
+# The dev profile is 8x12; smoke is 3x8. Show statistics or replay a seed:
+$env:HYPOTHESIS_PROFILE="dev"; python -m pytest --override-ini=addopts= tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral --hypothesis-show-statistics
+python -m pytest --override-ini=addopts= tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral --hypothesis-seed=<seed>
+```
+
+The research gate proposed 90x40 general and 60x30 deletion as starting calibration inputs. A dated local Task 5A run on 2026-09-09 was interrupted after 568.15 seconds before the 90x40 general test completed. In accordance with the plan's CI-budget rule, the repository profiles reduce example counts before removing transition families or oracle assertions. The always-on mix is 15 general histories and 10 deletion histories, so deletion-focused histories remain 40% of the generated PR total. The two exact profiles completed together in 49.03 seconds in the same local environment after consolidating observation reads. PR-runner timing and any further adjustment remain Task 5C/Task 9 evidence; local timing does not qualify the p95 target.
+
 ## CI coverage
 
 GitHub Actions uses Python 3.11 and Node.js 22. In addition to the common checks, CI runs architecture boundary manifest validation, Python architecture boundary checks (`lint-imports`), Agent architecture boundary checks (`npm run check:architecture` in `extension`), Bridge architecture boundary checks (`npm run check:architecture` in `frontend`), contract-integrity tests, the provisioning-page module test, the 10,000-message Agent snapshot qualification, the backend suite on Windows, and capture end-to-end tests.

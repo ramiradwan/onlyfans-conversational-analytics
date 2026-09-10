@@ -82,8 +82,8 @@ The machine manifest defines twenty-two protected architectural invariants that 
 | Invariant ID | Owner | Severity | Assurance | Requirement / Quality scenario |
 |---|---|---|---|---|
 | `canonical-authority` | Brain canonical persistence | Critical | Documented | HistoryRepository is the sole authoritative commit point for acknowledged platform conversation effects. (ADR 0001, ADR 0009) |
-| `checkpoint-monotonicity` | Brain transport and persistence | Critical | Documented | Source sequence positions advance monotonically per stream; gaps trigger sync resync rather than advancing sequence. (ADR 0004, ADR 0010) |
-| `replay-idempotency` | Brain canonical persistence | Critical | Documented | Replaying previously committed snapshot chunks or delta deliveries produces no duplicate effects and preserves logical identity. (ADR 0004, ADR 0010) |
+| `checkpoint-monotonicity` | Brain transport and persistence | Critical | Qualified | Source sequence positions advance monotonically per stream; gaps trigger sync resync rather than advancing sequence. (ADR 0004, ADR 0010) |
+| `replay-idempotency` | Brain canonical persistence | Critical | Qualified | Replaying previously committed snapshot chunks or delta deliveries produces no duplicate effects and preserves logical identity. (ADR 0004, ADR 0010) |
 | `atomic-canonical-commit` | Brain canonical persistence | Critical | Documented | Snapshot commits transition all chunked events and stream head in a single atomic database transaction. (ADR 0009, ADR 0010) |
 | `snapshot-integrity` | Brain canonical persistence and Agent outbox | High | Documented | Snapshot chunk count, chunk order, and record counts must match the snapshot staging contract before commit is acknowledged, and conflicting entity content or duplicate identifiers are rejected as invariant violations. (ADR 0010, app/persistence/history.py) |
 | `deletion-closure` | Brain persistence and lifecycle maintenance | Critical | Documented | Hard deletion irrevocably clears canonical records, derived projections, graph edges, and prevents resurrection upon replay. (ADR 0009, ADR 0020) |

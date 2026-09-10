@@ -923,11 +923,11 @@
       "severity": "critical",
       "requirement_or_scenario": "Source sequence positions advance monotonically per stream; gaps trigger sync resync rather than advancing sequence. (ADR 0004, ADR 0010)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/stateful/test_brain_ingestion.py"
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral"
         ],
-        "falsifier": "planned:BrokenGapAdapter"
+        "falsifier": "tests/hardening/falsifiers/test_falsifiers.py::test_broken_gap_adapter"
       }
     },
     {
@@ -936,12 +936,12 @@
       "severity": "critical",
       "requirement_or_scenario": "Replaying previously committed snapshot chunks or delta deliveries produces no duplicate effects and preserves logical identity. (ADR 0004, ADR 0010)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/test_durable_ingestion.py",
-          "planned:tests/stateful/test_brain_ingestion.py"
+          "tests/test_durable_ingestion.py",
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral"
         ],
-        "falsifier": "planned:BrokenReplayAdapter"
+        "falsifier": "tests/hardening/falsifiers/test_falsifiers.py::test_broken_duplicate_adapter"
       }
     },
     {

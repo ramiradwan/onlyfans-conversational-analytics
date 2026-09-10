@@ -25,11 +25,17 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+PYTEST_INI = ROOT / "pytest.ini"
 
 BACKEND_TEST_COMMAND = "python -m pytest"
 DEPENDENCY_INSTALL_COMMAND = "python -m pip install -r requirements-dev.txt"
 FRONTEND_BUILD_COMMAND = "npm run build --prefix frontend"
 WINDOWS_PRODUCTION_MARKER = "windows_production"
+STATEFUL_TIER_A_MARKER = "stateful_tier_a"
+TIER_A_TARGETS = {
+    "tier_a_general": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",
+    "tier_a_deletion": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion",
+}
 
 BROWSER_SUITE_DIRECTORY = "tools/e2e-capture"
 BROWSER_SUITE_INVOCATIONS = ("npm test", "npm run test", "playwright test")
@@ -398,3 +404,50 @@ def test_non_windows_jobs_deselect_the_production_boot_tests() -> None:
                 f"job `{name}` runs the backend suite on a non-Windows runner "
                 f"without deselecting `{WINDOWS_PRODUCTION_MARKER}`"
             )
+
+
+def _tier_a_steps(workflow: dict[str, Any]) -> list[tuple[str, int, dict[str, Any]]]:
+    return [
+        (job_name, index, step)
+        for job_name, job in _jobs(workflow).items()
+        for index, step in enumerate(_steps(job))
+        if isinstance(step.get("run"), str)
+        and any(target in step["run"] for target in TIER_A_TARGETS.values())
+    ]
+
+
+def _assert_tier_a_profiles_are_required_once(workflow: dict[str, Any]) -> None:
+    found = _tier_a_steps(workflow)
+    assert len(found) == 2, f"expected two explicit Brain Tier A steps, found {found}"
+    for profile, target in TIER_A_TARGETS.items():
+        matches = [item for item in found if target in item[2]["run"]]
+        assert len(matches) == 1, f"{target} must run exactly once"
+        job_name, index, step = matches[0]
+        job = _jobs(workflow)[job_name]
+        assert not _runs_on_windows(job), "high-volume Tier A belongs in the required Linux lane"
+        assert step.get("env", {}).get("HYPOTHESIS_PROFILE") == profile
+        assert "--override-ini=addopts=" in step["run"]
+        installs = _run_step_indexes(job, DEPENDENCY_INSTALL_COMMAND)
+        assert installs and installs[0] < index, "Tier A must run after backend dependencies install"
+
+
+def test_brain_tier_a_profiles_run_once_in_the_required_linux_job() -> None:
+    workflow = _workflow_document()
+    _assert_tier_a_profiles_are_required_once(workflow)
+
+    missing = deepcopy(workflow)
+    job_name, index, _ = _tier_a_steps(missing)[0]
+    del _jobs(missing)[job_name]["steps"][index]
+    with pytest.raises(AssertionError, match="two explicit Brain Tier A steps"):
+        _assert_tier_a_profiles_are_required_once(missing)
+
+
+def test_ordinary_backend_suites_exclude_explicit_tier_a_tests() -> None:
+    assert f"not {STATEFUL_TIER_A_MARKER}" in PYTEST_INI.read_text(encoding="utf-8")
+    for job_name, job in _jobs(_workflow_document()).items():
+        for index in _backend_suite_indexes(job):
+            expression = _marker_expression(_steps(job)[index]["run"].strip())
+            if expression is not None and not _selects_production_boot(expression):
+                assert f"not {STATEFUL_TIER_A_MARKER}" in expression, (
+                    f"job `{job_name}` ordinary backend suite reruns Tier A"
+                )

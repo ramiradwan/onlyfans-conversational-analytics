@@ -363,15 +363,15 @@ Each entry specifies: stimulus, precondition, expected disposition, expected sta
 - **Persistent/restart expectation:** Existing staging upload unchanged across restart.
 - **Protected invariant:** Single concurrent snapshot upload per stream.
 
-#### Entry N05: Snapshot begin through_seq behind checkpoint
+#### Entry N05: Snapshot through_seq behind checkpoint at commit
 - **Classification:** `normative behavior`
-- **Stimulus:** `ingest.snapshot` begin with `through_seq < checkpoint`.
-- **Precondition:** Checkpoint > `through_seq`.
-- **Expected disposition:** `rejected` with code `invariant_failed`.
-- **Expected state mutation:** None.
-- **Expected non-mutation:** No row inserted in `snapshot_uploads`.
+- **Stimulus:** `ingest.snapshot` commit for a staged upload whose declared `through_seq < checkpoint`.
+- **Precondition:** The begin was admitted and its complete declared chunks were staged without changing the stream checkpoint; the current checkpoint still exceeds `through_seq`.
+- **Expected disposition:** Begin/chunks are admitted to staging; commit is `rejected` with code `invariant_failed`.
+- **Expected state mutation:** Begin/chunks mutate staging only; the rejected commit causes no additional mutation.
+- **Expected non-mutation:** The rejected commit does not advance the checkpoint or merge staged records into canonical state; the staged upload remains pending.
 - **Retryability:** `False`.
-- **Persistent/restart expectation:** Persistent storage remains unchanged.
+- **Persistent/restart expectation:** The pending staging upload remains persistent; canonical state and checkpoint remain unchanged.
 - **Protected invariant:** Snapshot high-water mark non-regression.
 
 #### Entry N06: Valid ordered snapshot chunk frame
@@ -776,6 +776,8 @@ To avoid uncontrolled CI runtime expansion, named profiles are defined for state
 | **Windows Smoke** | Persistence Factory | ~5 × 12 + regressions | Production LocalSQLite | Windows-specific filesystem semantics |
 
 If CI budget pressure requires tuning, example counts must be reduced before removing critical transition families or invariant assertions.
+
+**Task 5A local calibration (2026-09-09):** The initial 90 x 40 Brain general profile did not complete within 568.15 seconds on the local Windows development host and was interrupted. The implemented always-on profiles therefore use 15 x 20 general and 10 x 20 deletion histories while retaining every transition family and every per-transition oracle assertion. The 10 deletion histories are 40% of the combined 25 generated histories. These are current repository settings, not PR-runner p95 qualification; Task 5C and Task 9 must measure the required runner and tune further if necessary.
 
 ### 7.2 Deletion profile guarantee
 
