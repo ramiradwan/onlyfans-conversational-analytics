@@ -1,3 +1,5 @@
+<!-- CODE-VERIFY: Verify SQLCipher notice retention against packaging/sqlcipher/build-fixed-wheel.py and the distributed file list in packaging/runtime-files.json. Preserve upstream notice text. -->
+
 # Third-party notices
 
 Runtime dependency licenses are distributed with their installed packages.
