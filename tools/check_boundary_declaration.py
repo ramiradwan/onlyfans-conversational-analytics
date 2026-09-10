@@ -564,6 +564,18 @@ def _git_changed_files(base_ref: str, head_ref: str) -> list[str]:
 
 def _git_manifest_at(base_ref: str) -> dict[str, Any]:
     try:
+        listing = subprocess.run(
+            ["git", "ls-tree", "--name-only", base_ref, "--", MANIFEST_REPOSITORY_PATH],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        if not listing.stdout.strip():
+            # The first manifest introduces every declaration. Keep an empty
+            # baseline so its rules, authority, and exceptions require review.
+            # ls-tree must succeed: an invalid ref is never an empty baseline.
+            return {}
         completed = subprocess.run(
             ["git", "show", f"{base_ref}:{MANIFEST_REPOSITORY_PATH}"],
             cwd=ROOT,
@@ -571,8 +583,11 @@ def _git_manifest_at(base_ref: str) -> dict[str, Any]:
             capture_output=True,
             check=True,
         )
-        return json.loads(completed.stdout)
-    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        manifest = json.loads(completed.stdout)
+        if not isinstance(manifest, dict):
+            raise ValueError("base architecture manifest root must be a JSON object")
+        return manifest
+    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
         detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
         raise BoundaryDeclarationError(
             f"cannot read base architecture manifest at {base_ref!r}: {detail}"

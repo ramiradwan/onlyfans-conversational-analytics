@@ -23,6 +23,7 @@ from app.analytics.opaque_refs import conversation_ref, message_ref
 from app.analytics.pipeline import CanonicalReadModelSource
 from app.analytics.provenance import stable_config_digest
 from app.analytics.runtime import AnalyticsRuntime, analytics_runtime
+from app.canonical.read_models import AccountReadModel
 from app.models.analytics import (
     AnalysisMode,
     AnalyticsProjection,
@@ -412,7 +413,7 @@ def _projection_is_current(
 async def _canonical_account(
     runtime: AnalyticsRuntime,
     creator_account_id: str,
-):
+) -> AccountReadModel:
     try:
         return await runtime.scheduler.canonical_account(creator_account_id)
     except (ProjectionBackpressure, ProjectionCoordinatorClosed) as error:
@@ -651,7 +652,7 @@ async def build_analytics_update(
 
 def _conversations_from_snapshot(
     creator_account_id: str,
-    account,
+    account: AccountReadModel,
     projection: AnalyticsProjection,
 ) -> list[ExtendedConversationNode]:
     """Build compatibility conversations from one account/projection generation."""

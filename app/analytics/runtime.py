@@ -282,7 +282,7 @@ async def shutdown_default_analytics_runtime(*, timeout: float = 5.0) -> bool:
 
 
 def reset_analytics_runtimes() -> None:
-    """Clear derived process state and bootstrap configuration."""
+    """Clear derived process state while retaining bootstrap configuration."""
 
     global _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     with _RUNTIME_LOCK:

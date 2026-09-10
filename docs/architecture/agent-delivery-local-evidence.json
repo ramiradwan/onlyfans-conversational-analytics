@@ -3,52 +3,60 @@
   "falsifier_probe": {
     "detected": true,
     "falsifier": "BrokenNoopAllocatesSequence",
-    "minimized_failure_command_count": 2,
-    "minimized_failure_frame_count": 1,
-    "minimized_failure_record": "tests/fixtures/agent-delivery-minimized-frame-failure.json",
+    "minimized_failure_record": null,
+    "minimized_failure_record_reason": "The probe reports a falsifying example in pytest output; it does not persist a command/frame record.",
     "shrink_phase_reason": "Hypothesis exposes the total test duration, not a separate first-failure versus shrinking timing API.",
     "shrink_phase_seconds": null,
-    "wall_seconds": 2.131108
+    "wall_seconds": 1.637375
   },
-  "generated_at_utc": "2026-09-10T09:13:27Z",
+  "generated_at_utc": "2026-09-10T13:43:47Z",
   "limitations": [
     "Local FakeIndexedDb evidence drives real DurableIngestOutbox and AgentWebSocketClient but is not a browser-storage performance benchmark.",
-    "No PR-runner percentile is claimed from one local sample."
+    "No PR-runner percentile is claimed from one local sample.",
+    "The Hypothesis probe and checked-in frame-failure fixture are separate fault cases; fixture counts are not measured shrink output."
   ],
+  "persisted_frame_failure": {
+    "command_count": 2,
+    "fault": "frame_source_sequence_corruption",
+    "frame_count": 1,
+    "record": "tests/fixtures/agent-delivery-minimized-frame-failure.json",
+    "replay_verified": true,
+    "wall_seconds": 1.05326
+  },
   "profiles": [
     {
       "deletion_operations": 0,
-      "driver_transitions_executed": 202,
-      "frame_comparisons": 202,
+      "driver_transitions_executed": 142,
+      "frame_comparisons": 142,
       "histories_executed": 5,
       "node_processes_started": 5,
       "partial_snapshot_restart_operations": 0,
       "profile": "general",
-      "reconnect_operations": 47,
-      "restart_operations": 16,
+      "reconnect_operations": 27,
+      "restart_operations": 7,
       "runner_percentiles": null,
       "runner_percentiles_reason": "One local profile run has no sample distribution for p50/p90/p95.",
       "same_client_reconnect_operations": 5,
-      "snapshot_operations": 89,
+      "snapshot_operations": 55,
       "sync_required_operations": 5,
-      "wall_seconds": 4.708678
+      "wall_seconds": 4.092265
     },
     {
-      "deletion_operations": 16,
-      "driver_transitions_executed": 201,
-      "frame_comparisons": 201,
+      "deletion_operations": 22,
+      "driver_transitions_executed": 189,
+      "frame_comparisons": 189,
       "histories_executed": 4,
       "node_processes_started": 4,
       "partial_snapshot_restart_operations": 4,
       "profile": "deletion",
-      "reconnect_operations": 33,
-      "restart_operations": 11,
+      "reconnect_operations": 27,
+      "restart_operations": 9,
       "runner_percentiles": null,
       "runner_percentiles_reason": "One local profile run has no sample distribution for p50/p90/p95.",
       "same_client_reconnect_operations": 4,
-      "snapshot_operations": 94,
+      "snapshot_operations": 81,
       "sync_required_operations": 4,
-      "wall_seconds": 9.48702
+      "wall_seconds": 8.147539
     }
   ],
   "runner": {

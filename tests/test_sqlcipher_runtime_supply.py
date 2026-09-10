@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import importlib.util
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
+import tomllib
+from types import ModuleType
 
 import pytest
 
@@ -18,6 +23,76 @@ from app.persistence.sqlcipher_runtime import (
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ROOT / "packaging" / "sqlcipher" / "fixed-runtime-sources.json"
+
+
+@pytest.fixture
+def wheel_builder() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "fixed_wheel_builder", SOURCES.with_name("build-fixed-wheel.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_native_notices_survive_build_cleanup_and_match_provenance(
+    wheel_builder: ModuleType, tmp_path: Path
+) -> None:
+    wheelhouse = tmp_path / "wheelhouse"
+    with TemporaryDirectory(dir=tmp_path) as directory:
+        build = Path(directory)
+        files = {
+            "binding/LICENSE": "Binding license\n",
+            "cipher/LICENSE.md": "SQLCipher license\n",
+            "cipher/LICENSE.txt": "SQLCipher license\n",
+            "cipher/SQLITE_LICENSE.md": "SQLite notice\n",
+            "installed/share/openssl/copyright": "OpenSSL license\n",
+        }
+        for relative, contents in files.items():
+            source = build / relative
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text(contents, encoding="utf-8")
+        notices = tmp_path / "THIRD_PARTY_NOTICES.md"
+        notices.write_text("\n".join(files.values()), encoding="utf-8")
+        retained = wheel_builder._retain_runtime_licenses(
+            binding=build / "binding", cipher=build / "cipher",
+            installed=build / "installed", wheelhouse=wheelhouse,
+            version="0.6.2+ofca.1", distribution_notices=notices,
+        )
+        assert len(list((build / "binding/ofca-licenses").glob("*/*"))) == 4
+    assert not build.exists()
+    assert len(retained) == 5
+    for relative, digest in retained.items():
+        assert hashlib.sha256((wheelhouse / relative).read_bytes()).hexdigest() == digest
+
+
+def test_builder_rejects_distributed_notices_that_omit_native_license(
+    wheel_builder: ModuleType, tmp_path: Path
+) -> None:
+    binding = tmp_path / "binding"
+    binding.mkdir()
+    (binding / "LICENSE").write_text("new upstream binding notice", encoding="utf-8")
+    notices = tmp_path / "THIRD_PARTY_NOTICES.md"
+    notices.write_text("old upstream binding notice", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="omit binding/LICENSE"):
+        wheel_builder._retain_runtime_licenses(
+            binding=binding, cipher=tmp_path / "cipher", installed=tmp_path / "installed",
+            wheelhouse=tmp_path / "wheelhouse", version="0.6.2+ofca.1",
+            distribution_notices=notices,
+        )
+
+
+def test_rewritten_binding_metadata_includes_native_license_files(
+    wheel_builder: ModuleType, tmp_path: Path
+) -> None:
+    (tmp_path / "setup.py").write_text("VERSION = '0.6.2'\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nversion = "0.6.2"\n', encoding="utf-8"
+    )
+    wheel_builder._rewrite_binding_version(tmp_path, "0.6.2+ofca.1")
+    project = tomllib.loads((tmp_path / "pyproject.toml").read_text(encoding="utf-8"))
+    assert project["project"]["license-files"] == ["LICENSE", "ofca-licenses/*/*"]
 
 
 def test_fixed_windows_runtime_sources_are_exact_and_static_md() -> None:

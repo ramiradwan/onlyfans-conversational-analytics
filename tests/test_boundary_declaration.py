@@ -12,7 +12,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tools import check_boundary_declaration
 from tools.check_boundary_declaration import (
+    BoundaryDeclarationError,
     DEFAULT_MANIFEST_PATH,
     classify_architecture_impact,
     load_manifest,
@@ -333,6 +335,91 @@ def test_cli_accepts_explicit_changed_file_and_body_file_without_network(tmp_pat
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout.split("Architecture impact declaration passed.")[0])
     assert report["architecture_impact"]["maximum_zone"] == "green"
+
+
+@pytest.fixture
+def base_repository(tmp_path: Path) -> Path:
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-c", "user.name=Boundary test",
+            "-c", "user.email=boundary@example.invalid",
+            "-c", "commit.gpgsign=false",
+            "commit", "--allow-empty", "-m", "Before architecture baseline",
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    return tmp_path
+
+
+def test_first_manifest_introduction_requires_all_governance_disclosures(
+    base_repository: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with monkeypatch.context() as context:
+        context.setattr(check_boundary_declaration, "ROOT", base_repository)
+        previous = check_boundary_declaration._git_manifest_at("HEAD")
+    assert previous == {}
+
+    changed_paths = ["docs/architecture-boundaries.json"]
+    impact, errors = validate_gate(
+        changed_paths, TEMPLATE_BODY, MANIFEST, base_manifest=previous
+    )
+    assert set(impact.affected_rules) == {
+        rule["id"]
+        for rule in MANIFEST["rules"]
+        if rule["enforcement"]["status"] == "enforced"
+    }
+    assert set(impact.authority_changes) == {module["id"] for module in MANIFEST["modules"]}
+    assert set(impact.invariant_definition_changes) == {
+        invariant["id"] for invariant in MANIFEST["semantic_invariants"]
+    }
+    assert impact.protected_mapping_changed
+    assert impact.exceptions_changed
+    assert any("Safety evidence" in error for error in errors)
+
+    body = _body(
+        rationale="Introduce the machine architecture baseline and its review controls.",
+        actual="; ".join((*impact.affected_rules, "authority", "invariant", "mapping", "exception")),
+        evidence="python -m pytest tests/test_boundary_declaration.py tests/test_architecture_boundaries.py",
+    )
+    _, errors = validate_gate(changed_paths, body, MANIFEST, base_manifest=previous)
+    assert not errors
+
+
+def test_missing_base_ref_is_not_treated_as_an_initial_manifest(
+    base_repository: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(check_boundary_declaration, "ROOT", base_repository)
+    with pytest.raises(BoundaryDeclarationError, match="cannot read base architecture manifest"):
+        check_boundary_declaration._git_manifest_at("missing-architecture-base-ref")
+
+
+@pytest.mark.parametrize("content", ["{broken-json", "[]", "null"])
+def test_malformed_existing_base_manifest_is_not_treated_as_an_initial_manifest(
+    base_repository: Path, monkeypatch: pytest.MonkeyPatch, content: str
+) -> None:
+    manifest_path = base_repository / "docs" / "architecture-boundaries.json"
+    manifest_path.parent.mkdir()
+    manifest_path.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "add", "docs/architecture-boundaries.json"], cwd=base_repository, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c", "user.name=Boundary test",
+            "-c", "user.email=boundary@example.invalid",
+            "-c", "commit.gpgsign=false",
+            "commit", "-m", "Invalid existing baseline",
+        ],
+        cwd=base_repository,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.setattr(check_boundary_declaration, "ROOT", base_repository)
+    with pytest.raises(BoundaryDeclarationError, match="cannot read base architecture manifest"):
+        check_boundary_declaration._git_manifest_at("HEAD")
 
 
 def test_required_build_and_test_job_runs_the_pull_request_gate_with_local_inputs() -> None:

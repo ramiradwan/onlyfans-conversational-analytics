@@ -140,7 +140,53 @@ def _rewrite_binding_version(binding: Path, version: str) -> None:
     expected_project = 'version = "0.6.2"'
     if expected_project not in project_text:
         raise RuntimeError("sqlcipher3 pyproject.toml no longer has the reviewed version")
-    project.write_text(project_text.replace(expected_project, f'version = "{version}"', 1), encoding="utf-8")
+    project.write_text(
+        project_text.replace(
+            expected_project,
+            f'version = "{version}"\nlicense-files = ["LICENSE", "ofca-licenses/*/*"]',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _retain_runtime_licenses(
+    *, binding: Path, cipher: Path, installed: Path, wheelhouse: Path,
+    version: str, distribution_notices: Path,
+) -> dict[str, str]:
+    """Keep native notices in the wheel and release record before cleanup."""
+
+    sources = {
+        "binding/LICENSE": binding / "LICENSE",
+        "sqlcipher/LICENSE.md": cipher / "LICENSE.md",
+        "sqlcipher/LICENSE.txt": cipher / "LICENSE.txt",
+        "sqlcipher/SQLITE_LICENSE.md": cipher / "SQLITE_LICENSE.md",
+        "openssl/LICENSE.txt": installed / "share" / "openssl" / "copyright",
+    }
+    distributed_text = distribution_notices.read_text(encoding="utf-8")
+    # The installer already distributes THIRD_PARTY_NOTICES.md. Refuse a native
+    # dependency update until that file includes the new upstream notices.
+    for name, source in sources.items():
+        notice = "\n".join(
+            line.rstrip() for line in source.read_text(encoding="utf-8").splitlines()
+        ).strip()
+        if not notice or notice not in distributed_text:
+            raise RuntimeError(f"distributed third-party notices omit {name}")
+
+    retained: dict[str, str] = {}
+    for name, source in sources.items():
+        relative = Path(f"sqlcipher3-{version}.licenses") / name
+        destination = wheelhouse / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        retained[relative.as_posix()] = _sha256(destination)
+        # setuptools includes these files through the explicit license-files
+        # declaration. The binding's own LICENSE is already included there.
+        if not name.startswith("binding/"):
+            wheel_notice = binding / "ofca-licenses" / name
+            wheel_notice.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, wheel_notice)
+    return retained
 
 
 def _assert_generated_runtime(amalgamation: Path) -> str:
@@ -198,6 +244,14 @@ def _build(
         raise RuntimeError("the reviewed static vcpkg OpenSSL layout is unavailable")
     compiler_version = _msvc_compiler_version(vcvars)
     openssl_port_version = _openssl_port_version(installed)
+    retained_licenses = _retain_runtime_licenses(
+        binding=binding,
+        cipher=cipher,
+        installed=installed,
+        wheelhouse=wheelhouse,
+        version=sources["binding"]["local_version"],
+        distribution_notices=ROOT / "THIRD_PARTY_NOTICES.md",
+    )
     # Add vcpkg after vcvars64 replaces INCLUDE and LIB.
     body = (
         f'set "INCLUDE={openssl_include};%INCLUDE%" && '
@@ -244,7 +298,7 @@ def _build(
             },
             "openssl_linkage": "static /MD; dumpbin found no libcrypto/libssl DLL dependency",
         },
-        "licenses_retained": ["binding/LICENSE", "sqlcipher/LICENSE.md", "sqlcipher/LICENSE.txt", "sqlcipher/SQLITE_LICENSE.md", "vcpkg/licenses"],
+        "licenses_retained": retained_licenses,
     }
     (wheelhouse / "sqlcipher3-0.6.2+ofca.1.provenance.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(provenance, sort_keys=True))

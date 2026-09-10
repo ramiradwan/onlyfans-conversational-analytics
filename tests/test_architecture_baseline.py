@@ -295,7 +295,7 @@ def test_contracts_and_runtime_evidence_keep_their_scope() -> None:
         )
     )
     assert agent_delivery["falsifier_probe"]["detected"] is True
-    assert agent_delivery["falsifier_probe"]["minimized_failure_record"].startswith("tests/")
+    assert agent_delivery["persisted_frame_failure"]["record"].startswith("tests/")
     assert persistent_ingestion["qualification_claim"].endswith("not production-equivalent")
     assert persistent_ingestion["status"] == "blocked_unfixed_runtime"
     assert persistent_ingestion["benchmark"]["pr_runner_baseline_status"]["status"] == "pending"

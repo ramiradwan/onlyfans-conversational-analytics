@@ -77,6 +77,16 @@ def _workflow_document() -> dict[str, Any]:
     return document
 
 
+def test_pull_request_body_edits_rerun_architecture_declaration_gate() -> None:
+    # BaseLoader preserves YAML's "on" key instead of coercing it to True.
+    workflow = yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    events = workflow["on"]["pull_request"]
+    assert "edited" in events.get("types", []), (
+        "correcting a PR architecture declaration must schedule a fresh event payload"
+    )
+    assert {"opened", "synchronize", "reopened"} <= set(events["types"])
+
+
 def _jobs(workflow: dict[str, Any]) -> dict[str, Any]:
     jobs = workflow.get("jobs")
     assert isinstance(jobs, dict) and jobs, "the workflow declares no jobs"

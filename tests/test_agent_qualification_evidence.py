@@ -31,5 +31,15 @@ def test_agent_local_evidence_has_real_profile_counts_and_no_invented_percentile
     probe = evidence["falsifier_probe"]
     assert probe["falsifier"] == "BrokenNoopAllocatesSequence" and probe["detected"] is True
     assert probe["shrink_phase_seconds"] is None and probe["shrink_phase_reason"]
-    assert probe["minimized_failure_record"] == "tests/fixtures/agent-delivery-minimized-frame-failure.json"
-    assert probe["minimized_failure_command_count"] > 0 and probe["minimized_failure_frame_count"] > 0
+    assert probe["minimized_failure_record"] is None
+    assert probe["minimized_failure_record_reason"]
+    assert "minimized_failure_command_count" not in probe
+    assert "minimized_failure_frame_count" not in probe
+    persisted = evidence["persisted_frame_failure"]
+    assert persisted["fault"] == "frame_source_sequence_corruption"
+    assert persisted["replay_verified"] is True
+    assert persisted["wall_seconds"] > 0
+    assert persisted["record"] == "tests/fixtures/agent-delivery-minimized-frame-failure.json"
+    record = json.loads((EVIDENCE.parents[2] / persisted["record"]).read_text(encoding="utf-8"))
+    assert persisted["command_count"] == len(record["commands"]) > 0
+    assert persisted["frame_count"] == len(record["actual_frames"]) > 0

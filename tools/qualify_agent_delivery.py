@@ -68,7 +68,7 @@ def run_profile(profile: str, target: str) -> dict[str, object]:
 
 
 def run_falsifier_probe() -> dict[str, object]:
-    """Run the faulting Hypothesis test and require its minimized example."""
+    """Run the faulting Hypothesis test and require its falsifying example."""
     environment = {**os.environ, "AGENT_FALSIFIER_PROBE": "1"}
     started = time.perf_counter()
     completed = subprocess.run(
@@ -77,18 +77,37 @@ def run_falsifier_probe() -> dict[str, object]:
     )
     elapsed = time.perf_counter() - started
     output = f"{completed.stdout}\n{completed.stderr}"
-    if completed.returncode == 0 or "Falsifying example" not in output:
+    if completed.returncode != 1 or "Falsifying example" not in output:
         raise RuntimeError(f"semantic falsifier probe did not fail and shrink as expected:\n{output}")
-    record = json.loads(FAILURE_RECORD.read_text(encoding="utf-8"))
     return {
         "falsifier": "BrokenNoopAllocatesSequence",
         "detected": True,
         "wall_seconds": round(elapsed, 6),
         "shrink_phase_seconds": None,
         "shrink_phase_reason": "Hypothesis exposes the total test duration, not a separate first-failure versus shrinking timing API.",
-        "minimized_failure_record": str(FAILURE_RECORD.relative_to(ROOT)).replace("\\", "/"),
-        "minimized_failure_command_count": len(record["commands"]),
-        "minimized_failure_frame_count": len(record["actual_frames"]),
+        "minimized_failure_record": None,
+        "minimized_failure_record_reason": "The probe reports a falsifying example in pytest output; it does not persist a command/frame record.",
+    }
+
+
+def run_persisted_frame_failure() -> dict[str, object]:
+    """Verify the separate checked-in frame-corruption regression fixture."""
+    started = time.perf_counter()
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", "--override-ini=addopts=", "tests/stateful/test_agent_delivery.py::test_persisted_minimized_frame_failure_is_rejected_by_shared_oracle", "-q"],
+        cwd=ROOT, capture_output=True, text=True, check=False,
+    )
+    elapsed = time.perf_counter() - started
+    if completed.returncode:
+        raise RuntimeError(f"persisted frame-failure replay failed:\n{completed.stdout}\n{completed.stderr}")
+    record = json.loads(FAILURE_RECORD.read_text(encoding="utf-8"))
+    return {
+        "fault": "frame_source_sequence_corruption",
+        "replay_verified": True,
+        "wall_seconds": round(elapsed, 6),
+        "record": str(FAILURE_RECORD.relative_to(ROOT)).replace("\\", "/"),
+        "command_count": len(record["commands"]),
+        "frame_count": len(record["actual_frames"]),
     }
 
 
@@ -113,9 +132,11 @@ def main() -> None:
         "profiles": profiles,
         "deletion_history_fraction": deletion_histories / all_histories,
         "falsifier_probe": run_falsifier_probe(),
+        "persisted_frame_failure": run_persisted_frame_failure(),
         "limitations": [
             "Local FakeIndexedDb evidence drives real DurableIngestOutbox and AgentWebSocketClient but is not a browser-storage performance benchmark.",
             "No PR-runner percentile is claimed from one local sample.",
+            "The Hypothesis probe and checked-in frame-failure fixture are separate fault cases; fixture counts are not measured shrink output.",
         ],
     }
     OUTPUT.write_text(f"{json.dumps(evidence, indent=2, sort_keys=True)}\n", encoding="utf-8")
