@@ -10,7 +10,10 @@ from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_authenticated_account_session
 from app.api.security import AuthContext
+from app.analytics import runtime as analytics_runtime
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.opaque_refs import account_ref
+from app.bootstrap import transport_manager
 from app.main import app
 from app.persistence.history import HistoryRepository, StreamKey
 from app.protocol.payloads import (
@@ -21,7 +24,6 @@ from app.protocol.payloads import (
 )
 from app.services import insights_service
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
-from app.transport import transport_manager
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
@@ -141,21 +143,21 @@ def seed_canonical_snapshot(history: HistoryRepository, payload: FixtureSnapshot
 @pytest.fixture(autouse=True)
 def reset_runtime():
     transport_manager.reset()
-    insights_service.reset_analytics_runtimes()
+    analytics_runtime.reset_analytics_runtimes()
     app.dependency_overrides.clear()
     yield
     app.dependency_overrides.clear()
     transport_manager.reset()
-    insights_service.reset_analytics_runtimes()
+    analytics_runtime.reset_analytics_runtimes()
 
 
 async def seed_default_runtime() -> FixtureSnapshot:
     payload = alpha_snapshot()
     seed_canonical_snapshot(transport_manager.history, payload)
-    account = transport_manager.ingestion.account_read_model(
+    account = HistoryAnalyticsSource(transport_manager.history).account_read_model(
         payload.creator_account_id
     )
-    scheduler = insights_service.projection_scheduler()
+    scheduler = analytics_runtime.projection_scheduler()
     await scheduler.schedule(payload.creator_account_id, account.view_revision)
     await scheduler.wait(payload.creator_account_id)
     return payload

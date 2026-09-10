@@ -22,8 +22,8 @@ from app.api.security import (
     csrf_token,
     get_runtime_policy,
 )
+from app.bootstrap import transport_manager
 from app.security.runtime_policy import RuntimePolicy
-from app.transport import transport_manager
 
 router = APIRouter(tags=["Frontend"])
 

@@ -22,6 +22,7 @@ from fastapi import (
 from pydantic import ValidationError
 
 from app.api.activation import require_activated_runtime
+from app.bootstrap import transport_manager
 from app.core.config import settings
 from app.models.extension_storage import (
     ExtensionStorageRotateRequest,
@@ -54,7 +55,6 @@ from app.transport.manager import (
     AuthenticationError,
     AuthorizationError,
     BridgeBinding,
-    transport_manager,
     utc_now,
 )
 
@@ -364,18 +364,12 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
 
 
 async def _schedule_analytics_rebuild(account_id: str) -> None:
-    """Rebuild derived analytics projections after a canonical commit.
+    """Queue a coalesced analytics rebuild after acknowledgement."""
 
-    Fire-and-forget and defensive: the derived-analytics coordinator must never
-    fail or slow the canonical ingestion path. The ingest.ack has already been
-    sent by the time this runs, so the awaited scheduling only enqueues a
-    coalesced rebuild and returns.
-    """
-
-    from app.services import insights_service
+    from app.analytics.runtime import request_projection_rebuild
 
     try:
-        await insights_service.request_projection_rebuild(account_id)
+        await request_projection_rebuild(account_id)
     except Exception:
         logger.exception(
             "[ANALYTICS] post-commit projection rebuild scheduling failed"

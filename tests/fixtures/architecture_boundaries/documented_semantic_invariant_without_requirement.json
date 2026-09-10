@@ -1,0 +1,12 @@
+{
+  "scenario": "documented_semantic_invariant_without_requirement",
+  "description": "Documented invariant with empty requirement/scenario description",
+  "expected_diagnostic": "missing requirement_or_scenario",
+  "mutation": {
+    "op": "set",
+    "target": "semantic_invariants",
+    "index": 0,
+    "field": "requirement_or_scenario",
+    "value": ""
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "scenario": "not affected disposition omits its rationale",
+  "changed_files": ["app/analytics/identity.py"],
+  "body": "## Architecture impact\n\nArchitecture rationale:\nN/A\n\nPotentially affected invariant dispositions:\ngraph-identity:\nnot affected\n\nInvariant / boundary actually affected:\nN/A\n\nSafety evidence:\nN/A\n",
+  "expected_diagnostic": "requires a non-empty rationale"
+}

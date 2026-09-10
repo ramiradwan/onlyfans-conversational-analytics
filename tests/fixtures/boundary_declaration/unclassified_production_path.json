@@ -1,0 +1,6 @@
+{
+  "scenario": "new production namespace fails closed",
+  "changed_files": ["app/new_runtime/worker.py"],
+  "body": "## Architecture impact\n\nArchitecture rationale:\nN/A\n\nPotentially affected invariant dispositions:\nN/A\n\nInvariant / boundary actually affected:\nN/A\n\nSafety evidence:\nN/A\n",
+  "expected_diagnostic": "unclassified production path"
+}

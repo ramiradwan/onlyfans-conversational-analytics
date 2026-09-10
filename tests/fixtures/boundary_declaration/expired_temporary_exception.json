@@ -1,0 +1,7 @@
+{
+  "scenario": "expired temporary exception fails before declaration review",
+  "changed_files": ["frontend/src/components/ConversationCard.tsx"],
+  "body": "## Architecture impact\n\nArchitecture rationale:\nN/A\n\nPotentially affected invariant dispositions:\nN/A\n\nInvariant / boundary actually affected:\nN/A\n\nSafety evidence:\nN/A\n",
+  "expired_temporary_exception": true,
+  "expected_diagnostic": "temporary exception expired"
+}

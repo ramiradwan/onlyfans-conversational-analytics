@@ -2,7 +2,9 @@
 
 Use [CONTRIBUTING.md](CONTRIBUTING.md) for setup and contribution rules, [docs/testing.md](docs/testing.md) for tests, and [docs/style.md](docs/style.md) for documentation.
 
-Accepted [architecture decisions](docs/adr/README.md) are authoritative. Read the relevant ADR before changing system boundaries, persistence, authentication, protocol behavior, or packaging. If implementation and an accepted ADR disagree, do not silently choose one; correct the inconsistency or update the architecture decision.
+`docs/architecture-boundaries.json` is the authoritative machine-readable architecture baseline. Read [docs/architecture-boundaries.md](docs/architecture-boundaries.md) before modifying subsystem boundaries, dependency directions, or declared exceptions.
+
+Accepted [architecture decisions](docs/adr/README.md) are authoritative. Read the relevant ADR before changing system boundaries, persistence, authentication, protocol behavior, or packaging. If implementation and an accepted ADR disagree, do not silently choose one; correct the inconsistency or update the architecture decision. Do not promote or wholesale implement proposed ADR 0012; it remains proposed.
 
 ## Architecture constraints
 

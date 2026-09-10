@@ -1,0 +1,1440 @@
+{
+  "schema_version": "1.0.0",
+  "machine_authority": "docs/architecture-boundaries.json",
+  "description": "Authoritative machine-readable architecture baseline for ramiradwan/onlyfans-conversational-analytics.",
+  "non_production_policy": {
+    "external_vendored_contracts": [
+      "contracts/**"
+    ],
+    "development_and_test_namespaces": [
+      "tests/**",
+      "tools/**",
+      "docs/**",
+      ".husky/**",
+      ".git/**",
+      ".github/**",
+      "extension/test-fixtures/**",
+      "frontend/.dependency-cruiser.cjs",
+      "frontend/test-fixtures/**"
+    ],
+    "root_metadata_files": [
+      ".gitattributes",
+      ".gitignore",
+      ".importlinter",
+      "AI-instructions.md",
+      "CONTRIBUTING.md",
+      "LICENSE",
+      "README.md",
+      "THIRD_PARTY_NOTICES.md",
+      "communication-spec.md",
+      "pytest.ini",
+      "requirements-dev.txt",
+      "requirements.txt"
+    ]
+  },
+  "modules": [
+    {
+      "id": "architecture-governance",
+      "path_patterns": [
+        "docs/architecture-boundaries.json",
+        "docs/architecture-boundaries.md"
+      ],
+      "role": "Machine architecture authority and human-readable architecture contract governing repository boundaries.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [],
+      "permitted_inputs": [
+        "architecture decision records",
+        "plan specifications"
+      ],
+      "permitted_outputs": [
+        "machine-readable boundary manifest",
+        "human architecture contract"
+      ]
+    },
+    {
+      "id": "packaging-release",
+      "path_patterns": [
+        "packaging/**",
+        "tools/packaged-signing-rule/**",
+        "tools/legal-release-bindings/**",
+        "tools/packaging_policy.py"
+      ],
+      "role": "Windows packaging scripts, installer definitions, PyInstaller spec, runtime file closure manifests, and release signing verification tools.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "release-integrity"
+      ],
+      "permitted_inputs": [
+        "built application binaries",
+        "compiled extension",
+        "compiled frontend",
+        "release coordinates"
+      ],
+      "permitted_outputs": [
+        "Windows installers",
+        "Store ZIP bundles",
+        "file closure manifests",
+        "signed release artifacts"
+      ]
+    },
+    {
+      "id": "attestation-verification",
+      "path_patterns": [
+        "attestation/**",
+        "tools/engineering_attestation.py"
+      ],
+      "role": "Engineering attestation verification keys, public signer definitions, and release attestation generation tooling.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "release-integrity"
+      ],
+      "permitted_inputs": [
+        "attestation signing inputs",
+        "release bundle hashes"
+      ],
+      "permitted_outputs": [
+        "attestation signature verification results",
+        "engineering attestation documents"
+      ]
+    },
+    {
+      "id": "ci-workflows",
+      "path_patterns": [
+        ".github/workflows/**",
+        ".github/pull_request_template.md",
+        ".github/ISSUE_TEMPLATE/**"
+      ],
+      "role": "Continuous integration and release workflow control plane.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "release-integrity"
+      ],
+      "permitted_inputs": [
+        "git push and pull request events",
+        "release dispatch events"
+      ],
+      "permitted_outputs": [
+        "CI verification status",
+        "release build artifacts"
+      ]
+    },
+    {
+      "id": "shared-legal-evidence",
+      "path_patterns": [
+        "shared/legal/**",
+        "artifacts/**"
+      ],
+      "role": "Legal activation evidence schemas, risk disclosure locks, and verified retention acceptance artifacts.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "consent-authorization",
+        "release-integrity"
+      ],
+      "permitted_inputs": [
+        "user activation records",
+        "acceptance test outcomes"
+      ],
+      "permitted_outputs": [
+        "immutable legal evidence bundles",
+        "tamper-evident locks"
+      ]
+    },
+    {
+      "id": "agent-capture",
+      "path_patterns": [
+        "extension/capture/**"
+      ],
+      "role": "Browser-side observation and normalization of creator-visible platform activity under consent control.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "capture-control-separation",
+        "consent-authorization"
+      ],
+      "permitted_inputs": [
+        "creator-visible browser and platform activity",
+        "consent state"
+      ],
+      "permitted_outputs": [
+        "normalized capture records to Agent runtime"
+      ]
+    },
+    {
+      "id": "protocol-core",
+      "path_patterns": [
+        "app/protocol/**",
+        "extension/protocol/**",
+        "frontend/src/protocol/**",
+        "shared/fixtures/protocol/**"
+      ],
+      "role": "Cross-runtime protocol v2 schema definitions, golden fixtures, and bidirectional frame validation.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "protocol-compatibility"
+      ],
+      "permitted_inputs": [
+        "raw wire messages from Agent and Bridge",
+        "internal event payloads"
+      ],
+      "permitted_outputs": [
+        "validated typed protocol frames",
+        "protocol error frames"
+      ]
+    },
+    {
+      "id": "agent-runtime",
+      "path_patterns": [
+        "extension/popup.*",
+        "extension/preview/**",
+        "extension/activation/**",
+        "extension/transport/**",
+        "extension/runtime/**",
+        "extension/background*.js",
+        "extension/content.js",
+        "extension/page-hook*.js",
+        "extension/manifest.json",
+        "extension/build.mjs",
+        "extension/.dependency-cruiser.cjs",
+        "extension/vendor/**",
+        "extension/icons/**",
+        "extension/extension-config.json",
+        "extension/package*.json",
+        "extension/tests/**",
+        "extension/qa/**",
+        "extension/qualification/**",
+        "extension/README.md"
+      ],
+      "role": "Agent durable delivery, WebSocket connection management, outbox persistence, signing/history coordination, preview UI, and MV3 service worker runtime.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "durable-agent-delivery",
+        "checkpoint-monotonicity",
+        "consent-authorization",
+        "protocol-compatibility"
+      ],
+      "permitted_inputs": [
+        "normalized capture records",
+        "Brain protocol frames",
+        "session and ack responses",
+        "user consent actions"
+      ],
+      "permitted_outputs": [
+        "validated protocol frames toward Brain",
+        "local delivery state",
+        "popup and preview presentation"
+      ]
+    },
+    {
+      "id": "canonical-read-models",
+      "path_patterns": [
+        "app/canonical/**"
+      ],
+      "role": "Neutral canonical read-model type ownership shared by canonical persistence, analytics, and transport without assigning ingestion behavior to the type namespace.",
+      "authority": "authoritative",
+      "zone": "orange",
+      "protected_invariants": [],
+      "permitted_inputs": [
+        "canonical state represented by the read model"
+      ],
+      "permitted_outputs": [
+        "neutral canonical read-model value types"
+      ]
+    },
+    {
+      "id": "brain-transport",
+      "path_patterns": [
+        "app/transport/**",
+        "app/api/endpoints/transport_ws.py"
+      ],
+      "role": "Brain network admission, WebSocket connection lifecycle, protocol framing, and session dispatch to canonical persistence.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "transport-analytics-separation",
+        "protocol-compatibility",
+        "atomic-canonical-commit"
+      ],
+      "permitted_inputs": [
+        "authenticated protocol frames from Agent and Bridge"
+      ],
+      "permitted_outputs": [
+        "admitted source effects to canonical persistence",
+        "Bridge state broadcasts",
+        "Agent acks"
+      ]
+    },
+    {
+      "id": "persistence-factory",
+      "path_patterns": [
+        "app/persistence/factory.py"
+      ],
+      "role": "Persistence assembly module that constructs and returns persistence-owned repositories only.",
+      "authority": "composition",
+      "zone": "red",
+      "protected_invariants": [
+        "persistence-analytics-separation"
+      ],
+      "permitted_inputs": [
+        "runtime database configurations",
+        "injected persistence paths"
+      ],
+      "permitted_outputs": [
+        "HistoryRepository instances",
+        "ProjectionRepository instances",
+        "persistence configuration and command repositories"
+      ]
+    },
+    {
+      "id": "persistence-projection-coordination",
+      "path_patterns": [
+        "app/persistence/projection_activation.py",
+        "app/persistence/projection_pipeline.py",
+        "app/persistence/projection_sql/**"
+      ],
+      "role": "Coordination between canonical revisions and projection publication activation; entangled composition seam recorded under current design.",
+      "authority": "composition",
+      "zone": "orange",
+      "protected_invariants": [
+        "projection-publication-revision",
+        "derived-referential-closure"
+      ],
+      "permitted_inputs": [
+        "canonical revision identity",
+        "projection activation requests"
+      ],
+      "permitted_outputs": [
+        "active projection descriptor",
+        "projection publication state"
+      ]
+    },
+    {
+      "id": "canonical-persistence",
+      "path_patterns": [
+        "app/persistence/history.py",
+        "app/persistence/database.py",
+        "app/persistence/migrations.py",
+        "app/persistence/deletion_operations.py",
+        "app/persistence/auth.py",
+        "app/persistence/private_files.py",
+        "app/persistence/sqlite_api.py",
+        "app/persistence/sqlcipher_runtime.py",
+        "app/persistence/retention.py",
+        "app/persistence/managed_recovery.py",
+        "app/persistence/archive_export.py",
+        "app/persistence/__init__.py",
+        "app/persistence/sql/**",
+        "app/persistence/auth_sql/**"
+      ],
+      "role": "Authoritative canonical conversation storage, SQLite database lifecycle and SQLCipher runtime qualification, schema migrations, and irreversible deletion closure.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "canonical-authority",
+        "atomic-canonical-commit",
+        "checkpoint-monotonicity",
+        "replay-idempotency",
+        "snapshot-integrity",
+        "deletion-closure",
+        "persistence-analytics-separation",
+        "persistence-transport-separation"
+      ],
+      "permitted_inputs": [
+        "admitted source effects from transport",
+        "authorized deletion and lifecycle requests",
+        "database migration tasks",
+        "runtime qualification requests"
+      ],
+      "permitted_outputs": [
+        "canonical read models via canonical gateway",
+        "durable database commits",
+        "backup and recovery state",
+        "SQLCipher runtime qualification reports"
+      ]
+    },
+    {
+      "id": "persistence-coordination",
+      "path_patterns": [
+        "app/persistence/repositories.py",
+        "app/persistence/backup.py",
+        "app/persistence/retention_restore.py"
+      ],
+      "role": "Repository aggregation, backup coordination, and retention restore operations bridging persistence with service, transport, and analytics concerns.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "atomic-canonical-commit",
+        "deletion-closure"
+      ],
+      "permitted_inputs": [
+        "canonical repository instances",
+        "backup directives",
+        "restore descriptors"
+      ],
+      "permitted_outputs": [
+        "aggregated repository collections",
+        "verified backup archives",
+        "restored database instances"
+      ]
+    },
+    {
+      "id": "security-trust",
+      "path_patterns": [
+        "app/security/**",
+        "app/api/security.py"
+      ],
+      "role": "Side authority governing local authentication, device-bound keys, activation gate, grant verification, and capability permits.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "consent-authorization",
+        "provisioning-trust"
+      ],
+      "permitted_inputs": [
+        "runtime configuration",
+        "pinned trust and grant sets",
+        "platform key material",
+        "local session requests"
+      ],
+      "permitted_outputs": [
+        "fail-closed admission decisions",
+        "verified auth tokens",
+        "capability permits"
+      ]
+    },
+    {
+      "id": "provisioning-surface",
+      "path_patterns": [
+        "app/provisioning/**"
+      ],
+      "role": "Isolated first-run onboarding web surface, claim submission, creator association, and configuration handoff.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "provisioning-trust"
+      ],
+      "permitted_inputs": [
+        "creator claim submission",
+        "session and CSRF tokens",
+        "injected verification callables"
+      ],
+      "permitted_outputs": [
+        "durable provisioning state",
+        "verified runtime configuration handoff"
+      ]
+    },
+    {
+      "id": "brain-vault-api",
+      "path_patterns": [
+        "app/api/endpoints/creator_vault.py"
+      ],
+      "role": "Creator vault REST endpoints governing hard deletion closure, vault lifecycle, and authenticated consent actions.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "deletion-closure",
+        "canonical-authority",
+        "consent-authorization"
+      ],
+      "permitted_inputs": [
+        "authenticated creator vault HTTP requests",
+        "deletion and export commands"
+      ],
+      "permitted_outputs": [
+        "vault status responses",
+        "audit receipts",
+        "deletion execution outcomes"
+      ]
+    },
+    {
+      "id": "brain-auth-api",
+      "path_patterns": [
+        "app/api/endpoints/webauthn.py"
+      ],
+      "role": "WebAuthn ceremony endpoints and local device authentication flows.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "provisioning-trust",
+        "consent-authorization"
+      ],
+      "permitted_inputs": [
+        "WebAuthn challenge requests",
+        "assertion responses"
+      ],
+      "permitted_outputs": [
+        "ceremony challenges",
+        "verified session credentials"
+      ]
+    },
+    {
+      "id": "brain-api-presentation",
+      "path_patterns": [
+        "app/api/**",
+        "app/static/**",
+        "app/templates/**"
+      ],
+      "role": "HTTP REST endpoints exposing read models, setup routes, and compiled Bridge static asset delivery.",
+      "authority": "presentation",
+      "zone": "yellow",
+      "protected_invariants": [
+        "protocol-compatibility"
+      ],
+      "permitted_inputs": [
+        "authenticated client HTTP requests",
+        "analytics read models"
+      ],
+      "permitted_outputs": [
+        "JSON HTTP responses",
+        "static asset responses"
+      ]
+    },
+    {
+      "id": "brain-runtime-bootstrap",
+      "path_patterns": [
+        "app/main.py",
+        "app/bootstrap.py",
+        "app/launcher.py",
+        "app/packaged_entry.py",
+        "app/core/**",
+        "app/models/**",
+        "app/utils/**",
+        "app/__init__.py",
+        "app/.env.example",
+        "app/README.md"
+      ],
+      "role": "Top-level application assembly, FastAPI application lifecycle, CLI entrypoints, core shared models/utilities, and bootstrap composition.",
+      "authority": "composition",
+      "zone": "red",
+      "protected_invariants": [
+        "atomic-canonical-commit",
+        "provisioning-trust"
+      ],
+      "permitted_inputs": [
+        "environment variables",
+        "runtime CLI flags",
+        "composed subsystem factories"
+      ],
+      "permitted_outputs": [
+        "running FastAPI ASGI application",
+        "process lifecycle management"
+      ]
+    },
+    {
+      "id": "application-services",
+      "path_patterns": [
+        "app/services/**"
+      ],
+      "role": "Application workflow orchestration for analytics read services, configuration, command execution, and retention maintenance.",
+      "authority": "derived",
+      "zone": "orange",
+      "protected_invariants": [
+        "deletion-closure",
+        "provenance-integrity",
+        "transport-analytics-separation"
+      ],
+      "permitted_inputs": [
+        "canonical read models",
+        "analytics projections"
+      ],
+      "permitted_outputs": [
+        "service response models",
+        "command execution results"
+      ]
+    },
+    {
+      "id": "analytics-semantic-foundation",
+      "path_patterns": [
+        "app/analytics/canonical_source.py",
+        "app/analytics/pipeline.py",
+        "app/analytics/graph_*.py",
+        "app/analytics/*projection_store.py",
+        "app/analytics/*graph_store.py",
+        "app/analytics/retention_store.py",
+        "app/analytics/provenance.py",
+        "app/analytics/scheduling.py",
+        "app/analytics/runtime.py",
+        "app/analytics/rebuild.*",
+        "app/analytics/identity.py",
+        "app/analytics/ownership.py",
+        "app/analytics/historical_derivation.py",
+        "app/analytics/factory.py",
+        "app/analytics/database.py",
+        "app/analytics/sql/**",
+        "app/analytics/types.py",
+        "app/analytics/errors.py",
+        "app/analytics/cancellation.py",
+        "app/analytics/networkx_adapter.py",
+        "app/analytics/opaque_refs.py",
+        "app/analytics/__init__.py",
+        "app/analytics/README.md"
+      ],
+      "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
+      "authority": "derived",
+      "zone": "orange",
+      "protected_invariants": [
+        "graph-identity",
+        "derived-state-determinism",
+        "graph-semantic-reproducibility",
+        "projection-reproducibility",
+        "projection-publication-revision",
+        "derived-referential-closure",
+        "provenance-integrity",
+        "deletion-closure"
+      ],
+      "permitted_inputs": [
+        "canonical history via canonical_source.py",
+        "canonical revision identity",
+        "pipeline configuration",
+        "bootstrap-injected canonical read source, storage paths, and projection activation"
+      ],
+      "permitted_outputs": [
+        "rebuildable graph and projection stores",
+        "analytics generations",
+        "feature read models"
+      ]
+    },
+    {
+      "id": "analytics-analyzers-metrics",
+      "path_patterns": [
+        "app/analytics/analyzers.py",
+        "app/analytics/analyzers/**",
+        "app/analytics/metrics.py",
+        "app/analytics/metrics/**",
+        "app/analytics/enrichment.py",
+        "app/analytics/enrichment/**",
+        "app/analytics/conversation_quality.py",
+        "app/analytics/response_time.py",
+        "app/analytics/fan_loyalty.py",
+        "app/analytics/financial.py",
+        "app/analytics/topics.py",
+        "app/analytics/activity.py",
+        "app/analytics/insights.py"
+      ],
+      "role": "Derived feature analytics, metrics calculations, and enrichment analyzers consuming canonical read models or graph projections.",
+      "authority": "derived",
+      "zone": "orange",
+      "protected_invariants": [
+        "derived-state-determinism",
+        "provenance-integrity"
+      ],
+      "permitted_inputs": [
+        "canonical read models",
+        "graph projection state"
+      ],
+      "permitted_outputs": [
+        "feature metric summaries",
+        "conversation enrichments"
+      ]
+    },
+    {
+      "id": "bridge-presentation",
+      "path_patterns": [
+        "frontend/src/components/**",
+        "frontend/src/views/**",
+        "frontend/src/layouts/**",
+        "frontend/src/routing/**",
+        "frontend/src/common/**",
+        "frontend/src/story-only/**",
+        "frontend/src/styles/**",
+        "frontend/src/theme/**",
+        "frontend/src/assets/**",
+        "frontend/src/index.css",
+        "frontend/index.html",
+        "frontend/visual-harness.html",
+        "frontend/.design-sync/**",
+        "frontend/*.md"
+      ],
+      "role": "User-facing React presentation components, views, layouts, design system elements, and visual harnesses.",
+      "authority": "presentation",
+      "zone": "green",
+      "protected_invariants": [],
+      "permitted_inputs": [
+        "store state",
+        "view props",
+        "theme settings"
+      ],
+      "permitted_outputs": [
+        "rendered DOM elements",
+        "user interaction events"
+      ]
+    },
+    {
+      "id": "bridge-orchestration",
+      "path_patterns": [
+        "frontend/src/store/**",
+        "frontend/src/services/**",
+        "frontend/src/analytics/**",
+        "frontend/src/config/**",
+        "frontend/src/hooks/**",
+        "frontend/src/utils/**",
+        "frontend/src/types/**",
+        "frontend/src/main.tsx",
+        "frontend/src/App.tsx",
+        "frontend/src/vite-env.d.ts",
+        "frontend/src/__mocks__/**",
+        "frontend/tests/**",
+        "frontend/scripts/**",
+        "frontend/vite.config.ts",
+        "frontend/vitest.config.ts",
+        "frontend/tsconfig*.json",
+        "frontend/package*.json",
+        "frontend/eslint.config.js"
+      ],
+      "role": "Bridge client-side state management, WebSocket session synchronization, authenticated REST API integration, test suites, and build tooling.",
+      "authority": "presentation",
+      "zone": "yellow",
+      "protected_invariants": [
+        "protocol-compatibility"
+      ],
+      "permitted_inputs": [
+        "Brain WebSocket delta and snapshot frames",
+        "REST analytics responses"
+      ],
+      "permitted_outputs": [
+        "Bridge store state",
+        "resync requests",
+        "authenticated REST requests"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "rule-canonical-read-model-ownership",
+      "description": "AccountReadModel is defined only in app.canonical.read_models; analytics, persistence coordination, and transport import it directly from that owner and must not import or re-export it through app.transport.ingestion.",
+      "source_modules": [
+        "analytics-semantic-foundation",
+        "persistence-coordination",
+        "persistence-projection-coordination",
+        "brain-transport"
+      ],
+      "target_modules": [
+        "canonical-read-models"
+      ],
+      "type": "protected",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/test_architecture_contracts.py::test_canonical_read_model_ownership_contract",
+          "tests/test_architecture_contracts.py::test_negative_control_legacy_transport_account_read_model_import"
+        ]
+      }
+    },
+    {
+      "id": "rule-canonical-persistence-no-upward",
+      "description": "Core canonical persistence modules (history, database, migrations, deletion_operations) must not import feature, API, provisioning, transport, or analytics orchestration modules.",
+      "source_modules": [
+        "canonical-persistence"
+      ],
+      "target_modules": [
+        "analytics-semantic-foundation",
+        "analytics-analyzers-metrics",
+        "application-services",
+        "brain-api-presentation",
+        "provisioning-surface",
+        "brain-transport"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/test_architecture_contracts.py::test_canonical_persistence_no_upward_contract"
+        ]
+      }
+    },
+    {
+      "id": "rule-canonical-history-gateway",
+      "description": "Only approved gateway modules may depend directly on app.persistence.history; ordinary analytics must use canonical read source.",
+      "source_modules": [
+        "analytics-analyzers-metrics"
+      ],
+      "target_modules": [
+        "canonical-persistence"
+      ],
+      "type": "protected",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/test_architecture_contracts.py::test_canonical_history_gateway_contract"
+        ]
+      }
+    },
+    {
+      "id": "rule-agent-capture-isolation",
+      "description": "Agent capture modules must produce observations only and not import transport, outbox publication, or command execution.",
+      "source_modules": [
+        "agent-capture"
+      ],
+      "target_modules": [
+        "agent-runtime"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "extension/tests/architecture-boundaries.test.mjs"
+        ]
+      }
+    },
+    {
+      "id": "rule-persistence-factory-no-analytics",
+      "description": "Persistence factory must not construct or depend on analytics-facing adapters.",
+      "source_modules": [
+        "persistence-factory"
+      ],
+      "target_modules": [
+        "analytics-semantic-foundation"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/test_architecture_contracts.py::test_persistence_factory_analytics_separation_contract",
+          "tests/test_architecture_contracts.py::test_negative_control_persistence_factory_imports_analytics"
+        ]
+      }
+    },
+    {
+      "id": "rule-projection-coordination-boundary",
+      "description": "Projection activation coordination between canonical revisions and analytics projection publication is an entangled composition seam recorded under current design.",
+      "source_modules": [
+        "persistence-projection-coordination"
+      ],
+      "target_modules": [
+        "analytics-semantic-foundation"
+      ],
+      "type": "boundary",
+      "enforcement": {
+        "status": "documented",
+        "enforced_by": [
+          "planned:projection-coordination-boundary-control"
+        ]
+      }
+    },
+    {
+      "id": "rule-no-service-to-transport",
+      "description": "app.services.insights_service must not directly import or discover app.transport; bootstrap injects the canonical read source into app.analytics.runtime, and canonical read types have their own owner.",
+      "source_modules": [
+        "application-services"
+      ],
+      "target_modules": [
+        "brain-transport"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/test_architecture_contracts.py::test_service_transport_separation_contract",
+          "tests/test_architecture_contracts.py::test_negative_control_insights_service_imports_transport"
+        ]
+      }
+    },
+    {
+      "id": "rule-transport-analytics-separation",
+      "description": "Transport layer must not construct analytics-facing adapters or directly invoke analytics pipelines.",
+      "source_modules": [
+        "brain-transport"
+      ],
+      "target_modules": [
+        "analytics-semantic-foundation"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/test_architecture_contracts.py::test_transport_manager_canonical_analytics_source_separation_contract",
+          "tests/test_architecture_contracts.py::test_negative_control_transport_manager_imports_canonical_analytics_source"
+        ]
+      }
+    },
+    {
+      "id": "rule-bridge-no-canonical-writes",
+      "description": "Bridge frontend components and stores consume Brain state and must not act as an ingestion or canonical write proxy.",
+      "source_modules": [
+        "bridge-presentation",
+        "bridge-orchestration"
+      ],
+      "target_modules": [
+        "canonical-persistence"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "documented",
+        "enforced_by": [
+          "planned:bridge-canonical-write-boundary-control"
+        ]
+      }
+    },
+    {
+      "id": "rule-runtime-policy-confinement",
+      "description": "Runtime policy and role authorization decisions are confined to the security kernel.",
+      "source_modules": [
+        "brain-api-presentation",
+        "application-services"
+      ],
+      "target_modules": [
+        "security-trust"
+      ],
+      "type": "protected",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/test_architecture_runtime_policy.py::test_runtime_authorization_is_confined_to_the_security_kernel"
+        ]
+      }
+    },
+    {
+      "id": "rule-grant-licence-admission-confinement",
+      "description": "Grant and licence authorization modules must not resolve or reference capability permit admission markers.",
+      "source_modules": [
+        "security-trust"
+      ],
+      "target_modules": [
+        "provisioning-surface"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/test_architecture_admission.py::test_no_grant_or_licence_authorization_module_resolves_permit_admission"
+        ]
+      }
+    },
+    {
+      "id": "rule-agent-protected-acyclic",
+      "description": "Protected Agent protocol, transport, and runtime kernel modules must remain acyclic. This rule enforces acyclicity; separate rules govern dependency direction.",
+      "source_modules": [
+        "agent-runtime",
+        "protocol-core"
+      ],
+      "target_modules": [
+        "agent-runtime",
+        "protocol-core"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "extension/tests/architecture-boundaries.test.mjs"
+        ]
+      }
+    },
+    {
+      "id": "rule-bridge-protected-acyclic",
+      "description": "Protected Bridge protocol, store, and service kernel modules must remain acyclic. This rule enforces acyclicity; separate rules govern dependency direction.",
+      "source_modules": [
+        "bridge-orchestration",
+        "protocol-core"
+      ],
+      "target_modules": [
+        "bridge-orchestration",
+        "protocol-core"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "frontend/tests/architecture-boundaries.test.ts"
+        ]
+      }
+    }
+  ],
+  "semantic_invariants": [
+    {
+      "id": "canonical-authority",
+      "owner": "Brain canonical persistence",
+      "severity": "critical",
+      "requirement_or_scenario": "HistoryRepository is the sole authoritative commit point for acknowledged platform conversation effects. (ADR 0001, ADR 0009)",
+      "assurance": {
+        "status": "documented",
+        "evidence": [
+          "planned:tests/test_canonical_repository_contract.py",
+          "planned:tests/stateful/test_brain_ingestion.py"
+        ],
+        "falsifier": "planned:BrokenCommitAdapter"
+      }
+    },
+    {
+      "id": "checkpoint-monotonicity",
+      "owner": "Brain transport and persistence",
+      "severity": "critical",
+      "requirement_or_scenario": "Source sequence positions advance monotonically per stream; gaps trigger sync resync rather than advancing sequence. (ADR 0004, ADR 0010)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral"
+        ],
+        "falsifier": "tests/hardening/falsifiers/test_falsifiers.py::test_broken_gap_adapter"
+      }
+    },
+    {
+      "id": "replay-idempotency",
+      "owner": "Brain canonical persistence",
+      "severity": "critical",
+      "requirement_or_scenario": "Replaying previously committed snapshot chunks or delta deliveries produces no duplicate effects and preserves logical identity. (ADR 0004, ADR 0010)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/test_durable_ingestion.py",
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral"
+        ],
+        "falsifier": "tests/hardening/falsifiers/test_falsifiers.py::test_broken_duplicate_adapter"
+      }
+    },
+    {
+      "id": "atomic-canonical-commit",
+      "owner": "Brain canonical persistence",
+      "severity": "critical",
+      "requirement_or_scenario": "Snapshot commits transition all chunked events and stream head in a single atomic database transaction. (ADR 0009, ADR 0010)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",
+          "tests/test_history_v2.py::test_message_tombstone_parent_conflict_rolls_back_checkpoint"
+        ],
+        "falsifier": "tests/hardening/falsifiers/test_falsifiers.py::test_broken_atomic_commit_adapter"
+      }
+    },
+    {
+      "id": "snapshot-integrity",
+      "owner": "Brain canonical persistence and Agent outbox",
+      "severity": "high",
+      "requirement_or_scenario": "Snapshot chunk count, chunk order, and record counts must match the snapshot staging contract before commit is acknowledged, and conflicting entity content or duplicate identifiers are rejected as invariant violations. (ADR 0010, app/persistence/history.py)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",
+          "tests/test_history_v2.py::test_snapshot_progress_survives_restart_and_conflicting_commit_replay_rejects"
+        ],
+        "falsifier": "tests/hardening/falsifiers/test_falsifiers.py::test_broken_staged_material_adapter"
+      }
+    },
+    {
+      "id": "deletion-closure",
+      "owner": "Brain persistence and lifecycle maintenance",
+      "severity": "critical",
+      "requirement_or_scenario": "Hard deletion irrevocably clears canonical records, derived projections, graph edges, and prevents resurrection upon replay. (ADR 0009, ADR 0020)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion",
+          "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion",
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
+        ],
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
+      }
+    },
+    {
+      "id": "durable-agent-delivery",
+      "owner": "Agent transport runtime",
+      "severity": "critical",
+      "requirement_or_scenario": "Observed platform activity is stored in durable IndexedDB outbox until explicit server ACK is received. (ADR 0001, ADR 0004)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "extension/tests/durable-ingestion.test.mjs",
+          "tests/stateful/test_agent_delivery.py::test_persisted_successful_agent_trace_replays_every_transition"
+        ],
+        "falsifier": "tests/stateful/test_agent_delivery.py::test_named_agent_semantic_falsifiers_fail_shared_oracle"
+      }
+    },
+    {
+      "id": "protocol-compatibility",
+      "owner": "Protocol schema and validator runtimes",
+      "severity": "high",
+      "requirement_or_scenario": "Protocol v2 schemas and shared golden fixtures evaluate equivalently in Python, Agent JS, and Bridge TS validators. (ADR 0006, ADR 0010)",
+      "assurance": {
+        "status": "documented",
+        "evidence": [
+          "planned:tests/test_protocol_contract.py"
+        ],
+        "falsifier": "planned:BrokenProtocolFixtureAdapter"
+      }
+    },
+    {
+      "id": "capture-control-separation",
+      "owner": "Agent capture architecture",
+      "severity": "high",
+      "requirement_or_scenario": "Observation and normalization modules have no direct control over outbox publication, consent, or transport. (ADR 0001, ADR 0022)",
+      "assurance": {
+        "status": "documented",
+        "evidence": [
+          "planned:dependency-cruiser-agent"
+        ],
+        "falsifier": "planned:IllegalCaptureImportFixture"
+      }
+    },
+    {
+      "id": "transport-analytics-separation",
+      "owner": "Brain transport and services",
+      "severity": "medium",
+      "requirement_or_scenario": "Transport admission routes into persistence without directly constructing or invoking analytics pipelines. (Section 3)",
+      "assurance": {
+        "status": "documented",
+        "evidence": [
+          "planned:tests/test_architecture_boundaries.py"
+        ],
+        "falsifier": "planned:TransportAnalyticsImportFixture"
+      }
+    },
+    {
+      "id": "persistence-analytics-separation",
+      "owner": "Brain persistence and analytics",
+      "severity": "medium",
+      "requirement_or_scenario": "Canonical persistence does not construct analytics-facing adapters or depend on analytics modules. (Architecture composition model)",
+      "assurance": {
+        "status": "documented",
+        "evidence": [
+          "planned:tests/test_architecture_boundaries.py"
+        ],
+        "falsifier": "planned:PersistenceAnalyticsImportFixture"
+      }
+    },
+    {
+      "id": "persistence-transport-separation",
+      "owner": "Brain persistence and transport",
+      "severity": "medium",
+      "requirement_or_scenario": "Persistence modules do not import transport or WebSocket connection management. (Section 3)",
+      "assurance": {
+        "status": "documented",
+        "evidence": [
+          "planned:tests/test_architecture_boundaries.py"
+        ],
+        "falsifier": "planned:PersistenceTransportImportFixture"
+      }
+    },
+    {
+      "id": "graph-identity",
+      "owner": "Brain analytics and knowledge graph",
+      "severity": "high",
+      "requirement_or_scenario": "Graph entities and participant/message IDs are deterministically derived from canonical IDs without ambiguous collision. (Section 5, app/analytics/identity.py)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/test_graph_store_contract.py::test_graph_models_require_opaque_ids_and_aware_timestamps",
+          "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
+        ],
+        "falsifier": "tests/stateful/test_analytics_determinism.py::test_oracle_falsifiers_reject_each_6a_family"
+      }
+    },
+    {
+      "id": "derived-state-determinism",
+      "owner": "Brain analytics pipeline",
+      "severity": "high",
+      "requirement_or_scenario": "Clean rebuilds of analytics metrics and graph from identical canonical state produce identical semantic outputs within ReproducibilityContext. (Rebuild equivalence contract)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
+        ],
+        "falsifier": "tests/stateful/test_analytics_determinism.py::test_oracle_falsifiers_reject_each_6a_family"
+      }
+    },
+    {
+      "id": "graph-semantic-reproducibility",
+      "owner": "Brain analytics knowledge graph",
+      "severity": "high",
+      "requirement_or_scenario": "Knowledge graph structure and semantic edges are reproducible across rebuilds within ReproducibilityContext. (Rebuild equivalence contract)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
+        ],
+        "falsifier": "tests/stateful/test_analytics_determinism.py::test_oracle_falsifiers_reject_each_6a_family"
+      }
+    },
+    {
+      "id": "projection-reproducibility",
+      "owner": "Brain analytics and projection store",
+      "severity": "high",
+      "requirement_or_scenario": "Incremental projection computation achieves semantic and provenance equivalence with a clean rebuild from canonical head under identical ReproducibilityContext, excluding explicitly documented transient fields. (Rebuild equivalence contract)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence",
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
+        ],
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
+      }
+    },
+    {
+      "id": "projection-publication-revision",
+      "owner": "Brain analytics publication",
+      "severity": "critical",
+      "requirement_or_scenario": "Projections refuse publication if their source revision does not match the authoritative canonical revision; active projection and graph material matches canonical head under ReproducibilityContext. (ADR 0020, rebuild equivalence contract)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_analytics_equivalence.py::test_stale_candidate_is_rejected_and_active_publication_stays_current",
+          "tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness"
+        ],
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness"
+      }
+    },
+    {
+      "id": "derived-referential-closure",
+      "owner": "Brain analytics and projection store",
+      "severity": "high",
+      "requirement_or_scenario": "Every referenced entity in derived projections resolves to an allowed extant derived entity or canonical entity. (Rebuild equivalence contract)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
+        ],
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
+      }
+    },
+    {
+      "id": "provenance-integrity",
+      "owner": "Brain analytics pipeline",
+      "severity": "medium",
+      "requirement_or_scenario": "Published analytics generations carry canonical revision, content digests, and pipeline identity witnesses. (ADR 0020, Section 5)",
+      "assurance": {
+        "status": "qualified",
+        "evidence": [
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence",
+          "tests/stateful/test_analytics_equivalence.py::test_stale_candidate_is_rejected_and_active_publication_stays_current"
+        ],
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
+      }
+    },
+    {
+      "id": "consent-authorization",
+      "owner": "Agent consent and Brain security",
+      "severity": "critical",
+      "requirement_or_scenario": "Full capture and telemetry operate only under valid creator consent; revocation immediately ceases capture. (ADR 0021, ADR 0022)",
+      "assurance": {
+        "status": "documented",
+        "evidence": [
+          "planned:tests/test_legal_instrument_approval.py",
+          "planned:tools/e2e-capture/tests/legal-activation.spec.mjs"
+        ],
+        "falsifier": "planned:BrokenConsentGateAdapter"
+      }
+    },
+    {
+      "id": "provisioning-trust",
+      "owner": "Brain provisioning and security",
+      "severity": "critical",
+      "requirement_or_scenario": "First-run provisioning validates signed claim packages and creator association before local runtime activation. (ADR 0008, ADR 0019)",
+      "assurance": {
+        "status": "documented",
+        "evidence": [
+          "planned:tests/test_provisioning_finalize.py",
+          "planned:tests/test_activation_gate.py"
+        ],
+        "falsifier": "planned:BrokenProvisioningTrustAdapter"
+      }
+    },
+    {
+      "id": "release-integrity",
+      "owner": "Packaging and attestation",
+      "severity": "critical",
+      "requirement_or_scenario": "Release artifacts are bound to immutable source coordinates and requalified before signing and attestation. (packaging policy, attestation specifications)",
+      "assurance": {
+        "status": "documented",
+        "evidence": [
+          "planned:tests/test_engineering_attestation.py",
+          "planned:tools/packaged-signing-rule/verify.test.mjs"
+        ],
+        "falsifier": "planned:BrokenAttestationDigestAdapter"
+      }
+    }
+  ],
+  "protected_impact": {
+    "description": "Narrow path-to-invariant mappings used by the pull-request protected-impact gate. Module risk zones remain review context; only these semantic paths create an invariant disposition obligation.",
+    "invariant_path_mappings": [
+      {
+        "invariant": "canonical-authority",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "app/persistence/database.py",
+          "app/persistence/migrations.py",
+          "app/persistence/sql/**"
+        ]
+      },
+      {
+        "invariant": "atomic-canonical-commit",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "app/transport/manager.py"
+        ]
+      },
+      {
+        "invariant": "checkpoint-monotonicity",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "extension/runtime/**"
+        ]
+      },
+      {
+        "invariant": "replay-idempotency",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "extension/runtime/**"
+        ]
+      },
+      {
+        "invariant": "snapshot-integrity",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "extension/runtime/**"
+        ]
+      },
+      {
+        "invariant": "deletion-closure",
+        "path_patterns": [
+          "app/persistence/deletion_operations.py",
+          "app/persistence/history.py",
+          "app/analytics/pipeline.py",
+          "app/analytics/retention_store.py"
+        ]
+      },
+      {
+        "invariant": "durable-agent-delivery",
+        "path_patterns": [
+          "extension/runtime/**",
+          "extension/transport/**"
+        ]
+      },
+      {
+        "invariant": "protocol-compatibility",
+        "path_patterns": [
+          "app/protocol/**",
+          "extension/protocol/**",
+          "frontend/src/protocol/**"
+        ]
+      },
+      {
+        "invariant": "capture-control-separation",
+        "path_patterns": [
+          "extension/capture/**"
+        ]
+      },
+      {
+        "invariant": "transport-analytics-separation",
+        "path_patterns": [
+          "app/transport/manager.py",
+          "app/services/insights_service.py"
+        ]
+      },
+      {
+        "invariant": "persistence-analytics-separation",
+        "path_patterns": [
+          "app/persistence/factory.py"
+        ]
+      },
+      {
+        "invariant": "persistence-transport-separation",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "app/persistence/database.py"
+        ]
+      },
+      {
+        "invariant": "graph-identity",
+        "path_patterns": [
+          "app/analytics/identity.py",
+          "app/analytics/graph_*.py",
+          "app/analytics/*graph_store.py"
+        ]
+      },
+      {
+        "invariant": "derived-state-determinism",
+        "path_patterns": [
+          "app/analytics/pipeline.py",
+          "app/analytics/runtime.py",
+          "app/analytics/rebuild.*",
+          "app/analytics/analyzers.py",
+          "app/analytics/metrics.py"
+        ]
+      },
+      {
+        "invariant": "graph-semantic-reproducibility",
+        "path_patterns": [
+          "app/analytics/graph_*.py",
+          "app/analytics/*graph_store.py",
+          "app/analytics/pipeline.py"
+        ]
+      },
+      {
+        "invariant": "projection-reproducibility",
+        "path_patterns": [
+          "app/analytics/pipeline.py",
+          "app/analytics/*projection_store.py",
+          "app/analytics/rebuild.*"
+        ]
+      },
+      {
+        "invariant": "projection-publication-revision",
+        "path_patterns": [
+          "app/persistence/projection_activation.py",
+          "app/persistence/projection_pipeline.py",
+          "app/analytics/*projection_store.py"
+        ]
+      },
+      {
+        "invariant": "derived-referential-closure",
+        "path_patterns": [
+          "app/persistence/projection_activation.py",
+          "app/analytics/*projection_store.py",
+          "app/analytics/*graph_store.py"
+        ]
+      },
+      {
+        "invariant": "provenance-integrity",
+        "path_patterns": [
+          "app/analytics/provenance.py",
+          "app/analytics/pipeline.py"
+        ]
+      },
+      {
+        "invariant": "consent-authorization",
+        "path_patterns": [
+          "extension/capture/**",
+          "app/security/**",
+          "app/api/endpoints/creator_vault.py",
+          "app/api/endpoints/webauthn.py"
+        ]
+      },
+      {
+        "invariant": "provisioning-trust",
+        "path_patterns": [
+          "app/provisioning/**",
+          "app/security/**",
+          "app/api/endpoints/webauthn.py"
+        ]
+      },
+      {
+        "invariant": "release-integrity",
+        "path_patterns": [
+          "packaging/**",
+          "attestation/**",
+          "tools/packaged-signing-rule/**",
+          "tools/legal-release-bindings/**",
+          "tools/packaging_policy.py",
+          ".github/workflows/**"
+        ]
+      }
+    ]
+  },
+  "exceptions": [
+    {
+      "source": "app/persistence/projection_activation.py",
+      "target": "app.analytics",
+      "rule": "rule-projection-coordination-boundary",
+      "reason": "Projection activation coordinates canonical revisions with analytics publication identity.",
+      "status": "current_design",
+      "introduced_by": "ADR 0020",
+      "tracking_issue": "DESIGN-PROJECTION-ACTIVATION-IDENTITY",
+      "expires": null,
+      "removal_task": null
+    }
+  ]
+}

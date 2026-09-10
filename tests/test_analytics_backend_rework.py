@@ -24,6 +24,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 import app.main as main_module
+from app.analytics import runtime as analytics_runtime
 from app.analytics.analyzers import RuleBasedSentimentAnalyzer
 from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.enrichment import EnrichmentStage
@@ -55,6 +56,7 @@ from app.analytics.resilient_projection_store import (
 )
 from app.analytics.provenance import stable_config_digest
 from app.analytics import rebuild as rebuild_module
+from app.bootstrap import transport_manager
 from app.analytics.rebuild import (
     ReadOnlyCanonicalDatabase,
     RebuildFailure,
@@ -91,12 +93,17 @@ from app.protocol.payloads import (
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from app.services import insights_service
 from app.transport.manager import DEV_AGENT_AUTH_TICKET
-from app.transport import transport_manager
-from app.transport.ingestion import AccountReadModel
+from app.canonical.read_models import AccountReadModel
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 REPOSITORY_ROOT = Path(__file__).parents[1]
+
+
+def history_source_for(repositories: CanonicalRepositories) -> HistoryAnalyticsSource:
+    """Explicit test composition of the canonical analytics read boundary."""
+
+    return HistoryAnalyticsSource(repositories.history)
 
 
 @contextmanager
@@ -298,18 +305,13 @@ async def seed(
 
 
 async def seed_default(name: str) -> FixtureSnapshot:
-    """Seed the shared default runtime's canonical history and schedule its build.
-
-    Canonical commits do not yet self-schedule an analytics rebuild in
-    production (see the report accompanying this port); tests drive the
-    scheduler explicitly the way a future post-commit hook would.
-    """
+    """Seed canonical history and build the default analytics projection."""
     payload = snapshot(name)
     seed_canonical_snapshot(transport_manager.history, payload)
-    account = transport_manager.ingestion.account_read_model(
+    account = HistoryAnalyticsSource(transport_manager.history).account_read_model(
         payload.creator_account_id
     )
-    scheduler = insights_service.projection_scheduler()
+    scheduler = analytics_runtime.projection_scheduler()
     await scheduler.schedule(payload.creator_account_id, account.view_revision)
     await scheduler.wait(payload.creator_account_id)
     return payload
@@ -398,12 +400,12 @@ def test_protected_analytics_openapi_requires_auth_and_structured_errors() -> No
 @pytest.fixture(autouse=True)
 def isolated_default_runtime():
     transport_manager.reset()
-    insights_service.reset_analytics_runtimes()
+    analytics_runtime.reset_analytics_runtimes()
     app.dependency_overrides.clear()
     yield
     app.dependency_overrides.clear()
     transport_manager.reset()
-    insights_service.reset_analytics_runtimes()
+    analytics_runtime.reset_analytics_runtimes()
 
 
 @pytest.mark.asyncio
@@ -534,12 +536,13 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
     repositories = create_canonical_repositories(
         "sqlite", canonical_path=canonical_path
     )
+    history_source = history_source_for(repositories)
     payload = await seed(repositories, "creator-beta")
 
     def read_identity(account_id: str):
-        if not repositories.ingestion.account_exists(account_id):
+        if not history_source.account_exists(account_id):
             return None
-        return canonical_identity(repositories.ingestion.account_read_model(account_id))
+        return canonical_identity(history_source.account_read_model(account_id))
 
     stores = create_analytics_stores(
         "sqlite",
@@ -551,7 +554,7 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
     )
     assert isinstance(stores.projections, LazySQLiteAnalyticsProjectionStore)
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source,
         projections=stores.projections,
         graph=stores.graph,
     )
@@ -559,7 +562,7 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         pipeline, worker_count=2, queue_capacity=4
     )
     runtime = insights_service.AnalyticsRuntime(
-        source=repositories.ingestion,
+        source=history_source,
         pipeline=pipeline,
         scheduler=scheduler,
     )
@@ -638,7 +641,7 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         )
         assert all(str(projection_path) not in response.text for response in responses)
 
-        account = repositories.ingestion.account_read_model(
+        account = history_source.account_read_model(
             payload.creator_account_id
         )
         recovery_state = await asyncio.wait_for(
@@ -709,7 +712,7 @@ async def test_get_is_read_only_and_preserves_revision_tagged_failure(
 ) -> None:
     account_id = "synthetic-read-only-account"
     source = MutableCanonicalSource({account_id: 1})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     calls = 0
 
     def fail_projection(*args, **kwargs):
@@ -738,16 +741,8 @@ async def test_get_is_read_only_and_preserves_revision_tagged_failure(
     assert await runtime.scheduler.close(timeout=1)
 
 
-# The signer-v2 canonical commit path now drives a post-commit analytics
-# rebuild: app/api/endpoints/transport_ws.py acks the commit, schedules the
-# durable read-model projection, then calls
-# insights_service.request_projection_rebuild(account_id), which coalesces a
-# scheduler-owned rebuild for the committed view_revision. This closes the gap
-# that the former IngestionService.set_projection_scheduler seam covered before
-# the in-memory ingestion cache was retired. The two tests below pin the new
-# contract: the request targets the committed revision, and it stays a no-op on
-# the non-sqlite default backend so memory-backed flows keep the startup-only
-# behavior and never spin the coordinator on the ingestion hot path.
+# Post-commit rebuild requests target the committed revision and are disabled
+# for the in-memory backend.
 
 
 @pytest.mark.asyncio
@@ -756,7 +751,7 @@ async def test_request_projection_rebuild_schedules_recovery_for_committed_revis
 ) -> None:
     account_id = "post-commit-rebuild-account"
     source = MutableCanonicalSource({account_id: 7})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     recorded: list[tuple[str, int]] = []
 
     async def spy_request_recovery(
@@ -768,7 +763,7 @@ async def test_request_projection_rebuild_schedules_recovery_for_committed_revis
         runtime.scheduler, "request_recovery", spy_request_recovery
     )
 
-    requested = await insights_service.request_projection_rebuild(
+    requested = await analytics_runtime.request_projection_rebuild(
         account_id, source=source
     )
     assert requested is True
@@ -781,15 +776,23 @@ async def test_request_projection_rebuild_schedules_recovery_for_committed_revis
 async def test_request_projection_rebuild_is_noop_for_non_sqlite_default_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.core import config
-
+    previous_backend = main_module.settings.canonical_persistence_backend
     monkeypatch.setattr(
-        config.settings, "canonical_persistence_backend", "memory"
+        main_module.settings, "canonical_persistence_backend", "memory"
     )
-    # No explicit source => the guard consults the backend and skips the request
-    # so the coordinator is never touched on memory-backed deployments/tests.
-    requested = await insights_service.request_projection_rebuild("any-account")
-    assert requested is False
+    try:
+        main_module.configure_analytics_runtime()
+        # No explicit source => bootstrap's explicit backend configuration skips
+        # the request so the coordinator is never touched on memory deployments.
+        requested = await analytics_runtime.request_projection_rebuild("any-account")
+        assert requested is False
+    finally:
+        monkeypatch.setattr(
+            main_module.settings,
+            "canonical_persistence_backend",
+            previous_backend,
+        )
+        main_module.configure_analytics_runtime()
 
 
 @pytest.mark.asyncio
@@ -813,8 +816,8 @@ async def test_app_shutdown_awaits_scheduler_and_logs_fixed_timeout(
 
     monkeypatch.setattr(main_module.transport_manager, "stop", stop_transport)
     monkeypatch.setattr(
-        main_module.insights_service,
-        "shutdown_default_projection_scheduler",
+        main_module.analytics_runtime,
+        "shutdown_default_analytics_runtime",
         close_scheduler,
     )
     monkeypatch.setattr(
@@ -858,8 +861,8 @@ async def test_app_readiness_does_not_wait_for_projection_recovery(
     monkeypatch.setattr(main_module.broadcast, "connect", connect_broadcast)
     monkeypatch.setattr(main_module.transport_manager, "start", start_transport)
     monkeypatch.setattr(
-        main_module.insights_service,
-        "launch_default_projection_scheduler",
+        main_module.analytics_runtime,
+        "launch_default_analytics_runtime",
         launch_recovery,
     )
 
@@ -905,7 +908,8 @@ from app.protocol.payloads import (
     IngestSnapshotCommitPayload,
     SnapshotRecordCounts,
 )
-from app.transport import DEV_ACCOUNT_ID, transport_manager
+from app.bootstrap import transport_manager
+from app.transport import DEV_ACCOUNT_ID
 
 async def run():
     await main_module.startup_event()
@@ -1323,7 +1327,7 @@ async def test_projection_get_keeps_event_loop_responsive_during_canonical_read(
             return super().account_read_model(creator_account_id)
 
     source = BlockingCanonicalSource({account_id: 1})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     runtime.pipeline.project_account(account_id)
     source.delay = 0.2
 
@@ -1399,7 +1403,7 @@ async def test_bootstrap_retries_from_one_complete_projection_generation(
 ) -> None:
     account_id = "synthetic-bootstrap-generation-account"
     source = MutableCanonicalSource({account_id: 1})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     runtime.pipeline.project_account(account_id)
     original = insights_service._conversations_from_snapshot
     calls = 0
@@ -1448,7 +1452,7 @@ async def test_bootstrap_generation_retry_is_strictly_bounded(
 ) -> None:
     account_id = "synthetic-bootstrap-moving-account"
     source = MutableCanonicalSource({account_id: 1})
-    runtime = insights_service.analytics_runtime(source)
+    runtime = analytics_runtime.analytics_runtime(source)
     runtime.pipeline.project_account(account_id)
     original = insights_service._conversations_from_snapshot
     calls = 0
@@ -1481,7 +1485,7 @@ async def test_projection_build_coordination_is_per_account(
     repositories = create_canonical_repositories("memory")
     alpha = await seed(repositories, "creator-alpha")
     beta = await seed(repositories, "creator-beta")
-    pipeline = AnalyticsPipeline(repositories.ingestion)
+    pipeline = AnalyticsPipeline(history_source_for(repositories))
     original_build = pipeline._build
     concurrent_builds = threading.Barrier(2)
 
@@ -1632,7 +1636,7 @@ async def test_analyzer_config_digest_invalidates_same_revision_projection() -> 
     )
     graph = projections.graph
     first_pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=projections,
         graph=graph,
     )
@@ -1646,7 +1650,7 @@ async def test_analyzer_config_digest_invalidates_same_revision_projection() -> 
         )
 
     changed_pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=projections,
         graph=graph,
         enrichment=EnrichmentStage(sentiment=ChangedSentimentConfig()),
@@ -1752,7 +1756,7 @@ async def test_aware_timestamps_and_equal_time_source_order_survive_sqlite(
         "sqlite", canonical_path=database_path
     )
     seed_canonical_snapshot(repositories.history, ordered_payload)
-    run = AnalyticsPipeline(repositories.ingestion).project_account(
+    run = AnalyticsPipeline(history_source_for(repositories)).project_account(
         ordered_payload.creator_account_id
     )
     projection = run.artifact.projection
@@ -1796,12 +1800,12 @@ async def test_aware_timestamps_and_equal_time_source_order_survive_sqlite(
     restarted = create_canonical_repositories(
         "sqlite", canonical_path=database_path
     )
-    restarted_account = restarted.ingestion.account_read_model(
+    restarted_account = history_source_for(restarted).account_read_model(
         ordered_payload.creator_account_id
     )
     restarted_messages = restarted_account.conversations[chat["chat_id"]]["messages"]
     assert [item["source_ordinal"] for item in restarted_messages] == [0, 1]
-    restarted_projection = AnalyticsPipeline(restarted.ingestion).project_account(
+    restarted_projection = AnalyticsPipeline(history_source_for(restarted)).project_account(
         ordered_payload.creator_account_id
     ).artifact.projection
     assert [
@@ -1869,13 +1873,13 @@ async def test_analytics_surfaces_store_only_domain_separated_opaque_references(
         canonical_path=canonical_path,
         activation=repositories.projection_activation,
         canonical_identity_reader=lambda account_id: (
-            canonical_identity(repositories.ingestion.account_read_model(account_id))
-            if repositories.ingestion.account_exists(account_id)
+            canonical_identity(history_source_for(repositories).account_read_model(account_id))
+            if history_source_for(repositories).account_exists(account_id)
             else None
         ),
     )
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=stores.projections,
         graph=stores.graph,
     )
@@ -1920,8 +1924,8 @@ async def test_analytics_surfaces_store_only_domain_separated_opaque_references(
     )
 
     seed_canonical_snapshot(transport_manager.history, private_payload)
-    default_account = transport_manager.ingestion.account_read_model(account_marker)
-    default_scheduler = insights_service.projection_scheduler()
+    default_account = HistoryAnalyticsSource(transport_manager.history).account_read_model(account_marker)
+    default_scheduler = analytics_runtime.projection_scheduler()
     await default_scheduler.schedule(account_marker, default_account.view_revision)
     await default_scheduler.wait(account_marker)
     # /api/v1/frontend/bootstrap (the old ticket-era JSON bootstrap envelope)
@@ -2138,7 +2142,7 @@ async def test_range_and_baseline_provenance_are_explicit_on_every_full_slice() 
 async def test_zero_denominators_are_unavailable_instead_of_fabricated() -> None:
     repositories = create_canonical_repositories("memory")
     payload = await seed(repositories, "creator-alpha")
-    projection = AnalyticsPipeline(repositories.ingestion).project_account(
+    projection = AnalyticsPipeline(history_source_for(repositories)).project_account(
         payload.creator_account_id
     ).artifact.projection
     outbound = next(

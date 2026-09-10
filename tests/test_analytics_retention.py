@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.analytics.database import ProjectionsDatabase
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.identity import canonical_identity
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.projection_store import CLEAR_PIPELINE_REVISION
@@ -66,11 +67,17 @@ def seed_messages(path: Path, messages: list[tuple[str, datetime]]):
     return repositories
 
 
+def history_source_for(repositories) -> HistoryAnalyticsSource:
+    return HistoryAnalyticsSource(repositories.history)
+
+
 def identity_reader(repositories):
+    history_source = history_source_for(repositories)
+
     def read(account_id: str):
-        if not repositories.ingestion.account_exists(account_id):
+        if not history_source.account_exists(account_id):
             return None
-        return canonical_identity(repositories.ingestion.account_read_model(account_id))
+        return canonical_identity(history_source.account_read_model(account_id))
 
     return read
 
@@ -83,7 +90,7 @@ def test_pipeline_excludes_messages_at_or_beyond_ninety_days(tmp_path: Path) -> 
             ("recent", NOW - timedelta(days=1)),
         ],
     )
-    result = AnalyticsPipeline(repositories.ingestion, clock=lambda: NOW).rebuild_account(
+    result = AnalyticsPipeline(history_source_for(repositories), clock=lambda: NOW).rebuild_account(
         ACCOUNT
     )
 
@@ -114,7 +121,7 @@ def test_sqlite_generation_expires_from_original_source_time_without_clock_reset
         clock=clock,
     )
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=store,
         graph=store.graph,
         clock=clock,
@@ -177,7 +184,7 @@ def test_mixed_age_generation_rebuild_keeps_recent_source_after_oldest_expires(
         clock=clock,
     )
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=store,
         graph=store.graph,
         clock=clock,
@@ -216,7 +223,7 @@ def test_analytics_workspace_persists_no_raw_message_text(tmp_path: Path) -> Non
         clock=lambda: NOW,
     )
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=store,
         graph=store.graph,
         clock=lambda: NOW,
@@ -256,7 +263,7 @@ def test_pre_bounded_generation_fails_closed_and_is_scrubbed_on_access(
         canonical_identity_reader=identity_reader(repositories),
     )
     legacy_pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=legacy,
         graph=legacy.graph,
         clock=lambda: NOW,

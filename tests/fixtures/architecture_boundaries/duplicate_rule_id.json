@@ -1,0 +1,10 @@
+{
+  "scenario": "duplicate_rule_id",
+  "description": "Manifest containing duplicate rule identifier",
+  "expected_diagnostic": "duplicate rule id",
+  "mutation": {
+    "op": "duplicate",
+    "target": "rules",
+    "index": 0
+  }
+}

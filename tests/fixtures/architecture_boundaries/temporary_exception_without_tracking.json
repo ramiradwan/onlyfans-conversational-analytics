@@ -1,0 +1,12 @@
+{
+  "scenario": "temporary_exception_without_tracking",
+  "description": "Temporary exception with empty tracking issue",
+  "expected_diagnostic": "missing or empty tracking_issue",
+  "mutation": {
+    "op": "set",
+    "target": "exceptions",
+    "index": 0,
+    "field": "tracking_issue",
+    "value": ""
+  }
+}

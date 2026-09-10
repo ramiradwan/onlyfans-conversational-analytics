@@ -1,9 +1,4 @@
-"""Bound WebSocket sessions and replaceable in-memory transport state.
-
-The state containers in this module deliberately sit behind one manager so a
-shared durable implementation can replace them without changing endpoint or
-router behavior in a later phase.
-"""
+"""Bound WebSocket sessions and in-memory transport state."""
 
 from __future__ import annotations
 
@@ -35,11 +30,10 @@ from app.services.command_execution import (
     CommandService,
 )
 from app.persistence.auth import SQLiteAuthenticationStore
-from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
+from app.persistence.factory import CanonicalRepositories
 from app.persistence.history import IngestResult, InvariantViolation, StreamKey
 from app.provisioning.progress_reporting import (
     OnboardingProgressCoordinator,
-    configured_runtime_onboarding_progress,
 )
 from app.security.account_bindings import eligible_accounts
 from app.security.activation_gate import runtime_is_activated
@@ -70,13 +64,7 @@ def _authentication_store(path: str) -> SQLiteAuthenticationStore:
 
 
 def authorized_account_ids() -> frozenset[str]:
-    """Return the creator accounts this installation currently authorizes.
-
-    Resolved from the durable authorization records and current grant state, so
-    a lapsed or revoked authorization stops resolving. An installation with no
-    authorization, and one whose authentication store cannot be opened, both
-    resolve to the empty set.
-    """
+    """Return creator accounts with current durable authorization."""
 
     try:
         store = _authentication_store(str(settings.auth_database_path))
@@ -149,11 +137,10 @@ class InMemoryTransportManager:
 
     def __init__(
         self,
-        repositories: CanonicalRepositories | None = None,
+        repositories: CanonicalRepositories,
         *,
         onboarding_progress: OnboardingProgressCoordinator | None = None,
     ) -> None:
-        repositories = repositories or create_canonical_repositories("memory")
         # Retain the repository aggregate so its disposable TemporaryDirectory
         # remains alive for the full manager lifetime in isolated tests.
         self._repositories = repositories
@@ -165,7 +152,6 @@ class InMemoryTransportManager:
         self._agent_config_grants: dict[str, AgentConfigGrant] = {}
         self.history = repositories.history
         self.projection = repositories.projection
-        self.ingestion = repositories.ingestion
         self.projection_activation = repositories.projection_activation
         self.config_authority = AgentConfigurationAuthority(
             repositories.configuration, authorized_accounts=authorized_account_ids
@@ -484,13 +470,7 @@ class InMemoryTransportManager:
         *,
         now: datetime | None = None,
     ) -> tuple[str, str, str, str]:
-        """Consume bootstrap once or verify a bounded stateless reconnect ticket.
-
-        Renewal intentionally overlaps the prior reconnect credential until
-        its signed expiry so loss of the `agent.session` response cannot lock
-        out an installation. Purpose/account/installation/lifetime remain
-        immutable, and pairing tickets themselves are still single-use.
-        """
+        """Consume a pairing ticket or verify a bounded reconnect ticket."""
         self._require_activated_runtime()
         authenticated_at = now or utc_now()
         self._expire_auth_grants(authenticated_at)
@@ -1090,13 +1070,7 @@ class InMemoryTransportManager:
                 await self.broadcast_presence_state(account_id)
 
     def agent_state_payload(self, account_id: str) -> dict[str, Any]:
-        """Describe Agent state for one bound account.
-
-        An account the installation has not authorized holds no configuration,
-        which is an ordinary state rather than a failure. It is described with a
-        null required revision and a reason: an omitted frame is
-        indistinguishable to a client from a lost one.
-        """
+        """Return Agent state for one bound account."""
 
         lease = self.active_agents.get(account_id)
         history_settings = self.history.history_settings(account_id)
@@ -1443,21 +1417,3 @@ class InMemoryTransportManager:
         await self.signal_config_available(account_id)
         await self.broadcast_agent_state(account_id)
         return document
-
-
-transport_manager = InMemoryTransportManager(
-    create_canonical_repositories(
-        settings.canonical_persistence_backend,
-        canonical_path=(
-            settings.canonical_database_path
-            if settings.canonical_persistence_backend == "sqlite"
-            else None
-        ),
-        projection_path=(
-            settings.projection_database_path
-            if settings.canonical_persistence_backend == "sqlite"
-            else None
-        ),
-    ),
-    onboarding_progress=configured_runtime_onboarding_progress(),
-)

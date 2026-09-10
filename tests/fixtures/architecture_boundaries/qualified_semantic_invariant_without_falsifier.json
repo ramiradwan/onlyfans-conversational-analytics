@@ -1,0 +1,17 @@
+{
+  "scenario": "qualified_semantic_invariant_without_falsifier",
+  "description": "Qualified invariant with empty falsifier",
+  "expected_diagnostic": "qualified status requires permanent falsifier reference",
+  "mutation": {
+    "op": "set_fields",
+    "target": "semantic_invariants",
+    "index": 0,
+    "fields": {
+      "assurance.status": "qualified",
+      "assurance.evidence": [
+        "tests/test_architecture_runtime_policy.py::test_runtime_authorization_is_confined_to_the_security_kernel"
+      ],
+      "assurance.falsifier": ""
+    }
+  }
+}

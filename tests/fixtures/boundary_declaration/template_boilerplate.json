@@ -1,0 +1,6 @@
+{
+  "scenario": "template placeholder cannot count as evidence",
+  "changed_files": ["app/analytics/identity.py"],
+  "body": "## Architecture impact\n\nArchitecture rationale:\n[Describe architecture rationale]\n\nPotentially affected invariant dispositions:\ngraph-identity:\naffected\n\nInvariant / boundary actually affected:\n[Name invariant]\n\nSafety evidence:\n[Provide safety evidence]\n",
+  "expected_diagnostic": "meaningful Architecture rationale"
+}

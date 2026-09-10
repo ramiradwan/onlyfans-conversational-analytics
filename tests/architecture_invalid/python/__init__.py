@@ -1,0 +1,1 @@
+# Isolated negative control fixtures

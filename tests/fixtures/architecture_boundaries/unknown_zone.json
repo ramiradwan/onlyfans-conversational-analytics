@@ -1,0 +1,12 @@
+{
+  "scenario": "unknown_zone",
+  "description": "Module with invalid safety zone value",
+  "expected_diagnostic": "invalid zone",
+  "mutation": {
+    "op": "set",
+    "target": "modules",
+    "index": 0,
+    "field": "zone",
+    "value": "purple"
+  }
+}

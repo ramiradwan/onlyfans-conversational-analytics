@@ -5,6 +5,7 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+    types: [opened, synchronize, reopened, edited]
 
 jobs:
   build-and-test:
@@ -13,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -22,6 +25,7 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
 
       - name: Check documentation
         run: python tools/check_docs.py
@@ -50,14 +54,116 @@ jobs:
       - name: Install backend dependencies
         run: python -m pip install -r requirements-dev.txt
 
+      - name: Run Brain Tier A general state machine
+        env:
+          HYPOTHESIS_PROFILE: tier_a_general
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral
+          -vv
+          --hypothesis-show-statistics
+
+      - name: Run Brain Tier A deletion state machine
+        env:
+          HYPOTHESIS_PROFILE: tier_a_deletion
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion
+          -vv
+          --hypothesis-show-statistics
+
+      - name: Run Agent Tier A general state machine
+        env:
+          HYPOTHESIS_PROFILE: agent_tier_a_general
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral
+          -vv
+
+      - name: Run Agent Tier A deletion state machine
+        env:
+          HYPOTHESIS_PROFILE: agent_tier_a_deletion
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_agent_delivery.py::TestAgentDeliveryDeletion
+          -vv
+
+      - name: Run deterministic analytics rebuilds
+        env:
+          HYPOTHESIS_PROFILE: analytics_determinism_fast
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism
+          -vv
+          --hypothesis-show-statistics
+
+      - name: Run incremental analytics convergence
+        env:
+          HYPOTHESIS_PROFILE: analytics_convergence_fast
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence
+          -vv
+          --hypothesis-show-statistics
+
+      - name: Run derived deletion closure
+        env:
+          HYPOTHESIS_PROFILE: analytics_deletion_fast
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence
+          -vv
+          --hypothesis-show-statistics
+
+      - name: Run analytics oracle falsifiers
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults
+          tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_forged_topic_or_entity_graph_in_both_artifacts
+          tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_stale_deleted_message_metric_in_both_artifacts
+          tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness
+          tests/stateful/test_analytics_equivalence.py::test_deliberate_falsifier_failure_configures_hypothesis_shrink_phase
+          -vv
+          --hypothesis-show-statistics
+
+      - name: Validate architecture boundary manifest
+        run: python tools/validate_architecture_boundaries.py
+
+      - name: Check protected architecture impact declaration
+        if: github.event_name == 'pull_request'
+        run: >
+          python tools/check_boundary_declaration.py
+          --event-path "$GITHUB_EVENT_PATH"
+          --base-ref "${{ github.event.pull_request.base.sha }}"
+          --head-ref "${{ github.event.pull_request.head.sha }}"
+
+      - name: Check Python architecture boundary contracts
+        run: lint-imports
+
       - name: Verify selected contract snapshot integrity
         run: python -m pytest -m contract_integrity tests/test_contract_snapshot.py
 
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
+      - name: Check Bridge architecture boundary contracts
+        working-directory: frontend
+        run: npm run check:architecture
+
       - name: Install extension dependencies
         run: npm ci --prefix extension
+
+      - name: Check Agent architecture boundary contracts
+        working-directory: extension
+        run: npm run check:architecture
 
       - name: Build frontend
         run: npm run build --prefix frontend
@@ -65,7 +171,7 @@ jobs:
       - name: Test backend
         run: >
           python -m pytest
-          -m "not slow and not windows_production"
+          -m "not slow and not windows_production and not stateful_tier_a and not stateful_tier_b and not stateful_agent_tier_a"
           -vv
           --override-ini=faulthandler_timeout=120
           --durations=30
@@ -105,7 +211,37 @@ jobs:
           name: extension-dist
           path: extension/dist/
 
+  fixed-sqlcipher-wheel:
+    # Both Windows test jobs use this run's wheel.
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build fixed SQLCipher wheel
+        shell: pwsh
+        run: |
+          $wheelhouse = Join-Path $env:RUNNER_TEMP "ofca-fixed-sqlcipher-wheelhouse"
+          .\packaging\sqlcipher\build-fixed-wheel.ps1 `
+            -BuildPython (Get-Command python.exe).Source `
+            -Wheelhouse $wheelhouse
+
+      - name: Retain fixed SQLCipher wheel and provenance
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
+          retention-days: 30
+          if-no-files-found: error
+
   windows-tests:
+    needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
 
     steps:
@@ -120,6 +256,19 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+
+      # Install this run's pinned Windows wheel before resolving requirements.
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -131,7 +280,12 @@ jobs:
             extension/package-lock.json
 
       - name: Install backend dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+
+      - name: Qualify the fixed SQLCipher runtime
+        run: >
+          python tools/qualify_sqlcipher_runtime.py
+          --output "$env:RUNNER_TEMP\fixed-sqlcipher-runtime-evidence.json"
 
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
@@ -149,7 +303,51 @@ jobs:
       # tests are selected positively here rather than skipped elsewhere. The
       # invocation exits 5 if the marker ever stops matching them.
       - name: Test Windows production boot
-        run: python -m pytest -m "not slow and windows_production"
+        run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
+
+      # File-backed qualification stays on the required Windows path because
+      # local evidence cannot qualify the packaged runtime or hosted runner.
+      - name: Test Windows persistent SQLCipher general profile
+        env:
+          HYPOTHESIS_PROFILE: tier_b_general
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral
+          --junitxml="$env:RUNNER_TEMP\tier-b-general-junit.xml"
+          -vv
+
+      - name: Test Windows persistent SQLCipher deletion profile
+        env:
+          HYPOTHESIS_PROFILE: tier_b_deletion
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion
+          --junitxml="$env:RUNNER_TEMP\tier-b-deletion-junit.xml"
+          -vv
+
+      - name: Test Windows persistent SQLCipher smoke profile
+        env:
+          HYPOTHESIS_PROFILE: windows_persistence_smoke
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke
+          --junitxml="$env:RUNNER_TEMP\tier-b-smoke-junit.xml"
+          -vv
+
+      - name: Retain Windows persistence evidence
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: windows-persistence-evidence-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}\fixed-sqlcipher-runtime-evidence.json
+            ${{ runner.temp }}\tier-b-general-junit.xml
+            ${{ runner.temp }}\tier-b-deletion-junit.xml
+            ${{ runner.temp }}\tier-b-smoke-junit.xml
+          retention-days: 30
+          if-no-files-found: error
 
       - name: Test backend
         run: python -m pytest
@@ -158,6 +356,7 @@ jobs:
     # The activation and capture specs drive native Chrome optional-permission
     # dialogs through UI Automation. Keep them on a Windows runner;
     # test_ci_workflow.py keeps that binding required.
+    needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
 
     env:
@@ -181,6 +380,18 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -193,7 +404,7 @@ jobs:
             tools/e2e-capture/package-lock.json
 
       - name: Install backend dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
 
       - name: Install frontend dependencies
         run: npm ci --prefix frontend

@@ -9,7 +9,6 @@ __all__ = [
     "DEV_ACCOUNT_ID",
     "DEV_AGENT_AUTH_TICKET",
     "DEV_BRIDGE_AUTH_TICKET",
-    "transport_manager",
 ]
 
 

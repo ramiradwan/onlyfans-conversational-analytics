@@ -1,0 +1,11 @@
+{
+  "scenario": "module_missing_permitted_inputs",
+  "description": "Module missing permitted_inputs specification",
+  "expected_diagnostic": "missing permitted_inputs",
+  "mutation": {
+    "op": "delete",
+    "target": "modules",
+    "index": 0,
+    "field": "permitted_inputs"
+  }
+}

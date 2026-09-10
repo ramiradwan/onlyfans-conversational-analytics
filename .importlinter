@@ -1,0 +1,60 @@
+[importlinter]
+root_packages =
+    app
+
+[importlinter:contract:contract-a-canonical-persistence-no-upward]
+name = Contract A: Canonical persistence core cannot depend upward or into transport
+type = forbidden
+source_modules =
+    app.persistence.history
+    app.persistence.database
+    app.persistence.migrations
+    app.persistence.deletion_operations
+forbidden_modules =
+    app.analytics
+    app.services
+    app.api
+    app.provisioning
+    app.transport
+
+[importlinter:contract:contract-b-canonical-history-gateway]
+name = Contract B: Only approved gateway modules may import app.persistence.history
+type = forbidden
+source_modules =
+    app.analytics
+forbidden_modules =
+    app.persistence.history
+ignore_imports =
+    app.analytics.canonical_source -> app.persistence.history
+    app.analytics.rebuild -> app.persistence.history
+allow_indirect_imports = True
+
+# ------------------------------------------------------------------------------
+# Service/transport and persistence/analytics composition contracts
+# ------------------------------------------------------------------------------
+[importlinter:contract:contract-c-service-transport-separation]
+name = Contract C: Application services must not import transport
+type = forbidden
+source_modules =
+    app.services.insights_service
+forbidden_modules =
+    app.transport
+allow_indirect_imports = True
+
+[importlinter:contract:contract-d-persistence-factory-no-analytics]
+name = Contract D: Persistence factory must not import analytics
+type = forbidden
+source_modules =
+    app.persistence.factory
+forbidden_modules =
+    app.analytics
+allow_indirect_imports = True
+
+[importlinter:contract:contract-e-transport-manager-no-canonical-analytics-source]
+name = Contract E: Transport manager must not import canonical analytics source
+type = forbidden
+source_modules =
+    app.transport.manager
+forbidden_modules =
+    app.analytics.canonical_source
+allow_indirect_imports = True

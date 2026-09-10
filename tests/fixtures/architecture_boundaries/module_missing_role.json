@@ -1,0 +1,11 @@
+{
+  "scenario": "module_missing_role",
+  "description": "Module missing required role description",
+  "expected_diagnostic": "missing or empty role",
+  "mutation": {
+    "op": "delete",
+    "target": "modules",
+    "index": 0,
+    "field": "role"
+  }
+}

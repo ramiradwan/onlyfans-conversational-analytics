@@ -25,8 +25,8 @@ from app.analytics.pipeline import (
     AnalyticsPipeline,
     ProjectionCandidate,
 )
+from app.canonical.read_models import AccountReadModel
 from app.models.analytics import AvailabilityStatus
-from app.transport.ingestion import AccountReadModel
 
 
 _Result = TypeVar("_Result")

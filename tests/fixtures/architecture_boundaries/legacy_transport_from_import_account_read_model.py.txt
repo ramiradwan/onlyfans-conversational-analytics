@@ -1,0 +1,3 @@
+from app.transport import ingestion
+
+account_read_model = ingestion.AccountReadModel

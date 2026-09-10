@@ -642,6 +642,20 @@ def _collected_node_ids(
     return [line.strip() for line in collected.stdout.splitlines() if "::" in line]
 
 
+def _unsigned_package_artifact_name(workflow: dict[str, Any]) -> str:
+    downloads = [
+        step
+        for step in _steps(_signing_job(workflow))
+        if _action_path(step) == "actions/download-artifact"
+    ]
+    assert len(downloads) == 1, (
+        "the signing job must download exactly one unsigned package artifact"
+    )
+    name = (downloads[0].get("with") or {}).get("name")
+    assert isinstance(name, str) and name, "the unsigned package artifact must be named"
+    return name
+
+
 def _assert_the_packaged_first_run_gates_the_upload(workflow: dict[str, Any]) -> None:
     steps = _steps(_build_job(workflow))
     gate = _first_run_gate_index(steps)
@@ -660,12 +674,23 @@ def _assert_the_packaged_first_run_gates_the_upload(workflow: dict[str, Any]) ->
         for index, step in enumerate(steps)
         if _action_path(step) == PUBLISH_ACTION
     ]
-    assert len(publication) == 1, (
-        f"the build job must upload exactly once, found {len(publication)}"
+    package_name = _unsigned_package_artifact_name(workflow)
+    package_uploads = [
+        index
+        for index in publication
+        if (steps[index].get("with") or {}).get("name") == package_name
+    ]
+    assert len(package_uploads) == 1, (
+        "the build job must upload the unsigned package exactly once, "
+        f"found {len(package_uploads)}"
     )
-    assert gate < publication[0], (
-        "the packaged first-run gate must run before the package is uploaded"
-    )
+    # Evidence is retained separately from the package consumed by signing.
+    # Every artifact still depends on successful packaged first-run coverage.
+    for index in publication:
+        assert gate < index, (
+            "the packaged first-run gate must run before every build artifact upload: "
+            f"{steps[index].get('name')!r}"
+        )
 
 
 def test_the_build_job_gates_the_upload_on_a_packaged_first_run() -> None:
@@ -692,17 +717,37 @@ def test_the_build_job_gates_the_upload_on_a_packaged_first_run() -> None:
     with pytest.raises(AssertionError, match="isolated build environment"):
         _assert_the_packaged_first_run_gates_the_upload(detached)
 
-    reordered = deepcopy(workflow)
-    steps = _build_job(reordered)["steps"]
-    gate = _first_run_gate_index(_steps(_build_job(reordered)))
-    publication = next(
-        index
-        for index, step in enumerate(steps)
-        if _action_path(step) == PUBLISH_ACTION
-    )
-    steps.insert(gate, steps.pop(publication))
-    with pytest.raises(AssertionError, match="before the package is uploaded"):
-        _assert_the_packaged_first_run_gates_the_upload(reordered)
+    for index, step in enumerate(_steps(_build_job(workflow))):
+        if _action_path(step) != PUBLISH_ACTION:
+            continue
+        reordered = deepcopy(workflow)
+        steps = _build_job(reordered)["steps"]
+        gate = _first_run_gate_index(steps)
+        steps.insert(gate, steps.pop(index))
+        with pytest.raises(AssertionError, match="before every build artifact upload"):
+            _assert_the_packaged_first_run_gates_the_upload(reordered)
+
+
+def test_the_build_job_uploads_one_unsigned_package_alongside_its_evidence() -> None:
+    """Evidence cannot hide a missing or duplicate package upload."""
+
+    workflow = _workflow_document()
+    _assert_the_packaged_first_run_gates_the_upload(workflow)
+    package_name = _unsigned_package_artifact_name(workflow)
+
+    for copies in (0, 2):
+        changed = deepcopy(workflow)
+        steps = _build_job(changed)["steps"]
+        package = next(
+            step
+            for step in steps
+            if _action_path(step) == PUBLISH_ACTION
+            and (step.get("with") or {}).get("name") == package_name
+        )
+        position = steps.index(package)
+        steps[position : position + 1] = [deepcopy(package) for _ in range(copies)]
+        with pytest.raises(AssertionError, match="upload the unsigned package exactly once"):
+            _assert_the_packaged_first_run_gates_the_upload(changed)
 
 
 def test_the_gate_selection_collects_the_packaged_first_run_test() -> None:

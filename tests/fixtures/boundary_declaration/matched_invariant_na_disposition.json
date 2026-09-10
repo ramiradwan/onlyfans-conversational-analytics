@@ -1,0 +1,6 @@
+{
+  "scenario": "machine-matched invariant uses N/A",
+  "changed_files": ["app/analytics/identity.py"],
+  "body": "## Architecture impact\n\nArchitecture rationale:\nN/A\n\nPotentially affected invariant dispositions:\nN/A\n\nInvariant / boundary actually affected:\nN/A\n\nSafety evidence:\nN/A\n",
+  "expected_diagnostic": "N/A is not a valid disposition"
+}

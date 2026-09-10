@@ -1,0 +1,7 @@
+{
+  "scenario": "exact duplicate exception identity fails even when the PR body is all N/A",
+  "changed_files": ["docs/architecture-boundaries.json"],
+  "body": "## Architecture impact\n\nArchitecture rationale:\nN/A\n\nPotentially affected invariant dispositions:\nN/A\n\nInvariant / boundary actually affected:\nN/A\n\nSafety evidence:\nN/A\n",
+  "duplicate_exception_identity": true,
+  "expected_diagnostic": "duplicate exception identity"
+}

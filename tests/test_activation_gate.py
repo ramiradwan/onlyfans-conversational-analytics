@@ -66,12 +66,12 @@ from app.security.installation_key import (
     ProviderKeyInfo,
 )
 from app.security.runtime_policy import AuthContext
+from app.bootstrap import transport_manager
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
     DEV_BRIDGE_AUTH_TICKET,
     DEV_PRINCIPAL_ID,
     AuthenticationError,
-    transport_manager,
 )
 
 

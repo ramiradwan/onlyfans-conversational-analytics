@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
-import logging
 from collections import Counter, defaultdict
-from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from statistics import mean
-from threading import RLock
 
-from app.analytics.factory import create_analytics_stores
-from app.analytics.identity import canonical_identity
 from app.analytics.errors import (
     CanonicalAccountNotFound,
     InvalidAnalyticsRequest,
@@ -26,9 +20,10 @@ from app.analytics.metrics import (
     priority_score,
 )
 from app.analytics.opaque_refs import conversation_ref, message_ref
-from app.analytics.pipeline import AnalyticsPipeline, CanonicalReadModelSource
+from app.analytics.pipeline import CanonicalReadModelSource
 from app.analytics.provenance import stable_config_digest
-from app.analytics.scheduling import InProcessProjectionScheduler
+from app.analytics.runtime import AnalyticsRuntime, analytics_runtime
+from app.canonical.read_models import AccountReadModel
 from app.models.analytics import (
     AnalysisMode,
     AnalyticsProjection,
@@ -51,9 +46,6 @@ from app.models.insights import (
     TopicMetricsCollection,
     TopicMetricsResponse,
 )
-from app.transport.ingestion import AccountReadModel
-
-
 RESPONSE_TIME_REVISION = "response_time.baseline.v2"
 RESPONSE_TIME_PROVENANCE = MetricProvenance(
     metric_name="response_time",
@@ -70,196 +62,6 @@ RESPONSE_TIME_PROVENANCE = MetricProvenance(
     mode=AnalysisMode.BASELINE,
     calibration_status=CalibrationStatus.NOT_CALIBRATED,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class AnalyticsRuntime:
-    source: CanonicalReadModelSource
-    pipeline: AnalyticsPipeline
-    scheduler: InProcessProjectionScheduler
-
-
-_RUNTIMES: dict[int, AnalyticsRuntime] = {}
-_RUNTIME_LOCK = RLock()
-_STARTUP_TASK: asyncio.Task[None] | None = None
-LOGGER = logging.getLogger(__name__)
-
-
-def analytics_runtime(
-    source: CanonicalReadModelSource | None = None,
-) -> AnalyticsRuntime:
-    """Return the process-local derived runtime for one canonical repository."""
-
-    use_default_runtime = source is None
-    if source is None:
-        from app.transport import transport_manager
-
-        source = transport_manager.ingestion
-    key = id(source)
-    with _RUNTIME_LOCK:
-        existing = _RUNTIMES.get(key)
-        if (
-            existing is not None
-            and existing.source is source
-            and not existing.scheduler.closed
-        ):
-            return existing
-        if use_default_runtime:
-            from app.core.config import settings
-            from app.transport import transport_manager
-
-            if settings.canonical_persistence_backend == "sqlite":
-                stores = create_analytics_stores(
-                    "sqlite",
-                    projections_path=settings.analytics_projection_database_path,
-                    canonical_path=settings.canonical_database_path,
-                    activation=transport_manager.projection_activation,
-                    canonical_identity_reader=lambda account_id: (
-                        canonical_identity(source.account_read_model(account_id))
-                        if source.account_exists(account_id)
-                        else None
-                    ),
-                    lazy=True,
-                )
-                pipeline = AnalyticsPipeline(
-                    source,
-                    projections=stores.projections,
-                    graph=stores.graph,
-                )
-            else:
-                pipeline = AnalyticsPipeline(source)
-        else:
-            pipeline = AnalyticsPipeline(source)
-        runtime = AnalyticsRuntime(
-            source=source,
-            pipeline=pipeline,
-            scheduler=InProcessProjectionScheduler(pipeline),
-        )
-        _RUNTIMES[key] = runtime
-        return runtime
-
-
-def analytics_pipeline(
-    source: CanonicalReadModelSource | None = None,
-) -> AnalyticsPipeline:
-    return analytics_runtime(source).pipeline
-
-
-def projection_scheduler(
-    source: CanonicalReadModelSource | None = None,
-) -> InProcessProjectionScheduler:
-    return analytics_runtime(source).scheduler
-
-
-def configure_default_projection_scheduler() -> InProcessProjectionScheduler:
-    """Return the in-process, per-account scheduling seam for the default runtime."""
-
-    return projection_scheduler()
-
-
-async def start_default_projection_scheduler() -> InProcessProjectionScheduler:
-    """Bind the coordinator and recover every canonical account at startup."""
-
-    scheduler = configure_default_projection_scheduler()
-    await scheduler.start(recover=True)
-    return scheduler
-
-
-def launch_default_projection_scheduler() -> asyncio.Task[None]:
-    """Launch derived recovery after transport readiness without blocking it."""
-
-    global _STARTUP_TASK
-    scheduler = configure_default_projection_scheduler()
-    if _STARTUP_TASK is not None and not _STARTUP_TASK.done():
-        return _STARTUP_TASK
-
-    async def start() -> None:
-        try:
-            await scheduler.start(recover=True)
-        except (ProjectionCoordinatorClosed, ProjectionStorageUnavailable):
-            LOGGER.warning(
-                "analytics_scheduler_event "
-                "reason_code=analytics_projection_start_unavailable "
-                "event_type=startup count=1"
-            )
-        except Exception:
-            LOGGER.exception(
-                "analytics_scheduler_event "
-                "reason_code=analytics_projection_start_failed "
-                "event_type=startup count=1"
-            )
-
-    _STARTUP_TASK = asyncio.create_task(
-        start(), name="analytics-projection-startup"
-    )
-    return _STARTUP_TASK
-
-
-async def request_projection_rebuild(
-    creator_account_id: str,
-    *,
-    source: CanonicalReadModelSource | None = None,
-) -> bool:
-    """Schedule a derived-analytics rebuild after a canonical commit.
-
-    The projection scheduler is otherwise driven only by the one-time startup
-    recovery sweep, so without a post-commit trigger freshly committed
-    conversations stay analytically stale until the process restarts. Returns
-    True when a rebuild was requested. With no explicit ``source`` the request
-    is skipped unless the canonical backend persists analytics projections, so
-    memory-backed tests and non-sqlite deployments keep the startup-only
-    behavior and never spin the coordinator on the ingestion hot path.
-    """
-
-    if source is None:
-        from app.core.config import settings
-
-        if settings.canonical_persistence_backend != "sqlite":
-            return False
-    runtime = analytics_runtime(source)
-    if runtime.scheduler.closed:
-        return False
-    account = await _canonical_account(runtime, creator_account_id)
-    await runtime.scheduler.request_recovery(
-        creator_account_id, account.view_revision
-    )
-    return True
-
-
-async def shutdown_default_projection_scheduler(*, timeout: float = 5.0) -> bool:
-    """Close publication/admission and await bounded owned-worker shutdown."""
-
-    from app.transport import transport_manager
-
-    source = transport_manager.ingestion
-    key = id(source)
-    with _RUNTIME_LOCK:
-        runtime = _RUNTIMES.get(key)
-    if runtime is None or runtime.source is not source:
-        return True
-    drained = await runtime.scheduler.close(timeout=timeout)
-    global _STARTUP_TASK
-    startup_task = _STARTUP_TASK
-    _STARTUP_TASK = None
-    if startup_task is not None and not startup_task.done():
-        startup_task.cancel()
-    with _RUNTIME_LOCK:
-        if _RUNTIMES.get(key) is runtime:
-            _RUNTIMES.pop(key, None)
-    return drained
-
-
-def reset_analytics_runtimes() -> None:
-    """Clear derived process state; canonical data remains untouched."""
-
-    global _STARTUP_TASK
-    with _RUNTIME_LOCK:
-        for runtime in _RUNTIMES.values():
-            runtime.scheduler.abort()
-        _RUNTIMES.clear()
-    if _STARTUP_TASK is not None and not _STARTUP_TASK.done():
-        _STARTUP_TASK.cancel()
-    _STARTUP_TASK = None
 
 
 def _utc(value: datetime) -> datetime:

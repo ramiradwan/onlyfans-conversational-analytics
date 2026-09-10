@@ -1,0 +1,90 @@
+{
+  "deliberate_falsifier": {
+    "measured": {
+      "actual_generated_call_count": 11,
+      "generation_to_first_failure_reason": "Hypothesis does not expose a first-failure or post-first-failure shrink boundary to this expected-exception test.",
+      "generation_to_first_failure_seconds": null,
+      "shrink_phase_reason": "Hypothesis does not expose a first-failure or post-first-failure shrink boundary to this expected-exception test.",
+      "shrink_phase_seconds": null,
+      "status": "expected_failure_with_generate_and_shrink_configured",
+      "wall_clock_seconds": 0.293219
+    },
+    "process_wall_clock_seconds": 4.721508,
+    "target": "tests/stateful/test_analytics_equivalence.py::test_deliberate_falsifier_failure_configures_hypothesis_shrink_phase"
+  },
+  "evidence_origin": "tools/qualify_analytics_convergence.py",
+  "limitations": [
+    "Local timing is not hosted-runner p95 evidence.",
+    "Temporary canonical SQLCipher files do not qualify shipped fixed-runtime persistence.",
+    "Fresh in-memory derived stores do not qualify persistent projection/graph restart behavior.",
+    "No live creator data, external enrichment, or production traffic trace was used."
+  ],
+  "measured_at": "2026-09-10T09:27:38.035003+00:00",
+  "profile_mix": {
+    "actual_deletion_histories": 4,
+    "actual_general_histories": 6,
+    "actual_general_to_deletion_ratio": 1.5,
+    "research_contract_deletion_examples": 20,
+    "research_contract_general_examples": 30,
+    "research_contract_general_to_deletion_ratio": 1.5
+  },
+  "profiles": {
+    "analytics_deletion_fast": {
+      "measured": {
+        "actual_accepted_deletion_count": 8,
+        "actual_alternative_order_history_count": 4,
+        "actual_canonical_mutation_deliveries": 44,
+        "actual_clean_rebuild_count": 12,
+        "actual_deletion_delivery_count": 12,
+        "actual_duplicate_delivery_count": 4,
+        "actual_history_count": 4,
+        "actual_repository_restart_count": 4,
+        "history_wall_clock_seconds": [
+          2.991923,
+          2.893113,
+          2.972682,
+          2.865465
+        ],
+        "hypothesis_profile": "analytics_deletion_fast"
+      },
+      "process_wall_clock_seconds": 13.856238,
+      "target": "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
+    },
+    "analytics_convergence_fast": {
+      "measured": {
+        "actual_accepted_deletion_count": 6,
+        "actual_alternative_order_history_count": 6,
+        "actual_canonical_mutation_deliveries": 84,
+        "actual_clean_rebuild_count": 12,
+        "actual_deletion_delivery_count": 6,
+        "actual_duplicate_delivery_count": 6,
+        "actual_history_count": 6,
+        "actual_repository_restart_count": 6,
+        "history_wall_clock_seconds": [
+          3.027383,
+          4.173419,
+          4.040098,
+          3.218456,
+          3.438548,
+          4.036818
+        ],
+        "hypothesis_profile": "analytics_convergence_fast"
+      },
+      "process_wall_clock_seconds": 24.313967,
+      "target": "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence"
+    }
+  },
+  "runtime": {
+    "hypothesis_version": "6.128.0",
+    "platform": "Windows-11-10.0.26340-SP0",
+    "python_implementation": "CPython",
+    "python_version": "3.13.6",
+    "sqlcipher_version": "4.12.0 community",
+    "sqlite_runtime_version": "3.51.1"
+  },
+  "schema_version": "analytics-convergence-local-evidence.v2",
+  "scope": {
+    "canonical_authority": "temporary file-backed SQLCipher canonical and repository projection databases created by create_canonical_repositories('memory') and exercised through HistoryRepository",
+    "derived_stores": "fresh in-process InMemoryAnalyticsProjectionStore and InMemoryGraphRepository for each incremental or clean pipeline"
+  }
+}

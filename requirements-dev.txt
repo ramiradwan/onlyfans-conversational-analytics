@@ -5,3 +5,9 @@ pytest-asyncio
 
 # Release-workflow policy tests parse .github/workflows into a structure.
 PyYAML
+
+# Python architecture boundary linter
+import-linter==2.15
+
+# Stateful property-based testing for ingestion and analytics assurance
+hypothesis==6.128.0

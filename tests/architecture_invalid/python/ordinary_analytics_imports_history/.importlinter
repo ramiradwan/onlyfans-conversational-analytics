@@ -1,0 +1,15 @@
+[importlinter]
+root_packages =
+    app
+
+[importlinter:contract:contract-b-canonical-history-gateway]
+name = Contract B: Only approved gateway modules may import app.persistence.history
+type = forbidden
+source_modules =
+    app.analytics
+forbidden_modules =
+    app.persistence.history
+ignore_imports =
+    app.analytics.canonical_source -> app.persistence.history
+    app.analytics.rebuild -> app.persistence.history
+allow_indirect_imports = True

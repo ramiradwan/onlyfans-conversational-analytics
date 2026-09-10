@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
+from app.canonical.read_models import AccountReadModel
 from app.models.analytics import AnalyticsProjection
-from app.transport.ingestion import AccountReadModel
 
 
 @dataclass(frozen=True, slots=True)

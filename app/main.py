@@ -1,12 +1,4 @@
-"""
-Main entry point for the OnlyFans Conversational Analytics API.
-
-This FastAPI app exposes:
-- authenticated protocol-v2 ingestion, settings, and message-page routes
-- Agent and Bridge WebSocket transports
-- Frontend React app (built with Vite) served via Jinja2 templates
-- Static assets (JS/CSS) from the Vite build
-"""
+"""FastAPI application for ingestion, analytics, Agent, and Bridge traffic."""
 
 import logging
 
@@ -15,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.endpoints import creator_vault, frontend, history, insights, transport_ws, webauthn
+from app.analytics import runtime as analytics_runtime
+from app.bootstrap import history_source, transport_manager
 from app.core.config import settings
 from app.core.broadcast import broadcast
 from app.core.resource_paths import resource_path
@@ -28,8 +22,6 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
 )
-from app.services import insights_service
-from app.transport import transport_manager
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +29,27 @@ _installation_key_authority: InstallationKeyAuthority | None = None
 _installation_key_reference: InstallationKeyReference | None = None
 
 
-def initialize_installation_key() -> InstallationKeyReference:
-    """Ready the TPM-backed installation key for this installation.
+def configure_analytics_runtime():
+    """Build the analytics runtime from application-owned resources."""
 
-    A test runtime adopts a key that is already active, because its durable
-    store outlives the process while the provider that produced the key need
-    not be one this host can open. Every other runtime proves the key through
-    the provider authority, and a test runtime holding no active key does too.
-    """
+    return analytics_runtime.configure_default_analytics_runtime(
+        history_source,
+        backend=settings.canonical_persistence_backend,
+        projections_path=settings.analytics_projection_database_path,
+        canonical_path=settings.canonical_database_path,
+        activation=transport_manager.projection_activation,
+        post_commit_rebuild_enabled=(
+            settings.canonical_persistence_backend == "sqlite"
+        ),
+    )
+
+
+# Register dependencies before handlers request the default runtime.
+configure_analytics_runtime()
+
+
+def initialize_installation_key() -> InstallationKeyReference:
+    """Load or create the TPM-backed installation key."""
     global _installation_key_authority, _installation_key_reference
     store = SQLiteAuthenticationStore(settings.auth_database_path)
     if settings.environment.lower() == "test":
@@ -140,14 +145,16 @@ async def startup_event():
     activate_runtime()
     await broadcast.connect()
     await transport_manager.start()
+    # Use resources created for this application lifecycle.
+    configure_analytics_runtime()
     # Recover every canonical account's analytics projection in the
     # background; readiness must not wait on this potentially slow replay.
-    insights_service.launch_default_projection_scheduler()
+    analytics_runtime.launch_default_analytics_runtime()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await transport_manager.stop()
-    drained = await insights_service.shutdown_default_projection_scheduler(
+    drained = await analytics_runtime.shutdown_default_analytics_runtime(
         timeout=5.0
     )
     if not drained:

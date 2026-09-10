@@ -8,13 +8,14 @@ from uuid import uuid4
 import pytest
 
 from app.api.endpoints.transport_ws import _handle_agent_message
+from app.bootstrap import transport_manager
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.services.agent_configuration import BOOTSTRAP_CONFIG_REVISION
 from app.services.command_execution import (
     CommandAlreadyExistsError,
     CommandReissueError,
 )
-from app.transport.manager import DEV_ACCOUNT_ID, transport_manager
+from app.transport.manager import DEV_ACCOUNT_ID
 
 
 NOW = datetime(2026, 7, 18, 10, 5, tzinfo=timezone.utc)

@@ -1,0 +1,6 @@
+{
+  "scenario": "unmatched disposition cannot be used to spoof completeness",
+  "changed_files": ["app/analytics/identity.py"],
+  "body": "## Architecture impact\n\nArchitecture rationale:\nN/A\n\nPotentially affected invariant dispositions:\ngraph-identity:\nnot affected\nrationale: Comment-only change.\nmade-up-invariant:\nnot affected\nrationale: This was not matched.\n\nInvariant / boundary actually affected:\nN/A\n\nSafety evidence:\nN/A\n",
+  "expected_diagnostic": "unknown invariant disposition"
+}

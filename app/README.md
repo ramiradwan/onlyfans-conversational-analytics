@@ -2,7 +2,7 @@
 
 # Brain
 
-Brain is the local backend for OnlyFans Conversational Analytics. It runs on the creator's computer, accepts authenticated Agent and Bridge traffic, stores canonical conversation data, builds derived analytics, and serves Bridge.
+Brain is the local backend for OnlyFans Conversational Analytics. It comprises the Python `app/` tree (there is no standalone `brain/` directory). It runs on the creator's computer, accepts authenticated Agent and Bridge traffic, stores canonical conversation data, builds derived analytics, and serves Bridge.
 
 ## Responsibilities
 
@@ -18,7 +18,7 @@ Brain is the local backend for OnlyFans Conversational Analytics. It runs on the
 
 Brain runs as one application writer. Changes that add another writer or move conversation content to a hosted service require an architecture decision.
 
-See [ADR 0009](../docs/adr/0009-local-first-topology-and-persistence.md) for the production topology and persistence boundary.
+`docs/architecture-boundaries.json` is the authoritative machine-readable architecture baseline. See [Architecture boundaries](../docs/architecture-boundaries.md) for the full boundary contract and [ADR 0009](../docs/adr/0009-local-first-topology-and-persistence.md) for the production topology and persistence boundary.
 
 ## Main areas
 
@@ -31,6 +31,7 @@ See [ADR 0009](../docs/adr/0009-local-first-topology-and-persistence.md) for the
 
 ## Related documentation
 
+- [Architecture boundaries](../docs/architecture-boundaries.md)
 - [Brain API endpoints](api/endpoints/README.md)
 - [Analytics](analytics/README.md)
 - [Communication overview](../communication-spec.md)

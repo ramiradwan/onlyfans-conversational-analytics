@@ -110,6 +110,16 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+
+      - name: Build fixed SQLCipher wheel
+        shell: pwsh
+        run: |
+          $wheelhouse = Join-Path $env:RUNNER_TEMP "ofca-fixed-sqlcipher-wheelhouse"
+          .\packaging\sqlcipher\build-fixed-wheel.ps1 `
+            -BuildPython (Get-Command python.exe).Source `
+            -Wheelhouse $wheelhouse
+          "SQLCIPHER_WHEELHOUSE=$wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -122,7 +132,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -r requirements-dev.txt
+          python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
           npm ci --prefix frontend
           npm ci --prefix extension
 

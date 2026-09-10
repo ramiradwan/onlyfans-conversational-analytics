@@ -1,10 +1,4 @@
-"""Durable-ingestion sequencing and the replaceable repository boundary.
-
-The in-memory repository is intentionally the only class that owns storage
-mutation. Sequencing and validation live in :class:`IngestionService`, so a
-database-backed repository can replace it without moving protocol rules into
-the WebSocket endpoint.
-"""
+"""Durable-ingestion sequencing and repository interfaces."""
 
 from __future__ import annotations
 
@@ -16,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
+from app.canonical import read_models
 
 ZERO_ANALYTICS = {
     "total_conversations": 0,
@@ -58,12 +53,6 @@ class RawStreamState:
 
 
 @dataclass(slots=True)
-class AccountReadModel:
-    view_revision: int = 0
-    conversations: dict[str, dict[str, Any]] = field(default_factory=dict)
-
-
-@dataclass(slots=True)
 class CommitOutcome:
     status: Literal["accepted", "duplicate", "gap", "rejected"]
     committed_source_seq: int
@@ -81,7 +70,7 @@ class IngestionRepository(Protocol):
 
     def stream(self, key: StreamKey) -> RawStreamState | None: ...
 
-    def account_read_model(self, creator_account_id: str) -> AccountReadModel: ...
+    def account_read_model(self, creator_account_id: str) -> read_models.AccountReadModel: ...
 
     def commit_snapshot(
         self,
@@ -89,7 +78,7 @@ class IngestionRepository(Protocol):
         *,
         expected_checkpoint: int,
         stream: RawStreamState,
-        account: AccountReadModel,
+        account: read_models.AccountReadModel,
     ) -> bool: ...
 
     def commit_delta(
@@ -98,7 +87,7 @@ class IngestionRepository(Protocol):
         *,
         expected_checkpoint: int,
         stream: RawStreamState,
-        account: AccountReadModel,
+        account: read_models.AccountReadModel,
     ) -> bool: ...
 
     def reset(self) -> None: ...
@@ -109,7 +98,7 @@ class InMemoryIngestionRepository:
 
     def __init__(self) -> None:
         self._streams: dict[StreamKey, RawStreamState] = {}
-        self._accounts: dict[str, AccountReadModel] = {}
+        self._accounts: dict[str, read_models.AccountReadModel] = {}
 
     def checkpoint(self, key: StreamKey) -> int | None:
         state = self._streams.get(key)
@@ -119,8 +108,8 @@ class InMemoryIngestionRepository:
         state = self._streams.get(key)
         return deepcopy(state) if state is not None else None
 
-    def account_read_model(self, creator_account_id: str) -> AccountReadModel:
-        return deepcopy(self._accounts.get(creator_account_id, AccountReadModel()))
+    def account_read_model(self, creator_account_id: str) -> read_models.AccountReadModel:
+        return deepcopy(self._accounts.get(creator_account_id, read_models.AccountReadModel()))
 
     def commit_snapshot(
         self,
@@ -128,7 +117,7 @@ class InMemoryIngestionRepository:
         *,
         expected_checkpoint: int,
         stream: RawStreamState,
-        account: AccountReadModel,
+        account: read_models.AccountReadModel,
     ) -> bool:
         if stream.checkpoint < expected_checkpoint:
             raise ValueError("snapshot checkpoint cannot move backwards")
@@ -140,7 +129,7 @@ class InMemoryIngestionRepository:
         *,
         expected_checkpoint: int,
         stream: RawStreamState,
-        account: AccountReadModel,
+        account: read_models.AccountReadModel,
     ) -> bool:
         if stream.checkpoint != expected_checkpoint + 1:
             raise ValueError("delta checkpoint must advance contiguously")
@@ -151,13 +140,13 @@ class InMemoryIngestionRepository:
         key: StreamKey,
         expected_checkpoint: int,
         stream: RawStreamState,
-        account: AccountReadModel,
+        account: read_models.AccountReadModel,
     ) -> bool:
         current = self._streams.get(key)
         current_checkpoint = 0 if current is None else current.checkpoint
         if current_checkpoint != expected_checkpoint:
             return False
-        current_account = self._accounts.get(key.creator_account_id, AccountReadModel())
+        current_account = self._accounts.get(key.creator_account_id, read_models.AccountReadModel())
         if account.view_revision not in {
             current_account.view_revision,
             current_account.view_revision + 1,
@@ -484,7 +473,7 @@ def _project(stream: RawStreamState) -> dict[str, dict[str, Any]]:
 
 def _replace_projection(
     creator_account_id: str,
-    account: AccountReadModel,
+    account: read_models.AccountReadModel,
     stream: RawStreamState,
 ) -> dict[str, Any] | None:
     projected = _project(stream)

@@ -7,8 +7,8 @@ import json
 from app.persistence import sqlite_api as sqlite3
 from datetime import datetime
 
+from app.canonical.read_models import AccountReadModel
 from app.persistence.history import HistoryRepository
-from app.transport.ingestion import AccountReadModel
 
 
 class HistoryAnalyticsSource:

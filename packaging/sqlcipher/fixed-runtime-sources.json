@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "binding": {
+    "project": "sqlcipher3",
+    "upstream_version": "0.6.2",
+    "local_version": "0.6.2+ofca.1",
+    "source_url": "https://files.pythonhosted.org/packages/ae/c1/414003d77549c444bafd636149ab3ace6f4e2cb4666c9955d54ad62096cb/sqlcipher3-0.6.2.tar.gz",
+    "sha256": "a2b675289ba8889f389625a21f3a01f1ff159a551b5b88fba8fd92da0e02380a",
+    "license": "zlib/libpng-style; retained from the upstream sdist"
+  },
+  "sqlcipher": {
+    "version": "4.17.0",
+    "commit": "810db22f575ee7cf94ea96a3e91622b5fcece3dc",
+    "source_url": "https://codeload.github.com/sqlcipher/sqlcipher/zip/810db22f575ee7cf94ea96a3e91622b5fcece3dc",
+    "sha256": "8ad1818bcc79c05c6dfce283b11a00566b4557e7a55da3045dcda9ca42e65776",
+    "license": "SQLCipher Community Edition BSD-style license; retain LICENSE.md and LICENSE.txt"
+  },
+  "vcpkg": {
+    "commit": "9e593bb18ea69cc5095e012465dcd675a822ed0d",
+    "source_url": "https://codeload.github.com/microsoft/vcpkg/zip/9e593bb18ea69cc5095e012465dcd675a822ed0d",
+    "sha256": "92ea07cd3ad4b3bbe65e6e7088b4074eddab371d7bb70107c6e7ceefcb5d5c3e",
+    "triplet": "x64-windows-static-md",
+    "port": "openssl",
+    "license": "MIT; port sources and notices are retained in the vcpkg build tree"
+  },
+  "minimum_runtime": {
+    "sqlite": "3.51.3",
+    "sqlcipher": "4.14.0"
+  },
+  "builder_tools": {
+    "setuptools": "82.0.1",
+    "wheel": "0.46.3"
+  }
+}

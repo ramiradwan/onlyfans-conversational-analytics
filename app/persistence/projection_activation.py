@@ -13,9 +13,9 @@ from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.identity import CanonicalIdentity, canonical_identity
 from app.analytics.ownership import BuildOwner
 from app.analytics.opaque_refs import account_ref as analytics_account_ref
+from app.canonical.read_models import AccountReadModel
 from app.persistence.database import CanonicalSQLite
 from app.persistence.history import HistoryRepository
-from app.transport.ingestion import AccountReadModel
 
 
 ActivationState = Literal["reserved", "completed", "cancelled"]

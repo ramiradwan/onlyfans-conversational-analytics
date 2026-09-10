@@ -7,6 +7,7 @@ from pathlib import Path
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.historical_derivation import HistoricalDerivationProvenance
 from app.analytics.identity import canonical_identity
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.retention_store import (
     MAX_RETENTION_TIMER_SECONDS,
@@ -68,11 +69,17 @@ def _insert_message(connection, message_id: str, sent_at: datetime, *, index: in
     )
 
 
+def _history_source(repositories) -> HistoryAnalyticsSource:
+    return HistoryAnalyticsSource(repositories.history)
+
+
 def _identity_reader(repositories):
+    history_source = _history_source(repositories)
+
     def read(account_id: str):
-        if not repositories.ingestion.account_exists(account_id):
+        if not history_source.account_exists(account_id):
             return None
-        return canonical_identity(repositories.ingestion.account_read_model(account_id))
+        return canonical_identity(history_source.account_read_model(account_id))
 
     return read
 
@@ -86,7 +93,7 @@ def _store(repositories, path: Path, clock: MutableClock):
         clock=clock,
     )
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        _history_source(repositories),
         projections=store,
         graph=store.graph,
         clock=clock,

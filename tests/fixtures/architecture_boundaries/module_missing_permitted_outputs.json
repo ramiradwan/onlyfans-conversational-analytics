@@ -1,0 +1,11 @@
+{
+  "scenario": "module_missing_permitted_outputs",
+  "description": "Module missing permitted_outputs specification",
+  "expected_diagnostic": "missing permitted_outputs",
+  "mutation": {
+    "op": "delete",
+    "target": "modules",
+    "index": 0,
+    "field": "permitted_outputs"
+  }
+}

@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from app.analytics.graph_identity import graph_id
 from app.analytics.graph_privacy import graph_content_digest
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.graph_store import InMemoryGraphRepository
 from app.analytics.identity import canonical_identity
 from app.analytics.opaque_refs import account_ref, validated_account_ref
@@ -279,6 +280,7 @@ def run(path: Path, size: int, *, retention_updates: int = 2) -> dict[str, Any]:
             repositories = create_canonical_repositories(
                 "sqlite", canonical_path=canonical_path
             )
+            history_source = HistoryAnalyticsSource(repositories.history)
             assert repositories.database is not None
             with repositories.database.transaction() as connection:
                 connection.execute(
@@ -287,10 +289,10 @@ def run(path: Path, size: int, *, retention_updates: int = 2) -> dict[str, Any]:
                 )
 
             def read_identity(account_id: str):
-                if not repositories.ingestion.account_exists(account_id):
+                if not history_source.account_exists(account_id):
                     return None
                 return canonical_identity(
-                    repositories.ingestion.account_read_model(account_id)
+                    history_source.account_read_model(account_id)
                 )
 
             store = SQLiteAnalyticsProjectionStore(
@@ -301,11 +303,11 @@ def run(path: Path, size: int, *, retention_updates: int = 2) -> dict[str, Any]:
                 gc_batch_size=8,
             )
             pipeline = AnalyticsPipeline(
-                repositories.ingestion,
+                history_source,
                 projections=store,
                 graph=store.graph,
             )
-            account = repositories.ingestion.account_read_model(ACCOUNT_ID)
+            account = history_source.account_read_model(ACCOUNT_ID)
             artifact = _artifact(
                 pipeline,
                 account,
@@ -337,7 +339,7 @@ def run(path: Path, size: int, *, retention_updates: int = 2) -> dict[str, Any]:
                         """,
                         (revision, ACCOUNT_ID),
                     )
-                account = repositories.ingestion.account_read_model(ACCOUNT_ID)
+                account = pipeline.source.account_read_model(ACCOUNT_ID)
                 artifact = _artifact(
                     pipeline,
                     account,

@@ -1,0 +1,17 @@
+{
+  "scenario": "qualified_invariant_with_missing_evidence",
+  "description": "Qualified invariant referencing non-existent evidence file",
+  "expected_diagnostic": "referenced file does not exist",
+  "mutation": {
+    "op": "set_fields",
+    "target": "semantic_invariants",
+    "index": 0,
+    "fields": {
+      "assurance.status": "qualified",
+      "assurance.evidence": [
+        "tests/missing_evidence_test.py"
+      ],
+      "assurance.falsifier": "tests/test_architecture_runtime_policy.py::test_runtime_authorization_is_confined_to_the_security_kernel"
+    }
+  }
+}

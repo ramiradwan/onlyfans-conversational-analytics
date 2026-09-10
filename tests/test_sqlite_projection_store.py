@@ -24,6 +24,7 @@ from app.analytics.graph_store import GraphDeadlineExceeded, GraphStoreError
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.factory import create_analytics_stores
 from app.analytics.identity import CanonicalIdentity, canonical_identity
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.opaque_refs import account_ref, validated_account_ref
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.projection_store import projection_content_digest
@@ -62,11 +63,17 @@ WORKER = Path(__file__).with_name("projection_crash_worker.py")
 CONCURRENT_WORKER = Path(__file__).with_name("projection_concurrent_worker.py")
 
 
+def history_source_for(repositories: CanonicalRepositories) -> HistoryAnalyticsSource:
+    return HistoryAnalyticsSource(repositories.history)
+
+
 def identity_reader(repositories: CanonicalRepositories):
+    history_source = history_source_for(repositories)
+
     def read(account_id: str) -> CanonicalIdentity | None:
-        if not repositories.ingestion.account_exists(account_id):
+        if not history_source.account_exists(account_id):
             return None
-        return canonical_identity(repositories.ingestion.account_read_model(account_id))
+        return canonical_identity(history_source.account_read_model(account_id))
 
     return read
 
@@ -77,7 +84,7 @@ def prepare_empty_canonical(path: Path) -> CanonicalRepositories:
         canonical_path=path,
     )
     assert repositories.database is not None
-    if not repositories.ingestion.account_exists("account-a"):
+    if not history_source_for(repositories).account_exists("account-a"):
         with repositories.database.transaction() as connection:
             connection.execute(
                 "INSERT INTO account_heads(creator_account_id, updated_at)"
@@ -120,7 +127,7 @@ def pipeline_for(
     repositories: CanonicalRepositories, store: SQLiteAnalyticsProjectionStore
 ) -> AnalyticsPipeline:
     return AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=store,
         graph=store.graph,
     )
@@ -168,7 +175,7 @@ def test_projection_and_graph_survive_restart_with_exact_completed_witness(
         canonical_identity_reader=identity_reader(repositories),
     )
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=stores.projections,
         graph=stores.graph,
     )
@@ -500,7 +507,7 @@ def test_50000_node_stage_renews_short_writer_lease_through_validation(
         lease_seconds=0.5,
     )
     pipeline = pipeline_for(repositories, store)
-    canonical = repositories.ingestion.account_read_model("account-a")
+    canonical = history_source_for(repositories).account_read_model("account-a")
     base = pipeline._build("account-a", canonical, projection_generation=1)
     occurred_at = datetime.now(timezone.utc)
     nodes = [
@@ -916,7 +923,7 @@ async def _wait_for_lazy_projection(
     *,
     timeout: float = 5.0,
 ):
-    account = repositories.ingestion.account_read_model("account-a")
+    account = history_source_for(repositories).account_read_model("account-a")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -945,7 +952,7 @@ async def test_deleted_projection_file_returns_unavailable_then_rebuilds_once(
     )
     assert isinstance(stores.projections, LazySQLiteAnalyticsProjectionStore)
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=stores.projections,
         graph=stores.graph,
     )
@@ -963,7 +970,7 @@ async def test_deleted_projection_file_returns_unavailable_then_rebuilds_once(
 
     pipeline._build = counted_build  # type: ignore[method-assign]
     path.unlink()
-    account = repositories.ingestion.account_read_model("account-a")
+    account = history_source_for(repositories).account_read_model("account-a")
     with pytest.raises(ProjectionStorageUnavailable):
         await scheduler.active_projection("account-a", account)
     await scheduler.request_recovery("account-a", account.view_revision)
@@ -992,7 +999,7 @@ async def test_valid_empty_projection_file_replacement_is_quarantined_and_rebuil
     )
     assert isinstance(stores.projections, LazySQLiteAnalyticsProjectionStore)
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=stores.projections,
         graph=stores.graph,
     )
@@ -1026,7 +1033,7 @@ async def test_valid_empty_projection_file_replacement_is_quarantined_and_rebuil
         candidate.unlink(missing_ok=True)
     os.replace(replacement_path, path)
 
-    account = repositories.ingestion.account_read_model("account-a")
+    account = history_source_for(repositories).account_read_model("account-a")
     with pytest.raises(ProjectionStorageUnavailable):
         await scheduler.active_projection("account-a", account)
     await scheduler.request_recovery("account-a", account.view_revision)
@@ -1056,7 +1063,7 @@ async def test_graph_digest_tamper_quarantines_projection_and_self_heals(
     )
     assert isinstance(stores.projections, LazySQLiteAnalyticsProjectionStore)
     pipeline = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=stores.projections,
         graph=stores.graph,
     )
@@ -1073,7 +1080,7 @@ async def test_graph_digest_tamper_quarantines_projection_and_self_heals(
             WHERE node_id=(SELECT MIN(node_id) FROM graph_nodes)
             """
         )
-    account = repositories.ingestion.account_read_model("account-a")
+    account = history_source_for(repositories).account_read_model("account-a")
     with pytest.raises(ProjectionStorageUnavailable):
         await scheduler.active_projection("account-a", account)
     await scheduler.request_recovery("account-a", account.view_revision)
@@ -1092,7 +1099,7 @@ async def test_non_sqlite_projection_file_cannot_block_canonical_readiness(
     repositories = prepare_empty_canonical(canonical_path)
     path = tmp_path / "analytics-projections.sqlite3"
     path.write_bytes(b"synthetic-not-a-sqlite-projection")
-    assert repositories.ingestion.account_read_model("account-a").view_revision == 0
+    assert history_source_for(repositories).account_read_model("account-a").view_revision == 0
     stores = create_analytics_stores(
         "sqlite",
         projections_path=path,
@@ -1104,7 +1111,7 @@ async def test_non_sqlite_projection_file_cannot_block_canonical_readiness(
     assert isinstance(stores.projections, LazySQLiteAnalyticsProjectionStore)
     scheduler = InProcessProjectionScheduler(
         AnalyticsPipeline(
-            repositories.ingestion,
+            history_source_for(repositories),
             projections=stores.projections,
             graph=stores.graph,
         )
@@ -1247,7 +1254,7 @@ async def test_deleting_projections_allows_deterministic_canonical_rebuild(
             canonical_identity_reader=identity_reader(repositories),
         )
         return AnalyticsPipeline(
-            repositories.ingestion,
+            history_source_for(repositories),
             projections=stores.projections,
             graph=stores.graph,
         ).rebuild_account(creator_account_id).artifact

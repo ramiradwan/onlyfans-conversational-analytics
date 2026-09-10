@@ -1,0 +1,17 @@
+{
+  "scenario": "qualified_invariant_with_non_string_evidence",
+  "description": "Qualified invariant with non-string evidence entry",
+  "expected_diagnostic": "reference must be a non-empty string",
+  "mutation": {
+    "op": "set_fields",
+    "target": "semantic_invariants",
+    "index": 0,
+    "fields": {
+      "assurance.status": "qualified",
+      "assurance.evidence": [
+        null
+      ],
+      "assurance.falsifier": "tests/test_architecture_runtime_policy.py::test_runtime_authorization_is_confined_to_the_security_kernel"
+    }
+  }
+}

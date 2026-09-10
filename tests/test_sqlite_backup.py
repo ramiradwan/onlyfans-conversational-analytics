@@ -12,6 +12,7 @@ import pytest
 
 from app.analytics.factory import AnalyticsStores, create_analytics_stores
 from app.analytics.identity import canonical_identity
+from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.opaque_refs import account_ref
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
@@ -56,11 +57,17 @@ class Runtime:
     artifact: object
 
 
+def history_source_for(repositories: CanonicalRepositories) -> HistoryAnalyticsSource:
+    return HistoryAnalyticsSource(repositories.history)
+
+
 def identity_reader(repositories: CanonicalRepositories):
+    history_source = history_source_for(repositories)
+
     def read(account_id: str):
-        if not repositories.ingestion.account_exists(account_id):
+        if not history_source.account_exists(account_id):
             return None
-        return canonical_identity(repositories.ingestion.account_read_model(account_id))
+        return canonical_identity(history_source.account_read_model(account_id))
 
     return read
 
@@ -161,7 +168,7 @@ async def seeded_runtime(tmp_path: Path) -> Runtime:
         canonical_identity_reader=identity_reader(repositories),
     )
     artifact = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=stores.projections,
         graph=stores.graph,
     ).project_account(creator_account_id).artifact
@@ -249,7 +256,7 @@ async def test_canonical_only_restore_discards_projection_and_rebuilds(
         canonical_identity_reader=identity_reader(restored),
     )
     rebuilt = AnalyticsPipeline(
-        restored.ingestion,
+        history_source_for(restored),
         projections=restored_stores.projections,
         graph=restored_stores.graph,
     ).rebuild_account(runtime.creator_account_id).artifact
@@ -356,7 +363,7 @@ async def test_mismatched_backup_pair_exposes_no_projection_and_rebuilds(
     )
     assert stores.projections.get(runtime.creator_account_id) is None
     rebuilt = AnalyticsPipeline(
-        repositories.ingestion,
+        history_source_for(repositories),
         projections=stores.projections,
         graph=stores.graph,
     ).project_account(runtime.creator_account_id)

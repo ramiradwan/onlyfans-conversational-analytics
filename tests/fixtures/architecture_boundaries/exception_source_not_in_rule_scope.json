@@ -1,0 +1,19 @@
+{
+  "scenario": "exception_source_not_in_rule_scope",
+  "description": "Exception whose source does not classify into the rule's source_modules",
+  "expected_diagnostic": "is not in rule",
+  "mutation": {
+    "op": "append",
+    "target": "exceptions",
+    "item": {
+      "source": "app/api/endpoints/webauthn.py",
+      "target": "app.analytics.canonical_source",
+      "rule": "rule-persistence-factory-no-analytics",
+      "reason": "Test exception whose source is not in rule.source_modules",
+      "status": "temporary_exception",
+      "introduced_by": "test",
+      "tracking_issue": "TEST-1",
+      "expires": "2027-12-31"
+    }
+  }
+}

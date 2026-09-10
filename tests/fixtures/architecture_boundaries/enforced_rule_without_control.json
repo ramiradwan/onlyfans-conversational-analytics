@@ -1,0 +1,24 @@
+{
+  "scenario": "enforced_rule_without_control",
+  "description": "Enforced rule missing required executable control reference",
+  "expected_diagnostic": "enforced rule must name at least one executable control",
+  "mutation": {
+    "op": "append",
+    "target": "rules",
+    "item": {
+      "id": "rule-test-enforced-empty",
+      "description": "Test rule without control",
+      "source_modules": [
+        "canonical-persistence"
+      ],
+      "target_modules": [
+        "security-trust"
+      ],
+      "type": "forbidden",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": []
+      }
+    }
+  }
+}
