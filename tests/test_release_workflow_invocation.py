@@ -294,6 +294,28 @@ def _assert_the_derived_url_is_published_by_the_gate(workflow: dict[str, Any]) -
     ), f"no packaging parameter reads {variable}, which the gate publishes"
 
 
+def _assert_the_package_build_retains_sqlcipher_provenance(
+    workflow: dict[str, Any],
+) -> None:
+    steps = _steps(_build_job(workflow))
+    retained = [
+        step
+        for step in steps
+        if step.get("name") == "Retain fixed SQLCipher wheel and provenance"
+    ]
+    assert len(retained) == 1, "release package build must retain SQLCipher provenance"
+    step = retained[0]
+    assert step.get("uses") == (
+        "actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4"
+    )
+    settings = step.get("with")
+    assert isinstance(settings, dict), "SQLCipher provenance upload has no settings"
+    assert settings.get("name") == "windows-package-sqlcipher-${{ inputs.product_revision }}"
+    assert "ofca-fixed-sqlcipher-wheelhouse" in str(settings.get("path", ""))
+    assert settings.get("retention-days") == 90
+    assert settings.get("if-no-files-found") == "error"
+
+
 def test_the_release_workflow_passes_every_input_the_script_demands() -> None:
     """Dropping a parameter from the workflow turns the named check red, and so
     does adding a release input to the script that the workflow does not pass."""
@@ -386,3 +408,20 @@ def test_the_privacy_policy_url_is_the_one_the_bindings_gate_derives() -> None:
     step["run"] = re.sub(r"\s*--environment-file=\S+", "", str(step["run"]))
     with pytest.raises(AssertionError, match="not asked to publish"):
         _assert_the_derived_url_is_published_by_the_gate(unpublished)
+
+
+def test_the_release_package_retains_its_fixed_sqlcipher_build_record() -> None:
+    """Deleting the release candidate's wheel provenance upload turns CI red."""
+
+    workflow = _workflow_document()
+    _assert_the_package_build_retains_sqlcipher_provenance(workflow)
+
+    missing = deepcopy(workflow)
+    build_job = _build_job(missing)
+    build_job["steps"] = [
+        step
+        for step in _steps(build_job)
+        if step.get("name") != "Retain fixed SQLCipher wheel and provenance"
+    ]
+    with pytest.raises(AssertionError, match="must retain SQLCipher provenance"):
+        _assert_the_package_build_retains_sqlcipher_provenance(missing)

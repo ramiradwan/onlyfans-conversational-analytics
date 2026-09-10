@@ -51,7 +51,17 @@ def runtime_identity() -> dict[str, Any]:
     }
 
 
-def encryption_fail_closed_probe() -> dict[str, bool]:
+def _cipher_integrity_result(errors: list[tuple[Any, ...]]) -> str:
+    """Map SQLCipher's one-row-per-error result contract to one status."""
+
+    return (
+        "ok"
+        if not errors
+        else "error: " + " | ".join(str(error[0]) for error in errors)
+    )
+
+
+def encryption_fail_closed_probe() -> dict[str, bool | str]:
     """Prove an encrypted test file remains unreadable through stdlib SQLite."""
 
     with tempfile.TemporaryDirectory(prefix="ofca-sqlcipher-probe-") as temporary:
@@ -70,7 +80,10 @@ def encryption_fail_closed_probe() -> dict[str, bool]:
         try:
             connection.execute(f"PRAGMA key = \"x'{key}'\"")
             readback = connection.execute("SELECT value FROM probe").fetchone()[0]
-            integrity = connection.execute("PRAGMA cipher_integrity_check").fetchone()
+            # SQLCipher emits one row for each external consistency error. An
+            # empty result is the successful outcome documented for this
+            # pragma; any row is retained as a qualification failure.
+            integrity_errors = connection.execute("PRAGMA cipher_integrity_check").fetchall()
         finally:
             connection.close()
         wrong_key_rejected = False
@@ -90,11 +103,8 @@ def encryption_fail_closed_probe() -> dict[str, bool]:
             plaintext_rejected = True
         finally:
             connection.close()
-    integrity_result = "unsupported" if integrity is None else str(integrity[0]).lower()
     return {
-        # SQLCipher builds can omit this optional diagnostic pragma. The
-        # report distinguishes that case from a supported failing check.
-        "cipher_integrity_check": integrity_result,
+        "cipher_integrity_check": _cipher_integrity_result(integrity_errors),
         "encrypted_readback": readback == "encrypted",
         "stdlib_sqlite_rejected": plaintext_rejected,
         "wrong_key_rejected": wrong_key_rejected,
@@ -109,7 +119,7 @@ def qualification_report() -> dict[str, Any]:
     identity["encryption"] = encryption
     identity["qualified"] = bool(
         identity["version_qualified"]
-        and encryption["cipher_integrity_check"] in {"ok", "unsupported"}
+        and encryption["cipher_integrity_check"] == "ok"
         and encryption["encrypted_readback"]
         and encryption["stdlib_sqlite_rejected"]
         and encryption["wrong_key_rejected"]

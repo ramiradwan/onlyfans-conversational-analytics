@@ -33,3 +33,7 @@ the binding license. The release's `THIRD_PARTY_NOTICES.md` names both. A
 successful build alone is not a production-equivalent qualification: the
 runtime probe and frozen executable probe must both report SQLite >= 3.51.3
 and SQLCipher >= 4.14.0, and their evidence must be preserved.
+The probe treats `PRAGMA cipher_integrity_check` according to SQLCipher's
+documented result contract: no rows means the encrypted database is externally
+consistent, while every returned row is an integrity error that fails
+qualification.

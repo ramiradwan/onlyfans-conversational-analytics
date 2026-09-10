@@ -232,6 +232,16 @@ jobs:
           tests/test_packaged_runtime.py::test_frozen_executable_reports_the_fixed_sqlcipher_runtime
           -vv
 
+      # The release candidate's native dependency evidence travels separately
+      # from the installer because signing later rewrites only the installer.
+      - name: Retain fixed SQLCipher wheel and provenance
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: windows-package-sqlcipher-${{ inputs.product_revision }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
+          retention-days: 90
+          if-no-files-found: error
+
       # The installer directory is the artifact set: the installer, the Agent
       # bundle, and the sha256sums.txt computed over both. Signing rewrites the
       # installer, so the signing job recomputes that digest file.

@@ -21,6 +21,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 from re import search
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -161,22 +162,9 @@ def _assert_generated_runtime(amalgamation: Path) -> str:
     return _sha256(amalgamation)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--python", required=True, type=Path, dest="python_executable")
-    parser.add_argument("--wheelhouse", required=True, type=Path)
-    parser.add_argument("--work-root", type=Path)
-    arguments = parser.parse_args()
-    if os.name != "nt":
-        raise RuntimeError("the shipped dependency is a Windows wheel; run this on Windows")
-    python_executable = arguments.python_executable.resolve()
-    if not python_executable.is_file():
-        raise RuntimeError(f"build Python does not exist: {python_executable}")
-    sources = json.loads(SOURCES.read_text(encoding="utf-8"))
-    wheelhouse = arguments.wheelhouse.resolve()
-    wheelhouse.mkdir(parents=True, exist_ok=True)
-    root = (arguments.work_root or Path(tempfile.mkdtemp(prefix="ofca-fixed-sqlcipher-"))).resolve()
-    root.mkdir(parents=True, exist_ok=True)
+def _build(
+    *, root: Path, wheelhouse: Path, python_executable: Path, sources: dict[str, Any]
+) -> int:
     builder_environment = root / "wheel-builder"
     _run([str(python_executable), "-m", "venv", str(builder_environment)])
     builder_python = builder_environment / "Scripts" / "python.exe"
@@ -270,6 +258,40 @@ def main() -> int:
     (wheelhouse / "sqlcipher3-0.6.2+ofca.1.provenance.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(provenance, sort_keys=True))
     return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--python", required=True, type=Path, dest="python_executable")
+    parser.add_argument("--wheelhouse", required=True, type=Path)
+    parser.add_argument("--work-root", type=Path)
+    arguments = parser.parse_args()
+    if os.name != "nt":
+        raise RuntimeError("the shipped dependency is a Windows wheel; run this on Windows")
+    python_executable = arguments.python_executable.resolve()
+    if not python_executable.is_file():
+        raise RuntimeError(f"build Python does not exist: {python_executable}")
+    sources = json.loads(SOURCES.read_text(encoding="utf-8"))
+    wheelhouse = arguments.wheelhouse.resolve()
+    wheelhouse.mkdir(parents=True, exist_ok=True)
+    if arguments.work_root is not None:
+        root = arguments.work_root.resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        return _build(
+            root=root,
+            wheelhouse=wheelhouse,
+            python_executable=python_executable,
+            sources=sources,
+        )
+    # CI/local default builds need no debug tree after producing a wheel and
+    # provenance record. Keep an explicit --work-root intact for diagnosis.
+    with tempfile.TemporaryDirectory(prefix="ofca-fixed-sqlcipher-") as temporary:
+        return _build(
+            root=Path(temporary).resolve(),
+            wheelhouse=wheelhouse,
+            python_executable=python_executable,
+            sources=sources,
+        )
 
 
 if __name__ == "__main__":

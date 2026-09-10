@@ -10,6 +10,7 @@ import pytest
 from app.persistence.sqlcipher_runtime import (
     MINIMUM_SQLCIPHER,
     MINIMUM_SQLITE,
+    _cipher_integrity_result,
     _version_tuple,
     qualification_report,
 )
@@ -55,6 +56,22 @@ def test_provenance_builder_records_the_resolved_windows_toolchain() -> None:
         assert field in builder
 
 
+def test_builder_cleans_its_automatic_work_root_but_keeps_a_debug_root() -> None:
+    builder = (ROOT / "packaging" / "sqlcipher" / "build-fixed-wheel.py").read_text(
+        encoding="utf-8"
+    )
+    assert "with tempfile.TemporaryDirectory(prefix=\"ofca-fixed-sqlcipher-\")" in builder
+    assert "if arguments.work_root is not None:" in builder
+    assert "root.mkdir(parents=True, exist_ok=True)" in builder
+
+
+def test_cipher_integrity_no_rows_is_success_and_any_row_is_a_failure() -> None:
+    assert _cipher_integrity_result([]) == "ok"
+    assert _cipher_integrity_result([("HMAC verification failed",)]) == (
+        "error: HMAC verification failed"
+    )
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [("3.51.3", (3, 51, 3)), ("4.17.0 community", (4, 17, 0)), ("4.14", (4, 14, 0))],
@@ -68,7 +85,7 @@ def test_active_windows_driver_is_fixed_and_fails_closed() -> None:
     report = qualification_report()
     assert _version_tuple(str(report["sqlite_version"])) >= MINIMUM_SQLITE
     assert _version_tuple(str(report["sqlcipher_version"])) >= MINIMUM_SQLCIPHER
-    assert report["encryption"]["cipher_integrity_check"] in {"ok", "unsupported"}
+    assert report["encryption"]["cipher_integrity_check"] == "ok"
     assert report["encryption"]["encrypted_readback"] is True
     assert report["encryption"]["stdlib_sqlite_rejected"] is True
     assert report["encryption"]["wrong_key_rejected"] is True

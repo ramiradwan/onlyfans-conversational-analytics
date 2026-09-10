@@ -163,7 +163,7 @@ def test_frozen_executable_reports_the_fixed_sqlcipher_runtime(
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert _version_tuple(str(report["sqlite_version"])) >= MINIMUM_SQLITE
     assert _version_tuple(str(report["sqlcipher_version"])) >= MINIMUM_SQLCIPHER
-    assert report["encryption"]["cipher_integrity_check"] in {"ok", "unsupported"}
+    assert report["encryption"]["cipher_integrity_check"] == "ok"
     assert report["encryption"]["encrypted_readback"] is True
     assert report["encryption"]["stdlib_sqlite_rejected"] is True
     assert report["encryption"]["wrong_key_rejected"] is True
