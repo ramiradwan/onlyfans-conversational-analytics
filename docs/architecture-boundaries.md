@@ -34,6 +34,23 @@ Zones describe the architectural blast radius of file modifications. A safety zo
 | **Orange** | High | Semantic foundation, metric calculations, knowledge graph schema, projections, service workflows, and projection coordination (`analytics-semantic-foundation`, `analytics-analyzers-metrics`, `application-services`, `persistence-projection-coordination`). A defect can produce structurally valid but semantically wrong analytics across multiple features. |
 | **Red** | Critical | Canonical persistence, persistence coordination, Agent capture and durable delivery, runtime security, provisioning, wire protocol, vault APIs, WebAuthn endpoints, runtime bootstrap, packaging, release tools, and architecture governance (`architecture-governance`, `packaging-release`, `attestation-verification`, `ci-workflows`, `shared-legal-evidence`, `agent-capture`, `protocol-core`, `agent-runtime`, `brain-transport`, `persistence-factory`, `canonical-persistence`, `persistence-coordination`, `security-trust`, `provisioning-surface`, `brain-vault-api`, `brain-auth-api`, `brain-runtime-bootstrap`). Defects risk data loss, authorization bypass, or corrupted distribution. |
 
+## Protected-impact pull-request review
+
+The safety zone is always reported as review context; it does not itself require
+architecture evidence. The manifest's `protected_impact.invariant_path_mappings`
+contains the narrow semantic paths that require a PR author to disposition a
+potentially affected invariant as `affected` or `not affected` with a rationale.
+This mapping is deliberately narrower than module ownership: for example, an
+Agent icon remains Red context but does not by itself claim a durable-delivery
+change.
+
+Changes to an enforced rule definition, an exception-ledger entry, or an
+authority/trust declaration are protected governance impact. They require an
+architecture rationale, an actual invariant or boundary declaration, and safety
+evidence. `tools/check_boundary_declaration.py` compares the checked-out base
+and head manifest and parses one exact `## Architecture impact` section from the
+pull-request body without calling a network API.
+
 ## Classified architectural modules
 
 The following twenty-five modules partition the repository's production namespaces:

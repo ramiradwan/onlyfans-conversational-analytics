@@ -1,0 +1,6 @@
+{
+  "scenario": "each stable declaration field appears exactly once",
+  "changed_files": ["frontend/src/components/ConversationCard.tsx"],
+  "body": "## Architecture impact\n\nArchitecture rationale:\nN/A\n\nArchitecture rationale:\nN/A\n\nPotentially affected invariant dispositions:\nN/A\n\nInvariant / boundary actually affected:\nN/A\n\nSafety evidence:\nN/A\n",
+  "expected_diagnostic": "duplicate field 'Architecture rationale:'"
+}

@@ -1,0 +1,6 @@
+{
+  "scenario": "affected invariant has no safety evidence",
+  "changed_files": ["app/analytics/identity.py"],
+  "body": "## Architecture impact\n\nArchitecture rationale:\nThe stable identifier derivation changed.\n\nPotentially affected invariant dispositions:\ngraph-identity:\naffected\n\nInvariant / boundary actually affected:\ngraph-identity\n\nSafety evidence:\nN/A\n",
+  "expected_diagnostic": "meaningful Safety evidence"
+}

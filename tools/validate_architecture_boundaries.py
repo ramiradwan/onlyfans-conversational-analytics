@@ -24,6 +24,7 @@ ALLOWED_ENFORCEMENT_STATUSES = frozenset({"enforced", "documented"})
 ALLOWED_ASSURANCE_STATUSES = frozenset({"documented", "qualified"})
 ALLOWED_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
 ALLOWED_EXCEPTION_STATUSES = frozenset({"temporary_exception", "current_design"})
+INVARIANT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 ALLOWED_EXECUTABLE_EXTENSIONS = frozenset({".py", ".mjs", ".js", ".ts", ".tsx", ".sh", ".ps1"})
 DOCUMENTATION_EXTENSIONS = frozenset({".md", ".txt", ".json", ".yaml", ".yml", ".rst", ".html", ".css", ".ini", ".lock"})
@@ -113,6 +114,63 @@ def load_manifest(path: Path | str) -> dict[str, Any]:
         return json.loads(content)
     except json.JSONDecodeError as exc:
         raise ArchitectureBoundaryError(f"Invalid JSON in manifest {manifest_path}: {exc}") from exc
+
+
+def validate_protected_impact_mappings(manifest: dict[str, Any]) -> list[str]:
+    """Validate the manifest-owned narrow mappings used by PR impact review."""
+
+    errors: list[str] = []
+    protected_impact = manifest.get("protected_impact")
+    if not isinstance(protected_impact, dict):
+        return ["protected_impact must be an object in docs/architecture-boundaries.json"]
+
+    entries = protected_impact.get("invariant_path_mappings")
+    if not isinstance(entries, list) or not entries:
+        return ["protected_impact.invariant_path_mappings must be a non-empty list"]
+
+    declared_invariants = {
+        entry.get("id")
+        for entry in manifest.get("semantic_invariants", [])
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str)
+    }
+    module_invariants = {
+        invariant
+        for module in manifest.get("modules", [])
+        if isinstance(module, dict)
+        for invariant in module.get("protected_invariants", [])
+        if isinstance(invariant, str)
+    }
+    seen_invariants: set[str] = set()
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            errors.append(f"protected_impact.invariant_path_mappings[{index}] must be an object")
+            continue
+        invariant = entry.get("invariant")
+        if not isinstance(invariant, str) or not INVARIANT_ID_PATTERN.fullmatch(invariant):
+            errors.append(
+                f"protected_impact.invariant_path_mappings[{index}].invariant must be a non-empty invariant id"
+            )
+            continue
+        if invariant in seen_invariants:
+            errors.append(f"protected_impact.invariant_path_mappings duplicates invariant {invariant!r}")
+        seen_invariants.add(invariant)
+        if invariant not in declared_invariants:
+            errors.append(
+                f"protected_impact.invariant_path_mappings references undeclared invariant {invariant!r}"
+            )
+        if invariant not in module_invariants:
+            errors.append(
+                f"protected_impact.invariant_path_mappings invariant {invariant!r} is not protected by any module"
+            )
+        patterns = entry.get("path_patterns")
+        if not isinstance(patterns, list) or not patterns:
+            errors.append(
+                f"protected_impact.invariant_path_mappings[{index}].path_patterns must be a non-empty list"
+            )
+            continue
+        if any(not isinstance(pattern, str) or not pattern.strip() for pattern in patterns):
+            errors.append(f"protected_impact.invariant_path_mappings[{index}] has an empty path pattern")
+    return errors
 
 
 def resolve_executable_reference(ref: Any, repo_root: Path, context: str) -> list[str]:
@@ -436,6 +494,7 @@ def validate_manifest_schema(
 
     # Compile matchers for validating exception source scope
     matchers = build_module_matchers(manifest)
+    seen_exception_identities: set[tuple[str, str, str]] = set()
 
     for idx, exc in enumerate(exceptions):
         if not isinstance(exc, dict):
@@ -448,6 +507,14 @@ def validate_manifest_schema(
         reason = exc.get("reason")
         status = exc.get("status")
         tracking = exc.get("tracking_issue")
+
+        if all(isinstance(value, str) and value for value in (source, target, rule_ref)):
+            identity = (source, target, rule_ref)
+            if identity in seen_exception_identities:
+                errors.append(
+                    f"duplicate exception identity: {rule_ref}: {source} -> {target}"
+                )
+            seen_exception_identities.add(identity)
 
         if not source or not isinstance(source, str):
             errors.append(f"exceptions[{idx}]: missing or empty source")
@@ -523,6 +590,7 @@ def validate_manifest_schema(
                     f"exceptions[{idx}] ({source} -> {target}): current_design exception must have null expires"
                 )
 
+    errors.extend(validate_protected_impact_mappings(manifest))
     return errors
 
 

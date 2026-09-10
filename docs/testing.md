@@ -22,6 +22,32 @@ npm run audit --prefix extension
 
 Install backend development dependencies from `requirements-dev.txt` and JavaScript dependencies with `npm ci` in the relevant package before running these commands.
 
+## Protected architecture-impact PR gate
+
+The pull-request gate reports a deterministic `architecture_impact` object from
+the machine manifest. Risk-zone colour is context only. A mapped invariant needs
+one explicit `affected` or `not affected` disposition; a confirmed affected
+invariant, enforced rule, authority/trust relationship, or exception-ledger
+change also needs meaningful rationale, a named boundary, and safety evidence.
+
+For a local PR-style run, provide a checked-out base, head, and body file. The
+command reads the event/body and Git diff locally and does not call GitHub:
+
+```powershell
+python tools/check_boundary_declaration.py --base-ref origin/main --head-ref HEAD --pr-body-file .github/pull_request_template.md
+```
+
+For a path-only classifier diagnostic, use explicit changed-file input and omit
+the declaration check:
+
+```powershell
+python tools/check_boundary_declaration.py --changed-file frontend/src/components/ConversationCard.tsx --report-only
+```
+
+The required `build-and-test` pull-request job passes the GitHub event payload
+and base/head SHAs to the same command. Push builds retain their existing checks;
+the declaration gate is intentionally a pull-request-only review control.
+
 ## Stateful property-based ingestion tests
 
 Task 5A provides model-based state machine tests and falsifier harnesses for Brain canonical ingestion assurance (`checkpoint-monotonicity` and `replay-idempotency`):

@@ -1243,6 +1243,183 @@
       }
     }
   ],
+  "protected_impact": {
+    "description": "Narrow path-to-invariant mappings used by the pull-request protected-impact gate. Module risk zones remain review context; only these semantic paths create an invariant disposition obligation.",
+    "invariant_path_mappings": [
+      {
+        "invariant": "canonical-authority",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "app/persistence/database.py",
+          "app/persistence/migrations.py",
+          "app/persistence/sql/**"
+        ]
+      },
+      {
+        "invariant": "atomic-canonical-commit",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "app/transport/manager.py"
+        ]
+      },
+      {
+        "invariant": "checkpoint-monotonicity",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "extension/runtime/**"
+        ]
+      },
+      {
+        "invariant": "replay-idempotency",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "extension/runtime/**"
+        ]
+      },
+      {
+        "invariant": "snapshot-integrity",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "extension/runtime/**"
+        ]
+      },
+      {
+        "invariant": "deletion-closure",
+        "path_patterns": [
+          "app/persistence/deletion_operations.py",
+          "app/persistence/history.py",
+          "app/analytics/pipeline.py",
+          "app/analytics/retention_store.py"
+        ]
+      },
+      {
+        "invariant": "durable-agent-delivery",
+        "path_patterns": [
+          "extension/runtime/**",
+          "extension/transport/**"
+        ]
+      },
+      {
+        "invariant": "protocol-compatibility",
+        "path_patterns": [
+          "app/protocol/**",
+          "extension/protocol/**",
+          "frontend/src/protocol/**"
+        ]
+      },
+      {
+        "invariant": "capture-control-separation",
+        "path_patterns": [
+          "extension/capture/**"
+        ]
+      },
+      {
+        "invariant": "transport-analytics-separation",
+        "path_patterns": [
+          "app/transport/manager.py",
+          "app/services/insights_service.py"
+        ]
+      },
+      {
+        "invariant": "persistence-analytics-separation",
+        "path_patterns": [
+          "app/persistence/factory.py"
+        ]
+      },
+      {
+        "invariant": "persistence-transport-separation",
+        "path_patterns": [
+          "app/persistence/history.py",
+          "app/persistence/database.py"
+        ]
+      },
+      {
+        "invariant": "graph-identity",
+        "path_patterns": [
+          "app/analytics/identity.py",
+          "app/analytics/graph_*.py",
+          "app/analytics/*graph_store.py"
+        ]
+      },
+      {
+        "invariant": "derived-state-determinism",
+        "path_patterns": [
+          "app/analytics/pipeline.py",
+          "app/analytics/runtime.py",
+          "app/analytics/rebuild.*",
+          "app/analytics/analyzers.py",
+          "app/analytics/metrics.py"
+        ]
+      },
+      {
+        "invariant": "graph-semantic-reproducibility",
+        "path_patterns": [
+          "app/analytics/graph_*.py",
+          "app/analytics/*graph_store.py",
+          "app/analytics/pipeline.py"
+        ]
+      },
+      {
+        "invariant": "projection-reproducibility",
+        "path_patterns": [
+          "app/analytics/pipeline.py",
+          "app/analytics/*projection_store.py",
+          "app/analytics/rebuild.*"
+        ]
+      },
+      {
+        "invariant": "projection-publication-revision",
+        "path_patterns": [
+          "app/persistence/projection_activation.py",
+          "app/persistence/projection_pipeline.py",
+          "app/analytics/*projection_store.py"
+        ]
+      },
+      {
+        "invariant": "derived-referential-closure",
+        "path_patterns": [
+          "app/persistence/projection_activation.py",
+          "app/analytics/*projection_store.py",
+          "app/analytics/*graph_store.py"
+        ]
+      },
+      {
+        "invariant": "provenance-integrity",
+        "path_patterns": [
+          "app/analytics/provenance.py",
+          "app/analytics/pipeline.py"
+        ]
+      },
+      {
+        "invariant": "consent-authorization",
+        "path_patterns": [
+          "extension/capture/**",
+          "app/security/**",
+          "app/api/endpoints/creator_vault.py",
+          "app/api/endpoints/webauthn.py"
+        ]
+      },
+      {
+        "invariant": "provisioning-trust",
+        "path_patterns": [
+          "app/provisioning/**",
+          "app/security/**",
+          "app/api/endpoints/webauthn.py"
+        ]
+      },
+      {
+        "invariant": "release-integrity",
+        "path_patterns": [
+          "packaging/**",
+          "attestation/**",
+          "tools/packaged-signing-rule/**",
+          "tools/legal-release-bindings/**",
+          "tools/packaging_policy.py",
+          ".github/workflows/**"
+        ]
+      }
+    ]
+  },
   "exceptions": [
     {
       "source": "app/persistence/projection_activation.py",

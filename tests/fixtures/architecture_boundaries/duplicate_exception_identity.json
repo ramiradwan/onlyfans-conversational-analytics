@@ -1,0 +1,10 @@
+{
+  "scenario": "duplicate_exception_identity",
+  "description": "Manifest containing two exception ledger entries for the same rule/source/target identity",
+  "expected_diagnostic": "duplicate exception identity",
+  "mutation": {
+    "op": "duplicate",
+    "target": "exceptions",
+    "index": 0
+  }
+}

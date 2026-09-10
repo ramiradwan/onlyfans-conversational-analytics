@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -133,6 +135,14 @@ jobs:
 
       - name: Validate architecture boundary manifest
         run: python tools/validate_architecture_boundaries.py
+
+      - name: Check protected architecture impact declaration
+        if: github.event_name == 'pull_request'
+        run: >
+          python tools/check_boundary_declaration.py
+          --event-path "$GITHUB_EVENT_PATH"
+          --base-ref "${{ github.event.pull_request.base.sha }}"
+          --head-ref "${{ github.event.pull_request.head.sha }}"
 
       - name: Check Python architecture boundary contracts
         run: lint-imports

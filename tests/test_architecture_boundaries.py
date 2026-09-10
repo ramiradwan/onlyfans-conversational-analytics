@@ -634,6 +634,7 @@ def load_negative_fixture(fixture_name: str, base_manifest: dict[str, Any]) -> t
         ("enforced_rule_with_external_ref", "escapes repository root"),
         ("enforced_rule_with_readme_control", "non-executable"),
         ("exception_source_not_in_rule_scope", "is not in rule"),
+        ("duplicate_exception_identity", "duplicate exception identity"),
     ],
 )
 def test_permanent_negative_fixtures_are_rejected(
