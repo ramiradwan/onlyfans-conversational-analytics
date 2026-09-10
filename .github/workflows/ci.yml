@@ -70,6 +70,16 @@ jobs:
           -vv
           --hypothesis-show-statistics
 
+      - name: Run Task 6A deterministic clean rebuilds
+        env:
+          HYPOTHESIS_PROFILE: task6a_determinism_fast
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism
+          -vv
+          --hypothesis-show-statistics
+
       - name: Validate architecture boundary manifest
         run: python tools/validate_architecture_boundaries.py
 

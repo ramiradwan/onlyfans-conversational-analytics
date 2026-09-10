@@ -37,6 +37,8 @@ TIER_A_TARGETS = {
     "tier_a_general": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",
     "tier_a_deletion": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion",
 }
+TASK6A_TARGET = "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
+TASK6A_PROFILE = "task6a_determinism_fast"
 
 BROWSER_SUITE_DIRECTORY = "tools/e2e-capture"
 BROWSER_SUITE_INVOCATIONS = ("npm test", "npm run test", "playwright test")
@@ -441,6 +443,43 @@ def test_brain_tier_a_profiles_run_once_in_the_required_linux_job() -> None:
     del _jobs(missing)[job_name]["steps"][index]
     with pytest.raises(AssertionError, match="two explicit Brain Tier A steps"):
         _assert_tier_a_profiles_are_required_once(missing)
+
+
+def _assert_task6a_determinism_profile(workflow: dict[str, Any]) -> None:
+    matches = [
+        (job_name, step)
+        for job_name, job in _jobs(workflow).items()
+        for step in _steps(job)
+        if isinstance(step.get("run"), str) and TASK6A_TARGET in step["run"]
+    ]
+    assert len(matches) == 1, "Task 6A must run in exactly one explicit CI step"
+    job_name, step = matches[0]
+    assert not _runs_on_windows(_jobs(workflow)[job_name])
+    assert step.get("env", {}).get("HYPOTHESIS_PROFILE") == TASK6A_PROFILE
+    assert "--override-ini=addopts=" in step["run"]
+
+
+def test_task6a_determinism_profile_runs_once_in_the_required_linux_job() -> None:
+    """Task 6A is explicit CI evidence, not an accidental default rerun."""
+
+    workflow = _workflow_document()
+    _assert_task6a_determinism_profile(workflow)
+
+    missing = deepcopy(workflow)
+    job_name, _ = [
+        (name, step)
+        for name, job in _jobs(missing).items()
+        for step in _steps(job)
+        if isinstance(step.get("run"), str) and TASK6A_TARGET in step["run"]
+    ][0]
+    job = _jobs(missing)[job_name]
+    job["steps"] = [
+        candidate
+        for candidate in job["steps"]
+        if not (isinstance(candidate.get("run"), str) and TASK6A_TARGET in candidate["run"])
+    ]
+    with pytest.raises(AssertionError, match="Task 6A must run"):
+        _assert_task6a_determinism_profile(missing)
 
 
 def test_ordinary_backend_suites_exclude_explicit_tier_a_tests() -> None:

@@ -63,6 +63,26 @@ python tools/qualify_tier_b_runtime.py --output docs/architecture/task5c-local-r
 
 These profiles are marker-excluded from ordinary backend collection and are not CI-required production-equivalent evidence. The local `sqlcipher3==0.6.2` runtime reports SQLite 3.51.1 / SQLCipher 4.12.0, while the [SQLite WAL-reset advisory](https://sqlite.org/wal.html#walresetbug) requires a fixed SQLite runtime (3.51.3 or later). The local artifact is therefore only semantic file-backed evidence. It does not qualify a shipped Windows runtime, a runner p95 budget, or deletion closure for derived projections/graph state.
 
+## Task 6A deterministic clean rebuilds
+
+Task 6A rebuilds the same immutable canonical read model in two fresh in-memory
+analytics runtimes under one frozen `ReproducibilityContext`. Its independent
+oracle compares canonical witness, pipeline and analyzer provenance, message,
+conversation, and participant identities, metrics, enrichments, graph nodes
+and edges, graph digests, and graph referential closure. It excludes only the
+contract's lifecycle fields: projection generation and store publication,
+ownership, lease, and execution-time metadata.
+
+```powershell
+$env:HYPOTHESIS_PROFILE="task6a_determinism_fast"; python -m pytest --override-ini=addopts= tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism
+python -m pytest --override-ini=addopts= tests/stateful/test_analytics_determinism.py
+```
+
+The selected CI profile is 30 generated canonical final states, with two fresh
+clean builds per example. It is a local in-memory determinism check only: it
+does not claim incremental/rebuild convergence, file-backed qualification, or
+end-to-end derived deletion closure, which remain Task 6B and later evidence.
+
 ## CI coverage
 
 GitHub Actions uses Python 3.11 and Node.js 22. In addition to the common checks, CI runs architecture boundary manifest validation, Python architecture boundary checks (`lint-imports`), Agent architecture boundary checks (`npm run check:architecture` in `extension`), Bridge architecture boundary checks (`npm run check:architecture` in `frontend`), contract-integrity tests, the provisioning-page module test, the 10,000-message Agent snapshot qualification, the backend suite on Windows, and capture end-to-end tests.

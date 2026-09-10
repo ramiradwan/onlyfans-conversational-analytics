@@ -1083,11 +1083,11 @@
       "severity": "high",
       "requirement_or_scenario": "Clean rebuilds of analytics metrics and graph from identical canonical state produce identical semantic outputs within ReproducibilityContext. (Section 6, Task 6A)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/stateful/test_analytics_determinism.py"
+          "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
         ],
-        "falsifier": "planned:BrokenRebuildDeterminismAdapter"
+        "falsifier": "tests/stateful/test_analytics_determinism.py::test_oracle_falsifiers_reject_each_6a_family"
       }
     },
     {
@@ -1096,11 +1096,11 @@
       "severity": "high",
       "requirement_or_scenario": "Knowledge graph structure and semantic edges are reproducible across rebuilds within ReproducibilityContext. (Task 6A)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/stateful/test_analytics_determinism.py"
+          "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
         ],
-        "falsifier": "planned:BrokenGraphReproducibilityAdapter"
+        "falsifier": "tests/stateful/test_analytics_determinism.py::test_oracle_falsifiers_reject_each_6a_family"
       }
     },
     {
