@@ -6,6 +6,7 @@ detects invariant violations across:
 2. BrokenDuplicateAdapter: mutates revision/state on exact duplicate.
 3. BrokenDeletionAdapter: permits tombstoned material to return.
 4. BrokenReopenAdapter: simulates committed-state loss before reconstruction.
+5. BrokenAtomicCommitAdapter: simulates an interrupted split snapshot commit.
 """
 
 from __future__ import annotations
@@ -132,3 +133,89 @@ class BrokenStagedMaterialAdapter(ProductionBrainAdapter):
                    WHERE creator_account_id=? AND agent_installation_id=? AND agent_stream_id=? AND snapshot_id=?""",
                 (key.creator_account_id, str(key.agent_installation_id), str(key.agent_stream_id), str(snapshot_id)),
             )
+
+
+class BrokenAtomicCommitAdapter(ProductionBrainAdapter):
+    """Leave snapshot commit bookkeeping split from its visible canonical state.
+
+    The real commit is used to establish the canonical row and account-head
+    state.  The deliberate second transaction then models an interrupted split
+    commit: the checkpoint is restored to the snapshot's starting value, the
+    committed-snapshot marker is removed, the upload is returned to staging
+    despite its already-cleared staged records, and stream membership is
+    removed.  It does not copy the production transition implementation.
+    """
+
+    SPLIT_COMMIT_DIVERGENCES = (
+        "canonical rows and account-head revision remain committed",
+        "ingest checkpoint remains at the snapshot starting checkpoint",
+        "committed_snapshots marker is absent",
+        "snapshot_upload remains staging after staged-record cleanup",
+        "stream chat membership for the committed snapshot is absent",
+    )
+
+    def commit_snapshot(
+        self, key: ModelStreamKey, cmd: Any
+    ) -> ProductionTransitionOutcome:
+        result = super().commit_snapshot(key, cmd)
+        if result.disposition == "accepted":
+            with self.database.transaction() as conn:
+                upload = conn.execute(
+                    """SELECT starting_checkpoint FROM snapshot_uploads
+                       WHERE creator_account_id=? AND agent_installation_id=?
+                         AND agent_stream_id=? AND snapshot_id=?""",
+                    (
+                        key.creator_account_id,
+                        str(key.agent_installation_id),
+                        str(key.agent_stream_id),
+                        str(cmd.snapshot_id),
+                    ),
+                ).fetchone()
+                if upload is None:
+                    raise AssertionError("accepted snapshot must retain its upload row")
+                starting_checkpoint = int(upload[0])
+                conn.execute(
+                    """UPDATE ingest_checkpoints SET committed_source_seq=?
+                       WHERE creator_account_id=? AND agent_installation_id=?
+                         AND agent_stream_id=?""",
+                    (
+                        starting_checkpoint,
+                        key.creator_account_id,
+                        str(key.agent_installation_id),
+                        str(key.agent_stream_id),
+                    ),
+                )
+                conn.execute(
+                    """DELETE FROM committed_snapshots
+                       WHERE creator_account_id=? AND agent_installation_id=?
+                         AND agent_stream_id=? AND snapshot_id=?""",
+                    (
+                        key.creator_account_id,
+                        str(key.agent_installation_id),
+                        str(key.agent_stream_id),
+                        str(cmd.snapshot_id),
+                    ),
+                )
+                conn.execute(
+                    """UPDATE snapshot_uploads
+                       SET state='staging', committed_at=NULL
+                       WHERE creator_account_id=? AND agent_installation_id=?
+                         AND agent_stream_id=? AND snapshot_id=?""",
+                    (
+                        key.creator_account_id,
+                        str(key.agent_installation_id),
+                        str(key.agent_stream_id),
+                        str(cmd.snapshot_id),
+                    ),
+                )
+                conn.execute(
+                    """DELETE FROM stream_chat_membership
+                       WHERE creator_account_id=? AND agent_installation_id=?
+                         AND agent_stream_id=?""",
+                    (
+                        key.creator_account_id,
+                        str(key.agent_installation_id),
+                        str(key.agent_stream_id),
+                    ),
+                )
+        return result

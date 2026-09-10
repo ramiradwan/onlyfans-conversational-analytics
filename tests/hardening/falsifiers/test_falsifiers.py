@@ -6,6 +6,7 @@ Falsifiers tested:
 3. BrokenDeletionAdapter: resurrects tombstoned entity -> catches deletion-closure violation.
 4. BrokenReopenAdapter: corrupts state before reconstruction -> catches state-loss divergence.
 5. BrokenStagedMaterialAdapter: corrupts acknowledged staging -> catches staging divergence.
+6. BrokenAtomicCommitAdapter: leaves snapshot bookkeeping stale after canonical state is visible.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import pytest
 
 from app.persistence.factory import create_canonical_repositories
 from tests.hardening.falsifiers.falsifier_adapters import (
+    BrokenAtomicCommitAdapter,
     BrokenDeletionAdapter,
     BrokenDuplicateAdapter,
     BrokenGapAdapter,
@@ -299,3 +301,174 @@ def test_broken_staged_material_adapter() -> None:
     before = adapter.observe_state(key); model_outcome = model.add_snapshot_chunk(key, chunk); prod_outcome = adapter.add_snapshot_chunk(key, chunk); after = adapter.observe_state(key)
     with pytest.raises(OracleMismatchError, match="Outcome|Pending snapshot|staging"):
         assert_transition_oracle(model=model, adapter=adapter, key=key, command=chunk, model_outcome=model_outcome, prod_outcome=prod_outcome, snapshot_before=before, snapshot_after=after, command_history=[begin, chunk, chunk])
+
+
+def test_broken_atomic_commit_adapter() -> None:
+    """The oracle rejects a partial snapshot durable state, not a revision bump."""
+
+    snapshot_id = UUID("70000000-0000-4000-8000-000000000001")
+    begin = ModelSnapshotBeginCommand(snapshot_id, 2, 1, 1, 0, 0)
+    chunk = ModelSnapshotChunkCommand(
+        snapshot_id,
+        0,
+        "chat",
+        [{
+            "tombstone": False,
+            "chat": {
+                "record_kind": "full",
+                "chat_id": "atomic",
+                "platform_user_id": "fan-atomic",
+                "display_name": "Atomic",
+                "updated_at": "2026-07-19T10:01:00Z",
+            },
+        }],
+    )
+    commit = ModelSnapshotCommitCommand(snapshot_id, 1)
+
+    # First prove this exact snapshot completes against the untouched production
+    # adapter and passes every shared oracle assertion.
+    normal_repos, normal_model, normal_adapter, normal_key, normal_history = _setup_environment()
+    normal_commands = list(normal_history)
+    for command, operation in ((begin, "begin_snapshot"), (chunk, "add_snapshot_chunk")):
+        before = normal_adapter.observe_state(normal_key)
+        model_outcome = getattr(normal_model, operation)(normal_key, command)
+        prod_outcome = getattr(normal_adapter, operation)(normal_key, command)
+        after = normal_adapter.observe_state(normal_key)
+        normal_commands.append(command)
+        assert_transition_oracle(
+            model=normal_model,
+            adapter=normal_adapter,
+            key=normal_key,
+            command=command,
+            model_outcome=model_outcome,
+            prod_outcome=prod_outcome,
+            snapshot_before=before,
+            snapshot_after=after,
+            command_history=normal_commands,
+        )
+
+    normal_before = normal_adapter.observe_state(normal_key)
+    normal_model_outcome = normal_model.commit_snapshot(normal_key, commit)
+    normal_prod_outcome = normal_adapter.commit_snapshot(normal_key, commit)
+    normal_after = normal_adapter.observe_state(normal_key)
+    assert_transition_oracle(
+        model=normal_model,
+        adapter=normal_adapter,
+        key=normal_key,
+        command=commit,
+        model_outcome=normal_model_outcome,
+        prod_outcome=normal_prod_outcome,
+        snapshot_before=normal_before,
+        snapshot_after=normal_after,
+        command_history=normal_commands + [commit],
+    )
+
+    def durable_components(repos, key: ModelStreamKey) -> dict[str, object]:
+        with repos.database.read() as conn:
+            return {
+                "checkpoint": conn.execute(
+                    """SELECT committed_source_seq FROM ingest_checkpoints
+                       WHERE creator_account_id=? AND agent_installation_id=? AND agent_stream_id=?""",
+                    (key.creator_account_id, str(key.agent_installation_id), str(key.agent_stream_id)),
+                ).fetchone()[0],
+                "canonical_revision": conn.execute(
+                    "SELECT canonical_revision FROM account_heads WHERE creator_account_id=?",
+                    (key.creator_account_id,),
+                ).fetchone()[0],
+                "canonical_chat_visible": conn.execute(
+                    """SELECT COUNT(*) FROM account_chats
+                       WHERE creator_account_id=? AND chat_id='atomic' AND is_deleted=0""",
+                    (key.creator_account_id,),
+                ).fetchone()[0],
+                "committed_snapshot_marker": conn.execute(
+                    """SELECT COUNT(*) FROM committed_snapshots
+                       WHERE creator_account_id=? AND agent_installation_id=?
+                         AND agent_stream_id=? AND snapshot_id=?""",
+                    (key.creator_account_id, str(key.agent_installation_id), str(key.agent_stream_id), str(snapshot_id)),
+                ).fetchone()[0],
+                "upload_state": conn.execute(
+                    """SELECT state FROM snapshot_uploads
+                       WHERE creator_account_id=? AND agent_installation_id=?
+                         AND agent_stream_id=? AND snapshot_id=?""",
+                    (key.creator_account_id, str(key.agent_installation_id), str(key.agent_stream_id), str(snapshot_id)),
+                ).fetchone()[0],
+                "staged_chat_records": conn.execute(
+                    """SELECT COUNT(*) FROM snapshot_chat_records
+                       WHERE creator_account_id=? AND agent_installation_id=?
+                         AND agent_stream_id=? AND snapshot_id=?""",
+                    (key.creator_account_id, str(key.agent_installation_id), str(key.agent_stream_id), str(snapshot_id)),
+                ).fetchone()[0],
+                "atomic_chat_membership": conn.execute(
+                    """SELECT COUNT(*) FROM stream_chat_membership
+                       WHERE creator_account_id=? AND agent_installation_id=?
+                         AND agent_stream_id=? AND chat_id='atomic'""",
+                    (key.creator_account_id, str(key.agent_installation_id), str(key.agent_stream_id)),
+                ).fetchone()[0],
+            }
+
+    assert durable_components(normal_repos, normal_key) == {
+        "checkpoint": 2,
+        "canonical_revision": 2,
+        "canonical_chat_visible": 1,
+        "committed_snapshot_marker": 1,
+        "upload_state": "committed",
+        "staged_chat_records": 0,
+        "atomic_chat_membership": 1,
+    }
+
+    # The faulty adapter uses the same production setup and commands.  Only the
+    # named atomic components below diverge after the real commit succeeds.
+    repos, model, _, key, history_log = _setup_environment()
+    adapter = BrokenAtomicCommitAdapter(repos.history, repos.database)
+    broken_commands = list(history_log)
+    for command, operation in ((begin, "begin_snapshot"), (chunk, "add_snapshot_chunk")):
+        before = adapter.observe_state(key)
+        model_outcome = getattr(model, operation)(key, command)
+        prod_outcome = getattr(adapter, operation)(key, command)
+        after = adapter.observe_state(key)
+        broken_commands.append(command)
+        assert_transition_oracle(
+            model=model,
+            adapter=adapter,
+            key=key,
+            command=command,
+            model_outcome=model_outcome,
+            prod_outcome=prod_outcome,
+            snapshot_before=before,
+            snapshot_after=after,
+            command_history=broken_commands,
+        )
+
+    before = adapter.observe_state(key)
+    model_outcome = model.commit_snapshot(key, commit)
+    prod_outcome = adapter.commit_snapshot(key, commit)
+    after = adapter.observe_state(key)
+    assert durable_components(repos, key) == {
+        "checkpoint": 1,
+        "canonical_revision": 2,
+        "canonical_chat_visible": 1,
+        "committed_snapshot_marker": 0,
+        "upload_state": "staging",
+        "staged_chat_records": 0,
+        "atomic_chat_membership": 0,
+    }
+    assert BrokenAtomicCommitAdapter.SPLIT_COMMIT_DIVERGENCES == (
+        "canonical rows and account-head revision remain committed",
+        "ingest checkpoint remains at the snapshot starting checkpoint",
+        "committed_snapshots marker is absent",
+        "snapshot_upload remains staging after staged-record cleanup",
+        "stream chat membership for the committed snapshot is absent",
+    )
+    with pytest.raises(OracleMismatchError, match="Stream checkpoint disagreement") as exc_info:
+        assert_transition_oracle(
+            model=model,
+            adapter=adapter,
+            key=key,
+            command=commit,
+            model_outcome=model_outcome,
+            prod_outcome=prod_outcome,
+            snapshot_before=before,
+            snapshot_after=after,
+            command_history=broken_commands + [commit],
+        )
+    assert "Canonical revision disagreement" not in str(exc_info.value)

@@ -993,11 +993,12 @@
       "severity": "critical",
       "requirement_or_scenario": "Snapshot commits transition all chunked events and stream head in a single atomic database transaction. (ADR 0009, ADR 0010)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/test_sqlite_canonical_persistence.py"
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",
+          "tests/test_history_v2.py::test_message_tombstone_parent_conflict_rolls_back_checkpoint"
         ],
-        "falsifier": "planned:BrokenAtomicCommitAdapter"
+        "falsifier": "tests/hardening/falsifiers/test_falsifiers.py::test_broken_atomic_commit_adapter"
       }
     },
     {
@@ -1006,11 +1007,12 @@
       "severity": "high",
       "requirement_or_scenario": "Snapshot chunk count, chunk order, and record counts must match the snapshot staging contract before commit is acknowledged, and conflicting entity content or duplicate identifiers are rejected as invariant violations. (ADR 0010, app/persistence/history.py)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/test_history_v2.py"
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",
+          "tests/test_history_v2.py::test_snapshot_progress_survives_restart_and_conflicting_commit_replay_rejects"
         ],
-        "falsifier": "planned:BrokenSnapshotDigestAdapter"
+        "falsifier": "tests/hardening/falsifiers/test_falsifiers.py::test_broken_staged_material_adapter"
       }
     },
     {
@@ -1019,12 +1021,13 @@
       "severity": "critical",
       "requirement_or_scenario": "Hard deletion irrevocably clears canonical records, derived projections, graph edges, and prevents resurrection upon replay. (ADR 0009, ADR 0020)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/test_creator_vault_deletion_operations.py",
-          "planned:tests/stateful/test_analytics_equivalence.py"
+          "tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion",
+          "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion",
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
         ],
-        "falsifier": "planned:BrokenDeletionAdapter"
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
       }
     },
     {
@@ -1033,12 +1036,12 @@
       "severity": "critical",
       "requirement_or_scenario": "Observed platform activity is stored in durable IndexedDB outbox until explicit server ACK is received. (ADR 0001, ADR 0004)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/test_extension_storage.py",
-          "planned:tests/stateful/test_agent_delivery.py"
+          "extension/tests/durable-ingestion.test.mjs",
+          "tests/stateful/test_agent_delivery.py::test_persisted_successful_agent_trace_replays_every_transition"
         ],
-        "falsifier": "planned:BrokenOutboxDeliveryAdapter"
+        "falsifier": "tests/stateful/test_agent_delivery.py::test_named_agent_semantic_falsifiers_fail_shared_oracle"
       }
     },
     {
@@ -1112,12 +1115,12 @@
       "severity": "high",
       "requirement_or_scenario": "Graph entities and participant/message IDs are deterministically derived from canonical IDs without ambiguous collision. (Section 5, app/analytics/identity.py)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/test_graph_store_contract.py",
-          "planned:tests/stateful/test_analytics_determinism.py"
+          "tests/test_graph_store_contract.py::test_graph_models_require_opaque_ids_and_aware_timestamps",
+          "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
         ],
-        "falsifier": "planned:BrokenGraphIdentityAdapter"
+        "falsifier": "tests/stateful/test_analytics_determinism.py::test_oracle_falsifiers_reject_each_6a_family"
       }
     },
     {
@@ -1193,11 +1196,12 @@
       "severity": "medium",
       "requirement_or_scenario": "Published analytics generations carry canonical revision, content digests, and pipeline identity witnesses. (ADR 0020, Section 5)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/test_insights_pipeline.py"
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence",
+          "tests/stateful/test_analytics_equivalence.py::test_stale_candidate_is_rejected_and_active_publication_stays_current"
         ],
-        "falsifier": "planned:BrokenWitnessAdapter"
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
       }
     },
     {

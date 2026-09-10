@@ -20,7 +20,16 @@ def markdown_files() -> list[Path]:
     return sorted(
         path
         for path in ROOT.rglob("*.md")
-        if not any(part in SKIP_PARTS for part in path.relative_to(ROOT).parts)
+        if not _is_skipped_markdown_path(path.relative_to(ROOT))
+    )
+
+
+def _is_skipped_markdown_path(relative_path: Path) -> bool:
+    """Exclude generated trees without hiding similarly named nested docs."""
+
+    parts = relative_path.parts
+    return any(part in SKIP_PARTS for part in parts) or (
+        len(parts) > 1 and parts[0].startswith(".pytest_temp")
     )
 
 

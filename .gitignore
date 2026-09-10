@@ -9,6 +9,7 @@ __pycache__/
 env/
 venv/
 .pytest_cache/
+/.pytest_temp*/
 .hypothesis/
 
 # ------------------------

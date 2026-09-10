@@ -33,7 +33,9 @@ def _body(
     actual: str = "N/A",
     evidence: str = "N/A",
 ) -> str:
-    return f"""## Architecture impact
+    return f"""# Pull request
+
+## Architecture impact
 
 Architecture rationale:
 {rationale}
