@@ -1,0 +1,72 @@
+{
+  "advisories": [
+    "https://sqlite.org/wal.html#walresetbug",
+    "https://www.zetetic.net/sqlcipher/changelog/",
+    "https://pypi.org/project/sqlcipher3/"
+  ],
+  "benchmark": {
+    "failing_shrink_run": {
+      "executed_transition_count": 1,
+      "generation_to_first_failure_reason": "Hypothesis run_state_machine_as_test does not expose a first-failure or post-first-failure shrink boundary",
+      "generation_to_first_failure_seconds": null,
+      "shrink_duration_reason": "Hypothesis run_state_machine_as_test does not expose a first-failure or post-first-failure shrink boundary",
+      "shrink_duration_seconds": null,
+      "status": "failed_and_shrunk",
+      "wall_clock_seconds": 1.23433
+    },
+    "passing_run": {
+      "duration_seconds": 65.283443,
+      "status": "local_pass"
+    },
+    "pr_runner_baseline_status": {
+      "reason": "local runs are not representative PR-runner measurements",
+      "status": "pending"
+    },
+    "tier_b_deletion": {
+      "examples": 10,
+      "executed_transition_count": 516,
+      "history_count": 10,
+      "reopen_count": 171,
+      "steps": 20,
+      "wall_clock_seconds": 48.628686
+    },
+    "tier_b_general": {
+      "examples": 15,
+      "executed_transition_count": 667,
+      "history_count": 15,
+      "reopen_count": 302,
+      "steps": 25,
+      "wall_clock_seconds": 65.283443
+    },
+    "windows_smoke": {
+      "examples": 5,
+      "executed_transition_count": 115,
+      "history_count": 5,
+      "reopen_count": 43,
+      "steps": 12,
+      "wall_clock_seconds": 10.40019
+    }
+  },
+  "checkpoint_behavior": "SQLite automatic WAL checkpoint at default threshold and last-close checkpoint; no trigger exclusion claimed",
+  "connection_model": "fresh check_same_thread=False SQLCipher connections; BEGIN IMMEDIATE writer transactions",
+  "kind": "task5c-local-tier-b-runtime-probe",
+  "profile": {
+    "busy_timeout_ms": 5000,
+    "cipher_memory_security": "0",
+    "cipher_plaintext_header_size": "0",
+    "foreign_keys": 1,
+    "journal_mode": "wal",
+    "synchronous": 2
+  },
+  "qualification_claim": "file-backed semantic evidence only; not production-equivalent",
+  "runner": {
+    "os": "Windows-11-10.0.26340-SP0",
+    "python": "3.13.6 (tags/v3.13.6:4e66535, Aug  6 2025, 14:36:00) [MSC v.1944 64 bit (AMD64)]",
+    "sqlcipher": "4.12.0 community",
+    "sqlite": "3.51.1",
+    "stdlib_sqlite": "3.50.4"
+  },
+  "schema_version": 1,
+  "status": "blocked_unfixed_runtime",
+  "wall_clock_seconds": 124.704818
+}

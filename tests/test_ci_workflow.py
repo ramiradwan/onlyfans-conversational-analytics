@@ -32,6 +32,7 @@ DEPENDENCY_INSTALL_COMMAND = "python -m pip install -r requirements-dev.txt"
 FRONTEND_BUILD_COMMAND = "npm run build --prefix frontend"
 WINDOWS_PRODUCTION_MARKER = "windows_production"
 STATEFUL_TIER_A_MARKER = "stateful_tier_a"
+STATEFUL_TIER_B_MARKER = "stateful_tier_b"
 TIER_A_TARGETS = {
     "tier_a_general": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",
     "tier_a_deletion": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion",
@@ -451,3 +452,15 @@ def test_ordinary_backend_suites_exclude_explicit_tier_a_tests() -> None:
                 assert f"not {STATEFUL_TIER_A_MARKER}" in expression, (
                     f"job `{job_name}` ordinary backend suite reruns Tier A"
                 )
+
+
+def test_blocked_tier_b_is_excluded_from_ordinary_ci_and_not_required() -> None:
+    workflow = _workflow_document()
+    rendered = WORKFLOW.read_text(encoding="utf-8")
+    assert "tier_b_general" not in rendered and "tier_b_deletion" not in rendered
+    assert f"not {STATEFUL_TIER_B_MARKER}" in PYTEST_INI.read_text(encoding="utf-8")
+    for job in _jobs(workflow).values():
+        for index in _backend_suite_indexes(job):
+            expression = _marker_expression(_steps(job)[index]["run"].strip())
+            if expression is not None and not _selects_production_boot(expression):
+                assert f"not {STATEFUL_TIER_B_MARKER}" in expression

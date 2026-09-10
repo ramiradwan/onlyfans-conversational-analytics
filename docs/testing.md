@@ -49,6 +49,20 @@ python -m pytest --override-ini=addopts= tests/stateful/test_brain_ingestion.py:
 
 The research gate proposed 90x40 general and 60x30 deletion as starting calibration inputs. A dated local Task 5A run on 2026-09-09 was interrupted after 568.15 seconds before the 90x40 general test completed. In accordance with the plan's CI-budget rule, the repository profiles reduce example counts before removing transition families or oracle assertions. The always-on mix is 15 general histories and 10 deletion histories, so deletion-focused histories remain 40% of the generated PR total. The two exact profiles completed together in 49.03 seconds in the same local environment after consolidating observation reads. PR-runner timing and any further adjustment remain Task 5C/Task 9 evidence; local timing does not qualify the p95 target.
 
+## Task 5C file-backed restart qualification
+
+Task 5C drives the same `HistoryRepository` methods through fresh repository objects over one encrypted canonical SQLite file. It records accepted state, duplicate and gap recovery, staged snapshot material, deletion barriers, and JSON-safe trace replay across close/reopen cuts.
+
+```powershell
+python -m pytest --basetemp .test-tmp-tier-b tests/stateful/test_brain_persistent_ingestion.py
+$env:HYPOTHESIS_PROFILE="tier_b_general"; python -m pytest --basetemp .test-tmp-tier-b-general --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral
+$env:HYPOTHESIS_PROFILE="tier_b_deletion"; python -m pytest --basetemp .test-tmp-tier-b-deletion --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion
+$env:HYPOTHESIS_PROFILE="windows_persistence_smoke"; python -m pytest --basetemp .test-tmp-tier-b-smoke --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke
+python tools/qualify_tier_b_runtime.py --output docs/architecture/task5c-local-runtime-evidence.json
+```
+
+These profiles are marker-excluded from ordinary backend collection and are not CI-required production-equivalent evidence. The local `sqlcipher3==0.6.2` runtime reports SQLite 3.51.1 / SQLCipher 4.12.0, while the [SQLite WAL-reset advisory](https://sqlite.org/wal.html#walresetbug) requires a fixed SQLite runtime (3.51.3 or later). The local artifact is therefore only semantic file-backed evidence. It does not qualify a shipped Windows runtime, a runner p95 budget, or deletion closure for derived projections/graph state.
+
 ## CI coverage
 
 GitHub Actions uses Python 3.11 and Node.js 22. In addition to the common checks, CI runs architecture boundary manifest validation, Python architecture boundary checks (`lint-imports`), Agent architecture boundary checks (`npm run check:architecture` in `extension`), Bridge architecture boundary checks (`npm run check:architecture` in `frontend`), contract-integrity tests, the provisioning-page module test, the 10,000-message Agent snapshot qualification, the backend suite on Windows, and capture end-to-end tests.
