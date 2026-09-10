@@ -17,6 +17,8 @@ python -m pip install --find-links "$env:TEMP\ofca-sqlcipher-wheelhouse" -r requ
 
 Windows CI and the package workflow build from the pinned inputs. Release builds install the new wheel into an isolated PyInstaller environment. Uploaded wheelhouses retain evidence and are not reused as release inputs.
 
+CI reuses vcpkg native dependency binaries through a cache keyed by the hosted runner image and pinned builder inputs. Every run still builds a fresh SQLCipher wheel, records provenance, and qualifies the installed runtime. The release workflow continues to build its own fresh wheel.
+
 The wheel includes binding, SQLCipher, SQLite, and OpenSSL notices. Exact notice files also remain under `sqlcipher3-0.6.2+ofca.1.licenses/` in the wheelhouse; `licenses_retained` maps their relative paths to SHA-256 values. The builder verifies that the distributed [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) contains every upstream notice before building the wheel.
 
 Release evidence must include runtime and frozen-executable probes reporting SQLite 3.51.3 or later and SQLCipher 4.14.0 or later. `PRAGMA cipher_integrity_check` passes only when it returns no rows.

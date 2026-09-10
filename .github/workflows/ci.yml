@@ -224,8 +224,27 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Prepare native dependency cache
+        id: native-cache
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ImageVersion)) {
+            throw "The hosted runner image version is required for the native dependency cache"
+          }
+          "image-version=$env:ImageVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "ofca-vcpkg-cache") | Out-Null
+
+      - name: Cache native dependencies
+        id: vcpkg-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}\ofca-vcpkg-cache
+          key: ofca-vcpkg-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.image-version }}-${{ hashFiles('packaging/sqlcipher/fixed-runtime-sources.json', 'packaging/sqlcipher/build-fixed-wheel.py', 'packaging/sqlcipher/build-fixed-wheel.ps1') }}
+
       - name: Build fixed SQLCipher wheel
         shell: pwsh
+        env:
+          VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}\ofca-vcpkg-cache,readwrite
         run: |
           $wheelhouse = Join-Path $env:RUNNER_TEMP "ofca-fixed-sqlcipher-wheelhouse"
           .\packaging\sqlcipher\build-fixed-wheel.ps1 `
