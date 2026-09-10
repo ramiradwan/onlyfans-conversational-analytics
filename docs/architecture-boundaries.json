@@ -307,6 +307,7 @@
         "app/persistence/auth.py",
         "app/persistence/private_files.py",
         "app/persistence/sqlite_api.py",
+        "app/persistence/sqlcipher_runtime.py",
         "app/persistence/retention.py",
         "app/persistence/managed_recovery.py",
         "app/persistence/archive_export.py",
@@ -314,7 +315,7 @@
         "app/persistence/sql/**",
         "app/persistence/auth_sql/**"
       ],
-      "role": "Authoritative canonical conversation storage, SQLite database lifecycle, schema migrations, and irreversible deletion closure.",
+      "role": "Authoritative canonical conversation storage, SQLite database lifecycle and SQLCipher runtime qualification, schema migrations, and irreversible deletion closure.",
       "authority": "authoritative",
       "zone": "red",
       "protected_invariants": [
@@ -330,12 +331,14 @@
       "permitted_inputs": [
         "admitted source effects from transport",
         "authorized deletion and lifecycle requests",
-        "database migration tasks"
+        "database migration tasks",
+        "runtime qualification requests"
       ],
       "permitted_outputs": [
         "canonical read models via canonical gateway",
         "durable database commits",
-        "backup and recovery state"
+        "backup and recovery state",
+        "SQLCipher runtime qualification reports"
       ]
     },
     {

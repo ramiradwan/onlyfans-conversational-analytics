@@ -390,6 +390,12 @@ def test_canonical_persistence_and_coordination_split() -> None:
     assert "app/persistence/backup.py" not in canonical_patterns
     assert "app/persistence/retention_restore.py" not in canonical_patterns
     assert "app/persistence/factory.py" not in canonical_patterns
+    assert "app/persistence/sqlcipher_runtime.py" in canonical_patterns
+
+    runtime = classify_path("app/persistence/sqlcipher_runtime.py", manifest)
+    assert runtime.module_id == "canonical-persistence"
+    assert runtime.zone == "red"
+    assert runtime.authority == "authoritative"
 
     # Persistence coordination contains the coordination files
     coordination_patterns = set(mod_map["persistence-coordination"]["path_patterns"])
