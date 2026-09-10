@@ -98,6 +98,39 @@ jobs:
           tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism
           -vv
           --hypothesis-show-statistics
+
+      - name: Run Task 6B incremental convergence
+        env:
+          HYPOTHESIS_PROFILE: task6b_convergence_fast
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence
+          -vv
+          --hypothesis-show-statistics
+
+      - name: Run Task 6B derived deletion closure
+        env:
+          HYPOTHESIS_PROFILE: task6_deletion_fast
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence
+          -vv
+          --hypothesis-show-statistics
+
+      - name: Run Task 6B permanent falsifiers
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults
+          tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_forged_topic_or_entity_graph_in_both_artifacts
+          tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_stale_deleted_message_metric_in_both_artifacts
+          tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness
+          tests/stateful/test_analytics_equivalence.py::test_deliberate_falsifier_failure_configures_hypothesis_shrink_phase
+          -vv
+          --hypothesis-show-statistics
+
       - name: Validate architecture boundary manifest
         run: python tools/validate_architecture_boundaries.py
 

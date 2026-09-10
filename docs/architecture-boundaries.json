@@ -1112,24 +1112,26 @@
       "severity": "high",
       "requirement_or_scenario": "Incremental projection computation achieves semantic and provenance equivalence with a clean rebuild from canonical head under identical ReproducibilityContext, excluding explicitly documented transient fields. (Task 6B)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/stateful/test_analytics_equivalence.py"
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence",
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
         ],
-        "falsifier": "planned:BrokenAnalyticsAdapter"
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
       }
     },
     {
       "id": "projection-publication-revision",
       "owner": "Brain analytics publication",
       "severity": "critical",
-      "requirement_or_scenario": "Projections refuse publication if their source revision does not match the authoritative canonical revision. (ADR 0020, Section 5)",
+      "requirement_or_scenario": "Projections refuse publication if their source revision does not match the authoritative canonical revision; qualified Task 6B active projection and graph material matches canonical head under ReproducibilityContext. (ADR 0020, Section 5)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/test_projection_activation.py"
+          "tests/stateful/test_analytics_equivalence.py::test_stale_candidate_is_rejected_and_active_publication_stays_current",
+          "tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness"
         ],
-        "falsifier": "planned:BrokenProvenanceAdapter"
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness"
       }
     },
     {
@@ -1138,11 +1140,11 @@
       "severity": "high",
       "requirement_or_scenario": "Every referenced entity in derived projections resolves to an allowed extant derived entity or canonical entity. (Task 6B)",
       "assurance": {
-        "status": "documented",
+        "status": "qualified",
         "evidence": [
-          "planned:tests/stateful/test_analytics_equivalence.py"
+          "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
         ],
-        "falsifier": "planned:BrokenReferentialClosureAdapter"
+        "falsifier": "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults"
       }
     },
     {

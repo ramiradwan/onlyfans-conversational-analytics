@@ -95,6 +95,60 @@ python tools/qualify_agent_tier_a.py
 
 The bounded local profiles are 5×10 general and 4×10 deletion (44.4% of the configured Agent histories). [`task5b-agent-local-evidence.json`](architecture/task5b-agent-local-evidence.json) records the histories and Driver transitions actually executed, Node process count, reconnect/restart/snapshot/deletion operation counts, runner versions, and a deliberately failing Hypothesis falsifier probe. It records no PR-runner percentile; Hypothesis does not expose a separate shrinking-phase timer. Local timings are calibration evidence only and do not establish derived projection closure or Task 9 closure.
 
+## Task 6B incremental convergence and derived deletion closure
+
+Task 6B delivers every synthetic canonical frame through `HistoryRepository`,
+runs the normal `AnalyticsPipeline.project_account` path after every delivery,
+and compares its active artifact with a clean build in fresh in-memory
+projection and graph stores. The independent oracle derives expected output
+from the final canonical `AccountReadModel` and frozen context, then compares
+the canonical witness; pipeline and analyzer provenance; message, conversation,
+participant, topic, and entity identities; nested enrichments; metrics; graph
+nodes, edges, sequences, properties, and semantic digest; and
+active-publication freshness.
+Only documented lifecycle values such as projection generation and its composite
+digest are excluded.
+
+The test factory's `memory` selection still creates temporary file-backed
+SQLCipher canonical and repository-projection databases; it is the real canonical
+`HistoryRepository` authority. Only the incremental and clean analytics
+projection/graph stores are fresh in-process stores. This profile therefore
+does not claim production-equivalent fixed-runtime persistence.
+
+```powershell
+$env:HYPOTHESIS_PROFILE="task6b_convergence_fast"; python -m pytest --override-ini=addopts= tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence --hypothesis-show-statistics
+$env:HYPOTHESIS_PROFILE="task6_deletion_fast"; python -m pytest --override-ini=addopts= tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence --hypothesis-show-statistics
+python -m pytest --override-ini=addopts= tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults
+python tools/qualify_task6b_convergence.py --output docs/architecture/task6b-local-evidence.json
+```
+
+The checked-in fast CI mix is six general histories of fourteen deliveries and
+four deletion histories of eleven deliveries. Every history contains its full
+operation family, an alternative chat delivery order, an idempotent retry, and
+a real, distinct `CanonicalSQLite` wrapper plus
+`HistoryRepository`/`HistoryAnalyticsSource` reconstruction over the same
+temporary canonical database path, key scope, and timeout. The deletion
+histories perform that restart
+after tombstones and before duplicate replay, stale reappearance, and a final
+clean rebuild. Only the example count was reduced after local measurement.
+The retained `task6b_convergence_stress` (30) and `task6_deletion_stress` (20)
+profiles preserve the research-gate breadth for offline calibration. The local
+measurement is recorded in
+[`docs/architecture/task6b-local-evidence.json`](architecture/task6b-local-evidence.json).
+That artifact is generated from test-owned runtime instrumentation and records
+actual histories, canonical mutation deliveries, clean rebuilds, repository
+restarts, alternative-order histories, deletion and duplicate deliveries,
+wall-clock samples, runtime versions, and an expected failure/shrink
+invocation. It is not PR-runner p95 closure,
+production-equivalent persistence evidence, or Task 9 hardening closure.
+
+The deletion profile checks an individual message tombstone, a conversation
+cascade with temporal edges, last-participant removal, duplicate deletion,
+and rejected semantic reappearance through enrichments, metrics, graph nodes,
+edges, referential closure, and complete materialized active publication
+content. Its permanent falsifiers cover metric, provenance, identity, graph,
+deletion-closure, and stale-but-current-witness active-publication corruption.
+
 ## CI coverage
 
 GitHub Actions uses Python 3.11 and Node.js 22. In addition to the common checks, CI runs architecture boundary manifest validation, Python architecture boundary checks (`lint-imports`), Agent architecture boundary checks (`npm run check:architecture` in `extension`), Bridge architecture boundary checks (`npm run check:architecture` in `frontend`), contract-integrity tests, the provisioning-page module test, the 10,000-message Agent snapshot qualification, the backend suite on Windows, and capture end-to-end tests.

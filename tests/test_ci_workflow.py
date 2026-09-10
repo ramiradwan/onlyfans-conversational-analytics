@@ -50,6 +50,21 @@ AGENT_TIER_A_TARGETS = {
     "agent_tier_a_general": "tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral",
     "agent_tier_a_deletion": "tests/stateful/test_agent_delivery.py::TestAgentDeliveryDeletion",
 }
+TASK6B_TARGETS = {
+    "task6b_convergence_fast": (
+        "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence"
+    ),
+    "task6_deletion_fast": (
+        "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
+    ),
+}
+TASK6B_FALSIFIER_TARGETS = (
+    "tests/stateful/test_analytics_equivalence.py::test_task6b_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults",
+    "tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_forged_topic_or_entity_graph_in_both_artifacts",
+    "tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_stale_deleted_message_metric_in_both_artifacts",
+    "tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness",
+    "tests/stateful/test_analytics_equivalence.py::test_deliberate_falsifier_failure_configures_hypothesis_shrink_phase",
+)
 
 BROWSER_SUITE_DIRECTORY = "tools/e2e-capture"
 BROWSER_SUITE_INVOCATIONS = ("npm test", "npm run test", "playwright test")
@@ -608,6 +623,76 @@ def test_agent_tier_a_profiles_run_once_and_default_backend_excludes_them() -> N
             expression = _marker_expression(_steps(job)[index]["run"].strip())
             if expression is not None and not _selects_production_boot(expression):
                 assert f"not {STATEFUL_AGENT_TIER_A_MARKER}" in expression
+
+
+def _task6b_steps(workflow: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    return [
+        (job_name, step)
+        for job_name, job in _jobs(workflow).items()
+        for step in _steps(job)
+        if isinstance(step.get("run"), str)
+        and any(target in step["run"] for target in TASK6B_TARGETS.values())
+    ]
+
+
+def _assert_task6b_profiles_are_required_once(workflow: dict[str, Any]) -> None:
+    matches = _task6b_steps(workflow)
+    assert len(matches) == 2, "Task 6B must run two explicit CI profiles"
+    for profile, target in TASK6B_TARGETS.items():
+        selected = [item for item in matches if target in item[1]["run"]]
+        assert len(selected) == 1, f"{target} must run exactly once"
+        job_name, step = selected[0]
+        assert not _runs_on_windows(_jobs(workflow)[job_name])
+        assert step.get("env", {}).get("HYPOTHESIS_PROFILE") == profile
+        assert "--override-ini=addopts=" in step["run"]
+
+
+def test_task6b_convergence_and_deletion_profiles_run_once_in_linux_ci() -> None:
+    """The two expensive profiles need explicit execution, not default collection."""
+
+    workflow = _workflow_document()
+    _assert_task6b_profiles_are_required_once(workflow)
+
+    missing = deepcopy(workflow)
+    job_name, step = _task6b_steps(missing)[0]
+    _jobs(missing)[job_name]["steps"].remove(step)
+    with pytest.raises(AssertionError, match="Task 6B must run two explicit"):
+        _assert_task6b_profiles_are_required_once(missing)
+
+
+def _assert_task6b_falsifiers_required_once(workflow: dict[str, Any]) -> None:
+    """Require one Linux invocation of both marker-excluded falsifiers."""
+
+    matches = [
+        (job_name, step)
+        for job_name, job in _jobs(workflow).items()
+        for step in _steps(job)
+        if isinstance(step.get("run"), str)
+        and TASK6B_FALSIFIER_TARGETS[0] in step["run"]
+    ]
+    assert len(matches) == 1, "Task 6B permanent falsifiers must run exactly once"
+    job_name, step = matches[0]
+    assert not _runs_on_windows(_jobs(workflow)[job_name])
+    assert all(target in step["run"] for target in TASK6B_FALSIFIER_TARGETS)
+
+
+def test_task6b_permanent_falsifiers_run_once_in_linux_ci() -> None:
+    """The ordinary suite excludes these expensive negative controls."""
+
+    workflow = _workflow_document()
+    _assert_task6b_falsifiers_required_once(workflow)
+
+    missing = deepcopy(workflow)
+    job_name, step = next(
+        (candidate_job, candidate_step)
+        for candidate_job, job in _jobs(missing).items()
+        for candidate_step in _steps(job)
+        if isinstance(candidate_step.get("run"), str)
+        and TASK6B_FALSIFIER_TARGETS[0] in candidate_step["run"]
+    )
+    _jobs(missing)[job_name]["steps"].remove(step)
+    with pytest.raises(AssertionError, match="Task 6B permanent falsifiers"):
+        _assert_task6b_falsifiers_required_once(missing)
 
 
 def test_ordinary_backend_suites_exclude_explicit_tier_a_tests() -> None:
