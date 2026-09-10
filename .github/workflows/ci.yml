@@ -22,6 +22,7 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
 
       - name: Check documentation
         run: python tools/check_docs.py
@@ -149,7 +150,39 @@ jobs:
           name: extension-dist
           path: extension/dist/
 
+  fixed-sqlcipher-wheel:
+    # One immutable same-run wheel feeds both Windows test jobs. This avoids
+    # compiling OpenSSL twice while never letting a release consume a mutable
+    # cross-run artifact; windows-package.yml rebuilds independently.
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build fixed SQLCipher wheel
+        shell: pwsh
+        run: |
+          $wheelhouse = Join-Path $env:RUNNER_TEMP "ofca-fixed-sqlcipher-wheelhouse"
+          .\packaging\sqlcipher\build-fixed-wheel.ps1 `
+            -BuildPython (Get-Command python.exe).Source `
+            -Wheelhouse $wheelhouse
+
+      - name: Retain fixed SQLCipher wheel and provenance
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
+          retention-days: 30
+          if-no-files-found: error
+
   windows-tests:
+    needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
 
     steps:
@@ -164,6 +197,21 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+
+      # The Windows marker in requirements.txt deliberately names an internal
+      # local-version wheel. Consume only the immutable output from this
+      # workflow run's pinned-source build job before pip resolves it.
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -175,7 +223,12 @@ jobs:
             extension/package-lock.json
 
       - name: Install backend dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+
+      - name: Qualify the fixed SQLCipher runtime
+        run: >
+          python tools/qualify_sqlcipher_runtime.py
+          --output "$env:RUNNER_TEMP\fixed-sqlcipher-runtime-evidence.json"
 
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
@@ -193,7 +246,52 @@ jobs:
       # tests are selected positively here rather than skipped elsewhere. The
       # invocation exits 5 if the marker ever stops matching them.
       - name: Test Windows production boot
-        run: python -m pytest -m "not slow and windows_production"
+        run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
+
+      # Task 5C stays on the required Windows path. Its dated local evidence
+      # measured 65.283443s general, 48.628686s deletion, and 10.400190s
+      # smoke; CI captures runner timing before any profile reduction.
+      - name: Test Windows persistent SQLCipher general profile
+        env:
+          HYPOTHESIS_PROFILE: tier_b_general
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral
+          --junitxml="$env:RUNNER_TEMP\tier-b-general-junit.xml"
+          -vv
+
+      - name: Test Windows persistent SQLCipher deletion profile
+        env:
+          HYPOTHESIS_PROFILE: tier_b_deletion
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion
+          --junitxml="$env:RUNNER_TEMP\tier-b-deletion-junit.xml"
+          -vv
+
+      - name: Test Windows persistent SQLCipher smoke profile
+        env:
+          HYPOTHESIS_PROFILE: windows_persistence_smoke
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke
+          --junitxml="$env:RUNNER_TEMP\tier-b-smoke-junit.xml"
+          -vv
+
+      - name: Retain Windows Task 5C evidence
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: task5c-windows-evidence-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}\fixed-sqlcipher-runtime-evidence.json
+            ${{ runner.temp }}\tier-b-general-junit.xml
+            ${{ runner.temp }}\tier-b-deletion-junit.xml
+            ${{ runner.temp }}\tier-b-smoke-junit.xml
+          retention-days: 30
+          if-no-files-found: error
 
       - name: Test backend
         run: python -m pytest
@@ -202,6 +300,7 @@ jobs:
     # The activation and capture specs drive native Chrome optional-permission
     # dialogs through UI Automation. Keep them on a Windows runner;
     # test_ci_workflow.py keeps that binding required.
+    needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
 
     env:
@@ -225,6 +324,18 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -237,7 +348,7 @@ jobs:
             tools/e2e-capture/package-lock.json
 
       - name: Install backend dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
 
       - name: Install frontend dependencies
         run: npm ci --prefix frontend

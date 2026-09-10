@@ -23,6 +23,7 @@ import pytest
 
 import exclusive_resource
 from app.core.config import Settings
+from app.persistence.sqlcipher_runtime import MINIMUM_SQLCIPHER, MINIMUM_SQLITE, _version_tuple
 
 
 PACKAGED_ARTIFACT_ENVIRONMENT_VARIABLE = "BRAIN_PACKAGED_ARTIFACT_DIR"
@@ -139,6 +140,34 @@ def _runtime_process_environment(data_directory: Path) -> dict[str, str]:
     environment.pop(_TEST_DATABASE_KEY_ENVIRONMENT_NAME, None)
     environment["LOCAL_ANALYTICS_DATA_DIR"] = str(data_directory)
     return environment
+
+
+def test_frozen_executable_reports_the_fixed_sqlcipher_runtime(
+    packaged_artifact: Path, tmp_path: Path
+) -> None:
+    """The frozen bytes, rather than the runner Python, own this driver proof."""
+
+    report_path = tmp_path / "frozen-sqlcipher-runtime.json"
+    environment = os.environ.copy()
+    environment["BRAIN_SQLCIPHER_RUNTIME_REPORT_PATH"] = str(report_path)
+    subprocess.run(
+        [str(packaged_artifact / "Brain.exe"), "--sqlcipher-runtime-report"],
+        cwd=packaged_artifact,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+        env=environment,
+    )
+    assert report_path.is_file(), "frozen Brain.exe did not write its runtime report"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert _version_tuple(str(report["sqlite_version"])) >= MINIMUM_SQLITE
+    assert _version_tuple(str(report["sqlcipher_version"])) >= MINIMUM_SQLCIPHER
+    assert report["encryption"]["cipher_integrity_check"] in {"ok", "unsupported"}
+    assert report["encryption"]["encrypted_readback"] is True
+    assert report["encryption"]["stdlib_sqlite_rejected"] is True
+    assert report["encryption"]["wrong_key_rejected"] is True
+    assert report["qualified"] is True
 
 
 def _start_brain(

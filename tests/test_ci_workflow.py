@@ -31,6 +31,7 @@ BACKEND_TEST_COMMAND = "python -m pytest"
 DEPENDENCY_INSTALL_COMMAND = "python -m pip install -r requirements-dev.txt"
 FRONTEND_BUILD_COMMAND = "npm run build --prefix frontend"
 WINDOWS_PRODUCTION_MARKER = "windows_production"
+FIXED_SQLCIPHER_BUILDER = "packaging\\sqlcipher\\build-fixed-wheel.ps1"
 STATEFUL_TIER_A_MARKER = "stateful_tier_a"
 STATEFUL_TIER_B_MARKER = "stateful_tier_b"
 TIER_A_TARGETS = {
@@ -39,6 +40,11 @@ TIER_A_TARGETS = {
 }
 TASK6A_TARGET = "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
 TASK6A_PROFILE = "task6a_determinism_fast"
+TIER_B_TARGETS = {
+    "tier_b_general": "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral",
+    "tier_b_deletion": "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion",
+    "windows_persistence_smoke": "tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke",
+}
 
 BROWSER_SUITE_DIRECTORY = "tools/e2e-capture"
 BROWSER_SUITE_INVOCATIONS = ("npm test", "npm run test", "playwright test")
@@ -73,6 +79,26 @@ def _run_step_indexes(job: dict[str, Any], command: str) -> list[int]:
         index
         for index, step in enumerate(_steps(job))
         if isinstance(step.get("run"), str) and step["run"].strip() == command
+    ]
+
+
+def _backend_dependency_install_indexes(job: dict[str, Any]) -> list[int]:
+    """Find the dependency install even when Windows supplies a wheelhouse."""
+
+    return [
+        index
+        for index, step in enumerate(_steps(job))
+        if isinstance(step.get("run"), str)
+        and "python -m pip install" in step["run"]
+        and "requirements-dev.txt" in step["run"]
+    ]
+
+
+def _fixed_sqlcipher_build_indexes(job: dict[str, Any]) -> list[int]:
+    return [
+        index
+        for index, step in enumerate(_steps(job))
+        if isinstance(step.get("run"), str) and FIXED_SQLCIPHER_BUILDER in step["run"]
     ]
 
 
@@ -136,9 +162,9 @@ def _assert_the_windows_job_installs_dependencies_before_testing(
     job_name = _assert_a_windows_runner_executes_the_backend_tests(workflow)
     job = _jobs(workflow)[job_name]
 
-    install = _run_step_indexes(job, DEPENDENCY_INSTALL_COMMAND)
+    install = _backend_dependency_install_indexes(job)
     test = _backend_suite_indexes(job)
-    assert install, f"the Windows job never runs `{DEPENDENCY_INSTALL_COMMAND}`"
+    assert install, f"the Windows job never installs `{DEPENDENCY_INSTALL_COMMAND}`"
     assert install[0] < test[0], (
         "the Windows job must install backend dependencies before running pytest"
     )
@@ -202,6 +228,89 @@ def test_the_windows_job_installs_backend_dependencies_before_testing() -> None:
         AssertionError, match="must install backend dependencies before running pytest"
     ):
         _assert_the_windows_job_installs_dependencies_before_testing(reordered)
+
+
+def test_windows_ci_builds_the_fixed_wheel_before_resolving_requirements() -> None:
+    """Removing the local wheel build makes the Windows requirement unsatisfiable."""
+
+    workflow = _workflow_document()
+    windows_job = _assert_a_windows_runner_executes_the_backend_tests(workflow)
+    job = _jobs(workflow)[windows_job]
+    install = _backend_dependency_install_indexes(job)
+    wheel_job = _jobs(workflow).get("fixed-sqlcipher-wheel")
+    assert isinstance(wheel_job, dict), "CI must declare the fixed SQLCipher wheel job"
+    wheel = _fixed_sqlcipher_build_indexes(wheel_job)
+    assert len(wheel) == 1, "CI must construct exactly one fixed SQLCipher wheel"
+    assert _jobs(workflow)[windows_job].get("needs") == "fixed-sqlcipher-wheel"
+    assert "Retrieve fixed SQLCipher wheel" in str(_steps(job))
+    assert "--find-links" in str(_steps(job)[install[0]]["run"])
+
+    removed = deepcopy(workflow)
+    _jobs(removed).pop("fixed-sqlcipher-wheel")
+    with pytest.raises(AssertionError, match="construct exactly one fixed SQLCipher wheel"):
+        removed_job = _jobs(removed).get("fixed-sqlcipher-wheel")
+        assert isinstance(removed_job, dict) and len(_fixed_sqlcipher_build_indexes(removed_job)) == 1, "CI must construct exactly one fixed SQLCipher wheel"
+
+
+def _tier_b_steps(workflow: dict[str, Any]) -> list[tuple[str, int, dict[str, Any]]]:
+    return [
+        (job_name, index, step)
+        for job_name, job in _jobs(workflow).items()
+        for index, step in enumerate(_steps(job))
+        if isinstance(step.get("run"), str)
+        and any(target in step["run"] for target in TIER_B_TARGETS.values())
+    ]
+
+
+def _assert_windows_tier_b_qualification(workflow: dict[str, Any]) -> None:
+    windows_job = _assert_a_windows_runner_executes_the_backend_tests(workflow)
+    job = _jobs(workflow)[windows_job]
+    steps = _steps(job)
+    install = _backend_dependency_install_indexes(job)
+    runtime_indexes = [
+        index
+        for index, step in enumerate(steps)
+        if "tools/qualify_sqlcipher_runtime.py" in str(step.get("run", ""))
+    ]
+    assert len(runtime_indexes) == 1, "Windows CI must dynamically qualify SQLCipher"
+    assert install[0] < runtime_indexes[0], "qualify SQLCipher after installing its fixed wheel"
+    evidence = [
+        step
+        for step in steps
+        if step.get("name") == "Retain Windows Task 5C evidence"
+    ]
+    assert len(evidence) == 1, "Windows CI must retain Task 5C runner evidence"
+    evidence_with = evidence[0].get("with", {})
+    assert evidence_with.get("name") == "task5c-windows-evidence-${{ github.sha }}"
+    assert evidence_with.get("if-no-files-found") == "error"
+    evidence_paths = str(evidence_with.get("path", ""))
+    assert "fixed-sqlcipher-runtime-evidence.json" in evidence_paths
+    for profile in ("general", "deletion", "smoke"):
+        assert f"tier-b-{profile}-junit.xml" in evidence_paths
+    found = _tier_b_steps(workflow)
+    assert len(found) == 3, f"expected three explicit Brain Tier B steps, found {found}"
+    for profile, target in TIER_B_TARGETS.items():
+        matches = [item for item in found if target in item[2]["run"]]
+        assert len(matches) == 1, f"{target} must run exactly once"
+        job_name, index, step = matches[0]
+        assert job_name == windows_job and _runs_on_windows(job)
+        assert step.get("env", {}).get("HYPOTHESIS_PROFILE") == profile
+        assert "--override-ini=addopts=" in step["run"]
+        assert "--junitxml" in step["run"]
+        assert runtime_indexes[0] < index, "Tier B must run after SQLCipher qualification"
+
+
+def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> None:
+    """Removing a persistent profile or its native-runtime probe turns CI red."""
+
+    workflow = _workflow_document()
+    _assert_windows_tier_b_qualification(workflow)
+
+    broken = deepcopy(workflow)
+    job_name, index, _ = _tier_b_steps(broken)[1]
+    del _jobs(broken)[job_name]["steps"][index]
+    with pytest.raises(AssertionError, match="three explicit Brain Tier B steps"):
+        _assert_windows_tier_b_qualification(broken)
 
 
 def test_the_frontend_is_built_before_the_backend_tests_run() -> None:
@@ -493,10 +602,11 @@ def test_ordinary_backend_suites_exclude_explicit_tier_a_tests() -> None:
                 )
 
 
-def test_blocked_tier_b_is_excluded_from_ordinary_ci_and_not_required() -> None:
+def test_tier_b_is_explicit_windows_qualification_not_an_ordinary_suite() -> None:
     workflow = _workflow_document()
-    rendered = WORKFLOW.read_text(encoding="utf-8")
-    assert "tier_b_general" not in rendered and "tier_b_deletion" not in rendered
+    serialized = WORKFLOW.read_text(encoding="utf-8")
+    for profile, target in TIER_B_TARGETS.items():
+        assert profile in serialized and target in serialized
     assert f"not {STATEFUL_TIER_B_MARKER}" in PYTEST_INI.read_text(encoding="utf-8")
     for job in _jobs(workflow).values():
         for index in _backend_suite_indexes(job):

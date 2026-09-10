@@ -13,6 +13,7 @@ from app.core.runtime_paths import runtime_configuration_file
 PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HANDOFF_TOKEN"
 PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_EXTENSION_ID"
 PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
+SQLCIPHER_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE = "BRAIN_SQLCIPHER_RUNTIME_REPORT_PATH"
 
 # The Windows installer reads this name from its AppMutex directive to detect a
 # running instance. Both process modes publish it, and changing it here requires
@@ -137,11 +138,28 @@ def run_brain() -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     """Start the local launcher or the internal Brain process mode."""
     arguments = tuple(sys.argv[1:] if argv is None else argv)
+    if arguments == ("--sqlcipher-runtime-report",):
+        # This is a diagnostic probe used by the package qualification job. It
+        # does not select an application, open a configured store, or start a
+        # listener, so it cannot change normal runtime behavior.
+        import json
+
+        from app.persistence.sqlcipher_runtime import qualification_report
+
+        rendered_report = json.dumps(qualification_report(), sort_keys=True)
+        # Brain.exe is a Windows GUI executable, so its stdout is not a
+        # dependable test channel. The package qualifier supplies this path
+        # and reads the exact bytes emitted by the frozen process instead.
+        report_path = os.environ.get(SQLCIPHER_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE)
+        if report_path:
+            Path(report_path).write_text(rendered_report + "\n", encoding="utf-8")
+        print(rendered_report)
+        return 0
     hold_running_application_mutex()
     if arguments == ("--brain",):
         return run_brain()
     if arguments:
-        raise SystemExit("usage: Brain.exe [--brain]")
+        raise SystemExit("usage: Brain.exe [--brain|--sqlcipher-runtime-report]")
     from app.launcher import main as launcher_main
 
     return launcher_main()

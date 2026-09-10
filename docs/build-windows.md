@@ -6,7 +6,7 @@ Use `packaging/build-windows.ps1` to build the Windows installer, Agent extensio
 
 ## Requirements
 
-- An isolated Python environment with `requirements.txt` and `packaging/requirements-build.txt` installed. Do not use the repository `.venv` for packaging.
+- An isolated Python environment with `requirements.txt` and `packaging/requirements-build.txt` installed. Do not use the repository `.venv` for packaging. Build the fixed local SQLCipher wheel first, as the Windows dependency marker cannot resolve a public wheel.
 - Node.js and npm unless you pass `-SkipAssetBuild`.
 - Inno Setup 6.
 - An output directory outside the repository that does not already exist.
@@ -19,7 +19,8 @@ From the repository root:
 
 ```powershell
 python -m venv .build-venv
-.\.build-venv\Scripts\python.exe -m pip install -r requirements.txt -r packaging/requirements-build.txt
+.\packaging\sqlcipher\build-fixed-wheel.ps1 -BuildPython python.exe -Wheelhouse "$env:TEMP\ofca-sqlcipher-wheelhouse"
+.\.build-venv\Scripts\python.exe -m pip install --find-links "$env:TEMP\ofca-sqlcipher-wheelhouse" -r requirements.txt -r packaging/requirements-build.txt
 .\packaging\build-windows.ps1 -BuildPython .\.build-venv\Scripts\python.exe
 ```
 
