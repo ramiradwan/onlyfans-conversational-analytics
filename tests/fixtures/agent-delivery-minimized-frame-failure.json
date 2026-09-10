@@ -1,0 +1,224 @@
+{
+  "actual_frames": [
+    {
+      "payload": {
+        "acquisition_origin": "passive",
+        "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "change": {
+          "chat": {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          },
+          "type": "chat.upsert"
+        },
+        "connection_id": "60000000-0000-4000-8000-000000000004",
+        "creator_account_id": "qualification-account",
+        "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+        "fencing_token": "fence-failure",
+        "source_seq": 999
+      },
+      "type": "ingest.delta"
+    }
+  ],
+  "actual_state": {
+    "chats": [
+      {
+        "chat_id": "chat-1",
+        "display_name": "Fan 1",
+        "last_origin": "passive",
+        "last_source_seq": 1,
+        "platform_user_id": "fan-1",
+        "record_kind": "full",
+        "updated_at": "2026-01-01T00:00:01Z"
+      }
+    ],
+    "chunks": [],
+    "coverage": [],
+    "identity": {
+      "account_epoch": 1,
+      "acknowledged_source_seq": 0,
+      "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+      "applied_config_revision": null,
+      "creator_account_id": "qualification-account",
+      "entity_counts": {
+        "chats": 1,
+        "coverage_evidence": 0,
+        "messages": 0
+      },
+      "last_source_seq": 1,
+      "outbox_count": 1,
+      "pending_snapshot": null
+    },
+    "manifests": [],
+    "messages": [],
+    "outbox": [
+      {
+        "acquisition_origin": "passive",
+        "change": {
+          "chat": {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          },
+          "type": "chat.upsert"
+        },
+        "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+        "source_seq": 1
+      }
+    ],
+    "overrides": [],
+    "transport": {
+      "connected": true,
+      "connection_id": "60000000-0000-4000-8000-000000000004",
+      "fence": "fence-failure",
+      "frames": [
+        {
+          "payload": {
+            "acquisition_origin": "passive",
+            "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+            "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+            "change": {
+              "chat": {
+                "chat_id": "chat-1",
+                "display_name": "Fan 1",
+                "platform_user_id": "fan-1",
+                "record_kind": "full",
+                "updated_at": "2026-01-01T00:00:01Z"
+              },
+              "type": "chat.upsert"
+            },
+            "connection_id": "60000000-0000-4000-8000-000000000004",
+            "creator_account_id": "qualification-account",
+            "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+            "fencing_token": "fence-failure",
+            "source_seq": 999
+          },
+          "type": "ingest.delta"
+        }
+      ],
+      "replay": [
+        1
+      ],
+      "sync_required": false
+    }
+  },
+  "commands": [
+    {
+      "change": {
+        "chat": {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        },
+        "type": "chat.upsert"
+      },
+      "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+      "operation": "capture",
+      "origin": "passive",
+      "request_id": 1
+    },
+    {
+      "committed_source_seq": 0,
+      "fence": "fence-failure",
+      "next_expected_chunk_index": 0,
+      "operation": "connect",
+      "pending_snapshot_id": null,
+      "request_id": 2,
+      "resume_action": "resume"
+    }
+  ],
+  "expected_frames": [
+    {
+      "payload": {
+        "acquisition_origin": "passive",
+        "change": {
+          "chat": {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          },
+          "type": "chat.upsert"
+        },
+        "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+        "source_seq": 1
+      },
+      "type": "ingest.delta"
+    }
+  ],
+  "expected_state": {
+    "chats": [
+      {
+        "chat_id": "chat-1",
+        "display_name": "Fan 1",
+        "last_origin": "passive",
+        "last_source_seq": 1,
+        "platform_user_id": "fan-1",
+        "record_kind": "full",
+        "updated_at": "2026-01-01T00:00:01Z"
+      }
+    ],
+    "chunks": [],
+    "coverage": [],
+    "identity": {
+      "account_epoch": 1,
+      "acknowledged_source_seq": 0,
+      "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+      "applied_config_revision": null,
+      "creator_account_id": "qualification-account",
+      "entity_counts": {
+        "chats": 1,
+        "coverage_evidence": 0,
+        "messages": 0
+      },
+      "last_source_seq": 1,
+      "outbox_count": 1,
+      "pending_snapshot": null
+    },
+    "manifests": [],
+    "messages": [],
+    "outbox": [
+      {
+        "acquisition_origin": "passive",
+        "change": {
+          "chat": {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          },
+          "type": "chat.upsert"
+        },
+        "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+        "source_seq": 1
+      }
+    ],
+    "overrides": [],
+    "transport": {
+      "connected": true,
+      "fence": "fence-failure",
+      "replay": [
+        1
+      ],
+      "sync_required": false
+    }
+  },
+  "name": "bogus-source-seq-reconnect-frame",
+  "stream_session": {
+    "session": {
+      "connected": true,
+      "fence": "fence-failure"
+    },
+    "stream": "70000000-0000-4000-8000-000000000001"
+  }
+}

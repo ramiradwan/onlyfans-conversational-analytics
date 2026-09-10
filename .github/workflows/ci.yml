@@ -71,6 +71,24 @@ jobs:
           -vv
           --hypothesis-show-statistics
 
+      - name: Run Agent Tier A general state machine
+        env:
+          HYPOTHESIS_PROFILE: agent_tier_a_general
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral
+          -vv
+
+      - name: Run Agent Tier A deletion state machine
+        env:
+          HYPOTHESIS_PROFILE: agent_tier_a_deletion
+        run: >
+          python -m pytest
+          --override-ini=addopts=
+          tests/stateful/test_agent_delivery.py::TestAgentDeliveryDeletion
+          -vv
+
       - name: Run Task 6A deterministic clean rebuilds
         env:
           HYPOTHESIS_PROFILE: task6a_determinism_fast
@@ -80,7 +98,6 @@ jobs:
           tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism
           -vv
           --hypothesis-show-statistics
-
       - name: Validate architecture boundary manifest
         run: python tools/validate_architecture_boundaries.py
 
@@ -110,7 +127,7 @@ jobs:
       - name: Test backend
         run: >
           python -m pytest
-          -m "not slow and not windows_production and not stateful_tier_a and not stateful_tier_b"
+          -m "not slow and not windows_production and not stateful_tier_a and not stateful_tier_b and not stateful_agent_tier_a"
           -vv
           --override-ini=faulthandler_timeout=120
           --durations=30

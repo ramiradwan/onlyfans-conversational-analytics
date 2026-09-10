@@ -1,0 +1,62 @@
+{
+  "deletion_history_fraction": 0.4444444444444444,
+  "falsifier_probe": {
+    "detected": true,
+    "falsifier": "BrokenNoopAllocatesSequence",
+    "minimized_failure_command_count": 2,
+    "minimized_failure_frame_count": 1,
+    "minimized_failure_record": "tests/fixtures/agent-delivery-minimized-frame-failure.json",
+    "shrink_phase_reason": "Hypothesis exposes the total test duration, not a separate first-failure versus shrinking timing API.",
+    "shrink_phase_seconds": null,
+    "wall_seconds": 2.131108
+  },
+  "generated_at_utc": "2026-09-10T09:13:27Z",
+  "limitations": [
+    "Local FakeIndexedDb evidence drives real DurableIngestOutbox and AgentWebSocketClient but is not a browser-storage performance benchmark.",
+    "No PR-runner percentile is claimed from one local sample."
+  ],
+  "profiles": [
+    {
+      "deletion_operations": 0,
+      "driver_transitions_executed": 202,
+      "frame_comparisons": 202,
+      "histories_executed": 5,
+      "node_processes_started": 5,
+      "partial_snapshot_restart_operations": 0,
+      "profile": "general",
+      "reconnect_operations": 47,
+      "restart_operations": 16,
+      "runner_percentiles": null,
+      "runner_percentiles_reason": "One local profile run has no sample distribution for p50/p90/p95.",
+      "same_client_reconnect_operations": 5,
+      "snapshot_operations": 89,
+      "sync_required_operations": 5,
+      "wall_seconds": 4.708678
+    },
+    {
+      "deletion_operations": 16,
+      "driver_transitions_executed": 201,
+      "frame_comparisons": 201,
+      "histories_executed": 4,
+      "node_processes_started": 4,
+      "partial_snapshot_restart_operations": 4,
+      "profile": "deletion",
+      "reconnect_operations": 33,
+      "restart_operations": 11,
+      "runner_percentiles": null,
+      "runner_percentiles_reason": "One local profile run has no sample distribution for p50/p90/p95.",
+      "same_client_reconnect_operations": 4,
+      "snapshot_operations": 94,
+      "sync_required_operations": 4,
+      "wall_seconds": 9.48702
+    }
+  ],
+  "runner": {
+    "hypothesis_version": "6.128.0",
+    "node_version": "v22.18.0",
+    "os": "Windows-11-10.0.26340-SP0",
+    "python_version": "3.13.6"
+  },
+  "schema_version": 2,
+  "scope": "Task 5B local Agent durable-delivery evidence"
+}

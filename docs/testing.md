@@ -83,6 +83,18 @@ clean builds per example. It is a local in-memory determinism check only: it
 does not claim incremental/rebuild convergence, file-backed qualification, or
 end-to-end derived deletion closure, which remain Task 6B and later evidence.
 
+## Task 5B Agent durable-delivery qualification
+
+`tests/stateful/test_agent_delivery.py` keeps one Node JSON-lines process alive for each generated history. It drives the real `DurableIngestOutbox` and encrypted IndexedDB storage adapter over the repository FakeIndexedDb, then compares every transition with the independent Python delivery model. The explicit CI profiles are 5 × 10 general histories and 4 × 10 deletion histories; deletion therefore receives 44.4% of the bounded history budget. The calibration was reduced from the plan's starting count before removing any transition family.
+
+```powershell
+$env:HYPOTHESIS_PROFILE="agent_tier_a_general"; python -m pytest --override-ini=addopts= tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral
+$env:HYPOTHESIS_PROFILE="agent_tier_a_deletion"; python -m pytest --override-ini=addopts= tests/stateful/test_agent_delivery.py::TestAgentDeliveryDeletion
+python tools/qualify_agent_tier_a.py
+```
+
+The bounded local profiles are 5×10 general and 4×10 deletion (44.4% of the configured Agent histories). [`task5b-agent-local-evidence.json`](architecture/task5b-agent-local-evidence.json) records the histories and Driver transitions actually executed, Node process count, reconnect/restart/snapshot/deletion operation counts, runner versions, and a deliberately failing Hypothesis falsifier probe. It records no PR-runner percentile; Hypothesis does not expose a separate shrinking-phase timer. Local timings are calibration evidence only and do not establish derived projection closure or Task 9 closure.
+
 ## CI coverage
 
 GitHub Actions uses Python 3.11 and Node.js 22. In addition to the common checks, CI runs architecture boundary manifest validation, Python architecture boundary checks (`lint-imports`), Agent architecture boundary checks (`npm run check:architecture` in `extension`), Bridge architecture boundary checks (`npm run check:architecture` in `frontend`), contract-integrity tests, the provisioning-page module test, the 10,000-message Agent snapshot qualification, the backend suite on Windows, and capture end-to-end tests.

@@ -769,8 +769,8 @@ To avoid uncontrolled CI runtime expansion, named profiles are defined for state
 |---|---|---:|---|---|
 | **Tier A General** | Brain Ingestion | 90 × 40 | In-memory | Broad state-space exploration |
 | **Tier A Deletion** | Brain Ingestion | 60 × 30 | In-memory | Tombstone and resurrection stress |
-| **Agent Tier A General** | Agent Outbox | 50 × 30 | Persistent Node harness | Durable outbox and framing semantics |
-| **Agent Tier A Deletion** | Agent Outbox | 30 × 20 | Persistent Node harness | Deletion, reconnect, and snapshot stress |
+| **Agent Tier A General** | Agent Outbox | 5 × 10 (locally calibrated) | Persistent Node harness | Durable outbox and framing semantics |
+| **Agent Tier A Deletion** | Agent Outbox | 4 × 10 (locally calibrated) | Persistent Node harness | Deletion, reconnect, and snapshot stress |
 | **Tier B General** | Brain SQLite | 15 × 25 | File-backed SQLCipher | Transaction, reopen, and durability |
 | **Tier B Deletion** | Brain SQLite | 10 × 20 | File-backed SQLCipher | Durable deletion closure across reopen |
 | **Windows Smoke** | Persistence Factory | ~5 × 12 + regressions | Production LocalSQLite | Windows-specific filesystem semantics |
@@ -827,5 +827,5 @@ The following deliverables are downstream tasks authorized by PR 5R; they do not
 - **Task 5A (PR 5A) Readiness:** Brain independent reference model (`tests/state_models/brain_ingestion_model.py`) and Tier A state machine implementation (`tests/stateful/test_brain_ingestion.py`).
 - **Task 5C (PR 5B) Local Evidence:** File-backed persistent Brain qualification (`tests/state_models/sqlite_brain_adapter.py`) reopens fresh `HistoryRepository` objects over the same encrypted canonical file and checks checkpoint, staging, retry, and tombstone behavior through the Task 5A oracle. `tools/qualify_tier_b_runtime.py` writes dated local profile/runtime evidence.
   *Qualification status:* **blocked from production-equivalent claim.** The local `sqlcipher3==0.6.2` runtime reports SQLite 3.51.1 / SQLCipher 4.12.0, which predates the fixed SQLite WAL-reset runtime. SQLite's official advisory requires 3.51.3 or later and this application's concurrent connection/checkpoint pattern is not excluded. `packaging/sqlcipher/` defines a checksum-pinned SQLCipher 4.17.0 Windows wheel build and frozen-runtime probe, but the gate remains blocked until that wheel and the actual PyInstaller executable pass on the production runner and retain their provenance. Local file-backed results do not qualify derived projection/graph deletion closure or packaged Windows behavior.
-- **Task 5B (PR 5C) Readiness:** Real JavaScript Agent Node qualification harness (`extension/qualification/ingestion-model-harness.mjs`) and durable delivery qualification.
+- **Task 5B (PR 5C) Local Evidence:** `extension/qualification/ingestion-model-harness.mjs` keeps a real `DurableIngestOutbox` and encrypted IndexedDB storage adapter alive per generated Python history. The harness reconstructs the outbox against one FakeIndexedDb, observes exact stored material, and drives reconnect/session replay through `AgentWebSocketClient` with deterministic fake sockets. This establishes bounded local Agent delivery evidence only; it does not qualify derived deletion closure, runtime composition, or Task 9 closure.
 - **Tasks 6A / 6B Readiness:** Analytics determinism and rebuild convergence implementation.

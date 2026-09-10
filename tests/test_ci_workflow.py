@@ -34,6 +34,7 @@ WINDOWS_PRODUCTION_MARKER = "windows_production"
 FIXED_SQLCIPHER_BUILDER = "packaging\\sqlcipher\\build-fixed-wheel.ps1"
 STATEFUL_TIER_A_MARKER = "stateful_tier_a"
 STATEFUL_TIER_B_MARKER = "stateful_tier_b"
+STATEFUL_AGENT_TIER_A_MARKER = "stateful_agent_tier_a"
 TIER_A_TARGETS = {
     "tier_a_general": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",
     "tier_a_deletion": "tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion",
@@ -44,6 +45,10 @@ TIER_B_TARGETS = {
     "tier_b_general": "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral",
     "tier_b_deletion": "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion",
     "windows_persistence_smoke": "tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke",
+}
+AGENT_TIER_A_TARGETS = {
+    "agent_tier_a_general": "tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral",
+    "agent_tier_a_deletion": "tests/stateful/test_agent_delivery.py::TestAgentDeliveryDeletion",
 }
 
 BROWSER_SUITE_DIRECTORY = "tools/e2e-capture"
@@ -589,6 +594,20 @@ def test_task6a_determinism_profile_runs_once_in_the_required_linux_job() -> Non
     ]
     with pytest.raises(AssertionError, match="Task 6A must run"):
         _assert_task6a_determinism_profile(missing)
+
+
+def test_agent_tier_a_profiles_run_once_and_default_backend_excludes_them() -> None:
+    workflow = _workflow_document()
+    rendered = WORKFLOW.read_text(encoding="utf-8")
+    for profile, target in AGENT_TIER_A_TARGETS.items():
+        assert rendered.count(target) == 1
+        assert f"HYPOTHESIS_PROFILE: {profile}" in rendered
+    assert f"not {STATEFUL_AGENT_TIER_A_MARKER}" in PYTEST_INI.read_text(encoding="utf-8")
+    for job in _jobs(workflow).values():
+        for index in _backend_suite_indexes(job):
+            expression = _marker_expression(_steps(job)[index]["run"].strip())
+            if expression is not None and not _selects_production_boot(expression):
+                assert f"not {STATEFUL_AGENT_TIER_A_MARKER}" in expression
 
 
 def test_ordinary_backend_suites_exclude_explicit_tier_a_tests() -> None:

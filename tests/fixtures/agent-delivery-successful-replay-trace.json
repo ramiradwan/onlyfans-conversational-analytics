@@ -1,0 +1,1837 @@
+[
+  {
+    "after": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 0,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 0
+        },
+        "last_source_seq": 1,
+        "outbox_count": 1,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [],
+      "outbox": [
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "chat": {
+              "chat_id": "chat-1",
+              "display_name": "Fan 1",
+              "platform_user_id": "fan-1",
+              "record_kind": "full",
+              "updated_at": "2026-01-01T00:00:01Z"
+            },
+            "type": "chat.upsert"
+          },
+          "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+          "source_seq": 1
+        }
+      ],
+      "overrides": [],
+      "transport": {
+        "connected": false,
+        "connection_id": null,
+        "fence": null,
+        "frames": [],
+        "replay": [],
+        "sync_required": false
+      }
+    },
+    "before": null,
+    "command": {
+      "change": {
+        "chat": {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        },
+        "type": "chat.upsert"
+      },
+      "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+      "operation": "capture",
+      "origin": "passive",
+      "request_id": 1
+    },
+    "context": {
+      "session": {
+        "connected": false,
+        "fence": null
+      },
+      "stream": "70000000-0000-4000-8000-000000000001"
+    },
+    "error": null,
+    "model": {
+      "state": {
+        "chats": [
+          {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "last_origin": "passive",
+            "last_source_seq": 1,
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "chunks": [],
+        "coverage": [],
+        "identity": {
+          "account_epoch": 1,
+          "acknowledged_source_seq": 0,
+          "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+          "applied_config_revision": null,
+          "creator_account_id": "qualification-account",
+          "entity_counts": {
+            "chats": 1,
+            "coverage_evidence": 0,
+            "messages": 0
+          },
+          "last_source_seq": 1,
+          "outbox_count": 1,
+          "pending_snapshot": null
+        },
+        "manifests": [],
+        "messages": [],
+        "outbox": [
+          {
+            "acquisition_origin": "passive",
+            "change": {
+              "chat": {
+                "chat_id": "chat-1",
+                "display_name": "Fan 1",
+                "platform_user_id": "fan-1",
+                "record_kind": "full",
+                "updated_at": "2026-01-01T00:00:01Z"
+              },
+              "type": "chat.upsert"
+            },
+            "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+            "source_seq": 1
+          }
+        ],
+        "overrides": [],
+        "transport": {
+          "connected": false,
+          "fence": null,
+          "replay": [],
+          "sync_required": false
+        }
+      }
+    },
+    "operation": "capture",
+    "request_id": 1,
+    "requirements": [
+      "AG01",
+      "AG02"
+    ],
+    "result": {
+      "acquisition_origin": "passive",
+      "change": {
+        "chat": {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        },
+        "type": "chat.upsert"
+      },
+      "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+      "source_seq": 1
+    }
+  },
+  {
+    "after": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 0,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 0
+        },
+        "last_source_seq": 1,
+        "outbox_count": 1,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [],
+      "outbox": [
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "chat": {
+              "chat_id": "chat-1",
+              "display_name": "Fan 1",
+              "platform_user_id": "fan-1",
+              "record_kind": "full",
+              "updated_at": "2026-01-01T00:00:01Z"
+            },
+            "type": "chat.upsert"
+          },
+          "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+          "source_seq": 1
+        }
+      ],
+      "overrides": [],
+      "transport": {
+        "connected": false,
+        "connection_id": null,
+        "fence": null,
+        "frames": [],
+        "replay": [],
+        "sync_required": false
+      }
+    },
+    "before": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 0,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 0
+        },
+        "last_source_seq": 1,
+        "outbox_count": 1,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [],
+      "outbox": [
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "chat": {
+              "chat_id": "chat-1",
+              "display_name": "Fan 1",
+              "platform_user_id": "fan-1",
+              "record_kind": "full",
+              "updated_at": "2026-01-01T00:00:01Z"
+            },
+            "type": "chat.upsert"
+          },
+          "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+          "source_seq": 1
+        }
+      ],
+      "overrides": [],
+      "transport": {
+        "connected": false,
+        "connection_id": null,
+        "fence": null,
+        "frames": [],
+        "replay": [],
+        "sync_required": false
+      }
+    },
+    "command": {
+      "change": {
+        "chat": {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        },
+        "type": "chat.upsert"
+      },
+      "event_id": "ba557f7c-1d4a-58de-9737-a50f89979a3b",
+      "operation": "capture",
+      "origin": "passive",
+      "request_id": 2
+    },
+    "context": {
+      "session": {
+        "connected": false,
+        "fence": null
+      },
+      "stream": "70000000-0000-4000-8000-000000000001"
+    },
+    "error": null,
+    "model": {
+      "state": {
+        "chats": [
+          {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "last_origin": "passive",
+            "last_source_seq": 1,
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "chunks": [],
+        "coverage": [],
+        "identity": {
+          "account_epoch": 1,
+          "acknowledged_source_seq": 0,
+          "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+          "applied_config_revision": null,
+          "creator_account_id": "qualification-account",
+          "entity_counts": {
+            "chats": 1,
+            "coverage_evidence": 0,
+            "messages": 0
+          },
+          "last_source_seq": 1,
+          "outbox_count": 1,
+          "pending_snapshot": null
+        },
+        "manifests": [],
+        "messages": [],
+        "outbox": [
+          {
+            "acquisition_origin": "passive",
+            "change": {
+              "chat": {
+                "chat_id": "chat-1",
+                "display_name": "Fan 1",
+                "platform_user_id": "fan-1",
+                "record_kind": "full",
+                "updated_at": "2026-01-01T00:00:01Z"
+              },
+              "type": "chat.upsert"
+            },
+            "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+            "source_seq": 1
+          }
+        ],
+        "overrides": [],
+        "transport": {
+          "connected": false,
+          "fence": null,
+          "replay": [],
+          "sync_required": false
+        }
+      }
+    },
+    "operation": "capture",
+    "request_id": 2,
+    "requirements": [
+      "AG01",
+      "AG02"
+    ],
+    "result": null
+  },
+  {
+    "after": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 0,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 1
+        },
+        "last_source_seq": 2,
+        "outbox_count": 2,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [
+        {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "last_origin": "passive",
+          "last_source_seq": 2,
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        }
+      ],
+      "outbox": [
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "chat": {
+              "chat_id": "chat-1",
+              "display_name": "Fan 1",
+              "platform_user_id": "fan-1",
+              "record_kind": "full",
+              "updated_at": "2026-01-01T00:00:01Z"
+            },
+            "type": "chat.upsert"
+          },
+          "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+          "source_seq": 1
+        },
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "message": {
+              "chat_id": "chat-1",
+              "direction": "inbound",
+              "message_id": "message-1",
+              "sender_platform_user_id": "fan-1",
+              "sent_at": "2026-01-01T00:01:01Z",
+              "text": "hi 1"
+            },
+            "type": "message.upsert"
+          },
+          "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+          "source_seq": 2
+        }
+      ],
+      "overrides": [],
+      "transport": {
+        "connected": false,
+        "connection_id": null,
+        "fence": null,
+        "frames": [],
+        "replay": [],
+        "sync_required": false
+      }
+    },
+    "before": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 0,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 0
+        },
+        "last_source_seq": 1,
+        "outbox_count": 1,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [],
+      "outbox": [
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "chat": {
+              "chat_id": "chat-1",
+              "display_name": "Fan 1",
+              "platform_user_id": "fan-1",
+              "record_kind": "full",
+              "updated_at": "2026-01-01T00:00:01Z"
+            },
+            "type": "chat.upsert"
+          },
+          "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+          "source_seq": 1
+        }
+      ],
+      "overrides": [],
+      "transport": {
+        "connected": false,
+        "connection_id": null,
+        "fence": null,
+        "frames": [],
+        "replay": [],
+        "sync_required": false
+      }
+    },
+    "command": {
+      "event_ids": [
+        "526e71b8-9523-5696-884c-1abd8d5b84c3",
+        "7257a343-6b59-504f-9ab8-b09ed5f9868e"
+      ],
+      "message": {
+        "message": {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        },
+        "type": "message.upsert"
+      },
+      "operation": "capture_message_parent",
+      "parent": {
+        "chat": {
+          "chat_id": "chat-1",
+          "display_name": null,
+          "platform_user_id": null,
+          "record_kind": "placeholder",
+          "updated_at": null
+        },
+        "type": "chat.upsert"
+      },
+      "request_id": 3
+    },
+    "context": {
+      "session": {
+        "connected": false,
+        "fence": null
+      },
+      "stream": "70000000-0000-4000-8000-000000000001"
+    },
+    "error": null,
+    "model": {
+      "state": {
+        "chats": [
+          {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "last_origin": "passive",
+            "last_source_seq": 1,
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "chunks": [],
+        "coverage": [],
+        "identity": {
+          "account_epoch": 1,
+          "acknowledged_source_seq": 0,
+          "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+          "applied_config_revision": null,
+          "creator_account_id": "qualification-account",
+          "entity_counts": {
+            "chats": 1,
+            "coverage_evidence": 0,
+            "messages": 1
+          },
+          "last_source_seq": 2,
+          "outbox_count": 2,
+          "pending_snapshot": null
+        },
+        "manifests": [],
+        "messages": [
+          {
+            "chat_id": "chat-1",
+            "direction": "inbound",
+            "last_origin": "passive",
+            "last_source_seq": 2,
+            "message_id": "message-1",
+            "sender_platform_user_id": "fan-1",
+            "sent_at": "2026-01-01T00:01:01Z",
+            "text": "hi 1"
+          }
+        ],
+        "outbox": [
+          {
+            "acquisition_origin": "passive",
+            "change": {
+              "chat": {
+                "chat_id": "chat-1",
+                "display_name": "Fan 1",
+                "platform_user_id": "fan-1",
+                "record_kind": "full",
+                "updated_at": "2026-01-01T00:00:01Z"
+              },
+              "type": "chat.upsert"
+            },
+            "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+            "source_seq": 1
+          },
+          {
+            "acquisition_origin": "passive",
+            "change": {
+              "message": {
+                "chat_id": "chat-1",
+                "direction": "inbound",
+                "message_id": "message-1",
+                "sender_platform_user_id": "fan-1",
+                "sent_at": "2026-01-01T00:01:01Z",
+                "text": "hi 1"
+              },
+              "type": "message.upsert"
+            },
+            "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+            "source_seq": 2
+          }
+        ],
+        "overrides": [],
+        "transport": {
+          "connected": false,
+          "fence": null,
+          "replay": [],
+          "sync_required": false
+        }
+      }
+    },
+    "operation": "capture_message_parent",
+    "request_id": 3,
+    "requirements": [
+      "AG03"
+    ],
+    "result": {
+      "items": [
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "message": {
+              "chat_id": "chat-1",
+              "direction": "inbound",
+              "message_id": "message-1",
+              "sender_platform_user_id": "fan-1",
+              "sent_at": "2026-01-01T00:01:01Z",
+              "text": "hi 1"
+            },
+            "type": "message.upsert"
+          },
+          "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+          "source_seq": 2
+        }
+      ],
+      "messageItem": {
+        "acquisition_origin": "passive",
+        "change": {
+          "message": {
+            "chat_id": "chat-1",
+            "direction": "inbound",
+            "message_id": "message-1",
+            "sender_platform_user_id": "fan-1",
+            "sent_at": "2026-01-01T00:01:01Z",
+            "text": "hi 1"
+          },
+          "type": "message.upsert"
+        },
+        "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+        "source_seq": 2
+      },
+      "parentCreated": false
+    }
+  },
+  {
+    "after": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 0,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 1
+        },
+        "last_source_seq": 2,
+        "outbox_count": 2,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [
+        {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "last_origin": "passive",
+          "last_source_seq": 2,
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        }
+      ],
+      "outbox": [
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "chat": {
+              "chat_id": "chat-1",
+              "display_name": "Fan 1",
+              "platform_user_id": "fan-1",
+              "record_kind": "full",
+              "updated_at": "2026-01-01T00:00:01Z"
+            },
+            "type": "chat.upsert"
+          },
+          "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+          "source_seq": 1
+        },
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "message": {
+              "chat_id": "chat-1",
+              "direction": "inbound",
+              "message_id": "message-1",
+              "sender_platform_user_id": "fan-1",
+              "sent_at": "2026-01-01T00:01:01Z",
+              "text": "hi 1"
+            },
+            "type": "message.upsert"
+          },
+          "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+          "source_seq": 2
+        }
+      ],
+      "overrides": [],
+      "transport": {
+        "connected": true,
+        "connection_id": "60000000-0000-4000-8000-000000000004",
+        "fence": "fence-a",
+        "frames": [
+          {
+            "payload": {
+              "acquisition_origin": "passive",
+              "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+              "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+              "change": {
+                "chat": {
+                  "chat_id": "chat-1",
+                  "display_name": "Fan 1",
+                  "platform_user_id": "fan-1",
+                  "record_kind": "full",
+                  "updated_at": "2026-01-01T00:00:01Z"
+                },
+                "type": "chat.upsert"
+              },
+              "connection_id": "60000000-0000-4000-8000-000000000004",
+              "creator_account_id": "qualification-account",
+              "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+              "fencing_token": "fence-a",
+              "source_seq": 1
+            },
+            "type": "ingest.delta"
+          },
+          {
+            "payload": {
+              "acquisition_origin": "passive",
+              "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+              "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+              "change": {
+                "message": {
+                  "chat_id": "chat-1",
+                  "direction": "inbound",
+                  "message_id": "message-1",
+                  "sender_platform_user_id": "fan-1",
+                  "sent_at": "2026-01-01T00:01:01Z",
+                  "text": "hi 1"
+                },
+                "type": "message.upsert"
+              },
+              "connection_id": "60000000-0000-4000-8000-000000000004",
+              "creator_account_id": "qualification-account",
+              "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+              "fencing_token": "fence-a",
+              "source_seq": 2
+            },
+            "type": "ingest.delta"
+          }
+        ],
+        "replay": [
+          1,
+          2
+        ],
+        "sync_required": false
+      }
+    },
+    "before": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 0,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 1
+        },
+        "last_source_seq": 2,
+        "outbox_count": 2,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [
+        {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "last_origin": "passive",
+          "last_source_seq": 2,
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        }
+      ],
+      "outbox": [
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "chat": {
+              "chat_id": "chat-1",
+              "display_name": "Fan 1",
+              "platform_user_id": "fan-1",
+              "record_kind": "full",
+              "updated_at": "2026-01-01T00:00:01Z"
+            },
+            "type": "chat.upsert"
+          },
+          "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+          "source_seq": 1
+        },
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "message": {
+              "chat_id": "chat-1",
+              "direction": "inbound",
+              "message_id": "message-1",
+              "sender_platform_user_id": "fan-1",
+              "sent_at": "2026-01-01T00:01:01Z",
+              "text": "hi 1"
+            },
+            "type": "message.upsert"
+          },
+          "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+          "source_seq": 2
+        }
+      ],
+      "overrides": [],
+      "transport": {
+        "connected": false,
+        "connection_id": null,
+        "fence": null,
+        "frames": [],
+        "replay": [],
+        "sync_required": false
+      }
+    },
+    "command": {
+      "committed_source_seq": null,
+      "fence": "fence-a",
+      "next_expected_chunk_index": 0,
+      "operation": "connect",
+      "pending_snapshot_id": null,
+      "request_id": 4,
+      "resume_action": "resume"
+    },
+    "context": {
+      "session": {
+        "connected": true,
+        "fence": "fence-a"
+      },
+      "stream": "70000000-0000-4000-8000-000000000001"
+    },
+    "error": null,
+    "model": {
+      "state": {
+        "chats": [
+          {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "last_origin": "passive",
+            "last_source_seq": 1,
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "chunks": [],
+        "coverage": [],
+        "identity": {
+          "account_epoch": 1,
+          "acknowledged_source_seq": 0,
+          "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+          "applied_config_revision": null,
+          "creator_account_id": "qualification-account",
+          "entity_counts": {
+            "chats": 1,
+            "coverage_evidence": 0,
+            "messages": 1
+          },
+          "last_source_seq": 2,
+          "outbox_count": 2,
+          "pending_snapshot": null
+        },
+        "manifests": [],
+        "messages": [
+          {
+            "chat_id": "chat-1",
+            "direction": "inbound",
+            "last_origin": "passive",
+            "last_source_seq": 2,
+            "message_id": "message-1",
+            "sender_platform_user_id": "fan-1",
+            "sent_at": "2026-01-01T00:01:01Z",
+            "text": "hi 1"
+          }
+        ],
+        "outbox": [
+          {
+            "acquisition_origin": "passive",
+            "change": {
+              "chat": {
+                "chat_id": "chat-1",
+                "display_name": "Fan 1",
+                "platform_user_id": "fan-1",
+                "record_kind": "full",
+                "updated_at": "2026-01-01T00:00:01Z"
+              },
+              "type": "chat.upsert"
+            },
+            "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+            "source_seq": 1
+          },
+          {
+            "acquisition_origin": "passive",
+            "change": {
+              "message": {
+                "chat_id": "chat-1",
+                "direction": "inbound",
+                "message_id": "message-1",
+                "sender_platform_user_id": "fan-1",
+                "sent_at": "2026-01-01T00:01:01Z",
+                "text": "hi 1"
+              },
+              "type": "message.upsert"
+            },
+            "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+            "source_seq": 2
+          }
+        ],
+        "overrides": [],
+        "transport": {
+          "connected": true,
+          "fence": "fence-a",
+          "replay": [
+            1,
+            2
+          ],
+          "sync_required": false
+        }
+      }
+    },
+    "operation": "connect",
+    "request_id": 4,
+    "requirements": [
+      "AG04",
+      "AG08"
+    ],
+    "result": {
+      "connected": true,
+      "connection_id": "60000000-0000-4000-8000-000000000004",
+      "fence": "fence-a",
+      "frames": [
+        {
+          "payload": {
+            "acquisition_origin": "passive",
+            "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+            "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+            "change": {
+              "chat": {
+                "chat_id": "chat-1",
+                "display_name": "Fan 1",
+                "platform_user_id": "fan-1",
+                "record_kind": "full",
+                "updated_at": "2026-01-01T00:00:01Z"
+              },
+              "type": "chat.upsert"
+            },
+            "connection_id": "60000000-0000-4000-8000-000000000004",
+            "creator_account_id": "qualification-account",
+            "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+            "fencing_token": "fence-a",
+            "source_seq": 1
+          },
+          "type": "ingest.delta"
+        },
+        {
+          "payload": {
+            "acquisition_origin": "passive",
+            "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+            "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+            "change": {
+              "message": {
+                "chat_id": "chat-1",
+                "direction": "inbound",
+                "message_id": "message-1",
+                "sender_platform_user_id": "fan-1",
+                "sent_at": "2026-01-01T00:01:01Z",
+                "text": "hi 1"
+              },
+              "type": "message.upsert"
+            },
+            "connection_id": "60000000-0000-4000-8000-000000000004",
+            "creator_account_id": "qualification-account",
+            "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+            "fencing_token": "fence-a",
+            "source_seq": 2
+          },
+          "type": "ingest.delta"
+        }
+      ],
+      "replay": [
+        1,
+        2
+      ],
+      "sync_required": false
+    }
+  },
+  {
+    "after": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 2,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 1
+        },
+        "last_source_seq": 2,
+        "outbox_count": 0,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [
+        {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "last_origin": "passive",
+          "last_source_seq": 2,
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        }
+      ],
+      "outbox": [],
+      "overrides": [],
+      "transport": {
+        "connected": true,
+        "connection_id": "60000000-0000-4000-8000-000000000004",
+        "fence": "fence-a",
+        "frames": [
+          {
+            "payload": {
+              "acquisition_origin": "passive",
+              "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+              "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+              "change": {
+                "chat": {
+                  "chat_id": "chat-1",
+                  "display_name": "Fan 1",
+                  "platform_user_id": "fan-1",
+                  "record_kind": "full",
+                  "updated_at": "2026-01-01T00:00:01Z"
+                },
+                "type": "chat.upsert"
+              },
+              "connection_id": "60000000-0000-4000-8000-000000000004",
+              "creator_account_id": "qualification-account",
+              "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+              "fencing_token": "fence-a",
+              "source_seq": 1
+            },
+            "type": "ingest.delta"
+          },
+          {
+            "payload": {
+              "acquisition_origin": "passive",
+              "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+              "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+              "change": {
+                "message": {
+                  "chat_id": "chat-1",
+                  "direction": "inbound",
+                  "message_id": "message-1",
+                  "sender_platform_user_id": "fan-1",
+                  "sent_at": "2026-01-01T00:01:01Z",
+                  "text": "hi 1"
+                },
+                "type": "message.upsert"
+              },
+              "connection_id": "60000000-0000-4000-8000-000000000004",
+              "creator_account_id": "qualification-account",
+              "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+              "fencing_token": "fence-a",
+              "source_seq": 2
+            },
+            "type": "ingest.delta"
+          }
+        ],
+        "replay": [
+          1,
+          2
+        ],
+        "sync_required": false
+      }
+    },
+    "before": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 0,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 1
+        },
+        "last_source_seq": 2,
+        "outbox_count": 2,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [
+        {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "last_origin": "passive",
+          "last_source_seq": 2,
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        }
+      ],
+      "outbox": [
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "chat": {
+              "chat_id": "chat-1",
+              "display_name": "Fan 1",
+              "platform_user_id": "fan-1",
+              "record_kind": "full",
+              "updated_at": "2026-01-01T00:00:01Z"
+            },
+            "type": "chat.upsert"
+          },
+          "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+          "source_seq": 1
+        },
+        {
+          "acquisition_origin": "passive",
+          "change": {
+            "message": {
+              "chat_id": "chat-1",
+              "direction": "inbound",
+              "message_id": "message-1",
+              "sender_platform_user_id": "fan-1",
+              "sent_at": "2026-01-01T00:01:01Z",
+              "text": "hi 1"
+            },
+            "type": "message.upsert"
+          },
+          "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+          "source_seq": 2
+        }
+      ],
+      "overrides": [],
+      "transport": {
+        "connected": true,
+        "connection_id": "60000000-0000-4000-8000-000000000004",
+        "fence": "fence-a",
+        "frames": [
+          {
+            "payload": {
+              "acquisition_origin": "passive",
+              "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+              "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+              "change": {
+                "chat": {
+                  "chat_id": "chat-1",
+                  "display_name": "Fan 1",
+                  "platform_user_id": "fan-1",
+                  "record_kind": "full",
+                  "updated_at": "2026-01-01T00:00:01Z"
+                },
+                "type": "chat.upsert"
+              },
+              "connection_id": "60000000-0000-4000-8000-000000000004",
+              "creator_account_id": "qualification-account",
+              "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+              "fencing_token": "fence-a",
+              "source_seq": 1
+            },
+            "type": "ingest.delta"
+          },
+          {
+            "payload": {
+              "acquisition_origin": "passive",
+              "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+              "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+              "change": {
+                "message": {
+                  "chat_id": "chat-1",
+                  "direction": "inbound",
+                  "message_id": "message-1",
+                  "sender_platform_user_id": "fan-1",
+                  "sent_at": "2026-01-01T00:01:01Z",
+                  "text": "hi 1"
+                },
+                "type": "message.upsert"
+              },
+              "connection_id": "60000000-0000-4000-8000-000000000004",
+              "creator_account_id": "qualification-account",
+              "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+              "fencing_token": "fence-a",
+              "source_seq": 2
+            },
+            "type": "ingest.delta"
+          }
+        ],
+        "replay": [
+          1,
+          2
+        ],
+        "sync_required": false
+      }
+    },
+    "command": {
+      "committed_source_seq": 2,
+      "operation": "ack",
+      "request_id": 5,
+      "snapshot_id": null,
+      "snapshot_progress": null
+    },
+    "context": {
+      "session": {
+        "connected": true,
+        "fence": "fence-a"
+      },
+      "stream": "70000000-0000-4000-8000-000000000001"
+    },
+    "error": null,
+    "model": {
+      "state": {
+        "chats": [
+          {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "last_origin": "passive",
+            "last_source_seq": 1,
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "chunks": [],
+        "coverage": [],
+        "identity": {
+          "account_epoch": 1,
+          "acknowledged_source_seq": 2,
+          "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+          "applied_config_revision": null,
+          "creator_account_id": "qualification-account",
+          "entity_counts": {
+            "chats": 1,
+            "coverage_evidence": 0,
+            "messages": 1
+          },
+          "last_source_seq": 2,
+          "outbox_count": 0,
+          "pending_snapshot": null
+        },
+        "manifests": [],
+        "messages": [
+          {
+            "chat_id": "chat-1",
+            "direction": "inbound",
+            "last_origin": "passive",
+            "last_source_seq": 2,
+            "message_id": "message-1",
+            "sender_platform_user_id": "fan-1",
+            "sent_at": "2026-01-01T00:01:01Z",
+            "text": "hi 1"
+          }
+        ],
+        "outbox": [],
+        "overrides": [],
+        "transport": {
+          "connected": true,
+          "fence": "fence-a",
+          "replay": [
+            1,
+            2
+          ],
+          "sync_required": false
+        }
+      }
+    },
+    "operation": "ack",
+    "request_id": 5,
+    "requirements": [
+      "AG04",
+      "AG07"
+    ],
+    "result": {
+      "committedSourceSeq": 2,
+      "snapshotAcknowledged": false
+    }
+  },
+  {
+    "after": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 2,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 1
+        },
+        "last_source_seq": 2,
+        "outbox_count": 0,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [
+        {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "last_origin": "passive",
+          "last_source_seq": 2,
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        }
+      ],
+      "outbox": [],
+      "overrides": [],
+      "transport": {
+        "connected": false,
+        "connection_id": null,
+        "fence": null,
+        "frames": [],
+        "replay": [],
+        "scheduled_callbacks": 0,
+        "sync_required": false
+      }
+    },
+    "before": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 2,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 1
+        },
+        "last_source_seq": 2,
+        "outbox_count": 0,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [
+        {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "last_origin": "passive",
+          "last_source_seq": 2,
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        }
+      ],
+      "outbox": [],
+      "overrides": [],
+      "transport": {
+        "connected": true,
+        "connection_id": "60000000-0000-4000-8000-000000000004",
+        "fence": "fence-a",
+        "frames": [
+          {
+            "payload": {
+              "acquisition_origin": "passive",
+              "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+              "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+              "change": {
+                "chat": {
+                  "chat_id": "chat-1",
+                  "display_name": "Fan 1",
+                  "platform_user_id": "fan-1",
+                  "record_kind": "full",
+                  "updated_at": "2026-01-01T00:00:01Z"
+                },
+                "type": "chat.upsert"
+              },
+              "connection_id": "60000000-0000-4000-8000-000000000004",
+              "creator_account_id": "qualification-account",
+              "event_id": "fad157d2-78f4-5d96-befb-ee0b7557e20a",
+              "fencing_token": "fence-a",
+              "source_seq": 1
+            },
+            "type": "ingest.delta"
+          },
+          {
+            "payload": {
+              "acquisition_origin": "passive",
+              "agent_installation_id": "50000000-0000-4000-8000-000000000001",
+              "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+              "change": {
+                "message": {
+                  "chat_id": "chat-1",
+                  "direction": "inbound",
+                  "message_id": "message-1",
+                  "sender_platform_user_id": "fan-1",
+                  "sent_at": "2026-01-01T00:01:01Z",
+                  "text": "hi 1"
+                },
+                "type": "message.upsert"
+              },
+              "connection_id": "60000000-0000-4000-8000-000000000004",
+              "creator_account_id": "qualification-account",
+              "event_id": "7257a343-6b59-504f-9ab8-b09ed5f9868e",
+              "fencing_token": "fence-a",
+              "source_seq": 2
+            },
+            "type": "ingest.delta"
+          }
+        ],
+        "replay": [
+          1,
+          2
+        ],
+        "sync_required": false
+      }
+    },
+    "command": {
+      "operation": "restart",
+      "request_id": 6
+    },
+    "context": {
+      "session": {
+        "connected": false,
+        "fence": null
+      },
+      "stream": "70000000-0000-4000-8000-000000000001"
+    },
+    "error": null,
+    "model": {
+      "state": {
+        "chats": [
+          {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "last_origin": "passive",
+            "last_source_seq": 1,
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "chunks": [],
+        "coverage": [],
+        "identity": {
+          "account_epoch": 1,
+          "acknowledged_source_seq": 2,
+          "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+          "applied_config_revision": null,
+          "creator_account_id": "qualification-account",
+          "entity_counts": {
+            "chats": 1,
+            "coverage_evidence": 0,
+            "messages": 1
+          },
+          "last_source_seq": 2,
+          "outbox_count": 0,
+          "pending_snapshot": null
+        },
+        "manifests": [],
+        "messages": [
+          {
+            "chat_id": "chat-1",
+            "direction": "inbound",
+            "last_origin": "passive",
+            "last_source_seq": 2,
+            "message_id": "message-1",
+            "sender_platform_user_id": "fan-1",
+            "sent_at": "2026-01-01T00:01:01Z",
+            "text": "hi 1"
+          }
+        ],
+        "outbox": [],
+        "overrides": [],
+        "transport": {
+          "connected": false,
+          "fence": null,
+          "replay": [],
+          "sync_required": false
+        }
+      }
+    },
+    "operation": "restart",
+    "request_id": 6,
+    "requirements": [
+      "AG02",
+      "AG08"
+    ],
+    "result": {
+      "account_epoch": 1,
+      "acknowledged_source_seq": 2,
+      "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+      "applied_config_revision": null,
+      "creator_account_id": "qualification-account",
+      "entity_counts": {
+        "chats": 1,
+        "coverage_evidence": 0,
+        "messages": 1
+      },
+      "last_source_seq": 2,
+      "outbox_count": 0,
+      "pending_snapshot": null
+    }
+  },
+  {
+    "after": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 2,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 1
+        },
+        "last_source_seq": 2,
+        "outbox_count": 0,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [
+        {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "last_origin": "passive",
+          "last_source_seq": 2,
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        }
+      ],
+      "outbox": [],
+      "overrides": [],
+      "transport": {
+        "connected": true,
+        "connection_id": "60000000-0000-4000-8000-000000000009",
+        "fence": "fence-b",
+        "frames": [],
+        "replay": [],
+        "sync_required": false
+      }
+    },
+    "before": {
+      "chats": [
+        {
+          "chat_id": "chat-1",
+          "display_name": "Fan 1",
+          "last_origin": "passive",
+          "last_source_seq": 1,
+          "platform_user_id": "fan-1",
+          "record_kind": "full",
+          "updated_at": "2026-01-01T00:00:01Z"
+        }
+      ],
+      "chunks": [],
+      "coverage": [],
+      "identity": {
+        "account_epoch": 1,
+        "acknowledged_source_seq": 2,
+        "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+        "applied_config_revision": null,
+        "creator_account_id": "qualification-account",
+        "entity_counts": {
+          "chats": 1,
+          "coverage_evidence": 0,
+          "messages": 1
+        },
+        "last_source_seq": 2,
+        "outbox_count": 0,
+        "pending_snapshot": null
+      },
+      "manifests": [],
+      "messages": [
+        {
+          "chat_id": "chat-1",
+          "direction": "inbound",
+          "last_origin": "passive",
+          "last_source_seq": 2,
+          "message_id": "message-1",
+          "sender_platform_user_id": "fan-1",
+          "sent_at": "2026-01-01T00:01:01Z",
+          "text": "hi 1"
+        }
+      ],
+      "outbox": [],
+      "overrides": [],
+      "transport": {
+        "connected": false,
+        "connection_id": null,
+        "fence": null,
+        "frames": [],
+        "replay": [],
+        "scheduled_callbacks": 0,
+        "sync_required": false
+      }
+    },
+    "command": {
+      "committed_source_seq": null,
+      "fence": "fence-b",
+      "next_expected_chunk_index": 0,
+      "operation": "connect",
+      "pending_snapshot_id": null,
+      "request_id": 7,
+      "resume_action": "resume"
+    },
+    "context": {
+      "session": {
+        "connected": true,
+        "fence": "fence-b"
+      },
+      "stream": "70000000-0000-4000-8000-000000000001"
+    },
+    "error": null,
+    "model": {
+      "state": {
+        "chats": [
+          {
+            "chat_id": "chat-1",
+            "display_name": "Fan 1",
+            "last_origin": "passive",
+            "last_source_seq": 1,
+            "platform_user_id": "fan-1",
+            "record_kind": "full",
+            "updated_at": "2026-01-01T00:00:01Z"
+          }
+        ],
+        "chunks": [],
+        "coverage": [],
+        "identity": {
+          "account_epoch": 1,
+          "acknowledged_source_seq": 2,
+          "agent_stream_id": "70000000-0000-4000-8000-000000000001",
+          "applied_config_revision": null,
+          "creator_account_id": "qualification-account",
+          "entity_counts": {
+            "chats": 1,
+            "coverage_evidence": 0,
+            "messages": 1
+          },
+          "last_source_seq": 2,
+          "outbox_count": 0,
+          "pending_snapshot": null
+        },
+        "manifests": [],
+        "messages": [
+          {
+            "chat_id": "chat-1",
+            "direction": "inbound",
+            "last_origin": "passive",
+            "last_source_seq": 2,
+            "message_id": "message-1",
+            "sender_platform_user_id": "fan-1",
+            "sent_at": "2026-01-01T00:01:01Z",
+            "text": "hi 1"
+          }
+        ],
+        "outbox": [],
+        "overrides": [],
+        "transport": {
+          "connected": true,
+          "fence": "fence-b",
+          "replay": [],
+          "sync_required": false
+        }
+      }
+    },
+    "operation": "connect",
+    "request_id": 7,
+    "requirements": [
+      "AG04",
+      "AG08"
+    ],
+    "result": {
+      "connected": true,
+      "connection_id": "60000000-0000-4000-8000-000000000009",
+      "fence": "fence-b",
+      "frames": [],
+      "replay": [],
+      "sync_required": false
+    }
+  }
+]
