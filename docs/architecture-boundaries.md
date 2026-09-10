@@ -36,7 +36,7 @@ Zones describe the architectural blast radius of file modifications. A safety zo
 
 ## Classified architectural modules
 
-The following twenty-four modules partition the repository's production namespaces:
+The following twenty-five modules partition the repository's production namespaces:
 
 | Module ID | Zone | Authority | Responsibility |
 |---|---|---|---|
@@ -48,6 +48,7 @@ The following twenty-four modules partition the repository's production namespac
 | `agent-capture` | Red | Authoritative | Browser-side observation and normalization of creator-visible platform activity under consent control (`extension/capture/**`). |
 | `protocol-core` | Red | Authoritative | Cross-runtime protocol v2 schema definitions, golden fixtures, and bidirectional frame validation (`app/protocol/**`, `extension/protocol/**`, `frontend/src/protocol/**`, `shared/fixtures/protocol/**`). |
 | `agent-runtime` | Red | Authoritative | Agent durable delivery, WebSocket connection management, outbox persistence, signing/history coordination, preview UI, and MV3 service worker runtime (`extension/**` excluding `capture/` and `protocol/`). |
+| `canonical-read-models` | Orange | Authoritative | Neutral canonical read-model type ownership shared by canonical persistence, analytics, and transport without assigning ingestion behavior to the type namespace (`app/canonical/**`). |
 | `brain-transport` | Red | Authoritative | Brain network admission, WebSocket connection lifecycle, protocol framing, and session dispatch to canonical persistence (`app/transport/**`, `app/api/endpoints/transport_ws.py`). |
 | `persistence-factory` | Red | Composition | Persistence assembly module that constructs and returns persistence-owned repositories only (`app/persistence/factory.py`). |
 | `persistence-projection-coordination` | Orange | Composition | Coordination between canonical revisions and projection publication activation (`app/persistence/projection_activation.py`). |
@@ -106,16 +107,17 @@ The machine manifest defines twenty-two protected architectural invariants that 
 
 ## Enforced and documented dependency rules
 
-The repository specifies twelve architectural boundary rules governing cross-module dependencies:
+The repository specifies thirteen architectural boundary rules governing cross-module dependencies:
 
 | Rule ID | Type | Enforcement | Source modules | Target modules | Description |
 |---|---|---|---|---|---|
+| `rule-canonical-read-model-ownership` | Protected | Enforced | `analytics-semantic-foundation`, `persistence-coordination`, `persistence-projection-coordination`, `brain-transport` | `canonical-read-models` | AccountReadModel is defined only in app.canonical.read_models; analytics, persistence coordination, and transport import it directly from that owner and must not import or re-export it through app.transport.ingestion. |
 | `rule-canonical-persistence-no-upward` | Forbidden | Enforced | `canonical-persistence` | `analytics-semantic-foundation`, `analytics-analyzers-metrics`, `application-services`, `brain-api-presentation`, `provisioning-surface`, `brain-transport` | Core canonical persistence modules (history, database, migrations, deletion_operations) must not import feature, API, provisioning, transport, or analytics orchestration modules. |
 | `rule-canonical-history-gateway` | Protected | Enforced | `analytics-analyzers-metrics` | `canonical-persistence` | Only approved gateway modules may depend directly on app.persistence.history; ordinary analytics must use canonical read source. |
 | `rule-agent-capture-isolation` | Forbidden | Enforced | `agent-capture` | `agent-runtime` | Agent capture modules must produce observations only and not import transport, outbox publication, or command execution. |
 | `rule-persistence-factory-no-analytics` | Forbidden | Enforced | `persistence-factory` | `analytics-semantic-foundation` | Persistence factory must not construct or depend on analytics-facing adapters. |
 | `rule-projection-coordination-boundary` | Boundary | Documented | `persistence-projection-coordination` | `analytics-semantic-foundation` | Projection activation coordination between canonical revisions and analytics projection publication is an entangled composition seam recorded under current design. |
-| `rule-no-service-to-transport` | Forbidden | Enforced | `application-services` | `brain-transport` | app.services.insights_service must not directly import or discover app.transport; bootstrap injects the canonical read source into app.analytics.runtime. Contract C checks direct imports only while Task 7C removes remaining transitive canonical-read type ownership. |
+| `rule-no-service-to-transport` | Forbidden | Enforced | `application-services` | `brain-transport` | app.services.insights_service must not directly import or discover app.transport; bootstrap injects the canonical read source into app.analytics.runtime, and canonical read types have their own owner. |
 | `rule-transport-analytics-separation` | Forbidden | Enforced | `brain-transport` | `analytics-semantic-foundation` | Transport layer must not construct analytics-facing adapters or directly invoke analytics pipelines. |
 | `rule-bridge-no-canonical-writes` | Forbidden | Documented | `bridge-presentation`, `bridge-orchestration` | `canonical-persistence` | Bridge frontend components and stores consume Brain state and must not act as an ingestion or canonical write proxy. |
 | `rule-runtime-policy-confinement` | Protected | Enforced | `brain-api-presentation`, `application-services` | `security-trust` | Runtime policy and role authorization decisions are confined to the security kernel. |
@@ -169,7 +171,7 @@ Architectural rules are enforced by static checkers and automated test suites:
 - **Manifest validation**: `tools/validate_architecture_boundaries.py` and `tests/test_architecture_boundaries.py` verify manifest schema, zone validity, exception expiration, executable control references, and production path classification.
 - **Fail-closed path classification**: Every production file must match a declared module pattern. Unclassified production paths cause immediate validation failure.
 - **Dependency boundaries**: Import Linter module-granularity contracts and executable tests verify forbidden import directions and approved gateway access.
-- **Permanent negative fixtures**: `tests/fixtures/architecture_boundaries/` maintains invalid manifest fixtures to prove that validators reject misconfigurations.
+- **Permanent negative controls**: Isolated import fixtures, invalid manifest fixtures, and source-level regression assertions prove that boundary checks reject violations.
 - **Documentation consistency**: Automated checks ensure that `docs/architecture-boundaries.md` and `docs/architecture-boundaries.json` remain synchronized.
 
 ## Semantic assurance lifecycle

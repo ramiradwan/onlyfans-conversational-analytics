@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import shutil
 import subprocess
@@ -9,8 +10,18 @@ import sys
 from dataclasses import fields
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_ROOT = ROOT / "tests" / "architecture_invalid" / "python"
+CANONICAL_READ_MODEL_OWNER = ROOT / "app" / "canonical" / "read_models.py"
+CANONICAL_READ_MODEL_LEGACY_FIXTURES = (
+    "legacy_transport_account_read_model.py.txt",
+    "legacy_transport_from_import_account_read_model.py.txt",
+    "legacy_transport_from_import_alias_account_read_model.py.txt",
+    "legacy_transport_dotted_import_account_read_model.py.txt",
+    "legacy_transport_dotted_import_alias_account_read_model.py.txt",
+)
 
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 
@@ -50,9 +61,106 @@ def run_import_linter(
     )
 
 
+def _legacy_transport_account_read_model_imports(source: str) -> list[str]:
+    """Return static uses of the canonical type through its retired transport path."""
+
+    tree = ast.parse(source)
+    legacy_uses = [
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "app.transport.ingestion"
+        for alias in node.names
+        if alias.name == "AccountReadModel"
+    ]
+    transport_ingestion_aliases = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "app.transport"
+        for alias in node.names
+        if alias.name == "ingestion"
+    }
+    transport_ingestion_aliases.update(
+        alias.asname
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "app.transport.ingestion" and alias.asname is not None
+    )
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute) or node.attr != "AccountReadModel":
+            continue
+        if isinstance(node.value, ast.Name) and node.value.id in transport_ingestion_aliases:
+            legacy_uses.append(node.value.id)
+        elif _attribute_path(node) == "app.transport.ingestion.AccountReadModel":
+            legacy_uses.append("app.transport.ingestion")
+    return legacy_uses
+
+
+def _attribute_path(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if not isinstance(node, ast.Attribute):
+        return None
+    prefix = _attribute_path(node.value)
+    return None if prefix is None else f"{prefix}.{node.attr}"
+
+
+def _assert_no_legacy_transport_account_read_model_import(path: Path, source: str) -> None:
+    legacy_imports = _legacy_transport_account_read_model_imports(source)
+    assert not legacy_imports, (
+        f"{path.relative_to(ROOT)} imports AccountReadModel from "
+        "app.transport.ingestion; use app.canonical.read_models instead"
+    )
+
+
 # ------------------------------------------------------------------------------
 # Production Contracts (Enforced)
 # ------------------------------------------------------------------------------
+
+
+def test_canonical_read_model_ownership_contract() -> None:
+    """AccountReadModel has one canonical owner and no legacy transport alias."""
+
+    canonical_definitions = [
+        path
+        for path in (ROOT / "app").rglob("*.py")
+        if any(
+            isinstance(node, ast.ClassDef) and node.name == "AccountReadModel"
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        )
+    ]
+    assert canonical_definitions == [CANONICAL_READ_MODEL_OWNER]
+
+    for path in (ROOT / "app").rglob("*.py"):
+        _assert_no_legacy_transport_account_read_model_import(
+            path, path.read_text(encoding="utf-8")
+        )
+
+    ingestion_source = (ROOT / "app" / "transport" / "ingestion.py").read_text(encoding="utf-8")
+    assert "AccountReadModel" not in {
+        node.name
+        for node in ast.parse(ingestion_source).body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    from app.transport import ingestion
+
+    assert not hasattr(ingestion, "AccountReadModel")
+    with pytest.raises(ImportError):
+        exec("from app.transport.ingestion import AccountReadModel", {})
+
+
+def test_canonical_read_model_ownership_allows_other_ingestion_symbols() -> None:
+    """The ownership control remains limited to AccountReadModel."""
+
+    _assert_no_legacy_transport_account_read_model_import(
+        ROOT / "app" / "transport" / "ingestion.py",
+        "from app.transport.ingestion import IngestionService\n",
+    )
+
 
 def test_canonical_persistence_no_upward_contract() -> None:
     """Contract A: Core canonical persistence modules must not import analytics, services, API, provisioning, or transport."""
@@ -129,6 +237,21 @@ def test_production_import_linter_all_contracts() -> None:
 # ------------------------------------------------------------------------------
 # Permanent Negative Controls (Isolated Non-Importable Fixtures)
 # ------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("fixture_name", CANONICAL_READ_MODEL_LEGACY_FIXTURES)
+def test_negative_control_legacy_transport_account_read_model_import(fixture_name: str) -> None:
+    """Prove the ownership check rejects the retired transport import path."""
+
+    invalid_fixture_path = (
+        ROOT / "tests" / "fixtures" / "architecture_boundaries" / fixture_name
+    )
+    with pytest.raises(AssertionError, match="app.canonical.read_models"):
+        _assert_no_legacy_transport_account_read_model_import(
+            invalid_fixture_path,
+            invalid_fixture_path.read_text(encoding="utf-8"),
+        )
+
 
 def test_negative_control_ordinary_analytics_imports_history() -> None:
     """Prove rejection of ordinary analytics directly importing app.persistence.history (Contract B)."""

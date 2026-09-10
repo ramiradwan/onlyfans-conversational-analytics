@@ -54,6 +54,7 @@ from app.analytics.projection_store import (
     AtomicAnalyticsProjectionStore,
     InMemoryAnalyticsProjectionStore,
 )
+from app.canonical.read_models import AccountReadModel
 from app.models.analytics import (
     AnalyticsProjection,
     AnalyticsWindow,
@@ -61,7 +62,6 @@ from app.models.analytics import (
     RebuildArtifact,
     WindowScope,
 )
-from app.transport.ingestion import AccountReadModel
 
 
 class CanonicalReadModelSource(Protocol):

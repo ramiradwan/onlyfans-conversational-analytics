@@ -19,7 +19,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
 from app.analytics.pipeline import AnalyticsPipeline
-from app.transport.ingestion import AccountReadModel
+from app.canonical.read_models import AccountReadModel
 from tests.state_models.analytics_oracle import (
     AnalyticsOracleMismatch,
     assert_deterministic_rebuilds,

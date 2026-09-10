@@ -1,0 +1,3 @@
+import app.transport.ingestion as retired_ingestion
+
+account_read_model = retired_ingestion.AccountReadModel

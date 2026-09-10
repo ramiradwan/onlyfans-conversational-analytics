@@ -17,7 +17,7 @@ from app.persistence.projection_activation import (
     ProjectionActivationRepository,
     SQLiteProjectionActivationRepository,
 )
-from app.transport.ingestion import AccountReadModel
+from app.canonical.read_models import AccountReadModel
 
 
 TEST_OWNER = current_build_owner("activation-test-owner")

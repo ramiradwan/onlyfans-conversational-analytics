@@ -23,7 +23,7 @@ from app.analytics.historical_derivation import (
     RETENTION_BASIS,
 )
 from app.models.analytics import RebuildArtifact
-from app.transport.ingestion import AccountReadModel
+from app.canonical.read_models import AccountReadModel
 
 
 class AnalyticsOracleMismatch(AssertionError):

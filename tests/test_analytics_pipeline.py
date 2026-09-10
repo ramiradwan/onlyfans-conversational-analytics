@@ -24,7 +24,7 @@ from app.protocol.payloads import (
 )
 from app.services.data_ingest import CanonicalAnalyticsConsumer
 from app.services.onlyfans_client import OnlyFansClient
-from app.transport.ingestion import AccountReadModel
+from app.canonical.read_models import AccountReadModel
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"

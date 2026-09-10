@@ -232,6 +232,22 @@
       ]
     },
     {
+      "id": "canonical-read-models",
+      "path_patterns": [
+        "app/canonical/**"
+      ],
+      "role": "Neutral canonical read-model type ownership shared by canonical persistence, analytics, and transport without assigning ingestion behavior to the type namespace.",
+      "authority": "authoritative",
+      "zone": "orange",
+      "protected_invariants": [],
+      "permitted_inputs": [
+        "canonical state represented by the read model"
+      ],
+      "permitted_outputs": [
+        "neutral canonical read-model value types"
+      ]
+    },
+    {
       "id": "brain-transport",
       "path_patterns": [
         "app/transport/**",
@@ -690,6 +706,27 @@
   ],
   "rules": [
     {
+      "id": "rule-canonical-read-model-ownership",
+      "description": "AccountReadModel is defined only in app.canonical.read_models; analytics, persistence coordination, and transport import it directly from that owner and must not import or re-export it through app.transport.ingestion.",
+      "source_modules": [
+        "analytics-semantic-foundation",
+        "persistence-coordination",
+        "persistence-projection-coordination",
+        "brain-transport"
+      ],
+      "target_modules": [
+        "canonical-read-models"
+      ],
+      "type": "protected",
+      "enforcement": {
+        "status": "enforced",
+        "enforced_by": [
+          "tests/test_architecture_contracts.py::test_canonical_read_model_ownership_contract",
+          "tests/test_architecture_contracts.py::test_negative_control_legacy_transport_account_read_model_import"
+        ]
+      }
+    },
+    {
       "id": "rule-canonical-persistence-no-upward",
       "description": "Core canonical persistence modules (history, database, migrations, deletion_operations) must not import feature, API, provisioning, transport, or analytics orchestration modules.",
       "source_modules": [
@@ -782,7 +819,7 @@
     },
     {
       "id": "rule-no-service-to-transport",
-      "description": "app.services.insights_service must not directly import or discover app.transport; bootstrap injects the canonical read source into app.analytics.runtime. Contract C checks direct imports only while Task 7C removes remaining transitive canonical-read type ownership.",
+      "description": "app.services.insights_service must not directly import or discover app.transport; bootstrap injects the canonical read source into app.analytics.runtime, and canonical read types have their own owner.",
       "source_modules": [
         "application-services"
       ],

@@ -23,7 +23,7 @@ from app.models.analytics import AnalyticsProjection, GraphProjectionSummary, Re
 from app.persistence.projection_activation import (
     InMemoryProjectionActivationRepository,
 )
-from app.transport.ingestion import AccountReadModel
+from app.canonical.read_models import AccountReadModel
 
 
 class EmptySource:

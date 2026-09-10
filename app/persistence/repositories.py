@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+from app.canonical.read_models import AccountReadModel
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.database import CanonicalSQLite
 from app.protocol import AgentConfigDocumentResponse
@@ -24,7 +25,6 @@ from app.services.command_execution import (
     CommandTransition,
 )
 from app.transport.ingestion import (
-    AccountReadModel,
     IngestionRepository,
     RawStreamState,
     StoredEvent,

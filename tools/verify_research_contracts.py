@@ -142,6 +142,7 @@ def verify_referenced_codebase() -> list[tuple[bool, str]]:
     referenced_files = [
         "app/protocol/payloads.py",
         "app/protocol/common.py",
+        "app/canonical/read_models.py",
         "app/transport/ingestion.py",
         "app/transport/manager.py",
         "app/persistence/history.py",
@@ -191,9 +192,15 @@ def verify_referenced_codebase() -> list[tuple[bool, str]]:
     for sym in common_symbols:
         checks.append(check_ast_symbol("app/protocol/common.py", sym))
 
-    # 3. Transport symbols
+    # 3. Canonical read-model symbols
+    canonical_read_model_symbols = [
+        ("app/canonical/read_models.py", "AccountReadModel"),
+    ]
+    for rel_path, sym in canonical_read_model_symbols:
+        checks.append(check_ast_symbol(rel_path, sym))
+
+    # 4. Transport symbols
     transport_symbols = [
-        ("app/transport/ingestion.py", "AccountReadModel"),
         ("app/transport/ingestion.py", "InMemoryIngestionRepository"),
         ("app/transport/ingestion.py", "IngestionService"),
         ("app/transport/ingestion.py", "CommitOutcome"),
@@ -204,7 +211,7 @@ def verify_referenced_codebase() -> list[tuple[bool, str]]:
     for rel_path, sym in transport_symbols:
         checks.append(check_ast_symbol(rel_path, sym))
 
-    # 4. Persistence symbols
+    # 5. Persistence symbols
     history_symbols = [
         "HistoryRepository",
         "StreamKey",
@@ -232,7 +239,7 @@ def verify_referenced_codebase() -> list[tuple[bool, str]]:
     for sym in activation_symbols:
         checks.append(check_ast_symbol("app/persistence/projection_activation.py", sym))
 
-    # 5. Analytics pipeline and derivation symbols
+    # 6. Analytics pipeline and derivation symbols
     pipeline_symbols = [
         ("app/analytics/pipeline.py", "AnalyticsPipeline"),
         ("app/analytics/pipeline.py", "ProjectionCandidate"),

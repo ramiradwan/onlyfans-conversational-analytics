@@ -93,7 +93,7 @@ from app.protocol.payloads import (
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from app.services import insights_service
 from app.transport.manager import DEV_AGENT_AUTH_TICKET
-from app.transport.ingestion import AccountReadModel
+from app.canonical.read_models import AccountReadModel
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
