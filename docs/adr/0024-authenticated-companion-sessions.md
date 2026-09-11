@@ -19,15 +19,15 @@ Noise owns key derivation, authenticated encryption, directional keys, and trans
 
 The prototype uses a 4 KiB frame cap, bounded WebSocket queues, no compression, a total connection/handshake/request deadline, cancellation, and fixed payload-free error codes. These are spike limits, not a replacement for production size budgets. A production session also needs reviewed lifetime and record-count limits, backpressure, epoch fences, and orderly key destruction. Python object disposal does not prove secret memory erasure.
 
-## Trust bootstrap requiring review
+## Authenticated pin provisioning
 
-The listener on port 17871 is untrusted until it proves possession of the pre-authorized Brain key. A key obtained from that listener, a matching sender URL, or a successful health response cannot establish identity. Trust on first use is not accepted.
+Use a dedicated hosted-authority-signed pairing receipt, verified independently by Agent and Brain. The [pairing contract proposal](../companion-pairing-contract.md) defines issuance prerequisites, the protected delivery path, signed bindings, and admission rules. This is a new purpose-specific artifact; existing installation and account grants are not reinterpreted or changed by the spike.
 
-Brain's current installation identity is a TPM-backed ES256/P-256 signing key. The spike's X25519 static keys are separate key-agreement keys; they cannot substitute for that installation key or inherit its hardware-protection claim. Both endpoints' Noise keys must be bound to the authorized installation and Agent before Noise KK can be used.
+The receipt binds both X25519 keys to the installation, Agent, account, independent fresh endpoint challenges, pairing generation, authorization digest, and fixed Noise suite. Each endpoint compares its own signed key with its locally generated key and the receipt context with its independently authenticated pending pairing state. The issuer must verify the TPM-backed installation proof, Agent key possession, current grants, and explicit customer approval before signing.
 
-Review a provisioning artifact authenticated by the pinned hosted authority, or an explicit delegation signed by the already authenticated installation key. It must bind the exact installation, Agent identity, Noise public keys, permitted protocol suite, pairing generation, purpose/audience, validity, and revocation or replacement rules. Verification must reach an independently pinned authority through the existing authenticated provisioning path. Delivery through an unauthenticated local page or external message is not sufficient. Any new signed artifact or grant fields require cross-plane contract review; the spike does not issue or verify them.
+Receipt delivery uses the existing authenticated hosted provisioning channel, not an unauthenticated loopback page or external message. Receipt contents and Full-mode credentials are never sent on the plaintext WebSocket. Each endpoint derives the same Noise prologue binding from the verified receipt claims. A port owner must then prove possession of the authorized Noise private key before any application data is admitted. This separates signed authorization from live proof of possession and avoids trust on first use.
 
-The bootstrap cannot depend on first sending an auth ticket or storage key over an unprotected loopback link. Review how the public pairing artifact reaches Agent, how Agent proves possession and explicit approval, and how Brain authenticates the Agent key without that circular dependency. Changed pins, expired authorizations, account changes, cancellation, or revoked pairing must fail closed. Key replacement requires authenticated reauthorization, never acceptance of the next listener's key.
+The spike implements ES256 JWS verification through PyJWT, strict context/key checks, atomic in-memory pin admission, replay refusal, and cancellation/revocation fences. Tests use a synthetic hosted authority and signed receipts to establish Noise sessions. They do not establish actual hosted issuance or production grant validation. Production integration remains gated on cross-plane contract review, the real issuer and extension verifier, durable pin state, and offline authorization policy.
 
 ## Implementation findings
 
@@ -37,7 +37,7 @@ No production transport or permission change is authorized by this proposal. The
 
 ## Evidence and acceptance gate
 
-The [isolated Python spike](../../tools/companion-session-spike/README.md) tests synthetic pre-provisioned pins and Noise records over `ws://127.0.0.1:17871`. A separate hostile process occupies that port and must fail to obtain application plaintext or activate a session. Test fixtures do not establish production pin provenance.
+The [isolated Python spike](../../tools/companion-session-spike/README.md) tests signed synthetic pairing receipts, pin admission, and Noise records over `ws://127.0.0.1:17871`. A separate hostile process occupies that port and must fail to obtain application plaintext or activate a session. Test fixtures do not establish production pin provenance.
 
 Before production integration, require:
 
