@@ -1,3 +1,5 @@
+import { MAX_PAGE_LIMIT, MAX_CURSOR_LENGTH, SAFE_CURSOR, SIGNING_FAILURE_CODES,
+  SIGNING_VALIDATION_CODES, publicSigningError } from 'local-authenticated-read-connector/browser-signing';
 import {
   normalizeSignerConversation,
   normalizeSignerMessage,
@@ -6,33 +8,42 @@ import {
 const TERMINAL_CONVERSATION_PHASES = new Set(['complete', 'failed']);
 const MAX_RETRY_DELAY_MS = 3_600_000;
 const HISTORY_JOB_PAGE_SIZE = 500;
-// The signer measures its identity capture at 20 seconds; keep one run below
-// the one-minute MV3 reconciliation wake so a frozen tab becomes a retry.
+// Consumer policy bounds the whole acquisition wake, including signer bootstrap
+// and proof migration. It is shorter than the signer's full worst-case budget.
 const HISTORY_RUN_DEADLINE_MS = 20_000;
+const DEADLINE_ERRORS = new WeakSet();
 
 function abortError(reason = 'History acquisition was cancelled') {
-  const error = reason instanceof Error ? reason : new Error(reason);
+  const error = new Error(typeof reason === 'string' ? reason : 'History acquisition was cancelled');
   error.name = 'AbortError';
   return error;
 }
 
+function deadlineError() {
+  const error = Object.assign(abortError('History acquisition run exceeded its signer deadline'), {
+    code: 'history_run_deadline',
+  });
+  DEADLINE_ERRORS.add(error);
+  return error;
+}
+
 function throwIfAborted(signal) {
-  if (signal?.aborted) throw abortError(signal.reason);
+  signal?.throwIfAborted();
 }
 
 function isAbort(error, signal) {
-  return signal?.aborted === true || error?.name === 'AbortError';
+  return signal?.aborted === true || publicSigningError(error).failure_code === 'aborted';
 }
 
 function isDeadlineAbort(error, signal) {
-  return signal?.reason?.code === 'history_run_deadline' && error?.name === 'AbortError';
+  return DEADLINE_ERRORS.has(signal?.reason);
 }
 
 function awaitWithAbort(value, signal) {
   throwIfAborted(signal);
   let listener;
   const aborted = new Promise((_, reject) => {
-    listener = () => reject(abortError(signal.reason));
+    listener = () => reject(signal.reason);
     signal.addEventListener('abort', listener, { once: true });
   });
   return Promise.race([Promise.resolve(value), aborted])
@@ -43,28 +54,52 @@ class RateLimitedError extends Error {
   constructor(retryAfterMs) {
     super('Signer history read was rate limited');
     this.code = 'rate_limited';
-    this.retryAfterMs = Number.isSafeInteger(retryAfterMs) ? retryAfterMs : null;
+    this.retryAfterMs = Number.isSafeInteger(retryAfterMs) && retryAfterMs >= 0
+      ? Math.min(MAX_RETRY_DELAY_MS, retryAfterMs) : null;
   }
 }
 
-function assertPage(result, operation) {
-  if (result?.response?.status === 429) {
-    throw new RateLimitedError(result.response.retry_after_ms);
+const SIGNER_FAILURES = new Set(SIGNING_FAILURE_CODES);
+const SIGNER_VALIDATIONS = new Set(SIGNING_VALIDATION_CODES);
+const LOCAL_FAILURES = new Set(['invalid_signer_page', 'cursor_repeated', 'invalid_entity',
+  'invalid_change', 'identity_conflict', 'tombstone_revive', 'material_conflict', 'history_job_conflict', 'evidence_conflict', 'identity_required', 'history_authorization_unbound']);
+
+function localCode(error) {
+  try { const code = error?.code; return LOCAL_FAILURES.has(code) ? code : null; } catch { return null; }
+}
+
+function localFailure(code) {
+  return Object.assign(new Error('History acquisition rejected invalid page state'), { code });
+}
+
+class SignerReadFailure extends Error {
+  constructor(response) {
+    super('Signer history read failed');
+    this.code = SIGNER_FAILURES.has(response?.failure_code) ? response.failure_code : 'signing_failed';
+    this.validationError = SIGNER_VALIDATIONS.has(response?.validation_error) ? response.validation_error : null;
   }
-  if (
-    result?.success !== true
-    || result.operation !== operation
-    || !result.data
-    || !Array.isArray(result.data.items)
-    || (result.data.continuation !== null && typeof result.data.continuation !== 'string')
-    || ![null, 'inventory_end', 'history_start'].includes(result.data.boundary)
+}
+
+function assertSuccess(result) {
+  if (result?.response?.status === 429) throw new RateLimitedError(result.response.retry_after_ms);
+  if (result?.success !== true) throw new SignerReadFailure(result?.response);
+}
+
+function assertPage(result, operation, pageSize) {
+  assertSuccess(result);
+  const terminalBoundary = operation === 'conversations' ? 'inventory_end' : 'history_start';
+  if (result.operation !== operation || !result.data || Array.isArray(result.data)
+    || !Array.isArray(result.data.items) || result.data.items.length > pageSize
+    || (result.data.continuation !== null && (typeof result.data.continuation !== 'string'
+      || result.data.continuation.length === 0 || result.data.continuation.length > MAX_CURSOR_LENGTH
+      || !SAFE_CURSOR.test(result.data.continuation)))
     || Object.keys(result.data).length !== 3
     || Object.keys(result.data).some((key) => !['items', 'continuation', 'boundary'].includes(key))
-  ) {
-    throw new Error(`Signer ${operation} result is not a validated one-page result`);
-  }
-  if (result.data.boundary !== null && result.data.continuation !== null) {
-    throw new Error(`Signer ${operation} returned a boundary with a continuation`);
+    || (result.data.continuation === null ? result.data.boundary !== terminalBoundary : result.data.boundary !== null)
+  ) throw localFailure('invalid_signer_page');
+  // Sparse arrays are not pages, even when an injected provider bypasses the package parser.
+  for (let index = 0; index < result.data.items.length; index += 1) {
+    if (!Object.hasOwn(result.data.items, index)) throw localFailure('invalid_signer_page');
   }
   return result.data;
 }
@@ -153,6 +188,7 @@ export class HistoryAcquisitionCoordinator {
     this.runAuthorizationIdentity = null;
     this.nextRunAttempt = 0;
     this.activeRunAttempt = null;
+    this.activeDeadlineAt = null;
     this.stopped = false;
     // Bounded backoff so a persistent signer/refresh failure cannot re-run on
     // every wake and reload the platform tab in a tight loop.
@@ -170,10 +206,11 @@ export class HistoryAcquisitionCoordinator {
     if (this.running !== null) {
       if (nextIdentity !== this.runAuthorizationIdentity) {
         const staleRun = this.running;
-        this.cancelCurrent('History acquisition authorization changed');
+        const staleSignal = this.runController?.signal;
+        this.cancelCurrent(abortError('History acquisition authorization changed'));
         return staleRun
           .catch((error) => {
-            if (!isAbort(error, this.runController?.signal)) throw error;
+            if (!isAbort(error, staleSignal)) throw error;
           })
           .then(() => this.wake());
       }
@@ -183,12 +220,11 @@ export class HistoryAcquisitionCoordinator {
     const attempt = ++this.nextRunAttempt;
     this.runController = controller;
     this.activeRunAttempt = attempt;
+    this.activeDeadlineAt = this.clock() + this.runDeadlineMs;
     this.runAuthorizationIdentity = nextIdentity;
     const deadline = this.setTimeoutImpl(() => {
       if (this.activeRunAttempt === attempt && this.runController === controller) {
-        const error = abortError('History acquisition run exceeded its signer deadline');
-        error.code = 'history_run_deadline';
-        controller.abort(error);
+        controller.abort(deadlineError());
       }
     }, this.runDeadlineMs);
     const run = this.#run(authorization, controller.signal, attempt).then(
@@ -196,7 +232,9 @@ export class HistoryAcquisitionCoordinator {
       (error) => {
         if (!isAbort(error, controller.signal) || isDeadlineAbort(error, controller.signal)) {
           this.failureStreak += 1;
-          this.backoffUntil = this.clock() + Math.min(60_000, 3_000 * 2 ** (this.failureStreak - 1));
+          const ordinaryBackoff = Math.min(60_000, 3_000 * 2 ** (this.failureStreak - 1));
+          this.backoffUntil = this.clock() + (error instanceof RateLimitedError
+            ? Math.max(ordinaryBackoff, error.retryAfterMs ?? 0) : ordinaryBackoff);
         }
         throw error;
       },
@@ -208,21 +246,22 @@ export class HistoryAcquisitionCoordinator {
         this.runController = null;
         this.runAuthorizationIdentity = null;
         this.activeRunAttempt = null;
+        this.activeDeadlineAt = null;
       }
     });
     return this.running;
   }
 
-  cancelCurrent(reason = 'History acquisition was cancelled') {
+  cancelCurrent(reason = abortError()) {
     if (this.runController !== null && !this.runController.signal.aborted) {
-      this.runController.abort(abortError(reason));
+      this.runController.abort(reason);
     }
     return this.running;
   }
 
   stop() {
     this.stopped = true;
-    this.cancelCurrent('History acquisition coordinator stopped');
+    this.cancelCurrent(abortError('History acquisition coordinator stopped'));
   }
 
   #authorization() {
@@ -237,6 +276,8 @@ export class HistoryAcquisitionCoordinator {
       || policy?.enabled !== true
       || typeof policy.consent_revision !== 'string'
       || typeof policy.authorized_platform_creator_id !== 'string'
+      || policy.authorized_platform_creator_id.length === 0
+      || !Number.isSafeInteger(policy.page_size) || policy.page_size < 1 || policy.page_size > MAX_PAGE_LIMIT
     ) return null;
     return { document, session: boundSession, policy };
   }
@@ -336,6 +377,12 @@ export class HistoryAcquisitionCoordinator {
       this.#assertActive(signal, authorization);
       for (const job of page) {
         if (job.kind !== 'inventory') continue;
+        // A prior partition must never silently adopt a new platform mapping.
+        // Legacy jobs without this durable binding need an explicit migration.
+        this.#assertPlatformBinding(job, authorization);
+        if (job.authorization_revision !== authorization.policy.consent_revision
+          || job.account_epoch !== this.outbox.identityState().account_epoch) continue;
+        this.#assertActive(signal, authorization, job);
         if (job.phase === 'closed') closed = newerInventory(closed, job);
         else open = newerInventory(open, job);
       }
@@ -363,6 +410,7 @@ export class HistoryAcquisitionCoordinator {
         if (job.kind !== 'conversation' || job.generation_id !== generationId) {
           throw new Error('History conversation job is stored under the wrong generation');
         }
+        this.#assertActive(signal, authorization, job);
         if (job.phase === 'failed') hasFailed = true;
         if (TERMINAL_CONVERSATION_PHASES.has(job.phase)) continue;
         hasPending = true;
@@ -393,18 +441,39 @@ export class HistoryAcquisitionCoordinator {
     return hasUnknownChat;
   }
 
+  #assertPlatformBinding(job, expected) {
+    if (typeof job.authorized_platform_creator_id !== 'string'
+      || job.authorized_platform_creator_id.length === 0) {
+      throw localFailure('history_authorization_unbound');
+    }
+    if (job.authorized_platform_creator_id !== expected.policy.authorized_platform_creator_id) {
+      throw Object.assign(new Error('Stored history belongs to another authorized platform creator'), { code: 'account_mismatch' });
+    }
+  }
+
   #assertAuthorization(expected, job = null) {
     const current = this.#authorization();
     if (current === null || authorizationIdentity(current) !== authorizationIdentity(expected)) {
       throw new Error('History acquisition authorization changed');
     }
-    if (job !== null && this.outbox.identityState().account_epoch !== job.account_epoch) {
-      throw new Error('History acquisition account epoch changed');
+    if (job !== null) {
+      this.#assertPlatformBinding(job, current);
+      if (this.outbox.identityState().account_epoch !== job.account_epoch) {
+        throw new Error('History acquisition account epoch changed');
+      }
+      if (job.creator_account_id !== current.session.creator_account_id
+        || job.authorization_revision !== current.policy.consent_revision) {
+        throw localFailure('history_job_conflict');
+      }
     }
     return current;
   }
 
   #assertActive(signal, expected, job = null) {
+    if (this.runController?.signal === signal && !signal.aborted
+      && this.activeDeadlineAt !== null && this.clock() >= this.activeDeadlineAt) {
+      this.runController.abort(deadlineError());
+    }
     throwIfAborted(signal);
     return this.#assertAuthorization(expected, job);
   }
@@ -425,16 +494,17 @@ export class HistoryAcquisitionCoordinator {
       operation: 'identity',
       parameters: {},
       // The signer refreshes only when no generation exists or a validated read reports
-      // stale authorization. Its Chrome host independently requires an inactive,
+      // unsupported state or successful revision drift. Its Chrome host requires an inactive,
       // draft-free tab before reloading, so an ordinary healthy wake never reloads.
       refreshMode: 'allow',
       signal,
     }, expected, signal, attempt);
+    assertSuccess(identity);
     if (
       identity?.success !== true
       || identity.operation !== 'identity'
       || identity.data?.id !== policy.authorized_platform_creator_id
-    ) throw new Error('Signer identity does not match the authorized platform creator');
+    ) throw Object.assign(new Error('Signer identity does not match the authorized platform creator'), { code: 'account_mismatch' });
     this.#assertActive(signal, expected);
     const generationId = this.idFactory();
     const state = this.outbox.identityState();
@@ -452,11 +522,13 @@ export class HistoryAcquisitionCoordinator {
       lease_token: this.leaseToken,
       creator_account_id: session.creator_account_id,
       authorization_revision: policy.consent_revision,
+      authorized_platform_creator_id: policy.authorized_platform_creator_id,
       recent_window_days: policy.recent_window_days,
     };
     await this.outbox.saveHistoryJob(
       job,
       () => this.#assertActive(signal, expected),
+      { signal, assertCurrent: () => this.#assertActive(signal, expected) },
     );
     return job;
   }
@@ -467,6 +539,7 @@ export class HistoryAcquisitionCoordinator {
     await this.outbox.saveHistoryJob(
       claimed,
       () => this.#assertActive(signal, authorization, claimed),
+      { signal, assertCurrent: () => this.#assertActive(signal, authorization, claimed) },
     );
     return claimed;
   }
@@ -483,11 +556,12 @@ export class HistoryAcquisitionCoordinator {
       expectedLeaseToken: this.leaseToken,
       changes: page.changes ?? [],
       evidence: page.evidence ?? [],
-      nextCursor: page.nextCursor ?? claimed.cursor,
-      boundary: page.boundary ?? claimed.boundary,
+      nextCursor: Object.hasOwn(page, 'nextCursor') ? page.nextCursor : claimed.cursor,
+      boundary: Object.hasOwn(page, 'boundary') ? page.boundary : claimed.boundary,
       jobPatch: { retry_count: 0, next_attempt_at: null, ...(page.jobPatch ?? {}) },
       spawnJobs: page.spawnJobs ?? [],
       validateAuthorization: () => this.#assertActive(signal, authorization, claimed),
+      signal, assertCurrent: () => this.#assertActive(signal, authorization, claimed),
     });
   }
 
@@ -506,13 +580,13 @@ export class HistoryAcquisitionCoordinator {
         },
         refreshMode: 'allow',
         signal,
-      }, authorization, signal, attempt, job), 'conversations');
+      }, authorization, signal, attempt, job), 'conversations', policy.page_size);
       this.#assertActive(signal, authorization, job);
       if (data.boundary !== null && data.boundary !== 'inventory_end') {
         throw new Error('Conversation inventory returned the wrong boundary');
       }
       if (data.continuation !== null && data.continuation === job.cursor) {
-        throw new Error('Conversation inventory cursor repeated');
+        throw localFailure('cursor_repeated');
       }
       const changes = data.items.map((item) => normalizeSignerConversation(item, {
         observedAt,
@@ -546,6 +620,7 @@ export class HistoryAcquisitionCoordinator {
         lease_token: this.leaseToken,
         creator_account_id: job.creator_account_id,
         authorization_revision: job.authorization_revision,
+        authorized_platform_creator_id: job.authorized_platform_creator_id,
         last_activity_at,
         recent_priority,
       }));
@@ -564,7 +639,7 @@ export class HistoryAcquisitionCoordinator {
         spawnJobs,
       }, authorization, signal);
     } catch (error) {
-      if (isAbort(error, signal)) throw abortError(signal.reason);
+      if (isAbort(error, signal)) throw signal.aborted ? signal.reason : error;
       await this.#recordFailure(job, error, authorization, signal);
     }
   }
@@ -585,13 +660,13 @@ export class HistoryAcquisitionCoordinator {
         },
         refreshMode: 'allow',
         signal,
-      }, authorization, signal, attempt, job), 'message-page');
+      }, authorization, signal, attempt, job), 'message-page', policy.page_size);
       this.#assertActive(signal, authorization, job);
       if (data.boundary !== null && data.boundary !== 'history_start') {
         throw new Error('Message page returned the wrong boundary');
       }
       if (data.continuation !== null && data.continuation === job.cursor) {
-        throw new Error('Message history cursor repeated');
+        throw localFailure('cursor_repeated');
       }
       const changes = data.items.map((item) => normalizeSignerMessage(item, {
         observedAt,
@@ -630,7 +705,7 @@ export class HistoryAcquisitionCoordinator {
         },
       }, authorization, signal);
     } catch (error) {
-      if (isAbort(error, signal)) throw abortError(signal.reason);
+      if (isAbort(error, signal)) throw signal.aborted ? signal.reason : error;
       await this.#recordFailure(job, error, authorization, signal);
     }
   }
@@ -642,7 +717,11 @@ export class HistoryAcquisitionCoordinator {
       ? job
       : await this.#claim(job, authorization, signal);
     this.#assertActive(signal, authorization, claimed);
-    const rateLimited = error?.code === 'rate_limited';
+    const projected = publicSigningError(error);
+    const failureCode = error instanceof SignerReadFailure ? error.code
+      : localCode(error) ?? projected.failure_code;
+    const validationError = error instanceof SignerReadFailure ? error.validationError : projected.validation_error;
+    const rateLimited = error instanceof RateLimitedError;
     const exponentialDelay = Math.max(1_000, authorization.policy.request_interval_ms)
       * 2 ** Math.max(0, retries - 1);
     const retryDelay = rateLimited
@@ -660,12 +739,14 @@ export class HistoryAcquisitionCoordinator {
       jobPatch: {
         retry_count: retries,
         phase: retries > authorization.policy.retry_limit ? 'failed' : claimed.phase,
-        last_error_code: typeof error?.code === 'string' ? error.code : 'read_failed',
+        last_error_code: failureCode,
+        last_validation_error: validationError,
         next_attempt_at: rateLimited && retries <= authorization.policy.retry_limit
           ? new Date(this.clock() + retryDelay).toISOString()
           : null,
       },
       validateAuthorization: () => this.#assertActive(signal, authorization, claimed),
+      signal, assertCurrent: () => this.#assertActive(signal, authorization, claimed),
     });
     if (!rateLimited && retries <= authorization.policy.retry_limit) throw error;
   }

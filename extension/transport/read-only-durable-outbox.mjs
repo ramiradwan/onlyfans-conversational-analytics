@@ -438,7 +438,7 @@ export class DurableIngestOutbox {
     });
   }
 
-  async saveHistoryJob(job, validateAuthorization = null) {
+  async saveHistoryJob(job, validateAuthorization = null, guard = {}) {
     assertNonEmptyString(job?.job_id, 'history job_id');
     return this.queueMutation(async () => this.storage.runTransaction(
       'readwrite',
@@ -452,6 +452,7 @@ export class DurableIngestOutbox {
         if (this.invalidated) throw new Error('Account partition was invalidated');
         return clone(job);
       },
+      guard,
     ));
   }
 
@@ -623,6 +624,8 @@ export class DurableIngestOutbox {
     jobPatch = {},
     spawnJobs = [],
     validateAuthorization = null,
+    signal = null,
+    assertCurrent = null,
   }) {
     return this.queueMutation(async () => {
       const result = await this.storage.runTransaction(
@@ -676,7 +679,9 @@ export class DurableIngestOutbox {
             const existingSpawn = await tx.get(INGESTION_STORES.historyJobs, spawned.job_id);
             if (existingSpawn === undefined) {
               await tx.put(INGESTION_STORES.historyJobs, clone(spawned));
-            } else if (!exactlyEqual(existingSpawn, spawned)) {
+            } else if (['job_id', 'generation_id', 'kind', 'conversation_id', 'as_of',
+              'account_epoch', 'creator_account_id', 'authorization_revision', 'authorized_platform_creator_id']
+              .some((field) => existingSpawn[field] !== spawned[field])) {
               throw new InvariantViolation(
                 'history_job_conflict',
                 `History job ${spawned.job_id} was reused with conflicting state`,
@@ -690,6 +695,7 @@ export class DurableIngestOutbox {
           if (validateAuthorization !== null) await validateAuthorization();
           return { meta, job: nextJob, appended };
         },
+        { signal, assertCurrent },
       );
       this.meta = clone(result.meta);
       return { job: clone(result.job), items: result.appended.map(clone) };

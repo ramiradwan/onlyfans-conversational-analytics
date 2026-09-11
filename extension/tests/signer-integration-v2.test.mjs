@@ -437,7 +437,7 @@ test('history coordinator permits signer-owned safe bootstrap/renewal and emits 
       }
       if (request.operation === 'conversations') {
         assert.equal(canonicalRequest.url.pathname, '/api2/v2/chats');
-        assert.equal(canonicalRequest.url.search, '?limit=50');
+        assert.equal(canonicalRequest.url.search, request.operation === 'message-page' ? '?limit=50&order=desc' : '?limit=50');
         return {
           operation: 'conversations',
           success: true,
@@ -454,7 +454,7 @@ test('history coordinator permits signer-owned safe bootstrap/renewal and emits 
         };
       }
       assert.equal(canonicalRequest.url.pathname, '/api2/v2/chats/chat-1/messages');
-      assert.equal(canonicalRequest.url.search, '?limit=50');
+      assert.equal(canonicalRequest.url.search, request.operation === 'message-page' ? '?limit=50&order=desc' : '?limit=50');
       return {
         operation: 'message-page',
         success: true,
@@ -561,6 +561,7 @@ test('history scheduling finds pending work and closes a generation beyond 10,00
           lease_token: 'prior-worker-lease',
           creator_account_id: ACCOUNT,
           authorization_revision: 'consent-1',
+          authorized_platform_creator_id: 'creator-platform-1',
           last_activity_at: '2026-07-18T00:00:00Z',
           recent_priority: false,
         });
@@ -579,6 +580,7 @@ test('history scheduling finds pending work and closes a generation beyond 10,00
         lease_token: 'prior-worker-lease',
         creator_account_id: ACCOUNT,
         authorization_revision: 'consent-1',
+        authorized_platform_creator_id: 'creator-platform-1',
         recent_window_days: 30,
       });
     },
@@ -761,7 +763,7 @@ test('history coordinator rejects signer complete and page_digest claims', async
 
       await assert.rejects(
         coordinator.wake(),
-        /not a validated one-page result/,
+        { code: 'invalid_signer_page' },
       );
       const changes = (await durable.entries()).map((entry) => entry.change);
       assert.equal(
@@ -1079,7 +1081,8 @@ test('lease loss and shutdown abort signer work without recording a failed page'
       if (action === 'shutdown') coordinator.stop();
       else coordinator.cancelCurrent('Agent lease ended');
       assert.equal(pageSignal.aborted, true);
-      await assert.rejects(running, (error) => error?.name === 'AbortError');
+      await assert.rejects(running, (error) => action === 'shutdown'
+        ? error?.name === 'AbortError' : error === 'Agent lease ended');
       const inventory = (await durable.historyJobs()).find((job) => job.kind === 'inventory');
       assert.equal(inventory.retry_count, 0);
       assert.equal(inventory.committed_pages, 1);
@@ -1211,7 +1214,7 @@ test('recent_window_days prioritizes recent conversations and a new chat opens a
   assert.equal(inventoryReads, 2);
 });
 
-test('signer records with no timestamp or derivable direction still normalize', () => {
+test('nullable conversation timestamps and message directions preserve the canonical contract', () => {
   // The platform omits the last message on some conversations, leaving no
   // conversation-scoped timestamp, and a page whose messages all come from the
   // creator carries no counterparty to derive direction from. Both arrive as

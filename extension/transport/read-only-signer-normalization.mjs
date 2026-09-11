@@ -1,3 +1,5 @@
+import { normalizedTimestamp } from '../capture/normalization.mjs';
+import { normalizeIdentifier } from 'local-authenticated-read-connector/browser-signing';
 import { mapPlatformObservation } from './read-only-capture-ingestion.mjs';
 
 const CONVERSATION_KEYS = Object.freeze([
@@ -25,6 +27,14 @@ function requireExactRecord(record, keys, label) {
   ) throw new Error(`Signer returned a non-canonical ${label} item`);
 }
 
+function canonicalIdentifier(value) {
+  return typeof value === 'string' && normalizeIdentifier(value) === value;
+}
+
+function invalidCanonical() {
+  throw Object.assign(new Error('Signer returned a non-canonical item'), { code: 'invalid_response' });
+}
+
 function normalizedObservation({ eventType, record, observedAt, creatorPlatformId, conversationId }) {
   const sourcePath = eventType === 'chat.observed'
     ? '/api2/v2/chats'
@@ -43,6 +53,10 @@ function normalizedObservation({ eventType, record, observedAt, creatorPlatformI
 
 export function normalizeSignerConversation(record, context) {
   requireExactRecord(record, CONVERSATION_KEYS, 'conversation');
+  if (!canonicalIdentifier(record.id) || !canonicalIdentifier(record.platform_user_id)
+    || (record.display_name !== null && typeof record.display_name !== 'string')
+    || (record.updated_at !== null && (typeof record.updated_at !== 'string'
+      || normalizedTimestamp(record.updated_at) === null))) invalidCanonical();
   return normalizedObservation({
     eventType: 'chat.observed',
     record,
@@ -54,6 +68,10 @@ export function normalizeSignerConversation(record, context) {
 
 export function normalizeSignerMessage(record, context) {
   requireExactRecord(record, MESSAGE_KEYS, 'message');
+  if (!canonicalIdentifier(record.id) || !canonicalIdentifier(record.sender_platform_user_id)
+    || (record.chat_id !== null && !canonicalIdentifier(record.chat_id))
+    || typeof record.text !== 'string' || typeof record.sent_at !== 'string'
+    || normalizedTimestamp(record.sent_at) === null) invalidCanonical();
   if (record.chat_id !== null && record.chat_id !== context.conversationId) {
     throw new Error('Signer message does not belong to the requested conversation');
   }
