@@ -48,7 +48,7 @@ async function sourceGraph(entry) {
     format: 'esm',
     metafile: true,
     platform: 'browser',
-    target: ['chrome116'],
+    target: ['chrome132'],
     treeShaking: true,
     write: false,
   });
@@ -143,6 +143,7 @@ test('read-only handshake advertises exactly the four analytics capabilities', (
   const sockets = [];
   const validationErrors = [];
   const client = new ReadOnlyAgentWebSocketClient({
+    extensionVersion: '2.0.1',
     identity: {
       agentInstallationId: '10000000-0000-4000-8000-000000000001',
       agentStreamId: '20000000-0000-4000-8000-000000000001',

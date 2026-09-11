@@ -7,6 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { auditLegalBindingLiterals } from '../qualification/legal-binding-literals.mjs';
 
 import {
   canonicalLegalBindingsJson,
@@ -200,16 +201,10 @@ test('a packaged build binds the runtime to the verified instruments', async () 
       /__OFCA_TEST_LEGAL_RELEASE_BINDINGS__/,
       'the packaged background must not read the unbound test seam',
     );
-    assert.ok(source.includes(bindings.legal_repository_revision));
-    assert.ok(source.includes(bindings.public_origin));
-    for (const instrument of Object.values(bindings.instruments)) {
-      for (const field of ['version', 'rendered_sha256', 'public_url', 'locale']) {
-        assert.ok(
-          source.includes(instrument[field]),
-          `the packaged background must carry ${field}`,
-        );
-      }
-    }
+    auditLegalBindingLiterals(source, {
+      canonical: canonicalLegalBindingsJson(bindings),
+      digest: fileDigest(await readFile(SYNTHETIC_BINDINGS)),
+    });
   });
 });
 

@@ -12,8 +12,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
-import { unzipSync, zipSync } from 'fflate';
+import { zipSync } from 'fflate';
 import { validatePackagedSigningRule } from 'local-authenticated-read-connector/browser-signing';
+import { auditLegalBindingLiterals } from './qualification/legal-binding-literals.mjs';
+import { readArchiveEntries } from './qualification/archive-entries.mjs';
 
 import { canonicalLegalBindingsJson } from '../tools/legal-release-bindings/canonical-json.mjs';
 import {
@@ -23,7 +25,10 @@ import {
 } from './runtime/legal-instruments.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(ROOT, 'dist');
+const DIST = path.resolve(argumentValue('--outdir') ?? path.join(ROOT, 'dist'));
+const SOURCE_MANIFEST = JSON.parse(await readFile(path.join(ROOT, 'manifest.json'), 'utf8'));
+assert.equal(SOURCE_MANIFEST.minimum_chrome_version, '132');
+const CHROME_TARGET = `chrome${SOURCE_MANIFEST.minimum_chrome_version}`;
 const SIGNER_PACKAGE = 'local-authenticated-read-connector';
 const SIGNER_VERSION = '0.2.0-beta.11';
 const SIGNER_SPEC =
@@ -314,10 +319,14 @@ const LEGAL_BINDINGS_MODULE = /(^|[\\/])runtime[\\/]legal-release-bindings\.mjs$
  */
 export function legalBindingsModuleSource(legalBindings) {
   return [
-    `const BINDINGS = Object.freeze(JSON.parse(${JSON.stringify(legalBindings.canonical)}));`,
+    `const LEGAL_RELEASE_BINDINGS_B64 = ${JSON.stringify(Buffer.from(legalBindings.canonical, 'utf8').toString('base64'))};`,
     `export const LEGAL_RELEASE_BINDINGS_SHA256 = ${JSON.stringify(legalBindings.digest)};`,
     'export function legalReleaseBindings() {',
-    '  return BINDINGS;',
+    '  if (!/^[a-f0-9]{64}$/.test(LEGAL_RELEASE_BINDINGS_SHA256)) {',
+    "    throw new Error('Invalid Legal release binding digest');",
+    '  }',
+    '  const bytes = Uint8Array.from(atob(LEGAL_RELEASE_BINDINGS_B64), (character) => character.charCodeAt(0));',
+    '  return JSON.parse(new TextDecoder().decode(bytes));',
     '}',
     '',
   ].join('\n');
@@ -407,7 +416,7 @@ async function compileOnce(signingRule, legalBindings) {
     platform: 'browser',
     plugins,
     sourcemap: false,
-    target: ['chrome116'],
+    target: [CHROME_TARGET],
     treeShaking: true,
     write: false,
   };
@@ -466,7 +475,8 @@ function verifyIdenticalBuilds(first, second) {
 
 function auditManifest(manifest) {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.minimum_chrome_version, '116');
+  assert.equal(manifest.minimum_chrome_version, SOURCE_MANIFEST.minimum_chrome_version);
+  assert.equal(manifest.version, SOURCE_MANIFEST.version);
   assert.equal(manifest.name, 'Conversation Analytics');
   assert.equal(deriveExtensionId(manifest.key), EXPECTED_EXTENSION_ID);
   assert.deepEqual(manifest.permissions, EXPECTED_PERMISSIONS);
@@ -581,10 +591,11 @@ export function auditSigningRuleBinding(source, signingRule, { required }) {
 
 async function auditDependencyLock() {
   const packageDocument = await readJson(path.join(ROOT, 'package.json'));
+  assert.equal(packageDocument.version, SOURCE_MANIFEST.version, 'package and manifest versions differ');
   assert.equal(packageDocument.dependencies?.[SIGNER_PACKAGE], SIGNER_SPEC);
   assert.equal(packageDocument.dependencies?.[packageDocument.name], undefined);
   assert.equal(packageDocument.devDependencies?.esbuild, '0.25.6');
-  assert.equal(packageDocument.devDependencies?.fflate, '0.8.2');
+  assert.equal(packageDocument.devDependencies?.fflate, '0.8.3');
 
   const lock = await readJson(path.join(ROOT, 'package-lock.json'));
   const root = lock.packages?.[''];
@@ -592,7 +603,7 @@ async function auditDependencyLock() {
   assert.equal(root?.dependencies?.[SIGNER_PACKAGE], SIGNER_SPEC);
   assert.equal(root?.dependencies?.[packageDocument.name], undefined);
   assert.equal(lock.packages?.[`node_modules/${packageDocument.name}`], undefined);
-  assert.equal(root?.devDependencies?.fflate, '0.8.2');
+  assert.equal(root?.devDependencies?.fflate, '0.8.3');
   assert.equal(signer?.version, SIGNER_VERSION);
   assert.equal(signer?.resolved, SIGNER_SPEC);
   assert.equal(signer?.integrity, sha512Integrity(await readFile(SIGNER_TARBALL)));
@@ -658,7 +669,8 @@ async function auditArtifactView(view, {
   assert.equal(metadata.signer, `${SIGNER_PACKAGE}@${SIGNER_VERSION}`);
   assert.equal(metadata.signer_tarball, sha256(await readFile(SIGNER_TARBALL)));
   assert.equal(metadata.extension_id, EXPECTED_EXTENSION_ID);
-  assert.equal(metadata.target, 'chrome116');
+  assert.equal(metadata.target, CHROME_TARGET);
+  assert.equal(metadata.extension_version, manifest.version);
   assert.equal(metadata.determinism_verified, true);
 
   let artifactSigningRule = null;
@@ -738,10 +750,7 @@ async function auditArtifactView(view, {
           /__OFCA_TEST_LEGAL_RELEASE_BINDINGS__/,
           'the built background carries the unbound Legal release bindings module',
         );
-        assert.ok(
-          source.includes(expectedLegalBindings.document.legal_repository_revision),
-          'the built background does not carry the verified Legal release bindings',
-        );
+        auditLegalBindingLiterals(source, expectedLegalBindings);
       }
       assert.match(source, /createChromeBrowserSigningProvider/);
       assert.match(source, /signer-state/);
@@ -816,7 +825,7 @@ export async function auditChromeArchive(
   await auditDependencyLock();
   assert.notEqual(expectedSigningRule, null, 'archive audit requires an expected signing rule');
   const bytes = await readFile(filename);
-  const view = archiveView(unzipSync(bytes));
+  const view = archiveView(readArchiveEntries(bytes));
   const metadata = await auditArtifactView(view, {
     expectedSigningRule,
     expectedLegalBindings,
@@ -832,7 +841,35 @@ export async function auditChromeArchive(
 async function writeArtifact(compiled, signingRule, extensionConfig, legalBindings) {
   const sourceManifest = await readJson(path.join(ROOT, 'manifest.json'));
   auditManifest(sourceManifest);
-  await rm(DIST, { force: true, recursive: true });
+  // An output option must never turn a build into deletion of an arbitrary tree.
+  // Reuse only a directory owned by a prior build; candidates start empty.
+  assert.notEqual(DIST, ROOT, 'build output must not be the source directory');
+  const relativeRoot = path.relative(DIST, ROOT);
+  assert.ok(relativeRoot.startsWith('..') || path.isAbsolute(relativeRoot), 'build output must not contain source');
+  const { readdir } = await import('node:fs/promises');
+  const existing = await readdir(DIST).catch((error) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  if (existing.length > 0) {
+    const previous = await readJson(path.join(DIST, BUILD_METADATA_FILE));
+    assert.equal(previous.schema, BUILD_METADATA_SCHEMA, 'output directory is not an extension build');
+    assert.deepEqual(existing.sort(), [...new Set([
+      ...Object.keys(previous.outputs).map((name) => name.split('/')[0]),
+      BUILD_METADATA_FILE,
+      ...existing.filter((name) => /^conversation-analytics-[0-9.]+\.zip$/.test(name)),
+      ...existing.filter((name) => name === 'release'),
+    ])].sort(), 'output directory contains unrelated files');
+    // Preserve promoted releases and delete only known previous output files.
+    for (const filename of Object.keys(previous.outputs)) {
+      assert.ok(!path.isAbsolute(filename) && !filename.includes('..') && !filename.includes('\\'));
+      await rm(path.join(DIST, filename), { force: true });
+    }
+    for (const name of existing.filter((name) => /^conversation-analytics-[0-9.]+\.zip$/.test(name))) {
+      await rm(path.join(DIST, name), { force: true });
+    }
+    await rm(path.join(DIST, BUILD_METADATA_FILE), { force: true });
+  }
   await mkdir(path.join(DIST, 'icons'), { recursive: true });
 
   for (const [filename, bytes] of compiled) {
@@ -893,7 +930,7 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
       sha256: signingRule.digest,
     },
     legal_bindings: legalBindingsMetadata(legalBindings),
-    target: 'chrome116',
+    target: CHROME_TARGET,
     determinism_verified: true,
     privacy_policy_configured: extensionConfig.privacy_policy_url !== '',
     outputs,

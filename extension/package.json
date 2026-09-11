@@ -9,6 +9,8 @@
     "audit": "node build.mjs --audit",
     "package:chrome": "node build.mjs --package",
     "audit:chrome": "node build.mjs --audit-package",
+    "test:browser:release": "playwright test --config qualification/playwright.config.mjs",
+    "verify:release": "node qualification/verify-release.mjs",
     "legal:evidence": "node ../tools/legal-evidence/generate-activation-bundle.mjs",
     "qualify:snapshot": "node --expose-gc qualification/snapshot-100k.mjs",
     "qualify:snapshot:ci": "node --expose-gc qualification/snapshot-100k.mjs --messages=10000"
@@ -17,9 +19,10 @@
     "local-authenticated-read-connector": "file:vendor/local-authenticated-read-connector-0.2.0-beta.11.tgz"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "dependency-cruiser": "18.2.0",
     "esbuild": "0.25.6",
-    "fflate": "0.8.2"
+    "fflate": "0.8.3"
   },
   "description": "Conversation Analytics provides a consent-gated seven-day activity preview and connects creator-authorized analytics to an on-device service.",
   "main": "background.js",
