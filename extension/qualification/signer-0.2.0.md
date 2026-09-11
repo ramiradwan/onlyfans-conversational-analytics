@@ -29,7 +29,7 @@ The existing 20-second acquisition deadline bounds cold bootstrap and proof migr
 
 The coordinator validates exact canonical pages and terminal boundaries, stores opaque cursors unchanged, clears terminal cursors, and retains page traversal, deduplication and coverage ownership. Repeated inventory members preserve an existing conversation job's progress and lease while immutable identity conflicts still reject the transaction. Canonical messages require `sent_at`; passive observation normalization keeps its separate contract. Persisted diagnostics use fixed consumer codes or the signer's public failure and validation allowlists.
 
-New history jobs bind their authorized platform creator identity. A different binding cannot resume the generation or report it current. Legacy jobs without this binding fail closed while retaining signing state, material, jobs and evidence. Such partitions need an explicit reviewed migration or re-authorization procedure before history can resume; this integration does not infer an identity or clear their data. A new consent revision for the same platform identity starts a newly verified generation.
+New history jobs bind their authorized platform creator identity. A different binding cannot resume the generation or report it current. Legacy jobs without this binding fail closed while retaining signing state, material, jobs and evidence. Resuming those partitions while preserving their data would require an explicit reviewed migration; this integration does not infer an identity or clear their data. A new consent revision for the same platform identity starts a newly verified generation.
 
 History cancellation and absolute deadline checks reach native transaction controls, including after the storage callback returns. Both encrypted storage variants schedule requests inside native IndexedDB callbacks so WebCrypto completion remains compatible with Chrome 132.
 
@@ -44,6 +44,8 @@ The browser worker recovery harness is a separate QA bundle of these production 
 Run `npm run test:browser:signer-recovery -- --browser-executable=<chromium.exe> --outdir=<evidence-directory>` for each supported browser. The report identifies the engine, signer archive and QA bundle. It checks committed-page reconstruction, rollback of an entered page transaction after worker termination, cancellation after the callback returns, opaque cursor resumption, deduplication and coverage using a synthetic three-conversation/five-message scenario.
 
 ## Required production inputs
+
+The initial release has no existing users and targets fresh installations. Legacy history migration is therefore outside the release scope and is not a production blocker. Use fresh browser profiles for release acceptance. Handling any retained development data is a separate choice; the existing account-binding checks remain enabled.
 
 The final signer qualification used rule revision `202609101529-ed4efd662b`, SHA-256 `218faeca41e0cd1ee649ad59100a10df2ea6789393dd075c76c50e2fc66b9ea4`. Its exact retained bytes are at `acceptance/live-driver-files/reviewed-rule.json` inside the verified evidence bundle. Those bytes may be used for integration qualification.
 
