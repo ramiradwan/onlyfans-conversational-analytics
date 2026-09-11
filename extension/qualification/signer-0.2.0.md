@@ -8,7 +8,7 @@ The extension adopts the unchanged published archive through the public `local-a
 
 | Input | Identity |
 | --- | --- |
-| Private release | `ramiradwan/local-of-signer`, `v0.2.0`, release `386910504` |
+| Signer release | `v0.2.0`, release `386910504` in the configured private signer repository |
 | Package | `local-authenticated-read-connector@0.2.0`, asset `556904013` |
 | Archive SHA-256 | `d32da93c6c1e863b49ca96ed0bc86f2c9c615174b88ccee04310f817dd88a281` |
 | Signer source | `672ba94db26aa582451c817ec72a04304a2a238c` |
@@ -49,8 +49,17 @@ The initial release has no existing users and targets fresh installations. Legac
 
 The final signer qualification used rule revision `202609101529-ed4efd662b`, SHA-256 `218faeca41e0cd1ee649ad59100a10df2ea6789393dd075c76c50e2fc66b9ea4`. Its exact retained bytes are at `acceptance/live-driver-files/reviewed-rule.json` inside the verified evidence bundle. Those bytes may be used for integration qualification.
 
-The separate `signing-rule-prod-v1` release, asset `545500717`, contains different bytes: SHA-256 `3f8278caae456f41d5474f91a7b1f7102caf71890a6f0f1b0e70a1f029183e33`. At integration time no standalone release asset matched the final qualified rule. This existing asset must not be relabeled or treated as qualification of the final rule.
+The approved rule is now published in the configured private signer repository as asset `packaged-signing-rule.json` with these production coordinates. The repository identity remains in private release configuration:
 
-Before production packaging, the signer maintainer must supply approved release coordinates for the reviewed rule through the existing release process. Configure `SIGNING_RULE_RELEASE_TAG`, `SIGNING_RULE_RELEASE_ASSET_ID`, `SIGNING_RULE_DIGEST` and `SIGNING_RULE_SOURCE_REVISION` together. Preserve `tools/packaged-signing-rule/verify.mjs` and its authenticated retrieval gate; extracting an evidence-bundle rule is not a substitute for that gate.
+```ini
+SIGNING_RULE_RELEASE_TAG=signing-rule-202609101529-ed4efd662b
+SIGNING_RULE_RELEASE_ASSET_ID=557256152
+SIGNING_RULE_DIGEST=218faeca41e0cd1ee649ad59100a10df2ea6789393dd075c76c50e2fc66b9ea4
+SIGNING_RULE_SOURCE_REVISION=202609101529-ed4efd662b
+```
+
+The approved release and downloaded asset match the exact rule already used for integration qualification. The existing authenticated retrieval gate passed using configured GitHub App credentials in [run 34601815710](https://github.com/ramiradwan/onlyfans-conversational-analytics/actions/runs/34601815710). The missing-rule-coordinates blocker is cleared. Supply all four coordinates together to production packaging and preserve `tools/packaged-signing-rule/verify.mjs`; each build must still verify its retrieved input.
+
+The older `signing-rule-prod-v1` release, asset `545500717`, contains different bytes: SHA-256 `3f8278caae456f41d5474f91a7b1f7102caf71890a6f0f1b0e70a1f029183e33`. It is not the approved input for this qualification.
 
 Production packaging also requires verified Legal release bindings, the actual HTTPS privacy policy, a browser-trusted authenticated companion, and recorded native-permission acceptance of the exact ZIP on Chrome 132 and the current browser. Synthetic Legal inputs qualify implementation only. Scoped live traversal needs an authorized account, bounded scope, observed counts, deduplication and reconstruction evidence; the upstream 11-conversation/144-message snapshot does not establish consumer live-history completeness. Deployment remains a separate action.
