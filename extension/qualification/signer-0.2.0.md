@@ -2,7 +2,7 @@
 
 <!-- CODE-VERIFY: Check signer-release.mjs, build.mjs, agent-runtime-core.mjs, read-only-history-coordinator.mjs, signer-release tests, browser recovery harness, and tools/packaged-signing-rule/verify.mjs. Published identities were checked against authenticated release assets and the offline verifier. -->
 
-The extension adopts the unchanged published archive through the public `local-authenticated-read-connector/browser-signing` export. The production entry remains `background-read-only.js`, with its read-only runtime, coordinator, normalization and durable outbox. The authoring counterparts retain parity.
+The extension loads the published archive through the public `local-authenticated-read-connector/browser-signing` export. The production entry is `background-read-only.js`, with its read-only runtime, coordinator, normalization and durable outbox. The authoring counterparts retain parity.
 
 ## Artifact identities
 
@@ -19,7 +19,7 @@ The extension adopts the unchanged published archive through the public `local-a
 
 The dependency, generated lockfile, vendored archive, build pins, generated notices and ZIP metadata agree. `signer-release.mjs` checks the archive SHA-256, installed files and resolved browser entry. Compilation consumes the compared release source bytes, and notices use the verified archive license. Both ZIP audit paths verify the signer identity and release coordinates.
 
-All twelve published payloads were checked against authenticated GitHub asset digests. The published verifier was reconstructed in an isolated checkout with raw Git line endings and no installed dependencies. Its `verify` and `release-check` commands passed against the evidence bundle. Historical offline publication flags describe the original decision; the later publication record and authenticated GitHub release establish publication. The unchanged signer environment matrix was not rerun for this consumer integration.
+Package verification covers all twelve published payload digests and the offline verifier’s `verify` and `release-check` commands against the evidence bundle. Reproduce offline verification in an isolated checkout with raw Git line endings and no installed dependencies. Consumer qualification covers the integration behavior described below; the published evidence bundle supplies the signer environment matrix.
 
 ## Compatibility and consumer ownership
 
@@ -45,11 +45,11 @@ Run `npm run test:browser:signer-recovery -- --browser-executable=<chromium.exe>
 
 ## Required production inputs
 
-The initial release has no existing users and targets fresh installations. Legacy history migration is therefore outside the release scope and is not a production blocker. Use fresh browser profiles for release acceptance. Handling any retained development data is a separate choice; the existing account-binding checks remain enabled.
+Extension 2.0.1 supports fresh installations. Release acceptance uses fresh browser profiles. Migration of history jobs without an account binding is outside this release’s scope; those jobs fail closed without deleting their data.
 
-The final signer qualification used rule revision `202609101529-ed4efd662b`, SHA-256 `218faeca41e0cd1ee649ad59100a10df2ea6789393dd075c76c50e2fc66b9ea4`. Its exact retained bytes are at `acceptance/live-driver-files/reviewed-rule.json` inside the verified evidence bundle. Those bytes may be used for integration qualification.
+The required signing rule has revision `202609101529-ed4efd662b`, SHA-256 `218faeca41e0cd1ee649ad59100a10df2ea6789393dd075c76c50e2fc66b9ea4`. The matching qualification fixture is at `acceptance/live-driver-files/reviewed-rule.json` inside the verified evidence bundle. Those bytes may be used for integration qualification.
 
-The approved rule is now published in the configured private signer repository as asset `packaged-signing-rule.json` with these production coordinates. The repository identity remains in private release configuration:
+Production packaging retrieves `packaged-signing-rule.json` using these coordinates and the repository identity in private release configuration:
 
 ```ini
 SIGNING_RULE_RELEASE_TAG=signing-rule-202609101529-ed4efd662b
@@ -58,8 +58,29 @@ SIGNING_RULE_DIGEST=218faeca41e0cd1ee649ad59100a10df2ea6789393dd075c76c50e2fc66b
 SIGNING_RULE_SOURCE_REVISION=202609101529-ed4efd662b
 ```
 
-The approved release and downloaded asset match the exact rule already used for integration qualification. The existing authenticated retrieval gate passed using configured GitHub App credentials in [run 34601815710](https://github.com/ramiradwan/onlyfans-conversational-analytics/actions/runs/34601815710). The missing-rule-coordinates blocker is cleared. Supply all four coordinates together to production packaging and preserve `tools/packaged-signing-rule/verify.mjs`; each build must still verify its retrieved input.
+Supply all four coordinates together to production packaging. `tools/packaged-signing-rule/verify.mjs` authenticates retrieval and verifies the asset identity and bytes before each build.
 
-The older `signing-rule-prod-v1` release, asset `545500717`, contains different bytes: SHA-256 `3f8278caae456f41d5474f91a7b1f7102caf71890a6f0f1b0e70a1f029183e33`. It is not the approved input for this qualification.
+## Legal bindings
 
-Production packaging also requires verified Legal release bindings, the actual HTTPS privacy policy, a browser-trusted authenticated companion, and recorded native-permission acceptance of the exact ZIP on Chrome 132 and the current browser. Synthetic Legal inputs qualify implementation only. Scoped live traversal needs an authorized account, bounded scope, observed counts, deduplication and reconstruction evidence; the upstream 11-conversation/144-message snapshot does not establish consumer live-history completeness. Deployment remains a separate action.
+Extension 2.0.1 requires these approved Legal bindings coordinates:
+
+```ini
+LEGAL_REPOSITORY_REVISION=ad4f38ddd82f55bc054a756212385dd22655270b
+LEGAL_BINDINGS_REPOSITORY_REVISION=1af27b19efa1f4701bd6d619530f9d44dc431148
+LEGAL_BINDINGS_PATH=compliance/cws/releases/2.0.1/legal-release-bindings.json
+LEGAL_BINDINGS_DIGEST=a42899ee8b86b978ef52dfb473c8b93b297f1fa49d1d4bf00322a72d09f1771f
+```
+
+`LEGAL_REPOSITORY_REVISION` identifies the document approval; `LEGAL_BINDINGS_REPOSITORY_REVISION` identifies the commit containing the bindings artifact. The retrieval gate verifies the canonical document bytes and derives `https://assets.dipsy.fi/legal/provider-privacy` from the approved privacy instrument. Repository identities and credentials belong in private configuration. The qualification workflow removes staged private inputs and publishes only verification results and artifact identities.
+
+## Verification evidence
+
+[Run 34610865649](https://github.com/ramiradwan/onlyfans-conversational-analytics/actions/runs/34610865649) verifies authenticated retrieval of both inputs, all 24 Legal gate regression tests, and the extension build and archive audit at Product commit `00a956e7fed1ae83a42dfb60d4720fa80481eb67`.
+
+The CI qualification ZIP SHA-256 is `286edf7ba6740b3d8d8a1f0e03bf9aa78d654cc743afaba914d35a3ce08477e4`. A local build with the same verified input identities produced `a8d2db0ab65eabf7379842f5ec367eaa2a3528bb0f38594d48ac3b027237ff62`; its exact extracted ZIP passed the release smoke scenario on Chromium 132.0.6834.159 and 153.0.8010.12. These are distinct artifacts: the local browser results do not attest the CI ZIP, and cross-environment byte reproducibility has not been established. The production acceptance gate must qualify the exact final artifact.
+
+## Production acceptance requirements
+
+Verify public Legal route availability and approved document bytes before Store submission. Authenticated bindings retrieval and local packaging do not fetch those routes, so a successful build does not establish public availability.
+
+Production acceptance requires a browser-trusted authenticated companion and recorded native-permission acceptance of the exact ZIP on Chrome 132 and the current browser. Scoped live traversal needs an authorized account, bounded scope, observed counts, deduplication and reconstruction evidence. Synthetic fixtures and upstream signer evidence do not establish consumer live-history completeness.
