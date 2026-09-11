@@ -386,6 +386,7 @@ test('applied revision is echoed by subsequent heartbeat and reconnect hello', a
   const wsScheduler = scheduler();
   let id = 1;
   websocketClient = new AgentWebSocketClient({
+    extensionVersion: '2.0.1',
     identity,
     creatorAccountId: ACCOUNT_ID,
     authTicket: 'test-agent-auth-ticket',
@@ -467,7 +468,7 @@ test('persistence failure rolls atomic activation back to last known good', asyn
 test('HTTP adapter keeps the config ticket out of the URL and sends it as authorization', async () => {
   const seen = [];
   const adapter = createConfigHttpAdapter({
-    endpoint: 'https://brain.example/api/v1/agent/config',
+    endpoint: 'https://bridge.localhost:17871/api/v1/agent/config',
     fetchImpl: async (url, options) => {
       seen.push({ url, options });
       return {
@@ -531,6 +532,7 @@ test('config.available is routed to a forced conditional refresh', async () => {
   };
   const sockets = [];
   const client = new AgentWebSocketClient({
+    extensionVersion: '2.0.1',
     identity,
     creatorAccountId: ACCOUNT_ID,
     authTicket: 'test-agent-auth-ticket',
@@ -660,4 +662,27 @@ test('message-only capture configuration is rejected without replacing the last 
   assert.equal(result.error.code, 'unsafe_capture_policy');
   assert.equal(h.identity.appliedConfigRevision, 'config-7');
   assert.deepEqual(h.activator.current(), good);
+});
+
+
+test('session loss cancels an in-flight configuration fetch without writes, reports, or retries', async () => {
+  let complete;
+  let requestSignal;
+  const initial = await configDocument('config-1');
+  const response = await configDocument('config-2');
+  const h = await clientHarness({
+    initial,
+    fetchConfig: (request) => {
+      requestSignal = request.signal;
+      return new Promise((resolve) => { complete = resolve; });
+    },
+  });
+  const refresh = h.client.requireConfig({ required_config_revision: 'config-2' });
+  h.client.clearSessionAuthorization();
+  assert.equal(requestSignal.aborted, true);
+  complete({ status: 200, etag: response.etag, document: response });
+  assert.equal((await refresh).status, 'cancelled');
+  assert.deepEqual(h.persistence.writes, []);
+  assert.equal(h.client.activeDocument.config_revision, 'config-1');
+  assert.deepEqual(h.reports, []);
 });

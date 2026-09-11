@@ -11,6 +11,11 @@ import {
   createBrainBindingBridgeCore,
   createChromeAdapterCore,
 } from './chrome-adapter-core.mjs';
+import {
+  LOCAL_SERVICE_ORIGIN,
+  LOCAL_SERVICE_STORAGE_ROTATE,
+  LOCAL_SERVICE_STORAGE_UNSEAL,
+} from './local-service-endpoints.mjs';
 
 export {
   ACTIVE_ACCOUNT_PARTITION_KEY,
@@ -27,6 +32,8 @@ export function createChromeAdapter(
   return createChromeAdapterCore({
     chromeApi,
     idFactory,
+    storageUnsealEndpoint: options.storageUnsealEndpoint ?? LOCAL_SERVICE_STORAGE_UNSEAL,
+    storageRotateEndpoint: options.storageRotateEndpoint ?? LOCAL_SERVICE_STORAGE_ROTATE,
     ...options,
     accountDatabaseName,
     encryptedPrefix: INGESTION_DATABASE_NAME_PREFIX,
@@ -35,5 +42,8 @@ export function createChromeAdapter(
 }
 
 export function createBrainBindingBridge(options = {}) {
-  return createBrainBindingBridgeCore(options);
+  return createBrainBindingBridgeCore({
+    allowedOrigins: [LOCAL_SERVICE_ORIGIN],
+    ...options,
+  });
 }

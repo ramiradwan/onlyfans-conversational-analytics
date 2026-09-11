@@ -217,6 +217,9 @@ async function bundledSafeDocument(creatorAccountId, cryptoApi) {
 
 export class ReadOnlyAgentConfigClient {
   constructor(options) {
+    this.signal = options.signal ?? null;
+    this.sessionAbort = new AbortController();
+    this.signal?.addEventListener('abort', () => this.clearSessionAuthorization(), { once: true });
     this.identity = options.identity;
     this.creatorAccountId = options.creatorAccountId;
     this.configAuthTicket = options.configAuthTicket ?? null;
@@ -241,6 +244,7 @@ export class ReadOnlyAgentConfigClient {
   }
 
   async initialize() {
+    this.signal?.throwIfAborted();
     const saved = await this.persistence.loadAppliedConfig?.();
     if (saved !== null && saved !== undefined) {
       try {
@@ -252,7 +256,9 @@ export class ReadOnlyAgentConfigClient {
           capabilities: this.capabilities,
           cryptoApi: this.cryptoApi,
         });
+        this.signal?.throwIfAborted();
         await this.activator.activate(validated);
+        this.signal?.throwIfAborted();
         this.activeDocument = clone(validated);
         this.identity.appliedConfigRevision = validated.config_revision;
         this.lastFailure = null;
@@ -275,7 +281,9 @@ export class ReadOnlyAgentConfigClient {
       this.creatorAccountId,
       this.cryptoApi,
     );
+    this.signal?.throwIfAborted();
     await this.activator.activate(bundled);
+    this.signal?.throwIfAborted();
     this.activeDocument = clone(bundled);
     return { source: 'bundled', document: clone(bundled) };
   }
@@ -290,12 +298,15 @@ export class ReadOnlyAgentConfigClient {
     if (typeof configAuthTicket !== 'string' || configAuthTicket.length === 0) {
       throw new Error('A session-issued configuration authorization ticket is required');
     }
+    this.sessionAbort.abort(new Error('session_authorization_changed'));
+    this.sessionAbort = new AbortController();
     this.configAuthTicket = configAuthTicket;
     this.authorizationEpoch += 1;
     this.#clearRetry();
   }
 
   clearSessionAuthorization() {
+    this.sessionAbort.abort(new Error('session_authorization_changed'));
     this.configAuthTicket = null;
     this.authorizationEpoch += 1;
     this.#clearRetry();
@@ -316,7 +327,7 @@ export class ReadOnlyAgentConfigClient {
     if (this.refreshPromise !== null) {
       const pendingResult = await this.refreshPromise;
       if (
-        pendingResult.status !== 'unauthorized'
+        !['unauthorized', 'cancelled'].includes(pendingResult.status)
         && this.identity.appliedConfigRevision !== this.required.revision
       ) {
         return this.requireConfig(
@@ -339,7 +350,7 @@ export class ReadOnlyAgentConfigClient {
       this.refreshPromise = null;
     }
     if (
-      result.status !== 'unauthorized'
+      !['unauthorized', 'cancelled'].includes(result.status)
       && this.required.revision !== targetRevision
     ) {
       return this.requireConfig(
@@ -357,7 +368,16 @@ export class ReadOnlyAgentConfigClient {
     const required = { ...this.required };
     const authTicket = this.configAuthTicket;
     const authorizationEpoch = this.authorizationEpoch;
+    const signal = this.signal === null ? this.sessionAbort.signal
+      : AbortSignal.any([this.signal, this.sessionAbort.signal]);
+    const assertCurrent = () => {
+      signal.throwIfAborted();
+      if (authorizationEpoch !== this.authorizationEpoch || authTicket !== this.configAuthTicket) {
+        throw new Error('session_authorization_changed');
+      }
+    };
     try {
+      assertCurrent();
       if (authTicket === null) {
         throw new ConfigActivationError(
           'missing_session_authorization',
@@ -366,6 +386,7 @@ export class ReadOnlyAgentConfigClient {
         );
       }
       const result = await this.http.fetchConfig({
+        signal,
         authTicket,
         agentInstallationId: this.identity.agentInstallationId,
         creatorAccountId: this.creatorAccountId,
@@ -427,12 +448,14 @@ export class ReadOnlyAgentConfigClient {
         capabilities: this.capabilities,
         cryptoApi: this.cryptoApi,
       });
-      await this.#activate(validated);
+      assertCurrent();
+      await this.#activate(validated, { signal, assertCurrent });
       return {
         status: result.status === 304 ? 'reused' : 'applied',
         document: clone(validated),
       };
     } catch (error) {
+      if (signal.aborted || authorizationEpoch !== this.authorizationEpoch) return { status: 'cancelled' };
       const failure =
         error instanceof ConfigActivationError
           ? error
@@ -448,13 +471,16 @@ export class ReadOnlyAgentConfigClient {
     }
   }
 
-  async #activate(document) {
+  async #activate(document, controls) {
+    controls.assertCurrent();
     const previous = this.activeDocument === null
       ? null
       : clone(this.activeDocument);
     await this.activator.activate(document);
     try {
-      await this.persistence.saveAppliedConfig(document);
+      controls.assertCurrent();
+      await this.persistence.saveAppliedConfig(document, controls);
+      controls.assertCurrent();
     } catch (error) {
       if (previous !== null) await this.activator.activate(previous);
       throw new ConfigActivationError(
@@ -463,6 +489,7 @@ export class ReadOnlyAgentConfigClient {
         'degraded',
       );
     }
+    controls.assertCurrent();
     this.activeDocument = clone(document);
     this.identity.appliedConfigRevision = document.config_revision;
     this.lastFailure = null;
@@ -496,7 +523,8 @@ export class ReadOnlyAgentConfigClient {
 
   #scheduleRetry() {
     if (
-      this.retryTimer !== null
+      this.signal?.aborted
+      || this.retryTimer !== null
       || this.required === null
       || this.configAuthTicket === null
     ) return;

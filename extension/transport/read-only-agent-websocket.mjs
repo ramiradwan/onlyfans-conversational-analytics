@@ -1,3 +1,4 @@
+import { LOCAL_SERVICE_WS } from './local-service-endpoints.mjs';
 import {
   READ_ONLY_CAPABILITIES,
   parseAgentToBrainMessage,
@@ -27,7 +28,12 @@ const asyncNoOp = async () => {};
 
 export class ReadOnlyAgentWebSocketClient {
   constructor(options) {
-    this.url = options.url ?? 'ws://bridge.localhost:17871/ws/agent';
+    this.url = options.url ?? LOCAL_SERVICE_WS;
+    if (this.url !== LOCAL_SERVICE_WS) throw new Error('invalid_agent_websocket_endpoint');
+    this.signal = options.signal ?? null;
+    this.connectionAbort = new AbortController();
+    this.sessionDeadlineMs = options.sessionDeadlineMs ?? 10_000;
+    this.sessionTimer = null;
     this.identity = options.identity;
     if (typeof options.creatorAccountId !== 'string' || options.creatorAccountId.length === 0) {
       throw new Error('A Brain-authorized creatorAccountId is required');
@@ -45,7 +51,10 @@ export class ReadOnlyAgentWebSocketClient {
     this.reconnectAuthTicket = options.reconnectAuthTicket ?? null;
     this.persistReconnectAuthTicket = options.persistReconnectAuthTicket ?? asyncNoOp;
     this.bootstrapAuthTicketUsed = false;
-    this.extensionVersion = options.extensionVersion ?? '2.0.0';
+    if (typeof options.extensionVersion !== 'string' || !/^\d+(?:\.\d+){1,3}$/.test(options.extensionVersion)) {
+      throw new TypeError('An explicit extension version is required');
+    }
+    this.extensionVersion = options.extensionVersion;
     this.capabilities = options.capabilities ?? READ_ONLY_CAPABILITIES;
     this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
     this.scheduler = options.scheduler ?? defaultScheduler;
@@ -79,16 +88,39 @@ export class ReadOnlyAgentWebSocketClient {
     this.sentSourceSeqs = new Set();
     this.flushPromise = null;
     this.snapshotSendPromise = null;
+    this.signal?.addEventListener('abort', () => this.stop(), { once: true });
+  }
 
+  connectionContext() {
+    const socket = this.socket;
+    const session = this.session;
+    const signal = this.signal === null ? this.connectionAbort.signal
+      : AbortSignal.any([this.signal, this.connectionAbort.signal]);
+    return {
+      signal,
+      assertCurrent: () => {
+        signal.throwIfAborted();
+        if (this.stopped || this.socket !== socket || this.session !== session) {
+          throw Object.assign(new Error('stale_agent_session'), { code: 'stale_agent_session' });
+        }
+      },
+    };
+  }
+
+  clearSessionDeadline() {
+    if (this.sessionTimer !== null) this.scheduler.clearTimeout(this.sessionTimer);
+    this.sessionTimer = null;
   }
 
   start() {
+    this.signal?.throwIfAborted();
     this.stopped = false;
     this.reconnectAllowed = true;
     this.ensureConnected();
   }
 
   ensureConnected() {
+    this.signal?.throwIfAborted();
     if (this.stopped) this.stopped = false;
     if (this.socket && [CONNECTING, OPEN].includes(this.socket.readyState)) return;
     this.clearReconnect();
@@ -111,6 +143,8 @@ export class ReadOnlyAgentWebSocketClient {
   }
 
   stop() {
+    this.connectionAbort.abort(new Error('agent_stopped'));
+    this.clearSessionDeadline();
     this.stopped = true;
     this.reconnectAllowed = false;
     this.clearReconnect();
@@ -172,12 +206,15 @@ export class ReadOnlyAgentWebSocketClient {
       await this.flushPromise;
       return this.flushOutbox();
     }
+    const controls = this.connectionContext();
     this.flushPromise = (async () => {
+      controls.assertCurrent();
       let after = this.identity.lastAcknowledgedSourceSeq;
       while (!this.syncRequired) {
         const entries = typeof this.outbox.entriesPage === 'function'
           ? await this.outbox.entriesPage(after, 100)
           : await this.outbox.entries();
+        controls.assertCurrent();
         for (const item of entries) {
           if (this.syncRequired || this.sentSourceSeqs.has(item.source_seq)) continue;
           const sent = this.sendBound('ingest.delta', {
@@ -232,7 +269,7 @@ export class ReadOnlyAgentWebSocketClient {
   }
 
   sendBound(type, payload, correlationId = null) {
-    if (!this.session || !this.socket || this.socket.readyState !== OPEN) return false;
+    if (this.stopped || this.signal?.aborted || !this.session || !this.socket || this.socket.readyState !== OPEN) return false;
     const document = {
       type,
       protocol_version: '2',
@@ -251,9 +288,18 @@ export class ReadOnlyAgentWebSocketClient {
   }
 
   openSocket() {
+    this.signal?.throwIfAborted();
+    this.connectionAbort.abort(new Error('agent_connection_changed'));
+    this.connectionAbort = new AbortController();
+    this.clearSessionDeadline();
     const socket = this.webSocketFactory(this.url);
     this.socket = socket;
     this.session = null;
+    this.sessionTimer = this.scheduler.setTimeout(() => {
+      if (this.socket === socket && this.session === null) {
+        socket.close(4008, 'Session establishment timed out');
+      }
+    }, this.sessionDeadlineMs);
     socket.onopen = () => {
       if (this.socket !== socket) return;
       const authTicket = this.reconnectAuthTicket ?? (
@@ -323,6 +369,7 @@ export class ReadOnlyAgentWebSocketClient {
       this.acceptSession(message.payload);
       return;
     }
+    const controls = this.connectionContext();
     if (message.type === 'agent.session') {
       socket.close(safeCloseCode(1002), 'Duplicate agent.session');
       return;
@@ -332,7 +379,7 @@ export class ReadOnlyAgentWebSocketClient {
       socket.close(safeCloseCode(1008), 'Session identity conflict');
       return;
     }
-    this.dispatch(message).catch((error) => this.onValidationError(error));
+    this.dispatch(message).catch((error) => { if (!controls.signal.aborted) this.onValidationError(error); });
   }
 
   acceptSession(session) {
@@ -345,17 +392,21 @@ export class ReadOnlyAgentWebSocketClient {
       this.socket?.close(safeCloseCode(1008), 'Session identity conflict');
       return;
     }
+    this.clearSessionDeadline();
+    this.session = session;
+    const controls = this.connectionContext();
     this.reconnectAuthTicket = session.reconnect_auth_ticket;
     void Promise.resolve(this.persistReconnectAuthTicket(
       session.reconnect_auth_ticket,
       session.config_auth_ticket,
+      controls,
     ))
       .catch((error) => {
+        if (controls.signal.aborted) return;
         this.reconnectAllowed = false;
         this.onValidationError(error);
         this.socket?.close(safeCloseCode(1011), 'Agent reconnect credential could not be stored');
       });
-    this.session = session;
     this.configClient?.bindSessionAuthorization?.(session.config_auth_ticket);
     this.sentSourceSeqs.clear();
     this.syncRequired = session.resume_action === 'snapshot_required';
@@ -388,31 +439,36 @@ export class ReadOnlyAgentWebSocketClient {
           max_frame_bytes: 524_288,
           max_records_per_chunk: 100,
         },
-      }).catch((error) => this.onValidationError(error));
+      }).catch((error) => { if (!controls.signal.aborted) this.onValidationError(error); });
     } else {
       void this.reconcileLocalSnapshot(session)
         .then(() => this.flushOutbox())
-        .catch((error) => this.onValidationError(error));
+        .catch((error) => { if (!controls.signal.aborted) this.onValidationError(error); });
     }
   }
 
-  async handleSyncRequired(payload) {
+  async handleSyncRequired(payload, controls = this.connectionContext()) {
+    controls.assertCurrent();
     this.syncRequired = true;
     this.onSyncRequired(payload);
     if (this.outbox === null) return;
     const manifest = await this.outbox.prepareSnapshot();
+    controls.assertCurrent();
     const canResume = payload.pending_snapshot_id === manifest.snapshot_id;
     if (canResume) {
       await this.sendNextSnapshotFrame(payload.next_expected_chunk_index);
       return;
     }
     const begin = await this.outbox.snapshotBeginFrame();
+    controls.assertCurrent();
     this.sendSnapshot(begin);
   }
 
-  async reconcileLocalSnapshot(session) {
+  async reconcileLocalSnapshot(session, controls = this.connectionContext()) {
+    controls.assertCurrent();
     if (this.outbox === null || typeof this.outbox.currentSnapshotManifest !== 'function') return;
     const manifest = await this.outbox.currentSnapshotManifest();
+    controls.assertCurrent();
     if (manifest === null || session.committed_source_seq < manifest.through_seq) return;
     await this.outbox.acknowledge(
       session.committed_source_seq,
@@ -422,21 +478,30 @@ export class ReadOnlyAgentWebSocketClient {
         next_expected_chunk_index: manifest.chunk_count,
         committed: true,
       },
+      controls,
     );
+    controls.assertCurrent();
     this.syncRequired = false;
   }
 
   async sendNextSnapshotFrame(nextExpectedChunkIndex) {
     if (this.snapshotSendPromise !== null) return this.snapshotSendPromise;
+    const controls = this.connectionContext();
     this.snapshotSendPromise = (async () => {
+      controls.assertCurrent();
       const manifest = await this.outbox.currentSnapshotManifest();
+      controls.assertCurrent();
       if (manifest === null || manifest.state !== 'ready') {
         throw new Error('A ready local snapshot is required');
       }
       if (nextExpectedChunkIndex < manifest.chunk_count) {
-        this.sendSnapshot(await this.outbox.snapshotChunkFrame(nextExpectedChunkIndex));
+        const frame = await this.outbox.snapshotChunkFrame(nextExpectedChunkIndex);
+        controls.assertCurrent();
+        this.sendSnapshot(frame);
       } else if (nextExpectedChunkIndex === manifest.chunk_count) {
-        this.sendSnapshot(await this.outbox.snapshotCommitFrame());
+        const frame = await this.outbox.snapshotCommitFrame();
+        controls.assertCurrent();
+        this.sendSnapshot(frame);
       } else {
         throw new Error('Brain requested a snapshot chunk beyond the manifest');
       }
@@ -458,7 +523,8 @@ export class ReadOnlyAgentWebSocketClient {
     return true;
   }
 
-  async dispatch(message) {
+  async dispatch(message, controls = this.connectionContext()) {
+    controls.assertCurrent();
     switch (message.type) {
       case 'sync.required':
         await this.handleSyncRequired(message.payload);
@@ -470,7 +536,9 @@ export class ReadOnlyAgentWebSocketClient {
             message.payload.committed_source_seq,
             message.payload.snapshot_id,
             message.payload.snapshot_progress,
+            controls,
           );
+          controls.assertCurrent();
           snapshotAcknowledged = result.snapshotAcknowledged;
         }
         const committed = Math.max(
@@ -478,7 +546,9 @@ export class ReadOnlyAgentWebSocketClient {
           message.payload.committed_source_seq,
         );
         this.identity.lastAcknowledgedSourceSeq = committed;
-        await (this.persistence.saveAcknowledgedSourceSeq?.(committed) ?? asyncNoOp());
+        controls.assertCurrent();
+        await (this.persistence.saveAcknowledgedSourceSeq?.(committed, controls) ?? asyncNoOp());
+        controls.assertCurrent();
         this.sentSourceSeqs = new Set(
           [...this.sentSourceSeqs].filter((sourceSeq) => sourceSeq > committed),
         );
@@ -552,6 +622,8 @@ export class ReadOnlyAgentWebSocketClient {
 
   handleClose(socket) {
     if (this.socket !== socket) return;
+    this.connectionAbort.abort(new Error('agent_disconnected'));
+    this.clearSessionDeadline();
     this.socket = null;
     this.session = null;
     this.configClient?.clearSessionAuthorization?.();

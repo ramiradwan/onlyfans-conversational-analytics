@@ -269,6 +269,7 @@ function scheduler() {
 
 function websocketClient(persistence, executor, socket, idFactory, config = appliedConfig()) {
   return new AgentWebSocketClient({
+    extensionVersion: '2.0.1',
     creatorAccountId: 'dev-creator-account',
     authTicket: 'brain-ticket-1',
     identity: {

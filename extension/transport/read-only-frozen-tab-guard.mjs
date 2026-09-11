@@ -32,15 +32,17 @@ export async function assertOnlyFansTabCanRun(chromeApi, tabId = null) {
 }
 
 /** Adds a second pre-dispatch fence in case the selected tab changes after signing starts. */
-export function guardMainWorldDispatch(chromeApi) {
+export function guardMainWorldDispatch(chromeApi, { signal } = {}) {
   if (!chromeApi?.scripting?.executeScript) throw frozenTabError();
   const scripting = new Proxy(chromeApi.scripting, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
       if (property === 'executeScript') {
         return async (details) => {
+          signal?.throwIfAborted();
           const tabId = details?.target?.tabId;
           await assertOnlyFansTabCanRun(chromeApi, tabId);
+          signal?.throwIfAborted();
           return value.call(target, details);
         };
       }

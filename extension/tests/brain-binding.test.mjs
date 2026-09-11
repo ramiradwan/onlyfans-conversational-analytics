@@ -65,17 +65,17 @@ function brainStorageApi() {
     calls,
     async fetch(url, options) {
       const body = JSON.parse(options.body);
-      calls.push({ url, options: clone(options), body });
+      calls.push({ url, options: { ...options, signal: undefined }, body });
       if (url.endsWith('/unseal')) {
         const value = unlocks.get(body.storage_bootstrap);
         return value
-          ? { ok: true, async json() { return clone(value); } }
-          : { ok: false, async json() { return {}; } };
+          ? Response.json(clone(value))
+          : Response.json({}, { status: 403 });
       }
       if (url.endsWith('/rotate')) {
         const current = unlocks.get(body.storage_bootstrap);
         if (!current || current.creator_account_id !== body.creator_account_id) {
-          return { ok: false, async json() { return {}; } };
+          return Response.json({}, { status: 403 });
         }
         const sealed = `sealed-reconnect-${body.creator_account_id}`;
         unlocks.set(sealed, {
@@ -83,15 +83,10 @@ function brainStorageApi() {
           credential_kind: 'reconnect',
           auth_ticket: body.reconnect_auth_ticket,
         });
-        return {
-          ok: true,
-          async json() {
-            return {
-              schema: 'ofca-extension-storage-rotation/v1',
-              storage_bootstrap: sealed,
-            };
-          },
-        };
+        return Response.json({
+          schema: 'ofca-extension-storage-rotation/v1',
+          storage_bootstrap: sealed,
+        });
       }
       throw new Error(`Unexpected endpoint ${url}`);
     },
@@ -153,7 +148,7 @@ function binding(overrides = {}) {
   };
 }
 
-function dispatch(listener, message, sender = { url: 'http://bridge.localhost:17871/settings' }) {
+function dispatch(listener, message, sender = { url: 'https://bridge.localhost:17871/settings' }) {
   return new Promise((resolve) => {
     const keepAlive = listener(message, sender, resolve);
     if (keepAlive === false) queueMicrotask(() => resolve(undefined));
@@ -166,7 +161,7 @@ test('Brain binding accepts only the exact Bridge origin and persists only a sea
 
   for (const url of [
     'http://bridge.localhost:17872/settings',
-    'https://bridge.localhost:17871/settings',
+    'http://bridge.localhost:17871/settings',
     'http://localhost:17871/settings',
   ]) {
     assert.equal(await dispatch(h.listeners[0], binding(), { url }), undefined);
@@ -336,5 +331,35 @@ for (const [build, module] of [
       () => harness({ module, onBound: 'reconcile' }),
       /onBound must be a function/,
     );
+  });
+}
+
+
+for (const [name, module] of [['full', fullAdapter], ['read-only', readOnlyAdapter]]) {
+  test(`${name}: clearing during unseal prevents late cache or bootstrap resurrection`, async () => {
+    let completeFetch;
+    let fetchStarted;
+    const started = new Promise((resolve) => { fetchStarted = resolve; });
+    const local = { [FULL_STORAGE_BOOTSTRAP_KEY]: 'sealed-pairing-1' };
+    const session = {};
+    const adapter = module.createChromeAdapter({
+      storage: { local: storageArea(local), session: storageArea(session) },
+    }, () => 'installation-1', {
+      fetchImpl: () => { fetchStarted(); return new Promise((resolve) => { completeFetch = resolve; }); },
+      listDatabases: async () => [],
+    });
+    const loading = adapter.loadBrainBinding();
+    const rejected = assert.rejects(loading, { code: 'stale_binding' });
+    await started;
+    await adapter.clearBrainBinding();
+    await rejected;
+    completeFetch(Response.json({
+      schema: 'ofca-extension-storage-unlock/v1', creator_account_id: 'creator-account-1',
+      credential_kind: 'pairing', auth_ticket: 'synthetic-ticket', storage_key_base64: STORAGE_KEY,
+    }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(local, {});
+    assert.deepEqual(session, {});
+    await assert.rejects(adapter.loadBrainBinding(), /binding is required/);
   });
 }

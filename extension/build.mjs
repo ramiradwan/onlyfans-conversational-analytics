@@ -53,10 +53,10 @@ const EXPECTED_PERMISSIONS = Object.freeze([
 const EXPECTED_OPTIONAL_PERMISSIONS = Object.freeze(['webRequest']);
 const EXPECTED_OPTIONAL_HOST_PERMISSIONS = Object.freeze([
   'https://onlyfans.com/*',
-  'http://bridge.localhost:17871/*',
+  'https://bridge.localhost:17871/*',
 ]);
-const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['http://bridge.localhost:17871/*']);
-const EXPECTED_EXTENSION_CSP = "script-src 'self'; object-src 'self'; connect-src 'self' http://bridge.localhost:17871 ws://bridge.localhost:17871;";
+const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['https://bridge.localhost:17871/*']);
+const EXPECTED_EXTENSION_CSP = "script-src 'self'; object-src 'self'; connect-src 'self' https://bridge.localhost:17871 wss://bridge.localhost:17871;";
 const FORBIDDEN_PERMISSIONS = Object.freeze([
   'cookies',
   'debugger',
@@ -146,8 +146,8 @@ export function validateExtensionConfig(document, { requirePrivacyPolicy = false
     'extension configuration contains unexpected fields',
   );
   assert.equal(document.schema, 'ofca-extension-config/v1');
-  assert.equal(document.dashboard_url, 'http://bridge.localhost:17871/');
-  assert.equal(document.history_settings_url, 'http://bridge.localhost:17871/settings');
+  assert.equal(document.dashboard_url, 'https://bridge.localhost:17871/');
+  assert.equal(document.history_settings_url, 'https://bridge.localhost:17871/settings');
   assert.equal(typeof document.privacy_policy_url, 'string');
   if (document.privacy_policy_url === '') {
     if (requirePrivacyPolicy) throw new Error('Chrome package requires a privacy policy URL.');

@@ -1,4 +1,11 @@
 /** Shared device-bound persistence adapter for the full and read-only graphs. */
+import { createSecureLocalFetch } from './secure-local-fetch.mjs';
+import {
+  LOCAL_SERVICE_ORIGIN,
+  LOCAL_SERVICE_STORAGE_UNSEAL,
+  LOCAL_SERVICE_STORAGE_ROTATE,
+  assertLocalServiceUrl,
+} from './local-service-endpoints.mjs';
 
 const INSTALLATION_ID_KEY = 'agent_installation_id';
 export const ACTIVE_ACCOUNT_PARTITION_KEY = 'active_account_partition_v5';
@@ -123,11 +130,12 @@ function validatedRotation(value) {
   return value.storage_bootstrap;
 }
 
-async function jsonPost(fetchImpl, endpoint, body, authorization = null) {
+async function jsonPost(fetchImpl, endpoint, body, authorization = null, context = {}) {
   let response;
   try {
     response = await fetchImpl(endpoint, {
       method: 'POST',
+      signal: context.signal,
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
@@ -138,8 +146,9 @@ async function jsonPost(fetchImpl, endpoint, body, authorization = null) {
       credentials: 'omit',
       referrerPolicy: 'no-referrer',
     });
-  } catch (_error) {
-    throw new Error('The local Brain could not unlock Full-mode storage');
+  } catch (error) {
+    context.signal?.throwIfAborted();
+    throw error;
   }
   if (!response?.ok) throw new Error('The local Brain refused Full-mode storage');
   try {
@@ -175,17 +184,57 @@ export function createChromeAdapterCore({
   encryptedPrefix,
   legacyPrefix,
   listDatabases = null,
-  storageUnsealEndpoint = 'http://bridge.localhost:17871/api/v1/agent/storage/unseal',
-  storageRotateEndpoint = 'http://bridge.localhost:17871/api/v1/agent/storage/rotate',
+  storageUnsealEndpoint = LOCAL_SERVICE_STORAGE_UNSEAL,
+  storageRotateEndpoint = LOCAL_SERVICE_STORAGE_ROTATE,
 }) {
   if (!chromeApi?.storage?.local) throw new Error('chrome.storage.local is unavailable');
   if (typeof fetchImpl !== 'function') throw new Error('fetch is unavailable');
   if (listDatabases !== null && typeof listDatabases !== 'function') {
     throw new Error('IndexedDB plaintext cleanup enumeration is invalid');
   }
+  assertLocalServiceUrl(storageUnsealEndpoint);
+  assertLocalServiceUrl(storageRotateEndpoint);
+  fetchImpl = createSecureLocalFetch({ fetchImpl, maxResponseBytes: 16 * 1024 });
   const installationStorage = chromeApi.storage.local;
   const sessionStorage = chromeApi.storage.session;
   let cached = null;
+  let cacheGeneration = 0;
+  const pending = new Set();
+  const controllers = new Set();
+  let cleanup = Promise.resolve();
+  function invalidate() {
+    cacheGeneration += 1;
+    cached = null;
+    for (const controller of controllers) {
+      controller.abort(Object.assign(new Error('stale_binding'), { code: 'stale_binding' }));
+    }
+  }
+  function run(operation, args, context = {}) {
+    const generation = cacheGeneration;
+    const controller = new AbortController();
+    controllers.add(controller);
+    const abort = () => controller.abort(context.signal.reason);
+    context.signal?.addEventListener('abort', abort, { once: true });
+    if (context.signal?.aborted) abort();
+    const assertCurrent = () => {
+      controller.signal.throwIfAborted();
+      if (generation !== cacheGeneration) throw Object.assign(new Error('stale_binding'), { code: 'stale_binding' });
+      context.assertCurrent?.();
+    };
+    const attempt = cleanup.then(async () => {
+      assertCurrent();
+      const result = await operation(...args, { signal: controller.signal, assertCurrent });
+      assertCurrent();
+      return result;
+    });
+    pending.add(attempt);
+    void attempt.finally(() => {
+      pending.delete(attempt);
+      controllers.delete(controller);
+      context.signal?.removeEventListener('abort', abort);
+    }).catch(() => undefined);
+    return attempt;
+  }
 
   async function savedBootstrap() {
     const value = await storageGet(installationStorage, [FULL_STORAGE_BOOTSTRAP_KEY]);
@@ -195,11 +244,13 @@ export function createChromeAdapterCore({
     return bootstrap;
   }
 
-  async function unlock(bootstrap) {
+  async function unlock(bootstrap, context) {
+    context.assertCurrent();
     if (cached?.bootstrap === bootstrap) return cached.unlock;
     const document = await jsonPost(fetchImpl, storageUnsealEndpoint, {
       storage_bootstrap: bootstrap,
-    });
+    }, null, context);
+    context.assertCurrent();
     const unlocked = validatedUnlock(document);
     cached = { bootstrap, unlock: unlocked };
     return unlocked;
@@ -234,7 +285,7 @@ export function createChromeAdapterCore({
     if (sessionStorage) await storageRemove(sessionStorage, GLOBAL_CREDENTIAL_KEYS_TO_REMOVE);
   }
 
-  return Object.freeze({
+  const adapter = {
     async loadAgentInstallationId() {
       const saved = await storageGet(installationStorage, [INSTALLATION_ID_KEY]);
       const agentInstallationId = saved[INSTALLATION_ID_KEY] ?? idFactory();
@@ -247,12 +298,13 @@ export function createChromeAdapterCore({
       return { agentInstallationId: await this.loadAgentInstallationId() };
     },
 
-    async loadBrainBinding() {
+    async loadBrainBinding(context) {
       const bootstrap = await savedBootstrap();
       if (bootstrap === null) throw new Error('A Brain-authorized encrypted session binding is required');
-      const unlocked = await unlock(bootstrap);
+      const unlocked = await unlock(bootstrap, context);
       const databaseName = await encryptedPartitionName(unlocked.creatorAccountId);
       if (!sessionStorage) throw new Error('chrome.storage.session is unavailable');
+      context.assertCurrent();
       await storageSet(sessionStorage, { [ACTIVE_ACCOUNT_PARTITION_KEY]: databaseName });
       return {
         creatorAccountId: unlocked.creatorAccountId,
@@ -262,13 +314,13 @@ export function createChromeAdapterCore({
       };
     },
 
-    async loadReconnectAuthTicket(creatorAccountId) {
+    async loadReconnectAuthTicket(creatorAccountId, context) {
       if (!nonempty(creatorAccountId)) {
         throw new Error('A creator account is required to load an Agent reconnect credential');
       }
       const bootstrap = await savedBootstrap();
       if (bootstrap === null) return null;
-      const unlocked = await unlock(bootstrap);
+      const unlocked = await unlock(bootstrap, context);
       if (unlocked.creatorAccountId !== creatorAccountId || unlocked.credentialKind !== 'reconnect') {
         return null;
       }
@@ -280,7 +332,7 @@ export function createChromeAdapterCore({
       authTicket,
       configAuthTicket,
       agentInstallationId,
-    }) {
+    }, context) {
       const credential = validatedReconnectCredential({
         creator_account_id: creatorAccountId,
         auth_ticket: authTicket,
@@ -289,7 +341,7 @@ export function createChromeAdapterCore({
       });
       const bootstrap = await savedBootstrap();
       if (bootstrap === null) throw new Error('A matching encrypted Brain binding is required');
-      const unlocked = await unlock(bootstrap);
+      const unlocked = await unlock(bootstrap, context);
       if (unlocked.creatorAccountId !== credential.creatorAccountId) {
         throw new Error('A matching encrypted Brain binding is required');
       }
@@ -304,9 +356,12 @@ export function createChromeAdapterCore({
           storage_bootstrap: bootstrap,
         },
         credential.configAuthTicket,
+        context,
       );
+      context.assertCurrent();
       const rotated = validatedRotation(document);
       await storageSet(installationStorage, { [FULL_STORAGE_BOOTSTRAP_KEY]: rotated });
+      context.assertCurrent();
       cached = {
         bootstrap: rotated,
         unlock: {
@@ -317,14 +372,14 @@ export function createChromeAdapterCore({
       };
     },
 
-    async saveBrainBinding({ creatorAccountId, authTicket, storageBootstrap }) {
+    async saveBrainBinding({ creatorAccountId, authTicket, storageBootstrap }, context) {
       const binding = validatedBinding({
         creator_account_id: creatorAccountId,
         auth_ticket: authTicket,
         storage_bootstrap: storageBootstrap,
       });
       if (!sessionStorage) throw new Error('chrome.storage.session is unavailable');
-      const unlocked = await unlock(binding.storageBootstrap);
+      const unlocked = await unlock(binding.storageBootstrap, context);
       if (
         unlocked.creatorAccountId !== binding.creatorAccountId
         || unlocked.authTicket !== binding.authTicket
@@ -334,7 +389,7 @@ export function createChromeAdapterCore({
       let durableUnlock = unlocked;
       const existingBootstrap = await savedBootstrap();
       if (existingBootstrap !== null && existingBootstrap !== binding.storageBootstrap) {
-        const existing = await unlock(existingBootstrap);
+        const existing = await unlock(existingBootstrap, context);
         if (
           existing.creatorAccountId === binding.creatorAccountId
           && existing.credentialKind === 'reconnect'
@@ -353,13 +408,17 @@ export function createChromeAdapterCore({
         throw error;
       }
       const databaseName = await encryptedPartitionName(binding.creatorAccountId);
+      context.assertCurrent();
       await storageSet(installationStorage, {
         [FULL_STORAGE_BOOTSTRAP_KEY]: durableBootstrap,
       });
+      context.assertCurrent();
       await storageSet(sessionStorage, {
         [ACTIVE_ACCOUNT_PARTITION_KEY]: databaseName,
       });
+      context.assertCurrent();
       await scrubGlobalCredentials();
+      context.assertCurrent();
       cached = { bootstrap: durableBootstrap, unlock: durableUnlock };
       return {
         creatorAccountId: binding.creatorAccountId,
@@ -410,6 +469,22 @@ export function createChromeAdapterCore({
         alarmEvent?.removeListener?.(alarmWrapper);
       };
     },
+  };
+  return Object.freeze({
+    ...adapter,
+    loadBrainBinding: (context = {}) => run(adapter.loadBrainBinding, [], context),
+    loadReconnectAuthTicket: (account, context = {}) => run(adapter.loadReconnectAuthTicket, [account], context),
+    saveReconnectAuthTicket: (credential, context = {}) => run(adapter.saveReconnectAuthTicket, [credential], context),
+    saveBrainBinding(binding, context = {}) {
+      invalidate();
+      cleanup = Promise.allSettled([...pending, cleanup]).then(() => undefined);
+      return run(adapter.saveBrainBinding, [binding], context);
+    },
+    clearBrainBinding() {
+      invalidate();
+      cleanup = Promise.allSettled([...pending, cleanup]).then(() => adapter.clearBrainBinding());
+      return cleanup;
+    },
   });
 }
 
@@ -418,7 +493,10 @@ export function createBrainBindingBridgeCore({
   adapter,
   runtime,
   onBound = null,
-  allowedOrigins = ['http://bridge.localhost:17871'],
+  ensureReady = async () => {},
+  allowsBinding = () => true,
+  runBindingOperation = (operation) => operation({}),
+  allowedOrigins = [LOCAL_SERVICE_ORIGIN],
 } = {}) {
   if (!chromeApi?.runtime?.onMessageExternal?.addListener) {
     throw new Error('chrome.runtime.onMessageExternal is unavailable');
@@ -433,6 +511,9 @@ export function createBrainBindingBridgeCore({
     throw new Error('Brain binding bridge onBound must be a function');
   }
   const origins = new Set(allowedOrigins);
+  if ([...origins].some((origin) => origin !== LOCAL_SERVICE_ORIGIN)) {
+    throw new Error('invalid_local_service_endpoint');
+  }
   let registered = false;
   const listener = (message, sender, sendResponse) => {
     let origin = null;
@@ -456,10 +537,20 @@ export function createBrainBindingBridgeCore({
       sendResponse({ ok: false, code: 'invalid_binding' });
       return false;
     }
-    void adapter.saveBrainBinding({
-      creatorAccountId: message.creator_account_id,
-      authTicket: message.auth_ticket,
-      storageBootstrap: message.storage_bootstrap,
+    void Promise.resolve().then(async () => {
+      await ensureReady();
+      return runBindingOperation(async (context = {}) => {
+        context.assertCurrent?.();
+        if (!allowsBinding()) throw new Error('binding_disabled');
+        const result = await adapter.saveBrainBinding({
+          creatorAccountId: message.creator_account_id,
+          authTicket: message.auth_ticket,
+          storageBootstrap: message.storage_bootstrap,
+        }, context);
+        context.assertCurrent?.();
+        if (!allowsBinding()) throw new Error('binding_disabled');
+        return result;
+      });
     }).then(
       async () => {
         try {
