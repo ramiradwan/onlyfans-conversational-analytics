@@ -8,7 +8,7 @@ import asyncio
 from noise.connection import Keypair, NoiseConnection
 
 PROFILE = b"Noise_KK_25519_ChaChaPoly_SHA256"
-PROLOGUE = b"ofca-session-spike/v1;agent-to-brain;no-early-data"
+PROLOGUE = b"ofca-companion-session/v1;agent-to-brain;no-early-data"
 MAX_FRAME = 4096
 
 

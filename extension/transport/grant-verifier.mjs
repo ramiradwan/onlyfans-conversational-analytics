@@ -316,6 +316,14 @@ export async function loadGrantTrustSet(input, { allowNonProduction = false } = 
   }
 }
 
+/**
+ * Parse one JSON object under the grant parser's grammar. Objects have null
+ * prototypes; floats, NaN, and unsafe integers parse as an opaque marker.
+ */
+export function parseStrictJson(bytes) {
+  return strictJson(bytes);
+}
+
 /** Decode a grant payload without verifying it, to propose context values. */
 export function peekGrantClaims(token) {
   try {

@@ -1,79 +1,125 @@
-// Closed, flat receipt profile; cryptographic operations use WebCrypto.
-export const ISSUER = "https://control.creatorapp.ai";
-export const AUDIENCE = "urn:ofca:companion-pairing:v1";
+// Local Agent-to-Brain pairing per docs/companion-pairing-contract.md: the
+// transcript, proofs, comparison code, session prologue, message schemas, and
+// the Agent checks. tools/companion-session-spike/local_pairing.py is the
+// reference; both reproduce extension/test-fixtures/pairing/local-pairing-vector.json.
+import {
+  GRANT_PROFILES,
+  parseStrictJson,
+  peekGrantClaims,
+  verifyGrant,
+} from "./grant-verifier.mjs";
+
 export const SUITE = "Noise_KK_25519_ChaChaPoly_SHA256";
-export const TYPE = "ofca-companion-pairing+jwt";
-export class PairingFailure extends Error {
-  constructor(code = "pairing_refused") {
-    super(code);
-    this.name = "PairingFailure";
-    this.code = code;
-  }
-}
-export const requirePairing = (condition) => {
-  if (!condition) throw new PairingFailure();
-};
-const enc = new TextEncoder();
-const id = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/u;
-const ids = [
+export const SESSION_PROFILE =
+  "ofca-companion-session/v1;agent-to-brain;no-early-data";
+export const PAIRING_PATH = "/ws/agent/pairing";
+export const MAX_PAIRING_FRAME = 36_864;
+export const MAX_GRANT_LENGTH = 16_384;
+export const PAIRING_WINDOW_SECONDS = 300;
+export const PAIRING_STEP_SECONDS = 10;
+export const GRANT_AUDIENCES = Object.freeze({
+  installation_grant: "urn:bridge-clean:local-brain:installation",
+  creator_account_binding: "urn:bridge-clean:local-brain:creator-binding",
+});
+export const OUTCOMES = Object.freeze([
+  "confirmed",
+  "declined",
+  "expired",
+  "cancelled",
+]);
+const DOMAINS = Object.freeze({
+  grants: "OFCA-LOCAL-PAIRING-GRANTS-V1",
+  transcript: "OFCA-LOCAL-PAIRING-TRANSCRIPT-V1",
+  proof: "OFCA-LOCAL-PAIRING-PROOF-V1",
+  code: "OFCA-LOCAL-PAIRING-CODE-V1",
+});
+const SCHEMAS = Object.freeze({
+  "pair.request": {
+    agent_installation_id: "id",
+    agent_identity_jwk: "jwk",
+    agent_noise_key: "key",
+    agent_nonce: "key",
+  },
+  "pair.offer": {
+    pairing_id: "key",
+    generation: "generation",
+    creator_account_id: "id",
+    brain_noise_key: "key",
+    brain_nonce: "key",
+    installation_jwk: "jwk",
+    installation_grant: "grant",
+    creator_account_binding: "grant",
+    brain_proof: "signature",
+  },
+  "pair.confirm": { pairing_id: "key", agent_proof: "signature" },
+  "pair.result": { pairing_id: "key", outcome: "outcome" },
+  "session.authorization": {
+    installation_grant: "grant",
+    creator_account_binding: "grant",
+  },
+});
+export const TRANSCRIPT_FIELDS = Object.freeze([
+  "pairing_id",
+  "generation",
   "organization_id",
   "installation_id",
   "installation_key_id",
-  "agent_id",
-  "agent_identity_key_id",
-  "account_id",
-  "approval_id",
-];
-const hexes = [
-  "jti",
-  "pairing_id",
+  "installation_key_jkt",
+  "creator_account_id",
+  "agent_installation_id",
+  "agent_identity_key_jkt",
+  "agent_noise_key",
+  "brain_noise_key",
   "agent_nonce",
   "brain_nonce",
   "grant_digest",
-];
-const keys = [
-  "installation_key_jkt",
-  "agent_identity_key_jkt",
-  "agent_key",
-  "brain_key",
-];
-const integers = [
-  "iat",
-  "exp",
-  "generation",
-  "approval_revision",
-  "offline_not_after",
-];
-export const CLAIM_FIELDS = [
-  ...ids,
-  ...hexes,
-  ...keys,
-  ...integers,
-  "iss",
-  "aud",
-  "suite",
-];
-export const CONTEXT_FIELDS = CLAIM_FIELDS.filter(
-  (key) => !["iss", "aud", "suite", "iat", "exp", "jti"].includes(key),
+]);
+
+export class PairingFailure extends Error {
+  constructor(code = "pairing_refused", detail = null) {
+    super(detail === null ? code : `${code} ${detail}`);
+    this.name = "PairingFailure";
+    this.code = code;
+    this.detail = detail;
+  }
+}
+export const requirePairing = (condition, code) => {
+  if (!condition) throw new PairingFailure(code);
+};
+
+const enc = new TextEncoder();
+const ID = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/u;
+const JWS = /^[A-Za-z0-9_.-]+$/u;
+const ORDER = BigInt(
+  "0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
 );
+const P = BigInt(
+  "0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff",
+);
+const B = BigInt(
+  "0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b",
+);
+
 export const toHex = (bytes) =>
   [...bytes].map((x) => x.toString(16).padStart(2, "0")).join("");
-export function raw32(value) {
-  requirePairing(typeof value === "string" && /^[0-9a-f]{64}$/u.test(value));
-  return Uint8Array.from(value.match(/../gu), (x) => parseInt(x, 16));
-}
+export const fromHex = (value) => {
+  requirePairing(typeof value === "string" && /^(?:[0-9a-f]{2})*$/u.test(value));
+  return Uint8Array.from(value.match(/../gu) ?? [], (x) => parseInt(x, 16));
+};
+const toBigInt = (bytes) => BigInt("0x" + (toHex(bytes) || "0"));
+export const sameBytes = (a, b) =>
+  a instanceof Uint8Array &&
+  b instanceof Uint8Array &&
+  a.length === b.length &&
+  a.every((x, i) => x === b[i]);
+
 export function b64u(bytes) {
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/gu, "-")
-    .replace(/\//gu, "_")
-    .replace(/=+$/u, "");
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
 }
 export function unb64u(value) {
-  requirePairing(
-    typeof value === "string" &&
-      /^[A-Za-z0-9_-]+$/u.test(value) &&
-      value.length <= 8192,
-  );
+  requirePairing(typeof value === "string" && /^[A-Za-z0-9_-]+$/u.test(value));
   let result;
   try {
     result = Uint8Array.from(
@@ -90,19 +136,21 @@ export function unb64u(value) {
   return result;
 }
 export function key32(value) {
+  requirePairing(typeof value === "string" && value.length === 43);
   const bytes = unb64u(value);
   requirePairing(bytes.length === 32);
   return bytes;
 }
 export function exact(object, fields) {
   requirePairing(
-    object &&
+    object !== null &&
       typeof object === "object" &&
       !Array.isArray(object) &&
       Object.keys(object).length === fields.length &&
       fields.every((k) => Object.hasOwn(object, k)),
   );
 }
+
 export function lp(domain, fields) {
   const parts = [enc.encode(domain + "\0")];
   for (const field of fields) {
@@ -130,279 +178,266 @@ export function lp(domain, fields) {
 }
 export const digest = async (bytes) =>
   new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-function enrollmentFields(c) {
-  return [
-    AUDIENCE,
-    SUITE,
-    c.organization_id,
-    c.installation_id,
-    c.installation_key_id,
-    c.installation_key_jkt,
-    c.agent_id,
-    c.agent_identity_key_id,
-    c.agent_identity_key_jkt,
-    c.account_id,
-    c.pairing_id,
-    key32(c.agent_key),
-    key32(c.brain_key),
-    raw32(c.agent_nonce),
-    raw32(c.brain_nonce),
-    c.generation,
-    raw32(c.grant_digest),
-    c.approval_id,
-    c.approval_revision,
-    c.offline_not_after,
-  ];
-}
-export const enrollmentDigest = (c) =>
-  digest(lp("OFCA-COMPANION-PAIRING-ENROLLMENT-V1", enrollmentFields(c)));
-export function proofMessage(role, challenge, enrollment, keyId) {
-  requirePairing(["agent", "brain"].includes(role) && id.test(keyId));
-  requirePairing(
-    challenge instanceof Uint8Array &&
-      challenge.length === 32 &&
-      enrollment instanceof Uint8Array &&
-      enrollment.length === 32,
-  );
-  return lp("OFCA-COMPANION-PAIRING-PROOF-V1", [
-    "pairing-enrollment",
-    AUDIENCE,
-    role,
-    challenge,
-    enrollment,
-    keyId,
-  ]);
-}
-export function registrationMessage(
-  challenge,
-  organization,
-  agent,
-  keyId,
-  jkt,
-) {
-  requirePairing(
-    [organization, agent, keyId].every(
-      (v) => typeof v === "string" && id.test(v),
-    ),
-  );
-  key32(jkt);
-  requirePairing(challenge instanceof Uint8Array && challenge.length === 32);
-  return lp("OFCA-AGENT-IDENTITY-REGISTRATION-V1", [
-    organization,
-    agent,
-    keyId,
-    jkt,
-    challenge,
-  ]);
-}
-export const grantDigest = (creator, installation) =>
-  digest(
-    lp("OFCA-COMPANION-PAIRING-GRANTS-V1", [
-      "creator_account_binding",
-      raw32(creator),
-      "installation_grant",
-      raw32(installation),
-    ]),
-  );
-export const receiptBinding = (c) =>
-  digest(
-    lp("OFCA-COMPANION-PAIRING-BINDING-V1", [
-      TYPE,
-      c.iss,
-      c.aud,
-      c.iat,
-      c.exp,
-      c.jti,
-      c.suite,
-      ...enrollmentFields(c).slice(2),
-    ]),
-  );
-export function validateClaims(c) {
-  exact(c, CLAIM_FIELDS);
-  requirePairing(c.iss === ISSUER && c.aud === AUDIENCE && c.suite === SUITE);
-  for (const k of ids)
-    requirePairing(typeof c[k] === "string" && id.test(c[k]));
-  for (const k of hexes) raw32(c[k]);
-  for (const k of keys) key32(c[k]);
-  for (const k of integers)
-    requirePairing(Number.isSafeInteger(c[k]) && c[k] >= 0);
-  requirePairing(
-    c.generation > 0 &&
-      c.approval_revision > 0 &&
-      c.exp > c.iat &&
-      c.exp - c.iat <= 300 &&
-      c.offline_not_after >= c.exp,
-  );
-  requirePairing(
-    c.agent_key !== c.brain_key && c.agent_nonce !== c.brain_nonce,
-  );
-}
-// Both objects contain only strings/numbers. Tokenize before JSON.parse to reject
-// duplicate names (including escaped spellings) without accepting nested JSON.
-export function flatObject(bytes, limit) {
-  requirePairing(bytes.length <= limit);
-  let text;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-      bytes,
-    );
-  } catch {
-    throw new PairingFailure();
-  }
-  const string =
-    '"(?:[^"\\\\\\x00-\\x1f]|\\\\(?:["\\\\/bfnrt]|u[0-9a-fA-F]{4}))*"';
-  const token = new RegExp(
-    `[ \\t\\r\\n]*(${string}|-?(?:0|[1-9][0-9]*)|[{}:,])`,
-    "y",
-  );
-  const tokens = [];
-  let pos = 0;
-  while (pos < text.length && !/^[ \t\r\n]*$/u.test(text.slice(pos))) {
-    token.lastIndex = pos;
-    const m = token.exec(text);
-    requirePairing(m);
-    tokens.push(m[1]);
-    pos = token.lastIndex;
-  }
-  requirePairing(tokens.shift() === "{" && tokens.pop() === "}");
-  const result = Object.create(null);
-  while (tokens.length) {
-    const name = tokens.shift();
-    requirePairing(name?.startsWith('"') && tokens.shift() === ":");
-    const key = JSON.parse(name);
-    requirePairing(!Object.hasOwn(result, key));
-    const value = tokens.shift();
-    requirePairing(value && !["{", "}", ":", ","].includes(value));
-    result[key] = JSON.parse(value);
-    if (tokens.length)
-      requirePairing(tokens.shift() === "," && tokens.length > 0);
-  }
-  return result;
-}
-const ORDER = BigInt(
-  "0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
+
+// libsodium's X25519 small-order encodings, compared with the top bit cleared.
+export const SMALL_ORDER_POINTS = Object.freeze(
+  [
+    "00".repeat(32),
+    "01" + "00".repeat(31),
+    "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800",
+    "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157",
+    "ec" + "ff".repeat(30) + "7f",
+    "ed" + "ff".repeat(30) + "7f",
+    "ee" + "ff".repeat(30) + "7f",
+  ].map(fromHex),
 );
+export function isSmallOrder(key) {
+  requirePairing(key instanceof Uint8Array && key.length === 32);
+  const masked = key.slice();
+  masked[31] &= 0x7f;
+  return SMALL_ORDER_POINTS.some((point) => sameBytes(point, masked));
+}
+
 export function lowSignature(signature) {
-  requirePairing(signature.length === 64);
-  const r = BigInt("0x" + toHex(signature.slice(0, 32))),
-    s = BigInt("0x" + toHex(signature.slice(32)));
+  requirePairing(signature instanceof Uint8Array && signature.length === 64);
+  const r = toBigInt(signature.slice(0, 32)),
+    s = toBigInt(signature.slice(32));
   requirePairing(r > 0n && r < ORDER && s > 0n && s <= ORDER / 2n);
 }
-export async function thumbprint(jwk) {
-  requirePairing(jwk.kty === "EC" && jwk.crv === "P-256");
-  key32(jwk.x);
-  key32(jwk.y);
-  return b64u(
-    await digest(
-      enc.encode(
-        JSON.stringify({ crv: "P-256", kty: "EC", x: jwk.x, y: jwk.y }),
-      ),
-    ),
+export function normalizeSignature(signature) {
+  requirePairing(signature instanceof Uint8Array && signature.length === 64);
+  const s = toBigInt(signature.slice(32));
+  if (s > ORDER / 2n)
+    signature.set(fromHex((ORDER - s).toString(16).padStart(64, "0")), 32);
+  lowSignature(signature);
+  return signature;
+}
+
+/** Exactly {crv, kty, x, y} on P-256, and a point on the curve. */
+export function publicJwk(jwk) {
+  exact(jwk, ["crv", "kty", "x", "y"]);
+  requirePairing(jwk.crv === "P-256" && jwk.kty === "EC");
+  const x = toBigInt(key32(jwk.x)),
+    y = toBigInt(key32(jwk.y));
+  requirePairing(
+    x < P && y < P && (y * y) % P === (((x * x - 3n) * x + B) % P + P) % P,
   );
+  return { crv: "P-256", kty: "EC", x: jwk.x, y: jwk.y };
 }
-export async function loadTrustSet(input) {
+/** RFC 7638 SHA-256 thumbprint as unpadded base64url. */
+export async function thumbprint(jwk) {
+  const bare = publicJwk({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y });
+  return b64u(await digest(enc.encode(JSON.stringify(bare))));
+}
+
+export const grantDigest = async (creatorAccountBinding, installationGrant) =>
+  digest(
+    lp(DOMAINS.grants, [
+      "creator_account_binding",
+      await digest(enc.encode(creatorAccountBinding)),
+      "installation_grant",
+      await digest(enc.encode(installationGrant)),
+    ]),
+  );
+export const pairingTranscript = (t) =>
+  lp(DOMAINS.transcript, [SUITE, ...TRANSCRIPT_FIELDS.map((name) => t[name])]);
+export const pairingDigest = (t) => digest(pairingTranscript(t));
+export function proofMessage(role, pairingDigestBytes) {
+  requirePairing(
+    (role === "agent" || role === "brain") &&
+      pairingDigestBytes instanceof Uint8Array &&
+      pairingDigestBytes.length === 32,
+  );
+  return lp(DOMAINS.proof, [role, pairingDigestBytes]);
+}
+export async function comparisonCode(pairingDigestBytes) {
+  requirePairing(pairingDigestBytes instanceof Uint8Array && pairingDigestBytes.length === 32);
+  const hash = await digest(lp(DOMAINS.code, [pairingDigestBytes]));
+  const value = new DataView(hash.buffer).getUint32(0);
+  return String(value % 1_000_000).padStart(6, "0");
+}
+export function sessionPrologue(pairingDigestBytes) {
+  requirePairing(pairingDigestBytes instanceof Uint8Array && pairingDigestBytes.length === 32);
+  const prefix = enc.encode(SESSION_PROFILE + "\0");
+  const prologue = new Uint8Array(prefix.length + 32);
+  prologue.set(prefix);
+  prologue.set(pairingDigestBytes, prefix.length);
+  return prologue;
+}
+
+export async function verifyProof(jwk, role, pairingDigestBytes, signature) {
   try {
-    const t = structuredClone(input);
-    exact(t, [
-      "environment",
-      "issuer",
-      "keys",
-      "production_usable",
-      "profile",
-      "transition_sequence",
-    ]);
-    requirePairing(
-      t.environment === "production" &&
-        t.production_usable === true &&
-        t.issuer === ISSUER &&
-        t.profile === "pairing-receipt-v1",
+    const raw = unb64u(signature);
+    lowSignature(raw);
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      publicJwk(jwk),
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
     );
-    requirePairing(
-      Number.isSafeInteger(t.transition_sequence) &&
-        t.transition_sequence >= 1 &&
-        Array.isArray(t.keys) &&
-        t.keys.length > 0 &&
-        t.keys.length <= 32,
+    return await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      key,
+      raw,
+      proofMessage(role, pairingDigestBytes),
     );
-    const entries = new Map();
-    for (const e of t.keys) {
-      exact(e, ["alg", "fixture_only", "jwk", "kid", "purpose", "thumbprint"]);
-      exact(e.jwk, ["crv", "kid", "kty", "x", "y"]);
-      requirePairing(
-        e.alg === "ES256" &&
-          e.fixture_only === false &&
-          e.purpose === "pairing-receipt" &&
-          e.jwk.kid === e.kid &&
-          !entries.has(e.kid),
-      );
-      const jkt = await thumbprint(e.jwk);
-      requirePairing(
-        jkt === e.thumbprint &&
-          e.kid === "pr1." + b64u(unb64u(jkt).slice(0, 16)),
-      );
-      entries.set(
-        e.kid,
-        await crypto.subtle.importKey(
-          "jwk",
-          e.jwk,
-          { name: "ECDSA", namedCurve: "P-256" },
-          false,
-          ["verify"],
-        ),
-      );
-    }
-    return Object.freeze({
-      sequence: t.transition_sequence,
-      lookup: (kid) => entries.get(kid),
-    });
   } catch {
-    throw new PairingFailure("pairing_trust_refused");
+    return false;
   }
 }
-export async function verifyReceipt(token, { trust, expected, now, deadline }) {
+
+function validField(kind, value) {
+  if (kind === "id") return typeof value === "string" && ID.test(value);
+  if (kind === "key") return key32(value).length === 32;
+  if (kind === "signature")
+    return typeof value === "string" && value.length === 86 && unb64u(value).length === 64;
+  if (kind === "jwk") return Boolean(publicJwk(value));
+  if (kind === "grant")
+    return typeof value === "string" && value.length <= MAX_GRANT_LENGTH && JWS.test(value);
+  if (kind === "generation") return Number.isSafeInteger(value) && value >= 1;
+  return typeof value === "string" && OUTCOMES.includes(value);
+}
+
+/** Parse one pairing text frame under its closed schema. */
+export function parseMessage(frame, type) {
   try {
-    const context = structuredClone(expected);
-    requirePairing(typeof token === "string" && token.length <= 8192);
-    const parts = token.split(".");
-    requirePairing(parts.length === 3);
-    const h = flatObject(unb64u(parts[0]), 512),
-      c = flatObject(unb64u(parts[1]), 6144),
-      signature = unb64u(parts[2]);
-    exact(h, ["alg", "kid", "typ"]);
-    requirePairing(
-      h.alg === "ES256" &&
-        h.typ === TYPE &&
-        typeof h.kid === "string" &&
-        id.test(h.kid),
-    );
-    lowSignature(signature);
-    const key = trust.lookup(h.kid);
-    requirePairing(key);
-    requirePairing(
-      await crypto.subtle.verify(
-        { name: "ECDSA", hash: "SHA-256" },
-        key,
-        signature,
-        enc.encode(parts[0] + "." + parts[1]),
-      ),
-    );
-    validateClaims(c);
-    requirePairing(
-      Number.isSafeInteger(now) &&
-        Number.isSafeInteger(deadline) &&
-        now >= c.iat &&
-        now < c.exp &&
-        now < deadline,
-    );
-    for (const field of CONTEXT_FIELDS)
-      requirePairing(c[field] === context[field]);
-    return Object.freeze({
-      claims: Object.freeze(c),
-      binding: await receiptBinding(c),
-      issuerKid: h.kid,
-      trustSequence: trust.sequence,
-    });
+    requirePairing(typeof frame !== "string" || frame.isWellFormed());
+    const bytes = typeof frame === "string" ? enc.encode(frame) : frame;
+    requirePairing(bytes instanceof Uint8Array && bytes.length <= MAX_PAIRING_FRAME);
+    const schema = Object.hasOwn(SCHEMAS, type) ? SCHEMAS[type] : null;
+    const message = parseStrictJson(bytes);
+    requirePairing(schema && message.type === type);
+    exact(message, ["type", ...Object.keys(schema)]);
+    for (const [name, kind] of Object.entries(schema))
+      requirePairing(validField(kind, message[name]));
+    return message;
   } catch {
-    throw new PairingFailure("pairing_receipt_refused");
+    throw new PairingFailure("pairing_message_invalid");
   }
+}
+export const encodeMessage = (message) => JSON.stringify(message);
+
+const claimText = (claims, name) =>
+  claims && typeof claims[name] === "string" ? claims[name] : "";
+
+/**
+ * Verify both Brain-audience grants for one identity (organization_id,
+ * installation_id, installation_key_id, installation_key_jkt,
+ * creator_account_id); return the earliest exp plus grace.
+ */
+export async function verifyGrants(
+  installationGrant,
+  creatorAccountBinding,
+  identity,
+  { trust, now },
+) {
+  let notAfter = null;
+  for (const [grantType, token] of [
+    ["installation_grant", installationGrant],
+    ["creator_account_binding", creatorAccountBinding],
+  ]) {
+    let subject = `installation:${identity.installation_id}`;
+    if (grantType === "creator_account_binding")
+      subject += `:creator:${identity.creator_account_id}`;
+    const outcome = await verifyGrant(
+      token,
+      {
+        expectedGrantType: grantType,
+        expectedAudience: GRANT_AUDIENCES[grantType],
+        expectedOrganizationId: identity.organization_id,
+        expectedInstallationId: identity.installation_id,
+        expectedInstallationKeyId: identity.installation_key_id,
+        expectedInstallationKeyJkt: identity.installation_key_jkt,
+        expectedSubject: subject,
+        verifierTime: now,
+        tombstones: [],
+      },
+      trust,
+    );
+    if (!outcome.valid)
+      throw new PairingFailure("pairing_grant_refused", `${grantType}:${outcome.result}`);
+    const limit = peekGrantClaims(token).exp + GRANT_PROFILES[grantType].grace;
+    notAfter = notAfter === null ? limit : Math.min(notAfter, limit);
+  }
+  if (claimText(peekGrantClaims(creatorAccountBinding), "creator_account_id") !== identity.creator_account_id)
+    throw new PairingFailure("pairing_account_refused");
+  return notAfter;
+}
+
+export async function transcriptOf(request, offer, identity, grants) {
+  return {
+    pairing_id: key32(offer.pairing_id),
+    generation: offer.generation,
+    organization_id: identity.organization_id,
+    installation_id: identity.installation_id,
+    installation_key_id: identity.installation_key_id,
+    installation_key_jkt: identity.installation_key_jkt,
+    creator_account_id: identity.creator_account_id,
+    agent_installation_id: request.agent_installation_id,
+    agent_identity_key_jkt: await thumbprint(request.agent_identity_jwk),
+    agent_noise_key: key32(request.agent_noise_key),
+    brain_noise_key: key32(offer.brain_noise_key),
+    agent_nonce: key32(request.agent_nonce),
+    brain_nonce: key32(offer.brain_nonce),
+    grant_digest: grants,
+  };
+}
+
+/**
+ * Agent checks for pair.offer, in contract order. highWater maps installation_id
+ * to the highest admitted generation.
+ */
+export async function verifyOffer(request, frame, { trust, detectedAccountId, highWater, now }) {
+  const offer = parseMessage(frame, "pair.offer");
+  const agentNoiseKey = key32(request.agent_noise_key),
+    brainNoiseKey = key32(offer.brain_noise_key);
+  if (isSmallOrder(brainNoiseKey) || sameBytes(brainNoiseKey, agentNoiseKey))
+    throw new PairingFailure("pairing_key_refused");
+  if (offer.brain_nonce === request.agent_nonce)
+    throw new PairingFailure("pairing_nonce_refused");
+  const claims = peekGrantClaims(offer.installation_grant);
+  const identity = Object.freeze({
+    organization_id: claimText(claims, "organization_id"),
+    installation_id: claimText(claims, "installation_id"),
+    installation_key_id: claimText(claims, "installation_key_id"),
+    installation_key_jkt: await thumbprint(offer.installation_jwk),
+    creator_account_id: offer.creator_account_id,
+  });
+  const grantsNotAfter = await verifyGrants(
+    offer.installation_grant,
+    offer.creator_account_binding,
+    identity,
+    { trust, now },
+  );
+  if (offer.creator_account_id !== detectedAccountId)
+    throw new PairingFailure("pairing_account_refused");
+  const floor = highWater && Object.hasOwn(highWater, identity.installation_id)
+    ? highWater[identity.installation_id]
+    : 0;
+  if (offer.generation <= floor) throw new PairingFailure("pairing_generation_refused");
+  const grants = await grantDigest(offer.creator_account_binding, offer.installation_grant);
+  const pairing = await pairingDigest(await transcriptOf(request, offer, identity, grants));
+  if (!(await verifyProof(offer.installation_jwk, "brain", pairing, offer.brain_proof)))
+    throw new PairingFailure("pairing_proof_refused");
+  return Object.freeze({
+    offer,
+    identity,
+    pairingId: offer.pairing_id,
+    generation: offer.generation,
+    brainNoiseKey,
+    grantDigest: grants,
+    pairingDigest: pairing,
+    comparisonCode: await comparisonCode(pairing),
+    grantsNotAfter,
+  });
+}
+
+/** Agent check for the first session record; returns the session limit. */
+export async function verifySessionAuthorization(frame, identity, { trust, now }) {
+  const record = parseMessage(frame, "session.authorization");
+  return verifyGrants(record.installation_grant, record.creator_account_binding, identity, {
+    trust,
+    now,
+  });
 }

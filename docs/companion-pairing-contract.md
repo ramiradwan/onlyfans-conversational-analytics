@@ -70,11 +70,11 @@ Brain signs with the installation key through the installation-key abstraction. 
 
 ## Comparison code
 
-Take the first four bytes of SHA-256 over the code domain followed by `pairing_digest`. Read them as `uint32_be`, reduce modulo 1,000,000, and zero-pad to six digits. Bridge and the Agent popup both display it as two groups of three digits.
+Take the first four bytes of SHA-256 over the code domain followed by `pairing_digest` as one field. Read them as `uint32_be`, reduce modulo 1,000,000, and zero-pad to six digits. Bridge and the Agent popup both display it as two groups of three digits.
 
 ## Exchange
 
-Pairing uses the WebSocket path `/ws/agent/pairing` on the local Brain origin. Messages are UTF-8 JSON text frames with closed schemas: unknown, duplicate, or missing members are rejected. A frame is at most 36,864 bytes, and each compact grant at most 16,384 characters. Any violation closes the socket with a fixed error code and no detail.
+Pairing uses the WebSocket path `/ws/agent/pairing` on the local Brain origin. Messages are UTF-8 JSON text frames with closed schemas: each is an object whose `type` member names the message, and unknown, duplicate, or missing members are rejected. A frame is at most 36,864 bytes, and each compact grant at most 16,384 characters. Any violation closes the socket with a fixed error code and no detail.
 
 1. An authenticated Bridge operator opens a pairing window for one approved creator account. Brain allocates the next generation for the installation, a random `pairing_id`, a fresh Noise static key pair, and a fresh `brain_nonce`. The window lasts at most 300 seconds, and one installation has at most one open window.
 2. Agent → Brain `pair.request`: `agent_installation_id`, `agent_identity_jwk`, `agent_noise_key`, `agent_nonce`. Agent generates a fresh Noise key pair and nonce for every attempt.
@@ -82,14 +82,17 @@ Pairing uses the WebSocket path `/ws/agent/pairing` on the local Brain origin. M
 4. Agent verifies the offer under "Agent checks" and stores the pending pairing. Agent → Brain `pair.confirm`: `pairing_id`, `agent_proof`. Agent displays the comparison code.
 5. Brain verifies `agent_proof` against the transcript it computed. Bridge displays the comparison code, the Agent identity key thumbprint, and the creator account.
 6. The operator confirms or declines in Bridge before the window expires. Brain → Agent `pair.result`: `pairing_id` and `outcome`, where `outcome` is `confirmed`, `declined`, `expired`, or `cancelled`. This message is a hint only. Agent treats a pairing as complete only after the session step below.
-7. On `confirmed`, Agent opens a session using the pending pins. Brain admits a KK handshake only from the confirmed Agent Noise key. Agent commits its pin once the handshake and both fixed session confirmations succeed.
+7. On `confirmed`, Agent opens a session using the pending pins. Brain admits a KK handshake only from the confirmed Agent Noise key. Agent commits its pin once the handshake, both fixed session confirmations, and the session authorization succeed.
 
 Each message step has a 10-second deadline. The wait for the operator is bounded by the window. Agent needs an open popup to pair, and closing it cancels the pending pairing.
 
 ## Agent checks
 
-Agent accepts an offer only when all of the following hold:
+Agent accepts an offer only when all of the following hold. It applies them in the order listed and refuses on the first failure; each vector case names the refusal it expects.
 
+- The offer matches its schema.
+- `brain_noise_key` is not a small-order X25519 point and differs from `agent_noise_key`.
+- `brain_nonce` differs from `agent_nonce`.
 - Each grant verifies under grant profile `urn:bridge-clean:grant-profile:v1` with a key from the packaged trust set whose purpose is `installation-binding`. `kid` only selects among packaged keys.
 - Each grant is accepted as current or within grace at the Agent's clock, with the profile's lifetimes, grace periods, and 60-second not-before tolerance. The results match the `contracts/grant-profile-v1` vectors for both grant types.
 - Each grant's `grant_type`, `aud`, `typ`, `iss`, `profile`, and `sub` have the values the profile requires for Brain audiences.
@@ -97,14 +100,13 @@ Agent accepts an offer only when all of the following hold:
 - The RFC 7638 thumbprint of `installation_jwk` equals `installation_key_jkt`.
 - `creator_account_binding.creator_account_id` equals the offer's `creator_account_id` and the account Agent detects locally.
 - `generation` is higher than the highest generation Agent has admitted for that `installation_id`.
-- `brain_nonce` differs from `agent_nonce`, and neither Noise public key is a small-order X25519 point.
 - `brain_proof` verifies under `installation_jwk` over the transcript Agent computes from its own request and the offer.
 
 Agent has no revocation list for grants. Brain holds hosted revocation state and refuses to pair or serve when its grants are revoked.
 
 ## Brain checks
 
-Brain accepts `pair.confirm` only when the window is open, the request was the first in that window, the Agent JWK is a valid point, the Noise key is not small-order, the nonces differ, and `agent_proof` verifies under the Agent JWK. Brain also applies its ADR 0008 grant checks, including revocation state. Confirmation is a compare-and-set on the window state. If the window was cancelled or expired, or a revocation is recorded, before the commit, the confirmation fails.
+Brain accepts `pair.confirm` only when the window is open, the request was the first in that window, the Agent JWK is a valid point, the Agent Noise key is not small-order and differs from the Brain Noise key, the nonces differ, and `agent_proof` verifies under the Agent JWK. Brain also applies its ADR 0008 grant checks, including revocation state. Confirmation is a compare-and-set on the window state. If the window was cancelled or expired, or a revocation is recorded, before the commit, the confirmation fails.
 
 ## Durable state
 
@@ -112,9 +114,12 @@ Agent uses one IndexedDB transaction for each state change. Brain uses one `auth
 
 Agent keeps:
 
-- a pending pairing: `pairing_id`, `generation`, `agent_nonce`, the offer fields, `pairing_digest`, candidate key references, deadline, and a version used as the commit fence;
-- one admitted pin per Brain installation: installation, organization, and account identities; `agent_installation_id`, `pairing_id`, `generation`, `pairing_digest`, and `grant_digest`; the Brain Noise public key; and references to its own identity and wrapped Noise keys;
+- at most one pending pairing: its request, the wrapped candidate Noise key, the deadline, and, once the offer verifies, `pairing_id`, `generation`, the verified identities, the Brain Noise public key, `pairing_digest`, and `grant_digest`;
+- at most one pin: the same fields, `agent_installation_id`, and the wrapped Noise key;
+- an epoch that forgetting the companion advances, which fences every pending commit;
 - the highest admitted generation per `installation_id`, which survives forgetting a pin.
+
+Agent refuses to start a pairing while it holds a pin. Pairing again requires forgetting the companion first.
 
 Brain keeps:
 
@@ -128,7 +133,7 @@ A confirmed pairing for the same Agent installation and account replaces the old
 
 Agent is the KK initiator. The prologue is the UTF-8 string `ofca-companion-session/v1;agent-to-brain;no-early-data`, then one zero byte, then the pin's `pairing_digest`.
 
-Brain's first application record is `session.authorization`, carrying its current `installation_grant` and `creator_account_binding`. Agent applies the grant rules from "Agent checks". It also requires `organization_id`, `installation_id`, `installation_key_id`, `installation_key_jkt`, and `creator_account_id` to equal the pinned values. Agent sends no Full-mode record until this check passes. Brain sends a new `session.authorization` record after each grant refresh. Agent closes the session once the earliest grant's `exp` plus grace passes, or when a check fails.
+Brain's first application record is `session.authorization`, carrying its current `installation_grant` and `creator_account_binding`. Agent applies the grant rules from "Agent checks". It also requires `organization_id`, `installation_id`, `installation_key_id`, `installation_key_jkt`, and `creator_account_id` to equal the pinned values. Agent sends no Full-mode record until this check passes. The encoded record must fit one application record, at most 4,079 bytes. A session carries exactly one `session.authorization`. Agent closes the session when a check fails, when the earliest grant's `exp` plus grace passes, or 900 seconds after it started, whichever comes first. Refreshed grants take effect in the next session.
 
 ## Revocation and recovery
 
@@ -140,4 +145,4 @@ A privileged attacker who restores a whole old local profile restores both pins 
 
 ## Vectors
 
-Published vectors fix the grant digest, transcript, both proof messages, comparison code, and prologue for one pairing. They also include negative cases for every Agent and Brain check. JavaScript and Python implementations must reproduce them byte for byte. Proof signatures are verified rather than compared, because ECDSA signatures are randomized.
+`extension/test-fixtures/pairing/local-pairing-vector.json`, generated by `tools/companion-session-spike/local_pairing.py`, fixes the grant digest, transcript, both proof messages, comparison code, and prologue for one pairing. They also include negative cases for every Agent and Brain check. JavaScript and Python implementations must reproduce them byte for byte. Implementations verify proof signatures rather than compare them, because ECDSA signers may use random nonces.

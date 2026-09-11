@@ -1,4 +1,9 @@
-import { PairingFailure, requirePairing } from "./pairing-contract.mjs";
+import {
+  PairingFailure,
+  requirePairing,
+  sessionPrologue,
+  verifySessionAuthorization,
+} from "./pairing-contract.mjs";
 
 const enc = new TextEncoder(),
   MAX_FRAME = 4096,
@@ -7,13 +12,15 @@ const ready = enc.encode("client-ready"),
   peerReady = enc.encode("server-ready");
 
 // Agent-only record adapter. The composition layer supplies a packaged Snow
-// constructor, admitted store material, and authenticated revocation delivery.
-// No socket, hosted client, shipping CSP change, or transport fallback is installed.
+// constructor, the pairing store, the packaged grant trust set, and the socket.
+// With requestId the session runs on a verified pending pairing and commits
+// its pin once the session authorization verifies.
 export async function createCompanionSession({
   store,
   SnowSession,
   accountId,
-  trustSequence,
+  requestId,
+  trust,
   signal,
   maxActiveSessionSeconds = 900,
   clock = () => Date.now() / 1000,
@@ -35,7 +42,7 @@ export async function createCompanionSession({
   const start = clock(),
     monoStart = monotonic();
   requirePairing(Number.isFinite(start) && Number.isFinite(monoStart));
-  let deadline,
+  let deadline = start + maxActiveSessionSeconds,
     phaseDeadline = monoStart + 2,
     lastWall = start,
     lastMono = monoStart;
@@ -107,33 +114,20 @@ export async function createCompanionSession({
   unsubscribe = store.onInvalidate(close);
   let material;
   try {
-    material = await store.sessionMaterial({
-      accountId,
-      trustSequence,
-      signal,
-    });
+    material = await store.sessionMaterial({ accountId, requestId, signal });
   } catch {
     close();
     throw new PairingFailure("session_initialization_refused");
   }
+  const { identity, commit } = material;
   try {
-    requirePairing(state !== "closed" && !signal?.aborted);
-    deadline = Math.min(
-      start + maxActiveSessionSeconds,
-      material.offlineNotAfter,
-    );
+    requirePairing(state !== "closed" && !signal?.aborted && trust);
     requirePairing(clock() < deadline && monotonic() < phaseDeadline);
-    const prefix = enc.encode(
-      "ofca-session-spike/v1;agent-to-brain;no-early-data\0",
-    );
-    const prologue = new Uint8Array(prefix.length + 32);
-    prologue.set(prefix);
-    prologue.set(material.binding, prefix.length);
     inner = new SnowSession(
       true,
       material.privateKey,
       material.peerKey,
-      prologue,
+      sessionPrologue(material.pairingDigest),
     );
   } catch {
     close();
@@ -181,11 +175,40 @@ export async function createCompanionSession({
         !peerReady.every((v, i) => plain[i + 1] === v)
       )
         failure("session_authentication_failed");
+      state = "authorizing";
+    },
+    // Brain's first application record carries its current grants. No
+    // application record is sealed or opened before they verify.
+    async authorize(value) {
+      check("authorizing");
+      state = "verifying";
+      const plain = guarded(() => inner.decrypt_transport(frame(value)));
+      if (plain[0] !== 1) failure("session_authentication_failed");
+      let notAfter;
+      try {
+        notAfter = await verifySessionAuthorization(plain.slice(1), identity, {
+          trust,
+          now: Math.floor(clock()),
+        });
+      } catch {
+        return failure("session_authorization_refused");
+      }
+      if (state !== "verifying") failure("session_expired");
+      deadline = Math.min(deadline, notAfter);
+      if (commit) {
+        try {
+          await store.commit(commit, signal);
+        } catch {
+          return failure("session_commit_refused");
+        }
+        if (state !== "verifying") failure("session_expired");
+      }
+      state = "authorizing";
+      check("authorizing");
       state = "ready";
-      phaseDeadline =
-        monoStart +
-        Math.min(maxActiveSessionSeconds, material.offlineNotAfter - start);
+      phaseDeadline = monoStart + (deadline - start);
       arm();
+      return Object.freeze({ ...identity, notAfter: deadline });
     },
     seal(value) {
       check("ready");

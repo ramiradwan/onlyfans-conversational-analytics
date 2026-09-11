@@ -1,21 +1,26 @@
 import { openPairingStore } from "../runtime/companion-pairing-store.mjs";
+import { loadGrantTrustSet } from "../transport/grant-verifier.mjs";
 import {
+  PairingFailure,
   b64u,
-  raw32,
-  toHex,
-  thumbprint,
-  unb64u,
-  loadTrustSet,
+  encodeMessage,
+  grantDigest,
+  normalizeSignature,
+  pairingDigest,
+  proofMessage,
+  transcriptOf,
+  verifyProof,
 } from "../transport/pairing-contract.mjs";
-import vector from "../test-fixtures/pairing/authority-vector.json" with { type: "json" };
-const NOW = 1800000000,
-  ORDER = BigInt(
-    "0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
-  );
+import vector from "../test-fixtures/pairing/local-pairing-vector.json" with { type: "json" };
+
+const NOW = vector.now,
+  ACCOUNT = vector.detected_account_id,
+  INSTALLATION = vector.expected.identity.installation_id;
+const encoder = new TextEncoder();
 const check = (value, label) => {
   if (!value) throw new Error(label);
 };
-async function refused(fn) {
+async function refused(fn, code) {
   let error;
   try {
     await fn();
@@ -23,199 +28,229 @@ async function refused(fn) {
     error = e;
   }
   check(error, "expected_refusal");
+  if (code) check(error instanceof PairingFailure && error.code === code, `expected_${code}`);
 }
-async function authority() {
-  const pair = await crypto.subtle.generateKey(
+const noiseKeypair = async () => ({
+  privateKey: new Uint8Array(32).fill(9),
+  publicKey: new Uint8Array(32).fill(8),
+});
+
+// Test Brain: the vector's installation key signs offers over fresh Agent requests.
+async function brain() {
+  const { d, ...publicJwk } = vector.test_keys.installation_private_jwk;
+  const key = await crypto.subtle.importKey(
+    "jwk",
+    { ...publicJwk, d },
     { name: "ECDSA", namedCurve: "P-256" },
     false,
-    ["sign", "verify"],
+    ["sign"],
   );
-  const publicKey = await crypto.subtle.exportKey("jwk", pair.publicKey),
-    jkt = await thumbprint(publicKey),
-    kid = "pr1." + b64u(unb64u(jkt).slice(0, 16));
-  const jwk = {
-    crv: publicKey.crv,
-    kty: publicKey.kty,
-    x: publicKey.x,
-    y: publicKey.y,
-    kid,
-  };
-  const trust = await loadTrustSet({
-    environment: "production",
-    issuer: vector.receipt_claims.iss,
-    production_usable: true,
-    profile: "pairing-receipt-v1",
-    transition_sequence: 1,
-    keys: [
-      {
-        alg: "ES256",
-        fixture_only: false,
-        jwk,
-        kid,
-        purpose: "pairing-receipt",
-        thumbprint: jkt,
-      },
-    ],
-  });
-  return {
-    trust,
-    async sign(claims) {
-      const head = b64u(
-          new TextEncoder().encode(
-            JSON.stringify({
-              alg: "ES256",
-              typ: "ofca-companion-pairing+jwt",
-              kid,
-            }),
-          ),
-        ),
-        body = b64u(new TextEncoder().encode(JSON.stringify(claims)));
-      const signature = new Uint8Array(
-        await crypto.subtle.sign(
-          { name: "ECDSA", hash: "SHA-256" },
-          pair.privateKey,
-          new TextEncoder().encode(head + "." + body),
-        ),
-      );
-      const s = BigInt("0x" + toHex(signature.slice(32)));
-      if (s > ORDER / 2n)
-        signature.set(raw32((ORDER - s).toString(16).padStart(64, "0")), 32);
-      return head + "." + body + "." + b64u(signature);
-    },
-  };
+  const trust = await loadGrantTrustSet(vector.trust_set, { allowNonProduction: true });
+  async function offer(request, generation) {
+    const random = () => b64u(crypto.getRandomValues(new Uint8Array(32)));
+    const body = {
+      type: "pair.offer",
+      pairing_id: random(),
+      generation,
+      creator_account_id: ACCOUNT,
+      brain_noise_key: random(),
+      brain_nonce: random(),
+      installation_jwk: vector.offer.installation_jwk,
+      installation_grant: vector.offer.installation_grant,
+      creator_account_binding: vector.offer.creator_account_binding,
+    };
+    const grants = await grantDigest(body.creator_account_binding, body.installation_grant);
+    const digest = await pairingDigest(
+      await transcriptOf(request, body, vector.expected.identity, grants),
+    );
+    const signature = new Uint8Array(
+      await crypto.subtle.sign(
+        { name: "ECDSA", hash: "SHA-256" },
+        key,
+        proofMessage("brain", digest),
+      ),
+    );
+    return encoder.encode(encodeMessage({ ...body, brain_proof: b64u(normalizeSignature(signature)) }));
+  }
+  return { trust, offer };
 }
-async function prepare(store, issuer, generation = 7, pairingId = vector.receipt_claims.pairing_id) {
-  const identity = await store.identity();
-  const context = {
-    ...vector.receipt_claims,
-    generation,
-    pairing_id: pairingId,
-    agent_identity_key_jkt: identity.thumbprint,
-  };
+async function pairOnce(store, peer, generation) {
   const pending = await store.begin({
-    context,
+    agentInstallationId: vector.request.agent_installation_id,
+    generateNoiseKeypair: noiseKeypair,
     deadline: NOW + 300,
-    generateNoiseKeypair: async () => ({
-      privateKey: new Uint8Array(32).fill(9),
-      publicKey: new Uint8Array(32).fill(8),
-    }),
   });
-  const frozen = { ...context, ...pending.context };
-  // Only the closed contextual fields are consumed by freeze.
-  delete frozen.iss;
-  delete frozen.aud;
-  delete frozen.suite;
-  delete frozen.iat;
-  delete frozen.exp;
-  delete frozen.jti;
-  await store.freeze(pending.requestId, frozen);
-  const claims = {
-    ...vector.receipt_claims,
-    ...frozen,
-    jti: generation.toString(16).padStart(2, "0").repeat(32),
-  };
-  return { pending, token: await issuer.sign(claims), identity };
+  const accepted = await store.acceptOffer(
+    pending.requestId,
+    await peer.offer(pending.request, generation),
+    { trust: peer.trust, detectedAccountId: ACCOUNT },
+  );
+  return { pending, accepted };
 }
+
 export async function runStorageScenario(stage, expectedIdentity) {
   let time = NOW;
   const store = await openPairingStore({ clock: () => time });
   try {
     if (stage === "seed") {
-      const issuer = await authority(),
-        { pending, token, identity } = await prepare(store, issuer);
+      const peer = await brain(),
+        identity = await store.identity();
       await refused(() => crypto.subtle.exportKey("jwk", identity.privateKey));
-      await store.admit(pending.requestId, token, issuer.trust);
+      const { pending, accepted } = await pairOnce(store, peer, 7);
+      check(/^[0-9]{6}$/u.test(accepted.comparisonCode), "comparison_code");
       const material = await store.sessionMaterial({
-        accountId: "account-1",
-        trustSequence: 1,
+        accountId: ACCOUNT,
+        requestId: pending.requestId,
       });
       check(
-        material.privateKey.every((x) => x === 9),
-        "wrapped_key_roundtrip",
+        await verifyProof(identity.publicJwk, "agent", material.pairingDigest, accepted.confirm.agent_proof),
+        "agent_proof",
       );
+      check(material.privateKey.every((x) => x === 9), "wrapped_key_roundtrip");
       material.privateKey.fill(0);
+      check((await store.status()).paired === false, "pin_before_commit");
+      await store.commit(material.commit);
+      check((await store.status()).paired === true, "pin_after_commit");
       return { identity: identity.thumbprint };
     }
     const identity = await store.identity();
-    check(
-      identity.thumbprint === expectedIdentity,
-      "identity_changed_after_restart",
-    );
+    check(identity.thumbprint === expectedIdentity, "identity_changed_after_restart");
     await refused(() => crypto.subtle.exportKey("jwk", identity.privateKey));
-    time = NOW + 301;
-    const material = await store.sessionMaterial({
-      accountId: "account-1",
-      trustSequence: 1,
-    });
+    // The pin carries no lease; session validity comes from the grants at authorization.
+    time = NOW + 30 * 86400;
+    const material = await store.sessionMaterial({ accountId: ACCOUNT });
+    check(material.commit === null && material.generation === 7, "pinned_material");
     material.privateKey.fill(0);
-    await refused(() =>
-      store.sessionMaterial({ accountId: "other-account", trustSequence: 1 }),
+    await refused(
+      () => store.sessionMaterial({ accountId: "creator-account-pairing-002" }),
+      "pairing_account_refused",
     );
-    await refused(() =>
-      store.sessionMaterial({ accountId: "account-1", trustSequence: 2 }),
+    await refused(
+      () =>
+        store.begin({
+          agentInstallationId: vector.request.agent_installation_id,
+          generateNoiseKeypair: noiseKeypair,
+          deadline: time + 300,
+        }),
+      "pairing_state_refused",
     );
-    time = NOW;
-    await refused(() =>
-      store.sessionMaterial({ accountId: "account-1", trustSequence: 1 }),
-    );
-    time = NOW + 301;
     let closed = false;
     store.onInvalidate(() => {
       closed = true;
     });
-    await store.revoke(vector.receipt_claims.pairing_id, 7);
-    check(closed, "revocation_did_not_close");
-    await refused(() =>
-      store.sessionMaterial({ accountId: "account-1", trustSequence: 1 }),
-    );
-    return {
-      restart: true,
-      receiptExpiryIndependent: true,
-      rollbackRefused: true,
-      revocation: true,
-    };
+    await store.forget();
+    check(closed, "forget_did_not_close");
+    await refused(() => store.sessionMaterial({ accountId: ACCOUNT }), "pairing_state_refused");
+    const status = await store.status();
+    check(!status.paired && status.highWater[INSTALLATION] === 7, "high_water_after_forget");
+    return { restart: true, noPairingLease: true, accountBound: true, singlePin: true, forget: true };
   } finally {
     store.close();
   }
 }
+
 export async function runRaceScenario() {
-  const issuer = await authority(),
+  const peer = await brain(),
     store = await openPairingStore({ name: "pairing-races", clock: () => NOW });
   try {
-    const a = await prepare(store, issuer);
-    const substituted = { ...vector.receipt_claims, account_id: "substitute" };
-    await refused(() => store.freeze(a.pending.requestId, substituted));
+    // Cancellation during offer verification fences the pending record.
+    const a = await store.begin({
+      agentInstallationId: vector.request.agent_installation_id,
+      generateNoiseKeypair: noiseKeypair,
+      deadline: NOW + 300,
+    });
     const racingTrust = {
-      ...issuer.trust,
       lookup(kid) {
         void store.cancel();
-        return issuer.trust.lookup(kid);
+        return peer.trust.lookup(kid);
       },
     };
-    await refused(() => store.admit(a.pending.requestId, a.token, racingTrust));
-    await refused(() =>
-      store.sessionMaterial({ accountId: "account-1", trustSequence: 1 }),
+    await refused(
+      async () =>
+        store.acceptOffer(a.requestId, await peer.offer(a.request, 1), {
+          trust: racingTrust,
+          detectedAccountId: ACCOUNT,
+        }),
+      "pairing_state_refused",
     );
-    const b = await prepare(store, issuer);
+    await refused(
+      () => store.sessionMaterial({ accountId: ACCOUNT, requestId: a.requestId }),
+      "pairing_state_refused",
+    );
+
+    // A newer attempt supersedes the older one.
+    const old = await store.begin({
+      agentInstallationId: vector.request.agent_installation_id,
+      generateNoiseKeypair: noiseKeypair,
+      deadline: NOW + 300,
+    });
+    const b = await pairOnce(store, peer, 3);
+    await refused(
+      async () =>
+        store.acceptOffer(old.requestId, await peer.offer(old.request, 4), {
+          trust: peer.trust,
+          detectedAccountId: ACCOUNT,
+        }),
+      "pairing_state_refused",
+    );
+
+    // Two commits of one probation session: exactly one pins.
+    const material = await store.sessionMaterial({
+      accountId: ACCOUNT,
+      requestId: b.pending.requestId,
+    });
+    material.privateKey.fill(0);
     const results = await Promise.allSettled([
-      store.admit(b.pending.requestId, b.token, issuer.trust),
-      store.admit(b.pending.requestId, b.token, issuer.trust),
+      store.commit(material.commit),
+      store.commit(material.commit),
     ]);
-    check(
-      results.filter((x) => x.status === "fulfilled").length === 1,
-      "double_admission",
-    );
+    check(results.filter((x) => x.status === "fulfilled").length === 1, "double_commit");
+
+    // The generation high-water survives forget.
+    await store.forget();
+    await refused(() => pairOnce(store, peer, 3), "pairing_generation_refused");
     await store.cancel();
-    await refused(() => prepare(store, issuer, 7));
-    const other = await prepare(store, issuer, 7, "ab".repeat(32));
-    await refused(() => store.admit(other.pending.requestId, other.token, issuer.trust));
+    await pairOnce(store, peer, 4);
+    await store.cancel();
+
+    // A root with another format is refused and left as found.
+    const foreign = { format: "ofca-companion-pairing/v0", marker: "unchanged" };
+    await putRoot("pairing-format", foreign);
+    await refused(() => openPairingStore({ name: "pairing-format" }), "pairing_storage_refused");
+    const after = await getRoot("pairing-format");
+    check(after?.format === foreign.format && after.marker === foreign.marker, "foreign_state_overwritten");
     return {
       cancellationFence: true,
-      singleAdmission: true,
-      generationRollbackRefused: true,
-      crossLineageReplayRefused: true,
+      supersededAttemptRefused: true,
+      singleCommit: true,
+      generationHighWaterSurvivesForget: true,
+      unsupportedFormatRefused: true,
     };
   } finally {
     store.close();
   }
 }
+
+function rawDatabase(name) {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(name, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("state");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function rootOp(name, mode, op) {
+  const db = await rawDatabase(name);
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("state", mode),
+        request = op(tx.objectStore("state"));
+      tx.oncomplete = () => resolve(request.result);
+      tx.onabort = tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+const putRoot = (name, value) => rootOp(name, "readwrite", (s) => s.put(value, "root"));
+const getRoot = (name) => rootOp(name, "readonly", (s) => s.get("root"));

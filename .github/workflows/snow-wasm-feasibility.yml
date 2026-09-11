@@ -7,7 +7,10 @@ on:
       - 'extension/qualification/snow-wasm-spike/**'
       - 'extension/qualification/pairing-storage-*.mjs'
       - 'extension/transport/*pairing*.mjs'
+      - 'extension/transport/grant-verifier.mjs'
       - 'extension/transport/companion-noise-session.mjs'
+      - 'tools/companion-session-spike/**'
+      - 'docs/companion-pairing-contract.md'
       - 'extension/runtime/companion-*.mjs'
       - 'extension/tests/companion-pairing-contract.test.mjs'
       - 'extension/test-fixtures/pairing/**'
@@ -43,6 +46,12 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/snow-python"
           "$RUNNER_TEMP/snow-python/bin/python" -m pip install -r tools/companion-session-spike/requirements.txt
+
+      - name: Verify the Python pairing reference and published vector
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/snow-python/bin/python" tools/companion-session-spike/local_pairing.py --check
+          "$RUNNER_TEMP/snow-python/bin/python" -m unittest discover -s tools/companion-session-spike -p "test_*.py" -v
 
       - name: Install existing extension qualification dependencies
         shell: bash

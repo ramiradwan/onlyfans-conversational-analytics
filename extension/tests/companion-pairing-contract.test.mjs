@@ -1,253 +1,203 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { GrantTrustError, loadGrantTrustSet } from "../transport/grant-verifier.mjs";
 import {
-  CONTEXT_FIELDS,
   PairingFailure,
-  b64u,
-  unb64u,
-  raw32,
-  toHex,
-  enrollmentDigest,
+  SMALL_ORDER_POINTS,
+  TRANSCRIPT_FIELDS,
+  comparisonCode,
+  encodeMessage,
+  isSmallOrder,
+  key32,
+  lp,
+  pairingTranscript,
+  parseMessage,
   proofMessage,
-  registrationMessage,
-  grantDigest,
-  receiptBinding,
-  flatObject,
-  loadTrustSet,
-  verifyReceipt,
+  sessionPrologue,
   thumbprint,
+  toHex,
+  transcriptOf,
+  unb64u,
+  verifyOffer,
+  verifyProof,
+  verifySessionAuthorization,
 } from "../transport/pairing-contract.mjs";
-import {
-  signAgentRegistration,
-  signAgentPairing,
-} from "../runtime/companion-agent-identity.mjs";
+import { signPairingProof } from "../runtime/companion-agent-identity.mjs";
+
 const vector = JSON.parse(
   await readFile(
-    new URL("../test-fixtures/pairing/authority-vector.json", import.meta.url),
+    new URL("../test-fixtures/pairing/local-pairing-vector.json", import.meta.url),
     "utf8",
   ),
 );
-const now = vector.receipt_claims.iat;
-const key = await crypto.subtle.importKey(
-  "jwk",
-  vector.fixture_key.public_jwk,
-  { name: "ECDSA", namedCurve: "P-256" },
-  false,
-  ["verify"],
-);
-const trust = {
-  sequence: 1,
-  lookup: (kid) => (kid === vector.fixture_key.kid ? key : undefined),
-};
-const options = {
-  trust,
-  expected: vector.receipt_claims,
-  now,
-  deadline: now + 300,
-};
-test("hosted authority vector reproduces every canonical digest and verifies ES256", async () => {
-  assert.equal(
-    toHex(await enrollmentDigest(vector.receipt_claims)),
-    vector.enrollment_digest_hex,
-  );
-  assert.equal(
-    toHex(await receiptBinding(vector.receipt_claims)),
-    vector.receipt_binding_hex,
-  );
-  assert.equal(
-    toHex(
-      proofMessage(
-        "agent",
-        raw32(vector.agent_proof.issuer_challenge_hex),
-        raw32(vector.enrollment_digest_hex),
-        vector.agent_proof.identity_key_id,
-      ),
-    ),
-    vector.agent_proof.message_hex,
-  );
-  assert.equal(
-    toHex(
-      await grantDigest(
-        vector.grant_digest.creator_account_binding_sha256,
-        vector.grant_digest.installation_grant_sha256,
-      ),
-    ),
-    vector.grant_digest.combined_hex,
-  );
-  const result = await verifyReceipt(vector.signed_jws, options);
-  assert.equal(toHex(result.binding), vector.receipt_binding_hex);
-  assert.equal(result.claims.iss, "https://control.creatorapp.ai");
-});
-test("receipt refuses every context substitution and admission boundary", async () => {
-  for (const field of CONTEXT_FIELDS)
-    await assert.rejects(
-      verifyReceipt(vector.signed_jws, {
-        ...options,
-        expected: { ...vector.receipt_claims, [field]: "substituted" },
-      }),
-      PairingFailure,
-      field,
-    );
-  for (const time of [now - 1, now + 300, NaN, Infinity, 1.5])
-    await assert.rejects(
-      verifyReceipt(vector.signed_jws, { ...options, now: time }),
-      PairingFailure,
-    );
-  await assert.rejects(
-    verifyReceipt(vector.signed_jws, { ...options, deadline: now }),
-    PairingFailure,
-  );
-});
-test("closed JSON rejects duplicate escaped keys, nesting, trailing data and malformed UTF8", () => {
-  const encode = (s) => new TextEncoder().encode(s);
-  for (const text of [
-    '{"kid":"a","k\\u0069d":"b"}',
-    '{"a":{}}',
-    '{"a":[]}',
-    '{"a":true}',
-    '{"a":1,}',
-    "{} garbage",
-    '{"a":NaN}',
-  ])
-    assert.throws(() => flatObject(encode(text), 512), PairingFailure, text);
-  assert.throws(() => flatObject(Uint8Array.of(0xff), 512), PairingFailure);
-});
-test("signature, encoding, header and key-source confusion fail closed", async () => {
-  const [h, p, s] = vector.signed_jws.split(".");
-  const changedHeader = (obj) =>
-    b64u(new TextEncoder().encode(JSON.stringify(obj))) + "." + p + "." + s;
-  const header = JSON.parse(vector.protected_header_utf8);
-  for (const token of [
-    h + "=." + p + "." + s,
-    h + "." + p + "." + s + "=",
-    h + "." + p + "." + b64u(new Uint8Array(64)),
-    changedHeader({ ...header, alg: "none" }),
-    changedHeader({ ...header, jku: "https://example.invalid" }),
-    changedHeader({ ...header, kid: "unknown" }),
-    vector.signed_jws + ".",
-    "x".repeat(8193),
-  ])
-    await assert.rejects(verifyReceipt(token, options), PairingFailure);
-  const sig = unb64u(s),
-    order = BigInt(
-      "0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
-    );
-  sig.set(
-    raw32(
-      (order - BigInt("0x" + toHex(sig.slice(32))))
-        .toString(16)
-        .padStart(64, "0"),
-    ),
-    32,
-  );
-  await assert.rejects(
-    verifyReceipt(h + "." + p + "." + b64u(sig), options),
-    PairingFailure,
-  );
-});
-test("production trust loader rejects template and fixture keys; checks exact thumbprint and purpose", async () => {
-  const pair = await crypto.subtle.generateKey(
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign", "verify"],
-  );
-  const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey),
-    jkt = await thumbprint(jwk),
-    kid = "pr1." + b64u(unb64u(jkt).slice(0, 16));
-  const entry = {
-    alg: "ES256",
-    fixture_only: false,
-    jwk: { crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y, kid },
-    kid,
-    purpose: "pairing-receipt",
-    thumbprint: jkt,
-  };
-  const t = {
-    environment: "production",
-    issuer: options.expected.iss,
-    keys: [entry],
-    production_usable: true,
-    profile: "pairing-receipt-v1",
-    transition_sequence: 1,
-  };
-  assert.ok((await loadTrustSet(t)).lookup(kid));
-  for (const change of [
-    { production_usable: false },
-    { keys: [] },
-    { transition_sequence: 0 },
-    { keys: [{ ...entry, fixture_only: true }] },
-    { keys: [{ ...entry, purpose: "installation-binding" }] },
-    { keys: [{ ...entry, thumbprint: vector.fixture_key.thumbprint }] },
-    { keys: [entry, entry] },
-  ])
-    await assert.rejects(loadTrustSet({ ...t, ...change }), PairingFailure);
-});
-test("dedicated non-exportable identity signs purpose-separated registration and pairing messages", async () => {
-  const pair = await crypto.subtle.generateKey(
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign", "verify"],
-  );
-  const identity = {
-    privateKey: pair.privateKey,
-    thumbprint: await thumbprint(
-      await crypto.subtle.exportKey("jwk", pair.publicKey),
-    ),
-  };
-  await assert.rejects(crypto.subtle.exportKey("jwk", identity.privateKey));
-  const c = {
-      ...vector.receipt_claims,
-      agent_identity_key_jkt: identity.thumbprint,
-    },
-    challenge = new Uint8Array(32).fill(7);
-  const sig = await signAgentPairing(identity, c, challenge);
-  assert.equal(
-    await crypto.subtle.verify(
-      { name: "ECDSA", hash: "SHA-256" },
-      pair.publicKey,
-      sig,
-      proofMessage(
-        "agent",
-        challenge,
-        await enrollmentDigest(c),
-        c.agent_identity_key_id,
-      ),
-    ),
-    true,
-  );
-  const registration = await signAgentRegistration(identity, {
-    challenge,
-    organizationId: c.organization_id,
-    agentId: c.agent_id,
-    keyId: c.agent_identity_key_id,
-    thumbprint: identity.thumbprint,
+const trust = await loadGrantTrustSet(vector.trust_set, { allowNonProduction: true });
+const expected = vector.expected;
+const encoder = new TextEncoder();
+const digest = unb64u(Buffer.from(expected.pairing_digest, "hex").toString("base64url"));
+
+function frameOf(c) {
+  const bytes = encoder.encode(c.text);
+  if (c.pad_to_bytes === undefined) return bytes;
+  const padded = new Uint8Array(c.pad_to_bytes).fill(0x20);
+  padded.set(bytes);
+  return padded;
+}
+const offerCheck = (c) =>
+  verifyOffer(vector.request, frameOf(c), {
+    trust,
+    detectedAccountId: vector.detected_account_id,
+    highWater: c.high_water ?? {},
+    now: vector.now,
   });
-  assert.notDeepEqual(registration, sig);
-  assert.equal(await crypto.subtle.verify(
-    {name: "ECDSA", hash: "SHA-256"}, pair.publicKey, registration,
-    registrationMessage(challenge, c.organization_id, c.agent_id, c.agent_identity_key_id, identity.thumbprint),
-  ), true);
-  assert.equal(await crypto.subtle.verify(
-    {name: "ECDSA", hash: "SHA-256"}, pair.publicKey, registration,
-    proofMessage("agent", challenge, await enrollmentDigest(c), c.agent_identity_key_id),
-  ), false);
-  await assert.rejects(
-    signAgentPairing(identity, vector.receipt_claims, challenge),
-    PairingFailure,
-  );
-  const snapshot = structuredClone(c), frozenChallenge = challenge.slice();
-  const pending = signAgentPairing(identity, c, challenge);
-  c.agent_identity_key_id = "substituted";
-  challenge.fill(8);
-  assert.equal(await crypto.subtle.verify(
-    {name: "ECDSA", hash: "SHA-256"}, pair.publicKey, await pending,
-    proofMessage("agent", frozenChallenge, await enrollmentDigest(snapshot), snapshot.agent_identity_key_id),
-  ), true);
+const refusal = (code, detail = null) => (error) =>
+  error instanceof PairingFailure && error.code === code && error.detail === detail;
+
+test("the vector trust set is refused by the production loader", async () => {
+  await assert.rejects(loadGrantTrustSet(vector.trust_set), GrantTrustError);
 });
 
-test("JSON numeric representation and whitespace match the authority parser", () => {
-  for (const input of ['{"generation":1.0}', '{"generation":1e0}', '\uFEFF{}', '{}\u00A0']) {
-    assert.throws(() => flatObject(new TextEncoder().encode(input), 512), PairingFailure);
+test("the positive vector verifies and reproduces every canonical value", async () => {
+  const verified = await offerCheck({ text: encodeMessage(vector.offer) });
+  assert.deepEqual({ ...verified.identity }, expected.identity);
+  assert.equal(toHex(verified.grantDigest), expected.grant_digest);
+  assert.equal(toHex(verified.pairingDigest), expected.pairing_digest);
+  assert.equal(verified.comparisonCode, expected.comparison_code);
+  assert.equal(verified.grantsNotAfter, expected.grants_not_after);
+  assert.equal(toHex(sessionPrologue(verified.pairingDigest)), expected.session_prologue);
+  assert.equal(toHex(proofMessage("brain", digest)), expected.brain_proof_message);
+  assert.equal(toHex(proofMessage("agent", digest)), expected.agent_proof_message);
+  assert.equal(await thumbprint(vector.request.agent_identity_jwk), expected.agent_identity_key_jkt);
+  const transcript = await transcriptOf(vector.request, vector.offer, expected.identity, verified.grantDigest);
+  assert.equal(toHex(pairingTranscript(transcript)), expected.transcript);
+  assert.equal(
+    await verifyProof(vector.request.agent_identity_jwk, "agent", digest, vector.confirm.agent_proof),
+    true,
+  );
+  const stale = vector.offer_cases.find((c) => c.name === "stale-generation");
+  assert.equal(encodeMessage(vector.offer), stale.text);
+  for (const [message, type] of [
+    [vector.request, "pair.request"],
+    [vector.confirm, "pair.confirm"],
+    [vector.result, "pair.result"],
+    [vector.session_authorization, "session.authorization"],
+  ])
+    assert.equal(encodeMessage(parseMessage(encodeMessage(message), type)), encodeMessage(message));
+});
+
+test("every negative offer case is refused with its code and detail", async () => {
+  assert.equal(vector.offer_cases.length, 29);
+  for (const c of vector.offer_cases)
+    await assert.rejects(offerCheck(c), refusal(c.error, c.detail), c.name);
+});
+
+test("request and confirm cases agree with the Agent parser and proof check", async () => {
+  for (const c of vector.request_cases) {
+    if (c.error === "pairing_message_invalid")
+      assert.throws(() => parseMessage(c.text, "pair.request"), refusal(c.error), c.name);
+    else parseMessage(c.text, "pair.request");
   }
+  for (const c of vector.confirm_cases) {
+    if (c.error === "pairing_message_invalid") {
+      assert.throws(() => parseMessage(c.text, "pair.confirm"), refusal(c.error), c.name);
+      continue;
+    }
+    const confirm = parseMessage(c.text, "pair.confirm");
+    if (c.error === "pairing_proof_refused")
+      assert.equal(
+        await verifyProof(vector.request.agent_identity_jwk, "agent", digest, confirm.agent_proof),
+        false,
+        c.name,
+      );
+    else assert.notEqual(confirm.pairing_id, vector.offer.pairing_id, c.name);
+  }
+});
+
+test("session authorization cases", async () => {
+  for (const c of vector.authorization_cases) {
+    const run = () => verifySessionAuthorization(c.text, expected.identity, { trust, now: c.now });
+    if (c.error) await assert.rejects(run(), refusal(c.error, c.detail), c.name);
+    else assert.equal(await run(), c.not_after, c.name);
+  }
+});
+
+test("every transcript field changes the digest", async () => {
+  const base = await transcriptOf(
+    vector.request,
+    vector.offer,
+    expected.identity,
+    Buffer.from(expected.grant_digest, "hex"),
+  );
+  const hash = async (t) => toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", pairingTranscript(t))));
+  assert.equal(await hash(base), expected.pairing_digest);
+  for (const field of TRANSCRIPT_FIELDS) {
+    const value = base[field];
+    const changed =
+      typeof value === "number"
+        ? value + 1
+        : typeof value === "string"
+          ? value + "x"
+          : Uint8Array.from(value, (x, i) => (i === 0 ? x ^ 1 : x));
+    assert.notEqual(await hash({ ...base, [field]: changed }), expected.pairing_digest, field);
+  }
+});
+
+test("small-order points match the reference, with and without the top bit", () => {
+  assert.deepEqual(SMALL_ORDER_POINTS.map(toHex), vector.small_order_points);
+  for (const point of SMALL_ORDER_POINTS) {
+    const high = point.slice();
+    high[31] |= 0x80;
+    assert.equal(isSmallOrder(point), true);
+    assert.equal(isSmallOrder(high), true);
+  }
+  for (let i = 0; i < 64; i += 1)
+    assert.equal(isSmallOrder(crypto.getRandomValues(new Uint8Array(32))), false);
+});
+
+test("canonical inputs are bounded", async () => {
+  assert.throws(() => proofMessage("bridge", digest), PairingFailure);
+  assert.throws(() => proofMessage("brain", digest.slice(1)), PairingFailure);
+  assert.throws(() => sessionPrologue(new Uint8Array(33)), PairingFailure);
+  await assert.rejects(comparisonCode(new Uint8Array(31)), PairingFailure);
+  assert.throws(() => lp("X", [-1]), PairingFailure);
+  assert.throws(() => lp("X", [2 ** 53]), PairingFailure);
+  assert.throws(() => key32(vector.offer.brain_noise_key + "A"), PairingFailure);
+  assert.throws(() => parseMessage(encodeMessage(vector.confirm), "pair.unknown"), refusal("pairing_message_invalid"));
+});
+
+test("pairing frames use the grant parser's JSON grammar", () => {
+  const text = encodeMessage(vector.confirm);
+  for (const input of [
+    "﻿" + text,
+    text + " ",
+    text + " x",
+    text.replace('"pair.confirm"', '"pair.\\ud800"'),
+    text.slice(0, -1) + ',"pairing_id":' + JSON.stringify(vector.confirm.pairing_id) + "}",
+    text.slice(0, -1) + ',"extra":1.5}',
+  ])
+    assert.throws(() => parseMessage(input, "pair.confirm"), refusal("pairing_message_invalid"), input);
+  assert.throws(() => parseMessage(Uint8Array.of(0xff), "pair.confirm"), refusal("pairing_message_invalid"));
+  parseMessage(` \n${text}\t\r`, "pair.confirm");
+});
+
+test("the non-exportable Agent identity signs low-S pairing proofs", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, [
+    "sign",
+    "verify",
+  ]);
+  const exported = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const jwk = { crv: exported.crv, kty: exported.kty, x: exported.x, y: exported.y };
+  await assert.rejects(crypto.subtle.exportKey("jwk", pair.privateKey));
+  for (let i = 0; i < 16; i += 1) {
+    const proof = await signPairingProof({ privateKey: pair.privateKey }, digest);
+    assert.equal(await verifyProof(jwk, "agent", digest, proof), true);
+    assert.equal(await verifyProof(jwk, "brain", digest, proof), false);
+  }
+  const extractable = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+    "sign",
+  ]);
+  await assert.rejects(
+    signPairingProof({ privateKey: extractable.privateKey }, digest),
+    refusal("pairing_proof_refused"),
+  );
 });

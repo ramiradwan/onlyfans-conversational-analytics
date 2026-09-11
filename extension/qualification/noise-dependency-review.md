@@ -10,4 +10,4 @@ The `snow-wasm-feasibility` evidence archive has SHA-256 `692fb8e1c8aff192ddc354
 
 Production adoption requires explicit review of `wasm-unsafe-eval`, locally packaged WASM/glue provenance and licenses, reproducible build treatment, and exact ZIP allowlist/audit integration. Remote code remains prohibited. Feasibility evidence does not qualify the shipping extension or establish production pairing provenance.
 
-See [ADR 0024](../../docs/adr/0024-authenticated-companion-sessions.md) for authenticated pairing, endpoint persistence, transport migration, and final acceptance requirements.
+See [ADR 0024](../../docs/adr/0024-authenticated-companion-sessions.md) and the [pairing contract](../../docs/companion-pairing-contract.md) for local pairing, endpoint persistence, transport migration, and final acceptance requirements.
