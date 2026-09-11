@@ -216,6 +216,21 @@ test('malformed Chrome response metadata rejects without capture or persistence 
   assert.equal(f.calls.saves, 1);
 });
 
+test('a failed Chrome transport with a surviving document does not refresh or rewrite signing state', async () => {
+  const { fixture: f, provider } = await established();
+  const saved = f.snapshot();
+  const before = f.calls.reads.length;
+  f.reply = () => { throw new Error(PRIVATE_MARKER); };
+  await assert.rejects(provider.read({ operation: 'conversations', refreshMode: 'allow' }), (error) => {
+    assert.deepEqual(publicSigningError(error), { failure_code: 'signing_failed', validation_error: null });
+    return true;
+  });
+  assert.equal(f.calls.reads.length - before, 1);
+  assert.equal(f.calls.reloads, 1);
+  assert.equal(f.calls.saves, 1);
+  assert.deepEqual(f.snapshot(), saved);
+});
+
 test('an unsupported packaged revision remains an error and preserves the prior signing document', async () => {
   const { fixture: f } = await established();
   const saved = f.snapshot();

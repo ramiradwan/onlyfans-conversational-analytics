@@ -1,13 +1,17 @@
 # Extension release verification
 
+<!-- CODE-VERIFY: Check build.mjs, signer-release.mjs, verify-release.mjs, release.spec.mjs, and acceptance-evidence.mjs before changing commands, artifact gates, browser requirements, or acceptance claims. -->
+
 Run `npm ci`, `npm test`, and `npm run check:architecture` from `extension/`.
 Install the pinned automation browser with `npx playwright install chromium`.
 
 `build.mjs` owns the Chrome 132 target, output isolation, deterministic compilation,
 read-only graph, dependency integrity and exact ZIP audits. `--outdir=<directory>`
 selects a fresh candidate directory. A failed candidate is never promoted over an
-existing release. Package and manifest versions must agree. The signer tarball
-and its integrity check remain unchanged.
+existing release. Package and manifest versions must agree. Signer 0.2.0 is bound
+to its reviewed archive digest and numeric release coordinates in
+`signer-release.mjs`; both build audits check those identities.
+See [signer integration qualification](signer-0.2.0.md) for its evidence and rule gate.
 
 ```powershell
 npm run verify:release -- --packaged-signing-rule=<rule.json> --legal-release-bindings=<bindings.json> --privacy-policy-url=<https-url> --chromium-min=<chromium-132.exe> --chromium-current=<current-chromium.exe> --acceptance-evidence=<acceptance.json>
@@ -55,5 +59,5 @@ acceptance; synthetic legal/signing fixtures only validate implementation.
 Full capture also requires a validated platform-to-companion account mapping and
 a companion actually serving browser-trusted authenticated HTTPS/WSS. The
 extension fails closed while either dependency is absent. Companion deployment,
-its origin migration from the older HTTP profile in ADR 0009, and signer updates
-are separate integration work; this extension change does not qualify them.
+and its origin migration from the older HTTP profile in ADR 0009 remain separate
+deployment work. Signer integration tests do not qualify that deployment.

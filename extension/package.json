@@ -10,6 +10,7 @@
     "package:chrome": "node build.mjs --package",
     "audit:chrome": "node build.mjs --audit-package",
     "test:browser:release": "playwright test --config qualification/playwright.config.mjs",
+    "test:browser:signer-recovery": "node qualification/signer-worker-recovery.mjs",
     "verify:release": "node qualification/verify-release.mjs",
     "legal:evidence": "node ../tools/legal-evidence/generate-activation-bundle.mjs",
     "qualify:snapshot": "node --expose-gc qualification/snapshot-100k.mjs",
