@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "OFCA Snow WASM Feasibility Spike",
+  "version": "0.0.0",
+  "minimum_chrome_version": "132",
+  "background": {"service_worker": "background.mjs", "type": "module"},
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;"
+  }
+}

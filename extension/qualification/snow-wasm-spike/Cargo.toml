@@ -1,0 +1,14 @@
+[package]
+name = "ofca-snow-wasm-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+snow = { version = "=0.10.0", default-features = false, features = ["default-resolver", "use-curve25519", "use-chacha20poly1305", "use-sha2", "use-getrandom"] }
+getrandom = { version = "=0.3.4", features = ["wasm_js"] }
+wasm-bindgen = "=0.2.128"
