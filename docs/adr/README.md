@@ -24,14 +24,13 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 ## Proposed
 
-- [ADR 0024: Protect Full-mode communication with authenticated sessions](0024-authenticated-companion-sessions.md)
-
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)
 - [ADR 0013: Define conversational-analytics scope](0013-conversational-analytics-scope.md)
 - [ADR 0014: Define the local authorization foundation](0014-local-authorization-foundation.md)
 - [ADR 0015: Define the non-expiring capability licence profile](0015-non-expiring-capability-licence-profile.md)
 - [ADR 0016: Define the single-execution permit profile](0016-single-execution-permit-profile.md)
 - [ADR 0017: Select packaged boot mode from runtime configuration](0017-configuration-selected-boot-modes.md)
+- [ADR 0024: Protect Full-mode communication with locally paired sessions](0024-authenticated-companion-sessions.md)
 
 ## Superseded
 

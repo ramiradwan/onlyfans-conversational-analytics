@@ -1,161 +1,143 @@
-# Authenticated companion pairing contract
+<!-- CODE-VERIFY: app/security/installation_key.py app/security/grant_verifier.py app/security/hosted_grants.py contracts/grant-profile-v1 contracts/production/grant-profile-v1/trust-set.json extension/runtime/companion-agent-identity.mjs extension/runtime/companion-pairing-store.mjs extension/transport/pairing-contract.mjs extension/transport/companion-noise-session.mjs extension/qualification/snow-wasm-spike/src/lib.rs -->
 
-This contract supplies the non-TOFU trust bootstrap for [ADR 0024](adr/0024-authenticated-companion-sessions.md). The Python spike is a verifier/admission model and interoperability fixture only; it is not the hosted issuer, production persistence, or a production transport change.
+# Companion pairing contract
 
-## Security invariant and exact identities
+This contract defines local Agent-to-Brain pairing and session binding for [ADR 0024](adr/0024-authenticated-companion-sessions.md). Both endpoints are local. The hosted plane takes no part beyond issuing the grants Brain already holds.
 
-A loopback listener is untrusted until it proves possession of the Brain X25519 private key authorized by a receipt independently verified by Agent and Brain against pinned hosted authority keys. A key learned from port `17871`, a health response, sender URL, local page, or extension message never establishes identity.
+## Invariant
 
-No Full-mode auth ticket, storage key/bootstrap value, reconnect credential, conversation data, rotation secret, receipt, or account identifier crosses the unauthenticated loopback boundary. Before Noise completes, loopback carries only the bounded Noise handshake and encrypted confirmation records.
+A loopback listener is untrusted until it proves possession of the installation key bound by valid grants, and then possession of the Noise static key that key signed. A key learned from the loopback port, a health response, a sender URL, a local page, or an extension message never establishes identity.
 
-Every pairing receipt binds this exact tuple:
+Before a session is established, loopback carries only the pairing messages below and Noise handshake messages. No auth ticket, storage key, bootstrap value, reconnect credential, rotation secret, or conversation data crosses it.
 
-- `organization_id`: customer/tenant namespace;
-- `installation_id`, `installation_key_id`, `installation_key_jkt`: logical Brain installation plus the exact registered TPM-backed P-256 signing key and RFC 7638 SHA-256 thumbprint;
-- `agent_id`, `agent_identity_key_id`, `agent_identity_key_jkt`: logical Agent plus the exact enrolled P-256 Agent signing key and thumbprint;
-- `account_id`: authorized creator account;
-- `pairing_id`: random 256-bit lineage identifier, lowercase hex;
-- `generation`: hosted-authority monotonic generation within that lineage.
+## Keys and identities
 
-The Agent identity is a dedicated non-exportable WebCrypto P-256 ECDSA key registered through authenticated hosted provisioning. It is not an auth ticket, storage/Noise key, Bridge credential, or other Full-mode secret. Replacing either endpoint signing identity requires fresh pairing approval; an old receipt cannot authorize a replacement key.
+| Key | Holder | Protection | Use |
+| --- | --- | --- | --- |
+| Installation key, P-256 | Brain | Non-exportable operating-system key, bound to the provisioning user | Signs the Brain pairing proof. Its RFC 7638 thumbprint is `installation_key_jkt` in the grants. |
+| Agent identity key, P-256 | Agent | Non-exportable WebCrypto key in IndexedDB | Signs the Agent pairing proof, and signs ADR 0008 Agent challenges inside the session. |
+| Brain Noise static, X25519 | Brain | Brain encrypted store (ADR 0019), one key per pairing | Noise KK responder static. |
+| Agent Noise static, X25519 | Agent | Private key wrapped under a non-exportable AES-GCM key in IndexedDB | Noise KK initiator static. |
 
-## Enrollment and issuance ceremony
+The raw Agent Noise private key exists in extension memory only while a handshake runs. Replacing any of the four keys requires a new pairing.
 
-Pairing is a hosted two-phase transaction:
+## Encoding
 
-1. Agent independently generates a new X25519 key pair and random 256-bit `agent_nonce`; Brain independently generates its X25519 key pair and random 256-bit `brain_nonce`.
-2. Each endpoint durably records authenticated pending state: own candidate private-key reference/public key, own nonce, selected identities/account, lineage/generation, approval/grant context, and deadline. Hosted values may be compared with this state but never overwrite it.
-3. Each endpoint submits only public contribution material through its already authenticated hosted provisioning channel. Noise private keys never leave the endpoint.
-4. After both contributions exist, the authority freezes one immutable enrollment request containing the complete receipt tuple except authority-assigned `jti`, `iat`, and `exp`.
-5. The authority returns that request over each authenticated provisioning channel plus a separate random 256-bit one-time proof challenge. Each endpoint recomputes the enrollment digest, verifies its own contribution and expected identities/context, then signs only if they match.
-6. Brain signs with the exact registered TPM installation key. Agent signs with the exact registered Agent identity key.
-7. Explicit customer approval is recorded against the same enrollment digest, `pairing_id`, and generation. Approval created before both endpoint contributions are fixed is invalid.
-8. In one finalization transaction the authority revalidates both proofs/challenges, current grants, account/installation authorization, approval revision, cancellation/revocation state, and generation; consumes the request/challenges; fixes one immutable receipt claim set; and advances authoritative generation state before signing.
-9. A signing retry may create another ES256 signature over the same finalized claims, but never a different claim set for that request.
-10. Agent and Brain retrieve the receipt only through authenticated hosted provisioning. A local message may trigger a hosted poll but cannot carry a receipt, approve a request, alter pending expectations, or install a pin.
-11. Each endpoint verifies the receipt against its pending state and atomically consumes pending state while installing the pin and advancing durable replay/rollback state.
-12. A fresh Noise KK handshake must still prove live possession of both authorized X25519 private keys. Signed authorization alone never opens Full mode.
+Transcripts are a domain string followed by fields. Each field is `uint32_be(length) || bytes`. Strings are UTF-8. Integers are unsigned 64-bit big-endian. Keys, nonces, and digests are raw bytes. No JSON serialization takes part.
 
-Changing either Noise key, endpoint nonce, identity binding, account, approval revision, grant context, lineage/generation, suite, or offline deadline creates a different enrollment digest and requires new proofs. Key/identity replacement additionally requires fresh customer approval.
+Pairing messages encode 32-byte values as canonical unpadded base64url and signatures as 64-byte P1363 `r || s` in canonical unpadded base64url. JWKs contain exactly `kty` `EC`, `crv` `P-256`, `x`, and `y`, and must be valid curve points.
 
-## Canonical enrollment and possession proofs
+Domains, each ending in one zero byte:
 
-Proof transcripts use a domain followed by a sequence of `uint32_be(length) || field_bytes`. Strings are UTF-8; integers are unsigned 64-bit big-endian; keys/challenges/digests are raw bytes. No JSON serialization participates.
-
-`enrollment_digest = SHA-256(...)` with domain `OFCA-COMPANION-PAIRING-ENROLLMENT-V1\0` and fields in this exact order:
-
-`audience`, `suite`, `organization_id`, `installation_id`, `installation_key_id`, `installation_key_jkt`, `agent_id`, `agent_identity_key_id`, `agent_identity_key_jkt`, `account_id`, `pairing_id`, raw Agent X25519 key, raw Brain X25519 key, raw `agent_nonce`, raw `brain_nonce`, `generation`, raw `grant_digest`, `approval_id`, `approval_revision`, `offline_not_after`.
-
-The possession-proof message uses domain `OFCA-COMPANION-PAIRING-PROOF-V1\0` and fields:
-
-`pairing-enrollment`, audience `urn:ofca:companion-pairing:v1`, role (`agent` or `brain`), raw 32-byte issuer challenge, raw 32-byte `enrollment_digest`, identity-key ID.
-
-Both proofs are ES256 over those exact bytes with canonical 64-byte P1363 `r || s` and low-S normalization. Brain uses the existing TPM-backed installation-key abstraction; Agent uses its registered non-exportable WebCrypto P-256 key. The authority resolves the proof key from previously registered identity state, not from a key supplied only in the enrollment request.
-
-Issuer proof challenges are distinct from `agent_nonce`/`brain_nonce`, role/request scoped, expire no later than the enrollment request, and are durably one-time consumed. Reused challenges and identical Agent/Brain endpoint nonces are refused.
-
-## Grant context and customer approval
-
-`grant_digest` is the exact pairing authorization provenance for `AGENT_PAIRING_GRANT_TYPES`: `creator_account_binding` and `installation_grant`.
-
-For each required type, take its existing lowercase 64-hex `VerifiedGrantReference.grant_digest` (SHA-256 of the exact verified compact grant), sort pairs by ASCII grant type, and compute SHA-256 over domain `OFCA-COMPANION-PAIRING-GRANTS-V1\0` followed for each pair by length-prefixed ASCII grant type and length-prefixed raw 32-byte decoded digest. Missing, duplicate, extra, expired, revoked, installation-mismatched, or account-mismatched grants make enrollment ineligible.
-
-This digest records issuance provenance; it does not replace runtime authorization. Routine grant refresh after admission does not itself replace a pin. Full-mode operations still evaluate current grants/consent. Removal of pairing authority, an account/installation change, or approval revocation updates pairing revocation state and fences sessions under the online/offline policy.
-
-Customer approval is a durable hosted record containing at least `approval_id`, monotonic `approval_revision`, approver principal, `pairing_id`, generation, enrollment digest, exact approved installation/Agent/account tuple, `approved_at`, and cancellation/revocation state. The receipt signs the current unrevoked approval ID/revision; changing approval-critical data creates a new revision/enrollment.
-
-## Lineage, cancellation, revocation, recovery, and offline use
-
-The hosted authority is the sole generation allocator. `generation` starts at 1 and strictly increases per `pairing_id`; the authority transactionally stores highest-issued and `revoked_through_generation`. A finalized request cannot reuse/decrement a generation.
-
-Endpoints persist highest admitted generation and revocation floor. Admission rejects generations at/below either floor, rejects a consumed `jti`, and never lets same-generation delivery replace a pin. A higher generation requires a separately authenticated pending replacement with fresh endpoint nonces, fresh issuer proof challenges, current grants, and current approval. A different `pairing_id` is a new pairing and cannot silently replace the active lineage.
-
-Hosted enrollment states are explicit: `pending`, `approved`, `issued`, `cancelled`, `revoked`. Finalization is transactional/CAS; cancellation or revocation observed before commit wins over concurrent verification/signing. Cancellation consumes/fences outstanding proof challenges. Post-issuance revocation records an authoritative floor/tombstone, prevents retrieval/admission/reissue at lower/equal generation, and closes known active sessions when delivered. Deleting a local pin never clears hosted generation/revocation state.
-
-Reinstall, lost identity key, or lost Noise private key requires a new pairing. Recovery never trusts the process currently listening on loopback and never treats an old receipt as proof of a new key.
-
-Receipt `exp` bounds **receipt admission only**. `offline_not_after` separately bounds creation/continuation of sessions while current hosted pairing state is unavailable; a session cannot outlive the remaining lease. Known revocation closes sessions immediately. While offline, endpoints cannot learn a new hosted revocation, so production must choose a finite offline lease. Extending it requires fresh authenticated hosted authorization, never local clock passage or replay of the old receipt.
-
-## Pairing receipt JWS profile
-
-The artifact is compact ES256 JWS. Protected header fields are exactly:
-
-- `alg`: `ES256`;
-- `typ`: `ofca-companion-pairing+jwt`;
-- `kid`: bounded local identifier selecting an already pinned key whose sole purpose is `pairing-receipt`.
-
-No other header is accepted. Embedded/remote key references (`jku`, `jwk`, `x5u`, `x5c`), critical extensions, and algorithm negotiation are forbidden. A receipt never supplies its own trust anchor.
-
-The payload contains exactly these claims and no others:
-
-| Claim | Requirement |
+| Name | Value |
 | --- | --- |
-| `iss` | Exact configured pairing issuer. |
-| `aud` | Exact string `urn:ofca:companion-pairing:v1`; arrays rejected. |
-| `iat`, `exp` | Safe integers; `iat <= now < exp <= iat + 300`. |
-| `jti` | Random 256-bit lowercase-hex receipt ID. |
-| `suite` | Exact `Noise_KK_25519_ChaChaPoly_SHA256`. |
-| `organization_id` | Exact tenant/customer. |
-| `installation_id`, `installation_key_id`, `installation_key_jkt` | Exact Brain installation/signing identity. |
-| `agent_id`, `agent_identity_key_id`, `agent_identity_key_jkt` | Exact Agent/signing identity. |
-| `account_id` | Exact authorized creator account. |
-| `pairing_id` | Random 256-bit lowercase-hex lineage. |
-| `agent_key`, `brain_key` | Canonical unpadded base64url of exactly 32 raw X25519 bytes. |
-| `agent_nonce`, `brain_nonce` | Independent 256-bit lowercase-hex challenges; must differ. |
-| `generation` | Safe positive authority-monotonic integer. |
-| `grant_digest` | Exact pairing grant digest above, lowercase hex. |
-| `approval_id`, `approval_revision` | Exact current approval record/revision. |
-| `offline_not_after` | Safe integer, not earlier than `exp`. |
+| Grants | `OFCA-LOCAL-PAIRING-GRANTS-V1\0` |
+| Transcript | `OFCA-LOCAL-PAIRING-TRANSCRIPT-V1\0` |
+| Proof | `OFCA-LOCAL-PAIRING-PROOF-V1\0` |
+| Comparison code | `OFCA-LOCAL-PAIRING-CODE-V1\0` |
 
-Identifier fields use ASCII `[A-Za-z0-9][A-Za-z0-9._~-]{0,127}`. JWK thumbprints are canonical unpadded 43-character base64url encodings of 32 bytes. Numeric values are integers (not bool/float) below `2^53`.
+## Grant digest
 
-Compact JWS is at most 8 KiB; decoded protected header at most 512 bytes; decoded payload at most 6144 bytes. All segments use canonical unpadded base64url. Header/payload are UTF-8 JSON objects with unique member names; duplicates are rejected before key selection/semantic use. Signature is exactly 64-byte P1363 ES256 and low-S; malformed/high-S signatures are rejected. Replay decisions use `pairing_id`/generation/`jti`/pending state, never concrete JWS or signature bytes.
+`grant_digest` identifies the exact grants Brain presented at pairing. For `creator_account_binding` then `installation_grant` (ASCII order), frame the grant type as a string and then the raw 32-byte SHA-256 of the exact compact JWS. `grant_digest` is SHA-256 over the grants domain followed by those four fields.
 
-## Issuer trust and key rotation
+## Pairing transcript
 
-Pairing receipts use a new signing key purpose. Existing installation-binding, membership, license, capability, or grant keys do not acquire pairing authority.
+`pairing_digest` is SHA-256 over the transcript domain followed by these fields in this order:
 
-Production distributes a `pairing-receipt-v1` trust set to Agent and Brain through signed software/contract distribution. Entries are P-256 with purpose `pairing-receipt`, stable `kid`, and checked RFC 7638 thumbprint. `kid` only selects among local trusted entries.
+1. `suite`: `Noise_KK_25519_ChaChaPoly_SHA256`
+2. `pairing_id`: 32 random bytes chosen by Brain
+3. `generation`: integer
+4. `organization_id`
+5. `installation_id`
+6. `installation_key_id`
+7. `installation_key_jkt`
+8. `creator_account_id`
+9. `agent_installation_id`
+10. `agent_identity_key_jkt`: RFC 7638 SHA-256 thumbprint of the Agent identity JWK
+11. Agent Noise static public key, 32 bytes
+12. Brain Noise static public key, 32 bytes
+13. `agent_nonce`, 32 bytes
+14. `brain_nonce`, 32 bytes
+15. `grant_digest`, 32 bytes
 
-Rotation publishes the new verification key before use, permits a bounded overlap, then retires the old signer. Admitted pins store issuer `kid` as provenance but `kid` is not in the Noise binding, so identical verified claims re-signed during rotation retain the same Noise context. Emergency key compromise must support revoking still-live pairings issued by that key or shortening them through authenticated revocation policy. Unknown/retired/wrong-purpose keys are rejected.
+Fields 4 to 8 come from the verified grants. Thumbprints are the 43-character base64url strings as they appear in the grants.
 
-## Endpoint admission and durable state
+## Proofs
 
-Verification is read-only until final commit. Each endpoint must:
+A proof message is the proof domain, then the role (`brain` or `agent`) as a string, then `pairing_digest`. Each proof is ES256 over the proof message: ECDSA P-256 over its SHA-256, encoded as 64-byte P1363 with low S. Signers normalize S. Verifiers reject high S.
 
-1. verify the closed JWS profile and purpose-scoped issuer key;
-2. compare every receipt context field to independently authenticated pending state;
-3. derive its own X25519 public key from the locally held candidate private-key handle and require an exact receipt match;
-4. enforce durable lineage/generation/revocation/consumed-`jti`/approval/grant/time rules;
-5. derive the canonical Noise binding from verified typed claims;
-6. atomically consume pending state, install the peer pin, advance replay/high-water state, and store issuer provenance;
-7. refuse commit if cancellation, account/consent change, revocation, or another state transition changed the pending version during verification.
+Brain signs with the installation key through the installation-key abstraction. Agent signs with its identity key. The proof domain differs from every other installation-key signing domain, so no other installation-key signature verifies as a pairing proof.
 
-Agent and Brain durably retain at least: active `pairing_id`, generation, receipt `jti`, issuer `kid`/trust-set version; exact organization/installation/Agent/account and signing-key identities; own Noise private-key reference/public key and peer pin; Noise binding digest; `grant_digest`, approval ID/revision, receipt `iat`/`exp`, `offline_not_after`; highest generation, revocation floor/tombstones, required consumed receipt IDs; and, if pending enrollment survives restart, its request ID/version, candidate key reference/public key, endpoint nonce, expected identity/account/grant/approval context, expected next generation, and deadline.
+## Comparison code
 
-Brain uses a durable DB transaction. Agent uses a transactional browser store (for example IndexedDB) and a non-exportable WebCrypto Agent identity; sequential best-effort `chrome.storage` writes are insufficient for admission. Noise handshake/cipher state and transport nonces never survive restart.
+Take the first four bytes of SHA-256 over the code domain followed by `pairing_digest`. Read them as `uint32_be`, reduce modulo 1,000,000, and zero-pad to six digits. Bridge and the Agent popup both display it as two groups of three digits.
 
-Authoritative hosted generation/revocation state plus transactional local high-water state prevents ordinary replay/rollback. A privileged attacker restoring an entire old local image can also restore its local high-water mark; pure software cannot prove monotonicity against that attacker indefinitely offline. The bounded signed `offline_not_after` limits that case. Stronger privileged-local rollback resistance requires an OS/hardware monotonic anchor and is outside this contract.
+## Exchange
 
-## Noise prologue binding and Full-mode boundary
+Pairing uses the WebSocket path `/ws/agent/pairing` on the local Brain origin. Messages are UTF-8 JSON text frames with closed schemas: unknown, duplicate, or missing members are rejected. A frame is at most 36,864 bytes, and each compact grant at most 16,384 characters. Any violation closes the socket with a fixed error code and no detail.
 
-After complete JWS verification, both endpoints SHA-256 one semantic binary encoding into the Noise prologue. It uses domain `OFCA-COMPANION-PAIRING-BINDING-V1\0`, the same length framing above, and this exact order:
+1. An authenticated Bridge operator opens a pairing window for one approved creator account. Brain allocates the next generation for the installation, a random `pairing_id`, a fresh Noise static key pair, and a fresh `brain_nonce`. The window lasts at most 300 seconds, and one installation has at most one open window.
+2. Agent → Brain `pair.request`: `agent_installation_id`, `agent_identity_jwk`, `agent_noise_key`, `agent_nonce`. Agent generates a fresh Noise key pair and nonce for every attempt.
+3. Brain → Agent `pair.offer`: `pairing_id`, `generation`, `creator_account_id`, `brain_noise_key`, `brain_nonce`, `installation_jwk`, `installation_grant`, `creator_account_binding`, `brain_proof`. Brain sends the offer only for the first request in an open window. A second request cancels the window and both sockets close.
+4. Agent verifies the offer under "Agent checks" and stores the pending pairing. Agent → Brain `pair.confirm`: `pairing_id`, `agent_proof`. Agent displays the comparison code.
+5. Brain verifies `agent_proof` against the transcript it computed. Bridge displays the comparison code, the Agent identity key thumbprint, and the creator account.
+6. The operator confirms or declines in Bridge before the window expires. Brain → Agent `pair.result`: `pairing_id` and `outcome`, where `outcome` is `confirmed`, `declined`, `expired`, or `cancelled`. This message is a hint only. Agent treats a pairing as complete only after the session step below.
+7. On `confirmed`, Agent opens a session using the pending pins. Brain admits a KK handshake only from the confirmed Agent Noise key. Agent commits its pin once the handshake and both fixed session confirmations succeed.
 
-`typ`, `iss`, `aud`, `iat`, `exp`, `jti`, `suite`, `organization_id`, `installation_id`, `installation_key_id`, `installation_key_jkt`, `agent_id`, `agent_identity_key_id`, `agent_identity_key_jkt`, `account_id`, `pairing_id`, raw Agent X25519 key, raw Brain X25519 key, raw `agent_nonce`, raw `brain_nonce`, `generation`, raw `grant_digest`, `approval_id`, `approval_revision`, `offline_not_after`.
+Each message step has a 10-second deadline. The wait for the operator is bounded by the window. Agent needs an open popup to pair, and closing it cancels the pending pairing.
 
-The spike contains fixed enrollment/proof/grant/binding vectors that MV3 and Python implementations must reproduce. JWS signature bytes and `kid` are deliberately excluded: the signature proves authority; the verified semantic tuple is the Noise context. Re-signing/key rotation over identical claims must not split the transcript.
+## Agent checks
 
-`Noise_KK_25519_ChaChaPoly_SHA256` is fixed, has no negotiation/plaintext fallback, and starts only from receipt-installed pins. The subsequent handshake proves live key possession; encrypted fixed confirmations precede application admission. Current grants/consent/operation authorization still apply after cryptographic authentication.
+Agent accepts an offer only when all of the following hold:
 
-> Full mode fails closed until an authenticated Noise session has been established using pins installed from a valid authority-signed pairing receipt. No Full-mode conversation data, storage keys, auth tickets, storage-bootstrap material, credential-rotation data, or equivalent secrets may traverse the extension/companion boundary outside that protected session.
+- Each grant verifies under grant profile `urn:bridge-clean:grant-profile:v1` with a key from the packaged trust set whose purpose is `installation-binding`. `kid` only selects among packaged keys.
+- Each grant is accepted as current or within grace at the Agent's clock, with the profile's lifetimes, grace periods, and 60-second not-before tolerance. The results match the `contracts/grant-profile-v1` vectors for both grant types.
+- Each grant's `grant_type`, `aud`, `typ`, `iss`, `profile`, and `sub` have the values the profile requires for Brain audiences.
+- Both grants carry the same `organization_id`, `installation_id`, `installation_key_id`, and `installation_key_jkt`.
+- The RFC 7638 thumbprint of `installation_jwk` equals `installation_key_jkt`.
+- `creator_account_binding.creator_account_id` equals the offer's `creator_account_id` and the account Agent detects locally.
+- `generation` is higher than the highest generation Agent has admitted for that `installation_id`.
+- `brain_nonce` differs from `agent_nonce`, and neither Noise public key is a small-order X25519 point.
+- `brain_proof` verifies under `installation_jwk` over the transcript Agent computes from its own request and the offer.
 
-Preview remains standalone and requires neither companion, issuer, pairing, nor Noise.
+Agent has no revocation list for grants. Brain holds hosted revocation state and refuses to pair or serve when its grants are revoked.
 
-## Production implementation gate
+## Brain checks
 
-Production transport remains unchanged until all four are complete and interoperable:
+Brain accepts `pair.confirm` only when the window is open, the request was the first in that window, the Agent JWK is a valid point, the Noise key is not small-order, the nonces differ, and `agent_proof` verifies under the Agent JWK. Brain also applies its ADR 0008 grant checks, including revocation state. Confirmation is a compare-and-set on the window state. If the window was cancelled or expired, or a revocation is recorded, before the commit, the confirmation fails.
 
-1. hosted issuer implementing the exact identity enrollment, proof/challenge, approval/grant digest, generation/finalization, receipt/trust rotation, retrieval, cancellation/revocation, recovery/replacement, and offline-lease contracts;
-2. Agent/MV3 verifier with registered non-exportable Agent identity, transactional pending/admitted state, durable replay/high-water/revocation state, and vectors;
-3. Brain enrollment/verifier using the registered TPM identity, protected Noise key storage, durable pin/high-water/revocation state, and the same vectors;
-4. actual Full-mode Noise integration plus release tests proving zero secret egress before confirmation, no downgrade/fallback, cancellation/late-completion fencing, hostile-port refusal, current Chrome behavior, and standalone Preview.
+## Durable state
+
+Agent uses one IndexedDB transaction for each state change. Brain uses one `auth.sqlite3` transaction.
+
+Agent keeps:
+
+- a pending pairing: `pairing_id`, `generation`, `agent_nonce`, the offer fields, `pairing_digest`, candidate key references, deadline, and a version used as the commit fence;
+- one admitted pin per Brain installation: installation, organization, and account identities; `agent_installation_id`, `pairing_id`, `generation`, `pairing_digest`, and `grant_digest`; the Brain Noise public key; and references to its own identity and wrapped Noise keys;
+- the highest admitted generation per `installation_id`, which survives forgetting a pin.
+
+Brain keeps:
+
+- windows with their state and the fields received;
+- pins: `pairing_id`, `generation`, `agent_installation_id`, the Agent JWK and thumbprint, the Agent Noise public key, `creator_account_id`, `pairing_digest`, the encrypted Brain Noise private key, the confirming principal, and time;
+- the highest generation allocated per installation.
+
+A confirmed pairing for the same Agent installation and account replaces the older pin in the same transaction, and the older pin's sessions close. Cancellation, consent withdrawal, a change of detected account, or revocation during verification or the handshake changes the pending version, and the commit then fails. Noise handshake state, cipher state, and transport nonces never persist.
+
+## Session binding
+
+Agent is the KK initiator. The prologue is the UTF-8 string `ofca-companion-session/v1;agent-to-brain;no-early-data`, then one zero byte, then the pin's `pairing_digest`.
+
+Brain's first application record is `session.authorization`, carrying its current `installation_grant` and `creator_account_binding`. Agent applies the grant rules from "Agent checks". It also requires `organization_id`, `installation_id`, `installation_key_id`, `installation_key_jkt`, and `creator_account_id` to equal the pinned values. Agent sends no Full-mode record until this check passes. Brain sends a new `session.authorization` record after each grant refresh. Agent closes the session once the earliest grant's `exp` plus grace passes, or when a check fails.
+
+## Revocation and recovery
+
+Revoking a pairing in Bridge deletes Brain's pin and closes its sessions. The next KK handshake fails, and Agent reports that the companion revoked the pairing. Forgetting the companion in the Agent popup deletes Agent's pin and pending state but keeps the generation high-water mark.
+
+Reinstalling either endpoint, or losing any key in the table above, requires a new pairing. Recovery never trusts the current loopback listener, and an old proof never authorizes a new key.
+
+A privileged attacker who restores a whole old local profile restores both pins and high-water marks. This contract does not detect that.
+
+## Vectors
+
+Published vectors fix the grant digest, transcript, both proof messages, comparison code, and prologue for one pairing. They also include negative cases for every Agent and Brain check. JavaScript and Python implementations must reproduce them byte for byte. Proof signatures are verified rather than compared, because ECDSA signatures are randomized.
