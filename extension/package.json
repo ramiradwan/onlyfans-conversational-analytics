@@ -3,7 +3,7 @@
   "private": true,
   "version": "2.0.1",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test tests/*.test.mjs",
     "check:architecture": "depcruise --config .dependency-cruiser.cjs capture protocol transport runtime",
     "build": "node build.mjs",
     "audit": "node build.mjs --audit",
@@ -11,6 +11,7 @@
     "audit:chrome": "node build.mjs --audit-package",
     "test:browser:release": "playwright test --config qualification/playwright.config.mjs",
     "test:browser:signer-recovery": "node qualification/signer-worker-recovery.mjs",
+    "test:browser:pairing-storage": "node qualification/pairing-storage-browser.mjs",
     "verify:release": "node qualification/verify-release.mjs",
     "legal:evidence": "node ../tools/legal-evidence/generate-activation-bundle.mjs",
     "qualify:snapshot": "node --expose-gc qualification/snapshot-100k.mjs",

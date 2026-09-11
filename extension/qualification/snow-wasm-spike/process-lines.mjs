@@ -67,6 +67,18 @@ export async function within(label, action, timeoutMs) {
   }
 }
 
+// Playwright discovers a worker before module evaluation necessarily finishes.
+// Wait for the entry point, not for a successful qualification operation.
+export async function waitForWorkerEntry(worker, entry, timeoutMs = 5000) {
+  return within('worker_initialization', () => worker.evaluate(async ({ entry, timeoutMs }) => {
+    const deadline = performance.now() + timeoutMs;
+    while (typeof globalThis[entry] !== 'function') {
+      if (performance.now() >= deadline) throw new Error('worker_initialization_timeout');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }, { entry, timeoutMs }), timeoutMs + 500);
+}
+
 export async function stopChild(child, label = 'child') {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise((resolve) => child.once('exit', resolve));

@@ -5,6 +5,12 @@ on:
     branches: [extension/production-readiness]
     paths:
       - 'extension/qualification/snow-wasm-spike/**'
+      - 'extension/qualification/pairing-storage-*.mjs'
+      - 'extension/transport/*pairing*.mjs'
+      - 'extension/transport/companion-noise-session.mjs'
+      - 'extension/runtime/companion-*.mjs'
+      - 'extension/tests/companion-pairing-contract.test.mjs'
+      - 'extension/test-fixtures/pairing/**'
       - '.github/workflows/snow-wasm-feasibility.yml'
   workflow_dispatch:
 
@@ -45,6 +51,12 @@ jobs:
           cd extension
           npx playwright install chromium
 
+      - name: Verify Agent pairing contract and MV3 durable state
+        shell: bash
+        run: |
+          node --test extension/tests/companion-pairing-contract.test.mjs
+          node extension/qualification/pairing-storage-browser.mjs
+
       - name: Build WASM and run vector, interoperability, and negative tests
         shell: bash
         run: |
@@ -75,6 +87,7 @@ jobs:
           BROWSER="$(find "$RUNNER_TEMP/chrome132" -type f -name chrome -path '*/chrome-linux64/chrome' | head -n1)"
           test -x "$BROWSER"
           "$BROWSER" --version
+          node extension/qualification/pairing-storage-browser.mjs "$BROWSER"
           timeout --signal=TERM --kill-after=5s 60s xvfb-run -a node extension/qualification/snow-wasm-spike/qualify-mv3.mjs "$BROWSER" chrome132
 
       - name: Record qualification summary
@@ -112,3 +125,16 @@ jobs:
             extension/qualification/snow-wasm-spike/dependency-metadata.json
             extension/qualification/snow-wasm-spike/qualification-results.json
             extension/qualification/snow-wasm-spike/chrome-*.json
+
+      - name: Require both browser qualifications
+        if: always()
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const report = JSON.parse(fs.readFileSync('extension/qualification/snow-wasm-spike/qualification-results.json', 'utf8'));
+          if (report.current_attempt_outcome !== 'success' || report.chrome_132_attempt_outcome !== 'success'
+              || report.chrome_current?.result !== 'passed' || report.chrome_132?.result !== 'passed') {
+            throw new Error('browser_qualification_required');
+          }
+          NODE

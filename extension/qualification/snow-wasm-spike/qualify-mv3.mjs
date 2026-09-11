@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createLineQueue, stopChild, within } from './process-lines.mjs';
+import { createLineQueue, stopChild, within, waitForWorkerEntry } from './process-lines.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.join(here, 'mv3-dist');
@@ -41,11 +41,17 @@ async function launch() {
   mark('browser-launch');
   const context = await within('browser_launch', () => chromium.launchPersistentContext('', options), 20000);
   observeRemote(context);
-  mark('service-worker-discovery');
-  const worker = context.serviceWorkers()[0]
-    ?? await within('service_worker_discovery', () => context.waitForEvent('serviceworker'), 15000);
-  mark('service-worker-ready');
-  return { context, worker };
+  try {
+    mark('service-worker-discovery');
+    const worker = context.serviceWorkers()[0]
+      ?? await within('service_worker_discovery', () => context.waitForEvent('serviceworker'), 15000);
+    await waitForWorkerEntry(worker, '__snowSpikeRun');
+    mark('service-worker-ready');
+    return { context, worker };
+  } catch (error) {
+    await closeContext(context);
+    throw error;
+  }
 }
 
 async function closeContext(context) {

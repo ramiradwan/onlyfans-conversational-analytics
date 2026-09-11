@@ -53,6 +53,8 @@ No production transport or permission change is authorized by this ADR revision.
 
 The [isolated Python spike](../../tools/companion-session-spike/README.md) tests strict synthetic pairing receipts, exact context/key admission, generation/revocation inputs, canonical proof/binding vectors, and Noise records over `ws://127.0.0.1:17871`. A separate hostile process occupies that port and must fail to obtain application plaintext or activate a session. Test fixtures do not establish production issuer behavior, production trust anchors, MV3 persistence, or actual hosted grant validation.
 
+The [Agent pairing components](../../extension/qualification/companion-pairing.md) add receipt verification against the hosted interoperability fixture, non-exportable Agent identity, transactional IndexedDB pin storage, and an Agent Snow session adapter. MV3 persistence/race tests and real-WASM lifecycle tests cover these components separately. They remain disconnected from shipping composition until hosted Agent authentication, trust-set release inputs, Brain integration, and the production gates below are resolved.
+
 Before production transport integration, require:
 
 1. Hosted issuer implementation of the exact pairing contract: dedicated signing purpose/trust-set rotation, Agent identity enrollment, TPM/Agent proof profiles, one-time challenges, grant digest, explicit approval, atomic generation/finalization, protected retrieval, cancellation/revocation/reinstall/replacement, and finite offline authorization.

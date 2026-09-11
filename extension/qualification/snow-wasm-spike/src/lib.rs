@@ -5,6 +5,20 @@ const PROFILE: &str = "Noise_KK_25519_ChaChaPoly_SHA256";
 const MAX_FRAME: usize = 4096;
 const TAG_LEN: usize = 16;
 
+// Return private || public so the caller can immediately wrap the private half
+// with its non-exportable IndexedDB wrapping key and clear the temporary bytes.
+#[wasm_bindgen]
+pub fn generate_static_keypair() -> Result<Vec<u8>, JsValue> {
+    let params = PROFILE.parse().map_err(|_| failure("unsupported_suite"))?;
+    let mut pair = Builder::new(params).generate_keypair()
+        .map_err(|_| failure("key_generation_failed"))?;
+    let mut bytes = Vec::with_capacity(64);
+    bytes.extend_from_slice(&pair.private);
+    bytes.extend_from_slice(&pair.public);
+    pair.private.fill(0);
+    Ok(bytes)
+}
+
 fn failure(code: &'static str) -> JsValue {
     JsValue::from_str(code)
 }
