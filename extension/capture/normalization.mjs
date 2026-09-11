@@ -18,7 +18,7 @@ function firstDefined(record, paths) {
 }
 
 export function identifier(value) {
-  if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  if (typeof value === 'string' && value.length <= 200 && value.trim().length > 0) return value.trim();
   if (Number.isSafeInteger(value) && value >= 0) return String(value);
   return null;
 }

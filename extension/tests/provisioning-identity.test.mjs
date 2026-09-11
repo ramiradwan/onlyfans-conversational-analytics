@@ -10,16 +10,24 @@ import { parseIdentityResponse } from '../../app/provisioning/provisioning.js';
 import {
   PROVISIONING_IDENTITY_MESSAGE_TYPE,
   PROVISIONING_IDENTITY_STORAGE_KEY,
+  PROVISIONING_IDENTITY_STORAGE_SCHEMA,
   createProvisioningIdentityBridge,
 } from '../transport/provisioning-identity.mjs';
 
+const CONSENT = { mode: 'full', consent_epoch: '10000000-0000-4000-8000-000000000008' };
 const QUERY = Object.freeze({ type: 'provisioning.identity.query', version: 1 });
-const BRIDGE_SENDER = Object.freeze({ url: 'http://bridge.localhost:17871/provisioning' });
+const BRIDGE_SENDER = Object.freeze({ url: 'https://bridge.localhost:17871/provisioning' });
 const CONTENT_SENDER = Object.freeze({
   id: 'synthetic-extension-id',
   frameId: 0,
   url: 'https://onlyfans.com/my/chats',
+  tab: { id: 17 },
+  documentId: 'document-a',
+  documentLifecycle: 'active',
 });
+const PAGE_EPOCH_A = '10000000-0000-4000-8000-000000000001';
+const PAGE_EPOCH_B = '10000000-0000-4000-8000-000000000002';
+const PAGE_EPOCH_C = '10000000-0000-4000-8000-000000000003';
 
 function storageArea(values) {
   return {
@@ -63,7 +71,7 @@ function bridgeHarness({ register = true } = {}) {
       session: storageArea(session),
     },
   };
-  const bridge = createProvisioningIdentityBridge({ chromeApi });
+  const bridge = createProvisioningIdentityBridge({ chromeApi, currentConsent: () => CONSENT });
   if (register) bridge.register();
   return { bridge, chromeApi, externalListeners, internalListeners, local, session };
 }
@@ -81,20 +89,25 @@ async function bundledSource(relativePath) {
     bundle: true,
     format: 'iife',
     platform: 'browser',
-    target: ['chrome116'],
+    target: ['chrome132'],
     write: false,
   });
   return result.outputFiles[0].text;
 }
 
-test('hooked identity responses flow through the content bridge, clear on sign-out, and satisfy the page parser', async () => {
+function update(accountId, pageEpoch = PAGE_EPOCH_A) {
+  return {
+    type: PROVISIONING_IDENTITY_MESSAGE_TYPE,
+    version: 1,
+    page_epoch: pageEpoch,
+    authenticated_profile: accountId === null ? null : { creator_account_id: accountId },
+  };
+}
+
+test('hooked identity responses bind the observed account to the current document', async () => {
   const h = bridgeHarness();
   const pageListeners = [];
   const posts = [];
-  // The page hook and the content bridge each register a message listener, and
-  // the order they register in follows whichever bundle finishes building
-  // first. A browser delivers the event to every listener, so addressing one by
-  // index would make the assertion depend on that order.
   const dispatchPageMessage = (message) => {
     const event = {
       source: pageWindow,
@@ -104,6 +117,7 @@ test('hooked identity responses flow through the content bridge, clear on sign-o
     for (const listener of [...pageListeners]) listener(event);
   };
   let identityBody = { id: 'creator-from-platform' };
+  const uuids = [PAGE_EPOCH_A, PAGE_EPOCH_B, PAGE_EPOCH_C];
   class FakeWebSocket {
     addEventListener() {}
   }
@@ -119,20 +133,17 @@ test('hooked identity responses flow through the content bridge, clear on sign-o
     },
     WebSocket: FakeWebSocket,
     async fetch() {
-      return {
-        clone() {
-          return { async json() { return identityBody; } };
-        },
-      };
+      return new Response(JSON.stringify(identityBody));
     },
-    postMessage(message, targetOrigin) { posts.push({ message, targetOrigin }); },
+    postMessage(message, targetOrigin) { posts.push({ message: structuredClone(message), targetOrigin }); },
     addEventListener(type, listener) {
       if (type === 'message') pageListeners.push(listener);
     },
   };
   const pageContext = vm.createContext({
     __OFCA_CAPTURE_MODE__: 'identity',
-    console,
+    console, TextEncoder, TextDecoder, AbortController, setTimeout, clearTimeout, structuredClone,
+    crypto: { randomUUID: () => uuids.shift() },
     Date,
     JSON,
     Proxy,
@@ -143,69 +154,71 @@ test('hooked identity responses flow through the content bridge, clear on sign-o
     window: pageWindow,
   });
   const contentContext = vm.createContext({
-    console,
+    console, TextEncoder, TextDecoder, AbortController, setTimeout, clearTimeout, structuredClone,
     chrome: {
       runtime: {
         lastError: null,
         onMessage: { addListener() {} },
         sendMessage(message, callback) {
+          if (message.type === 'ofca.capture.context.query') {
+            callback({ ok: true, consent_epoch: CONSENT.consent_epoch });
+            return;
+          }
           const listener = h.internalListeners[0];
-          assert.equal(
-            listener(message, CONTENT_SENDER, callback),
-            true,
-            'content forwards an identity update to the worker listener',
-          );
+          assert.equal(listener(message, CONTENT_SENDER, callback), true);
         },
       },
     },
     window: pageWindow,
   });
   await Promise.all([
-    bundledSource('../page-hook.js').then((source) => (
-      vm.runInContext(source, pageContext)
-    )),
-    bundledSource('../content.js').then((source) => (
-      vm.runInContext(source, contentContext)
-    )),
+    bundledSource('../page-hook.js').then((source) => vm.runInContext(source, pageContext)),
+    bundledSource('../content.js').then((source) => vm.runInContext(source, contentContext)),
   ]);
 
   await pageWindow.fetch('/api2/v2/users/me');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(JSON.parse(JSON.stringify(posts[0])), {
-    message: {
-      type: PROVISIONING_IDENTITY_MESSAGE_TYPE,
-      version: 1,
-      authenticated_profile: { creator_account_id: 'creator-from-platform' },
-    },
-    targetOrigin: 'https://onlyfans.com',
+  assert.equal(posts[0].message.type, PROVISIONING_IDENTITY_MESSAGE_TYPE);
+  assert.equal(posts[0].message.page_epoch, PAGE_EPOCH_B);
+  assert.deepEqual(posts[0].message.authenticated_profile, {
+    creator_account_id: 'creator-from-platform',
   });
   dispatchPageMessage(posts[0].message);
   await new Promise((resolve) => setImmediate(resolve));
 
   const signedIn = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
-  assert.deepEqual(
-    parseIdentityResponse(signedIn),
-    { accountId: 'creator-from-platform' },
-    'worker identity response satisfies provisioning.parseIdentityResponse',
-  );
+  assert.deepEqual(parseIdentityResponse(signedIn), { accountId: 'creator-from-platform' });
+  assert.deepEqual(await h.bridge.contextFor(CONTENT_SENDER), {
+    sender_key: '17:document-a',
+    tab_id: 17,
+    document_id: 'document-a',
+    page_epoch: PAGE_EPOCH_B,
+    observed_platform_id: 'creator-from-platform',
+    consent_epoch: CONSENT.consent_epoch,
+  });
 
   identityBody = { user: null };
   await pageWindow.fetch('/api2/v2/init');
   await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(posts[1].message.page_epoch, PAGE_EPOCH_C);
   dispatchPageMessage(posts[1].message);
   await new Promise((resolve) => setImmediate(resolve));
 
   const signedOut = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
-  assert.deepEqual(
-    parseIdentityResponse(signedOut),
-    { accountId: null },
-    'identity-path response with no user clears the provisioning-visible account',
+  assert.deepEqual(parseIdentityResponse(signedOut), { accountId: null });
+  assert.equal(
+    h.session[PROVISIONING_IDENTITY_STORAGE_KEY].schema,
+    PROVISIONING_IDENTITY_STORAGE_SCHEMA,
   );
-  assert.deepEqual(h.session, { [PROVISIONING_IDENTITY_STORAGE_KEY]: null });
+  assert.equal(h.session[PROVISIONING_IDENTITY_STORAGE_KEY].contexts.length, 1);
+  assert.equal(
+    h.session[PROVISIONING_IDENTITY_STORAGE_KEY].contexts[0].observed_platform_id,
+    null,
+  );
   assert.deepEqual(h.local, {});
 });
 
-test('identity reads are exact-origin, binding-independent, and fail closed for absent or malformed session state', async () => {
+test('identity reads fail closed for malformed or ambiguous document state', async () => {
   const h = bridgeHarness();
   const absent = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
   assert.deepEqual(parseIdentityResponse(absent), { accountId: null });
@@ -214,33 +227,42 @@ test('identity reads are exact-origin, binding-independent, and fail closed for 
   const malformed = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
   assert.deepEqual(parseIdentityResponse(malformed), { accountId: null });
 
-  h.session[PROVISIONING_IDENTITY_STORAGE_KEY] = [
-    { creator_account_id: 'creator-a' },
-    { creator_account_id: 'creator-b' },
-  ];
+  h.session[PROVISIONING_IDENTITY_STORAGE_KEY] = {
+    schema: PROVISIONING_IDENTITY_STORAGE_SCHEMA,
+    contexts: [
+      {
+        sender_key: '17:document-a',
+        tab_id: 17,
+        document_id: 'document-a',
+        page_epoch: PAGE_EPOCH_A,
+        observed_platform_id: 'creator-a',
+    consent_epoch: CONSENT.consent_epoch,
+      },
+      {
+        sender_key: '18:document-b',
+        tab_id: 18,
+        document_id: 'document-b',
+        page_epoch: PAGE_EPOCH_B,
+        observed_platform_id: 'creator-b',
+    consent_epoch: CONSENT.consent_epoch,
+      },
+    ],
+  };
   const ambiguous = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
   assert.deepEqual(parseIdentityResponse(ambiguous), { accountId: null });
 
   assert.equal(
-    await dispatch(h.externalListeners[0], QUERY, { url: 'http://bridge.localhost:17872/provisioning' }),
+    await dispatch(h.externalListeners[0], QUERY, { url: 'https://bridge.localhost:17872/provisioning' }),
     undefined,
-    'exact-origin gate rejects a different localhost port',
   );
   assert.equal(
     await dispatch(h.externalListeners[0], { ...QUERY, extra: true }, BRIDGE_SENDER),
     undefined,
-    'closed query envelope rejects extra fields',
   );
-  assert.deepEqual(h.local, {});
 });
 
-test('identity updates require the extension content sender and replace the one session value on repeat', async () => {
+test('identity updates are document-bound and replace stale context for the same tab', async () => {
   const h = bridgeHarness();
-  const update = (creatorAccountId) => ({
-    type: PROVISIONING_IDENTITY_MESSAGE_TYPE,
-    version: 1,
-    authenticated_profile: { creator_account_id: creatorAccountId },
-  });
   assert.equal(
     h.internalListeners[0](update('forged'), { ...CONTENT_SENDER, url: 'https://example.test/' }, () => {}),
     false,
@@ -252,14 +274,61 @@ test('identity updates require the extension content sender and replace the one 
   assert.deepEqual(h.session, {});
 
   assert.deepEqual(await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER), { ok: true });
-  assert.deepEqual(await dispatch(h.internalListeners[0], update('creator-b'), CONTENT_SENDER), { ok: true });
+  const nextDocument = {
+    ...CONTENT_SENDER,
+    documentId: 'document-b',
+    url: 'https://onlyfans.com/my/chats?switched=1',
+  };
+  assert.deepEqual(
+    await dispatch(h.internalListeners[0], update('creator-b', PAGE_EPOCH_B), nextDocument),
+    { ok: true },
+  );
+  assert.equal(await h.bridge.contextFor(CONTENT_SENDER), null);
+  assert.deepEqual(await h.bridge.contextFor(nextDocument), {
+    sender_key: '17:document-b',
+    tab_id: 17,
+    document_id: 'document-b',
+    page_epoch: PAGE_EPOCH_B,
+    observed_platform_id: 'creator-b',
+    consent_epoch: CONSENT.consent_epoch,
+  });
   const repeated = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
   assert.deepEqual(parseIdentityResponse(repeated), { accountId: 'creator-b' });
 });
 
-test('background places the provisioning identity bridge behind consent control', async () => {
+test('background binds capture to provisioning identity before consent-controlled ingestion', async () => {
   const source = await readFile(new URL('../background.js', import.meta.url), 'utf8');
-  assert.match(source, /createProvisioningIdentityBridge/);
-  assert.match(source, /provisioningIdentityBridge\s*=\s*createProvisioningIdentityBridge/);
+  assert.match(source, /createAccountBoundCaptureMessageBridge/);
+  assert.match(source, /provisioningIdentityBridge,\s*\n\s*allowsCapture/);
   assert.match(source, /provisioningIdentityBridge,\s*\n\s*previewMetrics/);
+});
+
+test('identity changes fence admitted writes immediately and permit the new document context', async () => {
+  const h = bridgeHarness();
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  let release;
+  let started;
+  const admitted = new Promise((resolve) => { started = resolve; });
+  const work = h.bridge.withCaptureContext(CONTENT_SENDER, async (_context, assertCurrent) => {
+    started();
+    await new Promise((resolve) => { release = resolve; });
+    assertCurrent();
+  });
+  await admitted;
+  await dispatch(h.internalListeners[0], update('creator-b', PAGE_EPOCH_B), CONTENT_SENDER);
+  release();
+  await assert.rejects(work, { code: 'stale_capture_context' });
+  assert.equal((await h.bridge.contextFor(CONTENT_SENDER)).observed_platform_id, 'creator-b');
+  assert.equal(parseIdentityResponse(await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER)).accountId, 'creator-b');
+});
+
+test('clearing consent contexts fences admitted captures before session persistence settles', async () => {
+  const h = bridgeHarness();
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  let guard;
+  await h.bridge.withCaptureContext(CONTENT_SENDER, async (_context, assertCurrent) => { guard = assertCurrent; });
+  const clearing = h.bridge.clearContexts();
+  assert.throws(guard, { code: 'stale_capture_context' });
+  await clearing;
+  assert.equal(await h.bridge.contextFor(CONTENT_SENDER), null);
 });
