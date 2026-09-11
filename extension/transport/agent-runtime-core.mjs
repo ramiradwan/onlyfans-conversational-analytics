@@ -1,3 +1,5 @@
+import { assertOnlyFansTabCanRun, guardMainWorldDispatch } from './read-only-frozen-tab-guard.mjs';
+
 const noOp = () => {};
 const SIGNER_STATE_KEY = 'signer-state';
 
@@ -6,6 +8,7 @@ export function createAccountSigningPersistence(
   creatorAccountId,
   credentialsStore = 'credentials',
 ) {
+  const pendingSaves = new Set();
   const assertAccount = (record) => {
     if (
       typeof record !== 'object'
@@ -31,11 +34,12 @@ export function createAccountSigningPersistence(
       );
       return record === undefined ? null : assertAccount(record);
     },
+    drain: () => Promise.allSettled([...pendingSaves]),
     async save(state) {
       if (typeof state !== 'object' || state === null || Array.isArray(state)) {
         throw new Error('Signer state must be an object');
       }
-      await storage.runTransaction(
+      const saved = storage.runTransaction(
         'readwrite',
         [credentialsStore],
         (tx) => tx.put(credentialsStore, {
@@ -44,6 +48,93 @@ export function createAccountSigningPersistence(
           state: structuredClone(state),
         }),
       );
+      pendingSaves.add(saved);
+      try { await saved; }
+      finally { pendingSaves.delete(saved); }
+    },
+  });
+}
+
+
+function awaitSignerWork(promise, signal) {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => { signal.removeEventListener('abort', abort); reject(signal.reason); };
+    signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve(promise).then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', abort);
+    });
+  });
+}
+
+/** One provider owns the account signing document, including any save already entered on abort. */
+export function createLazyAccountSigner({
+  creatorAccountId, storage, chromeApi, factory, expectedIdentity, signal,
+}) {
+  const persistence = createAccountSigningPersistence(storage, creatorAccountId);
+  let owner = null;
+  let construction = Promise.resolve();
+  const identity = () => {
+    const value = expectedIdentity();
+    // Signer 0.2.0's absent-user-id bootstrap requires this exact string domain.
+    if (typeof value !== 'string' || !/^[1-9][0-9]{0,255}$/.test(value)) {
+      throw Object.assign(new Error('History acquisition requires an authorized platform creator ID'), {
+        code: 'identity_required',
+      });
+    }
+    return value;
+  };
+  const identityChanged = () => Object.assign(new Error('History signer identity changed'), {
+    code: 'account_mismatch',
+  });
+  const resolveOwner = (requestedIdentity, operationSignal) => {
+    const next = construction.then(async () => {
+      operationSignal.throwIfAborted();
+      if (identity() !== requestedIdentity) throw identityChanged();
+      if (owner?.identity === requestedIdentity) return owner;
+      owner?.controller.abort(identityChanged());
+      owner = null;
+      // A cancelled read can return before the signer's already-entered save settles.
+      // A replacement store must load after that save, never race it with another cache.
+      await persistence.drain();
+      operationSignal.throwIfAborted();
+      if (identity() !== requestedIdentity) throw identityChanged();
+      const controller = new AbortController();
+      const ownerSignal = AbortSignal.any([signal, controller.signal]);
+      try {
+        const provider = await factory({
+          creatorAccountId,
+          chromeApi: guardMainWorldDispatch(chromeApi, { signal: ownerSignal }),
+          persistence,
+          expectedIdentity: requestedIdentity,
+          signal: AbortSignal.any([ownerSignal, operationSignal]),
+        });
+        operationSignal.throwIfAborted();
+        if (identity() !== requestedIdentity) throw identityChanged();
+        owner = { identity: requestedIdentity, provider, controller, signal: ownerSignal };
+        return owner;
+      } catch (error) {
+        controller.abort(error);
+        throw error;
+      }
+    });
+    construction = next.then(() => undefined, () => undefined);
+    return awaitSignerWork(next, operationSignal);
+  };
+  return Object.freeze({
+    async read(request) {
+      const operationSignal = request.signal ? AbortSignal.any([signal, request.signal]) : signal;
+      operationSignal.throwIfAborted();
+      const requestedIdentity = identity();
+      const current = await resolveOwner(requestedIdentity, operationSignal);
+      const readSignal = AbortSignal.any([operationSignal, current.signal]);
+      readSignal.throwIfAborted();
+      await assertOnlyFansTabCanRun(chromeApi);
+      readSignal.throwIfAborted();
+      const result = await current.provider.read({ ...request, signal: readSignal });
+      readSignal.throwIfAborted();
+      if (identity() !== requestedIdentity) throw identityChanged();
+      return result;
     },
   });
 }

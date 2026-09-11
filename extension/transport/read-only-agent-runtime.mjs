@@ -8,14 +8,10 @@ import { createChromeAdapter } from './read-only-chrome-adapter.mjs';
 import { createReadOnlyConfigHttpAdapter } from './read-only-config-http-adapter.mjs';
 import { DurableIngestOutbox } from './read-only-durable-outbox.mjs';
 import { HistoryAcquisitionCoordinator } from './read-only-history-coordinator.mjs';
-import {
-  assertOnlyFansTabCanRun,
-  guardMainWorldDispatch,
-} from './read-only-frozen-tab-guard.mjs';
 import { createReadOnlyIndexedDbIngestionStorage } from './read-only-indexeddb-ingestion-storage.mjs';
 import { createLifecycleStorage } from '../runtime/lifecycle-storage.mjs';
 import { LOCAL_SERVICE_WS } from './local-service-endpoints.mjs';
-import { AgentRuntime, createAccountSigningPersistence } from './agent-runtime-core.mjs';
+import { AgentRuntime, createLazyAccountSigner } from './agent-runtime-core.mjs';
 
 export function createReadOnlyAgentRuntime(options = {}) {
   const chromeApi = options.chromeApi ?? globalThis.chrome;
@@ -95,33 +91,14 @@ export function createReadOnlyAgentRuntime(options = {}) {
       await configuration.initialize();
       signal.throwIfAborted();
       if (signerFactory !== null) {
-        let signer = null;
-        let signerIdentity = null;
-        const lazySigner = {
-          async read(request) {
-            const operationSignal = request.signal ? AbortSignal.any([signal, request.signal]) : signal;
-            operationSignal.throwIfAborted();
-            const expectedIdentity = configuration.activeDocument?.history_acquisition?.authorized_platform_creator_id ?? null;
-            if (typeof expectedIdentity !== 'string' || expectedIdentity.length === 0) {
-              throw new Error('History acquisition has no authorized signer identity');
-            }
-            if (signer === null || signerIdentity !== expectedIdentity) {
-              signer = await signerFactory({
-                creatorAccountId,
-                chromeApi: guardMainWorldDispatch(chromeApi, { signal }),
-                persistence: createAccountSigningPersistence(accountStorage, creatorAccountId),
-                expectedIdentity,
-              });
-              signerIdentity = expectedIdentity;
-            }
-            operationSignal.throwIfAborted();
-            await assertOnlyFansTabCanRun(chromeApi);
-            operationSignal.throwIfAborted();
-            const result = await signer.read({ ...request, signal: operationSignal });
-            operationSignal.throwIfAborted();
-            return result;
-          },
-        };
+        const lazySigner = createLazyAccountSigner({
+          creatorAccountId,
+          storage: accountStorage,
+          chromeApi,
+          factory: signerFactory,
+          expectedIdentity: () => configuration.activeDocument?.history_acquisition?.authorized_platform_creator_id,
+          signal,
+        });
         history = historyCoordinatorFactory({
           outbox: durableOutbox,
           signer: lazySigner,
