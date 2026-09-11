@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { authorizationScope } from '../runtime/legal-instruments.mjs';
 import { ActivationEvidenceStore } from '../runtime/activation-evidence.mjs';
 import {
   LEGAL_ACTIVATION_FLOW_STORAGE_KEY,
@@ -91,6 +92,7 @@ test('AE-07 crash after Full transition recovers the original pending mode_upgra
 
   const flow = {
     schema: 'ofca-legal-activation-flow/v1',
+    binding_scope: authorizationScope(bindings, 'preview'),
     transaction_id: upgradeTransaction,
     terms_event_id: terms.event_id,
     risk_event_id: risk.event_id,

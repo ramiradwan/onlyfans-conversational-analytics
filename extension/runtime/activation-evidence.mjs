@@ -1,6 +1,7 @@
 import {
   LEGAL_ACTIVATION_SCHEMA_VERSION,
   LEGAL_INSTRUMENT_NAMES,
+  authorizationScope,
   presentedInstruments,
   validateLegalInstrumentBindings,
 } from './legal-instruments.mjs';
@@ -9,7 +10,7 @@ export const ACTIVATION_EVIDENCE_DATABASE_NAME = 'ofca_legal_evidence_v1';
 export const ACTIVATION_EVIDENCE_DATABASE_VERSION = 1;
 export const ACTIVATION_EVIDENCE_STORE = 'records';
 export const PRE_MODE_EVIDENCE_SCHEMA = 'ofca-pre-mode-legal-evidence/v1';
-export const MODE_EVIDENCE_RECORD_SCHEMA = 'ofca-mode-legal-evidence/v1';
+export const MODE_EVIDENCE_RECORD_SCHEMA = 'ofca-mode-legal-evidence/v2';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SEMVER = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -72,6 +73,7 @@ function transactionCompletion(transaction) {
 function openEvidenceDatabase(indexedDb) {
   if (typeof indexedDb?.open !== 'function') throw new Error('Activation evidence requires IndexedDB');
   return new Promise((resolve, reject) => {
+    let abandoned = false;
     const request = indexedDb.open(
       ACTIVATION_EVIDENCE_DATABASE_NAME,
       ACTIVATION_EVIDENCE_DATABASE_VERSION,
@@ -90,18 +92,23 @@ function openEvidenceDatabase(indexedDb) {
     };
     request.onsuccess = () => {
       const database = request.result;
+      if (abandoned) { database.close(); return; }
       database.onversionchange = () => database.close();
       resolve(database);
     };
     request.onerror = () => reject(
       request.error ?? new Error('Activation evidence database failed to open'),
     );
-    request.onblocked = () => reject(new Error('Activation evidence database upgrade was blocked'));
+    request.onblocked = () => {
+      abandoned = true;
+      reject(new Error('Activation evidence database upgrade was blocked'));
+    };
   });
 }
 
 function sameInstrument(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return ['version', 'rendered_sha256', 'public_url', 'locale']
+    .every((key) => left?.[key] === right?.[key]);
 }
 
 function validatePreModeRecord(record, meaning) {
@@ -226,8 +233,27 @@ export class ActivationEvidenceStore {
   }
 
   async #database() {
-    this.databasePromise ??= openEvidenceDatabase(this.indexedDb);
-    return this.databasePromise;
+    if (this.databasePromise !== null) return this.databasePromise;
+    const attempt = openEvidenceDatabase(this.indexedDb);
+    this.databasePromise = attempt;
+    try {
+      const database = await attempt;
+      database.onversionchange = () => {
+        database.close();
+        if (this.databasePromise === attempt) this.databasePromise = null;
+      };
+      return database;
+    } catch (error) {
+      if (this.databasePromise === attempt) this.databasePromise = null;
+      throw error;
+    }
+  }
+
+  async close() {
+    const pending = this.databasePromise;
+    this.databasePromise = null;
+    const database = await pending?.catch(() => null);
+    database?.close();
   }
 
   async #readRecord(recordKey) {
@@ -366,7 +392,16 @@ export class ActivationEvidenceStore {
 
     const recordKey = `mode:${transactionId}:${eventType}:${selectedMode}`;
     const existing = await this.#readRecord(recordKey);
-    if (existing !== null) return clone(existing);
+    if (existing !== null) {
+      const prior = validateActivationEnvelopeV2(existing.envelope);
+      if (existing.schema !== MODE_EVIDENCE_RECORD_SCHEMA
+        || existing.authorization_scope !== authorizationScope(validatedBindings, selectedMode)
+        || existing.terms_event_id !== termsEventId || existing.risk_event_id !== riskEventId
+        || prior.event_id !== existing.event_id || prior.selected_mode !== selectedMode) {
+        throw new Error('Mode-choice retry does not match the current authorization scope');
+      }
+      return clone(existing);
+    }
 
     const occurredAt = this.now().toISOString();
     const eventId = this.uuid();
@@ -405,6 +440,7 @@ export class ActivationEvidenceStore {
       terms_event_id: terms.event_id,
       risk_event_id: risk.event_id,
       occurred_at: occurredAt,
+      authorization_scope: authorizationScope(validatedBindings, selectedMode),
       envelope,
     }));
   }

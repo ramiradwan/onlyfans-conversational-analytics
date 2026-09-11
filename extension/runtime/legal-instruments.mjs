@@ -99,6 +99,20 @@ export function presentedInstruments(bindings) {
   return structuredClone(validated.instruments);
 }
 
+export function authorizationScope(bindings, mode) {
+  if (!['preview', 'full'].includes(mode)) throw new TypeError('Authorization scope requires an active mode');
+  const validated = validateLegalInstrumentBindings(bindings);
+  return JSON.stringify({
+    schema: 'ofca-authorization-scope/v1',
+    mode,
+    public_origin: validated.public_origin,
+    instruments: LEGAL_INSTRUMENT_NAMES.map((name) => {
+      const value = validated.instruments[name];
+      return [name, value.version, value.rendered_sha256, value.public_url, value.locale];
+    }),
+  });
+}
+
 export function absoluteInstrumentUrl(bindings, instrumentName) {
   if (!LEGAL_INSTRUMENT_NAMES.includes(instrumentName)) {
     throw new TypeError(`Unknown legal instrument ${instrumentName}`);
