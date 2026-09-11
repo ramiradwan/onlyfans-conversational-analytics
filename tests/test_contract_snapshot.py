@@ -8,11 +8,14 @@ from pathlib import Path
 import pytest
 
 from tools.regenerate_contract_snapshot import (
+    EXPECTED_PAIRING_PROFILE,
+    EXPECTED_PAIRING_VECTOR_FILES,
     EXPECTED_PROGRESS_VECTOR_FILES,
     EXPECTED_SCHEMA_CLOSURE,
     build_records,
     copy_schema_closure,
     schema_dependency_closure,
+    selected_pairing_profile,
     selected_progress_profile,
 )
 from contracts.loader import (
@@ -25,7 +28,15 @@ from contracts.loader import (
 
 ROOT = Path(__file__).resolve().parents[1] / "contracts"
 PROGRESS_PROFILE = "urn:bridge-clean:onboarding-progress:v1"
+PAIRING_PROFILE = "urn:bridge-clean:companion-pairing:v1"
 INSTALLATION_CLAIM_PROFILE = "urn:bridge-clean:installation-claim:v1"
+SELECTED_PROFILES = [
+    "urn:bridge-clean:grant-profile:v1",
+    "urn:bridge-clean:capability-permit-v1",
+    PAIRING_PROFILE,
+    "urn:bridge-clean:capability-permit-consumption-policy:v1",
+    PROGRESS_PROFILE,
+]
 EXPECTED_APPROVED_BYTES = {
     "onboarding-progress/metadata-rejected.expected.json": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
     "onboarding-progress/metadata-rejected.json": "b4e6637ad87e10801094be012ba0c2e6ec382e06d6f58f900473ceb9be17358f",
@@ -44,13 +55,8 @@ EXPECTED_APPROVED_BYTES = {
 @pytest.mark.contract_integrity
 def test_selected_snapshot_matches_its_independent_consumer_pin() -> None:
     manifest = verify_snapshot_integrity(ROOT)
-    assert len(manifest["files"]) == 437
-    assert manifest["profiles"] == [
-        "urn:bridge-clean:grant-profile:v1",
-        "urn:bridge-clean:capability-permit-v1",
-        "urn:bridge-clean:capability-permit-consumption-policy:v1",
-        PROGRESS_PROFILE,
-    ]
+    assert len(manifest["files"]) == 450
+    assert manifest["profiles"] == SELECTED_PROFILES
     assert manifest["export_set"] == [
         "grant-profile-v1",
         "capability-permit-v1",
@@ -58,22 +64,18 @@ def test_selected_snapshot_matches_its_independent_consumer_pin() -> None:
         "production",
         "schemas",
         "onboarding-progress",
+        "companion-pairing-v1",
+        "companion-pairing-profile",
     ]
 
 
 @pytest.mark.contract_integrity
 def test_onboarding_progress_is_an_independently_supported_profile_without_t2() -> None:
     manifest, pin = build_records()
-    expected = [
-        "urn:bridge-clean:grant-profile:v1",
-        "urn:bridge-clean:capability-permit-v1",
-        "urn:bridge-clean:capability-permit-consumption-policy:v1",
-        PROGRESS_PROFILE,
-    ]
 
     assert selected_progress_profile() == PROGRESS_PROFILE
-    assert manifest["profiles"] == expected
-    assert pin["supported_profiles"] == expected
+    assert manifest["profiles"] == SELECTED_PROFILES
+    assert pin["supported_profiles"] == SELECTED_PROFILES
     assert INSTALLATION_CLAIM_PROFILE not in manifest["profiles"]
 
 
@@ -87,6 +89,26 @@ def test_onboarding_progress_export_is_the_exact_selected_set() -> None:
     }
 
     assert actual == EXPECTED_PROGRESS_VECTOR_FILES
+
+
+@pytest.mark.contract_integrity
+def test_companion_pairing_record_and_vectors_name_one_profile() -> None:
+    pairing_root = ROOT / "companion-pairing-v1"
+    actual = {
+        path.relative_to(pairing_root).as_posix()
+        for path in pairing_root.rglob("*")
+        if path.is_file()
+    }
+    record = json.loads((ROOT / "companion-pairing-profile/profile.json").read_text("utf-8"))
+    vectors = json.loads((pairing_root / "manifest.json").read_text("utf-8"))
+
+    assert selected_pairing_profile() == EXPECTED_PAIRING_PROFILE
+    assert actual == EXPECTED_PAIRING_VECTOR_FILES
+    assert record["profile"] == vectors["profile"] == PAIRING_PROFILE
+    assert vectors["test_only"] is True
+    assert set(record["messages"].values()) <= {
+        entry["path"] for entry in verify_manifest(ROOT)["files"]
+    }
 
 
 @pytest.mark.contract_integrity

@@ -11,7 +11,8 @@ import {
   transcriptOf,
   verifyProof,
 } from "../transport/pairing-contract.mjs";
-import vector from "../test-fixtures/pairing/local-pairing-vector.json" with { type: "json" };
+import vector from "../../contracts/companion-pairing-v1/vector.json" with { type: "json" };
+import trustSet from "../../contracts/companion-pairing-v1/trust-set.json" with { type: "json" };
 
 const NOW = vector.now,
   ACCOUNT = vector.detected_account_id,
@@ -35,17 +36,37 @@ const noiseKeypair = async () => ({
   publicKey: new Uint8Array(32).fill(8),
 });
 
-// Test Brain: the vector's installation key signs offers over fresh Agent requests.
+const P256_ORDER = BigInt(
+  "0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
+);
+
+// The contract publishes no private key: a fixture scalar follows from its
+// published label under the contract's test-fixture derivation.
+async function fixturePrivateJwk(label, publicJwk) {
+  const material = new Uint8Array(
+    await crypto.subtle.digest(
+      "SHA-256",
+      encoder.encode(`OFCA TEST VECTORS ONLY - NEVER PRODUCTION - ${label}`),
+    ),
+  );
+  let value = 0n;
+  for (const byte of material) value = (value << 8n) | BigInt(byte);
+  const scalar = ((value % (P256_ORDER - 1n)) + 1n).toString(16).padStart(64, "0");
+  const bytes = Uint8Array.from(scalar.match(/../gu), (pair) => Number.parseInt(pair, 16));
+  return { ...publicJwk, d: b64u(bytes) };
+}
+
+// Test Brain: the vendored installation key signs offers over fresh Agent
+// requests. Its scalar is reconstructed from the published fixture label.
 async function brain() {
-  const { d, ...publicJwk } = vector.test_keys.installation_private_jwk;
   const key = await crypto.subtle.importKey(
     "jwk",
-    { ...publicJwk, d },
+    await fixturePrivateJwk(vector.fixture_labels.installation_key, vector.offer.installation_jwk),
     { name: "ECDSA", namedCurve: "P-256" },
     false,
     ["sign"],
   );
-  const trust = await loadGrantTrustSet(vector.trust_set, { allowNonProduction: true });
+  const trust = await loadGrantTrustSet(trustSet, { allowNonProduction: true });
   async function offer(request, generation) {
     const random = () => b64u(crypto.getRandomValues(new Uint8Array(32)));
     const body = {

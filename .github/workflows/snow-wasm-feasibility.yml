@@ -14,6 +14,10 @@ on:
       - 'extension/runtime/companion-*.mjs'
       - 'extension/tests/companion-pairing-contract.test.mjs'
       - 'extension/test-fixtures/pairing/**'
+      - 'contracts/companion-pairing-v1/**'
+      - 'contracts/companion-pairing-profile/**'
+      - 'contracts/manifest.json'
+      - 'contracts/consumer-pin.json'
       - '.github/workflows/snow-wasm-feasibility.yml'
   workflow_dispatch:
 
@@ -47,10 +51,9 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/snow-python"
           "$RUNNER_TEMP/snow-python/bin/python" -m pip install -r tools/companion-session-spike/requirements.txt
 
-      - name: Verify the Python pairing reference and published vector
+      - name: Verify the Python pairing reference against the vendored contract
         shell: bash
         run: |
-          "$RUNNER_TEMP/snow-python/bin/python" tools/companion-session-spike/local_pairing.py --check
           "$RUNNER_TEMP/snow-python/bin/python" -m unittest discover -s tools/companion-session-spike -p "test_*.py" -v
 
       - name: Install existing extension qualification dependencies

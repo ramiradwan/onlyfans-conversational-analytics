@@ -6,5 +6,6 @@ export const BRAIN_PUBLIC_HEX = '79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88
 export const APP_PAYLOAD = new TextEncoder().encode('snow-wasm-agent-application');
 export const APP_REPLY = new TextEncoder().encode('python-brain-application');
 
-// expected.pairing_digest of extension/test-fixtures/pairing/local-pairing-vector.json.
-export const PAIRING_DIGEST_HEX = '8d7fb3e9d40b6cff0713a53de3e06c7d695b4a769d784ddf780caf63fd692b42';
+// expected.pairing_digest of the vendored companion-pairing contract; this
+// module also loads in the browser, so binding.test.mjs checks the literal.
+export const PAIRING_DIGEST_HEX = 'da282a55e299bcd3893680db428f699bff8e340a8f87e5cb20e9808b1dc1c62f';

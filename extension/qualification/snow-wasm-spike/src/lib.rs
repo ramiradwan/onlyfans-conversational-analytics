@@ -2,7 +2,7 @@ use snow::{Builder, HandshakeState, TransportState};
 use wasm_bindgen::prelude::*;
 
 const PROFILE: &str = "Noise_KK_25519_ChaChaPoly_SHA256";
-const MAX_FRAME: usize = 4096;
+const MAX_FRAME: usize = 36864;
 const TAG_LEN: usize = 16;
 
 // Return private || public so the caller can immediately wrap the private half

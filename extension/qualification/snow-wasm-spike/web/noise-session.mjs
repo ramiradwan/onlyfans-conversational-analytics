@@ -1,5 +1,5 @@
-const MAX_FRAME = 4096;
-const MAX_APP_PLAINTEXT = MAX_FRAME - 17;
+const MAX_FRAME = 36864;
+const MAX_APP_PLAINTEXT = 4096 - 17;
 const CONTROL = 0;
 const APPLICATION = 1;
 const CLIENT_READY = new TextEncoder().encode('client-ready');

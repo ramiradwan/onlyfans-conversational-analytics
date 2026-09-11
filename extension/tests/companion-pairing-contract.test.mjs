@@ -1,9 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { GrantTrustError, loadGrantTrustSet } from "../transport/grant-verifier.mjs";
 import {
+  MAX_APPLICATION_FRAME,
+  MAX_APPLICATION_RECORD_PLAINTEXT,
+  MAX_PAIRING_FRAME,
+  MESSAGE_LIMITS,
+  NOISE_TAG_BYTES,
   PairingFailure,
+  RECORD_DISCRIMINATOR_BYTES,
   SMALL_ORDER_POINTS,
   TRANSCRIPT_FIELDS,
   comparisonCode,
@@ -24,14 +29,17 @@ import {
   verifySessionAuthorization,
 } from "../transport/pairing-contract.mjs";
 import { signPairingProof } from "../runtime/companion-agent-identity.mjs";
+import {
+  authorizationCases,
+  confirmCases,
+  offerCases,
+  profile,
+  requestCases,
+  trustSet,
+  vector,
+} from "../test-fixtures/pairing/vendored-vector.mjs";
 
-const vector = JSON.parse(
-  await readFile(
-    new URL("../test-fixtures/pairing/local-pairing-vector.json", import.meta.url),
-    "utf8",
-  ),
-);
-const trust = await loadGrantTrustSet(vector.trust_set, { allowNonProduction: true });
+const trust = await loadGrantTrustSet(trustSet, { allowNonProduction: true });
 const expected = vector.expected;
 const encoder = new TextEncoder();
 const digest = unb64u(Buffer.from(expected.pairing_digest, "hex").toString("base64url"));
@@ -53,8 +61,60 @@ const offerCheck = (c) =>
 const refusal = (code, detail = null) => (error) =>
   error instanceof PairingFailure && error.code === code && error.detail === detail;
 
-test("the vector trust set is refused by the production loader", async () => {
-  await assert.rejects(loadGrantTrustSet(vector.trust_set), GrantTrustError);
+test("the vendored trust set is refused by the production loader", async () => {
+  await assert.rejects(loadGrantTrustSet(trustSet), GrantTrustError);
+});
+
+test("the Agent implements the vendored profile record", () => {
+  assert.equal(profile.profile, vector.profile);
+  assert.equal(profile.suite, "Noise_KK_25519_ChaChaPoly_SHA256");
+  assert.deepEqual(
+    profile.transcript.fields.map((field) => field.name).slice(1),
+    [...TRANSCRIPT_FIELDS],
+  );
+  assert.deepEqual(profile.small_order_noise_keys.keys, SMALL_ORDER_POINTS.map(toHex));
+  assert.equal(profile.limits.max_frame_bytes, MAX_PAIRING_FRAME);
+  assert.equal(profile.limits.max_application_frame_bytes, MAX_APPLICATION_FRAME);
+  assert.equal(profile.limits.noise_tag_bytes, NOISE_TAG_BYTES);
+  assert.equal(
+    profile.limits.record_discriminator_bytes,
+    RECORD_DISCRIMINATOR_BYTES,
+  );
+  assert.equal(
+    profile.limits.max_application_record_plaintext_bytes,
+    MAX_APPLICATION_RECORD_PLAINTEXT,
+  );
+  assert.equal(
+    profile.limits.max_authorization_record_plaintext_bytes,
+    MESSAGE_LIMITS["session.authorization"],
+  );
+  const overhead =
+    profile.limits.noise_tag_bytes + profile.limits.record_discriminator_bytes;
+  assert.equal(
+    profile.limits.max_application_record_plaintext_bytes,
+    profile.limits.max_application_frame_bytes - overhead,
+  );
+  assert.equal(
+    profile.limits.max_authorization_record_plaintext_bytes,
+    profile.limits.max_frame_bytes - overhead,
+  );
+  const filler = "a".repeat(profile.limits.max_grant_characters);
+  assert.equal(
+    Buffer.byteLength(
+      JSON.stringify({
+        type: "session.authorization",
+        installation_grant: filler,
+        creator_account_binding: filler,
+      }),
+      "utf8",
+    ),
+    profile.limits.max_authorization_envelope_bytes,
+  );
+  assert.ok(
+    profile.limits.max_authorization_envelope_bytes <=
+      profile.limits.max_authorization_record_plaintext_bytes,
+    "two grants at the published limit must fit one authorization record",
+  );
 });
 
 test("the positive vector verifies and reproduces every canonical value", async () => {
@@ -74,7 +134,7 @@ test("the positive vector verifies and reproduces every canonical value", async 
     await verifyProof(vector.request.agent_identity_jwk, "agent", digest, vector.confirm.agent_proof),
     true,
   );
-  const stale = vector.offer_cases.find((c) => c.name === "stale-generation");
+  const stale = offerCases.find((c) => c.name === "stale-generation");
   assert.equal(encodeMessage(vector.offer), stale.text);
   for (const [message, type] of [
     [vector.request, "pair.request"],
@@ -86,18 +146,18 @@ test("the positive vector verifies and reproduces every canonical value", async 
 });
 
 test("every negative offer case is refused with its code and detail", async () => {
-  assert.equal(vector.offer_cases.length, 29);
-  for (const c of vector.offer_cases)
+  assert.equal(offerCases.length, 28);
+  for (const c of offerCases)
     await assert.rejects(offerCheck(c), refusal(c.error, c.detail), c.name);
 });
 
 test("request and confirm cases agree with the Agent parser and proof check", async () => {
-  for (const c of vector.request_cases) {
+  for (const c of requestCases) {
     if (c.error === "pairing_message_invalid")
       assert.throws(() => parseMessage(c.text, "pair.request"), refusal(c.error), c.name);
     else parseMessage(c.text, "pair.request");
   }
-  for (const c of vector.confirm_cases) {
+  for (const c of confirmCases) {
     if (c.error === "pairing_message_invalid") {
       assert.throws(() => parseMessage(c.text, "pair.confirm"), refusal(c.error), c.name);
       continue;
@@ -114,8 +174,9 @@ test("request and confirm cases agree with the Agent parser and proof check", as
 });
 
 test("session authorization cases", async () => {
-  for (const c of vector.authorization_cases) {
-    const run = () => verifySessionAuthorization(c.text, expected.identity, { trust, now: c.now });
+  for (const c of authorizationCases) {
+    const run = () =>
+      verifySessionAuthorization(frameOf(c), expected.identity, { trust, now: c.now });
     if (c.error) await assert.rejects(run(), refusal(c.error, c.detail), c.name);
     else assert.equal(await run(), c.not_after, c.name);
   }
@@ -144,6 +205,7 @@ test("every transcript field changes the digest", async () => {
 
 test("small-order points match the reference, with and without the top bit", () => {
   assert.deepEqual(SMALL_ORDER_POINTS.map(toHex), vector.small_order_points);
+  assert.deepEqual(vector.small_order_points, profile.small_order_noise_keys.keys);
   for (const point of SMALL_ORDER_POINTS) {
     const high = point.slice();
     high[31] |= 0x80;

@@ -1,15 +1,15 @@
 """Reference model of local Agent-to-Brain pairing.
 
-Implements docs/companion-pairing-contract.md: the transcript, proofs,
+Implements the vendored companion-pairing contract: the transcript, proofs,
 comparison code, session prologue, message schemas, and the Agent and Brain
 checks. Brain's window is modelled in memory; production Brain keeps it in
 auth.sqlite3 and signs through the installation-key provider.
 
-Run with --write to regenerate the published vector and --check to confirm the
-committed vector is reproduced. Every key in the vector is synthetic.
+The published vector is not generated here. load_contract() reads the copy
+vendored under contracts/ and returns it only when every byte matches the
+contract manifest and the independent consumer pin.
 """
 
-import argparse
 import base64
 import binascii
 from dataclasses import dataclass
@@ -43,8 +43,18 @@ SESSION_PROFILE = b"ofca-companion-session/v1;agent-to-brain;no-early-data"
 PAIRING_PATH = "/ws/agent/pairing"
 MAX_FRAME_BYTES = 36_864
 MAX_GRANT_LENGTH = 16_384
+NOISE_TAG_BYTES = 16
+RECORD_DISCRIMINATOR_BYTES = 1
+RECORD_OVERHEAD_BYTES = NOISE_TAG_BYTES + RECORD_DISCRIMINATOR_BYTES
+MAX_APPLICATION_FRAME_BYTES = 4_096
+MAX_APPLICATION_RECORD_PLAINTEXT_BYTES = (
+    MAX_APPLICATION_FRAME_BYTES - RECORD_OVERHEAD_BYTES
+)
+MAX_AUTHORIZATION_RECORD_PLAINTEXT_BYTES = MAX_FRAME_BYTES - RECORD_OVERHEAD_BYTES
 WINDOW_SECONDS = 300
-VECTOR_PATH = ROOT / "extension" / "test-fixtures" / "pairing" / "local-pairing-vector.json"
+CONTRACT_EXPORT = "companion-pairing-v1"
+CONTRACT_PROFILE = "urn:bridge-clean:companion-pairing:v1"
+FIXTURE_LABEL_PREFIX = "OFCA TEST VECTORS ONLY - NEVER PRODUCTION - "
 
 _GRANTS_DOMAIN = b"OFCA-LOCAL-PAIRING-GRANTS-V1\x00"
 _TRANSCRIPT_DOMAIN = b"OFCA-LOCAL-PAIRING-TRANSCRIPT-V1\x00"
@@ -80,6 +90,14 @@ _B64U_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$")
 _JWS_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 OUTCOMES = ("confirmed", "declined", "expired", "cancelled")
+
+MESSAGE_LIMITS = {
+    "pair.request": MAX_FRAME_BYTES,
+    "pair.offer": MAX_FRAME_BYTES,
+    "pair.confirm": MAX_FRAME_BYTES,
+    "pair.result": MAX_FRAME_BYTES,
+    "session.authorization": MAX_AUTHORIZATION_RECORD_PLAINTEXT_BYTES,
+}
 
 SCHEMAS = {
     "pair.request": {
@@ -295,11 +313,11 @@ def _valid_field(kind, value):
 
 
 def parse_message(data, message_type):
-    """Parse one pairing text frame under its closed schema."""
+    """Parse one pairing message under its closed schema and record bound."""
     try:
         if isinstance(data, str):
             data = data.encode("utf-8")
-        if len(data) > MAX_FRAME_BYTES:
+        if len(data) > MESSAGE_LIMITS[message_type]:
             raise ValueError("frame too large")
         message = json.loads(
             data.decode("utf-8"), object_pairs_hook=_unique,
@@ -559,29 +577,24 @@ def _x25519_public(private):
     )
 
 
-# Deterministic vector generation. Every key derives from a public label.
+# Brain-side test fixtures. Every key derives from a public label; the
+# published pairing vector is vendored, not built here.
 
 ISSUED_AT = 1_788_000_000
 NOW = ISSUED_AT + 3_600
 ORGANIZATION_ID = "0198a1b2-c3d4-7000-8000-0000000000a1"
 INSTALLATION_ID = "0198a1b2-c3d4-7000-8000-0000000000a2"
-OTHER_INSTALLATION_ID = "0198a1b2-c3d4-7000-8000-0000000000a3"
 ACCOUNT_ID = "creator-account-pairing-001"
-OTHER_ACCOUNT_ID = "creator-account-pairing-002"
 AGENT_INSTALLATION_ID = "6f1c2c9e-3b1a-4d55-9a8e-2f0c7b1d4e10"
 
 
 def _label(label):
-    return _sha256(b"ofca-local-pairing-vector/" + label.encode())
+    return _sha256(b"ofca-companion-spike-fixture/" + label.encode())
 
 
 def _p256(label):
     scalar = int.from_bytes(_label(label), "big") % (_P256_ORDER - 1) + 1
     return ec.derive_private_key(scalar, ec.SECP256R1())
-
-
-def _private_jwk(key):
-    return {**public_jwk(key), "d": b64u(key.private_numbers().private_value.to_bytes(32, "big"))}
 
 
 def _canonical(value):
@@ -606,7 +619,6 @@ def _sign_grant(issuer, grant_type, payload):
 class _Fixture:
     def __init__(self):
         self.issuer = _p256("issuer")
-        self.unknown_issuer = _p256("unknown-issuer")
         self.installation = _p256("installation-key")
         self.other_installation = _p256("other-installation-key")
         self.agent_identity = _p256("agent-identity-key")
@@ -618,47 +630,44 @@ class _Fixture:
         self._jti = 0
         self.base_grants = self.grants()
 
-    def grant(self, grant_type, *, issuer=None, installation_key=None, issued_at=ISSUED_AT,
-              installation_id=INSTALLATION_ID, account=ACCOUNT_ID, subject_account=None,
-              audience=None):
+    def grant(self, grant_type):
         self._jti += 1
-        key = installation_key or self.installation
-        jkt = jwk_thumbprint(public_jwk(key))
+        jkt = jwk_thumbprint(public_jwk(self.installation))
         payload = {
-            "aud": audience or GRANT_AUDIENCES[grant_type],
-            "exp": issued_at + _GRANT_LIFETIME[grant_type],
+            "aud": GRANT_AUDIENCES[grant_type],
+            "exp": ISSUED_AT + _GRANT_LIFETIME[grant_type],
             "grant_type": grant_type,
-            "iat": issued_at,
-            "installation_id": installation_id,
+            "iat": ISSUED_AT,
+            "installation_id": INSTALLATION_ID,
             "installation_key_id": "ik1." + b64u(unb64u(jkt)[:16]),
             "installation_key_jkt": jkt,
             "iss": "urn:bridge-clean:commercial-control-plane",
             "jti": f"0198a1b2-c3d4-7100-8000-{self._jti:012x}",
-            "nbf": issued_at,
+            "nbf": ISSUED_AT,
             "organization_id": ORGANIZATION_ID,
             "profile": "urn:bridge-clean:grant-profile:v1",
-            "sub": f"installation:{installation_id}",
+            "sub": f"installation:{INSTALLATION_ID}",
         }
         if grant_type == "creator_account_binding":
             payload.update({
                 "approval_id": "0198a1b2-c3d4-7200-8000-0000000000a1",
                 "approval_revision": 1,
-                "creator_account_id": account,
-                "sub": f"installation:{installation_id}:creator:{subject_account or account}",
+                "creator_account_id": ACCOUNT_ID,
+                "sub": f"installation:{INSTALLATION_ID}:creator:{ACCOUNT_ID}",
             })
-        return _sign_grant(issuer or self.issuer, grant_type, payload)
+        return _sign_grant(self.issuer, grant_type, payload)
 
-    def grants(self, **options):
+    def grants(self):
         return {
-            "installation_grant": self.grant("installation_grant", **options),
-            "creator_account_binding": self.grant("creator_account_binding", **options),
+            "installation_grant": self.grant("installation_grant"),
+            "creator_account_binding": self.grant("creator_account_binding"),
         }
 
     def trust_set(self):
         jwk = public_jwk(self.issuer)
         return {
             "production_usable": False,
-            "profile": "local-pairing-vector",
+            "profile": "companion-spike-fixture",
             "keys": [{
                 "purpose": "installation-binding",
                 "jwk": {**jwk, "kid": _kid(self.issuer)},
@@ -677,49 +686,6 @@ class _Fixture:
         message.update(changes)
         return message
 
-    def offer(self, request, *, grants=None, installation_key=None, account=ACCOUNT_ID,
-              generation=1, brain_noise_key=None, brain_nonce=None, proof_key=None,
-              proof_role="brain", proof_nonce=None, high_s=False):
-        grants = grants or self.base_grants
-        installation_key = installation_key or self.installation
-        offer = {
-            "type": "pair.offer",
-            "pairing_id": b64u(self.pairing_id),
-            "generation": generation,
-            "creator_account_id": account,
-            "brain_noise_key": b64u(brain_noise_key or _x25519_public(self.brain_noise)),
-            "brain_nonce": b64u(brain_nonce or self.brain_nonce),
-            "installation_jwk": public_jwk(installation_key),
-            "installation_grant": grants["installation_grant"],
-            "creator_account_binding": grants["creator_account_binding"],
-        }
-        claims = _peek(offer["installation_grant"])
-        identity = GrantIdentity(
-            _text(claims, "organization_id"), _text(claims, "installation_id"),
-            _text(claims, "installation_key_id"), jwk_thumbprint(offer["installation_jwk"]),
-            account,
-        )
-        signed = dict(offer, brain_nonce=b64u(proof_nonce)) if proof_nonce else offer
-        digest = pairing_digest(transcript_of(
-            request, signed, identity,
-            grant_digest(offer["creator_account_binding"], offer["installation_grant"]),
-        ))
-        proof = sign_proof(proof_key or installation_key, proof_role, digest)
-        if high_s:
-            raw = unb64u(proof)
-            s = _P256_ORDER - int.from_bytes(raw[32:], "big")
-            proof = b64u(raw[:32] + s.to_bytes(32, "big"))
-        offer["brain_proof"] = proof
-        return offer
-
-
-def _refusal(function, *args, **kwargs):
-    try:
-        function(*args, **kwargs)
-    except PairingError as exc:
-        return {"error": exc.code, "detail": exc.detail}
-    raise AssertionError("negative vector case was accepted")
-
 
 def case_frame(case):
     """The frame a vector case describes; pad_to_bytes appends JSON whitespace."""
@@ -727,198 +693,37 @@ def case_frame(case):
     return frame + b" " * (case.get("pad_to_bytes", len(frame)) - len(frame))
 
 
-def build_vector():
-    f = _Fixture()
-    trust = f.trust_set()
-    request = f.request()
-    offer = f.offer(request)
-    verified = verify_offer(
-        request, encode_message(offer), trust_set=trust,
-        detected_account_id=ACCOUNT_ID, high_water={}, now=NOW,
-    )
-    digest = verified.pairing_digest
-    agent_proof = sign_proof(f.agent_identity, "agent", digest)
-    confirm = {"type": "pair.confirm", "pairing_id": offer["pairing_id"], "agent_proof": agent_proof}
-    identity = verified.identity
-    authorization = {"type": "session.authorization", **f.base_grants}
-    small = SMALL_ORDER_POINTS[2]
-    high_bit = small[:31] + bytes([small[31] | 0x80])
-    brain_public = _x25519_public(f.brain_noise)
-
-    offer_cases = {
-        "unknown-member": dict(offer, extra="x"),
-        "wrong-type": dict(offer, type="pair.result"),
-        "missing-member": {k: v for k, v in offer.items() if k != "brain_proof"},
-        "noncanonical-key": dict(offer, brain_noise_key=offer["brain_noise_key"] + "="),
-        "invalid-installation-point": dict(offer, installation_jwk=dict(
-            offer["installation_jwk"], y=offer["installation_jwk"]["x"])),
-        "boolean-generation": dict(offer, generation=True),
-        "zero-generation": dict(offer, generation=0),
-        "small-order-brain-key": f.offer(request, brain_noise_key=small),
-        "small-order-high-bit": f.offer(request, brain_noise_key=high_bit),
-        "reflected-noise-key": f.offer(request, brain_noise_key=unb64u(request["agent_noise_key"])),
-        "reflected-nonce": f.offer(request, brain_nonce=f.agent_nonce),
-        "unknown-issuer-key": f.offer(request, grants=f.grants(issuer=f.unknown_issuer)),
-        "wrong-audience": f.offer(request, grants=dict(f.base_grants, installation_grant=f.grant(
-            "installation_grant", audience="urn:bridge-clean:local-brain:creator-binding"))),
-        "swapped-grants": f.offer(request, grants={
-            "installation_grant": f.base_grants["creator_account_binding"],
-            "creator_account_binding": f.base_grants["installation_grant"],
-        }),
-        "binding-past-grace": f.offer(request, grants=f.grants(issued_at=NOW - 864_000)),
-        "installation-key-substitution": f.offer(request, installation_key=f.other_installation),
-        "installation-mismatch": f.offer(request, grants=dict(
-            f.base_grants, creator_account_binding=f.grant(
-                "creator_account_binding", installation_id=OTHER_INSTALLATION_ID))),
-        "binding-for-other-account": f.offer(request, grants=dict(
-            f.base_grants, creator_account_binding=f.grant(
-                "creator_account_binding", account=OTHER_ACCOUNT_ID))),
-        "binding-account-claim-mismatch": f.offer(request, grants=dict(
-            f.base_grants, creator_account_binding=f.grant(
-                "creator_account_binding", account=OTHER_ACCOUNT_ID,
-                subject_account=ACCOUNT_ID))),
-        "undetected-account": f.offer(request, account=OTHER_ACCOUNT_ID, grants=dict(
-            f.base_grants, creator_account_binding=f.grant(
-                "creator_account_binding", account=OTHER_ACCOUNT_ID))),
-        "stale-generation": offer,
-        "proof-over-other-transcript": f.offer(request, proof_nonce=_label("other-nonce")),
-        "proof-with-agent-role": f.offer(request, proof_role="agent"),
-        "proof-by-other-key": f.offer(request, proof_key=f.other_installation),
-        "high-s-proof": f.offer(request, high_s=True),
-    }
-    text = encode_message(offer)
-    cases = [{"name": name, "text": encode_message(value)} for name, value in offer_cases.items()]
-    cases += [
-        {"name": "duplicate-member", "text": text[:-1] + ',"generation":1}'},
-        {"name": "float-generation", "text": text.replace('"generation":1', '"generation":1.0')},
-        {"name": "frame-at-limit-with-stale-generation", "text": text,
-         "pad_to_bytes": MAX_FRAME_BYTES, "high_water": {INSTALLATION_ID: 1}},
-        {"name": "oversize-frame", "text": text, "pad_to_bytes": MAX_FRAME_BYTES + 1},
-    ]
-    next(case for case in cases if case["name"] == "stale-generation")["high_water"] = {
-        INSTALLATION_ID: 1
-    }
-    for case in cases:
-        case.update(_refusal(
-            verify_offer, request, case_frame(case), trust_set=trust,
-            detected_account_id=ACCOUNT_ID, high_water=case.get("high_water", {}), now=NOW,
-        ))
-
-    request_cases = []
-    for name, value in {
-        "unknown-member": dict(request, extra="x"),
-        "invalid-identity-point": dict(request, agent_identity_jwk=dict(
-            request["agent_identity_jwk"], x=request["agent_identity_jwk"]["y"])),
-        "identity-jwk-with-private-member": dict(
-            request, agent_identity_jwk=_private_jwk(f.agent_identity)),
-        "noncanonical-installation-id": dict(request, agent_installation_id="-agent"),
-        "small-order-agent-key": dict(request, agent_noise_key=b64u(SMALL_ORDER_POINTS[0])),
-        "reflected-noise-key": dict(request, agent_noise_key=b64u(brain_public)),
-        "reflected-nonce": dict(request, agent_nonce=b64u(f.brain_nonce)),
-    }.items():
-        request_cases.append({"name": name, "text": encode_message(value), **_refusal(
-            verify_request, encode_message(value), brain_noise_key=brain_public,
-            brain_nonce=f.brain_nonce,
-        )})
-
-    agent_jwk = request["agent_identity_jwk"]
-    confirm_cases = []
-    raw_proof = unb64u(agent_proof)
-    for name, value in {
-        "wrong-type": dict(confirm, type="pair.offer"),
-        "other-pairing": dict(confirm, pairing_id=b64u(_label("other-pairing"))),
-        "proof-with-brain-role": dict(confirm, agent_proof=sign_proof(f.agent_identity, "brain", digest)),
-        "proof-by-other-key": dict(confirm, agent_proof=sign_proof(f.installation, "agent", digest)),
-        "high-s-proof": dict(confirm, agent_proof=b64u(raw_proof[:32] + (
-            _P256_ORDER - int.from_bytes(raw_proof[32:], "big")).to_bytes(32, "big"))),
-    }.items():
-        confirm_cases.append({"name": name, "text": encode_message(value), **_refusal(
-            verify_confirm, encode_message(value), pairing_id=f.pairing_id,
-            agent_jwk=agent_jwk, digest=digest,
-        )})
-
-    binding_exp = ISSUED_AT + _GRANT_LIFETIME["creator_account_binding"]
-    refreshed = f.grants(issued_at=ISSUED_AT + 86_400)
-    authorization_cases = []
-    for name, value, now in (
-        ("refreshed-grants", {"type": "session.authorization", **refreshed}, NOW + 86_400),
-        ("binding-in-grace", authorization, binding_exp),
-        ("binding-past-grace", authorization, binding_exp + GRANT_GRACE["creator_account_binding"]),
-        ("other-account", dict(authorization, creator_account_binding=f.grant(
-            "creator_account_binding", account=OTHER_ACCOUNT_ID)), NOW),
-        ("other-installation-key", {"type": "session.authorization", **f.grants(
-            installation_key=f.other_installation)}, NOW),
-        ("unknown-member", dict(authorization, extra="x"), NOW),
-    ):
-        case = {"name": name, "text": encode_message(value), "now": now}
-        try:
-            case["not_after"] = verify_session_authorization(
-                case["text"], identity, trust_set=trust, now=now
-            )
-        except PairingError as exc:
-            case.update({"error": exc.code, "detail": exc.detail})
-        authorization_cases.append(case)
-
-    return {
-        "profile": "ofca-local-pairing-vector/v1",
-        "note": "Synthetic keys and grants for tests. The trust set is not production-usable.",
-        "trust_set": trust,
-        "now": NOW,
-        "detected_account_id": ACCOUNT_ID,
-        "test_keys": {
-            "installation_private_jwk": _private_jwk(f.installation),
-            "agent_identity_private_jwk": _private_jwk(f.agent_identity),
-            "agent_noise_private": f.agent_noise.hex(),
-            "brain_noise_private": f.brain_noise.hex(),
-        },
-        "request": request,
-        "offer": offer,
-        "confirm": confirm,
-        "result": {"type": "pair.result", "pairing_id": offer["pairing_id"], "outcome": "confirmed"},
-        "session_authorization": authorization,
-        "expected": {
-            "identity": {
-                "organization_id": identity.organization_id,
-                "installation_id": identity.installation_id,
-                "installation_key_id": identity.installation_key_id,
-                "installation_key_jkt": identity.installation_key_jkt,
-                "creator_account_id": identity.creator_account_id,
-            },
-            "agent_identity_key_jkt": jwk_thumbprint(agent_jwk),
-            "grant_digest": verified.grant_digest.hex(),
-            "transcript": pairing_transcript(transcript_of(
-                request, offer, identity, verified.grant_digest)).hex(),
-            "pairing_digest": digest.hex(),
-            "brain_proof_message": proof_message("brain", digest).hex(),
-            "agent_proof_message": proof_message("agent", digest).hex(),
-            "comparison_code": verified.comparison_code,
-            "session_prologue": session_prologue(digest).hex(),
-            "grants_not_after": verified.grants_not_after,
-        },
-        "small_order_points": [point.hex() for point in SMALL_ORDER_POINTS],
-        "offer_cases": cases,
-        "request_cases": request_cases,
-        "confirm_cases": confirm_cases,
-        "authorization_cases": authorization_cases,
-    }
+def fixture_material(label):
+    """Return the test-only material a published contract label stands for."""
+    return _sha256((FIXTURE_LABEL_PREFIX + label).encode("ascii"))
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--write", action="store_true")
-    mode.add_argument("--check", action="store_true")
-    args = parser.parse_args(argv)
-    vector = build_vector()
-    if args.write:
-        VECTOR_PATH.write_bytes((json.dumps(vector, indent=2) + "\n").encode())
-        return 0
-    committed = json.loads(VECTOR_PATH.read_text(encoding="utf-8"))
-    if committed != vector:
-        print(f"{VECTOR_PATH} differs from the generated vector", file=sys.stderr)
-        return 1
-    return 0
+def load_contract():
+    """Return the vendored pairing contract once every byte matches its pin."""
+    from contracts.loader import verify_snapshot_integrity
 
+    manifest = verify_snapshot_integrity()
+    listed = {entry["path"]: entry for entry in manifest["files"]}
+    root = ROOT / "contracts"
 
-if __name__ == "__main__":
-    sys.exit(main())
+    def pinned(relative):
+        entry = listed.get(relative)
+        if entry is None:
+            raise PairingError("pairing_state_refused", f"unpinned contract file: {relative}")
+        data = (root / relative).read_bytes()
+        if len(data) != entry["size"] or _sha256(data).hex() != entry["sha256"]:
+            raise PairingError("pairing_state_refused", f"vendored bytes differ: {relative}")
+        return json.loads(data)
+
+    family = pinned(f"{CONTRACT_EXPORT}/manifest.json")
+    if family["profile"] != CONTRACT_PROFILE:
+        raise PairingError("pairing_state_refused", "vendored family names another profile")
+    contract = {}
+    for entry in family["files"]:
+        document = pinned(f"{CONTRACT_EXPORT}/{entry['path']}")
+        contract[entry["path"].removesuffix(".json")] = document
+    profile = pinned("companion-pairing-profile/profile.json")
+    if profile["profile"] != family["profile"]:
+        raise PairingError("pairing_state_refused", "vendored record names another profile")
+    contract["profile"] = profile
+    return contract

@@ -7,6 +7,7 @@ import {
 
 const enc = new TextEncoder(),
   MAX_FRAME = 4096,
+  MAX_AUTHORIZATION_FRAME = 36864,
   MAX_RECORDS = 1048576;
 const ready = enc.encode("client-ready"),
   peerReady = enc.encode("server-ready");
@@ -92,12 +93,8 @@ export async function createCompanionSession({
       return failure("session_authentication_failed");
     }
   }
-  function frame(value) {
-    if (
-      !(value instanceof Uint8Array) ||
-      value.length < 1 ||
-      value.length > MAX_FRAME
-    )
+  function frame(value, limit = MAX_FRAME) {
+    if (!(value instanceof Uint8Array) || value.length < 1 || value.length > limit)
       failure("session_frame_refused");
     return value;
   }
@@ -182,7 +179,9 @@ export async function createCompanionSession({
     async authorize(value) {
       check("authorizing");
       state = "verifying";
-      const plain = guarded(() => inner.decrypt_transport(frame(value)));
+      const plain = guarded(() =>
+        inner.decrypt_transport(frame(value, MAX_AUTHORIZATION_FRAME)),
+      );
       if (plain[0] !== 1) failure("session_authentication_failed");
       let notAfter;
       try {

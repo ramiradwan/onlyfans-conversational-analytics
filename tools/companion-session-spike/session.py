@@ -9,7 +9,9 @@ from noise.connection import Keypair, NoiseConnection
 
 PROFILE = b"Noise_KK_25519_ChaChaPoly_SHA256"
 PROLOGUE = b"ofca-companion-session/v1;agent-to-brain;no-early-data"
-MAX_FRAME = 4096
+MAX_FRAME = 36864
+MAX_APPLICATION_PAYLOAD = 4096 - 17
+MAX_AUTHORIZATION_PAYLOAD = MAX_FRAME - 17
 
 
 class SessionError(Exception):
@@ -61,10 +63,11 @@ class Session:
         except Exception:
             self.refuse("handshake_failed")
 
-    def seal(self, payload, control=False):
+    def seal(self, payload, control=False, authorization=False):
         if self.failed or (not control and not self.open):
             self.refuse("session_not_ready")
-        if not isinstance(payload, bytes) or len(payload) > MAX_FRAME - 17:
+        limit = MAX_AUTHORIZATION_PAYLOAD if authorization else MAX_APPLICATION_PAYLOAD
+        if not isinstance(payload, bytes) or len(payload) > limit:
             self.refuse("payload_too_large")
         try:
             return self.noise.encrypt((b"\x00" if control else b"\x01") + payload)

@@ -1,0 +1,37 @@
+[
+  {
+    "name": "unknown-member",
+    "text": "{\"type\":\"pair.request\",\"agent_installation_id\":\"6f1c2c9e-3b1a-4d55-9a8e-2f0c7b1d4e10\",\"agent_identity_jwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"J_SLh9HYk5J-uQMHwc68lukFzruvsAgDZ5f_j-LOUSU\",\"y\":\"DbqSzemRKF3WygukHuj7mIir7dYuzuehxpbBRJ5jHRQ\"},\"agent_noise_key\":\"hk9P6iy6ujTrDWGtSH1V-FqkYxNkWHcNQdzAp7VF1B8\",\"agent_nonce\":\"hQBuKgofu_JV6Ty3IvSDebC1ORNcZqNwRYy4YqNla-4\",\"extra\":\"x\"}",
+    "error": "pairing_message_invalid"
+  },
+  {
+    "name": "invalid-identity-point",
+    "text": "{\"type\":\"pair.request\",\"agent_installation_id\":\"6f1c2c9e-3b1a-4d55-9a8e-2f0c7b1d4e10\",\"agent_identity_jwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"DbqSzemRKF3WygukHuj7mIir7dYuzuehxpbBRJ5jHRQ\",\"y\":\"DbqSzemRKF3WygukHuj7mIir7dYuzuehxpbBRJ5jHRQ\"},\"agent_noise_key\":\"hk9P6iy6ujTrDWGtSH1V-FqkYxNkWHcNQdzAp7VF1B8\",\"agent_nonce\":\"hQBuKgofu_JV6Ty3IvSDebC1ORNcZqNwRYy4YqNla-4\"}",
+    "error": "pairing_message_invalid"
+  },
+  {
+    "name": "identity-jwk-with-private-member",
+    "text": "{\"type\":\"pair.request\",\"agent_installation_id\":\"6f1c2c9e-3b1a-4d55-9a8e-2f0c7b1d4e10\",\"agent_identity_jwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"J_SLh9HYk5J-uQMHwc68lukFzruvsAgDZ5f_j-LOUSU\",\"y\":\"DbqSzemRKF3WygukHuj7mIir7dYuzuehxpbBRJ5jHRQ\",\"d\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"},\"agent_noise_key\":\"hk9P6iy6ujTrDWGtSH1V-FqkYxNkWHcNQdzAp7VF1B8\",\"agent_nonce\":\"hQBuKgofu_JV6Ty3IvSDebC1ORNcZqNwRYy4YqNla-4\"}",
+    "error": "pairing_message_invalid"
+  },
+  {
+    "name": "noncanonical-installation-id",
+    "text": "{\"type\":\"pair.request\",\"agent_installation_id\":\"-agent\",\"agent_identity_jwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"J_SLh9HYk5J-uQMHwc68lukFzruvsAgDZ5f_j-LOUSU\",\"y\":\"DbqSzemRKF3WygukHuj7mIir7dYuzuehxpbBRJ5jHRQ\"},\"agent_noise_key\":\"hk9P6iy6ujTrDWGtSH1V-FqkYxNkWHcNQdzAp7VF1B8\",\"agent_nonce\":\"hQBuKgofu_JV6Ty3IvSDebC1ORNcZqNwRYy4YqNla-4\"}",
+    "error": "pairing_message_invalid"
+  },
+  {
+    "name": "small-order-agent-key",
+    "text": "{\"type\":\"pair.request\",\"agent_installation_id\":\"6f1c2c9e-3b1a-4d55-9a8e-2f0c7b1d4e10\",\"agent_identity_jwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"J_SLh9HYk5J-uQMHwc68lukFzruvsAgDZ5f_j-LOUSU\",\"y\":\"DbqSzemRKF3WygukHuj7mIir7dYuzuehxpbBRJ5jHRQ\"},\"agent_noise_key\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"agent_nonce\":\"hQBuKgofu_JV6Ty3IvSDebC1ORNcZqNwRYy4YqNla-4\"}",
+    "error": "pairing_key_refused"
+  },
+  {
+    "name": "reflected-noise-key",
+    "text": "{\"type\":\"pair.request\",\"agent_installation_id\":\"6f1c2c9e-3b1a-4d55-9a8e-2f0c7b1d4e10\",\"agent_identity_jwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"J_SLh9HYk5J-uQMHwc68lukFzruvsAgDZ5f_j-LOUSU\",\"y\":\"DbqSzemRKF3WygukHuj7mIir7dYuzuehxpbBRJ5jHRQ\"},\"agent_noise_key\":\"q_0FnFuu_IpSOzUUf07PV4TzyMJZz6Q22nzt1owBZxk\",\"agent_nonce\":\"hQBuKgofu_JV6Ty3IvSDebC1ORNcZqNwRYy4YqNla-4\"}",
+    "error": "pairing_key_refused"
+  },
+  {
+    "name": "reflected-nonce",
+    "text": "{\"type\":\"pair.request\",\"agent_installation_id\":\"6f1c2c9e-3b1a-4d55-9a8e-2f0c7b1d4e10\",\"agent_identity_jwk\":{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"J_SLh9HYk5J-uQMHwc68lukFzruvsAgDZ5f_j-LOUSU\",\"y\":\"DbqSzemRKF3WygukHuj7mIir7dYuzuehxpbBRJ5jHRQ\"},\"agent_noise_key\":\"hk9P6iy6ujTrDWGtSH1V-FqkYxNkWHcNQdzAp7VF1B8\",\"agent_nonce\":\"vEwXcvBOY_v0NOmMWiq3lR86ztr75VPP4ryEoU-LbfA\"}",
+    "error": "pairing_nonce_refused"
+  }
+]

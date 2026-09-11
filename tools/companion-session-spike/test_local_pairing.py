@@ -1,9 +1,10 @@
-"""Local pairing reference: vector reproduction, checks, window, and session."""
+"""Local pairing reference: the vendored contract, checks, window, and session."""
 from dataclasses import fields, replace
 import json
 import secrets
 import unittest
 
+from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
     X25519PublicKey,
@@ -13,20 +14,123 @@ import local_pairing as lp
 from session import PROLOGUE, Session, SessionError
 from test_session import ready
 
-VECTOR = json.loads(lp.VECTOR_PATH.read_text(encoding="utf-8"))
+# Every published byte below is read through load_contract(), which refuses the
+# snapshot unless each file matches the contract manifest and the consumer pin.
+CONTRACT = lp.load_contract()
+PROFILE = CONTRACT["profile"]
+VECTOR = CONTRACT["vector"]
+TRUST_SET = CONTRACT["trust-set"]
+OFFER_CASES = CONTRACT["offer-cases"]
+REQUEST_CASES = CONTRACT["request-cases"]
+CONFIRM_CASES = CONTRACT["confirm-cases"]
+AUTHORIZATION_CASES = CONTRACT["authorization-cases"]
+LABELS = VECTOR["fixture_labels"]
 
 
 def offer_check(case):
     return lp.verify_offer(
-        VECTOR["request"], lp.case_frame(case), trust_set=VECTOR["trust_set"],
+        VECTOR["request"], lp.case_frame(case), trust_set=TRUST_SET,
         detected_account_id=VECTOR["detected_account_id"],
         high_water=case.get("high_water", {}), now=VECTOR["now"],
     )
 
 
-class Vector(unittest.TestCase):
-    def test_committed_vector_is_reproduced(self):
-        self.assertEqual(lp.build_vector(), VECTOR)
+class Contract(unittest.TestCase):
+    def assertRefusal(self, error, case):
+        self.assertEqual(error.code, case["error"])
+        if case["error"] in PROFILE["detailed_refusal_codes"]:
+            self.assertEqual(error.detail, case["detail"])
+        else:
+            self.assertNotIn("detail", case)
+
+    def test_brain_implements_the_vendored_profile_record(self):
+        self.assertEqual(PROFILE["profile"], VECTOR["profile"])
+        self.assertEqual(PROFILE["suite"], lp.SUITE)
+        self.assertEqual(
+            [field["name"] for field in PROFILE["transcript"]["fields"]][1:],
+            [field.name for field in fields(lp.Transcript)],
+        )
+        self.assertEqual(
+            [PROFILE["domains"][name].encode("ascii") + b"\x00"
+             for name in ("grants", "transcript", "proof", "code")],
+            [lp._GRANTS_DOMAIN, lp._TRANSCRIPT_DOMAIN, lp._PROOF_DOMAIN, lp._CODE_DOMAIN],
+        )
+        self.assertEqual(PROFILE["session_prologue"]["text"].encode("ascii"), lp.SESSION_PROFILE)
+        limits = PROFILE["limits"]
+        self.assertEqual(limits["max_frame_bytes"], lp.MAX_FRAME_BYTES)
+        self.assertEqual(limits["max_grant_characters"], lp.MAX_GRANT_LENGTH)
+        self.assertEqual(limits["noise_tag_bytes"], lp.NOISE_TAG_BYTES)
+        self.assertEqual(
+            limits["record_discriminator_bytes"], lp.RECORD_DISCRIMINATOR_BYTES
+        )
+        self.assertEqual(
+            limits["max_application_frame_bytes"], lp.MAX_APPLICATION_FRAME_BYTES
+        )
+        self.assertEqual(
+            limits["max_application_record_plaintext_bytes"],
+            lp.MAX_APPLICATION_RECORD_PLAINTEXT_BYTES,
+        )
+        self.assertEqual(
+            limits["max_authorization_record_plaintext_bytes"],
+            lp.MAX_AUTHORIZATION_RECORD_PLAINTEXT_BYTES,
+        )
+        self.assertEqual(
+            limits["max_authorization_record_plaintext_bytes"],
+            lp.MESSAGE_LIMITS["session.authorization"],
+        )
+        envelope = len(json.dumps({
+            "type": "session.authorization",
+            "installation_grant": "a" * limits["max_grant_characters"],
+            "creator_account_binding": "a" * limits["max_grant_characters"],
+        }, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        self.assertEqual(envelope, limits["max_authorization_envelope_bytes"])
+        self.assertLessEqual(
+            envelope, limits["max_authorization_record_plaintext_bytes"],
+            "two grants at the published limit must fit one authorization record",
+        )
+        self.assertEqual(
+            {name: grant["audience"] for name, grant in PROFILE["grants"].items()},
+            lp.GRANT_AUDIENCES,
+        )
+        self.assertEqual(
+            {name: grant["grace_seconds"] for name, grant in PROFILE["grants"].items()},
+            lp.GRANT_GRACE,
+        )
+        self.assertEqual(
+            PROFILE["test_fixture_derivation"]["label_prefix"], lp.FIXTURE_LABEL_PREFIX
+        )
+        self.assertEqual(
+            [key["hex"] if isinstance(key, dict) else key
+             for key in PROFILE["small_order_noise_keys"]["keys"]],
+            [point.hex() for point in lp.SMALL_ORDER_POINTS],
+        )
+
+    def test_vendored_fixture_keys_follow_from_their_labels(self):
+        for label, jwk in (
+            (LABELS["installation_key"], VECTOR["offer"]["installation_jwk"]),
+            (LABELS["agent_identity_key"], VECTOR["request"]["agent_identity_jwk"]),
+        ):
+            with self.subTest(label=label):
+                material = int.from_bytes(lp.fixture_material(label), "big")
+                key = ec.derive_private_key(
+                    material % (lp._P256_ORDER - 1) + 1, ec.SECP256R1()
+                )
+                self.assertEqual(lp.public_jwk(key), jwk)
+        for label, encoded in (
+            (LABELS["agent_noise_key"], VECTOR["request"]["agent_noise_key"]),
+            (LABELS["brain_noise_key"], VECTOR["offer"]["brain_noise_key"]),
+        ):
+            with self.subTest(label=label):
+                self.assertEqual(
+                    lp.b64u(lp._x25519_public(lp.fixture_material(label))), encoded
+                )
+        for label, encoded in (
+            (LABELS["agent_nonce"], VECTOR["request"]["agent_nonce"]),
+            (LABELS["brain_nonce"], VECTOR["offer"]["brain_nonce"]),
+            (LABELS["pairing_id"], VECTOR["offer"]["pairing_id"]),
+        ):
+            with self.subTest(label=label):
+                self.assertEqual(lp.b64u(lp.fixture_material(label)), encoded)
 
     def test_session_prologue_matches_the_session_profile(self):
         self.assertEqual(lp.SESSION_PROFILE, PROLOGUE)
@@ -48,18 +152,16 @@ class Vector(unittest.TestCase):
         )
 
     def test_every_negative_case_is_refused_with_its_code(self):
-        for case in VECTOR["offer_cases"]:
+        self.assertEqual(len(OFFER_CASES), 28)
+        for case in OFFER_CASES:
             with self.subTest(case=case["name"]):
                 with self.assertRaises(lp.PairingError) as caught:
                     offer_check(case)
-                self.assertEqual(
-                    (caught.exception.code, caught.exception.detail),
-                    (case["error"], case["detail"]),
-                )
+                self.assertRefusal(caught.exception, case)
         brain_key = X25519PrivateKey.from_private_bytes(
-            bytes.fromhex(VECTOR["test_keys"]["brain_noise_private"])
+            lp.fixture_material(LABELS["brain_noise_key"])
         ).public_key().public_bytes_raw()
-        for case in VECTOR["request_cases"]:
+        for case in REQUEST_CASES:
             with self.subTest(request=case["name"]):
                 with self.assertRaisesRegex(lp.PairingError, f"^{case['error']}$"):
                     lp.verify_request(
@@ -67,7 +169,7 @@ class Vector(unittest.TestCase):
                         brain_nonce=lp.unb64u(VECTOR["offer"]["brain_nonce"]),
                     )
         digest = bytes.fromhex(VECTOR["expected"]["pairing_digest"])
-        for case in VECTOR["confirm_cases"]:
+        for case in CONFIRM_CASES:
             with self.subTest(confirm=case["name"]):
                 with self.assertRaisesRegex(lp.PairingError, f"^{case['error']}$"):
                     lp.verify_confirm(
@@ -77,20 +179,19 @@ class Vector(unittest.TestCase):
 
     def test_authorization_cases(self):
         identity = lp.GrantIdentity(**VECTOR["expected"]["identity"])
-        for case in VECTOR["authorization_cases"]:
+        for case in AUTHORIZATION_CASES:
             with self.subTest(case=case["name"]):
                 if "error" in case:
                     with self.assertRaises(lp.PairingError) as caught:
                         lp.verify_session_authorization(
-                            case["text"], identity, trust_set=VECTOR["trust_set"], now=case["now"]
+                            lp.case_frame(case), identity,
+                            trust_set=TRUST_SET, now=case["now"],
                         )
-                    self.assertEqual(
-                        (caught.exception.code, caught.exception.detail),
-                        (case["error"], case["detail"]),
-                    )
+                    self.assertRefusal(caught.exception, case)
                 else:
                     self.assertEqual(lp.verify_session_authorization(
-                        case["text"], identity, trust_set=VECTOR["trust_set"], now=case["now"]
+                        lp.case_frame(case), identity,
+                        trust_set=TRUST_SET, now=case["now"],
                     ), case["not_after"])
 
     def test_every_transcript_field_changes_the_digest(self):

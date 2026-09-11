@@ -9,7 +9,8 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 from websockets.asyncio.server import serve
 
-from session import Session, SessionError, establish, exchange, MAX_FRAME
+from session import (Session, SessionError, establish, exchange, MAX_FRAME,
+                     MAX_APPLICATION_PAYLOAD, MAX_AUTHORIZATION_PAYLOAD)
 
 URI = "ws://127.0.0.1:17871/session-spike"
 SENSITIVE = b"synthetic-message|storage-key|auth-ticket|rotation-material"
@@ -40,6 +41,23 @@ def ready(a, b):
 
 
 class Records(unittest.TestCase):
+    def test_authorization_record_carries_the_published_bound(self):
+        a, b = pair()
+        ready(a, b)
+        payload = b"a" * MAX_AUTHORIZATION_PAYLOAD
+        frame = b.seal(payload, authorization=True)
+        self.assertEqual(len(frame), MAX_FRAME)
+        self.assertEqual(a.unseal(frame), payload)
+        with self.assertRaises(SessionError) as caught:
+            b.seal(payload, authorization=False)
+        self.assertEqual(caught.exception.code, "payload_too_large")
+        c, d = pair()
+        ready(c, d)
+        with self.assertRaises(SessionError) as caught:
+            d.seal(payload + b"a", authorization=True)
+        self.assertEqual(caught.exception.code, "payload_too_large")
+        self.assertEqual(MAX_APPLICATION_PAYLOAD, 4079)
+
     def test_round_trip_and_no_cleartext(self):
         a, b = pair()
         transcript = ready(a, b)

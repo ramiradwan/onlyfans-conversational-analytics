@@ -1,7 +1,7 @@
 // Local Agent-to-Brain pairing per docs/companion-pairing-contract.md: the
 // transcript, proofs, comparison code, session prologue, message schemas, and
 // the Agent checks. tools/companion-session-spike/local_pairing.py is the
-// reference; both reproduce extension/test-fixtures/pairing/local-pairing-vector.json.
+// reference; both reproduce the vendored contracts/companion-pairing-v1 vectors.
 import {
   GRANT_PROFILES,
   parseStrictJson,
@@ -15,6 +15,21 @@ export const SESSION_PROFILE =
 export const PAIRING_PATH = "/ws/agent/pairing";
 export const MAX_PAIRING_FRAME = 36_864;
 export const MAX_GRANT_LENGTH = 16_384;
+export const NOISE_TAG_BYTES = 16;
+export const RECORD_DISCRIMINATOR_BYTES = 1;
+const RECORD_OVERHEAD = NOISE_TAG_BYTES + RECORD_DISCRIMINATOR_BYTES;
+export const MAX_APPLICATION_FRAME = 4_096;
+export const MAX_APPLICATION_RECORD_PLAINTEXT =
+  MAX_APPLICATION_FRAME - RECORD_OVERHEAD;
+export const MAX_AUTHORIZATION_RECORD_PLAINTEXT =
+  MAX_PAIRING_FRAME - RECORD_OVERHEAD;
+export const MESSAGE_LIMITS = Object.freeze({
+  "pair.request": MAX_PAIRING_FRAME,
+  "pair.offer": MAX_PAIRING_FRAME,
+  "pair.confirm": MAX_PAIRING_FRAME,
+  "pair.result": MAX_PAIRING_FRAME,
+  "session.authorization": MAX_AUTHORIZATION_RECORD_PLAINTEXT,
+});
 export const PAIRING_WINDOW_SECONDS = 300;
 export const PAIRING_STEP_SECONDS = 10;
 export const GRANT_AUDIENCES = Object.freeze({
@@ -304,7 +319,8 @@ export function parseMessage(frame, type) {
   try {
     requirePairing(typeof frame !== "string" || frame.isWellFormed());
     const bytes = typeof frame === "string" ? enc.encode(frame) : frame;
-    requirePairing(bytes instanceof Uint8Array && bytes.length <= MAX_PAIRING_FRAME);
+    const limit = Object.hasOwn(MESSAGE_LIMITS, type) ? MESSAGE_LIMITS[type] : 0;
+    requirePairing(bytes instanceof Uint8Array && bytes.length <= limit);
     const schema = Object.hasOwn(SCHEMAS, type) ? SCHEMAS[type] : null;
     const message = parseStrictJson(bytes);
     requirePairing(schema && message.type === type);

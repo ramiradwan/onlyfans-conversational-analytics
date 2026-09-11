@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
-APPROVED_SOURCE_COMMIT = "ce510faf767e8d808a04eb9ceb28523b598eac0f"
+APPROVED_SOURCE_COMMIT = "c335404b2bd1238950192c923671478062c9b92c"
 EXPORT_SET = [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -22,17 +22,26 @@ EXPORT_SET = [
     "production",
     "schemas",
     "onboarding-progress",
+    "companion-pairing-v1",
+    "companion-pairing-profile",
 ]
 EXPORT_SOURCES = {
     "grant-profile-v1": "test-vectors/grant-profile-v1",
     "capability-permit-v1": "test-vectors/capability-permit-v1",
     "permit-consumption": "test-vectors/adr-0012-v1/permit-consumption",
     "onboarding-progress": "test-vectors/adr-0012-v1/onboarding-progress",
+    "companion-pairing-v1": "test-vectors/companion-pairing-v1",
+    "companion-pairing-profile": "profiles/companion-pairing/v1",
 }
 SCHEMA_EXPORT = "schemas"
 SCHEMA_ROOT = Path("schemas")
 SCHEMA_ENTRYPOINTS = (
     Path("commercial/v1/capability-permit.schema.json"),
+    Path("local/v1/companion-pairing-confirm.schema.json"),
+    Path("local/v1/companion-pairing-offer.schema.json"),
+    Path("local/v1/companion-pairing-request.schema.json"),
+    Path("local/v1/companion-pairing-result.schema.json"),
+    Path("local/v1/companion-pairing-session-authorization.schema.json"),
     Path("provisioning/v1/onboarding-progress-report.schema.json"),
     Path("provisioning/v1/onboarding-progress-response.schema.json"),
     Path("provisioning/v1/report-proof-challenge.schema.json"),
@@ -54,10 +63,29 @@ EXPECTED_PROGRESS_VECTOR_FILES = frozenset(
     }
 )
 EXPECTED_PROGRESS_PROFILE = "urn:bridge-clean:onboarding-progress:v1"
-EXPECTED_FILE_COUNT = 437
+EXPECTED_PAIRING_PROFILE = "urn:bridge-clean:companion-pairing:v1"
+EXPECTED_PAIRING_PROFILE_FILES = frozenset({"profile.json"})
+EXPECTED_PAIRING_VECTOR_FILES = frozenset(
+    {
+        "authorization-cases.json",
+        "confirm-cases.json",
+        "manifest.json",
+        "offer-cases.json",
+        "request-cases.json",
+        "trust-set.json",
+        "vector.json",
+    }
+)
+EXPECTED_FILE_COUNT = 450
 APPROVED_SOURCE_SHA256 = {
     "schemas/commercial/v1/capability-permit.schema.json": "9b0bfee05eb11ed87876a43b6ee88035f67a6f3067254fcc79e23dd5c42b1aa8",
     "schemas/common/v1/definitions.schema.json": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa",
+    "schemas/local/v1/companion-pairing-confirm.schema.json": "1e0151a75cba3951beca60371c6ccabc38ba60cb6ffbd8f7a4259ce2bce08c2b",
+    "schemas/local/v1/companion-pairing-offer.schema.json": "f36f288fa0c0c5368ba8c0e726ae02d55d2de6b508658a0f76bcdd8725673d0c",
+    "schemas/local/v1/companion-pairing-request.schema.json": "b804343351c171274d855991cc2e8b38de8429433a45bca48592f4eeedf2e78c",
+    "schemas/local/v1/companion-pairing-result.schema.json": "c6d7aeabaf196c4da38313bf6f45febb182131d7e33117debb9f625d97462c93",
+    "schemas/local/v1/companion-pairing-session-authorization.schema.json": "eef0da8194bddf76d8082e21e7ed34246e8301042b748ade6a48e6c4e38350ab",
+    "profiles/companion-pairing/v1/profile.json": "d13572d0f7fa0bfbdfdfd7445d35e87f0272070910312dc999cde87bde566388",
     "schemas/provisioning/v1/onboarding-progress-report.schema.json": "062a9f277af0c29cdc22a469d2e35d73e306fb3f6dbf6435f942558b75987d65",
     "schemas/provisioning/v1/onboarding-progress-response.schema.json": "fc3f762656fbbf605ca96ad4fa7c7401b3aa855194e952010e3b84a2ba2bf452",
     "schemas/provisioning/v1/report-proof-challenge.schema.json": "96aeefee034ee710d98013b1cb2996ba84e576ec1000e40c5b24d2b28ba5f8f8",
@@ -71,11 +99,14 @@ APPROVED_SOURCE_SHA256 = {
 VECTOR_MANIFESTS = {
     "grant-profile-v1": "grant-profile-v1/manifest.json",
     "capability-permit-v1": "capability-permit-v1/manifest.json",
+    "companion-pairing-v1": "companion-pairing-v1/manifest.json",
 }
 TRUST_SETS = {
     "grant-profile-v1": "grant-profile-v1/keys/trust-set.json",
     "capability-permit-v1": "capability-permit-v1/trust-set.json",
+    "companion-pairing-v1": "companion-pairing-v1/trust-set.json",
 }
+PAIRING_PROFILE_RECORD = "companion-pairing-profile/profile.json"
 POLICY_PROFILES = {
     "permit-consumption": "permit-consumption/policy.json",
 }
@@ -218,6 +249,52 @@ def selected_progress_profile() -> str:
     return EXPECTED_PROGRESS_PROFILE
 
 
+def selected_pairing_profile() -> str:
+    """Return the pairing profile the vendored record and its vectors agree on."""
+
+    record_root = CONTRACTS_ROOT / "companion-pairing-profile"
+    actual = {
+        path.relative_to(record_root).as_posix()
+        for path in record_root.rglob("*")
+        if path.is_file()
+    }
+    if actual != EXPECTED_PAIRING_PROFILE_FILES:
+        difference = sorted(actual ^ EXPECTED_PAIRING_PROFILE_FILES)
+        raise SystemExit(
+            "selected companion-pairing profile export does not match approved file set: "
+            + ", ".join(difference)
+        )
+    vector_root = CONTRACTS_ROOT / "companion-pairing-v1"
+    vendored = {
+        path.relative_to(vector_root).as_posix()
+        for path in vector_root.rglob("*")
+        if path.is_file()
+    }
+    if vendored != EXPECTED_PAIRING_VECTOR_FILES:
+        difference = sorted(vendored ^ EXPECTED_PAIRING_VECTOR_FILES)
+        raise SystemExit(
+            "selected companion-pairing vectors do not match approved file set: "
+            + ", ".join(difference)
+        )
+    record = json.loads((CONTRACTS_ROOT / PAIRING_PROFILE_RECORD).read_text("utf-8"))
+    vectors = json.loads(
+        (CONTRACTS_ROOT / VECTOR_MANIFESTS["companion-pairing-v1"]).read_text("utf-8")
+    )
+    if record["profile"] != EXPECTED_PAIRING_PROFILE or vectors["profile"] != record["profile"]:
+        raise SystemExit("selected companion-pairing record and vectors name different profiles")
+    messages = record["messages"]
+    missing = [
+        path
+        for path in messages.values()
+        if not (CONTRACTS_ROOT / SCHEMA_EXPORT / Path(path).relative_to(SCHEMA_ROOT)).is_file()
+    ]
+    if missing:
+        raise SystemExit(
+            "selected companion-pairing record names an unvendored schema: " + ", ".join(missing)
+        )
+    return EXPECTED_PAIRING_PROFILE
+
+
 def verify_approved_source_bytes(source_root: Path) -> None:
     for relative, expected_digest in APPROVED_SOURCE_SHA256.items():
         source = source_root / relative
@@ -287,6 +364,8 @@ def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
         for path in POLICY_PROFILES.values()
     )
     profiles.append(selected_progress_profile())
+    if selected_pairing_profile() not in profiles:
+        raise SystemExit("selected companion-pairing profile is absent from the manifest")
     entries = fixture_entries()
     manifest = {
         "content_digest": aggregate_digest(entries),

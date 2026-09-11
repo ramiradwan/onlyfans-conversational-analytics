@@ -4,7 +4,7 @@ Research-only. This directory is intentionally outside the shipping extension gr
 
 The Rust `cdylib` wrapper pins upstream `snow` 0.10.0 and fixes `Noise_KK_25519_ChaChaPoly_SHA256`. Caller-provided static keys and the complete prologue are handed to `snow::Builder`; all Noise state transitions and cryptographic primitives remain inside upstream `snow`. The only extra crypto dependency declaration is `getrandom 0.3.4` with its documented `wasm_js` backend so `snow`'s existing RNG abstraction reaches browser `crypto.getRandomValues` on `wasm32-unknown-unknown`.
 
-The JavaScript layer implements only OFCA record admission/lifecycle: 4 KiB frames, encrypted `client-ready`/`server-ready` confirmations, record discriminators, cancellation/deadline, and fail-closed session destruction. `noise-binding.mjs` builds the session prologue from a pairing digest and is checked against the local pairing vector.
+The JavaScript layer implements only OFCA record admission/lifecycle: 4 KiB frames, encrypted `client-ready`/`server-ready` confirmations, record discriminators, cancellation/deadline, and fail-closed session destruction. `noise-binding.mjs` builds the session prologue from a pairing digest and is checked against the vendored companion-pairing vector.
 
 ## Pinned toolchain
 

@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { loadWasm } from "./helpers.mjs";
 import { NoiseSession } from "../web/noise-session.mjs";
 import { sessionPrologue, fromHex } from "../web/noise-binding.mjs";
@@ -14,19 +13,19 @@ import {
 import { createCompanionSession } from "../../../transport/companion-noise-session.mjs";
 import { loadGrantTrustSet } from "../../../transport/grant-verifier.mjs";
 
-const vector = JSON.parse(
-  await readFile(
-    new URL("../../../test-fixtures/pairing/local-pairing-vector.json", import.meta.url),
-    "utf8",
-  ),
-);
-const trust = await loadGrantTrustSet(vector.trust_set, { allowNonProduction: true });
+import {
+  authorizationCases,
+  trustSet,
+  vector,
+} from "../../../test-fixtures/pairing/vendored-vector.mjs";
+
+const trust = await loadGrantTrustSet(trustSet, { allowNonProduction: true });
 const NOW = vector.now,
   NOT_AFTER = vector.expected.grants_not_after;
 const encoder = new TextEncoder();
 const authorization = (name) =>
   encoder.encode(
-    name ? vector.authorization_cases.find((c) => c.name === name).text : JSON.stringify(vector.session_authorization),
+    name ? authorizationCases.find((c) => c.name === name).text : JSON.stringify(vector.session_authorization),
   );
 
 async function pair({ start = NOW, signal, commit = null, commitFails = false, identity } = {}) {
@@ -159,7 +158,7 @@ test("refused authorizations close the session", async () => {
     ["other-installation-key", {}],
     ["unknown-member", {}],
     [null, { start: NOT_AFTER }],
-    [null, { identity: { ...vector.expected.identity, creator_account_id: "creator-account-pairing-002" } }],
+    [null, { identity: { ...vector.expected.identity, creator_account_id: `${vector.detected_account_id}-other` } }],
   ];
   for (const [name, options] of cases) {
     const p = await pair(options);
@@ -223,7 +222,7 @@ test("Agent malformed records, early data and absolute handshake deadline perman
       } else {
         await ready(p.a, p.b);
         if (scenario === "text") assert.throws(() => p.a.open("secret"));
-        if (scenario === "oversize") assert.throws(() => p.a.open(new Uint8Array(4097)));
+        if (scenario === "oversize") assert.throws(() => p.a.open(new Uint8Array(36865)));
         if (scenario === "replay") {
           const frame = p.b.seal(new Uint8Array([3]));
           p.a.open(frame);

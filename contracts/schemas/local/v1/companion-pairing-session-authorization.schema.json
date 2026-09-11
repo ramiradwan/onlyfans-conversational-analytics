@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/local/v1/companion-pairing-session-authorization.schema.json",
+  "title": "Companion pairing session authorization v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "installation_grant",
+    "creator_account_binding"
+  ],
+  "properties": {
+    "type": {
+      "const": "session.authorization"
+    },
+    "installation_grant": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+    },
+    "creator_account_binding": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+    }
+  }
+}

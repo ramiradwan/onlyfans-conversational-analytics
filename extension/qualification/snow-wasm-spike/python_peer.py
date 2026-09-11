@@ -48,7 +48,7 @@ async def websocket_server(binding):
             if s.unseal(await ws.recv()) != APP: raise RuntimeError('bad app payload')
             await ws.send(s.seal(REPLY))
         finally: s.close()
-    async with serve(handler, '127.0.0.1', 17871, max_size=4096, max_queue=1, compression=None):
+    async with serve(handler, '127.0.0.1', 17871, max_size=36864, max_queue=1, compression=None):
         print('ready', flush=True)
         await asyncio.Future()
 

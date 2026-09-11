@@ -1,0 +1,27 @@
+[
+  {
+    "name": "wrong-type",
+    "text": "{\"type\":\"pair.offer\",\"pairing_id\":\"gZv8haCjVgEWmTY1muSr-WSCKZ2Vm-5eBrVb1L_63II\",\"agent_proof\":\"N_OaFilFVSHqhb-zjf9jubyP1wvQfIHZ9rxq6m_4gJ9hDZEpicEryI4E2oaLDHEUEOCmPd8texDNxzQKkOIKwg\"}",
+    "error": "pairing_message_invalid"
+  },
+  {
+    "name": "other-pairing",
+    "text": "{\"type\":\"pair.confirm\",\"pairing_id\":\"udEJbYZbeviGNsgjrdGAx_tywrETHr4__bG_21T73i4\",\"agent_proof\":\"N_OaFilFVSHqhb-zjf9jubyP1wvQfIHZ9rxq6m_4gJ9hDZEpicEryI4E2oaLDHEUEOCmPd8texDNxzQKkOIKwg\"}",
+    "error": "pairing_state_refused"
+  },
+  {
+    "name": "proof-with-brain-role",
+    "text": "{\"type\":\"pair.confirm\",\"pairing_id\":\"gZv8haCjVgEWmTY1muSr-WSCKZ2Vm-5eBrVb1L_63II\",\"agent_proof\":\"8T5bSFbsGkz7ph15txBv0RxiBT0ZTzVEJnlTE-GRankLFjmdgpEym5Eaazf4OHVUb9GtL36QLhBKrmZv_ReQYQ\"}",
+    "error": "pairing_proof_refused"
+  },
+  {
+    "name": "proof-by-other-key",
+    "text": "{\"type\":\"pair.confirm\",\"pairing_id\":\"gZv8haCjVgEWmTY1muSr-WSCKZ2Vm-5eBrVb1L_63II\",\"agent_proof\":\"F2yPF7MVPHxer9iB7KZDTJ5gE22xy_Xj-4F0Jxemqqh0za1kMpm7h0PywKmijP38uWcR9aOYCfCVB4zLn-tC8A\"}",
+    "error": "pairing_proof_refused"
+  },
+  {
+    "name": "high-s-proof",
+    "text": "{\"type\":\"pair.confirm\",\"pairing_id\":\"gZv8haCjVgEWmTY1muSr-WSCKZ2Vm-5eBrVb1L_63II\",\"agent_proof\":\"N_OaFilFVSHqhb-zjf9jubyP1wvQfIHZ9rxq6m_4gJ-e8m7Vdj7UOHH7JXl0847rrAZUb8fqI3Ql8pa4a4Eajw\"}",
+    "error": "pairing_proof_refused"
+  }
+]

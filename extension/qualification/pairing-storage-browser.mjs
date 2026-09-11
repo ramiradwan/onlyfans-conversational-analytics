@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { waitForWorkerEntry } from "./snow-wasm-spike/process-lines.mjs";
+// Loading this module verifies the vendored pairing contract against the
+// consumer pin, so the bundle below cannot inline unpinned bytes.
+import "../test-fixtures/pairing/vendored-vector.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const temp = await mkdtemp(path.join(tmpdir(), "ofca-pairing-"));
 const extension = path.join(temp, "extension"),

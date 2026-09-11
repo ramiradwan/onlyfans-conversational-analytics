@@ -1,6 +1,6 @@
 # Authenticated companion session spike
 
-This isolated research harness evaluates [ADR 0024](../../docs/adr/0024-authenticated-companion-sessions.md). It uses Noise KK from `noiseprotocol` over ordinary loopback WebSocket, and holds the Python reference model of the [local pairing contract](../../docs/companion-pairing-contract.md). It imports no production application code and changes no trust store, DNS configuration, extension permission, or production dependency.
+This isolated research harness evaluates [ADR 0024](../../docs/adr/0024-authenticated-companion-sessions.md). It uses Noise KK from `noiseprotocol` over ordinary loopback WebSocket, and holds the Python reference model of the [companion pairing contract](../../docs/companion-pairing-contract.md). It imports no production application code and changes no trust store, DNS configuration, extension permission, or production dependency.
 
 ## Run
 
@@ -16,14 +16,7 @@ python -m venv ../scratchpad/noise-review-venv
 
 The suite covers encrypted bidirectional records, refusal before session confirmation, peer-pin and prologue mismatch, replay, reordering, tampering, reflection, cross-session reuse, frame limits, deadlines, cancellation, and a hostile port owner. Pairing tests cover the closed message schemas, grant verification against a synthetic trust set, installation-key and account substitution, generation high-water, small-order and reflected keys, reflected nonces, role-separated low-S proofs, the Brain pairing window, and session authorization. All keys and payloads are synthetic.
 
-The published vector is generated and checked by the reference model:
-
-```powershell
-../scratchpad/noise-review-venv/Scripts/python tools/companion-session-spike/local_pairing.py --check
-../scratchpad/noise-review-venv/Scripts/python tools/companion-session-spike/local_pairing.py --write
-```
-
-`--check` fails when `extension/test-fixtures/pairing/local-pairing-vector.json` differs from a fresh build. The vector's keys derive from fixed labels and its signatures use RFC 6979 deterministic nonces, so the build is reproducible.
+The test vectors are not built here. `local_pairing.py` reads the vendored copy of the versioned companion-pairing contract under `contracts/companion-pairing-v1/`, and returns it only when every file matches both the contract manifest and the independent consumer pin, so a changed byte fails the suite instead of being reproduced. The vectors publish no private key: each fixture key derives from the public label the contract records for it, and the tests rebuild the keys from those labels.
 
 ## Limits
 

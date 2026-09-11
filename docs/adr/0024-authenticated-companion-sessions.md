@@ -2,8 +2,8 @@
 
 # ADR 0024: Protect Full-mode communication with locally paired sessions
 
-- Status: Proposed
-- Date: 2026-09-11
+- Status: Accepted
+- Date: 2026-09-12
 - Amends: [ADR 0008](0008-production-authentication.md), in the sections named under "Amendments to ADR 0008"
 - Scope: Agent-to-Brain Full-mode communication. Bridge and browser-to-Brain security are outside this decision.
 
@@ -83,7 +83,7 @@ Loopback reachability proves nothing about who is listening. The installation ke
 
 ## Confirmation
 
-- Agent and Brain produce identical transcripts, proofs, comparison codes, and prologues for the published vectors, in both JavaScript and Python.
+- Agent and Brain produce identical transcripts, proofs, comparison codes, and prologues for the vectors of contract profile `urn:bridge-clean:companion-pairing:v1`, in both JavaScript and Python. Both read the vendored copy under `contracts/`, and each verifies every file against the contract manifest and the consumer pin before using it.
 - A process that holds the loopback port without the installation key cannot complete pairing or a session. It receives no Full-mode data before Agent refuses it.
 - Pairing tests reject each of the following: an unknown trust-set key, wrong grant audience or type, expired grants past grace, a mismatch between grant and installation key, an account mismatch, a lower generation, a reused nonce, a second request in one window, and an expired window.
 - Session tests cover replay, reordering, modification, oversize frames, deadlines, cancellation, late completion, grant expiry mid-session, revocation on each side, and standalone Preview.
