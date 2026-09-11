@@ -172,6 +172,7 @@ function openDatabase(indexedDb, databaseName) {
       const database = request.result;
       database.onversionchange = () => database.close();
       if (settled) {
+        signal?.removeEventListener('abort', abort);
         database.close();
         return;
       }
@@ -310,7 +311,9 @@ function createRawIndexedDbIngestionStorage(
 
   return Object.freeze({
     databaseName: resolvedName,
-    async runTransaction(mode, storeNames, work) {
+    async runTransaction(mode, storeNames, work, { signal, assertCurrent } = {}) {
+      signal?.throwIfAborted();
+      assertCurrent?.();
       if (mode !== 'readonly' && mode !== 'readwrite') {
         throw new Error(`Unsupported IndexedDB transaction mode ${String(mode)}`);
       }
@@ -323,11 +326,18 @@ function createRawIndexedDbIngestionStorage(
       const database = await openDatabase(indexedDb, openedName);
       let active = true;
       let transaction;
+      const abort = () => {
+        try { transaction?.abort(); } catch { /* Already completed. */ }
+      };
       try {
+        signal?.throwIfAborted();
+        assertCurrent?.();
         const transactionStores = [...new Set([...storeNames, ENCRYPTION_KEY_CHECK_STORE])];
         transaction = database.transaction(transactionStores, mode);
         const releaseAsyncWorkHold = transaction.__ofca_hold_for_async_work?.() ?? (() => {});
         const completion = transactionCompletion(transaction);
+        void completion.catch(() => undefined);
+        signal?.addEventListener('abort', abort, { once: true });
         const handle = transactionHandle(
           transaction,
           transactionStores,
@@ -337,6 +347,8 @@ function createRawIndexedDbIngestionStorage(
         let result;
         try {
           result = await work(handle);
+          signal?.throwIfAborted();
+          assertCurrent?.();
         } catch (error) {
           active = false;
           releaseAsyncWorkHold();

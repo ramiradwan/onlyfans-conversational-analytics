@@ -1,7 +1,6 @@
 const noOp = () => {};
 const SIGNER_STATE_KEY = 'signer-state';
 
-/** Keep private signing generations inside the same account-hashed IndexedDB partition. */
 export function createAccountSigningPersistence(
   storage,
   creatorAccountId,
@@ -49,11 +48,6 @@ export function createAccountSigningPersistence(
   });
 }
 
-/**
- * Owns the disposable in-memory Agent runtime for one MV3 service-worker lifetime.
- * Wake listeners are registered synchronously; durable state is loaded lazily and
- * initialization failures are retryable on the next wake event.
- */
 export class AgentRuntime {
   constructor({
     initialize,
@@ -75,9 +69,13 @@ export class AgentRuntime {
     this.configuration = null;
     this.history = null;
     this.startupPromise = null;
+    this.startupAbort = null;
+    this.bindingResolution = null;
+    this.startupGeneration = 0;
     this.removeWakeListeners = null;
     this.listenersRegistered = false;
     this.bindingFingerprint = null;
+    this.drain = null;
     this.wakeListener = () => this.wake().catch(() => undefined);
   }
 
@@ -94,9 +92,16 @@ export class AgentRuntime {
 
   async suspend() {
     const pendingStartup = this.startupPromise;
-    if (pendingStartup !== null) await pendingStartup.catch(() => undefined);
+    this.startupGeneration += 1;
+    this.startupAbort?.abort(Object.assign(new Error('runtime_suspended'), {
+      code: 'runtime_suspended',
+    }));
+    this.startupAbort = null;
+
     const transport = this.transport;
     const history = this.history;
+    const drain = this.drain;
+    this.drain = null;
     this.transport = null;
     this.configuration = null;
     this.history = null;
@@ -107,36 +112,64 @@ export class AgentRuntime {
     this.removeWakeListeners?.();
     this.removeWakeListeners = null;
     this.listenersRegistered = false;
+    await Promise.allSettled([pendingStartup, this.bindingResolution, drain?.()]);
   }
 
   wake() {
+    if (this.bindingResolution !== null) return this.bindingResolution;
     if (this.transport !== null) {
       if (this.resolveBindingFingerprint !== null) {
-        return Promise.resolve(this.resolveBindingFingerprint()).then(async (resolution) => {
+        const transport = this.transport;
+        const generation = this.startupGeneration;
+        const signal = this.startupAbort?.signal;
+        const attempt = Promise.resolve(this.resolveBindingFingerprint({ signal })).then(async (resolution) => {
+          signal?.throwIfAborted();
+          if (this.transport !== transport || generation !== this.startupGeneration) {
+            throw Object.assign(new Error('stale_runtime'), { code: 'stale_runtime' });
+          }
           const fingerprint = typeof resolution === 'object' && resolution !== null
             ? resolution.fingerprint
             : resolution;
           if (fingerprint !== this.bindingFingerprint) {
             const stale = this.transport;
             const staleHistory = this.history;
+            const drain = this.drain;
+            this.drain = null;
             this.transport = null;
             this.configuration = null;
             this.history = null;
             this.bindingFingerprint = null;
             staleHistory?.stop?.();
             stale.stop?.();
-            await stale.outbox?.invalidateAccountEpoch?.();
+            try {
+              await stale.outbox?.invalidateAccountEpoch?.();
+            } finally {
+              this.startupAbort?.abort(Object.assign(new Error('account_changed'), { code: 'account_changed' }));
+              this.startupAbort = null;
+              await drain?.();
+            }
+            if (generation !== this.startupGeneration) throw new Error('stale_runtime');
+            this.bindingResolution = null;
             return this.wake();
           }
           await this.onBindingMatched?.(this.transport, resolution);
+          signal?.throwIfAborted();
           return this.#reconcileTransport();
         });
+        this.bindingResolution = attempt;
+        void attempt.finally(() => {
+          if (this.bindingResolution === attempt) this.bindingResolution = null;
+        }).catch(() => undefined);
+        return attempt;
       }
       return Promise.resolve(this.#reconcileTransport());
     }
     if (this.startupPromise !== null) return this.startupPromise;
 
-    const attempt = Promise.resolve().then(() => this.#initialize());
+    const generation = ++this.startupGeneration;
+    const controller = new AbortController();
+    this.startupAbort = controller;
+    const attempt = Promise.resolve().then(() => this.#initialize(generation, controller));
     this.startupPromise = attempt;
     void attempt.then(
       () => {
@@ -166,12 +199,21 @@ export class AgentRuntime {
     throw new Error('Agent transport is unavailable');
   }
 
-  async #initialize() {
+  async #initialize(generation, controller) {
+    let components = null;
     try {
-      const components = await this.initialize();
+      controller.signal.throwIfAborted();
+      components = await this.initialize({ signal: controller.signal });
+      controller.signal.throwIfAborted();
+      if (generation !== this.startupGeneration) {
+        const error = new Error('stale_startup');
+        error.code = 'stale_startup';
+        throw error;
+      }
       if (typeof components?.transport?.start !== 'function') {
         throw new Error('Agent runtime initializer did not provide a transport');
       }
+      this.drain = components.drain ?? null;
       this.configuration = components.configuration ?? null;
       this.history = components.history ?? null;
       this.transport = components.transport;
@@ -179,13 +221,18 @@ export class AgentRuntime {
       this.transport.start();
       return this.transport;
     } catch (error) {
-      this.transport?.stop?.();
-      this.history?.stop?.();
-      this.transport = null;
-      this.configuration = null;
-      this.history = null;
-      this.bindingFingerprint = null;
-      this.onStartupError(error);
+      components?.history?.stop?.();
+      components?.transport?.stop?.();
+      if (generation === this.startupGeneration) {
+        this.transport = null;
+        this.configuration = null;
+        this.history = null;
+        this.bindingFingerprint = null;
+      }
+      const cancelled = controller.signal.aborted;
+      controller.abort(error);
+      await components?.drain?.();
+      if (!cancelled) this.onStartupError(error);
       throw error;
     }
   }

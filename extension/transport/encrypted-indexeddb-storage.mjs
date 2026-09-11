@@ -448,7 +448,9 @@ export function createEncryptedIndexedDbStorage(rawStorage, {
   const keys = resolvedName.then((name) => deriveKeys(encryptionKey, name, cryptoApi));
   return Object.freeze({
     databaseName: resolvedName,
-    async runTransaction(mode, storeNames, work) {
+    async runTransaction(mode, storeNames, work, options = {}) {
+      options.signal?.throwIfAborted();
+      options.assertCurrent?.();
       const derived = await keys;
       const openedName = await resolvedName;
       return rawStorage.runTransaction(mode, storeNames, async (raw) => {
@@ -463,7 +465,7 @@ export function createEncryptedIndexedDbStorage(rawStorage, {
           active = false;
           await keepalive;
         }
-      });
+      }, options);
     },
   });
 }
