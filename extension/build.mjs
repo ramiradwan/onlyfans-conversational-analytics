@@ -16,6 +16,7 @@ import { zipSync } from 'fflate';
 import { validatePackagedSigningRule } from 'local-authenticated-read-connector/browser-signing';
 import { auditLegalBindingLiterals } from './qualification/legal-binding-literals.mjs';
 import { readArchiveEntries } from './qualification/archive-entries.mjs';
+import { SIGNER_RELEASE, signerReleaseFiles, auditInstalledSigner, auditSignerMetadata } from './qualification/signer-release.mjs';
 
 import { canonicalLegalBindingsJson } from '../tools/legal-release-bindings/canonical-json.mjs';
 import {
@@ -29,15 +30,12 @@ const DIST = path.resolve(argumentValue('--outdir') ?? path.join(ROOT, 'dist'));
 const SOURCE_MANIFEST = JSON.parse(await readFile(path.join(ROOT, 'manifest.json'), 'utf8'));
 assert.equal(SOURCE_MANIFEST.minimum_chrome_version, '132');
 const CHROME_TARGET = `chrome${SOURCE_MANIFEST.minimum_chrome_version}`;
-const SIGNER_PACKAGE = 'local-authenticated-read-connector';
-const SIGNER_VERSION = '0.2.0-beta.11';
-const SIGNER_SPEC =
-  'file:vendor/local-authenticated-read-connector-0.2.0-beta.11.tgz';
-const SIGNER_TARBALL = path.join(
-  ROOT,
-  'vendor',
-  'local-authenticated-read-connector-0.2.0-beta.11.tgz',
-);
+const SIGNER_PACKAGE = SIGNER_RELEASE.package;
+const SIGNER_VERSION = SIGNER_RELEASE.version;
+const SIGNER_SPEC = `file:vendor/${SIGNER_RELEASE.archive}`;
+const SIGNER_TARBALL = path.join(ROOT, 'vendor', SIGNER_RELEASE.archive);
+const SIGNER_ROOT = path.join(ROOT, 'node_modules', SIGNER_PACKAGE);
+let verifiedSignerFiles = null;
 const SIGNER_ENTRY = fileURLToPath(import.meta.resolve(`${SIGNER_PACKAGE}/browser-signing`));
 const SIGNING_RULE_FILE = 'packaged-signing-rule.json';
 const BUILD_METADATA_FILE = 'build-meta.json';
@@ -348,6 +346,17 @@ function packagedSignerPlugin(signingRule) {
   return {
     name: 'packaged-signer-rule',
     setup(context) {
+      context.onLoad(
+        { filter: /[\\/]node_modules[\\/]local-authenticated-read-connector[\\/].*\.js$/ },
+        async ({ path: filename }) => {
+          const relative = path.relative(SIGNER_ROOT, filename).replaceAll('\\', '/');
+          const expected = verifiedSignerFiles?.get(relative);
+          assert.ok(expected, 'signer compilation requested a file outside the reviewed archive');
+          const actual = await readFile(filename);
+          assert.equal(Buffer.compare(actual, expected), 0, `signer source changed before compilation: ${relative}`);
+          return { contents: expected.toString('utf8'), loader: 'js', resolveDir: path.dirname(filename) };
+        },
+      );
       context.onResolve(
         { filter: /^local-authenticated-read-connector\/browser-signing$/ },
         () => ({ path: 'packaged-signer-rule', namespace: 'packaged-signer-rule' }),
@@ -590,6 +599,9 @@ export function auditSigningRuleBinding(source, signingRule, { required }) {
 }
 
 async function auditDependencyLock() {
+  const archiveBytes = await readFile(SIGNER_TARBALL);
+  verifiedSignerFiles = signerReleaseFiles(archiveBytes);
+  await auditInstalledSigner({ files: verifiedSignerFiles, root: SIGNER_ROOT, entry: SIGNER_ENTRY });
   const packageDocument = await readJson(path.join(ROOT, 'package.json'));
   assert.equal(packageDocument.version, SOURCE_MANIFEST.version, 'package and manifest versions differ');
   assert.equal(packageDocument.dependencies?.[SIGNER_PACKAGE], SIGNER_SPEC);
@@ -606,7 +618,7 @@ async function auditDependencyLock() {
   assert.equal(root?.devDependencies?.fflate, '0.8.3');
   assert.equal(signer?.version, SIGNER_VERSION);
   assert.equal(signer?.resolved, SIGNER_SPEC);
-  assert.equal(signer?.integrity, sha512Integrity(await readFile(SIGNER_TARBALL)));
+  assert.equal(signer?.integrity, sha512Integrity(archiveBytes));
 
   const installed = await readJson(path.join(
     ROOT,
@@ -666,8 +678,7 @@ async function auditArtifactView(view, {
 
   const metadata = await jsonFromView(view, BUILD_METADATA_FILE);
   assert.equal(metadata.schema, BUILD_METADATA_SCHEMA);
-  assert.equal(metadata.signer, `${SIGNER_PACKAGE}@${SIGNER_VERSION}`);
-  assert.equal(metadata.signer_tarball, sha256(await readFile(SIGNER_TARBALL)));
+  auditSignerMetadata(metadata);
   assert.equal(metadata.extension_id, EXPECTED_EXTENSION_ID);
   assert.equal(metadata.target, CHROME_TARGET);
   assert.equal(metadata.extension_version, manifest.version);
@@ -889,12 +900,7 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     const details = await stat(path.join(DIST, filename));
     assert.ok(details.size > 0, `${filename} is empty`);
   }
-  const signerLicense = await readFile(path.join(
-    ROOT,
-    'node_modules',
-    SIGNER_PACKAGE,
-    'LICENSE',
-  ), 'utf8');
+  const signerLicense = verifiedSignerFiles.get('LICENSE').toString('utf8');
   const notice = [
     `${SIGNER_PACKAGE}@${SIGNER_VERSION}`,
     '',
@@ -924,6 +930,7 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     extension_id: deriveExtensionId(sourceManifest.key),
     signer: `${SIGNER_PACKAGE}@${SIGNER_VERSION}`,
     signer_tarball: sha256(await readFile(SIGNER_TARBALL)),
+    signer_release: SIGNER_RELEASE,
     signing_rule: signingRule === null ? null : {
       schema: signingRule.document.schema,
       source_revision: signingRule.document.source_revision,
@@ -959,6 +966,7 @@ async function buildArtifact(
   legalBindings,
   { requirePrivacyPolicy },
 ) {
+  await auditDependencyLock();
   const first = await compileOnce(signingRule, legalBindings);
   const second = await compileOnce(signingRule, legalBindings);
   verifyIdenticalBuilds(first, second);

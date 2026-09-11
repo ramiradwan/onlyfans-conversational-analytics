@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readArchiveEntries } from './archive-entries.mjs';
 import { auditLegalBindingLiterals } from './legal-binding-literals.mjs';
+import { auditSignerMetadata } from './signer-release.mjs';
 
 import { canonicalLegalBindingsJson } from '../../tools/legal-release-bindings/canonical-json.mjs';
 
@@ -67,6 +68,7 @@ export async function auditReleaseArchive({ artifact, legalBindings }) {
   assert.equal(config.history_settings_url, `${SECURE_ORIGIN}/settings`);
 
   const metadata = json(entries, 'build-meta.json');
+  auditSignerMetadata(metadata);
   assert.equal(metadata.target, `chrome${manifest.minimum_chrome_version}`);
   assert.equal(metadata.determinism_verified, true);
 
