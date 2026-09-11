@@ -38,7 +38,7 @@ function storage(indexedDb, creatorAccountId) {
 }
 
 test('IndexedDB schema version is independent and account database names are stable hashes', async () => {
-  assert.equal(INGESTION_DATABASE_VERSION, 4);
+  assert.equal(INGESTION_DATABASE_VERSION, 5);
   const first = await accountDatabaseName(ACCOUNT_A);
   const repeated = await accountDatabaseName(ACCOUNT_A);
   const other = await accountDatabaseName(ACCOUNT_B);

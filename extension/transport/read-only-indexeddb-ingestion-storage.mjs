@@ -9,7 +9,7 @@ import {
 
 export const LEGACY_INGESTION_DATABASE_NAME_PREFIX = 'conversation-analytics-read-only-account-v1';
 export const INGESTION_DATABASE_NAME_PREFIX = 'conversation-analytics-read-only-encrypted-account-v1';
-export const INGESTION_DATABASE_VERSION = 4;
+export const INGESTION_DATABASE_VERSION = 5;
 
 const STORE_SPECS = Object.freeze({
   [INGESTION_STORES.meta]: Object.freeze({
@@ -41,6 +41,11 @@ const STORE_SPECS = Object.freeze({
     primaryField: 'job_id',
     primaryProtection: 'history-job',
     indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.deliveryReceipts]: Object.freeze({
+    primaryField: 'delivery_id',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({ expires_at: 'clear' }),
   }),
   [INGESTION_STORES.config]: Object.freeze({
     primaryField: 'key',
@@ -135,6 +140,10 @@ function openDatabase(indexedDb, databaseName) {
             { unique: true },
           );
         }
+      }
+      if (!database.objectStoreNames.contains(INGESTION_STORES.deliveryReceipts)) {
+        const receipts = database.createObjectStore(INGESTION_STORES.deliveryReceipts, { keyPath: 'delivery_id' });
+        receipts.createIndex('expires_at', 'expires_at', { unique: false });
       }
       const keyedStores = [
         [INGESTION_STORES.historyJobs, 'job_id'],

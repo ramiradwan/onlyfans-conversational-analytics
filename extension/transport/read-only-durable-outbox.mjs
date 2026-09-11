@@ -5,6 +5,8 @@ import {
   mergeMessage,
 } from './entity-merge.mjs';
 
+import { assertDeliveryFresh, DELIVERY_RECEIPT_SCHEMA, DELIVERY_RECEIPT_RETENTION_MS } from './delivery-acceptance-core.mjs';
+
 const clone = (value) => structuredClone(value);
 
 export const INGESTION_STATE_VERSION = 2;
@@ -24,6 +26,7 @@ export const INGESTION_STORES = Object.freeze({
   coverageEvidence: 'coverage_evidence',
   historyJobs: 'history_jobs',
   config: 'config',
+  deliveryReceipts: 'delivery_receipts',
   snapshotManifests: 'snapshot_manifests',
   snapshotChunks: 'snapshot_chunks',
   snapshotOverrides: 'snapshot_overrides',
@@ -263,10 +266,12 @@ export class DurableIngestOutbox {
             meta = emptyMeta(this.creatorAccountId, this.idFactory());
             await tx.put(INGESTION_STORES.meta, meta, INGESTION_META_KEY);
           }
-          this.meta = validateMeta(meta, this.creatorAccountId);
-          return this.identityState();
+          return validateMeta(meta, this.creatorAccountId);
         },
-      );
+      ).then((meta) => {
+        this.meta = meta;
+        return this.identityState();
+      }).finally(() => { this.initializing = null; });
     }
     return this.initializing;
   }
@@ -312,6 +317,62 @@ export class DurableIngestOutbox {
       if (page.length < SNAPSHOT_MAX_RECORDS) return values;
       after = page.at(-1).source_seq;
     }
+  }
+
+  async enqueueDelivery({ delivery, change, parentChange = null, payloadDigest, now = Date.now }, guard = {}) {
+    const assertCurrent = () => {
+      guard.signal?.throwIfAborted();
+      guard.assertCurrent?.();
+      if (this.invalidated) throw new Error('Account partition was invalidated');
+      assertDeliveryFresh(delivery, now());
+    };
+    assertCurrent();
+    if (parentChange !== null && (change?.type !== 'message.upsert'
+      || parentChange?.type !== 'chat.upsert'
+      || change.message.chat_id !== parentChange.chat.chat_id)) {
+      throw new Error('Message and placeholder parent must use the same chat_id');
+    }
+    return this.queueMutation(async () => {
+      assertCurrent();
+      const committed = await this.storage.runTransaction('readwrite', [
+        INGESTION_STORES.meta, INGESTION_STORES.outbox, INGESTION_STORES.chats,
+        INGESTION_STORES.messages, INGESTION_STORES.coverageEvidence,
+        INGESTION_STORES.snapshotOverrides, INGESTION_STORES.deliveryReceipts,
+      ], async (tx) => {
+        assertCurrent();
+        const meta = cloneMetaForWrite(await tx.get(INGESTION_STORES.meta, INGESTION_META_KEY));
+        const existing = await tx.get(INGESTION_STORES.deliveryReceipts, delivery.delivery_id);
+        if (existing !== undefined) {
+          if (existing.schema !== DELIVERY_RECEIPT_SCHEMA || existing.payload_digest !== payloadDigest) {
+            throw Object.assign(new Error('delivery_id_conflict'), { code: 'delivery_id_conflict', retryable: false });
+          }
+          assertCurrent();
+          return { meta, result: existing.result };
+        }
+        const parent = parentChange === null ? null
+          : await appendChange(tx, meta, parentChange, 'passive', this.idFactory());
+        const item = await appendChange(tx, meta, change, 'passive', delivery.delivery_id);
+        const result = {
+          ok: true, delivery_id: delivery.delivery_id, accepted: true,
+          source_seq: item?.source_seq ?? null, material_transition: parent !== null || item !== null,
+        };
+        await tx.put(INGESTION_STORES.deliveryReceipts, {
+          delivery_id: delivery.delivery_id, schema: DELIVERY_RECEIPT_SCHEMA,
+          payload_digest: payloadDigest, expires_at: delivery.created_at_ms + DELIVERY_RECEIPT_RETENTION_MS,
+          result,
+        });
+        if (parent !== null || item !== null) await tx.put(INGESTION_STORES.meta, meta, INGESTION_META_KEY);
+        const page = await tx.getPageFromIndex(INGESTION_STORES.deliveryReceipts, 'expires_at', { limit: 100 });
+        for (const row of page) {
+          if (row.value.expires_at > now()) break;
+          await tx.delete(INGESTION_STORES.deliveryReceipts, row.key);
+        }
+        assertCurrent();
+        return { meta, result };
+      }, { ...guard, assertCurrent });
+      this.meta = clone(committed.meta);
+      return clone(committed.result);
+    });
   }
 
   async enqueue(change, eventId = this.idFactory(), origin = 'passive') {
@@ -861,7 +922,7 @@ export class DurableIngestOutbox {
     );
   }
 
-  async acknowledge(committedSourceSeq, snapshotId = null, snapshotProgress = null) {
+  async acknowledge(committedSourceSeq, snapshotId = null, snapshotProgress = null, controls = {}) {
     return this.queueMutation(async () => {
       const result = await this.storage.runTransaction(
         'readwrite',
@@ -923,7 +984,9 @@ export class DurableIngestOutbox {
           if (this.invalidated) throw new Error('Account partition was invalidated');
           return { meta, snapshotAcknowledged, committedSourceSeq: meta.acknowledged_source_seq };
         },
+        controls,
       );
+      controls.assertCurrent?.();
       this.meta = clone(result.meta);
       return {
         snapshotAcknowledged: result.snapshotAcknowledged,
@@ -941,7 +1004,7 @@ export class DurableIngestOutbox {
     );
   }
 
-  async saveAppliedConfig(document) {
+  async saveAppliedConfig(document, controls = {}) {
     return this.queueMutation(async () => {
       const result = await this.storage.runTransaction(
         'readwrite',
@@ -957,7 +1020,9 @@ export class DurableIngestOutbox {
           if (this.invalidated) throw new Error('Account partition was invalidated');
           return meta;
         },
+        controls,
       );
+      controls.assertCurrent?.();
       this.meta = clone(result);
     });
   }

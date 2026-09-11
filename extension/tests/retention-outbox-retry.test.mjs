@@ -152,6 +152,7 @@ test('durable outbox retransmits the same unacknowledged events after reconnect'
   const validationErrors = [];
   const reconnectScheduler = scheduler();
   const client = new AgentWebSocketClient({
+    extensionVersion: '2.0.1',
     creatorAccountId: ACCOUNT,
     authTicket: 'bootstrap-ticket',
     identity: {
