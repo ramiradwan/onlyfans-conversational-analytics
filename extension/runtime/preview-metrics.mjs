@@ -110,14 +110,20 @@ export class PreviewMetricsStore {
     return normalizePreviewMetrics(saved?.[PREVIEW_METRICS_STORAGE_KEY], this.now());
   }
 
-  record(observation) {
+  record(observation, { assertCurrent = () => {} } = {}) {
     const operation = this.queue.then(async () => {
+      assertCurrent();
       const next = addPreviewObservation(await this.#load(), observation, this.now());
+      assertCurrent();
       await this.storage.set({ [PREVIEW_METRICS_STORAGE_KEY]: next });
       return summarizePreviewMetrics(next, this.now());
     });
     this.queue = operation.catch(() => undefined);
     return operation;
+  }
+
+  async drain() {
+    await this.queue;
   }
 
   async summary() {
