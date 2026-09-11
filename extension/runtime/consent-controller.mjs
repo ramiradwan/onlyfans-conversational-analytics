@@ -1,3 +1,6 @@
+import { OperationScope, SerialExecutor } from './operation-scope.mjs';
+import { DELETE_INTENT_KEY, deletionIntent } from './deletion-state.mjs';
+import { LOCAL_SERVICE_PATTERN, LOCAL_SERVICE_HEALTH } from '../transport/local-service-endpoints.mjs';
 import {
   PAGE_CONTROL_MESSAGE_TYPE,
   PREVIEW_MESSAGE_TYPE,
@@ -10,60 +13,57 @@ export const UI_STATUS_MESSAGE_TYPE = 'ofca.ui.status';
 export const UI_TRANSITION_MESSAGE_TYPE = 'ofca.ui.transition';
 export const UI_CLEAR_PREVIEW_MESSAGE_TYPE = 'ofca.ui.clear-preview';
 export const UI_DELETE_LOCAL_DATA_MESSAGE_TYPE = 'ofca.ui.delete-local-data';
+export const UI_RELOAD_TABS_MESSAGE_TYPE = 'ofca.ui.reload-tabs';
 export const ONLYFANS_ORIGIN_PATTERN = 'https://onlyfans.com/*';
-export const LOCAL_ANALYTICS_ORIGIN_PATTERN = 'http://bridge.localhost:17871/*';
-export const LOCAL_ANALYTICS_HEALTH_URL = 'http://bridge.localhost:17871/health';
+export const LOCAL_ANALYTICS_ORIGIN_PATTERN = LOCAL_SERVICE_PATTERN;
+export const LOCAL_ANALYTICS_HEALTH_URL = LOCAL_SERVICE_HEALTH;
 export const PREVIEW_PRUNE_ALARM_NAME = 'ofca-preview-retention';
 
 const SCRIPT_MODES = Object.freeze(['identity', 'preview', 'full']);
 const ACTIVE_CONSENT_MODES = new Set(['preview', 'full']);
 const ALL_CONSENT_MODES = new Set(['off', 'preview', 'full', 'paused', 'revoked']);
-const CONTENT_SCRIPT_IDS = Object.freeze(
-  SCRIPT_MODES.flatMap((mode) => [`ofca-${mode}-main`, `ofca-${mode}-isolated`]),
-);
 
-function defaultState() {
+export function defaultConsentState() {
   return {
-    schema: 'ofca-consent/v1',
+    schema: 'ofca-consent/v2',
     mode: 'off',
     resume_mode: null,
     policy_revision: CONSENT_POLICY_REVISION,
     updated_at: null,
+    authorization_event_id: null,
+    consent_epoch: crypto.randomUUID(),
   };
 }
 
-function isTimestamp(value) {
-  return typeof value === 'string' && Number.isFinite(Date.parse(value));
-}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function validatedState(value) {
-  if (
-    typeof value !== 'object'
-    || value === null
-    || Array.isArray(value)
-    || Object.keys(value).length !== 5
-    || value.schema !== 'ofca-consent/v1'
+  if (!value || typeof value !== 'object' || Array.isArray(value)
     || !ALL_CONSENT_MODES.has(value.mode)
-    || (
-      value.resume_mode !== null
-      && !ACTIVE_CONSENT_MODES.has(value.resume_mode)
-    )
-    || (value.updated_at !== null && !isTimestamp(value.updated_at))
-    || typeof value.policy_revision !== 'string'
-  ) return defaultState();
-
-  const normalized = structuredClone(value);
-  if (
-    normalized.policy_revision !== CONSENT_POLICY_REVISION
-    && ACTIVE_CONSENT_MODES.has(normalized.mode)
-  ) {
+    || (value.resume_mode !== null && !ACTIVE_CONSENT_MODES.has(value.resume_mode))
+    || (value.updated_at !== null && !Number.isFinite(Date.parse(value.updated_at)))
+    || typeof value.policy_revision !== 'string') return defaultConsentState();
+  if (value.schema === 'ofca-consent/v1' && Object.keys(value).length === 5) {
     return {
-      ...normalized,
-      mode: 'paused',
-      resume_mode: normalized.mode,
+      ...defaultConsentState(),
+      mode: ACTIVE_CONSENT_MODES.has(value.mode) ? 'paused' : value.mode,
+      resume_mode: ACTIVE_CONSENT_MODES.has(value.mode) ? value.mode : value.resume_mode,
+      updated_at: value.updated_at,
     };
   }
-  return normalized;
+  if (value.schema !== 'ofca-consent/v2' || Object.keys(value).length !== 7
+    || !UUID.test(value.consent_epoch)
+    || (value.authorization_event_id !== null && !UUID.test(value.authorization_event_id))) {
+    return defaultConsentState();
+  }
+  const state = structuredClone(value);
+  if (state.mode === 'revoked' || state.mode === 'off') state.authorization_event_id = null;
+  if (state.policy_revision !== CONSENT_POLICY_REVISION && ACTIVE_CONSENT_MODES.has(state.mode)) {
+    state.resume_mode = state.mode;
+    state.mode = 'paused';
+    state.consent_epoch = crypto.randomUUID();
+  }
+  return state;
 }
 
 function contentScriptsFor(mode) {
@@ -90,10 +90,20 @@ function contentScriptsFor(mode) {
   ];
 }
 
-function sameIds(registered, desired) {
-  const left = registered.map((entry) => entry.id).sort();
-  const right = desired.map((entry) => entry.id).sort();
-  return left.length === right.length && left.every((id, index) => id === right[index]);
+function sameScripts(left, right) {
+  const signatures = (scripts) => scripts.map((script) => JSON.stringify({
+    id: script.id,
+    matches: [...(script.matches ?? [])].sort(),
+    excludeMatches: [...(script.excludeMatches ?? [])].sort(),
+    js: script.js ?? [],
+    css: script.css ?? [],
+    runAt: script.runAt ?? 'document_idle',
+    world: script.world ?? 'ISOLATED',
+    allFrames: script.allFrames === true,
+    matchOriginAsFallback: script.matchOriginAsFallback === true,
+    persistAcrossSessions: script.persistAcrossSessions !== false,
+  })).sort();
+  return JSON.stringify(signatures(left)) === JSON.stringify(signatures(right));
 }
 
 function trustedContentSender(sender, chromeApi) {
@@ -121,6 +131,10 @@ export class ConsentController {
     previewMetrics,
     clearLocalData,
     activeModeAuthorization,
+    captureScope = new OperationScope(),
+    legalScope = new OperationScope(),
+    controlQueue = new SerialExecutor(),
+    activationEvidenceStore = null,
     runtimeSummary = () => ({}),
     fetchImpl = globalThis.fetch,
     now = () => new Date(),
@@ -164,26 +178,41 @@ export class ConsentController {
     this.runtimeSummary = runtimeSummary;
     this.fetchImpl = fetchImpl;
     this.now = now;
-    this.state = defaultState();
+    this.captureScope = captureScope;
+    this.legalScope = legalScope;
+    this.controlQueue = controlQueue;
+    this.activationEvidenceStore = activationEvidenceStore;
+    this.controlGeneration = 0;
+    this.controlAbort = new AbortController();
+    this.loaded = false;
+    this.deletionPending = false;
+    this.reloadRequired = false;
+    this.documentReset = false;
+    this.state = defaultConsentState();
     this.phase = 'booting';
     this.initialization = null;
-    this.transition = Promise.resolve();
     this.registered = false;
     this.messageListener = this.#onMessage.bind(this);
     this.storageListener = this.#onStorageChanged.bind(this);
-    this.permissionListener = () => { void this.reconcile(); };
+    this.permissionListener = () => { void this.reconcile().catch(() => undefined); };
     this.alarmListener = (alarm) => {
       if (alarm?.name === PREVIEW_PRUNE_ALARM_NAME) {
-        void this.previewMetrics.prune().catch(() => undefined);
+        void this.runLegalOperation(async ({ assertCurrent }) => {
+          assertCurrent();
+          await this.previewMetrics.prune();
+        }).catch(() => undefined);
       }
     };
   }
 
   register() {
     if (this.registered) return;
+    this.brainBindingBridge.register();
+    this.provisioningIdentityBridge.register();
     this.chromeApi.runtime.onMessage.addListener(this.messageListener);
     this.chromeApi.storage.onChanged?.addListener(this.storageListener);
     this.chromeApi.permissions.onRemoved?.addListener(this.permissionListener);
+    this.chromeApi.permissions.onAdded?.addListener(this.permissionListener);
     this.chromeApi.alarms?.onAlarm?.addListener(this.alarmListener);
     const alarm = this.chromeApi.alarms?.create?.(PREVIEW_PRUNE_ALARM_NAME, {
       delayInMinutes: 1,
@@ -193,21 +222,73 @@ export class ConsentController {
     this.registered = true;
   }
 
+  #assertGeneration(generation) {
+    if (generation !== this.controlGeneration) {
+      throw Object.assign(new Error('stale_control'), { code: 'stale_control' });
+    }
+  }
+
+  #invalidate(code) {
+    this.controlGeneration += 1;
+    this.controlAbort.abort(Object.assign(new Error(code), { code }));
+    this.controlAbort = new AbortController();
+    this.captureScope.close(code);
+    // Stop published senders and cancel startup at the call boundary, before queue admission.
+    const stopping = this.#suspendRuntime();
+    void stopping.catch(() => undefined);
+    return this.controlGeneration;
+  }
+
+  async #loadStateLocked() {
+    await this.chromeApi.storage.local.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' });
+    if (!this.loaded) {
+      const saved = await this.chromeApi.storage.local.get([CONSENT_STORAGE_KEY, DELETE_INTENT_KEY]);
+      this.state = validatedState(saved?.[CONSENT_STORAGE_KEY]);
+      this.deletionPending = Object.hasOwn(saved ?? {}, DELETE_INTENT_KEY);
+      this.loaded = true;
+      if (saved?.[CONSENT_STORAGE_KEY] && JSON.stringify(saved[CONSENT_STORAGE_KEY]) !== JSON.stringify(this.state)) {
+        await this.chromeApi.storage.local.set({ [CONSENT_STORAGE_KEY]: this.state });
+      }
+    }
+    if (this.deletionPending) await this.#deleteLocalDataLocked(false);
+  }
+
   initialize() {
     if (this.initialization !== null) return this.initialization;
     this.register();
-    this.initialization = (async () => {
-      const saved = await this.chromeApi.storage.local.get([CONSENT_STORAGE_KEY]);
-      this.state = validatedState(saved?.[CONSENT_STORAGE_KEY]);
+    const generation = this.controlGeneration;
+    const attempt = this.controlQueue.run(async () => {
+      await this.#loadStateLocked();
+      this.#assertGeneration(generation);
       await this.previewMetrics.prune();
-      await this.reconcile();
+      await this.#reconcileLocked(generation);
+      if (!this.legalScope.isOpen) this.legalScope.reopen();
       return this;
-    })();
-    return this.initialization;
+    });
+    this.initialization = attempt;
+    void attempt.catch(() => {
+      if (this.initialization === attempt) this.initialization = null;
+    });
+    return attempt;
+  }
+
+  runLegalOperation(work) {
+    const generation = this.controlGeneration;
+    if (this.deletionPending) return Promise.reject(Object.assign(new Error('delete_incomplete'), { code: 'delete_incomplete' }));
+    return this.initialize().then(() => this.controlQueue.run(() => this.legalScope.run(async (lease) => {
+      const assertCurrent = () => { lease.assertCurrent(); this.#assertGeneration(generation); };
+      assertCurrent();
+      return work({
+        assertCurrent,
+        signal: AbortSignal.any([lease.signal, this.controlAbort.signal]),
+        status: () => this.#statusLocked(),
+        setMode: (mode, options) => this.#setModeLocked(mode, options, generation),
+      });
+    })));
   }
 
   allowsFullCapture() {
-    return this.phase === 'full' && this.state.mode === 'full';
+    return this.captureScope.isOpen && this.phase === 'full' && this.state.mode === 'full';
   }
 
   async #hasOnlyFansPermission() {
@@ -224,7 +305,7 @@ export class ConsentController {
 
   async #hasBrainBinding() {
     try {
-      await this.adapter.loadBrainBinding();
+      await this.adapter.loadBrainBinding({ signal: this.controlAbort.signal });
       return true;
     } catch (_error) {
       return false;
@@ -275,20 +356,22 @@ export class ConsentController {
   async #syncContentScripts(mode) {
     const desired = contentScriptsFor(mode);
     const allRegistered = await this.chromeApi.scripting.getRegisteredContentScripts();
-    const owned = allRegistered.filter((entry) => CONTENT_SCRIPT_IDS.includes(entry.id));
-    if (sameIds(owned, desired)) return;
+    const owned = allRegistered.filter((entry) => entry.id.startsWith('ofca-'));
+    const definitionsChanged = !sameScripts(owned, desired);
+    if (!definitionsChanged && !this.documentReset) return;
 
     const tabs = await this.#onlyFansTabs();
     await this.#stopTabs(tabs);
-    if (owned.length > 0) {
+    if (definitionsChanged && owned.length > 0) {
       await this.chromeApi.scripting.unregisterContentScripts({
         ids: owned.map((entry) => entry.id),
       });
     }
-    if (desired.length > 0) {
+    if (definitionsChanged && desired.length > 0) {
       await this.chromeApi.scripting.registerContentScripts(desired);
     }
-    await this.#reloadTabs(tabs);
+    this.reloadRequired = desired.length > 0 && tabs.length > 0;
+    this.documentReset = false;
   }
 
   async #suspendRuntime() {
@@ -300,18 +383,11 @@ export class ConsentController {
     this.runtime.transport?.stop?.();
   }
 
-  async #applyPhase(desired) {
+  async #applyPhase(desired, generation = this.controlGeneration) {
     const priorPhase = this.phase;
     this.phase = 'transitioning';
 
     if (desired !== 'full') await this.#suspendRuntime();
-    if (['identity', 'full'].includes(desired)) {
-      this.brainBindingBridge.register();
-      this.provisioningIdentityBridge.register();
-    } else {
-      this.brainBindingBridge.unregister();
-      this.provisioningIdentityBridge.unregister();
-    }
 
     let effective = desired;
     if (desired === 'full') {
@@ -323,10 +399,12 @@ export class ConsentController {
       }
     }
 
+    this.#assertGeneration(generation);
     this.phase = effective;
     const scriptMode = SCRIPT_MODES.includes(effective) ? effective : null;
     try {
       await this.#syncContentScripts(scriptMode);
+      this.#assertGeneration(generation);
     } catch (error) {
       this.phase = ACTIVE_CONSENT_MODES.has(desired)
         ? (priorPhase === 'booting' ? 'unavailable' : priorPhase)
@@ -335,33 +413,51 @@ export class ConsentController {
     }
   }
 
-  reconcile() {
-    const operation = this.transition.then(async () => {
-      if (
-        ACTIVE_CONSENT_MODES.has(this.state.mode)
-        && !await this.activeModeAuthorization.reconcileActiveMode({
-          mode: this.state.mode,
-          state: structuredClone(this.state),
-        })
-      ) {
-        const resumeMode = this.state.mode;
-        this.state = {
-          ...this.state,
-          mode: 'paused',
-          resume_mode: resumeMode,
-          updated_at: this.now().toISOString(),
-        };
-        await this.chromeApi.storage.local.set({ [CONSENT_STORAGE_KEY]: this.state });
-      }
-      const desired = await this.#desiredPhase();
-      await this.#applyPhase(desired);
-    });
-    this.transition = operation.catch(() => undefined);
-    return operation;
+  async #reconcileLocked(generation) {
+    this.#assertGeneration(generation);
+    this.captureScope.close('capture_reconcile');
+    if (ACTIVE_CONSENT_MODES.has(this.state.mode)
+      && !await this.activeModeAuthorization.reconcileActiveMode({
+        mode: this.state.mode, state: structuredClone(this.state),
+      })) {
+      this.#assertGeneration(generation);
+      this.state = {
+        ...this.state,
+        mode: 'paused',
+        resume_mode: this.state.mode,
+        consent_epoch: crypto.randomUUID(),
+        updated_at: this.now().toISOString(),
+      };
+      await this.chromeApi.storage.local.set({ [CONSENT_STORAGE_KEY]: this.state });
+    }
+    const desired = await this.#desiredPhase();
+    this.#assertGeneration(generation);
+    await this.captureScope.drain();
+    this.#assertGeneration(generation);
+    await this.#applyPhase(desired, generation);
+    this.#assertGeneration(generation);
+    if (['preview', 'full'].includes(this.phase)) this.captureScope.reopen();
   }
 
-  async setMode(mode, { evidenceEventId = null } = {}) {
-    await this.initialize();
+  reconcile() {
+    const generation = this.#invalidate('consent_reconcile');
+    return this.controlQueue.run(async () => {
+      await this.#loadStateLocked();
+      return this.#reconcileLocked(generation);
+    });
+  }
+
+  setMode(mode, options = {}) {
+    this.register();
+    const generation = this.#invalidate(`consent_${mode}`);
+    return this.controlQueue.run(async () => {
+      await this.#loadStateLocked();
+      return this.#setModeLocked(mode, options, generation);
+    });
+  }
+
+  async #setModeLocked(mode, { evidenceEventId = null } = {}, generation) {
+    this.#assertGeneration(generation);
     const currentState = structuredClone(this.state);
     let nextMode = mode;
     let resumeMode = null;
@@ -400,61 +496,90 @@ export class ConsentController {
     if (nextMode === 'full' && !await this.#hasLocalAnalyticsPermission()) {
       throw new Error('Local analytics service access must be granted from the popup');
     }
+    this.#assertGeneration(generation);
+    this.captureScope.close('consent_transition');
+    await this.#suspendRuntime();
+    await this.captureScope.drain();
+    this.#assertGeneration(generation);
+    const authorizationEventId = nextMode === 'revoked' ? null
+      : evidenceEventId ?? this.state.authorization_event_id;
+    const epochChanged = this.state.mode !== nextMode
+      || this.state.authorization_event_id !== authorizationEventId;
     this.state = {
-      schema: 'ofca-consent/v1',
+      schema: 'ofca-consent/v2',
       mode: nextMode,
       resume_mode: resumeMode,
       policy_revision: CONSENT_POLICY_REVISION,
       updated_at: this.now().toISOString(),
+      authorization_event_id: authorizationEventId,
+      consent_epoch: epochChanged ? crypto.randomUUID() : this.state.consent_epoch,
     };
     await this.chromeApi.storage.local.set({ [CONSENT_STORAGE_KEY]: this.state });
-    try {
-      await this.reconcile();
-    } finally {
-      if (nextMode === 'revoked') {
-        await this.chromeApi.permissions.remove({
-          permissions: ['webRequest'],
-          origins: [ONLYFANS_ORIGIN_PATTERN, LOCAL_ANALYTICS_ORIGIN_PATTERN],
-        });
-      }
+    if (epochChanged) {
+      this.documentReset = true;
+      await this.provisioningIdentityBridge.clearContexts?.();
     }
-    return this.status();
+    try {
+      await this.#reconcileLocked(generation);
+    } finally {
+      if (nextMode === 'revoked') await this.#removePermissions();
+    }
+    return this.#statusLocked();
   }
 
-  async deleteLocalData() {
-    await this.initialize();
-    const operation = this.transition.then(async () => {
-      this.state = defaultState();
-      let failure = null;
-      try {
-        await this.#applyPhase('off');
-      } catch (error) {
-        failure = error;
-      }
-      try {
-        await this.chromeApi.permissions.remove({
-          permissions: ['webRequest'],
-          origins: [ONLYFANS_ORIGIN_PATTERN, LOCAL_ANALYTICS_ORIGIN_PATTERN],
-        });
-      } catch (error) {
-        failure ??= error;
-      }
-      try {
-        await this.adapter.clearBrainBinding();
-      } catch (error) {
-        failure ??= error;
-      }
-      try {
-        await this.clearLocalData();
-      } catch (error) {
-        failure ??= error;
-      }
-      this.state = defaultState();
-      if (failure !== null) throw failure;
+  async #removePermissions() {
+    const removed = await this.chromeApi.permissions.remove({
+      permissions: ['webRequest'],
+      origins: [ONLYFANS_ORIGIN_PATTERN, LOCAL_ANALYTICS_ORIGIN_PATTERN],
     });
-    this.transition = operation.catch(() => undefined);
-    await operation;
-    return this.status();
+    if (removed === false) throw new Error('permission_remove_failed');
+  }
+
+  deleteLocalData() {
+    this.deletionPending = true;
+    this.legalScope.close('delete_requested');
+    this.#invalidate('delete_requested');
+    return this.controlQueue.run(async () => {
+      await this.#deleteLocalDataLocked(true);
+      this.loaded = true;
+      this.initialization = Promise.resolve(this);
+      return this.#statusLocked();
+    });
+  }
+
+  async #deleteLocalDataLocked(createIntent) {
+    this.captureScope.close('delete_requested');
+    this.legalScope.close('delete_requested');
+    this.deletionPending = true;
+    this.state = defaultConsentState();
+    const stored = await this.chromeApi.storage.local.get([DELETE_INTENT_KEY]);
+    const intent = stored?.[DELETE_INTENT_KEY] ?? deletionIntent(this.now());
+    await this.chromeApi.storage.local.set({
+      [CONSENT_STORAGE_KEY]: this.state,
+      ...(createIntent || !Object.hasOwn(stored ?? {}, DELETE_INTENT_KEY) ? { [DELETE_INTENT_KEY]: intent } : {}),
+    });
+    const failures = [];
+    const attempt = async (stage, work) => {
+      try { await work(); } catch { failures.push(stage); }
+    };
+    await attempt('phase_stop', () => this.#applyPhase('off'));
+    await attempt('runtime_suspend', () => this.#suspendRuntime());
+    await attempt('context_clear', () => this.provisioningIdentityBridge.clearContexts?.());
+    await attempt('capture_drain', () => this.captureScope.drain());
+    await attempt('legal_drain', () => this.legalScope.drain());
+    await attempt('preview_drain', () => this.previewMetrics.drain?.());
+    await attempt('evidence_close', () => this.activationEvidenceStore?.close());
+    await attempt('permission_remove', () => this.#removePermissions());
+    await attempt('binding_clear', () => this.adapter.clearBrainBinding());
+    await attempt('local_data_clear', () => this.clearLocalData());
+    if (failures.length > 0) {
+      // Even a legacy/injected cleaner must not erase an incomplete deletion's intent.
+      await this.chromeApi.storage.local.set({ [DELETE_INTENT_KEY]: intent });
+      throw Object.assign(new Error('delete_incomplete'), { code: 'delete_incomplete', failures });
+    }
+    await this.chromeApi.storage.local.remove([DELETE_INTENT_KEY]);
+    this.deletionPending = false;
+    this.legalScope.reopen();
   }
 
   async #brainReachable() {
@@ -475,8 +600,11 @@ export class ConsentController {
   }
 
   async status() {
-    await this.initialize();
-    await this.transition;
+    if (!this.loaded) await this.initialize();
+    return this.controlQueue.run(() => this.#statusLocked());
+  }
+
+  async #statusLocked() {
     const [preview, onlyFansPermission, localServicePermission, historyPermission] = await Promise.all([
       this.previewMetrics.summary(),
       this.#hasOnlyFansPermission(),
@@ -489,6 +617,7 @@ export class ConsentController {
       schema: 'ofca-popup-status/v1',
       consent: structuredClone(this.state),
       phase: this.phase,
+      reload_required: this.reloadRequired,
       onlyfans_permission: onlyFansPermission,
       local_service_permission: localServicePermission,
       history_permission: historyPermission,
@@ -496,6 +625,13 @@ export class ConsentController {
       brain_bound: this.phase === 'full',
       preview,
       delivery: {
+        startup_error_code: ['startup_failed', 'local_service_unavailable', 'local_service_timeout'].includes(runtime.startup_error_code)
+          ? runtime.startup_error_code : null,
+        history_error_code: ['history_unavailable', 'unsupported_browser', 'identity_required'].includes(runtime.history_error_code)
+          ? runtime.history_error_code : null,
+        capture_drop_counts: structuredClone(runtime.capture_drop_counts ?? {}),
+        transport_state: ['authenticated', 'authenticating', 'disconnected'].includes(runtime.transport_state)
+          ? runtime.transport_state : 'disconnected',
         runtime_ready: runtime.runtime_ready === true,
         socket_open: runtime.socket_open === true,
         pending_entries: Number.isSafeInteger(runtime.pending_entries)
@@ -513,25 +649,43 @@ export class ConsentController {
 
   #onStorageChanged(changes, areaName) {
     if (areaName === 'session' && Object.hasOwn(changes, 'active_account_partition_v5')) {
-      void this.reconcile();
+      void this.reconcile().catch(() => undefined);
     }
   }
 
   #onMessage(message, sender, sendResponse) {
     if (message?.type === PREVIEW_MESSAGE_TYPE) {
       if (!trustedContentSender(sender, this.chromeApi)) return false;
+      const generation = this.controlGeneration;
       void this.initialize().then(async () => {
+        this.#assertGeneration(generation);
         if (!['preview', 'full'].includes(this.phase) || !isPreviewEnvelope(message)) {
           sendResponse({ ok: false });
           return;
         }
-        await this.previewMetrics.record(message.observation);
+        await this.captureScope.run(({ assertCurrent }) => this.previewMetrics.record(
+          message.observation, { assertCurrent },
+        ));
         sendResponse({ ok: true });
       }).catch(() => sendResponse({ ok: false }));
       return true;
     }
 
     if (!trustedUiSender(sender, this.chromeApi)) return false;
+    if (message?.type === UI_RELOAD_TABS_MESSAGE_TYPE && Object.keys(message).length === 1) {
+      void this.runLegalOperation(async ({ assertCurrent, status }) => {
+        assertCurrent();
+        if (SCRIPT_MODES.includes(this.phase)) {
+          await this.#reloadTabs(await this.#onlyFansTabs());
+          this.reloadRequired = false;
+        }
+        return status();
+      }).then(
+        (status) => sendResponse({ ok: true, status }),
+        () => sendResponse({ ok: false, code: 'reload_failed' }),
+      );
+      return true;
+    }
     if (message?.type === UI_STATUS_MESSAGE_TYPE && Object.keys(message).length === 1) {
       void this.status().then(
         (status) => sendResponse({ ok: true, status }),
@@ -551,9 +705,10 @@ export class ConsentController {
       return true;
     }
     if (message?.type === UI_CLEAR_PREVIEW_MESSAGE_TYPE && Object.keys(message).length === 1) {
-      void this.previewMetrics.clear().then(
-        () => this.status(),
-      ).then(
+      void this.runLegalOperation(async ({ status }) => {
+        await this.previewMetrics.clear();
+        return status();
+      }).then(
         (status) => sendResponse({ ok: true, status }),
         () => sendResponse({ ok: false, code: 'clear_failed' }),
       );

@@ -75,7 +75,7 @@ function harness({ unregisterFails = false } = {}) {
       onRemoved: event(),
       async contains(query) {
         if (query.origins?.includes('https://onlyfans.com/*')) return permissionState.onlyFans;
-        if (query.origins?.includes('http://bridge.localhost:17871/*')) return permissionState.localService;
+        if (query.origins?.includes('https://bridge.localhost:17871/*')) return permissionState.localService;
         if (query.permissions) return permissionState.history;
         return false;
       },
@@ -242,11 +242,11 @@ test('delete attempts permission and storage cleanup after content-script teardo
   const h = harness({ unregisterFails: true });
   h.permissionState.onlyFans = true;
   await h.controller.setMode('preview');
-  await assert.rejects(h.controller.deleteLocalData(), /scripting teardown failed/);
+  await assert.rejects(h.controller.deleteLocalData(), { code: 'delete_incomplete' });
   assert.equal((await h.controller.status()).phase, 'unavailable');
   assert.equal(h.removedPermissions.length, 1);
   assert.equal(h.counters.bindingClears, 1);
   assert.equal(h.counters.deletes, 1);
-  assert.deepEqual(h.local, {});
+  assert.equal(h.local.ofca_delete_intent_v1.schema, 'ofca-delete-intent/v1');
   assert.deepEqual(h.session, {});
 });

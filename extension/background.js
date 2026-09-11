@@ -4,67 +4,79 @@ import {
   createBrainBindingBridge,
   createChromeAdapter,
 } from './transport/chrome-adapter.mjs';
-import {
-  CaptureDiagnostics,
-  CaptureIngestionService,
-  createCaptureMessageBridge,
-} from './transport/capture-ingestion.mjs';
+import { CaptureDiagnostics } from './transport/capture-ingestion.mjs';
+import { DeliveryCaptureIngestionService } from './transport/delivery-capture-ingestion.mjs';
+import { createAccountBoundCaptureMessageBridge } from './transport/account-bound-capture-bridge.mjs';
 import { createProvisioningIdentityBridge } from './transport/provisioning-identity.mjs';
+import { createSecureLocalFetch } from './transport/secure-local-fetch.mjs';
+import { LOCAL_SERVICE_HEALTH, LOCAL_SERVICE_ORIGIN } from './transport/local-service-endpoints.mjs';
 import { ConsentController } from './runtime/consent-controller.mjs';
 import { PreviewMetricsStore } from './runtime/preview-metrics.mjs';
 import { clearExtensionLocalData } from './runtime/local-data.mjs';
+import { OperationScope, SerialExecutor } from './runtime/operation-scope.mjs';
 import { ActivationEvidenceStore } from './runtime/activation-evidence.mjs';
 import { LegalActivationController } from './runtime/legal-activation-controller.mjs';
 import { LegalConsentAuthorization } from './runtime/legal-consent-authorization.mjs';
 import { legalReleaseBindings } from './runtime/legal-release-bindings.mjs';
 
+let lastStartupErrorCode = null;
+const secureLocalFetch = createSecureLocalFetch();
 export const chromeAdapter = createChromeAdapter();
+export const captureDiagnostics = new CaptureDiagnostics((diagnostic) => {
+  console.warn('[Conversation Analytics] capture observation dropped', diagnostic);
+});
 export const agentRuntime = createAgentRuntime({
   chromeAdapter,
+  chromeApi: chrome,
   signerFactory: (options) => createChromeBrowserSigningProvider(options),
   onStartupError: () => {
+    lastStartupErrorCode = 'startup_failed';
     console.error('[Conversation Analytics] local Agent startup failed; a later consented wake will retry');
   },
 });
+export const captureScope = new OperationScope();
+export const controlQueue = new SerialExecutor();
 
 let consentController = null;
 export const brainBindingBridge = createBrainBindingBridge({
   adapter: chromeAdapter,
   runtime: agentRuntime,
   onBound: () => consentController?.reconcile(),
+  ensureReady: () => consentController.initialize(),
+  allowsBinding: () => consentController?.state.mode === 'full'
+    && ['identity', 'full'].includes(consentController.phase),
+  runBindingOperation: (work) => consentController.runLegalOperation(work),
 });
-export const provisioningIdentityBridge = createProvisioningIdentityBridge();
-
-export const captureDiagnostics = new CaptureDiagnostics((diagnostic) => {
-  console.warn('[Conversation Analytics] capture observation dropped', diagnostic);
+export const provisioningIdentityBridge = createProvisioningIdentityBridge({
+  allowedOrigins: [LOCAL_SERVICE_ORIGIN],
+  currentConsent: () => consentController?.state,
+  ensureReady: () => consentController.initialize(),
+  allowsIdentity: () => consentController?.state.mode === 'full'
+    && ['identity', 'full'].includes(consentController.phase),
 });
-export const captureIngestion = new CaptureIngestionService({
+export const captureIngestion = new DeliveryCaptureIngestionService({
   runtime: agentRuntime,
   diagnostics: captureDiagnostics,
 });
-
-const consentGatedIngestion = Object.freeze({
-  rejectBridgeMessage: () => captureIngestion.rejectBridgeMessage(),
-  async ingest(observation) {
-    if (!consentController?.allowsFullCapture()) {
-      captureDiagnostics.record('capture_disabled', observation?.event_type);
-      return { ok: false, code: 'capture_disabled', retryable: false };
-    }
-    return captureIngestion.ingest(observation);
-  },
-});
-export const captureMessageBridge = createCaptureMessageBridge({
-  ingestion: consentGatedIngestion,
+export const captureMessageBridge = createAccountBoundCaptureMessageBridge({
+  ingestion: captureIngestion,
+  runtime: agentRuntime,
+  provisioningIdentityBridge,
+  allowsCapture: () => consentController?.allowsFullCapture() === true,
+  diagnostics: captureDiagnostics,
+  operationScope: captureScope,
+  currentConsent: () => consentController?.state,
+  ensureReady: () => consentController.initialize(),
 });
 
-export const previewMetrics = new PreviewMetricsStore({
-  storage: chrome.storage.local,
-});
+export const previewMetrics = new PreviewMetricsStore({ storage: chrome.storage.local });
 export const activationEvidenceStore = new ActivationEvidenceStore({
   softwareVersion: chrome.runtime.getManifest().version,
 });
 export const legalConsentAuthorization = new LegalConsentAuthorization({
   evidenceStore: activationEvidenceStore,
+  bindings: legalReleaseBindings,
+  storage: chrome.storage.local,
 });
 
 let agentWorkerInstanceId = null;
@@ -72,19 +84,27 @@ let agentWorkerInstanceId = null;
 function runtimeSummary() {
   const transport = agentRuntime.transport;
   const durableMeta = transport?.outbox?.meta ?? null;
-  if (transport !== null && agentWorkerInstanceId === null) {
-    agentWorkerInstanceId = crypto.randomUUID();
-  }
+  if (transport !== null && agentWorkerInstanceId === null) agentWorkerInstanceId = crypto.randomUUID();
+  if (transport !== null) lastStartupErrorCode = null;
   return {
     runtime_ready: transport !== null,
     socket_open: transport?.socket?.readyState === WebSocket.OPEN,
     pending_entries: durableMeta?.outbox_count ?? 0,
     captured_chats: durableMeta?.entity_counts?.chats ?? 0,
     captured_messages: durableMeta?.entity_counts?.messages ?? 0,
+    startup_error_code: lastStartupErrorCode,
+    history_error_code: null,
+    capture_drop_counts: captureDiagnostics.snapshot(),
+    transport_state: transport?.session
+      ? 'authenticated'
+      : transport?.socket?.readyState === WebSocket.OPEN
+        ? 'authenticating'
+        : 'disconnected',
   };
 }
 
 consentController = new ConsentController({
+  chromeApi: chrome,
   runtime: agentRuntime,
   adapter: chromeAdapter,
   brainBindingBridge,
@@ -92,7 +112,11 @@ consentController = new ConsentController({
   previewMetrics,
   clearLocalData: () => clearExtensionLocalData(),
   activeModeAuthorization: legalConsentAuthorization,
+  captureScope,
+  controlQueue,
+  activationEvidenceStore,
   runtimeSummary,
+  fetchImpl: (_url, init) => secureLocalFetch(LOCAL_SERVICE_HEALTH, init),
 });
 export { consentController };
 
@@ -104,9 +128,8 @@ export const legalActivationController = new LegalActivationController({
 });
 
 export async function legalActivationAuditSnapshot() {
-  return activationEvidenceStore.exportAuditTrail();
+  return legalActivationController.exportAuditTrail();
 }
-
 Object.defineProperty(globalThis, '__OFCA_LEGAL_ACTIVATION_AUDIT__', {
   configurable: false,
   enumerable: false,
@@ -129,12 +152,8 @@ export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile'
     sessionBound: transport?.session !== null && transport?.session !== undefined,
     heartbeatTimerPresent: transport?.heartbeatTimer !== null && transport?.heartbeatTimer !== undefined,
     syncRequired: transport?.syncRequired ?? null,
-    appliedConfigRevision:
-      agentRuntime.configuration?.activeDocument?.config_revision ?? null,
-    enabledResources: rules
-      .filter((rule) => rule.enabled === true)
-      .map((rule) => rule.resource)
-      .sort(),
+    appliedConfigRevision: agentRuntime.configuration?.activeDocument?.config_revision ?? null,
+    enabledResources: rules.filter((rule) => rule.enabled === true).map((rule) => rule.resource).sort(),
     reconcileAlarm: alarm === undefined ? null : {
       name: alarm.name,
       scheduledTime: alarm.scheduledTime,
@@ -153,7 +172,6 @@ export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile'
     },
   };
 }
-
 Object.defineProperty(globalThis, '__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__', {
   configurable: false,
   enumerable: false,
