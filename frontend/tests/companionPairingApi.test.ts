@@ -18,6 +18,18 @@ const response = (body: unknown) => new Response(JSON.stringify(body));
 afterEach(() => vi.useRealTimers());
 
 describe('companion pairing public API', () => {
+  it('lists bounded public pins and sends versioned CSRF revocation', async () => {
+    const pin = { ...status, state: 'admitted' };
+    const fetch = vi.fn().mockResolvedValueOnce(response({ pins: [pin] }))
+      .mockResolvedValueOnce(response({ ...pin, state: 'revoked' }));
+    const api = createCompanionPairingApi({ fetch, getCsrfToken: () => 'csrf-fixture' });
+    expect(await api.pins()).toEqual([pin]);
+    expect((await api.revoke(id, 4)).state).toBe('revoked');
+    expect(fetch.mock.calls[1]).toEqual([`/api/v1/companion/pins/${id}/revoke`, expect.objectContaining({
+      method: 'POST', body: '{"version":4}', headers: expect.objectContaining({ 'X-CSRF-Token': 'csrf-fixture' }),
+    })]);
+  });
+
   it('uses same-origin CSRF-protected commands and exact versioned decisions', async () => {
     const fetch = vi.fn(async () => response(status));
     const api = createCompanionPairingApi({ fetch, getCsrfToken: () => 'csrf-fixture' });

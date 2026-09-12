@@ -9,10 +9,7 @@ import {
   LEASE_EXPIRED_CLOSE_CODE,
 } from '../transport/agent-websocket.mjs';
 import { ReadOnlyAgentWebSocketClient } from '../transport/read-only-agent-websocket.mjs';
-import {
-  RECONCILE_ALARM_NAME,
-  createChromeAdapter,
-} from '../transport/chrome-adapter.mjs';
+
 import {
   parseAgentToBrainMessage,
   parseBrainToAgentMessage,
@@ -24,6 +21,13 @@ const INSTALLATION_ID = '20000000-0000-4000-8000-000000000001';
 const STREAM_ID = '30000000-0000-4000-8000-000000000001';
 const TEST_ACCOUNT_ID = 'dev-creator-account';
 const TEST_AUTH_TICKET = 'test-agent-auth-ticket';
+
+test('protocol clients refuse construction without an explicitly authenticated socket adapter', () => {
+  for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
+    assert.throws(() => new Client({ creatorAccountId: TEST_ACCOUNT_ID, authTicket: TEST_AUTH_TICKET,
+      extensionVersion: '2.0.1', identity: {} }), /authenticated companion socket factory/);
+  }
+});
 
 async function fixture(name) {
   return JSON.parse(await readFile(path.join(FIXTURE_ROOT, `${name}.json`), 'utf8'));
@@ -395,56 +399,6 @@ test('invalid fixtures and fatal protocol errors close safely without crashing',
   assert.equal(fatalHarness.scheduler.timeouts.filter((task) => !task.cleared).length, 0);
 });
 
-test('Chrome adapter identity initialization persists only stable identity and exposes wake events', async () => {
-  const values = {};
-  const listeners = [];
-  const alarmListeners = [];
-  const alarms = [];
-  const event = {
-    addListener(listener) { listeners.push(listener); },
-    removeListener() {},
-  };
-  const chromeMock = {
-    runtime: { onStartup: event, onInstalled: event, onMessage: event },
-    tabs: { onUpdated: event },
-    alarms: {
-      create(name, options) { alarms.push({ name, options }); },
-      onAlarm: {
-        addListener(listener) { alarmListeners.push(listener); },
-        removeListener() {},
-      },
-    },
-    storage: {
-      local: {
-        get(_keys, callback) { callback({ ...values }); },
-        set(update, callback) { Object.assign(values, update); callback?.(); },
-      },
-    },
-  };
-  let generated = 0;
-  const adapter = createChromeAdapter(
-    chromeMock,
-    () => `90000000-0000-4000-8000-${String(++generated).padStart(12, '0')}`,
-  );
-  const identity = await adapter.loadAgentIdentity();
-  assert.equal(identity.agentInstallationId, '90000000-0000-4000-8000-000000000001');
-  assert.deepEqual(Object.keys(values), ['agent_installation_id']);
-  assert.equal(adapter.saveAcknowledgedSourceSeq, undefined);
-  assert.equal(adapter.saveCommandState, undefined);
-
-  let wakes = 0;
-  adapter.onWake(() => { wakes += 1; });
-  assert.deepEqual(alarms, [{
-    name: RECONCILE_ALARM_NAME,
-    options: { delayInMinutes: 1, periodInMinutes: 1 },
-  }]);
-  listeners[0]();
-  assert.equal(wakes, 1);
-  alarmListeners[0]({ name: 'unrelated-alarm' });
-  assert.equal(wakes, 1);
-  alarmListeners[0]({ name: RECONCILE_ALARM_NAME });
-  assert.equal(wakes, 2);
-});
 
 test('MV3 manifest grants the alarms permission used for reconciliation', async () => {
   const manifest = JSON.parse(

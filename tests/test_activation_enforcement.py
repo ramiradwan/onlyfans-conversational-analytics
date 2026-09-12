@@ -57,13 +57,17 @@ UNGATED_SURFACES: dict[str, str] = {
     "GET /": "SPA shell; the client that reports an unactivated runtime to the operator",
     "GET /{frontend_path:path}": "SPA shell refresh of the same document as GET /",
     "WEBSOCKET /ws/agent": (
-        "activation is enforced inside "
-        "transport_manager.authenticate_agent_handshake"
+        "activation is enforced by the companion origin/admission gate before Noise"
     ),
     "WEBSOCKET /ws/bridge": "activation is enforced inside transport_manager.authenticate",
-    "GET /api/v1/agent/config": (
-        "activation is enforced inside transport_manager.authenticate_agent_config"
-    ),
+    "WEBSOCKET /ws/agent/pairing": "activation is enforced by the companion socket origin gate",
+    "GET /api/v1/companion/pins": "activation is enforced in the bounded Bridge policy adapter",
+    "GET /api/v1/companion/pairings/{pairing_id}": "activation is enforced in the bounded Bridge policy adapter",
+    "POST /api/v1/companion/pairings": "activation is enforced in the bounded Bridge policy adapter",
+    "POST /api/v1/companion/pairings/{pairing_id}/cancel": "activation is enforced in the bounded Bridge policy adapter",
+    "POST /api/v1/companion/pairings/{pairing_id}/confirm": "activation is enforced in the bounded Bridge policy adapter",
+    "POST /api/v1/companion/pairings/{pairing_id}/decline": "activation is enforced in the bounded Bridge policy adapter",
+    "POST /api/v1/companion/pins/{pairing_id}/revoke": "activation is enforced in the bounded Bridge policy adapter",
 }
 
 

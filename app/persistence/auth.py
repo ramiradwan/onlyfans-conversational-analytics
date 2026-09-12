@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import secrets
+from contextlib import contextmanager
 from app.persistence import sqlite_api as sqlite3
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -326,6 +327,21 @@ class ConsumedTicket:
     @property
     def creator_account_id(self) -> str:
         return self.policy.identity.creator_account_id
+
+
+@dataclass(frozen=True, slots=True)
+class CompanionSessionBinding:
+    """Immutable authority selected for one established Noise handshake."""
+
+    session_id: str
+    pairing_id: str
+    generation: int
+    pairing_digest: bytes
+    principal_id: str
+    creator_account_id: str
+    agent_installation_id: str
+    grant_reference_ids: tuple[str, ...]
+    expires_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -1193,15 +1209,47 @@ class SQLiteAuthenticationStore:
     def issue_agent_challenge(
         self, binding: AgentChallengeBinding, *, expires_at: datetime
     ) -> IssuedChallenge:
+        return self._issue_agent_challenge(binding, expires_at=expires_at)
+
+    def issue_companion_challenge(
+        self,
+        session: CompanionSessionBinding,
+        binding: AgentChallengeBinding,
+        *,
+        expires_at: datetime,
+    ) -> IssuedChallenge:
+        return self._issue_agent_challenge(
+            binding, expires_at=expires_at, companion=session
+        )
+
+    def _issue_agent_challenge(
+        self,
+        binding: AgentChallengeBinding,
+        *,
+        expires_at: datetime,
+        companion: CompanionSessionBinding | None = None,
+    ) -> IssuedChallenge:
         if binding.ticket_purpose is TicketPurpose.BRIDGE_WEBSOCKET:
             raise ValueError("Agent challenge requires an Agent ticket purpose")
         challenge_id, value, digest = _new_secret()
         with self.database.transaction() as connection:
             now = self._now()
             _require_interval(now, expires_at)
-            pairing, grants = self._require_pairing_current(
-                connection, binding.pairing_id, now
-            )
+            if companion is None:
+                pairing, grants = self._require_pairing_current(
+                    connection, binding.pairing_id, now
+                )
+            else:
+                pairing, grants = self._require_companion_session_current(
+                    connection, companion, now
+                )
+                if (
+                    binding.pairing_id != companion.pairing_id
+                    or expires_at > companion.expires_at
+                ):
+                    raise AuthenticationStateError(
+                        "Companion challenge binding does not match"
+                    )
             expected = (
                 binding.principal_id,
                 binding.creator_account_id,
@@ -1224,8 +1272,8 @@ class SQLiteAuthenticationStore:
                     challenge_id, challenge_kind, secret_digest, principal_id,
                     pairing_id, request_method, request_path, request_body_digest,
                     ticket_purpose, agent_installation_id, creator_account_id,
-                    key_id, brain_audience, issued_at, expires_at
-                ) VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    key_id, brain_audience, issued_at, expires_at, companion_session_id
+                ) VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     challenge_id,
@@ -1242,6 +1290,7 @@ class SQLiteAuthenticationStore:
                     binding.brain_audience,
                     _time_text(now),
                     _time_text(expires_at),
+                    None if companion is None else companion.session_id,
                 ),
             )
             self._insert_bindings(connection, "challenge", challenge_id, snapshots)
@@ -1263,6 +1312,23 @@ class SQLiteAuthenticationStore:
     def consume_agent_challenge(
         self, value: str, binding: AgentChallengeBinding
     ) -> ConsumedChallenge | None:
+        return self._consume_agent_challenge(value, binding)
+
+    def consume_companion_challenge(
+        self,
+        session: CompanionSessionBinding,
+        value: str,
+        binding: AgentChallengeBinding,
+    ) -> ConsumedChallenge | None:
+        return self._consume_agent_challenge(value, binding, companion=session)
+
+    def _consume_agent_challenge(
+        self,
+        value: str,
+        binding: AgentChallengeBinding,
+        *,
+        companion: CompanionSessionBinding | None = None,
+    ) -> ConsumedChallenge | None:
         expected = {
             "challenge_kind": "agent",
             "principal_id": binding.principal_id,
@@ -1275,10 +1341,15 @@ class SQLiteAuthenticationStore:
             "creator_account_id": binding.creator_account_id,
             "key_id": binding.key_id,
             "brain_audience": binding.brain_audience,
+            "companion_session_id": None if companion is None else companion.session_id,
         }
         with self.database.read() as connection:
-            grants = self._pairing_grants(connection, binding.pairing_id)
-        return self._consume_challenge(value, expected, grants)
+            grants = (
+                self._pairing_grants(connection, binding.pairing_id)
+                if companion is None
+                else companion.grant_reference_ids
+            )
+        return self._consume_challenge(value, expected, grants, companion=companion)
 
     def issue_bridge_session(self, issue: BridgeSessionIssue) -> IssuedBridgeSession:
         if issue.role not in {"creator", "operator"}:
@@ -1408,6 +1479,20 @@ class SQLiteAuthenticationStore:
             return ActiveBridgeSession(row["session_id"], policy)
 
     def issue_ticket(self, issue: TicketIssue) -> IssuedTicket:
+        return self._issue_ticket(issue)
+
+    def issue_companion_ticket(
+        self, session: CompanionSessionBinding, issue: TicketIssue
+    ) -> IssuedTicket:
+        if issue.purpose is TicketPurpose.BRIDGE_WEBSOCKET:
+            raise AuthenticationStateError(
+                "Companion session cannot issue a Bridge ticket"
+            )
+        return self._issue_ticket(issue, companion=session)
+
+    def _issue_ticket(
+        self, issue: TicketIssue, *, companion: CompanionSessionBinding | None = None
+    ) -> IssuedTicket:
         self._validate_ticket_issue(issue)
         ticket_id, value, digest = _new_secret()
         with self.database.transaction() as connection:
@@ -1431,9 +1516,21 @@ class SQLiteAuthenticationStore:
                     connection, "bridge_session", parent["session_id"]
                 )
             else:
-                parent, grants = self._require_pairing_current(
-                    connection, issue.parent_pairing_id or "", now
-                )
+                if companion is None:
+                    parent, grants = self._require_pairing_current(
+                        connection, issue.parent_pairing_id or "", now
+                    )
+                else:
+                    parent, grants = self._require_companion_session_current(
+                        connection, companion, now
+                    )
+                    if (
+                        issue.parent_pairing_id != companion.pairing_id
+                        or issue.expires_at > companion.expires_at
+                    ):
+                        raise AuthenticationStateError(
+                            "Companion ticket binding does not match"
+                        )
                 actual = (
                     parent["principal_id"],
                     parent["creator_account_id"],
@@ -1461,8 +1558,8 @@ class SQLiteAuthenticationStore:
                     ticket_id, secret_digest, purpose, principal_id, role,
                     creator_account_id, parent_session_id, parent_pairing_id,
                     expected_bridge_session_id, expected_agent_installation_id,
-                    issued_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    issued_at, expires_at, companion_session_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     ticket_id,
@@ -1477,6 +1574,7 @@ class SQLiteAuthenticationStore:
                     issue.expected_agent_installation_id,
                     _time_text(now),
                     _time_text(issue.expires_at),
+                    None if companion is None else companion.session_id,
                 ),
             )
             self._insert_grants(
@@ -1489,6 +1587,20 @@ class SQLiteAuthenticationStore:
     def consume_ticket(
         self, value: str, binding: TicketBinding
     ) -> ConsumedTicket | None:
+        return self._consume_ticket(value, binding)
+
+    def consume_companion_ticket(
+        self, session: CompanionSessionBinding, value: str, binding: TicketBinding
+    ) -> ConsumedTicket | None:
+        return self._consume_ticket(value, binding, companion=session)
+
+    def _consume_ticket(
+        self,
+        value: str,
+        binding: TicketBinding,
+        *,
+        companion: CompanionSessionBinding | None = None,
+    ) -> ConsumedTicket | None:
         with self.database.transaction() as connection:
             now = self._now()
             row = connection.execute(
@@ -1497,6 +1609,14 @@ class SQLiteAuthenticationStore:
             ).fetchone()
             if row is None:
                 return None
+            if row["companion_session_id"] != (
+                None if companion is None else companion.session_id
+            ):
+                return None
+            if companion is not None:
+                self._require_companion_session_current(connection, companion, now)
+                if row["parent_pairing_id"] != companion.pairing_id:
+                    return None
             expected = (
                 binding.purpose.value,
                 binding.creator_account_id,
@@ -1560,6 +1680,131 @@ class SQLiteAuthenticationStore:
     def runtime_policy_is_current(self, policy: RuntimePolicy) -> bool:
         with self.database.read() as connection:
             return self._policy_is_current(connection, policy, self._now())
+
+    def companion_session_policy(
+        self, session: CompanionSessionBinding
+    ) -> RuntimePolicy:
+        with self.database.transaction() as connection:
+            return self._companion_session_policy(connection, session)
+
+    @contextmanager
+    def companion_session_operation(self, session: CompanionSessionBinding):
+        """Serialize a synchronous protected write with all auth revocations."""
+        with self.database.transaction() as connection:
+            yield self._companion_session_policy(connection, session)
+
+    def close_companion_session(self, session_id: str) -> None:
+        with self.database.transaction() as connection:
+            now = _time_text(self._now())
+            for table in ("auth_challenges", "runtime_tickets"):
+                connection.execute(
+                    f"UPDATE {table} SET invalidated_at = COALESCE(invalidated_at, ?) "
+                    "WHERE companion_session_id = ? AND consumed_at IS NULL",
+                    (now, session_id),
+                )
+            self._increment_authorization_epoch(connection)
+
+    def _companion_session_policy(
+        self, connection: sqlite3.Connection, session: CompanionSessionBinding
+    ) -> RuntimePolicy:
+        row, grants = self._require_companion_session_current(
+            connection, session, self._now()
+        )
+        return self._runtime_policy(
+            connection,
+            identity=AuthContext(
+                principal_id=session.principal_id,
+                creator_account_id=session.creator_account_id,
+                role="agent",
+                session_id=session.session_id,
+            ),
+            expires_at=session.expires_at,
+            revocations=self._snapshot_revocations(
+                connection, self._agent_keys(row, grants)
+            ),
+            grant_reference_ids=grants,
+        )
+
+    def _require_companion_session_current(
+        self,
+        connection: sqlite3.Connection,
+        session: CompanionSessionBinding,
+        now: datetime,
+    ) -> tuple[sqlite3.Row, tuple[str, ...]]:
+        row = connection.execute(
+            "SELECT * FROM agent_pairings WHERE pairing_id = ?", (session.pairing_id,)
+        ).fetchone()
+        if (
+            now >= session.expires_at
+            or row is None
+            or row["revoked_at"] is not None
+            or row["pairing_generation"] != session.generation
+            or row["pairing_digest"] != session.pairing_digest
+            or row["protected_brain_noise_static_private_key"] is None
+            or row["principal_id"] != session.principal_id
+            or row["creator_account_id"] != session.creator_account_id
+            or row["agent_installation_id"] != session.agent_installation_id
+        ):
+            raise AuthenticationStateError("Companion session authority is unavailable")
+        grants = _unique(session.grant_reference_ids)
+        if len(grants) != 2:
+            raise AuthenticationStateError(
+                "Companion session grant authority is invalid"
+            )
+        self._require_retained_pairing_grants(connection, grants, now)
+        self._require_agent_grants(connection, grants, now, row)
+        for reference_id in grants:
+            grant = connection.execute(
+                "SELECT * FROM verified_grant_references WHERE reference_id = ?",
+                (reference_id,),
+            ).fetchone()
+            if any(
+                grant[field] != row[pinned]
+                for field, pinned in (
+                    ("organization_id", "companion_organization_id"),
+                    ("installation_key_id", "companion_installation_key_id"),
+                    ("installation_key_jkt", "companion_installation_key_jkt"),
+                )
+            ):
+                raise AuthenticationStateError(
+                    "Companion session grant identity changed"
+                )
+            if session.expires_at > _parse_time(str(grant["expires_at"])):
+                raise AuthenticationStateError(
+                    "Companion session exceeds grant lifetime"
+                )
+        key = connection.execute(
+            "SELECT * FROM installation_key_reference WHERE singleton = 1 AND activated_at IS NOT NULL"
+        ).fetchone()
+        if key is None or any(
+            key[field] != row[pinned]
+            for field, pinned in (
+                ("installation_key_id", "companion_installation_key_id"),
+                ("installation_key_jkt", "companion_installation_key_jkt"),
+            )
+        ):
+            raise AuthenticationStateError(
+                "Companion session installation identity changed"
+            )
+        approved = connection.execute(
+            "SELECT 1 FROM authorized_account_bindings AS binding "
+            "JOIN provisioning_candidates AS candidate ON candidate.association_request_id = binding.association_request_id "
+            "WHERE binding.creator_account_id = ? AND binding.installation_id = ? "
+            "AND binding.revoked_at IS NULL AND candidate.state = 'approved' "
+            "AND candidate.creator_account_id = binding.creator_account_id "
+            "AND candidate.installation_id = binding.installation_id AND candidate.organization_id = ?",
+            (
+                row["creator_account_id"],
+                row["installation_id"],
+                row["companion_organization_id"],
+            ),
+        ).fetchone()
+        if approved is None:
+            raise AuthenticationStateError(
+                "Companion session account authority is unavailable"
+            )
+        self._snapshot_revocations(connection, self._agent_keys(row, grants))
+        return row, grants
 
     def build_runtime_policy_from_grants(
         self,
@@ -1768,9 +2013,7 @@ class SQLiteAuthenticationStore:
             return self._scope_is_revoked(connection, key)
 
     @staticmethod
-    def _scope_is_revoked(
-        connection: sqlite3.Connection, key: RevocationKey
-    ) -> bool:
+    def _scope_is_revoked(connection: sqlite3.Connection, key: RevocationKey) -> bool:
         row = connection.execute(
             """
             SELECT revoked_at FROM auth_revocation_state
@@ -1781,9 +2024,7 @@ class SQLiteAuthenticationStore:
         return row is not None and row["revoked_at"] is not None
 
     @staticmethod
-    def _revocation_version(
-        connection: sqlite3.Connection, key: RevocationKey
-    ) -> int:
+    def _revocation_version(connection: sqlite3.Connection, key: RevocationKey) -> int:
         row = connection.execute(
             """
             SELECT version FROM auth_revocation_state
@@ -1798,9 +2039,12 @@ class SQLiteAuthenticationStore:
         value: str,
         expected: dict[str, object],
         grants: tuple[str, ...],
+        *, companion: CompanionSessionBinding | None = None,
     ) -> ConsumedChallenge | None:
         with self.database.transaction() as connection:
             now = self._now()
+            if companion is not None:
+                self._require_companion_session_current(connection, companion, now)
             row = connection.execute(
                 "SELECT * FROM auth_challenges WHERE secret_digest = ?",
                 (_secret_digest(value),),

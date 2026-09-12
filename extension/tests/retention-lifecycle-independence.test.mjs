@@ -93,7 +93,6 @@ function harness() {
       async loadBrainBinding() { return { bound: true }; },
       async clearBrainBinding() {},
     },
-    brainBindingBridge: bridge(),
     provisioningIdentityBridge: bridge(),
     previewMetrics: {
       async record() {},

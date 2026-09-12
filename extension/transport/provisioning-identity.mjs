@@ -164,6 +164,7 @@ export function createProvisioningIdentityBridge({
   allowedOrigins = [LOCAL_SERVICE_ORIGIN],
   currentConsent = () => null,
   allowsIdentity = () => currentConsent()?.mode === 'full',
+  allowsExternalIdentity = allowsIdentity,
   ensureReady = async () => {},
 } = {}) {
   if (!chromeApi?.runtime?.onMessage?.addListener) {
@@ -179,6 +180,9 @@ export function createProvisioningIdentityBridge({
   let registered = false;
   let contextQueue = Promise.resolve();
   let generation = 0;
+  const accountListeners = new Set();
+  const notifyAccount = () => { for (const listener of accountListeners) listener(); };
+  const observedDocuments = new Map();
   const documentGenerations = new Map();
   const invalidateDocument = (tabId) => {
     documentGenerations.set(tabId, (documentGenerations.get(tabId) ?? 0) + 1);
@@ -212,6 +216,11 @@ export function createProvisioningIdentityBridge({
     }
     // Fence admitted captures before waiting for persistence or readiness.
     invalidateDocument(sender.tab.id);
+    const previous = observedDocuments.get(sender.tab.id);
+    const observed = { senderKey, pageEpoch: update.pageEpoch, accountId: update.accountId };
+    observedDocuments.set(sender.tab.id, observed);
+    if (!previous || previous.senderKey !== observed.senderKey
+      || previous.pageEpoch !== observed.pageEpoch || previous.accountId !== observed.accountId) notifyAccount();
     const admittedGeneration = generation;
     const admittedConsentEpoch = currentConsent()?.consent_epoch;
     void (async () => {
@@ -240,8 +249,11 @@ export function createProvisioningIdentityBridge({
     if (!origins.has(senderOrigin(sender)) || !isIdentityQuery(message)) return false;
     void (async () => {
       await ensureReady();
-      if (!allowsIdentity()) return result(null);
-      return serializeContext(async () => result(provisioningAccountId(await loadContexts())));
+      if (!await allowsExternalIdentity()) return result(null);
+      return serializeContext(async () => {
+        const contexts = await loadContexts();
+        return result(await allowsExternalIdentity() ? provisioningAccountId(contexts) : null);
+      });
     })().then(sendResponse, () => sendResponse(result(null)));
     return true;
   };
@@ -256,12 +268,16 @@ export function createProvisioningIdentityBridge({
   const clearContexts = () => {
     generation += 1;
     documentGenerations.clear();
+    observedDocuments.clear();
+    notifyAccount();
     return serializeContext(() => storageSet(sessionStorage, {
       [PROVISIONING_IDENTITY_STORAGE_KEY]: storedDocument([]),
     }, chromeApi));
   };
   const removeTab = (tabId) => {
     invalidateDocument(tabId);
+    observedDocuments.delete(tabId);
+    notifyAccount();
     void serializeContext(async () => {
       const retained = (await loadContexts()).filter((context) => context.tab_id !== tabId);
       await storageSet(sessionStorage, {
@@ -275,6 +291,8 @@ export function createProvisioningIdentityBridge({
   const resetSession = () => { void clearContexts().catch(() => undefined); };
 
   return Object.freeze({
+    currentAccountId() { return serializeContext(async () => provisioningAccountId(await loadContexts())); },
+    onAccountChange(listener) { accountListeners.add(listener); return () => accountListeners.delete(listener); },
     clearContexts,
     contextFor(sender) {
       return serializeContext(() => contextForSender(sender));

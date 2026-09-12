@@ -9,6 +9,7 @@
     "_internal/contracts/manifest.json",
     "_internal/contracts/consumer-pin.json",
     "THIRD_PARTY_NOTICES.md",
+    "NATIVE_SNOW_NOTICES.txt",
     "release-manifest.json"
   ],
   "required_directories": [
@@ -56,7 +57,11 @@
         "0006_provisioning_state.sql": "60c25de7e57d1229ad288300833454e31dec385cf53d7c51cf3dc8d6c9bc51fc",
         "0007_authorized_account_bindings.sql": "14be709e2f7a817ffcab3821f32ffba64a51d42e6876bc5a6d566a9c6f7afae3",
         "0008_claim_submissions.sql": "7654cd89756af28b33e155ba9c115f2b53fa76cc13995b1568a51df25fb86618",
-        "0009_onboarding_progress_outbox.sql": "6242d854731434a5b15ef282498210c06adcbd9690ae8c65793a7803e9006393"
+        "0009_onboarding_progress_outbox.sql": "6242d854731434a5b15ef282498210c06adcbd9690ae8c65793a7803e9006393",
+        "0010_companion_grant_retention.sql": "9bcd633c8ddfecf55083b9842242f6f676b563e2fd0bf0c23b253130231d1ca6",
+        "0011_companion_pairing_persistence.sql": "bace433fa1b2e8abe7a0e3f6d4869b75fb29b4d7d2c132e8978e9dc2ed57756a",
+        "0012_companion_pin_admission.sql": "9ec530acb28dff0005d47d88474a73a64a3786d241955d545901dac2d392f193",
+        "0013_companion_session_credentials.sql": "5ccc23bf5292051034e27b90caa7ae8e8e5e89b77838cfb9b8fd3ae5cb5e663c"
       }
     },
     {

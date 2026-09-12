@@ -10,7 +10,6 @@ test('permission recovery requests only the origins required by the active mode'
   assert.deepEqual(requiredOriginsForMode('preview'), ['https://onlyfans.com/*']);
   assert.deepEqual(requiredOriginsForMode('full'), [
     'https://onlyfans.com/*',
-    'https://bridge.localhost:17871/*',
   ]);
   assert.deepEqual(requiredOriginsForMode('paused'), []);
 });

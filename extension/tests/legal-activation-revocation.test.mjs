@@ -103,7 +103,6 @@ function consentHarness(activeModeAuthorization) {
       async loadBrainBinding() { return { creator_account_id: 'synthetic-account' }; },
       async clearBrainBinding() {},
     },
-    brainBindingBridge: bridge,
     provisioningIdentityBridge: bridge,
     previewMetrics,
     async clearLocalData() {},

@@ -56,9 +56,3 @@ class MessagePageResponse(StrictModel):
     has_older_stored_items: bool
     conversation_coverage: ConversationCoverage
     projection: ProjectionState
-
-
-class AgentPairingResponse(StrictModel):
-    pairing_ticket: NonEmptyString
-    storage_bootstrap: str | None
-    expires_at: Timestamp

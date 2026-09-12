@@ -2,30 +2,27 @@ import {
   AtomicConfigActivator,
   ReadOnlyAgentConfigClient,
 } from './read-only-agent-config-client.mjs';
-import { ReadOnlyAgentWebSocketClient } from './read-only-agent-websocket.mjs';
 import { READ_ONLY_CAPABILITIES } from '../protocol/read-only.mjs';
-import { createChromeAdapter } from './read-only-chrome-adapter.mjs';
-import { createReadOnlyConfigHttpAdapter } from './read-only-config-http-adapter.mjs';
 import { DurableIngestOutbox } from './read-only-durable-outbox.mjs';
 import { HistoryAcquisitionCoordinator } from './read-only-history-coordinator.mjs';
 import { createReadOnlyIndexedDbIngestionStorage } from './read-only-indexeddb-ingestion-storage.mjs';
 import { createLifecycleStorage } from '../runtime/lifecycle-storage.mjs';
-import { LOCAL_SERVICE_WS } from './local-service-endpoints.mjs';
 import { AgentRuntime, createLazyAccountSigner } from './agent-runtime-core.mjs';
 
 export function createReadOnlyAgentRuntime(options = {}) {
   const chromeApi = options.chromeApi ?? globalThis.chrome;
   const extensionVersion = options.extensionVersion ?? chromeApi.runtime.getManifest().version;
-  const chromeAdapter = options.chromeAdapter ?? createChromeAdapter();
+  const chromeAdapter = options.chromeAdapter;
+  if (!chromeAdapter || typeof options.configHttpFactory !== 'function' || typeof options.transportFactory !== 'function') {
+    throw new Error('Authenticated companion adapters are required');
+  }
   const ingestionStorageFactory = options.ingestionStorageFactory
     ?? ((storageOptions) => createReadOnlyIndexedDbIngestionStorage(undefined, storageOptions));
   const outboxFactory = options.outboxFactory ?? ((outboxOptions) => new DurableIngestOutbox(outboxOptions));
   const configActivatorFactory = options.configActivatorFactory ?? (() => new AtomicConfigActivator());
-  const configHttpFactory = options.configHttpFactory ?? (() => createReadOnlyConfigHttpAdapter());
+  const configHttpFactory = options.configHttpFactory;
   const configClientFactory = options.configClientFactory ?? ((configOptions) => new ReadOnlyAgentConfigClient(configOptions));
-  const transportFactory = options.transportFactory ?? ((transportOptions) => new ReadOnlyAgentWebSocketClient({
-    ...transportOptions, url: LOCAL_SERVICE_WS, scheduler: options.scheduler,
-  }));
+  const transportFactory = options.transportFactory;
   const historyCoordinatorFactory = options.historyCoordinatorFactory
     ?? ((historyOptions) => new HistoryAcquisitionCoordinator(historyOptions));
   const signerFactory = options.signerFactory ?? null;

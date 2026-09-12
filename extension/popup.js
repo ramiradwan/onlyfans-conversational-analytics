@@ -24,6 +24,7 @@ const ids = [
   'full-disclosure', 'enable-preview', 'enable-full', 'not-now-preview', 'full-secondary',
   'restore-access', 'reload-tabs', 'review-full', 'resume', 'pause', 'history', 'open-dashboard', 'revoke',
   'clear-preview', 'delete-local-data', 'privacy-link',
+  'companion-pairing', 'pairing-status', 'pairing-code', 'pair-companion', 'cancel-pairing', 'forget-companion',
 ];
 const elements = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 
@@ -37,6 +38,30 @@ let legalStatus = null;
 let fullReviewRequested = false;
 let initialModeChoiceDismissed = false;
 let busy = false;
+let pairingStatus = { state: 'unpaired', comparison_code: null };
+const isPairingWindow = window.location.hash === '#pairing';
+const pairingPort = chrome.runtime.connect({ name: 'ofca.companion.pairing' });
+function renderPairing(value = pairingStatus) {
+  pairingStatus = value;
+  show(elements['companion-pairing'], currentStatus?.consent?.mode === 'full');
+  const pending = ['pairing', 'compare'].includes(value.state);
+  const paired = value.state === 'paired';
+  show(elements['pair-companion'], !pending && !paired);
+  show(elements['cancel-pairing'], pending);
+  show(elements['forget-companion'], paired);
+  const code = typeof value.comparison_code === 'string' && /^\d{6}$/u.test(value.comparison_code) ? value.comparison_code : null;
+  show(elements['pairing-code'], code !== null);
+  elements['pairing-code'].textContent = code === null ? '' : `${code.slice(0, 3)} ${code.slice(3)}`;
+  elements['pairing-status'].textContent = ({
+    paired: 'Desktop app identity is verified and saved.',
+    pairing: 'Connecting… Keep this window open.',
+    compare: 'Check that this code matches the desktop app. Confirm there only if both codes match. Keep this window open.',
+    pairing_failed: 'Connection was not approved. Open a new connection window in the desktop app and retry.',
+    unavailable: 'Enable Full analytics and open your creator account before connecting.',
+  })[value.state] ?? 'Open a connection window in the desktop app, then connect here.';
+}
+pairingPort.onMessage.addListener((value) => renderPairing(value));
+pairingPort.onDisconnect.addListener(() => renderPairing({ state: 'pairing_failed', comparison_code: null }));
 
 function show(element, visible) {
   element.classList.toggle('hidden', !visible);
@@ -143,6 +168,7 @@ function renderLegal(status) {
 
 function render(status) {
   currentStatus = status;
+  renderPairing();
   elements['mode-label'].textContent = phaseLabel(status);
   elements['messages-count'].textContent = String(status.preview.message_observations);
   elements['chats-count'].textContent = String(status.preview.chat_observations);
@@ -316,6 +342,17 @@ elements['delete-local-data'].addEventListener('click', async () => {
 elements['open-dashboard'].addEventListener('click', () => {
   void chrome.tabs.create({ url: companionConfig.dashboard_url });
 });
+elements['pair-companion'].addEventListener('click', () => {
+  if (isPairingWindow) pairingPort.postMessage({ type: 'pair' });
+  else void chrome.windows.create({ url: chrome.runtime.getURL('popup.html#pairing'), type: 'popup', width: 440, height: 760 })
+    .catch(() => { elements.feedback.textContent = 'The connection window could not be opened.'; });
+});
+elements['cancel-pairing'].addEventListener('click', () => pairingPort.postMessage({ type: 'cancel' }));
+elements['forget-companion'].addEventListener('click', () => {
+  if (window.confirm('Forget the desktop app and stop this connection? A new approval will be required to reconnect.')) {
+    pairingPort.postMessage({ type: 'forget' });
+  }
+});
 elements.history.addEventListener('click', async () => {
   setBusy(true);
   try {
@@ -365,6 +402,10 @@ async function initialize() {
   try {
     await loadCompanionConfig();
     await refresh();
+    if (isPairingWindow && currentStatus?.consent?.mode === 'full') {
+      pairingPort.postMessage({ type: 'pair' });
+      elements['companion-pairing'].scrollIntoView({ block: 'center' });
+    }
   } catch (_error) {
     elements.feedback.textContent = 'Local extension status is temporarily unavailable.';
   } finally {

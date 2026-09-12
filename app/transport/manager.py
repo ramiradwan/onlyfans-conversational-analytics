@@ -8,9 +8,10 @@ import hashlib
 import hmac
 import json
 import secrets
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
@@ -54,6 +55,23 @@ STATE_DELTA_FLUSH_SECONDS = 0.1
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def agent_authorization(websocket):
+    factory = getattr(websocket, "authorization_guard", None)
+    return factory() if factory is not None else nullcontext()
+
+
+def _guard_agent_write(operation):
+    @wraps(operation)
+    def guarded(self, lease, *args, **kwargs):
+        with agent_authorization(lease.websocket):
+            if not self.is_current_fence(lease):
+                raise AuthorizationError("Agent connection is no longer current")
+            return operation(self, lease, *args, **kwargs)
+
+    return guarded
+
 
 
 @lru_cache(maxsize=4)
@@ -690,25 +708,27 @@ class InMemoryTransportManager:
         applied_config_revision: str | None,
         now: datetime | None = None,
     ) -> AgentLease:
-        config_record = self.config_authority.bind_installation(
-            creator_account_id,
-            agent_installation_id,
-            applied_config_revision,
-        )
-        history_settings = self.history.history_settings(creator_account_id)
-        if history_settings["required_config_revision"] is None:
-            self.history.bind_history_config(
+        with agent_authorization(websocket):
+            config_record = self.config_authority.bind_installation(
                 creator_account_id,
-                settings_revision=int(history_settings["settings_revision"]),
-                config_revision=config_record.required_config_revision,
+                agent_installation_id,
+                applied_config_revision,
             )
-        if (
-            config_record.applied_config_revision
-            == config_record.required_config_revision
-        ):
-            self.history.mark_history_config_applied(
-                creator_account_id, config_record.required_config_revision
-            )
+            history_settings = self.history.history_settings(creator_account_id)
+            if history_settings["required_config_revision"] is None:
+                self.history.bind_history_config(
+                    creator_account_id,
+                    settings_revision=int(history_settings["settings_revision"]),
+                    config_revision=config_record.required_config_revision,
+                )
+            if (
+                config_record.applied_config_revision
+                == config_record.required_config_revision
+            ):
+                self.history.mark_history_config_applied(
+                    creator_account_id,
+                    config_record.required_config_revision,
+                )
         lease = AgentLease(
             websocket=websocket,
             principal_id=principal_id,
@@ -722,11 +742,12 @@ class InMemoryTransportManager:
             last_heartbeat_at=now or utc_now(),
         )
         async with self._agent_command_lock:
-            previous = self.active_agents.get(creator_account_id)
-            if previous is not None:
-                previous.status = "disconnected"
-            self.active_agents[creator_account_id] = lease
-            self.agent_connections[lease.connection_id] = lease
+            with agent_authorization(websocket):
+                previous = self.active_agents.get(creator_account_id)
+                if previous is not None:
+                    previous.status = "disconnected"
+                self.active_agents[creator_account_id] = lease
+                self.agent_connections[lease.connection_id] = lease
         await self.broadcast_agent_state(creator_account_id)
         return lease
 
@@ -798,6 +819,7 @@ class InMemoryTransportManager:
     def pending_snapshot_for(self, lease: AgentLease) -> tuple[UUID, int] | None:
         return self.history.pending_snapshot(self.stream_key(lease))
 
+    @_guard_agent_write
     def ingest_snapshot(self, lease: AgentLease, payload: Any) -> IngestResult:
         key = self.stream_key(lease)
         if payload.frame_kind == "begin":
@@ -808,6 +830,7 @@ class InMemoryTransportManager:
             return self.history.commit_snapshot(key, payload)
         raise InvariantViolation(f"unsupported snapshot frame {payload.frame_kind!r}")
 
+    @_guard_agent_write
     def ingest_delta(self, lease: AgentLease, payload: Any) -> IngestResult:
         return self.history.commit_delta(self.stream_key(lease), payload)
 
@@ -955,26 +978,29 @@ class InMemoryTransportManager:
         applied_revision: str | None,
         now: datetime | None = None,
     ) -> None:
-        lease.last_heartbeat_at = now or utc_now()
-        previous_record = self.config_authority.installation(
-            lease.creator_account_id, lease.agent_installation_id
-        )
-        record = self.config_authority.record_echo(
-            lease.creator_account_id,
-            lease.agent_installation_id,
-            applied_revision,
-        )
-        changed = (
-            lease.status != "connected"
-            or lease.applied_config_revision != record.applied_config_revision
-            or previous_record.last_failure != record.last_failure
-        )
-        lease.applied_config_revision = record.applied_config_revision
-        lease.status = "connected"
-        if record.applied_config_revision is not None:
-            self.history.mark_history_config_applied(
-                lease.creator_account_id, record.applied_config_revision
+        with agent_authorization(lease.websocket):
+            if not self.is_current_fence(lease):
+                raise AuthorizationError("Agent connection is no longer current")
+            lease.last_heartbeat_at = now or utc_now()
+            previous_record = self.config_authority.installation(
+                lease.creator_account_id, lease.agent_installation_id
             )
+            record = self.config_authority.record_echo(
+                lease.creator_account_id,
+                lease.agent_installation_id,
+                applied_revision,
+            )
+            changed = (
+                lease.status != "connected"
+                or lease.applied_config_revision != record.applied_config_revision
+                or previous_record.last_failure != record.last_failure
+            )
+            lease.applied_config_revision = record.applied_config_revision
+            lease.status = "connected"
+            if record.applied_config_revision is not None:
+                self.history.mark_history_config_applied(
+                    lease.creator_account_id, record.applied_config_revision
+                )
         if changed:
             await self.broadcast_agent_state(lease.creator_account_id)
 
@@ -998,23 +1024,27 @@ class InMemoryTransportManager:
         online_platform_user_ids: list[str],
         now: datetime | None = None,
     ) -> bool:
-        received_at = now or utc_now()
-        existing = self.presence.get(lease.creator_account_id)
-        if existing is not None and (
-            observation_id <= existing.observation_id or observed_at <= existing.observed_at
-        ):
-            return False
-        if observed_at + timedelta(seconds=PRESENCE_TTL_SECONDS) <= received_at:
-            return False
-        record = PresenceRecord(
-            creator_account_id=lease.creator_account_id,
-            observation_id=observation_id,
-            observed_at=observed_at,
-            server_received_at=received_at,
-            expires_at=received_at + timedelta(seconds=PRESENCE_TTL_SECONDS),
-            online_platform_user_ids=list(online_platform_user_ids),
-        )
-        self.presence[lease.creator_account_id] = record
+        with agent_authorization(lease.websocket):
+            if not self.is_current_fence(lease):
+                raise AuthorizationError("Agent connection is no longer current")
+            received_at = now or utc_now()
+            existing = self.presence.get(lease.creator_account_id)
+            if existing is not None and (
+                observation_id <= existing.observation_id
+                or observed_at <= existing.observed_at
+            ):
+                return False
+            if observed_at + timedelta(seconds=PRESENCE_TTL_SECONDS) <= received_at:
+                return False
+            record = PresenceRecord(
+                creator_account_id=lease.creator_account_id,
+                observation_id=observation_id,
+                observed_at=observed_at,
+                server_received_at=received_at,
+                expires_at=received_at + timedelta(seconds=PRESENCE_TTL_SECONDS),
+                online_platform_user_ids=list(online_platform_user_ids),
+            )
+            self.presence[lease.creator_account_id] = record
         await self.broadcast_presence_state(lease.creator_account_id)
         return True
 
@@ -1307,24 +1337,29 @@ class InMemoryTransportManager:
             self.bridges.pop(connection_id, None)
 
     async def record_config_applied(self, lease: AgentLease, payload: Any) -> None:
-        record = self.config_authority.record_report(
-            lease.creator_account_id,
-            lease.agent_installation_id,
-            config_revision=payload.config_revision,
-            digest=payload.digest,
-            outcome=payload.outcome,
-            capability_details=(
-                capability.detail for capability in payload.capabilities
-            ),
-        )
-        lease.applied_config_revision = record.applied_config_revision
+        with agent_authorization(lease.websocket):
+            record = self.config_authority.record_report(
+                lease.creator_account_id,
+                lease.agent_installation_id,
+                config_revision=payload.config_revision,
+                digest=payload.digest,
+                outcome=payload.outcome,
+                capability_details=(
+                    capability.detail for capability in payload.capabilities
+                ),
+            )
+            lease.applied_config_revision = record.applied_config_revision
+            if (
+                payload.outcome == "applied"
+                and record.applied_config_revision == payload.config_revision
+            ):
+                self.history.mark_history_config_applied(
+                    lease.creator_account_id, payload.config_revision
+                )
         if (
             payload.outcome == "applied"
             and record.applied_config_revision == payload.config_revision
         ):
-            self.history.mark_history_config_applied(
-                lease.creator_account_id, payload.config_revision
-            )
             if self._onboarding_progress is not None:
                 try:
                     await asyncio.to_thread(

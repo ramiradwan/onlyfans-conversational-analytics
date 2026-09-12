@@ -342,6 +342,9 @@ function Copy-DeclaredTopLevelFiles {
             continue
         }
         $source = Join-Path $ProjectRoot $relative
+        if ($relative -eq "NATIVE_SNOW_NOTICES.txt") {
+            $source = Join-Path $ProjectRoot "native/companion-snow/THIRD_PARTY_NOTICES.txt"
+        }
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
             throw "Declared top-level runtime file is absent: $source"
         }

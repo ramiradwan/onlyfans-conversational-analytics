@@ -151,7 +151,7 @@ def http_headers():
 
 def socket_headers(**extras):
     return {
-        "Host": "bridge.localhost:17871",
+        "Host": "127.0.0.1:17871",
         "Origin": f"chrome-extension://{EXTENSION}",
         **extras,
     }
@@ -312,6 +312,8 @@ def test_http_status_does_not_export_new_service_fields(application, monkeypatch
         "other-extension",
         "null-origin",
         "other-host",
+        "bridge-host",
+        "localhost-alias",
         "query",
         "authorization",
         "cookie",
@@ -336,6 +338,10 @@ def test_websocket_refuses_untrusted_origins_and_ambient_credentials(
         headers["Origin"] = "null"
     elif case == "other-host":
         headers["Host"] = "hostile.example:17871"
+    elif case == "bridge-host":
+        headers["Host"] = "bridge.localhost:17871"
+    elif case == "localhost-alias":
+        headers["Host"] = "localhost:17871"
     elif case == "query":
         path += "?auth_ticket=secret-sentinel"
     elif case == "authorization":

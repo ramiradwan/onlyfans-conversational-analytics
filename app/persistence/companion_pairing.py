@@ -11,10 +11,14 @@ from typing import Final
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.auth import (
     AuthenticationStateError,
+    CompanionSessionBinding,
     RevocationKey,
     RevocationScopeType,
     SQLiteAuthenticationStore,
+    VerifiedGrantReference,
+    _verified_grant_reference,
 )
+from app.security.runtime_policy import RuntimePolicy
 
 _BYTES32: Final = 32
 _MAX_PROTECTED_KEY_BYTES: Final = 4096
@@ -136,6 +140,39 @@ class CompanionPin:
     confirmed_at: datetime
     opened_at: datetime
     expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class CompanionSessionSnapshot:
+    pin: CompanionPin
+    installation_grant: VerifiedGrantReference = field(repr=False, compare=False)
+    creator_account_binding: VerifiedGrantReference = field(repr=False, compare=False)
+    expires_at: datetime
+
+    @property
+    def authorization(self) -> dict[str, str]:
+        """Secret record: the caller may only send it inside the Noise session."""
+        return {
+            "type": "session.authorization",
+            "installation_grant": self.installation_grant.compact_jws,
+            "creator_account_binding": self.creator_account_binding.compact_jws,
+        }
+
+    def binding(self, session_id: str) -> CompanionSessionBinding:
+        return CompanionSessionBinding(
+            session_id=session_id,
+            pairing_id=_encoded_pairing_id(self.pin.pairing_id),
+            generation=self.pin.generation,
+            pairing_digest=self.pin.pairing_digest,
+            principal_id="agent:" + self.pin.agent_installation_id,
+            creator_account_id=self.pin.creator_account_id,
+            agent_installation_id=self.pin.agent_installation_id,
+            grant_reference_ids=(
+                self.installation_grant.reference_id,
+                self.creator_account_binding.reference_id,
+            ),
+            expires_at=self.expires_at,
+        )
 
 
 class CompanionPairingPersistence:
@@ -815,6 +852,97 @@ class CompanionPairingPersistence:
         _require_bytes32(pairing_id, name="pairing_id")
         with self.database.read() as connection:
             return self._optional_pin_in_transaction(connection, pairing_id)
+
+    def authorized_pins(self, session_id: str) -> tuple[CompanionPin, ...]:
+        """Return at most sixteen current pins within the Bridge account scope."""
+        with self.database.transaction() as connection:
+            now = self.authentication._now()
+            try:
+                session = self.authentication._require_session_current(
+                    connection, session_id, now
+                )
+            except AuthenticationStateError:
+                raise CompanionPairingStateError(
+                    "Companion pairing requires a current Bridge session"
+                ) from None
+            _, credential = self._require_bridge_authority(
+                connection, session_id, str(session["creator_account_id"]), now
+            )
+            rows = connection.execute(
+                "SELECT pairing_id FROM agent_pairings WHERE creator_account_id = ? AND installation_id = ? "
+                "AND pairing_generation IS NOT NULL AND revoked_at IS NULL "
+                "AND protected_brain_noise_static_private_key IS NOT NULL "
+                "ORDER BY confirmed_at, pairing_id LIMIT 16",
+                (session["creator_account_id"], credential["installation_id"]),
+            ).fetchall()
+            return tuple(
+                self._pin_in_transaction(
+                    connection, base64.urlsafe_b64decode(str(row["pairing_id"]) + "=")
+                )
+                for row in rows
+            )
+
+    def session_authority(self, pairing_id: bytes) -> CompanionSessionSnapshot:
+        """Select current retained grants for the pin without changing its identity."""
+        _require_bytes32(pairing_id, name="pairing_id")
+        with self.database.transaction() as connection:
+            now = self.authentication._now()
+            pin = self._pin_in_transaction(connection, pairing_id)
+            parent = connection.execute(
+                "SELECT external_issuer, external_subject FROM agent_pairings WHERE pairing_id = ?",
+                (_encoded_pairing_id(pairing_id),),
+            ).fetchone()
+            selected: dict[str, VerifiedGrantReference] = {}
+            for kind in ("installation_grant", "creator_account_binding"):
+                grant = connection.execute(
+                    "SELECT * FROM verified_grant_references WHERE grant_type = ? "
+                    "AND installation_id = ? AND organization_id = ? AND installation_key_id = ? "
+                    "AND installation_key_jkt = ? AND issuer = ? AND subject = ? "
+                    "AND creator_account_id IS ? AND compact_jws IS NOT NULL "
+                    "AND revoked_at IS NULL AND valid_from <= ? AND expires_at > ? "
+                    "ORDER BY verified_at DESC, reference_id DESC LIMIT 1",
+                    (
+                        kind,
+                        pin.installation_id,
+                        pin.organization_id,
+                        pin.installation_key_id,
+                        pin.installation_key_jkt,
+                        parent["external_issuer"],
+                        parent["external_subject"],
+                        (
+                            pin.creator_account_id
+                            if kind == "creator_account_binding"
+                            else None
+                        ),
+                        _time_text(now),
+                        _time_text(now),
+                    ),
+                ).fetchone()
+                if grant is None:
+                    raise CompanionPairingGrantUnavailable(
+                        "Companion session grants are unavailable"
+                    )
+                selected[kind] = _verified_grant_reference(grant)
+            snapshot = CompanionSessionSnapshot(
+                pin=pin,
+                installation_grant=selected["installation_grant"],
+                creator_account_binding=selected["creator_account_binding"],
+                expires_at=min(
+                    now + timedelta(seconds=900),
+                    *(grant.expires_at for grant in selected.values()),
+                ),
+            )
+            self.authentication._require_companion_session_current(
+                connection, snapshot.binding("pending-handshake"), now
+            )
+            return snapshot
+
+    def refresh_session_policy(
+        self, snapshot: CompanionSessionSnapshot, session_id: str
+    ) -> RuntimePolicy:
+        return self.authentication.companion_session_policy(
+            snapshot.binding(session_id)
+        )
 
     def authorized_record(
         self, session_id: str, pairing_id: bytes

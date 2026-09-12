@@ -10,8 +10,6 @@ import {
   calculateConfigDigest,
 } from '../transport/agent-config-client.mjs';
 import { AgentWebSocketClient } from '../transport/agent-websocket.mjs';
-import { createChromeAdapter } from '../transport/chrome-adapter.mjs';
-import { createConfigHttpAdapter } from '../transport/config-http-adapter.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = path.resolve(HERE, '../../shared/fixtures/protocol/v2');
@@ -465,63 +463,8 @@ test('persistence failure rolls atomic activation back to last known good', asyn
   assert.deepEqual(activator.current(), good);
 });
 
-test('HTTP adapter keeps the config ticket out of the URL and sends it as authorization', async () => {
-  const seen = [];
-  const adapter = createConfigHttpAdapter({
-    endpoint: 'https://bridge.localhost:17871/api/v1/agent/config',
-    fetchImpl: async (url, options) => {
-      seen.push({ url, options });
-      return {
-        status: 304,
-        headers: { get: () => 'config-8' },
-      };
-    },
-  });
-  const result = await adapter.fetchConfig({
-    authTicket: 'agent-config-ticket-42',
-    agentInstallationId: INSTALLATION_ID,
-    creatorAccountId: ACCOUNT_ID,
-    currentEtag: 'config-8',
-    currentConfigRevision: 'config-8',
-    supportedSchemaVersions: ['2'],
-  });
-  assert.equal(result.status, 304);
-  assert.equal(seen[0].options.headers['If-None-Match'], 'config-8');
-  assert.equal(seen[0].options.headers.Authorization, 'Bearer agent-config-ticket-42');
-  const url = new URL(seen[0].url);
-  assert.equal(url.searchParams.has('auth_ticket'), false);
-  assert.equal(seen[0].url.includes('agent-config-ticket-42'), false);
-  assert.equal(url.searchParams.get('agent_installation_id'), INSTALLATION_ID);
-  assert.equal(url.searchParams.get('creator_account_id'), ACCOUNT_ID);
-});
 
-test('Chrome adapter identity initialization persists only the installation-global identifier', async () => {
-  const values = {};
-  const writes = [];
-  const chromeMock = {
-    runtime: {},
-    storage: {
-      local: {
-        get(keys, callback) {
-          callback(Object.fromEntries(keys.filter((key) => key in values).map((key) => [
-            key,
-            values[key],
-          ])));
-        },
-        set(update, callback) {
-          writes.push(clone(update));
-          Object.assign(values, clone(update));
-          callback?.();
-        },
-      },
-    },
-  };
-  const adapter = createChromeAdapter(chromeMock, () => INSTALLATION_ID);
-  assert.deepEqual(await adapter.loadAgentIdentity(), { agentInstallationId: INSTALLATION_ID });
-  assert.deepEqual(writes, [{ agent_installation_id: INSTALLATION_ID }]);
-  assert.equal(adapter.saveAppliedConfig, undefined);
-  assert.deepEqual(Object.keys(values), ['agent_installation_id']);
-});
+
 test('config.available is routed to a forced conditional refresh', async () => {
   const calls = [];
   const identity = {

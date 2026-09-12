@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.bootstrap import transport_manager
 from app.main import app
+from inner_protocol_harness import inner_protocol_app
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.services.agent_configuration import (
     BOOTSTRAP_CAPTURE_POLICY,
@@ -21,7 +22,7 @@ from app.services.agent_configuration import (
     InMemoryAgentConfigRepository,
     config_document_digest,
 )
-from app.transport import DEV_ACCOUNT_ID, DEV_AGENT_AUTH_TICKET
+from app.transport import DEV_ACCOUNT_ID
 
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
@@ -36,26 +37,10 @@ def fixture(name: str) -> dict:
 
 
 @pytest.fixture(autouse=True)
-def reset_transport() -> None:
+def reset_transport(inner_protocol_app) -> None:
     transport_manager.reset()
     yield
     transport_manager.reset()
-
-
-def config_params(**overrides) -> dict[str, str]:
-    values = {
-        "agent_installation_id": str(uuid4()),
-        "creator_account_id": DEV_ACCOUNT_ID,
-        "supported_config_schema_versions": "2",
-    }
-    values.update(overrides)
-    return values
-
-
-def config_headers(ticket: str = DEV_AGENT_AUTH_TICKET, **overrides: str) -> dict[str, str]:
-    values = {"Authorization": f"Bearer {ticket}"}
-    values.update(overrides)
-    return values
 
 
 def agent_handshake(socket, hello: dict | None = None) -> tuple[dict, dict]:
@@ -86,47 +71,6 @@ def bind_report(
         outcome="applied",
     )
     return report
-
-
-def test_authenticated_config_fetch_has_real_digest_and_conditional_etag() -> None:
-    client = TestClient(app)
-    response = client.get(
-        "/api/v1/agent/config", params=config_params(), headers=config_headers()
-    )
-    assert response.status_code == 200
-    document = response.json()
-    assert document["digest"] == config_document_digest(document)
-    assert response.headers["etag"] == document["etag"] == document["config_revision"]
-
-    not_modified = client.get(
-        "/api/v1/agent/config",
-        params=config_params(),
-        headers=config_headers(**{"If-None-Match": f'"{document["etag"]}"'}),
-    )
-    assert not_modified.status_code == 304
-    assert not_modified.content == b""
-    assert not_modified.headers["etag"] == document["etag"]
-
-
-def test_config_fetch_rejects_missing_invalid_and_unauthorized_stub_context() -> None:
-    client = TestClient(app)
-    assert client.get("/api/v1/agent/config", params=config_params()).status_code == 401
-    assert (
-        client.get(
-            "/api/v1/agent/config",
-            params=config_params(),
-            headers=config_headers("wrong"),
-        ).status_code
-        == 401
-    )
-    assert (
-        client.get(
-            "/api/v1/agent/config",
-            params=config_params(creator_account_id="another-account"),
-            headers=config_headers(),
-        ).status_code
-        == 401
-    )
 
 
 def test_repository_seals_each_monotonic_revision_against_mutation() -> None:
@@ -232,7 +176,7 @@ def test_publish_rejects_message_capture_without_chat_dependency() -> None:
 
 def test_publish_signals_connected_agent_and_new_session_self_heals_loss() -> None:
     client = TestClient(app)
-    with client.websocket_connect("/ws/agent") as agent:
+    with client.websocket_connect("/__test__/agent-protocol") as agent:
         _, session = agent_handshake(agent)
         assert session["payload"]["required_config_revision"] == BOOTSTRAP_CONFIG_REVISION
         published = asyncio.run(
@@ -270,7 +214,7 @@ def test_publish_signals_connected_agent_and_new_session_self_heals_loss() -> No
         assert repeated_signal["type"] == "config.available"
         assert repeated_signal["payload"] == available["payload"]
 
-    with client.websocket_connect("/ws/agent") as reconnected:
+    with client.websocket_connect("/__test__/agent-protocol") as reconnected:
         _, repeated = agent_handshake(reconnected)
         assert repeated["payload"]["required_config_revision"] == PUBLISHED_CONFIG_REVISION
 
@@ -284,7 +228,7 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
         for _ in range(4):
             bridge.receive_json()
 
-        with client.websocket_connect("/ws/agent") as agent:
+        with client.websocket_connect("/__test__/agent-protocol") as agent:
             hello = fixture("agent.hello")
             hello["payload"]["applied_config_revision"] = BOOTSTRAP_CONFIG_REVISION
             _, session = agent_handshake(agent, hello)

@@ -1,8 +1,8 @@
 """Device-bound bootstrap envelopes for Full-mode extension persistence.
 
-The browser stores only the opaque bootstrap.  Its account credential is
-protected with Windows DPAPI for the current user, while the stable account
-storage key is independently derived from the same installation master.
+The authenticated companion session carries the opaque bootstrap. Its account
+credential is protected with Windows DPAPI for the current user, while the
+stable account storage key is derived from the same installation master.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import base64
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -35,7 +35,7 @@ class ExtensionStorageBootstrap:
     extension_id: str
     creator_account_id: str
     credential_kind: Literal["pairing", "reconnect"]
-    auth_ticket: str
+    auth_ticket: str = field(repr=False)
 
 
 def seal_extension_storage_bootstrap(
@@ -45,7 +45,7 @@ def seal_extension_storage_bootstrap(
     credential_kind: Literal["pairing", "reconnect"],
     auth_ticket: str,
 ) -> str:
-    """Seal one account credential for browser-restart bootstrap."""
+    """Seal one account credential for encrypted session storage access."""
 
     document = _validated_document(
         {

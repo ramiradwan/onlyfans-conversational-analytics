@@ -2,59 +2,37 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from typing import Any, Literal
-from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from fastapi import (
     APIRouter,
-    Depends,
-    Header,
-    HTTPException,
-    Query,
-    Request,
-    Response,
     WebSocket,
     WebSocketDisconnect,
 )
 from pydantic import ValidationError
 
-from app.api.activation import require_activated_runtime
 from app.bootstrap import transport_manager
 from app.core.config import settings
-from app.models.extension_storage import (
-    ExtensionStorageRotateRequest,
-    ExtensionStorageRotateResponse,
-    ExtensionStorageUnsealRequest,
-    ExtensionStorageUnlockResponse,
-)
 from app.persistence import sqlite_api as sqlite3
 from app.protocol import (
     AGENT_TO_BRAIN_ADAPTER,
     BRIDGE_TO_BRAIN_ADAPTER,
-    AgentConfigDocumentResponse,
-    AgentConfigGetRequest,
     MAX_SNAPSHOT_FRAME_BYTES,
 )
 from app.persistence.history import InvariantViolation
-from app.security.extension_storage import (
-    UNLOCK_SCHEMA,
-    extension_storage_key_base64,
-    open_extension_storage_bootstrap,
-    seal_extension_storage_bootstrap,
-)
-from app.security.local_data_key import LocalDataKeyError
 from app.utils.logger import logger
 from app.transport.manager import (
-    DEV_ACCOUNT_ID,
     HEARTBEAT_INTERVAL_SECONDS,
     LEASE_TIMEOUT_SECONDS,
     AgentLease,
     AuthenticationError,
     AuthorizationError,
     BridgeBinding,
+    agent_authorization,
     utc_now,
 )
 
@@ -87,31 +65,6 @@ KNOWN_SERVER_TYPES = {
     "command.execute",
     "command.result.ack",
 }
-
-
-def _verify_extension_storage_origin(request: Request) -> None:
-    """Restrict key release to the packaged extension on the loopback host."""
-
-    expected_host = urlsplit(settings.bridge_origin).netloc.lower()
-    expected_origin = f"chrome-extension://{settings.extension_id}"
-    if (
-        not settings.extension_id
-        or request.headers.get("host", "").lower() != expected_host
-        or request.headers.get("origin") != expected_origin
-    ):
-        raise HTTPException(status_code=403, detail="Extension storage origin is not authorized")
-
-
-def _bearer_auth_ticket(request: Request) -> str:
-    if "auth_ticket" in request.query_params:
-        raise HTTPException(status_code=400, detail="Authentication ticket must not appear in the URL")
-    authorization = request.headers.get("authorization")
-    if authorization is None:
-        raise HTTPException(status_code=401, detail="Authentication ticket is required")
-    scheme, separator, ticket = authorization.partition(" ")
-    if not separator or scheme.lower() != "bearer" or not ticket:
-        raise HTTPException(status_code=401, detail="Bearer authentication ticket is required")
-    return ticket
 
 
 def _safe_document(raw: str) -> dict[str, Any] | None:
@@ -345,7 +298,8 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
         return True
 
     if message.type == "command.result":
-        recorded = transport_manager.commands.record_result(message.payload)
+        with agent_authorization(websocket):
+            recorded = transport_manager.commands.record_result(message.payload)
         await transport_manager.send_agent(
             websocket,
             "command.result.ack",
@@ -376,7 +330,7 @@ async def _schedule_analytics_rebuild(account_id: str) -> None:
         )
 
 
-async def _agent_socket(websocket: WebSocket) -> None:
+async def _agent_socket(websocket: WebSocket, *, authenticate=None) -> None:
     await websocket.accept()
     lease: AgentLease | None = None
     try:
@@ -405,12 +359,11 @@ async def _agent_socket(websocket: WebSocket) -> None:
             )
             return
         try:
+            arguments = (hello.payload.auth_ticket, hello.payload.requested_creator_account_id,
+                         hello.payload.agent_installation_id)
             principal_id, account_id, reconnect_auth_ticket, config_auth_ticket = (
-                transport_manager.authenticate_agent_handshake(
-                hello.payload.auth_ticket,
-                hello.payload.requested_creator_account_id,
-                hello.payload.agent_installation_id,
-                )
+                await asyncio.to_thread(authenticate, *arguments) if authenticate is not None
+                else transport_manager.authenticate_agent_handshake(*arguments)
             )
         except AuthenticationError as error:
             await _protocol_error(
@@ -691,164 +644,14 @@ async def _bridge_socket(websocket: WebSocket) -> None:
 
 @router.websocket("/ws/agent", name="agentWebSocket")
 async def agent_websocket(websocket: WebSocket) -> None:
-    await _agent_socket(websocket)
+    from app.api.endpoints.companion_session import companion_session_socket
+
+    await companion_session_socket(websocket)
 
 
 @router.websocket("/ws/bridge", name="bridgeWebSocket")
 async def bridge_websocket(websocket: WebSocket) -> None:
     await _bridge_socket(websocket)
-
-
-@router.get("/api/v1/agent/config", response_model=AgentConfigDocumentResponse)
-async def get_agent_config(
-    request: Request,
-    response: Response,
-    protocol_version: str = Query("2"),
-    agent_installation_id: UUID = Query(...),
-    creator_account_id: str = Query(...),
-    current_etag: str | None = Query(None),
-    current_config_revision: str | None = Query(None),
-    supported_config_schema_versions: list[str] = Query(["2"]),
-    authorization: str | None = Header(None, alias="Authorization"),
-    if_none_match: str | None = Header(None, alias="If-None-Match"),
-) -> AgentConfigDocumentResponse | Response:
-    """Return the authenticated immutable configuration required for this Agent."""
-    if "auth_ticket" in request.query_params:
-        raise HTTPException(status_code=400, detail="Authentication ticket must not appear in the URL")
-    if authorization is None:
-        raise HTTPException(status_code=401, detail="Authentication ticket is required")
-    scheme, separator, auth_ticket = authorization.partition(" ")
-    if not separator or scheme.lower() != "bearer" or not auth_ticket:
-        raise HTTPException(status_code=401, detail="Bearer authentication ticket is required")
-    try:
-        request_model = AgentConfigGetRequest.model_validate(
-            {
-                "operation": "agent.config.get",
-                "protocol_version": protocol_version,
-                "auth_ticket": auth_ticket,
-                "agent_installation_id": agent_installation_id,
-                "creator_account_id": creator_account_id,
-                "current_etag": current_etag,
-                "current_config_revision": current_config_revision,
-                "supported_config_schema_versions": supported_config_schema_versions,
-            }
-        )
-    except ValidationError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    try:
-        transport_manager.authenticate_agent_config(
-            request_model.auth_ticket,
-            request_model.creator_account_id,
-            request_model.agent_installation_id,
-        )
-    except AuthenticationError as error:
-        raise HTTPException(status_code=401, detail=str(error)) from error
-    except AuthorizationError as error:
-        raise HTTPException(status_code=403, detail=str(error)) from error
-
-    document = transport_manager.required_config_document(
-        request_model.creator_account_id
-    )
-    validators = [current_etag]
-    if if_none_match:
-        validators.extend(part.strip() for part in if_none_match.split(","))
-    matched = any(
-        candidate is not None
-        and candidate.removeprefix("W/").strip('"') == document.etag
-        for candidate in validators
-    )
-    headers = {
-        "ETag": document.etag,
-        "Cache-Control": "private, no-cache",
-    }
-    if matched:
-        return Response(status_code=304, headers=headers)
-    response.headers.update(headers)
-    return document
-
-
-@router.post(
-    "/api/v1/agent/storage/unseal",
-    response_model=ExtensionStorageUnlockResponse,
-    dependencies=[Depends(require_activated_runtime)],
-)
-async def unseal_agent_storage(
-    request: Request,
-    body: ExtensionStorageUnsealRequest,
-    response: Response,
-) -> ExtensionStorageUnlockResponse:
-    """Release a Full-mode key only from a valid current-user bootstrap."""
-
-    _verify_extension_storage_origin(request)
-    try:
-        bootstrap = open_extension_storage_bootstrap(
-            body.storage_bootstrap,
-            expected_extension_id=settings.extension_id,
-        )
-        storage_key = extension_storage_key_base64(
-            settings.auth_database_path,
-            extension_id=settings.extension_id,
-            creator_account_id=bootstrap.creator_account_id,
-        )
-    except LocalDataKeyError as error:
-        raise HTTPException(
-            status_code=401,
-            detail="Extension storage bootstrap is invalid or unavailable",
-        ) from error
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return ExtensionStorageUnlockResponse(
-        schema=UNLOCK_SCHEMA,
-        creator_account_id=bootstrap.creator_account_id,
-        credential_kind=bootstrap.credential_kind,
-        auth_ticket=bootstrap.auth_ticket,
-        storage_key_base64=storage_key,
-    )
-
-
-@router.post(
-    "/api/v1/agent/storage/rotate",
-    response_model=ExtensionStorageRotateResponse,
-    dependencies=[Depends(require_activated_runtime)],
-)
-async def rotate_agent_storage(
-    request: Request,
-    body: ExtensionStorageRotateRequest,
-    response: Response,
-) -> ExtensionStorageRotateResponse:
-    """Replace the sealed bootstrap after a successful Agent handshake."""
-
-    _verify_extension_storage_origin(request)
-    config_ticket = _bearer_auth_ticket(request)
-    try:
-        current = open_extension_storage_bootstrap(
-            body.storage_bootstrap,
-            expected_extension_id=settings.extension_id,
-        )
-        if current.creator_account_id != body.creator_account_id:
-            raise AuthorizationError("Extension storage bootstrap is bound to another account")
-        transport_manager.authenticate_agent_storage_rotation(
-            config_auth_ticket=config_ticket,
-            reconnect_auth_ticket=body.reconnect_auth_ticket,
-            requested_account=body.creator_account_id,
-            agent_installation_id=body.agent_installation_id,
-        )
-        rotated = seal_extension_storage_bootstrap(
-            extension_id=settings.extension_id,
-            creator_account_id=body.creator_account_id,
-            credential_kind="reconnect",
-            auth_ticket=body.reconnect_auth_ticket,
-        )
-    except (AuthenticationError, LocalDataKeyError) as error:
-        raise HTTPException(status_code=401, detail=str(error)) from error
-    except AuthorizationError as error:
-        raise HTTPException(status_code=403, detail=str(error)) from error
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return ExtensionStorageRotateResponse(
-        schema="ofca-extension-storage-rotation/v1",
-        storage_bootstrap=rotated,
-    )
 
 
 async def signal_config_available(account_id: str) -> bool:

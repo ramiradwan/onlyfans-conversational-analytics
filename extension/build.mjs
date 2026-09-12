@@ -17,6 +17,7 @@ import { validatePackagedSigningRule } from 'local-authenticated-read-connector/
 import { auditLegalBindingLiterals } from './qualification/legal-binding-literals.mjs';
 import { readArchiveEntries } from './qualification/archive-entries.mjs';
 import { SIGNER_RELEASE, signerReleaseFiles, auditInstalledSigner, auditSignerMetadata } from './qualification/signer-release.mjs';
+import { auditPackagedSnow, SNOW_WASM_FILE } from './qualification/companion-snow-release.mjs';
 
 import { canonicalLegalBindingsJson } from '../tools/legal-release-bindings/canonical-json.mjs';
 import {
@@ -36,8 +37,11 @@ const SIGNER_SPEC = `file:vendor/${SIGNER_RELEASE.archive}`;
 const SIGNER_TARBALL = path.join(ROOT, 'vendor', SIGNER_RELEASE.archive);
 const SIGNER_ROOT = path.join(ROOT, 'node_modules', SIGNER_PACKAGE);
 let verifiedSignerFiles = null;
+let verifiedSnow = null;
 const SIGNER_ENTRY = fileURLToPath(import.meta.resolve(`${SIGNER_PACKAGE}/browser-signing`));
 const SIGNING_RULE_FILE = 'packaged-signing-rule.json';
+const COMPANION_TRUST_FILE = 'companion-grant-trust.json';
+const COMPANION_TRUST_SOURCE = path.join(ROOT, '../contracts/production/grant-profile-v1/trust-set.json');
 const BUILD_METADATA_FILE = 'build-meta.json';
 const BUILD_METADATA_SCHEMA = 'ofca-extension-build/v4';
 const EXPECTED_EXTENSION_ID = 'mldllkjpnnjhdccpofhebhlhigpefcba';
@@ -56,10 +60,9 @@ const EXPECTED_PERMISSIONS = Object.freeze([
 const EXPECTED_OPTIONAL_PERMISSIONS = Object.freeze(['webRequest']);
 const EXPECTED_OPTIONAL_HOST_PERMISSIONS = Object.freeze([
   'https://onlyfans.com/*',
-  'https://bridge.localhost:17871/*',
 ]);
-const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['https://bridge.localhost:17871/*']);
-const EXPECTED_EXTENSION_CSP = "script-src 'self'; object-src 'self'; connect-src 'self' https://bridge.localhost:17871 wss://bridge.localhost:17871;";
+const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['http://bridge.localhost:17871/*']);
+const EXPECTED_EXTENSION_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;";
 const FORBIDDEN_PERMISSIONS = Object.freeze([
   'cookies',
   'debugger',
@@ -149,8 +152,8 @@ export function validateExtensionConfig(document, { requirePrivacyPolicy = false
     'extension configuration contains unexpected fields',
   );
   assert.equal(document.schema, 'ofca-extension-config/v1');
-  assert.equal(document.dashboard_url, 'https://bridge.localhost:17871/');
-  assert.equal(document.history_settings_url, 'https://bridge.localhost:17871/settings');
+  assert.equal(document.dashboard_url, 'http://bridge.localhost:17871/');
+  assert.equal(document.history_settings_url, 'http://bridge.localhost:17871/settings');
   assert.equal(typeof document.privacy_policy_url, 'string');
   if (document.privacy_policy_url === '') {
     if (requirePrivacyPolicy) throw new Error('Chrome package requires a privacy policy URL.');
@@ -382,7 +385,11 @@ const FORBIDDEN_BACKGROUND_INPUTS = Object.freeze([
   /(^|\/)transport\/agent-websocket\.mjs$/,
   /(^|\/)transport\/capture-ingestion\.mjs$/,
   /(^|\/)transport\/chrome-adapter\.mjs$/,
+  /(^|\/)transport\/chrome-adapter-core\.mjs$/,
+  /(^|\/)transport\/read-only-chrome-adapter\.mjs$/,
   /(^|\/)transport\/config-http-adapter\.mjs$/,
+  /(^|\/)transport\/read-only-config-http-adapter\.mjs$/,
+  /(^|\/)transport\/secure-local-fetch\.mjs$/,
   /(^|\/)transport\/durable-outbox\.mjs$/,
   /(^|\/)transport\/history-coordinator\.mjs$/,
   /(^|\/)transport\/indexeddb-ingestion-storage\.mjs$/,
@@ -457,6 +464,10 @@ async function compileOnce(signingRule, legalBindings) {
   ]);
 
   auditReadOnlyModuleGraph(Object.keys(background.metafile.inputs));
+  const backgroundInputs = Object.keys(background.metafile.inputs).map((input) => input.replaceAll('\\', '/'));
+  for (const required of ['runtime/packaged-snow.mjs', 'vendor/companion-snow/ofca_snow_wasm.js']) {
+    assert.ok(backgroundInputs.some((input) => input.endsWith(required)), `background omitted ${required}`);
+  }
 
   const signerInputs = Object.keys(background.metafile.inputs)
     .map((input) => input.replaceAll('\\', '/'))
@@ -683,6 +694,14 @@ async function auditArtifactView(view, {
   assert.equal(metadata.target, CHROME_TARGET);
   assert.equal(metadata.extension_version, manifest.version);
   assert.equal(metadata.determinism_verified, true);
+  verifiedSnow = await auditPackagedSnow();
+  assert.deepEqual(metadata.companion_snow, verifiedSnow.release);
+  const snowBytes = await view.read(SNOW_WASM_FILE);
+  assert.equal(sha256Hex(snowBytes), verifiedSnow.release.outputs[SNOW_WASM_FILE]);
+  assert.equal(metadata.outputs[SNOW_WASM_FILE], sha256(snowBytes));
+  const trustBytes = await view.read(COMPANION_TRUST_FILE);
+  assert.equal(sha256(trustBytes), sha256(await readFile(COMPANION_TRUST_SOURCE)));
+  assert.equal(metadata.outputs[COMPANION_TRUST_FILE], sha256(trustBytes));
 
   let artifactSigningRule = null;
   if (metadata.signing_rule !== null) {
@@ -764,12 +783,17 @@ async function auditArtifactView(view, {
         auditLegalBindingLiterals(source, expectedLegalBindings);
       }
       assert.match(source, /createChromeBrowserSigningProvider/);
+      assert.match(source, /ofca_snow_wasm_bg\.wasm/);
+      assert.match(source, /companion-grant-trust\.json/);
       assert.match(source, /signer-state/);
       assert.match(source, /browser-signing-read\/v1/);
       assert.match(source, /active_account_partition_v5/);
-      assert.match(source, /ofca_full_storage_bootstrap_v1/);
+      assert.match(source, /ofca-companion-pairing\/v1/);
+      assert.match(source, /session\.authorization/);
+      assert.match(source, /agent\.authenticate/);
+      assert.doesNotMatch(source, /ofca_full_storage_bootstrap_v1|ofca\.brain\.bind/);
       assert.match(source, /ofca-idb-aesgcm\/v1/);
-      assert.match(source, /\/api\/v1\/agent\/storage\/unseal/);
+      assert.match(source, /agent\.storage\.unseal/);
       assert.doesNotMatch(source, /pairing_auth_ticket/);
       assert.doesNotMatch(source, /browser_signing_state_v2:/);
       assert.doesNotMatch(source, /bridge-clean-dev-ticket|DEV_AUTH_TICKET|DEV_ACCOUNT_ID/);
@@ -801,6 +825,7 @@ async function auditArtifactView(view, {
   const notice = TEXT_DECODER.decode(noticeBytes);
   assert.match(notice, /local-authenticated-read-connector/);
   assert.match(notice, /MIT License/);
+  assert.match(notice, /snow 0\.10\.0/);
   assert.equal(metadata.outputs[NOTICE_FILE], sha256(noticeBytes));
   assert.equal(metadata.outputs['manifest.json'], sha256(await view.read('manifest.json')));
 
@@ -810,6 +835,8 @@ async function auditArtifactView(view, {
     'manifest.json',
     ...ICON_FILES,
     NOTICE_FILE,
+    SNOW_WASM_FILE,
+    COMPANION_TRUST_FILE,
     ...(artifactSigningRule === null ? [] : [SIGNING_RULE_FILE]),
   ].sort();
   assert.deepEqual(Object.keys(metadata.outputs).sort(), expectedOutputNames);
@@ -906,8 +933,12 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     '',
     signerLicense.trim(),
     '',
+    verifiedSnow.files.get('THIRD_PARTY_NOTICES.txt').toString('utf8').trim(),
+    '',
   ].join('\n');
   await writeFile(path.join(DIST, NOTICE_FILE), notice, 'utf8');
+  await writeFile(path.join(DIST, SNOW_WASM_FILE), verifiedSnow.files.get(SNOW_WASM_FILE));
+  await copyFile(COMPANION_TRUST_SOURCE, path.join(DIST, COMPANION_TRUST_FILE));
   if (signingRule !== null) {
     await writeFile(path.join(DIST, SIGNING_RULE_FILE), signingRule.bytes);
   }
@@ -918,6 +949,8 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     'manifest.json',
     ...ICON_FILES,
     NOTICE_FILE,
+    SNOW_WASM_FILE,
+    COMPANION_TRUST_FILE,
     ...(signingRule === null ? [] : [SIGNING_RULE_FILE]),
   ];
   const outputs = {};
@@ -931,6 +964,7 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     signer: `${SIGNER_PACKAGE}@${SIGNER_VERSION}`,
     signer_tarball: sha256(await readFile(SIGNER_TARBALL)),
     signer_release: SIGNER_RELEASE,
+    companion_snow: verifiedSnow.release,
     signing_rule: signingRule === null ? null : {
       schema: signingRule.document.schema,
       source_revision: signingRule.document.source_revision,
@@ -967,6 +1001,7 @@ async function buildArtifact(
   { requirePrivacyPolicy },
 ) {
   await auditDependencyLock();
+  verifiedSnow = await auditPackagedSnow();
   const first = await compileOnce(signingRule, legalBindings);
   const second = await compileOnce(signingRule, legalBindings);
   verifyIdenticalBuilds(first, second);

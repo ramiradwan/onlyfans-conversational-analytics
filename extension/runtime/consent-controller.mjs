@@ -126,7 +126,6 @@ export class ConsentController {
     chromeApi = globalThis.chrome,
     runtime,
     adapter,
-    brainBindingBridge,
     provisioningIdentityBridge,
     previewMetrics,
     clearLocalData,
@@ -170,7 +169,6 @@ export class ConsentController {
     this.chromeApi = chromeApi;
     this.runtime = runtime;
     this.adapter = adapter;
-    this.brainBindingBridge = brainBindingBridge;
     this.provisioningIdentityBridge = provisioningIdentityBridge;
     this.previewMetrics = previewMetrics;
     this.clearLocalData = clearLocalData;
@@ -207,7 +205,6 @@ export class ConsentController {
 
   register() {
     if (this.registered) return;
-    this.brainBindingBridge.register();
     this.provisioningIdentityBridge.register();
     this.chromeApi.runtime.onMessage.addListener(this.messageListener);
     this.chromeApi.storage.onChanged?.addListener(this.storageListener);
@@ -230,6 +227,7 @@ export class ConsentController {
 
   #invalidate(code) {
     this.controlGeneration += 1;
+    this.adapter.invalidate?.();
     this.controlAbort.abort(Object.assign(new Error(code), { code }));
     this.controlAbort = new AbortController();
     this.captureScope.close(code);
@@ -300,7 +298,9 @@ export class ConsentController {
   }
 
   async #hasLocalAnalyticsPermission() {
-    return this.chromeApi.permissions.contains({ origins: [LOCAL_ANALYTICS_ORIGIN_PATTERN] });
+    // The companion is reached only through the packaged WebSocket origin;
+    // it requires CSP authorization, not local HTTP host access.
+    return true;
   }
 
   async #hasBrainBinding() {
@@ -530,7 +530,7 @@ export class ConsentController {
   async #removePermissions() {
     const removed = await this.chromeApi.permissions.remove({
       permissions: ['webRequest'],
-      origins: [ONLYFANS_ORIGIN_PATTERN, LOCAL_ANALYTICS_ORIGIN_PATTERN],
+      origins: [ONLYFANS_ORIGIN_PATTERN],
     });
     if (removed === false) throw new Error('permission_remove_failed');
   }

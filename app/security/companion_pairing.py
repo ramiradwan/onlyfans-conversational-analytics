@@ -168,6 +168,27 @@ class CompanionPairingService:
         return self._public(record)
 
     @_boundary
+    def pins(self, policy: RuntimePolicy) -> list[dict]:
+        identity = self._identity(policy)
+        return [
+            self._public(pin)
+            for pin in self.persistence.authorized_pins(identity.session_id)
+        ]
+
+    @_boundary
+    def revoke(self, policy: RuntimePolicy, pairing_id: str, version: int) -> dict:
+        identity = self._identity(policy)
+        identifier = _decode(pairing_id, 32)
+        pin = self.persistence.authorized_record(identity.session_id, identifier)
+        if isinstance(
+            pin, CompanionPairingWindow
+        ) or not self.persistence.revoke_companion_pin(
+            identifier, session_id=identity.session_id, expected_version=version
+        ):
+            raise CompanionPairingError()
+        return {**self._public(pin), "state": "revoked"}
+
+    @_boundary
     def confirm(self, policy: RuntimePolicy, pairing_id: str, version: int) -> dict:
         identity = self._identity(policy)
         pin = self.persistence.confirm_and_admit(

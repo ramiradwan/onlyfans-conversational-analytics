@@ -21,6 +21,8 @@ const awaiting: CompanionPairingStatus = {
 
 function makeApi(overrides: Partial<CompanionPairingApi> = {}): CompanionPairingApi {
   return {
+    pins: vi.fn(async () => []),
+    revoke: vi.fn(async () => ({ ...awaiting, state: 'revoked' })),
     open: vi.fn(async () => open),
     get: vi.fn(async () => awaiting),
     change: vi.fn(async (_id, action) => ({
@@ -52,6 +54,25 @@ afterEach(() => {
 });
 
 describe('companion pairing controls', () => {
+  it('restores admitted pairings and revokes only the displayed account pin', async () => {
+    const pin = { ...awaiting, state: 'admitted' as const, version: 4, comparison_code: null };
+    const api = makeApi({ pins: vi.fn(async () => [pin]) });
+    mount(api);
+    await act(async () => {});
+    expect(screen.getByText('Paired extension 1')).toBeTruthy();
+    await click('Revoke extension 1');
+    expect(api.revoke).toHaveBeenCalledWith(pin.pairing_id, 4, expect.any(AbortSignal));
+    expect(screen.queryByText('Paired extension 1')).toBeNull();
+  });
+
+  it('refuses a pairing list from another account', async () => {
+    const api = makeApi({ pins: vi.fn(async () => [{ ...awaiting, state: 'admitted', creator_account_id: 'other' }]) });
+    mount(api);
+    await act(async () => {});
+    expect(screen.getByText('Paired extensions could not be verified.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Revoke extension 1' })).toBeNull();
+  });
+
   it('requires explicit code/account comparison before versioned confirmation', async () => {
     const api = makeApi();
     mount(api);

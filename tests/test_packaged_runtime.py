@@ -170,6 +170,31 @@ def test_frozen_executable_reports_the_fixed_sqlcipher_runtime(
     assert report["qualified"] is True
 
 
+def test_frozen_executable_loads_the_production_companion_noise_factory(
+    packaged_artifact: Path, tmp_path: Path
+) -> None:
+    report_path = tmp_path / "frozen-companion-runtime.json"
+    environment = os.environ.copy()
+    environment.pop("OFCA_TEST_DATABASE_MASTER_KEY_HEX", None)
+    environment["BRAIN_COMPANION_RUNTIME_REPORT_PATH"] = str(report_path)
+    subprocess.run(
+        [str(packaged_artifact / "Brain.exe"), "--companion-runtime-report"],
+        cwd=packaged_artifact, capture_output=True, text=True, check=True,
+        timeout=30, env=environment,
+    )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["schema"] == "ofca-companion-native-runtime/v1"
+    assert report["suite"] == "Noise_KK_25519_ChaChaPoly_SHA256"
+    for name in (
+        "native_module_loaded", "protected_factory", "typed_payload_free_refusal",
+        "closed_after_refusal",
+    ):
+        assert report[name] is True
+    modules = list(packaged_artifact.rglob("ofca_native_snow*.pyd"))
+    assert len(modules) == 1
+    assert report["module_sha256"] == hashlib.sha256(modules[0].read_bytes()).hexdigest()
+
+
 def _start_brain(
     artifact: Path, *, data_directory: Path, working_directory: Path
 ) -> subprocess.Popen[str]:

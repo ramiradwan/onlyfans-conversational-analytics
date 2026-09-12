@@ -146,7 +146,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
           <Alert severity="warning" role="status">
             <AlertTitle>Local Agent needs attention</AlertTitle>
             {transport.agent.degraded_reason}{' '}
-            If the History Sync extension is installed and enabled, reload this page to pair it.
+            Use the pairing controls below and compare the code with the extension popup.
           </Alert>
         )}
 

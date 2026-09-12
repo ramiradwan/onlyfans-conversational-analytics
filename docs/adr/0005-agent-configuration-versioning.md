@@ -2,6 +2,8 @@
 
 - Status: accepted
 
+Agent transport amendment: [ADR 0024](0024-authenticated-companion-sessions.md) moves Agent configuration, authentication and storage operations into the authenticated companion session. References below to Agent HTTP transport are superseded by the [session transport contract](../companion-session-transport.md).
+
 ## Context and problem statement
 
 Agent needs a configuration source that remains safe during temporary Brain unavailability and exposes truthful required-versus-applied state. Configuration rollout, protocol compatibility, extension releases, and local storage migrations are independent version domains and must not trigger one another implicitly.

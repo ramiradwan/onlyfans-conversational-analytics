@@ -2205,22 +2205,6 @@ async def test_public_errors_use_stable_codes_and_redact_inputs() -> None:
             "/api/v1/insights/full",
             params={"start_date": "2026-07-19T12:00:00"},
         )
-        bad_config = client.get(
-            "/api/v1/agent/config",
-            params={
-                "auth_ticket": DEV_AGENT_AUTH_TICKET,
-                # agent_installation_id is a UUID-typed query parameter;
-                # FastAPI validates and rejects a malformed one (422, echoing
-                # the invalid input) before the endpoint body's own
-                # "auth_ticket must not appear in the URL" check ever runs.
-                # Keep it well-formed so this exercises that 400 rejection
-                # specifically, without a private value leaking through an
-                # unrelated FastAPI parameter-validation error instead.
-                "agent_installation_id": "00000000-0000-4000-8000-000000000000",
-                "creator_account_id": private_account,
-                "supported_config_schema_versions": "1",
-            },
-        )
 
     assert cross.status_code == 403
     assert cross.json()["detail"]["code"] == "account_binding_mismatch"
@@ -2230,8 +2214,7 @@ async def test_public_errors_use_stable_codes_and_redact_inputs() -> None:
         naive_time.json()["detail"]["code"]
         == "analytics_timestamp_timezone_required"
     )
-    assert bad_config.status_code == 400
-    for response in (cross, invalid_time, naive_time, bad_config):
+    for response in (cross, invalid_time, naive_time):
         assert private_account not in response.text
         assert private_timestamp not in response.text
 

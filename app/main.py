@@ -22,6 +22,7 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
 )
+from app.transport.companion_origin import CompanionOriginBoundary
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +123,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(CompanionOriginBoundary)
 
 # -------------------------------------------------
 # Static file mount (Vite build output in app/static/dist)

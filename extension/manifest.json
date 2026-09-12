@@ -15,8 +15,7 @@
     "webRequest"
   ],
   "optional_host_permissions": [
-    "https://onlyfans.com/*",
-    "https://bridge.localhost:17871/*"
+    "https://onlyfans.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -31,7 +30,7 @@
   },
   "externally_connectable": {
     "matches": [
-      "https://bridge.localhost:17871/*"
+      "http://bridge.localhost:17871/*"
     ]
   },
   "icons": {
@@ -39,6 +38,6 @@
     "128": "icons/icon128.png"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://bridge.localhost:17871 wss://bridge.localhost:17871;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;"
   }
 }

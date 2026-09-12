@@ -109,7 +109,7 @@ function harness({ local = {}, indexedDb = evidenceDatabase(), bindingRef = { cu
   const bridge = { register() {}, unregister() {}, async clearContexts() {} };
   const consent = new ConsentController({
     chromeApi, runtime, previewMetrics: preview, activeModeAuthorization: authorization,
-    activationEvidenceStore: evidenceStore, brainBindingBridge: bridge, provisioningIdentityBridge: bridge,
+    activationEvidenceStore: evidenceStore, provisioningIdentityBridge: bridge,
     adapter: { async loadBrainBinding() { return {}; }, async clearBrainBinding() {} },
     clearLocalData: () => clearExtensionLocalData({ chromeApi, indexedDb }),
     fetchImpl: async () => ({ ok: true }), now,

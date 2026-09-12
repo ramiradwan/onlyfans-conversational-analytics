@@ -15,6 +15,7 @@ from starlette.websockets import WebSocketDisconnect
 from app.core.config import Settings, settings
 from app.bootstrap import transport_manager
 from app.main import app
+from inner_protocol_harness import inner_protocol_app
 from app.persistence.auth import (
     AuthorizedAccountBinding,
     InstallationKeyReference,
@@ -174,7 +175,7 @@ def bridge_handshake(socket) -> tuple[dict, dict, list[dict]]:
 
 
 @pytest.fixture(autouse=True)
-def reset_transport_manager():
+def reset_transport_manager(inner_protocol_app):
     transport_manager.reset()
     yield
     transport_manager.reset()
@@ -277,7 +278,7 @@ def commit_fixture_snapshot(socket, session: dict, hello: dict) -> tuple[dict, d
 
 def test_agent_and_bridge_complete_role_specific_handshakes() -> None:
     client = TestClient(app)
-    with client.websocket_connect("/ws/agent") as agent:
+    with client.websocket_connect("/__test__/agent-protocol") as agent:
         _, agent_session = agent_handshake(agent)
         assert agent_session["payload"]["resume_action"] == "snapshot_required"
         assert agent_session["payload"]["lease"] == {
@@ -390,10 +391,10 @@ def test_a_durable_authorization_reaches_configuration_through_the_manager(
 
 def test_agent_drop_reconnects_with_new_connection_and_fence() -> None:
     client = TestClient(app)
-    with client.websocket_connect("/ws/agent") as first:
+    with client.websocket_connect("/__test__/agent-protocol") as first:
         _, first_session = agent_handshake(first)
 
-    with client.websocket_connect("/ws/agent") as second:
+    with client.websocket_connect("/__test__/agent-protocol") as second:
         _, second_session = agent_handshake(second)
 
     assert (
@@ -410,7 +411,7 @@ def test_valid_fixture_exchange_routes_ack_and_presence_end_to_end() -> None:
     client = TestClient(app)
     with client.websocket_connect("/ws/bridge") as bridge:
         bridge_handshake(bridge)
-        with client.websocket_connect("/ws/agent") as agent:
+        with client.websocket_connect("/__test__/agent-protocol") as agent:
             hello, session = agent_handshake(agent)
             connected = bridge.receive_json()
             assert connected["type"] == "agent.state"
@@ -440,7 +441,7 @@ def test_valid_fixture_exchange_routes_ack_and_presence_end_to_end() -> None:
 
 def test_invalid_ingest_fixture_is_rejected_without_crashing_connection() -> None:
     client = TestClient(app)
-    with client.websocket_connect("/ws/agent") as agent:
+    with client.websocket_connect("/__test__/agent-protocol") as agent:
         hello, session = agent_handshake(agent)
         invalid = json.loads(
             (FIXTURES / "invalid" / "missing-identity.ingest.delta.json").read_text(
@@ -479,7 +480,7 @@ def test_invalid_ingest_fixture_is_rejected_without_crashing_connection() -> Non
 )
 def test_invalid_agent_hellos_receive_fatal_error_and_close(hello_mutation, expected_code) -> None:
     client = TestClient(app)
-    with client.websocket_connect("/ws/agent") as socket:
+    with client.websocket_connect("/__test__/agent-protocol") as socket:
         hello = fixture("agent.hello")
         hello_mutation(hello)
         socket.send_json(hello)
@@ -493,7 +494,7 @@ def test_invalid_agent_hellos_receive_fatal_error_and_close(hello_mutation, expe
 
 def test_wrong_role_pre_handshake_and_bridge_invalid_fixture_follow_error_matrix() -> None:
     client = TestClient(app)
-    with client.websocket_connect("/ws/agent") as socket:
+    with client.websocket_connect("/__test__/agent-protocol") as socket:
         socket.send_json(fixture("bridge.hello"))
         error = socket.receive_json()
         assert error["payload"]["code"] == "wrong_role"
@@ -510,7 +511,7 @@ def test_wrong_role_pre_handshake_and_bridge_invalid_fixture_follow_error_matrix
         assert error["payload"]["code"] == "validation_failed"
         assert error["payload"]["fatal"] is True
 
-    with client.websocket_connect("/ws/agent") as socket:
+    with client.websocket_connect("/__test__/agent-protocol") as socket:
         heartbeat = fixture("agent.heartbeat")
         socket.send_json(heartbeat)
         error = socket.receive_json()
@@ -519,9 +520,9 @@ def test_wrong_role_pre_handshake_and_bridge_invalid_fixture_follow_error_matrix
 
 def test_new_agent_connection_fences_old_writer() -> None:
     client = TestClient(app)
-    with client.websocket_connect("/ws/agent") as first:
+    with client.websocket_connect("/__test__/agent-protocol") as first:
         first_hello, first_session = agent_handshake(first)
-        with client.websocket_connect("/ws/agent") as second:
+        with client.websocket_connect("/__test__/agent-protocol") as second:
             agent_handshake(second)
             stale_snapshot = bind_agent_payload(
                 fixture("ingest.snapshot"), first_session, first_hello
@@ -534,7 +535,7 @@ def test_new_agent_connection_fences_old_writer() -> None:
 
 def test_lease_and_presence_expiry_derive_stale_disconnected_and_unknown() -> None:
     client = TestClient(app)
-    with client.websocket_connect("/ws/agent") as agent:
+    with client.websocket_connect("/__test__/agent-protocol") as agent:
         hello, session = agent_handshake(agent)
         lease = transport_manager.active_agents[DEV_ACCOUNT_ID]
         observed = bind_agent_payload(fixture("presence.observed"), session, hello)
@@ -718,32 +719,6 @@ def test_bridge_resync_returns_correlated_snapshot() -> None:
         snapshot = bridge.receive_json()
         assert snapshot["type"] == "state.snapshot"
         assert snapshot["correlation_id"] == resync["message_id"]
-
-
-def test_agent_config_transport_validates_stub_auth_and_etag() -> None:
-    client = TestClient(app)
-    params = {
-        "agent_installation_id": str(uuid4()),
-        "creator_account_id": DEV_ACCOUNT_ID,
-        "supported_config_schema_versions": "2",
-    }
-    auth = {"Authorization": f"Bearer {DEV_AGENT_AUTH_TICKET}"}
-    response = client.get("/api/v1/agent/config", params=params, headers=auth)
-    assert response.status_code == 200
-    assert response.json()["operation"] == "agent.config.document"
-    assert response.headers["etag"] == REQUIRED_CONFIG_REVISION
-
-    not_modified = client.get(
-        "/api/v1/agent/config",
-        params={**params, "current_etag": REQUIRED_CONFIG_REVISION},
-        headers=auth,
-    )
-    assert not_modified.status_code == 304
-
-    unauthorized = client.get(
-        "/api/v1/agent/config", params=params, headers={"Authorization": "Bearer wrong"}
-    )
-    assert unauthorized.status_code == 401
 
 
 def test_development_stub_fails_closed_for_production_or_non_local_exposure(monkeypatch) -> None:

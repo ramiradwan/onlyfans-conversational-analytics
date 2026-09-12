@@ -2,6 +2,8 @@
 
 - Status: accepted
 
+Agent transport amendment: [ADR 0024](0024-authenticated-companion-sessions.md) moves Agent configuration, authentication and storage operations into the authenticated companion session. References below to Agent HTTP transport are superseded by the [session transport contract](../companion-session-transport.md).
+
 ## Context and problem statement
 
 ADR 0008 keeps conversation processing in a creator-controlled local runtime and selects loopback-only Brain exposure by default. The runtime needs a production process topology, stable UI origin, durable persistence boundary, backup model, and update lifecycle that preserve acknowledged ingest and authentication state across restarts.

@@ -28,7 +28,10 @@ export async function createCompanionSession({
   monotonic = () => performance.now() / 1000,
   schedule = setTimeout,
   unschedule = clearTimeout,
+  onClose = () => {},
 }) {
+  const lifecycle = new AbortController();
+  signal = signal ? AbortSignal.any([signal, lifecycle.signal]) : lifecycle.signal;
   requirePairing(
     Number.isSafeInteger(maxActiveSessionSeconds) &&
       maxActiveSessionSeconds > 0 &&
@@ -55,6 +58,7 @@ export async function createCompanionSession({
   function close() {
     if (state === "closed") return;
     state = "closed";
+    lifecycle.abort();
     unschedule(timer);
     unsubscribe?.();
     signal?.removeEventListener("abort", abort);
@@ -66,6 +70,7 @@ export async function createCompanionSession({
         inner?.free();
       } catch {}
       inner = null;
+      onClose();
     }
   }
   function check(expected) {
@@ -109,6 +114,7 @@ export async function createCompanionSession({
     );
   }
   unsubscribe = store.onInvalidate(close);
+  arm();
   let material;
   try {
     material = await store.sessionMaterial({ accountId, requestId, signal });
@@ -135,6 +141,7 @@ export async function createCompanionSession({
   signal?.addEventListener("abort", abort, { once: true });
   arm();
   return Object.freeze({
+    pairingId: material.pairingId,
     get state() {
       return state;
     },
@@ -192,11 +199,11 @@ export async function createCompanionSession({
       } catch {
         return failure("session_authorization_refused");
       }
-      if (state !== "verifying") failure("session_expired");
+      check("verifying");
       deadline = Math.min(deadline, notAfter);
       if (commit) {
         try {
-          await store.commit(commit, signal);
+          await store.commit(commit, signal, { assertCurrent: () => check("verifying") });
         } catch {
           return failure("session_commit_refused");
         }

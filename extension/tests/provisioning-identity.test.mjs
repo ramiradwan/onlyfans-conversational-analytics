@@ -16,7 +16,7 @@ import {
 
 const CONSENT = { mode: 'full', consent_epoch: '10000000-0000-4000-8000-000000000008' };
 const QUERY = Object.freeze({ type: 'provisioning.identity.query', version: 1 });
-const BRIDGE_SENDER = Object.freeze({ url: 'https://bridge.localhost:17871/provisioning' });
+const BRIDGE_SENDER = Object.freeze({ url: 'http://bridge.localhost:17871/provisioning' });
 const CONTENT_SENDER = Object.freeze({
   id: 'synthetic-extension-id',
   frameId: 0,
@@ -43,7 +43,7 @@ function storageArea(values) {
   };
 }
 
-function bridgeHarness({ register = true } = {}) {
+function bridgeHarness({ register = true, allowsExternalIdentity } = {}) {
   const session = {};
   const local = {};
   const internalListeners = [];
@@ -71,7 +71,7 @@ function bridgeHarness({ register = true } = {}) {
       session: storageArea(session),
     },
   };
-  const bridge = createProvisioningIdentityBridge({ chromeApi, currentConsent: () => CONSENT });
+  const bridge = createProvisioningIdentityBridge({ chromeApi, currentConsent: () => CONSENT, allowsExternalIdentity });
   if (register) bridge.register();
   return { bridge, chromeApi, externalListeners, internalListeners, local, session };
 }
@@ -331,4 +331,26 @@ test('clearing consent contexts fences admitted captures before session persiste
   assert.throws(guard, { code: 'stale_capture_context' });
   await clearing;
   assert.equal(await h.bridge.contextFor(CONTENT_SENDER), null);
+});
+
+test('account or document changes invalidate companion sessions before storage settles', async () => {
+  const h = bridgeHarness();
+  let invalidations = 0;
+  h.bridge.onAccountChange(() => { invalidations++; });
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  assert.equal(invalidations, 1);
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  assert.equal(invalidations, 1);
+  const changing = dispatch(h.internalListeners[0], update('creator-b', PAGE_EPOCH_B), CONTENT_SENDER);
+  assert.equal(invalidations, 2);
+  await changing;
+  assert.equal(await h.bridge.currentAccountId(), 'creator-b');
+});
+
+test('active Full identity capture can continue while external bootstrap queries are disabled', async () => {
+  const h = bridgeHarness({ allowsExternalIdentity: async () => false });
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+  assert.equal(parseIdentityResponse(await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER)).accountId, null);
+  assert.equal(await dispatch(h.externalListeners[0], QUERY, { url: 'https://bridge.localhost:17871/' }), undefined);
 });

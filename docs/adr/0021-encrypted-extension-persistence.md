@@ -3,6 +3,8 @@
 - Status: accepted
 - Date: 2026-08-30
 
+Session amendment: [ADR 0024](0024-authenticated-companion-sessions.md) requires fresh authenticated Noise admission and identity proof before each worker unlock. Agent retains bootstrap envelopes and tickets only in memory; reconstruction uses the persisted pin and derives the same account storage key through a new encrypted session. HTTP bootstrap and key-release references below are superseded by the [session transport contract](../companion-session-transport.md).
+
 ## Decision
 
 Encrypt every account-scoped IndexedDB value written by Full mode with

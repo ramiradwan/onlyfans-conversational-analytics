@@ -135,6 +135,7 @@ function PairingAttemptControls({ api, creatorAccountId }: {
 
   return (
     <Stack spacing={2}>
+      <AdmittedPairings api={api} creatorAccountId={creatorAccountId} refresh={status?.version ?? -1} />
       <Typography variant="body2">Creator account: {creatorAccountId}</Typography>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
         Open a pairing window, then start pairing from the extension.
@@ -211,6 +212,57 @@ function PairingAttemptControls({ api, creatorAccountId }: {
           </Button>
         )}
       </Stack>
+    </Stack>
+  );
+}
+
+function AdmittedPairings({ api, creatorAccountId, refresh }: {
+  api: CompanionPairingApi; creatorAccountId: string; refresh: number;
+}) {
+  const [pins, setPins] = useState<CompanionPairingStatus[]>([]);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const operation = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    void api.pins(controller.signal).then((values) => {
+      if (controller.signal.aborted) return;
+      if (values.some((pin) => pin.creator_account_id !== creatorAccountId || pin.state !== 'admitted')) {
+        throw new Error('Pairing scope changed.');
+      }
+      setPins(values);
+      setFailed(false);
+    }).catch(() => { if (!controller.signal.aborted) setFailed(true); })
+      .finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    return () => { controller.abort(); operation.current?.abort(); };
+  }, [api, creatorAccountId, refresh, revision]);
+  const revoke = async (pin: CompanionPairingStatus) => {
+    operation.current?.abort();
+    const controller = new AbortController();
+    operation.current = controller;
+    setBusy(true);
+    try {
+      await api.revoke(pin.pairing_id, pin.version, controller.signal);
+      if (controller.signal.aborted) return;
+      setPins((values) => values.filter((value) => value.pairing_id !== pin.pairing_id));
+      setFailed(false);
+    } catch { if (!controller.signal.aborted) setFailed(true); }
+    finally { if (!controller.signal.aborted) setBusy(false); }
+  };
+  return (
+    <Stack spacing={1}>
+      {pins.map((pin) => (
+        <Stack key={pin.pairing_id} direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+          <Typography>Paired extension {pin.generation}</Typography>
+          <Button color="error" disabled={busy} onClick={() => void revoke(pin)}
+            aria-label={`Revoke extension ${pin.generation}`}>Revoke</Button>
+        </Stack>
+      ))}
+      {failed && <Alert severity="error">Paired extensions could not be verified.</Alert>}
+      <Button disabled={busy} onClick={() => setRevision((value) => value + 1)}>Refresh paired extensions</Button>
     </Stack>
   );
 }

@@ -1,10 +1,10 @@
-<!-- CODE-VERIFY: extension/transport/local-service-endpoints.mjs extension/transport/secure-local-fetch.mjs extension/transport/config-http-adapter.mjs extension/transport/agent-websocket.mjs extension/transport/chrome-adapter-core.mjs extension/qualification/snow-wasm-spike/src/lib.rs app/security/installation_key.py app/security/hosted_grants.py contracts/production/grant-profile-v1/trust-set.json -->
+<!-- CODE-VERIFY: app/api/endpoints/companion_session.py app/transport/companion_channel.py app/transport/companion_origin.py extension/transport/companion-channel.mjs extension/runtime/companion-client.mjs extension/manifest.json native/companion-snow/src/lib.rs extension/crypto/snow/src/lib.rs -->
 
 # ADR 0024: Protect Full-mode communication with locally paired sessions
 
 - Status: Accepted
 - Date: 2026-09-12
-- Amends: [ADR 0008](0008-production-authentication.md), in the sections named under "Amendments to ADR 0008"
+- Amends: [ADR 0008](0008-production-authentication.md), in the sections named under "Amendments to ADR 0008"; Agent transport placement in [ADR 0005](0005-agent-configuration-versioning.md), [ADR 0006](0006-canonical-communication-matrix.md), and [ADR 0009](0009-local-first-topology-and-persistence.md); bootstrap credential persistence in [ADR 0021](0021-encrypted-extension-persistence.md).
 - Scope: Agent-to-Brain Full-mode communication. Bridge and browser-to-Brain security are outside this decision.
 
 ## Context
@@ -65,7 +65,7 @@ ADR 0008 remains authoritative for separating hosted and local authority. This d
 | Local Agent authentication: challenge, proof, and ticket issuance for Agent WebSocket and configuration access. | Unchanged in content. These exchanges run as records inside the authenticated session instead of over plain HTTP. |
 | "Provisioning, grant refresh, WebAuthn, pairing, and ticket issuance use separate HTTP contracts and add no WebSocket operation." | Provisioning, grant refresh, WebAuthn, and Bridge ticket issuance keep separate HTTP contracts. Agent pairing uses a dedicated loopback WebSocket exchange. Agent challenge, ticket issuance, configuration, storage bootstrap, unseal, and rotation run inside the Agent session. |
 
-Protocol-v1 message schemas are unchanged. They are carried inside the session.
+Protocol v2 message schemas are unchanged. They are carried inside the session as specified by the [session transport contract](../companion-session-transport.md).
 
 ## Why
 
@@ -74,7 +74,8 @@ Loopback reachability proves nothing about who is listening. The installation ke
 ## Consequences
 
 - The extension talks to Brain only over the loopback WebSocket. The plain HTTP adapters, WebSocket opening headers, URL parameters, external extension messages, and error paths must not carry Full-mode secrets. The session must carry every Full-mode boundary, not just message frames.
-- The manifest's local origin becomes `ws://bridge.localhost:17871`. No host permission for HTTPS or HTTP to Brain remains.
+- Agent sockets use `ws://127.0.0.1:17871`. The manifest grants no local host permission; its CSP permits that exact WebSocket origin. Brain exposes no HTTP or Bridge WebSocket surface on that origin, so it cannot issue Bridge cookies there. Browser tests seed cookies on both origins and require their absence at a hostile listener.
+- Bridge remains on `bridge.localhost`. Its existing external extension message can request public provisioning identity only while Agent is unpaired. It cannot bind Full-mode credentials or authorize a session.
 - The extension ships a WebAssembly Noise implementation. That requires `wasm-unsafe-eval` in the extension CSP and a supply-chain review of the Noise library and its build.
 - Brain gains a pairing WebSocket path, per-pairing Noise keys held in its encrypted store (ADR 0019), a pairing-transcript signing purpose for the installation key, and a Bridge confirmation view.
 - Same-user malware can use the installation key and read extension state. That is outside the local security boundary. A process running as a different user cannot use the key.

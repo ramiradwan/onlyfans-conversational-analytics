@@ -199,7 +199,7 @@ async def _http_operation(
 ):
     try:
         async with asyncio.timeout(STEP_TIMEOUT_SECONDS):
-            mutation = operation != "status"
+            mutation = operation not in {"status", "pins"}
             policy = await asyncio.to_thread(_bridge_policy, request, mutation=mutation)
             if pairing_id is not None:
                 _pairing_id(pairing_id)
@@ -217,6 +217,10 @@ async def _http_operation(
                 call = lambda: service.open(policy, body["creator_account_id"])
             elif operation == "status":
                 call = lambda: service.status(policy, pairing_id)
+            elif operation == "pins":
+                call = lambda: service.pins(policy)
+            elif operation == "revoke":
+                call = lambda: service.revoke(policy, pairing_id, body["version"])
             elif operation == "confirm":
                 call = lambda: service.confirm(policy, pairing_id, body["version"])
             else:
@@ -230,6 +234,8 @@ async def _http_operation(
                 operation=operation,
                 pairing_id=pairing_id,
             )
+        if operation == "pins":
+            return _response({"pins": [_public_status(pin) for pin in result]})
         return _response(_public_status(result), 201 if operation == "open" else 200)
     except _Refusal as error:
         return _response({"detail": error.code}, error.status)
@@ -286,7 +292,13 @@ async def _http_call(
         )
         if disconnect in done:
             raise _Refusal("pairing_state_refused", 408)
-        result = _public_status(await task)
+        result = await task
+        if operation == "pins":
+            if not isinstance(result, list) or len(result) > 16:
+                raise _Refusal("pairing_storage_refused", 503)
+            result = [_public_status(pin) for pin in result]
+        else:
+            result = _public_status(result)
         success = True
         return result
     finally:
@@ -313,6 +325,16 @@ async def open_pairing(request: Request):
     return await _http_operation(request, "open")
 
 
+@router.get("/api/v1/companion/pins")
+async def list_pins(request: Request):
+    return await _http_operation(request, "pins")
+
+
+@router.post("/api/v1/companion/pins/{pairing_id}/revoke")
+async def revoke_pin(request: Request, pairing_id: str):
+    return await _http_operation(request, "revoke", pairing_id)
+
+
 @router.get("/api/v1/companion/pairings/{pairing_id}")
 async def pairing_status(request: Request, pairing_id: str):
     return await _http_operation(request, "status", pairing_id)
@@ -334,7 +356,7 @@ async def decline_pairing(request: Request, pairing_id: str):
 
 
 def _socket_origin(websocket: WebSocket) -> None:
-    expected_host = urlsplit(settings.bridge_origin).netloc.lower()
+    expected_host = "127.0.0.1:17871"
     client = websocket.client
     try:
         loopback = client is not None and ipaddress.ip_address(client.host).is_loopback

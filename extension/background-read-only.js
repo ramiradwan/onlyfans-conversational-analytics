@@ -1,15 +1,13 @@
 import { createReadOnlyAgentRuntime } from './transport/read-only-agent-runtime.mjs';
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
-import {
-  createBrainBindingBridge,
-  createChromeAdapter,
-} from './transport/read-only-chrome-adapter.mjs';
+import { ReadOnlyAgentWebSocketClient } from './transport/read-only-agent-websocket.mjs';
+import { createCompanionClient } from './runtime/companion-client.mjs';
+import { accountDatabaseName } from './transport/read-only-indexeddb-ingestion-storage.mjs';
 import { CaptureDiagnostics } from './transport/read-only-capture-ingestion.mjs';
 import { DeliveryCaptureIngestionService } from './transport/read-only-delivery-capture-ingestion.mjs';
 import { createAccountBoundCaptureMessageBridge } from './transport/account-bound-capture-bridge.mjs';
 import { createProvisioningIdentityBridge } from './transport/provisioning-identity.mjs';
-import { createSecureLocalFetch } from './transport/secure-local-fetch.mjs';
-import { LOCAL_SERVICE_HEALTH, LOCAL_SERVICE_ORIGIN } from './transport/local-service-endpoints.mjs';
+import { LOCAL_SERVICE_ORIGIN } from './transport/local-service-endpoints.mjs';
 import { ConsentController } from './runtime/consent-controller.mjs';
 import { PreviewMetricsStore } from './runtime/preview-metrics.mjs';
 import { clearExtensionLocalData } from './runtime/local-data.mjs';
@@ -20,14 +18,20 @@ import { LegalConsentAuthorization } from './runtime/legal-consent-authorization
 import { legalReleaseBindings } from './runtime/legal-release-bindings.mjs';
 
 let lastStartupErrorCode = null;
-const secureLocalFetch = createSecureLocalFetch();
-export const chromeAdapter = createChromeAdapter();
+export const companionClient = createCompanionClient({
+  accountDatabaseName,
+  allowsFull: () => consentController?.state.mode === 'full',
+  detectedAccountId: () => provisioningIdentityBridge.currentAccountId(),
+});
+export const chromeAdapter = companionClient.adapter;
 export const captureDiagnostics = new CaptureDiagnostics((diagnostic) => {
   console.warn('[Conversation Analytics] capture observation dropped', diagnostic);
 });
 export const agentRuntime = createReadOnlyAgentRuntime({
   chromeAdapter,
   chromeApi: chrome,
+  configHttpFactory: () => companionClient.configAdapter,
+  transportFactory: (options) => new ReadOnlyAgentWebSocketClient({ ...options, webSocketFactory: companionClient.webSocketFactory }),
   signerFactory: (options) => createChromeBrowserSigningProvider(options),
   onStartupError: () => {
     lastStartupErrorCode = 'startup_failed';
@@ -38,22 +42,19 @@ export const captureScope = new OperationScope();
 export const controlQueue = new SerialExecutor();
 
 let consentController = null;
-export const brainBindingBridge = createBrainBindingBridge({
-  adapter: chromeAdapter,
-  runtime: agentRuntime,
-  onBound: () => consentController?.reconcile(),
-  ensureReady: () => consentController.initialize(),
-  allowsBinding: () => consentController?.state.mode === 'full'
-    && ['identity', 'full'].includes(consentController.phase),
-  runBindingOperation: (work) => consentController.runLegalOperation(work),
-});
 export const provisioningIdentityBridge = createProvisioningIdentityBridge({
   allowedOrigins: [LOCAL_SERVICE_ORIGIN],
   currentConsent: () => consentController?.state,
   ensureReady: () => consentController.initialize(),
   allowsIdentity: () => consentController?.state.mode === 'full'
     && ['identity', 'full'].includes(consentController.phase),
+  allowsExternalIdentity: async () => {
+    if (consentController?.state.mode !== 'full' || consentController.phase !== 'identity') return false;
+    const paired = (await companionClient.status()).state === 'paired';
+    return !paired && consentController.state.mode === 'full' && consentController.phase === 'identity';
+  },
 });
+provisioningIdentityBridge.onAccountChange(() => companionClient.invalidate());
 export const captureIngestion = new DeliveryCaptureIngestionService({
   runtime: agentRuntime,
   diagnostics: captureDiagnostics,
@@ -107,7 +108,6 @@ consentController = new ConsentController({
   chromeApi: chrome,
   runtime: agentRuntime,
   adapter: chromeAdapter,
-  brainBindingBridge,
   provisioningIdentityBridge,
   previewMetrics,
   clearLocalData: () => clearExtensionLocalData(),
@@ -116,7 +116,7 @@ consentController = new ConsentController({
   controlQueue,
   activationEvidenceStore,
   runtimeSummary,
-  fetchImpl: (_url, init) => secureLocalFetch(LOCAL_SERVICE_HEALTH, init),
+  fetchImpl: async () => ({ ok: companionClient.connected }),
 });
 export { consentController };
 
@@ -182,4 +182,8 @@ Object.defineProperty(globalThis, '__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__', {
 captureMessageBridge.register();
 legalActivationController.register();
 consentController.register();
+companionClient.registerPopup({
+  onPaired: () => consentController.reconcile(),
+  onForget: () => consentController.reconcile(),
+});
 void consentController.initialize().catch(() => undefined);

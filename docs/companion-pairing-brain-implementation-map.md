@@ -47,11 +47,17 @@ The four failure states (`declined`, `cancelled`, `expired`, `revoked`) require 
 
 `tests/test_companion_pairing_proof.py` verifies the vendored snapshot before reading its vectors and exercises the production proof module through the existing installation-key authority with a test provider. Grant currentness, revocation, account approval, and the commit fence remain the persistence and orchestration callers' responsibility.
 
-`Noise_KK_25519_ChaChaPoly_SHA256` qualifies as a frozen-Brain transport under `tools/native-snow-brain-spike/`. Production session integration must still connect admitted pins to the native responder, encrypted authorization, and active-socket revocation. The shipping extension transport is not switched by the pairing APIs or Bridge controls.
+The native responder is built from `native/companion-snow`; the packaged Agent WASM is built from `extension/crypto/snow`. `app/security/companion_noise.py` constructs the native responder from an admitted pin and a purpose-bound unwrapped key. `app/api/endpoints/companion_session.py` admits the encrypted stream and routes session RPCs. Existing protocol v2 messages enter the transport manager through an adapter whose writes recheck the current session authority.
 
-Pairing adapters reject messages larger than 36,864 bytes before JSON decoding. Packaged server qualification must also verify message and queue bounds below the ASGI adapter, where complete WebSocket messages are allocated. Those limits must accommodate the existing Bridge snapshot route. Cancellation fences wait for durable cleanup; database lock contention can extend cleanup beyond the request deadline.
+`app/security/companion_session_authority.py` binds fresh challenges and tickets to one Noise session. Migration 0013 records that binding in authentication rows. Each operation rechecks the pinned installation, creator account, grants, generation and revocation state. Canonical writes hold an authentication transaction across their synchronous commit, so revocation and data admission are serialized. Session closure invalidates outstanding credentials; every reconnect performs a new handshake and identity proof.
 
-Browser qualification must verify that opening the pairing and session sockets sends no ambient credentials. The pairing adapter rejects cookies, authorization headers, query parameters, and subprotocol credentials. Rejection cannot retract credentials already sent to a hostile listener. `SameSite=Strict` alone is not sufficient evidence: Chrome documents special cookie behavior for extension requests with host permission. Any required cookie or origin isolation must be reviewed before the extension transport cutover; Bridge cookie configuration is unchanged. See [Chrome storage and cookies](https://developer.chrome.com/docs/extensions/develop/concepts/storage-and-cookies).
+Bridge lists current account-scoped pairings through `GET /api/v1/companion/pins`. The versioned `revoke` action clears the protected key and advances revocation state. Connected sessions check that state on traffic and every 250 milliseconds while idle.
+
+Packaged Uvicorn limits incoming WebSocket messages to 36,864 bytes and queues to eight messages, with compression disabled. The encrypted adapter imposes the smaller routine-record limit before decrypting and reconstructs bounded protocol documents. Bridge outgoing snapshots are unaffected by the incoming message limit.
+
+Agent sockets use `127.0.0.1:17871`; Bridge remains on `bridge.localhost:17871`. The Agent origin does not serve HTTP or issue cookies, and the extension has no local host permission. `extension/qualification/companion-origin-browser.mjs` exercises the packaged WASM and production socket modules against a hostile listener with cookies seeded on both origins. The release matrix runs this check on Chrome 132 and current Chromium. The pairing and session adapters independently reject cookies, authorization headers, query parameters and subprotocol credentials.
+
+See the [session transport contract](companion-session-transport.md) for framing, deadlines and encrypted operations.
 
 ## Record sizes
 

@@ -8,13 +8,13 @@ These FastAPI route modules expose Brain over the local runtime boundary. Accoun
 
 - `/ws/agent` accepts protocol-v2 Agent sessions, ingestion, presence, configuration acknowledgements, and command results.
 - `/ws/bridge` accepts protocol-v2 Bridge sessions and state-resynchronization requests.
-- `GET /api/v1/agent/config` returns the authenticated Agent configuration document with ETag support. Its purpose-bound ticket is accepted only in the Authorization header.
+- Agent configuration, challenge/proof, storage unlock and rotation use encrypted RPCs on `/ws/agent`; see the [session transport contract](../../../docs/companion-session-transport.md).
 
 Socket role, account, installation, stream, connection, and fencing identity are checked before domain writes. Wrong-role, pre-handshake, unsupported-version, identity-conflicting, stale-fence, and unauthorized messages fail with bounded protocol errors.
 
 ## `history.py`
 
-- `POST /api/v1/agent/pairing` issues one short-lived, account-bound Agent pairing ticket to an authenticated creator.
+- `/api/v1/companion/pairings` provides authenticated Bridge pairing controls. `/ws/agent/pairing` exchanges public pairing proofs. `/api/v1/companion/pins` lists account-scoped pins and provides their versioned revocation action.
 - `GET /api/v1/conversations/{conversation_id}/messages` returns authenticated message pages bound to a projection generation and signed cursor.
 - `GET /api/v1/settings/history` returns the local history state for the authenticated account.
 - `PUT /api/v1/settings/history` and `DELETE /api/v1/settings/history/consent` require creator authority, same-origin CSRF protection, and `If-Match`.

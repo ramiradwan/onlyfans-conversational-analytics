@@ -21,6 +21,8 @@ export type CompanionPairingStatus = z.infer<typeof statusSchema>;
 export type CompanionPairingAction = 'confirm' | 'decline' | 'cancel';
 
 export interface CompanionPairingApi {
+  pins(signal?: AbortSignal): Promise<CompanionPairingStatus[]>;
+  revoke(pairingId: string, version: number, signal?: AbortSignal): Promise<CompanionPairingStatus>;
   open(creatorAccountId: string, signal?: AbortSignal): Promise<CompanionPairingStatus>;
   get(pairingId: string, signal?: AbortSignal): Promise<CompanionPairingStatus>;
   change(
@@ -48,7 +50,7 @@ const MAX_RESPONSE_BYTES = 8_192;
 const REQUEST_DEADLINE_MS = 10_000;
 const ENDPOINT = '/api/v1/companion/pairings';
 
-async function readStatus(response: Response): Promise<CompanionPairingStatus> {
+async function readStatus(response: Response): Promise<unknown> {
   if (!response.ok) throw new CompanionPairingApiError('request');
   if (!response.body) throw new CompanionPairingApiError('response');
   const reader = response.body.getReader();
@@ -64,13 +66,17 @@ async function readStatus(response: Response): Promise<CompanionPairingStatus> {
       text += decoder.decode(part.value, { stream: true });
     }
     text += decoder.decode();
-    const parsed = statusSchema.safeParse(JSON.parse(text) as unknown);
-    if (!parsed.success) throw new CompanionPairingApiError('response');
-    return parsed.data;
+    return JSON.parse(text) as unknown;
   } finally {
     await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
+}
+
+function parseStatus(value: unknown): CompanionPairingStatus {
+  const result = statusSchema.safeParse(value);
+  if (!result.success) throw new CompanionPairingApiError('response');
+  return result.data;
 }
 
 export function createCompanionPairingApi(options: ApiOptions = {}): CompanionPairingApi {
@@ -83,7 +89,7 @@ export function createCompanionPairingApi(options: ApiOptions = {}): CompanionPa
     path: string,
     body: object | undefined,
     signal?: AbortSignal,
-  ): Promise<CompanionPairingStatus> => {
+  ): Promise<unknown> => {
     const controller = new AbortController();
     const cancel = () => controller.abort();
     signal?.addEventListener('abort', cancel, { once: true });
@@ -131,18 +137,31 @@ export function createCompanionPairingApi(options: ApiOptions = {}): CompanionPa
     signal?: AbortSignal,
   ) => {
     if (!pairingId.safeParse(id).success) throw new CompanionPairingApiError('request');
-    const value = await invoke(
+    const value = parseStatus(await invoke(
       `${ENDPOINT}/${id}${action ? `/${action}` : ''}`,
       action ? { version } : undefined,
       signal,
-    );
+    ));
     if (value.pairing_id !== id) throw new CompanionPairingApiError('response');
     return value;
   };
 
   return {
+    async pins(signal) {
+      const parsed = z.strictObject({ pins: z.array(statusSchema).max(16) }).safeParse(
+        await invoke('/api/v1/companion/pins', undefined, signal),
+      );
+      if (!parsed.success) throw new CompanionPairingApiError('response');
+      return parsed.data.pins;
+    },
+    async revoke(id, version, signal) {
+      if (!pairingId.safeParse(id).success) throw new CompanionPairingApiError('request');
+      const value = parseStatus(await invoke(`/api/v1/companion/pins/${id}/revoke`, { version }, signal));
+      if (value.pairing_id !== id || value.state !== 'revoked') throw new CompanionPairingApiError('response');
+      return value;
+    },
     async open(creatorAccountId, signal) {
-      const value = await invoke(ENDPOINT, { creator_account_id: creatorAccountId }, signal);
+      const value = parseStatus(await invoke(ENDPOINT, { creator_account_id: creatorAccountId }, signal));
       if (value.creator_account_id !== creatorAccountId) {
         throw new CompanionPairingApiError('response');
       }

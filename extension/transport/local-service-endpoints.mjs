@@ -1,9 +1,7 @@
-export const LOCAL_SERVICE_ORIGIN = 'https://bridge.localhost:17871';
+export const LOCAL_SERVICE_ORIGIN = 'http://bridge.localhost:17871';
 export const LOCAL_SERVICE_PATTERN = `${LOCAL_SERVICE_ORIGIN}/*`;
-export const LOCAL_SERVICE_WS = 'wss://bridge.localhost:17871/ws/agent';
-export const LOCAL_SERVICE_CONFIG = `${LOCAL_SERVICE_ORIGIN}/api/v1/agent/config`;
-export const LOCAL_SERVICE_STORAGE_UNSEAL = `${LOCAL_SERVICE_ORIGIN}/api/v1/agent/storage/unseal`;
-export const LOCAL_SERVICE_STORAGE_ROTATE = `${LOCAL_SERVICE_ORIGIN}/api/v1/agent/storage/rotate`;
+export const LOCAL_SERVICE_WS = 'ws://127.0.0.1:17871/ws/agent';
+export const LOCAL_PAIRING_WS = 'ws://127.0.0.1:17871/ws/agent/pairing';
 export const LOCAL_SERVICE_HEALTH = `${LOCAL_SERVICE_ORIGIN}/health`;
 
 export function assertLocalServiceUrl(value) {

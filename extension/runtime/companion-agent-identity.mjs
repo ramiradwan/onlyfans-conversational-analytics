@@ -3,6 +3,8 @@ import {
   b64u,
   normalizeSignature,
   proofMessage,
+  lp,
+  key32,
   requirePairing,
 } from "../transport/pairing-contract.mjs";
 
@@ -27,6 +29,19 @@ async function sign(privateKey, message) {
 /** Agent pairing proof over a verified pairing digest, as unpadded base64url. */
 export async function signPairingProof(identity, pairingDigest) {
   const message = proofMessage("agent", pairingDigest.slice());
+  return b64u(await sign(identity.privateKey, message));
+}
+
+export async function signAgentSessionProof(identity, challenge, pin, agentInstallationId) {
+  requirePairing(typeof challenge?.challenge === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(challenge.challenge));
+  key32(challenge.challenge);
+  requirePairing(typeof challenge.session_id === 'string' && /^[A-Za-z0-9._~-]{1,128}$/u.test(challenge.session_id));
+  const message = lp('OFCA-AGENT-REQUEST-V1', [
+    challenge.session_id, challenge.challenge, 'POST', '/agent/session-ticket',
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    'agent-websocket', agentInstallationId, pin.creator_account_id,
+    pin.pairing_id, pin.installation_id,
+  ]);
   return b64u(await sign(identity.privateKey, message));
 }
 

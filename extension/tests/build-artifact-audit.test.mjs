@@ -95,6 +95,10 @@ test('read-only module graph excludes full command and protocol modules', () => 
   ];
   assert.deepEqual(auditReadOnlyModuleGraph(allowed), [...allowed].sort());
   for (const forbidden of [
+    'transport/chrome-adapter-core.mjs',
+    'transport/read-only-chrome-adapter.mjs',
+    'transport/read-only-config-http-adapter.mjs',
+    'transport/secure-local-fetch.mjs',
     'background.js',
     'protocol/index.mjs',
     'protocol/validation.mjs',
@@ -136,8 +140,8 @@ test('Chrome package configuration requires an HTTPS privacy policy', () => {
   const base = {
     schema: 'ofca-extension-config/v1',
     privacy_policy_url: '',
-    dashboard_url: 'https://bridge.localhost:17871/',
-    history_settings_url: 'https://bridge.localhost:17871/settings',
+    dashboard_url: 'http://bridge.localhost:17871/',
+    history_settings_url: 'http://bridge.localhost:17871/settings',
   };
   assert.deepEqual(validateExtensionConfig(base), base);
   assert.throws(() => validateExtensionConfig(base, { requirePrivacyPolicy: true }));

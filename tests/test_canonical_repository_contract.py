@@ -8,11 +8,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.api.endpoints import transport_ws
 from app.api.endpoints.transport_ws import _handle_agent_message
-from app.main import app
 from app.persistence.factory import CanonicalRepositories, create_canonical_repositories
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.services.agent_configuration import (
@@ -26,7 +24,7 @@ from app.services.command_execution import (
     CommandDeliveryTarget,
     CommandService,
 )
-from app.transport.manager import DEV_AGENT_AUTH_TICKET, InMemoryTransportManager
+from app.transport.manager import InMemoryTransportManager
 from app.transport.ingestion import IngestionService, StreamKey
 
 
@@ -117,28 +115,6 @@ async def test_configuration_immutability_monotonic_digest_etag_and_drift_contra
     assert published.config_revision == published.etag == PUBLISHED_CONFIG_REVISION
     assert published.digest == config_document_digest(published)
     assert authority.required_document(ACCOUNT_ID).etag == published.etag
-    manager = InMemoryTransportManager(repositories)
-    monkeypatch.setattr(transport_ws, "transport_manager", manager)
-    parameters = {
-        "agent_installation_id": str(installation_id),
-        "creator_account_id": ACCOUNT_ID,
-        "supported_config_schema_versions": "2",
-    }
-    auth = {"Authorization": f"Bearer {DEV_AGENT_AUTH_TICKET}"}
-    response = TestClient(app).get(
-        "/api/v1/agent/config", params=parameters, headers=auth
-    )
-    assert response.status_code == 200
-    assert response.json()["digest"] == published.digest
-    not_modified = TestClient(app).get(
-        "/api/v1/agent/config",
-        params=parameters,
-        headers={**auth, "If-None-Match": f'W/"{published.etag}"'},
-    )
-    assert not_modified.status_code == 304
-    assert not_modified.content == b""
-    assert not_modified.headers["etag"] == published.etag
-
     drift = authority.installation(ACCOUNT_ID, installation_id)
     assert drift.required_config_revision == PUBLISHED_CONFIG_REVISION
     assert drift.applied_config_revision == BOOTSTRAP_CONFIG_REVISION

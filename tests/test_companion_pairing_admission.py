@@ -599,3 +599,33 @@ def test_authorized_status_expires_and_clears_candidate_without_socket_polling(
     assert expired.version == window.version + 1
     assert expired.wrapped_brain_noise_private_key is None
     assert pairing.window(window.pairing_id).state is CompanionPairingState.EXPIRED
+
+
+def test_authorized_pin_inventory_requires_current_session_and_omits_revoked(context):
+    _approve(context)
+    _, pairing, _, session = context
+    pin = _confirm(context, _await(context))
+    with pytest.raises(CompanionPairingStateError):
+        pairing.authorized_pins("unknown")
+    assert [
+        item.pairing_id for item in pairing.authorized_pins(session.session_id)
+    ] == [pin.pairing_id]
+    pairing.revoke_companion_pin(pin.pairing_id, session_id=session.session_id)
+    assert pairing.authorized_pins(session.session_id) == ()
+
+
+@pytest.mark.parametrize("column", ["creator_account_id", "installation_id"])
+def test_authorized_pin_inventory_and_revoke_do_not_cross_account_or_installation(
+    context, column
+):
+    _approve(context)
+    store, pairing, _, session = context
+    pin = _confirm(context, _await(context))
+    # Simulate another account/installation's independently admitted row.
+    with store.database.transaction() as connection:
+        connection.execute(
+            f"UPDATE agent_pairings SET {column} = ?", ("another-scope",)
+        )
+    assert pairing.authorized_pins(session.session_id) == ()
+    with pytest.raises(CompanionPairingStateError):
+        pairing.revoke_companion_pin(pin.pairing_id, session_id=session.session_id)

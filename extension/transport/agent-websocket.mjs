@@ -62,7 +62,10 @@ export class AgentWebSocketClient {
       'history.sync',
       'command.message.send',
     ];
-    this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
+    if (typeof options.webSocketFactory !== 'function') {
+      throw new TypeError('An authenticated companion socket factory is required');
+    }
+    this.webSocketFactory = options.webSocketFactory;
     this.scheduler = options.scheduler ?? defaultScheduler;
     this.idFactory = options.idFactory ?? (() => crypto.randomUUID());
     this.random = options.random ?? Math.random;
@@ -338,7 +341,7 @@ export class AgentWebSocketClient {
     }, this.sessionDeadlineMs);
     socket.onopen = () => {
       if (this.socket !== socket) return;
-      const authTicket = this.reconnectAuthTicket ?? (
+      const authTicket = socket.authTicket ?? this.reconnectAuthTicket ?? (
         this.bootstrapAuthTicketUsed ? null : this.authTicket
       );
       if (authTicket === null) {

@@ -2,14 +2,10 @@ import {
   AgentConfigClient,
   AtomicConfigActivator,
 } from './agent-config-client.mjs';
-import { AgentWebSocketClient } from './agent-websocket.mjs';
-import { createChromeAdapter } from './chrome-adapter.mjs';
-import { createConfigHttpAdapter } from './config-http-adapter.mjs';
 import { DurableIngestOutbox } from './durable-outbox.mjs';
 import { HistoryAcquisitionCoordinator } from './history-coordinator.mjs';
 import { createIndexedDbIngestionStorage } from './indexeddb-ingestion-storage.mjs';
 import { createLifecycleStorage } from '../runtime/lifecycle-storage.mjs';
-import { LOCAL_SERVICE_WS } from './local-service-endpoints.mjs';
 import { AgentRuntime, createLazyAccountSigner } from './agent-runtime-core.mjs';
 
 export { AgentRuntime, createAccountSigningPersistence } from './agent-runtime-core.mjs';
@@ -17,16 +13,17 @@ export { AgentRuntime, createAccountSigningPersistence } from './agent-runtime-c
 export function createAgentRuntime(options = {}) {
   const chromeApi = options.chromeApi ?? globalThis.chrome;
   const extensionVersion = options.extensionVersion ?? chromeApi.runtime.getManifest().version;
-  const chromeAdapter = options.chromeAdapter ?? createChromeAdapter();
+  const chromeAdapter = options.chromeAdapter;
+  if (!chromeAdapter || typeof options.configHttpFactory !== 'function' || typeof options.transportFactory !== 'function') {
+    throw new Error('Authenticated companion adapters are required');
+  }
   const ingestionStorageFactory = options.ingestionStorageFactory
     ?? ((storageOptions) => createIndexedDbIngestionStorage(undefined, storageOptions));
   const outboxFactory = options.outboxFactory ?? ((outboxOptions) => new DurableIngestOutbox(outboxOptions));
   const configActivatorFactory = options.configActivatorFactory ?? (() => new AtomicConfigActivator());
-  const configHttpFactory = options.configHttpFactory ?? (() => createConfigHttpAdapter());
+  const configHttpFactory = options.configHttpFactory;
   const configClientFactory = options.configClientFactory ?? ((configOptions) => new AgentConfigClient(configOptions));
-  const transportFactory = options.transportFactory ?? ((transportOptions) => new AgentWebSocketClient({
-    ...transportOptions, url: LOCAL_SERVICE_WS, scheduler: options.scheduler,
-  }));
+  const transportFactory = options.transportFactory;
   const historyCoordinatorFactory = options.historyCoordinatorFactory
     ?? ((historyOptions) => new HistoryAcquisitionCoordinator(historyOptions));
   const signerFactory = options.signerFactory ?? null;

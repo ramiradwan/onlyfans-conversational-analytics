@@ -329,10 +329,11 @@ async function openPairingStoreImpl({
   }
 
   /** Commit the pending pairing as the pin after its first session authorizes. */
-  async function commit(token, signal) {
+  async function commit(token, signal, controls = {}) {
     await transaction(
       "readwrite",
       (state) => {
+        controls.assertCurrent?.();
         const p = state.pending;
         requirePairing(
           token &&
