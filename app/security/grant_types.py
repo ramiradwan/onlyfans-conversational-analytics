@@ -14,6 +14,28 @@ reaches the wider layers structurally rather than by being copied into them.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal
+
+
+GrantDenialReason = Literal[
+    "revoked", "membership_removed", "role_reduced", "approval_revoked", "entitlement_inactive"
+]
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedGrantDenial:
+    """Verified denial evidence without the compact signed object."""
+
+    denial_jti: str
+    grant_type: str
+    revoked_jti: str
+    issued_at: int
+    expires_at: int
+    effective_at: int
+    reason_code: GrantDenialReason
+    evidence_sha256: str
+
 
 INSTALLATION_GRANT = "installation_grant"
 MEMBERSHIP_SNAPSHOT = "membership_snapshot"

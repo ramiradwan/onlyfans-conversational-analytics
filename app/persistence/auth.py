@@ -21,8 +21,11 @@ from app.security.grant_types import (
     ACCOUNT_AUTHORITY_GRANT_TYPES,
     AGENT_PAIRING_GRANT_TYPES,
     CREATOR_ACCOUNT_BINDING,
+    INSTALLATION_GRANT,
     LICENSE_ENTITLEMENT,
     MAX_GRANT_CHARACTERS,
+    MEMBERSHIP_SNAPSHOT,
+    VerifiedGrantDenial,
 )
 from app.security.runtime_policy import (
     AuthContext,
@@ -460,14 +463,21 @@ class AuthenticationStore(Protocol):
     ) -> bool: ...
 
     def replace_verified_grant(
-        self, previous_reference_id: str, grant: VerifiedGrantReference
+        self, previous_reference_id: str, grant: VerifiedGrantReference,
+        *, expected: VerifiedGrantReference | None = None,
     ) -> None: ...
+
+    def apply_hosted_grant_denial(
+        self, expected: VerifiedGrantReference, denial: VerifiedGrantDenial
+    ) -> Literal["applied", "already_applied", "stale"]: ...
 
     def verified_grant(
         self, reference_id: str
     ) -> VerifiedGrantReference | None: ...
 
-    def verified_grants(self) -> tuple[VerifiedGrantReference, ...]: ...
+    def verified_grants(
+        self, *, include_revoked: bool = False, limit: int | None = None
+    ) -> tuple[VerifiedGrantReference, ...]: ...
 
     def companion_pairing_grants_are_eligible(self, grants: tuple[str, ...]) -> bool: ...
 
@@ -602,6 +612,10 @@ class AuthenticationStateError(ValueError):
 
 class _ProvisioningCandidateResolutionConflict(Exception):
     """Roll back a compound binding write when approval cannot be applied."""
+
+
+class _HostedDenialCommitExpired(Exception):
+    """Roll back a denial that reaches its boundary during persistence."""
 
 
 AccountBindingRefusal = Literal[
@@ -928,7 +942,8 @@ class SQLiteAuthenticationStore:
         return True
 
     def replace_verified_grant(
-        self, previous_reference_id: str, grant: VerifiedGrantReference
+        self, previous_reference_id: str, grant: VerifiedGrantReference,
+        *, expected: VerifiedGrantReference | None = None,
     ) -> None:
         self._validate_verified_grant(grant)
         if previous_reference_id == grant.reference_id:
@@ -936,7 +951,7 @@ class SQLiteAuthenticationStore:
         with self.database.transaction() as connection:
             previous = connection.execute(
                 """
-                SELECT grant_type, revoked_at FROM verified_grant_references
+                SELECT * FROM verified_grant_references
                 WHERE reference_id = ?
                 """,
                 (previous_reference_id,),
@@ -949,6 +964,32 @@ class SQLiteAuthenticationStore:
                 raise AuthenticationStateError(
                     "Verified grant replacement does not match an active reference"
                 )
+            previous_grant = _verified_grant_reference(previous)
+            keys = [
+                RevocationKey(RevocationScopeType.VERIFIED_GRANT, previous_reference_id),
+                RevocationKey(RevocationScopeType.INSTALLATION, previous_grant.installation_id),
+            ]
+            if previous_grant.creator_account_id is not None:
+                keys.append(RevocationKey(
+                    RevocationScopeType.CREATOR_ACCOUNT, previous_grant.creator_account_id
+                ))
+            if any(self._scope_is_revoked(connection, key) for key in keys):
+                raise AuthenticationStateError("Verified grant replacement authority is revoked")
+            if expected is not None:
+                immutable = (
+                    "grant_type", "issuer", "subject", "organization_id", "installation_id",
+                    "installation_key_id", "installation_key_jkt", "creator_account_id",
+                    "membership_id", "approval_id", "approval_revision", "entitlement_id", "product_id",
+                )
+                now = self._now()
+                if (
+                    previous_grant != expected
+                    or expected.grant_identifier == grant.grant_identifier
+                    or not expected.valid_from <= now < expected.expires_at
+                    or not grant.valid_from <= now < grant.expires_at
+                    or any(getattr(expected, field) != getattr(grant, field) for field in immutable)
+                ):
+                    raise AuthenticationStateError("Verified grant replacement context is stale")
             self._insert_verified_grant(connection, grant)
             self._revoke_in_transaction(
                 connection,
@@ -959,6 +1000,155 @@ class SQLiteAuthenticationStore:
                 reason="replaced",
             )
             self._increment_authorization_epoch(connection)
+            if expected is not None:
+                now = self._now()
+                if not (
+                    expected.valid_from <= now < expected.expires_at
+                    and grant.valid_from <= now < grant.expires_at
+                ):
+                    raise AuthenticationStateError("Verified grant replacement context is stale")
+
+    def apply_hosted_grant_denial(
+        self, expected: VerifiedGrantReference, denial: VerifiedGrantDenial
+    ) -> Literal["applied", "already_applied", "stale"]:
+        """Commit verified denial evidence and its authority withdrawal atomically."""
+        try:
+            return self._apply_hosted_grant_denial(expected, denial)
+        except _HostedDenialCommitExpired:
+            return "stale"
+
+    def _apply_hosted_grant_denial(
+        self, expected: VerifiedGrantReference, denial: VerifiedGrantDenial
+    ) -> Literal["applied", "already_applied", "stale"]:
+        scope_type, scope_id = _hosted_denial_scope(expected, denial)
+        evidence = {
+            "grant_reference_id": expected.reference_id,
+            "grant_type": expected.grant_type,
+            "grant_jti": expected.grant_identifier,
+            "grant_digest": expected.grant_digest,
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "organization_id": expected.organization_id,
+            "installation_id": expected.installation_id,
+            "creator_account_id": expected.creator_account_id,
+            "effective_at": denial.effective_at,
+            "reason_code": denial.reason_code,
+            "evidence_id": denial.denial_jti,
+            "evidence_sha256": denial.evidence_sha256,
+            "denial_issued_at": denial.issued_at,
+            "denial_expires_at": denial.expires_at,
+            "retain_through": _time_text(expected.expires_at),
+        }
+        with self.database.transaction() as connection:
+            recorded = connection.execute(
+                "SELECT * FROM hosted_grant_tombstones WHERE evidence_id = ?",
+                (denial.denial_jti,),
+            ).fetchone()
+            current = connection.execute(
+                "SELECT * FROM verified_grant_references WHERE reference_id = ?",
+                (expected.reference_id,),
+            ).fetchone()
+            if current is None or _verified_grant_reference(current) != expected:
+                return "stale"
+            if recorded is not None:
+                return (
+                    "already_applied"
+                    if all(recorded[name] == value for name, value in evidence.items())
+                    else "stale"
+                )
+            now = self._now()
+            instant = now.timestamp()
+            keys = [
+                RevocationKey(RevocationScopeType.VERIFIED_GRANT, expected.reference_id),
+                RevocationKey(RevocationScopeType.INSTALLATION, expected.installation_id),
+            ]
+            if expected.creator_account_id is not None:
+                keys.append(
+                    RevocationKey(
+                        RevocationScopeType.CREATOR_ACCOUNT, expected.creator_account_id
+                    )
+                )
+            if (
+                current["revoked_at"] is not None
+                or not _hosted_denial_is_current(expected, denial, now)
+                or any(self._scope_is_revoked(connection, key) for key in keys)
+                or self._grant_has_hosted_tombstone(connection, expected)
+            ):
+                return "stale"
+            connection.execute(
+                """
+                INSERT INTO hosted_grant_tombstones (
+                    tombstone_id, grant_reference_id, grant_type, grant_jti,
+                    grant_digest, scope_type, scope_id, organization_id,
+                    installation_id, creator_account_id, effective_at,
+                    recorded_at, reason_code, source, evidence_id, evidence_sha256,
+                    denial_issued_at, denial_expires_at, retain_through
+                ) VALUES (
+                    :tombstone_id, :grant_reference_id, :grant_type, :grant_jti,
+                    :grant_digest, :scope_type, :scope_id, :organization_id,
+                    :installation_id, :creator_account_id, :effective_at,
+                    :recorded_at, :reason_code, 'hosted_refresh', :evidence_id,
+                    :evidence_sha256, :denial_issued_at, :denial_expires_at,
+                    :retain_through
+                )
+                """,
+                dict(evidence, tombstone_id=_new_uuid7(now), recorded_at=int(instant)),
+            )
+            rows = connection.execute(
+                """
+                SELECT * FROM verified_grant_references
+                WHERE organization_id = ? AND installation_id = ?
+                  AND revoked_at IS NULL
+                """,
+                (expected.organization_id, expected.installation_id),
+            ).fetchall()
+            for row in rows:
+                grant = _verified_grant_reference(row)
+                if self._grant_has_hosted_tombstone(connection, grant):
+                    self._revoke_in_transaction(
+                        connection,
+                        RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id),
+                        reason="hosted_grant_denial",
+                    )
+            if scope_type == "installation":
+                self._revoke_in_transaction(
+                    connection,
+                    RevocationKey(RevocationScopeType.INSTALLATION, expected.installation_id),
+                    reason="hosted_grant_denial",
+                )
+            self._increment_authorization_epoch(connection)
+            if not _hosted_denial_is_current(expected, denial, self._now()):
+                raise _HostedDenialCommitExpired
+        return "applied"
+
+    @staticmethod
+    def _grant_has_hosted_tombstone(
+        connection: sqlite3.Connection, grant: VerifiedGrantReference
+    ) -> bool:
+        # Scope identifiers are never reused. Signed-object expiry and audit
+        # retention therefore cannot remove an effective scope withdrawal.
+        return connection.execute(
+            """
+            SELECT 1 FROM hosted_grant_tombstones
+            WHERE grant_jti = ? OR (
+                organization_id = ? AND installation_id = ? AND (
+                    scope_type = 'installation'
+                    OR (scope_type = 'membership' AND scope_id = ?
+                        AND ? = 'membership_snapshot')
+                    OR (scope_type = 'creator-approval' AND scope_id = ?
+                        AND creator_account_id = ? AND ? = 'creator_account_binding')
+                    OR (scope_type = 'entitlement' AND scope_id = ?
+                        AND ? = 'license_entitlement')
+                )
+            ) LIMIT 1
+            """,
+            (
+                grant.grant_identifier, grant.organization_id, grant.installation_id,
+                grant.membership_id, grant.grant_type, grant.approval_id,
+                grant.creator_account_id, grant.grant_type, grant.entitlement_id,
+                grant.grant_type,
+            ),
+        ).fetchone() is not None
 
     def verified_grant(
         self, reference_id: str
@@ -970,16 +1160,23 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _verified_grant_reference(row)
 
-    def verified_grants(self) -> tuple[VerifiedGrantReference, ...]:
-        """Return every verified grant reference that is not revoked."""
-
+    def verified_grants(
+        self, *, include_revoked: bool = False, limit: int | None = None
+    ) -> tuple[VerifiedGrantReference, ...]:
+        """Read grant references in stable order, excluding revoked by default."""
+        if limit is not None and (
+            type(limit) is not int or not 0 < limit <= (1 << 63) - 1
+        ):
+            raise ValueError("grant reference limit must be a positive SQLite integer")
+        where = "" if include_revoked else "WHERE revoked_at IS NULL"
+        bounded = "" if limit is None else "LIMIT ?"
         with self.database.read() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT * FROM verified_grant_references
-                WHERE revoked_at IS NULL
-                ORDER BY verified_at, reference_id
-                """
+                {where} ORDER BY verified_at, reference_id {bounded}
+                """,
+                () if limit is None else (limit,),
             ).fetchall()
         return tuple(_verified_grant_reference(row) for row in rows)
 
@@ -1011,6 +1208,8 @@ class SQLiteAuthenticationStore:
     def _insert_verified_grant(
         connection: sqlite3.Connection, grant: VerifiedGrantReference
     ) -> None:
+        if SQLiteAuthenticationStore._grant_has_hosted_tombstone(connection, grant):
+            raise AuthenticationStateError("Verified grant authority is revoked")
         allowed_accounts = (
             None
             if grant.allowed_creator_account_ids is None
@@ -3284,6 +3483,58 @@ class SQLiteAuthenticationStore:
         value = self._clock()
         _time_text(value)
         return value.astimezone(timezone.utc)
+
+
+def _hosted_denial_is_current(
+    grant: VerifiedGrantReference, denial: VerifiedGrantDenial, now: datetime
+) -> bool:
+    instant = now.timestamp()
+    return (
+        grant.valid_from <= now < grant.expires_at
+        and denial.issued_at <= instant + 60
+        and instant < denial.expires_at
+        and denial.effective_at <= instant
+    )
+
+
+def _hosted_denial_scope(
+    grant: VerifiedGrantReference, denial: VerifiedGrantDenial
+) -> tuple[str, str]:
+    reasons = {
+        INSTALLATION_GRANT: {"revoked"},
+        MEMBERSHIP_SNAPSHOT: {"revoked", "membership_removed", "role_reduced"},
+        CREATOR_ACCOUNT_BINDING: {"revoked", "approval_revoked"},
+        LICENSE_ENTITLEMENT: {"revoked", "entitlement_inactive"},
+    }
+    if (
+        denial.grant_type != grant.grant_type
+        or denial.revoked_jti != grant.grant_identifier
+        or denial.reason_code not in reasons.get(grant.grant_type, set())
+        or not grant.organization_id
+        or not grant.installation_id
+        or not _SHA256_TEXT.fullmatch(denial.evidence_sha256)
+        or not _SHA256_TEXT.fullmatch(grant.grant_digest)
+        or any(
+            type(value) is not int or value < 0
+            for value in (denial.issued_at, denial.expires_at, denial.effective_at)
+        )
+        or denial.expires_at != denial.issued_at + 600
+    ):
+        raise AuthenticationStateError("Verified grant denial metadata is invalid")
+    _require_uuid7(denial.denial_jti, name="denial identifier")
+    _require_uuid7(denial.revoked_jti, name="denied grant identifier")
+    if grant.grant_type == INSTALLATION_GRANT:
+        return "installation", grant.installation_id
+    selected = {
+        "membership_removed": ("membership", grant.membership_id),
+        "approval_revoked": ("creator-approval", grant.approval_id),
+        "entitlement_inactive": ("entitlement", grant.entitlement_id),
+    }.get(denial.reason_code)
+    if selected is None:
+        return "jti", grant.grant_identifier
+    if not selected[1]:
+        raise AuthenticationStateError("Verified grant denial scope is incomplete")
+    return selected[0], selected[1]
 
 
 def _new_secret() -> tuple[str, str, str]:

@@ -6,11 +6,14 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 import re
 import struct
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from contextlib import AbstractContextManager, nullcontext
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from time import monotonic
 from typing import Literal, Protocol
 
 import httpx
@@ -23,14 +26,17 @@ from app.persistence.auth import (
     VerifiedGrantReference,
 )
 from app.security.grant_verifier import (
+    GrantDenialVerificationContext,
     GrantVerificationContext,
     load_pinned_trust_set,
     verify_grant,
+    verify_grant_denial,
 )
 from app.security.grant_types import (
     AGENT_PAIRING_GRANT_TYPES,
     HOSTED_CLAIM_GRANT_TYPES,
     MAX_GRANT_CHARACTERS,
+    VerifiedGrantDenial,
 )
 from app.security.installation_key import InstallationProof
 from app.security.runtime_policy import AuthContext, RuntimePolicy
@@ -98,6 +104,14 @@ _ONBOARDING_MILESTONES = frozenset(
 )
 
 
+def grant_offline_grace_seconds(grant_type: str) -> int:
+    """The offline allowance retained after a grant's signed expiry."""
+    try:
+        return _GRACE_SECONDS[grant_type]
+    except KeyError:
+        raise ValueError("Unsupported grant type") from None
+
+
 class HostedGrantError(RuntimeError):
     """Base failure for hosted grant operations."""
 
@@ -137,7 +151,7 @@ class _TransportFailure(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class TransportResponse:
     status_code: int
-    body: bytes
+    body: bytes = field(repr=False)
     content_type: str
 
 
@@ -161,6 +175,9 @@ class HTTPXHostedTransport:
     """HTTPS transport for hosted JSON requests."""
 
     def __init__(self, base_url: str, *, timeout_seconds: float = 10.0) -> None:
+        if isinstance(timeout_seconds, bool) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise ValueError("Hosted timeout must be finite and positive")
+        self._timeout_seconds = timeout_seconds
         try:
             url = httpx.URL(base_url)
         except Exception:
@@ -179,7 +196,7 @@ class HTTPXHostedTransport:
             base_url=str(url.copy_with(path="/")),
             follow_redirects=False,
             timeout=timeout_seconds,
-            headers={"Accept": "application/json"},
+            headers={"Accept": "application/json", "Accept-Encoding": "identity"},
         )
 
     def request(
@@ -189,13 +206,29 @@ class HTTPXHostedTransport:
         *,
         json_body: Mapping[str, object],
     ) -> TransportResponse:
+        deadline = monotonic() + self._timeout_seconds
         try:
-            response = self._client.request(method, path, json=json_body)
-            return TransportResponse(
-                response.status_code,
-                response.content,
-                response.headers.get("content-type", ""),
-            )
+            with self._client.stream(method, path, json=json_body) as response:
+                if monotonic() >= deadline:
+                    raise _TransportFailure("Hosted response exceeded deadline")
+                if response.headers.get("content-encoding", "identity").strip().lower() != "identity":
+                    raise _TransportFailure("Hosted response encoding is unsupported")
+                body = bytearray()
+                # Encoding is checked before iteration so decompression cannot
+                # allocate an unbounded buffer before the JSON size check.
+                for chunk in response.iter_raw():
+                    if monotonic() >= deadline:
+                        raise _TransportFailure("Hosted response exceeded deadline")
+                    if len(body) + len(chunk) > _MAX_RESPONSE_BYTES:
+                        raise _TransportFailure("Hosted response exceeds size limit")
+                    body.extend(chunk)
+                if monotonic() >= deadline:
+                    raise _TransportFailure("Hosted response exceeded deadline")
+                return TransportResponse(
+                    response.status_code,
+                    bytes(body),
+                    response.headers.get("content-type", ""),
+                )
         except Exception:
             raise _TransportFailure("Hosted request failed") from None
 
@@ -286,12 +319,13 @@ class ClaimConsumption:
 
 @dataclass(frozen=True, slots=True)
 class GrantRefresh:
-    state: Literal["updated", "unknown"]
+    state: Literal["updated", "unknown", "revoked"]
     grant_reference_ids: tuple[str, ...]
     policy: RuntimePolicy | None
 
 
 ProgressDelivery = Literal["delivered", "retry", "refused"]
+GrantCommitGuard = Callable[[], AbstractContextManager[bool]]
 
 
 class HostedGrantClient:
@@ -315,6 +349,15 @@ class HostedGrantClient:
             if trust_set is None
             else trust_set
         )
+
+    def close(self) -> None:
+        """Release the hosted connection pool after outstanding work has stopped."""
+        close = getattr(self._transport, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                raise HostedGrantUnavailable("Hosted transport could not close") from None
 
     def consume_claim(
         self,
@@ -491,6 +534,7 @@ class HostedGrantClient:
                     installation_id=association.installation_id,
                     account_id=association.creator_account_id,
                     key=key,
+                    audience=PROGRESS_PROOF_AUDIENCE,
                 ),
             },
         )
@@ -544,6 +588,7 @@ class HostedGrantClient:
                     installation_id=association.installation_id,
                     account_id=association.creator_account_id,
                     key=key,
+                    audience=PROGRESS_PROOF_AUDIENCE,
                 ),
             },
         )
@@ -579,10 +624,48 @@ class HostedGrantClient:
         identity: AuthContext,
         grant_reference_ids: tuple[str, ...],
         reference_id: str,
+        *,
+        commit_guard: GrantCommitGuard | None = None,
     ) -> GrantRefresh:
-        current_policy = self.runtime_policy(identity, grant_reference_ids)
+        if reference_id not in grant_reference_ids:
+            raise AuthenticationStateError("Verified grant refresh reference is unavailable")
         current = self._store.verified_grant(reference_id)
-        if current is None or reference_id not in grant_reference_ids:
+        refreshed = self.refresh_reference(reference_id, commit_guard=commit_guard)
+        if refreshed.state == "updated":
+            reference_ids = tuple(
+                refreshed.grant_reference_ids[0] if value == reference_id else value
+                for value in grant_reference_ids
+            )
+        elif refreshed.state == "revoked":
+            active_ids = {grant.reference_id for grant in self._store.verified_grants()}
+            reference_ids = tuple(value for value in grant_reference_ids if value in active_ids)
+        else:
+            reference_ids = grant_reference_ids
+        policy = None
+        if reference_ids and (
+            refreshed.state != "revoked"
+            or (current is not None and current.grant_type == "license_entitlement")
+        ):
+            try:
+                policy = self.runtime_policy(identity, reference_ids)
+            except AuthenticationStateError:
+                pass
+        return GrantRefresh(refreshed.state, reference_ids, policy)
+
+    def refresh_reference(
+        self,
+        reference_id: str,
+        *,
+        commit_guard: GrantCommitGuard | None = None,
+    ) -> GrantRefresh:
+        """Refresh installation-bound authority without requiring runtime access."""
+        current = self._store.verified_grant(reference_id)
+        now = self._now()
+        if (
+            current is None
+            or reference_id not in {grant.reference_id for grant in self._store.verified_grants()}
+            or not current.valid_from <= now < current.expires_at
+        ):
             raise AuthenticationStateError("Verified grant refresh reference is unavailable")
         key = self._installation_key.ensure_ready()
         if (
@@ -598,6 +681,7 @@ class HostedGrantClient:
             "purpose": purpose,
             "account_id": account_id,
         }
+        denial: VerifiedGrantDenial | None = None
         try:
             challenge_response = self._request(challenge_path, challenge_request)
             if challenge_response.status_code != 201:
@@ -621,35 +705,82 @@ class HostedGrantClient:
                 ),
             }
             response = self._request(path, envelope)
-            if response.status_code != 200:
+            if response.status_code == 403:
+                denial = self._verified_denial(response, current)
+            elif response.status_code != 200:
                 raise HostedGrantUnavailable("Hosted refresh result is unavailable")
-            document = _response_object(response)
-            token = self._validated_refresh_response(document, current)
-            payload = _untrusted_payload(token)
-            replacement = self._verified_reference(
-                token,
-                payload,
-                grant_type=current.grant_type,
-                organization_id=current.organization_id or "",
-                installation_id=current.installation_id,
-                key=key,
-                external_issuer=current.issuer,
-                external_subject=current.subject,
-                requested_account_ids=(),
-            )
+            else:
+                document = _response_object(response)
+                token = self._validated_refresh_response(document, current)
+                payload = _untrusted_payload(token)
+                replacement = self._verified_reference(
+                    token,
+                    payload,
+                    grant_type=current.grant_type,
+                    organization_id=current.organization_id or "",
+                    installation_id=current.installation_id,
+                    key=key,
+                    external_issuer=current.issuer,
+                    external_subject=current.subject,
+                    requested_account_ids=(),
+                )
+                immutable_fields = {
+                    "installation_grant": (),
+                    "creator_account_binding": (
+                        "creator_account_id", "approval_id", "approval_revision",
+                    ),
+                    "membership_snapshot": ("membership_id",),
+                    "license_entitlement": ("entitlement_id", "product_id"),
+                }[current.grant_type]
+                if replacement.grant_identifier == current.grant_identifier or any(
+                    getattr(replacement, member) != getattr(current, member)
+                    for member in immutable_fields
+                ):
+                    raise GrantVerificationRefused("refresh_context_mismatch")
         except (HostedGrantUnavailable, GrantVerificationRefused, ValueError, KeyError):
-            return GrantRefresh("unknown", grant_reference_ids, current_policy)
+            return GrantRefresh("unknown", (reference_id,), None)
 
-        self._store.replace_verified_grant(reference_id, replacement)
-        replacement_ids = tuple(
-            replacement.reference_id if value == reference_id else value
-            for value in grant_reference_ids
+        with (nullcontext(True) if commit_guard is None else commit_guard()) as allowed:
+            if allowed is not True:
+                return GrantRefresh("unknown", (reference_id,), None)
+            if denial is not None:
+                applied = self._store.apply_hosted_grant_denial(current, denial)
+                if applied == "stale":
+                    # A delayed answer cannot select or withdraw newer authority.
+                    return GrantRefresh("unknown", (reference_id,), None)
+                return GrantRefresh("revoked", (), None)
+            self._store.replace_verified_grant(reference_id, replacement, expected=current)
+        return GrantRefresh("updated", (replacement.reference_id,), None)
+
+    def _verified_denial(
+        self, response: TransportResponse, current: VerifiedGrantReference
+    ) -> VerifiedGrantDenial:
+        document = _response_object(response)
+        token = document.get("denial_jws")
+        if set(document) != {"denial_jws"} or not isinstance(token, str):
+            raise HostedGrantUnavailable("Hosted denial is invalid")
+        subject = _expected_subject(
+            current.grant_type,
+            {"creator_account_id": current.creator_account_id},
+            organization_id=current.organization_id or "",
+            installation_id=current.installation_id,
+            external_issuer=current.issuer,
+            external_subject=current.subject,
         )
-        try:
-            policy = self.runtime_policy(identity, replacement_ids)
-        except AuthenticationStateError:
-            policy = None
-        return GrantRefresh("updated", replacement_ids, policy)
+        result = verify_grant_denial(
+            token,
+            trust_set=self._trust_set,
+            context=GrantDenialVerificationContext(
+                expected_grant_type=current.grant_type,
+                expected_audience=_AUDIENCES[current.grant_type],
+                expected_subject=subject,
+                expected_revoked_jti=current.grant_identifier,
+                verifier_time=int(self._now().timestamp()),
+            ),
+        )
+        if not result.valid or result.denial is None:
+            raise GrantVerificationRefused(result.result)
+        return result.denial
 
     def _request(
         self, path: str, json_body: Mapping[str, object]
@@ -679,13 +810,13 @@ class HostedGrantClient:
         self,
         *,
         installation_id: str,
-        purpose: str,
+        purpose: Literal["creator-association-request", "creator-association-status"],
         account_id: str,
     ) -> str:
         response = self._request(
             f"/v1/installations/{installation_id}/proof-challenges",
             {
-                "profile": PROOF_PROFILE,
+                "profile": PROGRESS_PROOF_PROFILE,
                 "purpose": purpose,
                 "account_id": account_id,
             },
@@ -696,6 +827,8 @@ class HostedGrantClient:
             _response_object(response),
             installation_id=installation_id,
             purpose=purpose,
+            profile=PROGRESS_PROOF_PROFILE,
+            audience=PROGRESS_PROOF_AUDIENCE,
         )
 
     def _association_membership(
@@ -726,6 +859,7 @@ class HostedGrantClient:
         status: Literal["pending", "approved"],
         binding: bool,
     ) -> CreatorAssociationStatus:
+        updated_at = document.get("updated_at")
         expected = {
             "profile",
             "association_request_id",
@@ -745,7 +879,7 @@ class HostedGrantClient:
             or document.get("installation_id") != association.installation_id
             or document.get("creator_account_id") != association.creator_account_id
             or document.get("status") != status
-            or not isinstance(document.get("updated_at"), str)
+            or not isinstance(updated_at, str)
             or (
                 document.get("creator_account_binding") is not None
                 if not binding
@@ -753,7 +887,7 @@ class HostedGrantClient:
             )
         ):
             raise HostedGrantUnavailable("Hosted creator association is invalid")
-        return CreatorAssociationStatus(document["updated_at"])
+        return CreatorAssociationStatus(updated_at)
 
     def _proof(
         self,
@@ -779,8 +913,8 @@ class HostedGrantClient:
             audience.encode("ascii"),
         )
         canonical = bytearray(_PROOF_DOMAIN)
-        for field in fields:
-            canonical += struct.pack("!I", len(field)) + field
+        for value in fields:
+            canonical += struct.pack("!I", len(value)) + value
         proof = self._installation_key.sign_challenge(bytes(canonical))
         if (
             proof.installation_key_id != key.installation_key_id
@@ -825,6 +959,9 @@ class HostedGrantClient:
     def _validated_progress_challenge(
         document: Mapping[str, object], *, installation_id: str
     ) -> str:
+        challenge = document.get("challenge")
+        issued_at = document.get("issued_at")
+        expires_at = document.get("expires_at")
         expected = {
             "profile",
             "purpose",
@@ -840,14 +977,13 @@ class HostedGrantClient:
             or document.get("purpose") != "onboarding-progress-report"
             or document.get("installation_id") != installation_id
             or document.get("audience") != PROGRESS_PROOF_AUDIENCE
-            or not isinstance(document.get("challenge"), str)
-            or not isinstance(document.get("issued_at"), str)
-            or _TIMESTAMP_RE.fullmatch(document["issued_at"]) is None
-            or not isinstance(document.get("expires_at"), str)
-            or _TIMESTAMP_RE.fullmatch(document["expires_at"]) is None
+            or not isinstance(challenge, str)
+            or not isinstance(issued_at, str)
+            or _TIMESTAMP_RE.fullmatch(issued_at) is None
+            or not isinstance(expires_at, str)
+            or _TIMESTAMP_RE.fullmatch(expires_at) is None
         ):
             raise HostedGrantUnavailable("Hosted progress challenge is invalid")
-        challenge = document["challenge"]
         _decode_32(challenge)
         return challenge
 
@@ -855,6 +991,7 @@ class HostedGrantClient:
     def _validated_progress_response(
         document: Mapping[str, object], event: OnboardingProgressEvent
     ) -> None:
+        recorded_at = document.get("recorded_at")
         if (
             set(document)
             != {"profile", "event_id", "milestone", "status", "recorded_at"}
@@ -862,8 +999,8 @@ class HostedGrantClient:
             or document.get("event_id") != event.event_id
             or document.get("milestone") != event.milestone
             or document.get("status") not in {"recorded", "duplicate"}
-            or not isinstance(document.get("recorded_at"), str)
-            or _TIMESTAMP_RE.fullmatch(document["recorded_at"]) is None
+            or not isinstance(recorded_at, str)
+            or _TIMESTAMP_RE.fullmatch(recorded_at) is None
         ):
             raise HostedGrantUnavailable("Hosted progress response is invalid")
 
@@ -1069,7 +1206,10 @@ class HostedGrantClient:
         *,
         installation_id: str,
         purpose: str,
+        profile: str = PROOF_PROFILE,
+        audience: str = PROOF_AUDIENCE,
     ) -> str:
+        challenge = document.get("challenge")
         if (
             set(document)
             != {
@@ -1081,16 +1221,15 @@ class HostedGrantClient:
                 "issued_at",
                 "expires_at",
             }
-            or document.get("profile") != PROOF_PROFILE
+            or document.get("profile") != profile
             or document.get("purpose") != purpose
             or document.get("installation_id") != installation_id
-            or document.get("audience") != PROOF_AUDIENCE
-            or not isinstance(document.get("challenge"), str)
+            or document.get("audience") != audience
+            or not isinstance(challenge, str)
             or not isinstance(document.get("issued_at"), str)
             or not isinstance(document.get("expires_at"), str)
         ):
             raise HostedGrantUnavailable("Hosted refresh challenge is invalid")
-        challenge = document["challenge"]
         _decode_32(challenge)
         return challenge
 
@@ -1144,6 +1283,7 @@ class HostedGrantClient:
     def _validated_refresh_response(
         document: Mapping[str, object], current: VerifiedGrantReference
     ) -> str:
+        grant = document.get("grant")
         if (
             set(document)
             != {
@@ -1159,12 +1299,12 @@ class HostedGrantClient:
             or document.get("grant_type") != current.grant_type
             or document.get("previous_jti") != current.grant_identifier
             or not isinstance(document.get("request_id"), str)
-            or not isinstance(document.get("grant"), str)
+            or not isinstance(grant, str)
             or not isinstance(document.get("server_time"), str)
             or not isinstance(document.get("refresh_after"), str)
         ):
             raise HostedGrantUnavailable("Hosted refresh response is invalid")
-        return document["grant"]
+        return grant
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -1192,11 +1332,22 @@ def _contract_timestamp(value: datetime) -> str:
 
 def _response_object(response: TransportResponse) -> dict[str, object]:
     try:
-        value = json.loads(response.body.decode("utf-8"))
-    except (UnicodeError, json.JSONDecodeError):
+        value = json.loads(
+            response.body.decode("utf-8"), object_pairs_hook=_unique_json_object
+        )
+    except (UnicodeError, ValueError, RecursionError):
         raise HostedGrantUnavailable("Hosted response is invalid") from None
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise HostedGrantUnavailable("Hosted response is invalid")
+    return value
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, member in pairs:
+        if key in value:
+            raise ValueError("Duplicate response member")
+        value[key] = member
     return value
 
 
