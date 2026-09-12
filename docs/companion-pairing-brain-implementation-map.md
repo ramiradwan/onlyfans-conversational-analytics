@@ -1,6 +1,6 @@
 # Brain companion-pairing implementation map
 
-<!-- CODE-VERIFY: Check app/persistence/auth.py, app/persistence/companion_pairing.py, auth_sql/0010_companion_grant_retention.sql, auth_sql/0011_companion_pairing_persistence.sql, app/security/hosted_grants.py, grant_types.py, and the vendored companion profile. -->
+<!-- CODE-VERIFY: Check app/persistence/auth.py, app/persistence/companion_pairing.py, auth_sql/0010_companion_grant_retention.sql, auth_sql/0011_companion_pairing_persistence.sql, app/security/companion_pairing_proof.py, app/security/hosted_grants.py, grant_types.py, and the vendored companion profile. -->
 
 This note maps ADR 0024 and the vendored `urn:bridge-clean:companion-pairing:v1` profile onto Brain security and persistence owners.
 
@@ -38,6 +38,10 @@ The four failure states (`declined`, `cancelled`, `expired`, `revoked`) require 
 `confirmed` remains staging state until a separate admission transition atomically writes the durable Agent pin into `agent_pairings`. Production orchestration must authenticate window creation, verify proofs before advancing to confirmation, cancel on a second pairing request, and consume the confirmed candidate in the admission transaction. Persistence alone does not implement those transport operations.
 
 ## Transport qualification
+
+`app/security/companion_pairing_proof.py` owns the fixed binary pairing transcript, grant digest, role-separated ES256 proofs, comparison code, and Noise prologue. It binds the exact retained grants to their shared identity metadata and the active installation-key reference, and validates the public keys, nonces, and generation bounds. Brain signing uses `InstallationKeyAuthority.sign_challenge()`; the provider's result is verified against the referenced public key before it is returned. Agent proof verification requires canonical unpadded base64url and low-S P1363 signatures.
+
+`tests/test_companion_pairing_proof.py` verifies the vendored snapshot before reading its vectors and exercises the production proof module through the existing installation-key authority with a test provider. Grant currentness, revocation, account approval, and the commit fence remain the persistence and orchestration callers' responsibility.
 
 `Noise_KK_25519_ChaChaPoly_SHA256` qualifies as a frozen-Brain transport under `tools/native-snow-brain-spike/`. Production pairing routing and session integration remain separate from persistence.
 
