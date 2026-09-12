@@ -4,7 +4,7 @@ import base64
 import hashlib
 import json
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
@@ -79,9 +79,9 @@ def _proof_purpose(canonical: bytes) -> str:
 
 @dataclass(frozen=True)
 class SignedBundle:
-    tokens: dict[str, str]
-    creator_bindings: dict[str, str]
-    replacement_membership: str
+    tokens: dict[str, str] = field(repr=False)
+    creator_bindings: dict[str, str] = field(repr=False)
+    replacement_membership: str = field(repr=False)
     trust_set: dict[str, object]
     installation_key: InstallationKeyReference
 
@@ -1039,3 +1039,110 @@ def _payload(token: str) -> dict[str, Any]:
     return json.loads(
         base64.urlsafe_b64decode(encoded + "=" * ((4 - len(encoded) % 4) % 4))
     )
+
+
+def _check_retained_secret(actual: str | None, expected: str) -> None:
+    import secrets
+
+    if actual is None or not secrets.compare_digest(actual, expected):
+        pytest.fail("retained verified token mismatch", pytrace=False)
+
+
+def _check_secret_not_rendered(secret: str, rendered: str) -> None:
+    if secret in rendered:
+        pytest.fail("verified token exposed", pytrace=False)
+
+
+def test_acquisition_retains_only_exact_pairing_grants(
+    tmp_path, bundle, claim, identity, device, caplog
+):
+    client, store, _, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device, identity=identity)
+    for reference_id in consumed.grant_reference_ids:
+        reference = store.verified_grant(reference_id)
+        if reference.grant_type == "installation_grant":
+            _check_retained_secret(
+                reference.compact_jws, bundle.tokens[reference.grant_type]
+            )
+        else:
+            assert reference.compact_jws is None
+    association = _association(request_id="0198a1b2-c3d4-7800-8000-000000000001")
+    client.request_creator_association(association)
+    binding = client.acquire_creator_account_binding(
+        association, membership_reference_id=consumed.grant_reference_ids[1]
+    )
+    store.record_verified_grant(binding)
+    _check_retained_secret(
+        store.verified_grant(binding.reference_id).compact_jws,
+        bundle.creator_bindings[_ACCOUNT_ID],
+    )
+    for token in (*bundle.tokens.values(), *bundle.creator_bindings.values()):
+        _check_secret_not_rendered(token, caplog.text)
+        _check_secret_not_rendered(token, repr(store.verified_grants()))
+        _check_secret_not_rendered(token, repr(bundle))
+
+
+@pytest.mark.parametrize(
+    "tampered", [False, True], ids=["verified", "invalid-signature"]
+)
+def test_pairing_grant_refresh_retains_verified_replacement_only(
+    tmp_path, bundle, claim, identity, device, monkeypatch, caplog, tampered
+):
+    # A second independently generated authorized signer supplies the replacement.
+    signer = ec.generate_private_key(ec.SECP256R1())
+    entry = _trust_entry("installation-binding", signer)
+    bundle.trust_set["keys"].append(entry)
+    claims = _payload(bundle.tokens["installation_grant"])
+    previous_jti = claims["jti"]
+    claims["jti"] = "0198a1b2-c3d4-7100-8000-000000000099"
+    replacement = _token(
+        claims, "urn:bridge-clean:grant:installation:v1", entry["jwk"], signer
+    )
+    if tampered:
+        replacement = _tamper_signature(replacement)
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device, identity=identity)
+    previous_id = consumed.grant_reference_ids[0]
+    transport.refresh_mode = "success"
+    original_request = transport.request
+
+    def request(method, path, *, json_body):
+        # Refresh sends metadata/proof, never the retained grant as a credential.
+        _check_secret_not_rendered(
+            bundle.tokens["installation_grant"], json.dumps(json_body)
+        )
+        if path == "/v1/grants/installation:refresh":
+            return _json_response(
+                200,
+                {
+                    "profile": REFRESH_PROFILE,
+                    "request_id": "0198a1b2-c3d4-7500-8000-000000000001",
+                    "grant_type": "installation_grant",
+                    "previous_jti": previous_jti,
+                    "grant": replacement,
+                    "server_time": "2026-07-18T00:01:00.000Z",
+                    "refresh_after": "2026-07-18T06:01:00.000Z",
+                },
+            )
+        return original_request(method, path, json_body=json_body)
+
+    monkeypatch.setattr(transport, "request", request)
+    refreshed = client.refresh_grant(
+        identity, consumed.grant_reference_ids, previous_id
+    )
+    if tampered:
+        assert refreshed.state == "unknown"
+        _check_retained_secret(
+            store.verified_grant(previous_id).compact_jws,
+            bundle.tokens["installation_grant"],
+        )
+    else:
+        assert refreshed.state == "updated"
+        assert store.verified_grant(previous_id).compact_jws is None
+        _check_retained_secret(
+            store.verified_grant(refreshed.grant_reference_ids[0]).compact_jws,
+            replacement,
+        )
+    for secret in (replacement, bundle.tokens["installation_grant"]):
+        _check_secret_not_rendered(secret, caplog.text)
+        _check_secret_not_rendered(secret, repr(store.verified_grants()))

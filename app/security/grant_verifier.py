@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from contracts.loader import load_trust_set
+from app.security.grant_types import MAX_GRANT_CHARACTERS
 
 
 _P256_ORDER = int(
@@ -250,7 +251,12 @@ def verify_grant(
     profile = _PROFILES.get(context.expected_grant_type)
     if profile is None:
         return _outcome(False, "unsupported_grant_type")
-    if not isinstance(token, str) or len(token) > 16_384 or token.count(".") != 2:
+    if (
+        not isinstance(token, str)
+        or not token.isascii()
+        or len(token) > MAX_GRANT_CHARACTERS
+        or token.count(".") != 2
+    ):
         return _outcome(False, "invalid_compact_jws")
     try:
         header_segment, payload_segment, signature_segment = token.split(".")

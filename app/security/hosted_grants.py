@@ -27,7 +27,11 @@ from app.security.grant_verifier import (
     load_pinned_trust_set,
     verify_grant,
 )
-from app.security.grant_types import HOSTED_CLAIM_GRANT_TYPES
+from app.security.grant_types import (
+    AGENT_PAIRING_GRANT_TYPES,
+    HOSTED_CLAIM_GRANT_TYPES,
+    MAX_GRANT_CHARACTERS,
+)
 from app.security.installation_key import InstallationProof
 from app.security.runtime_policy import AuthContext, RuntimePolicy
 
@@ -989,7 +993,13 @@ class HostedGrantClient:
         result = verify_grant(token, context=context, trust_set=self._trust_set)
         if not result.valid:
             raise GrantVerificationRefused(result.result)
+        if not token.isascii() or len(token) > MAX_GRANT_CHARACTERS:
+            raise GrantVerificationRefused("invalid_compact_jws")
         digest = hashlib.sha256(token.encode("ascii")).digest()
+        # Only the two pairing grant types travel in a companion
+        # `session.authorization`, so only those are retained; every other
+        # grant type keeps the digest alone.
+        retained = token if grant_type in AGENT_PAIRING_GRANT_TYPES else None
         valid_from = datetime.fromtimestamp(_required_int(payload, "nbf"), timezone.utc)
         signed_expiry = datetime.fromtimestamp(_required_int(payload, "exp"), timezone.utc)
         creator_account_id = (
@@ -1050,6 +1060,7 @@ class HostedGrantClient:
             ),
             allowed_creator_account_ids=allowed_accounts,
             membership_roles=membership_roles,
+            compact_jws=retained,
         )
 
     @staticmethod

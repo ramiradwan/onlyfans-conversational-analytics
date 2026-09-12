@@ -1,5 +1,7 @@
 # Brain companion-pairing implementation map
 
+<!-- CODE-VERIFY: Check app/persistence/auth.py, auth_sql/0010_companion_grant_retention.sql, app/security/hosted_grants.py, grant_types.py, and the vendored companion profile for retention ownership and bounds. -->
+
 This note maps ADR 0024 and the vendored `urn:bridge-clean:companion-pairing:v1` profile onto the Brain security and storage owners that exist today. It describes ownership only; it does not change runtime behavior.
 
 ## Existing security/storage owners
@@ -19,7 +21,7 @@ This note maps ADR 0024 and the vendored `urn:bridge-clean:companion-pairing:v1`
 
 | State/capability | Owner |
 | --- | --- |
-| pairing window state and CAS version | `AgentPairing` in `app/persistence/auth.py` + `app/persistence/auth_sql/0010_*.sql` extending `agent_pairings` |
+| pairing window state and CAS version | `AgentPairing` in `app/persistence/auth.py` + `app/persistence/auth_sql/0011_*.sql` extending `agent_pairings` |
 | installation `highest_pairing_generation` | `app/persistence/auth.py` + the same auth migration |
 | wrapped Brain Noise private key | wrapper: `app/security/local_data_key.py`; ciphertext/state: `app/persistence/auth.py` + the same auth migration |
 | durable Agent pin | the existing `AgentPairing.public_key` / `key_fingerprint` columns |
@@ -31,7 +33,7 @@ This note maps ADR 0024 and the vendored `urn:bridge-clean:companion-pairing:v1`
 
 ## Transport qualification gate
 
-The Noise codec row above is gated, not scheduled. `Noise_KK_25519_ChaChaPoly_SHA256` must first qualify as a frozen-Brain transport under `tools/native-snow-brain-spike/`: an upstream Snow build that survives PyInstaller freezing, interoperates with the extension's MV3 WASM peer, agrees with an independent oracle, and rebuilds to identical bytes from the pinned lock. Until that qualification passes on Windows CI, no Brain Noise implementation lands and no pairing route depends on one.
+`Noise_KK_25519_ChaChaPoly_SHA256` qualifies as a frozen-Brain transport under `tools/native-snow-brain-spike/`: an upstream Snow build that survives PyInstaller freezing, interoperates with the extension's MV3 WASM peer, agrees with an independent oracle, and rebuilds to identical bytes from the pinned lock. [Run 34678991700](https://github.com/ramiradwan/onlyfans-conversational-analytics/actions/runs/34678991700) provides that evidence at `e279340af9e9ec2e8d51bd571992bb9588bcbeb5`. Production pairing routing and session integration remain separate implementation steps.
 
 ## Record sizes
 
@@ -39,12 +41,15 @@ Sizes come from `contracts/companion-pairing-profile/profile.json` and are recom
 
 ## Grant-byte retention required before pairing admission
 
-`VerifiedGrantReference` retains the SHA-256 digest of the exact compact JWS, which is enough to reproduce the contract transcript's grant-digest construction. It does not retain the compact JWS string itself, which `pair.offer` and the encrypted `session.authorization` must transmit.
+`VerifiedGrantReference` retains the SHA-256 digest and, for the two companion grant types, the exact verified compact JWS required by `pair.offer` and encrypted `session.authorization`. Other hosted grant types retain only their existing metadata and digest.
 
-The implementation extends `VerifiedGrantReference` and the SQLCipher-protected `auth.sqlite3` schema to retain the verified compact JWS on acquisition and refresh, under these bounds:
+`app/persistence/auth_sql/0010_companion_grant_retention.sql` adds a nullable compact-JWS column to the SQLCipher-protected `auth.sqlite3` schema. Acquisition and refresh persist it atomically with the verified digest and metadata, under these bounds:
 
-- Length is capped at the contract's 16,384-character grant limit. Verification refuses a longer token instead of storing it, so a grant that could never fit an authorization record is never retained.
+- Only ASCII compact JWS is retained, capped at the contract's 16,384-character grant limit. The store verifies that its SHA-256 matches the recorded digest.
 - The stored column is secret material: it is redacted from logs, diagnostics, support bundles and any export path, which carry the existing `grant_digest` instead.
 - It is cleared when the grant is superseded by refresh and when its revocation scope advances, so the retained set never outlives the current grant.
+- Provisioning replay preserves retention state and cannot restore bytes cleared by revocation. A fresh replacement grant is required.
 
 Pre-migration rows remain usable for existing ADR 0008 behavior but are not eligible for companion pairing until refreshed, because a digest cannot reconstruct the wire token. This stays within the existing local authorization-storage boundary and needs no hosted pairing endpoint and no second security database.
+
+The companion-grant eligibility predicate checks retention and currentness. Final pairing admission must also recheck the existing account and identity constraints in its own transaction. The future pairing-state migration is `0011_*.sql`; retention does not install a companion route or change existing ADR 0008 pairing behavior.

@@ -7,7 +7,7 @@ import json
 import re
 import secrets
 from app.persistence import sqlite_api as sqlite3
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -21,6 +21,7 @@ from app.security.grant_types import (
     AGENT_PAIRING_GRANT_TYPES,
     CREATOR_ACCOUNT_BINDING,
     LICENSE_ENTITLEMENT,
+    MAX_GRANT_CHARACTERS,
 )
 from app.security.runtime_policy import (
     AuthContext,
@@ -104,6 +105,13 @@ class VerifiedGrantReference:
     product_id: str | None = None
     allowed_creator_account_ids: tuple[str, ...] | None = None
     membership_roles: tuple[str, ...] | None = None
+    # The exact verified compact JWS. Companion pairing binds a Noise session to
+    # these bytes, so they are retained as secret data: never rendered, logged,
+    # exported, or carried into exception text. References recorded before
+    # retention existed hold None and cannot pair until refreshed.
+    # Equality uses the verified digest; diagnostic field comparisons must not
+    # expand the secret bytes either.
+    compact_jws: str | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -444,6 +452,8 @@ class AuthenticationStore(Protocol):
     ) -> VerifiedGrantReference | None: ...
 
     def verified_grants(self) -> tuple[VerifiedGrantReference, ...]: ...
+
+    def companion_pairing_grants_are_eligible(self, grants: tuple[str, ...]) -> bool: ...
 
     def register_agent_pairing(self, pairing: AgentPairing) -> None: ...
 
@@ -879,10 +889,17 @@ class SQLiteAuthenticationStore:
                         "SELECT * FROM verified_grant_references WHERE reference_id = ?",
                         (grant.reference_id,),
                     ).fetchone()
-                    if row is None or replace(
-                        _verified_grant_reference(row), verified_at=grant.verified_at
+                    existing = (
+                        None if row is None else _verified_grant_reference(row)
+                    )
+                    if existing is None or replace(
+                        existing,
+                        verified_at=grant.verified_at,
                     ) != grant:
                         raise
+                    # Replays preserve retention state. NULL may mean that a
+                    # broader revocation scope cleared the bytes; only a fresh
+                    # replacement grant may restore companion eligibility.
                 if not self._approve_provisioning_candidate_in_transaction(
                     connection,
                     association_request_id,
@@ -962,6 +979,17 @@ class SQLiteAuthenticationStore:
             )
         if grant.approval_revision is not None and grant.approval_revision <= 0:
             raise ValueError("approval revision must be positive")
+        token = grant.compact_jws
+        if token is None:
+            return
+        if not isinstance(token, str) or not token.isascii():
+            raise ValueError("retained grant must be a compact JWS")
+        if len(token) > MAX_GRANT_CHARACTERS:
+            raise ValueError("retained grant exceeds the contract maximum")
+        if re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", token) is None:
+            raise ValueError("retained grant must be a compact JWS")
+        if hashlib.sha256(token.encode("ascii")).hexdigest() != grant.grant_digest:
+            raise ValueError("retained grant digest does not match")
 
     @staticmethod
     def _insert_verified_grant(
@@ -993,8 +1021,8 @@ class SQLiteAuthenticationStore:
                 valid_from, expires_at, verified_at, organization_id,
                 installation_key_id, installation_key_jkt, membership_id,
                 approval_id, approval_revision, entitlement_id, product_id,
-                allowed_creator_account_ids, membership_roles
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                allowed_creator_account_ids, membership_roles, compact_jws
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 grant.reference_id,
@@ -1018,6 +1046,7 @@ class SQLiteAuthenticationStore:
                 grant.product_id,
                 allowed_accounts,
                 membership_roles,
+                grant.compact_jws,
             ),
         )
         SQLiteAuthenticationStore._ensure_scope(
@@ -1657,10 +1686,31 @@ class SQLiteAuthenticationStore:
         }.get(key.scope_type)
         if direct_table is not None:
             table, id_column = direct_table
+            # A revoked grant may no longer authorize a companion session, so the
+            # retained bytes are erased by the statement that revokes it. Refresh
+            # supersedes through this path too, leaving only the replacement current.
+            cleared = (
+                ", compact_jws = NULL"
+                if table == "verified_grant_references"
+                else ""
+            )
             connection.execute(
-                f"UPDATE {table} SET revoked_at = COALESCE(revoked_at, ?) "
+                f"UPDATE {table} SET revoked_at = COALESCE(revoked_at, ?){cleared} "
                 f"WHERE {id_column} = ?",
                 (timestamp, key.scope_id),
+            )
+        # A scope that advances over a grant withdraws that grant's authority to
+        # open a companion session, so its retained bytes go with it even though
+        # the reference itself stays the authorization record it always was.
+        scoped_column = {
+            RevocationScopeType.CREATOR_ACCOUNT: "creator_account_id",
+            RevocationScopeType.INSTALLATION: "installation_id",
+        }.get(key.scope_type)
+        if scoped_column is not None:
+            connection.execute(
+                f"UPDATE verified_grant_references SET compact_jws = NULL "
+                f"WHERE {scoped_column} = ? AND compact_jws IS NOT NULL",
+                (key.scope_id,),
             )
         return self._revocation_version(connection, key)
 
@@ -1986,6 +2036,56 @@ class SQLiteAuthenticationStore:
             raise AuthenticationStateError(
                 "Required verified grant reference types are missing"
             )
+
+    def companion_pairing_grants_are_eligible(
+        self, grants: tuple[str, ...]
+    ) -> bool:
+        """Report whether these grants can authorize a companion session.
+
+        A companion session transmits the grants themselves, so a digest is
+        not enough: both required grant types must hold retained bytes. A
+        reference recorded before retention existed keeps every authority
+        ADR 0008 gives it and is simply not eligible until it is refreshed.
+        This is a retention/currentness precondition, not account or identity
+        authorization; companion admission must recheck those in its transaction.
+        """
+
+        with self.database.read() as connection:
+            try:
+                self._require_retained_pairing_grants(
+                    connection, _unique(grants), self._now()
+                )
+            except AuthenticationStateError:
+                return False
+            return True
+
+    def _require_retained_pairing_grants(
+        self, connection: sqlite3.Connection, grants: tuple[str, ...], now: datetime
+    ) -> None:
+        self._require_grants_current(connection, grants, now)
+        found = SQLiteAuthenticationStore._retained_pairing_grant_types(
+            connection, grants
+        )
+        if not set(AGENT_PAIRING_GRANT_TYPES) <= found:
+            raise AuthenticationStateError(
+                "Companion pairing requires refreshed verified grants"
+            )
+
+    @staticmethod
+    def _retained_pairing_grant_types(
+        connection: sqlite3.Connection, grants: tuple[str, ...]
+    ) -> set[str]:
+        return {
+            str(row["grant_type"])
+            for reference_id in grants
+            for row in connection.execute(
+                """
+                SELECT grant_type FROM verified_grant_references
+                WHERE reference_id = ? AND compact_jws IS NOT NULL
+                """,
+                (reference_id,),
+            ).fetchall()
+        }
 
     @staticmethod
     def _grants_are_current(
@@ -3201,6 +3301,9 @@ def _verified_grant_reference(row: sqlite3.Row) -> VerifiedGrantReference:
         ),
         allowed_creator_account_ids=allowed_accounts,
         membership_roles=membership_roles,
+        compact_jws=(
+            None if row["compact_jws"] is None else str(row["compact_jws"])
+        ),
     )
 
 

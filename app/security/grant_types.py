@@ -20,6 +20,9 @@ MEMBERSHIP_SNAPSHOT = "membership_snapshot"
 CREATOR_ACCOUNT_BINDING = "creator_account_binding"
 LICENSE_ENTITLEMENT = "license_entitlement"
 
+# Shared verifier/retention bound; checked against the companion profile in tests.
+MAX_GRANT_CHARACTERS = 16_384
+
 # Installation identity and the person holding it. An installation that has
 # authorized no account satisfies this set, so it activates during setup.
 ACTIVATION_GRANT_TYPES = (INSTALLATION_GRANT, MEMBERSHIP_SNAPSHOT)
