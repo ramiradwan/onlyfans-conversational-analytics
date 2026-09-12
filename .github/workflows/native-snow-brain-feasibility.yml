@@ -192,7 +192,8 @@ jobs:
         shell: pwsh
         run: |
           $wheelhouse = Join-Path $env:RUNNER_TEMP "production-companion-sqlcipher"
-          .\packaging\sqlcipher\build-fixed-wheel.ps1 -BuildPython (Get-Command python.exe).Source -Wheelhouse $wheelhouse
+          $buildRoot = Join-Path $env:RUNNER_TEMP "production-companion-sqlcipher-build"
+          .\packaging\sqlcipher\build-fixed-wheel.ps1 -BuildPython (Get-Command python.exe).Source -Wheelhouse $wheelhouse -WorkRoot $buildRoot
           $venv = Join-Path $env:RUNNER_TEMP "production-companion-venv"
           python -m venv $venv
           $python = Join-Path $venv "Scripts\python.exe"
