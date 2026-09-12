@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
-APPROVED_SOURCE_COMMIT = "c335404b2bd1238950192c923671478062c9b92c"
+APPROVED_SOURCE_COMMIT = "a16096cf776646f4ce1efdf08fe7fb078d330d2e"
 EXPORT_SET = [
     "grant-profile-v1",
     "capability-permit-v1",
