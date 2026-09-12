@@ -6,7 +6,7 @@ import { snowKeypairGenerator } from '../../../runtime/companion-agent-identity.
 
 test('Snow CSPRNG generates independent static keys with matching X25519 public keys', async () => {
   await loadWasm();
-  const wasm = await import('../pkg/ofca_snow_wasm_spike.js');
+  const wasm = await import('../../../vendor/companion-snow/ofca_snow_wasm.js');
   const generate = snowKeypairGenerator(wasm.generate_static_keypair);
   const first = generate(), second = generate();
   try {

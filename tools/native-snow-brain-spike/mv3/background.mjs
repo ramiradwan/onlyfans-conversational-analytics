@@ -1,4 +1,4 @@
-import init, { SnowSession } from './pkg/ofca_snow_wasm_spike.js';
+import init, { SnowSession } from './pkg/ofca_snow_wasm.js';
 import { sessionPrologue, fromHex, toHex } from './noise-binding.mjs';
 import {
   PAIRING_DIGEST_HEX,

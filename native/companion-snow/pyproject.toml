@@ -4,9 +4,11 @@ build-backend = "maturin"
 
 [project]
 name = "ofca-native-snow"
-version = "0.0.0"
-requires-python = ">=3.11,<3.12"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+license-files = ["THIRD_PARTY_NOTICES.txt"]
 
 [tool.maturin]
 module-name = "ofca_native_snow"
 features = ["pyo3/extension-module"]
+locked = true

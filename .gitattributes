@@ -22,7 +22,12 @@ shared/legal/*.json text eol=lf
 
 # Native Snow qualification lock is a reviewed supply-chain input and must be
 # byte-identical across Windows and non-Windows checkouts.
-tools/native-snow-brain-spike/Cargo.lock text eol=lf
+native/companion-snow/** text eol=lf
+extension/crypto/snow/** text eol=lf
+extension/vendor/companion-snow/*.js text eol=lf
+extension/vendor/companion-snow/*.json text eol=lf
+extension/vendor/companion-snow/*.txt text eol=lf
+extension/vendor/companion-snow/*.wasm binary
 
 # A Legal instrument bindings document is stored in its canonical form and is
 # digested as the bytes it is read as, so it is never rewritten on checkout.
@@ -31,3 +36,7 @@ extension/tests/fixtures/legal-instrument-bindings*.json -text
 # Fixture cases are generated review noise; manifests, pins, schemas, docs, and
 # loaders remain visible because they define the reviewable contract boundary.
 contracts/grant-profile-v1/*/*/** linguist-generated=true
+
+# Generated upstream license notices retain their original internal whitespace.
+native/companion-snow/THIRD_PARTY_NOTICES.txt -whitespace
+extension/vendor/companion-snow/THIRD_PARTY_NOTICES.txt -whitespace

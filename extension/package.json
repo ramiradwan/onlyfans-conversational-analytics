@@ -7,6 +7,8 @@
     "check:architecture": "depcruise --config .dependency-cruiser.cjs capture protocol transport runtime",
     "build": "node build.mjs",
     "audit": "node build.mjs --audit",
+    "build:snow": "node crypto/snow/build.mjs",
+    "verify:snow": "node crypto/snow/build.mjs --check",
     "package:chrome": "node build.mjs --package",
     "audit:chrome": "node build.mjs --audit-package",
     "test:browser:release": "playwright test --config qualification/playwright.config.mjs",

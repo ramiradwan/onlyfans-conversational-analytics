@@ -1,6 +1,6 @@
 [package]
-name = "ofca-snow-wasm-spike"
-version = "0.0.0"
+name = "ofca-snow-wasm"
+version = "0.1.0"
 edition = "2024"
 publish = false
 license = "MIT"
