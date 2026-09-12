@@ -15,7 +15,7 @@ test('release manifest and package agree on the frozen-tab compatibility floor a
   assert.equal(manifest.minimum_chrome_version, '132');
   assert.equal(manifest.version, packageDocument.version);
   assert.deepEqual(manifest.optional_host_permissions, [
-    'https://onlyfans.com/*', 'https://bridge.localhost:17871/*',
+    'https://onlyfans.com/*',
   ]);
 });
 
@@ -51,9 +51,10 @@ test('release extraction rejects traversal, Windows drive and stream paths, and 
 test('popup smoke evidence cannot promote a release without exact-ZIP production acceptance', () => {
   const expected = { artifactDigest: 'a'.repeat(64), sourceRevision: 'b'.repeat(40), currentMajor: 145 };
   const valid = {
-    schema: 'ofca-extension-release-acceptance/v1', artifact_sha256: expected.artifactDigest,
-    source_revision: expected.sourceRevision, companion_origin: 'https://bridge.localhost:17871',
-    certificate_verification: 'browser_trusted', authentication: 'verified', permission_prompt: 'native',
+    schema: 'ofca-extension-release-acceptance/v2', artifact_sha256: expected.artifactDigest,
+    source_revision: expected.sourceRevision, companion_transport: 'ws://127.0.0.1:17871/ws/agent',
+    cryptographic_session: 'Noise_KK_25519_ChaChaPoly_SHA256', pairing: 'verified_grants_and_comparison',
+    ambient_credentials: 'absent', authentication: 'verified', permission_prompt: 'native',
     bypasses_used: false, companion_version: 'test-version', tester: 'test reviewer', performed_at: '2026-09-11T00:00:00Z',
     browsers: [132, 145].map((major) => ({ major, installation: 'supported', scenarios:
       RELEASE_SCENARIOS.map((id) => ({ id, result: 'passed', evidence: `local-report:${id}` })) })),
@@ -61,6 +62,9 @@ test('popup smoke evidence cannot promote a release without exact-ZIP production
   validateAcceptanceEvidence(valid, expected);
   assert.throws(() => validateAcceptanceEvidence({ ...valid, artifact_sha256: 'c'.repeat(64) }, expected));
   assert.throws(() => validateAcceptanceEvidence({ ...valid, bypasses_used: true }, expected));
+  assert.throws(() => validateAcceptanceEvidence({ ...valid, pairing: 'first_listener' }, expected));
+  assert.throws(() => validateAcceptanceEvidence({ ...valid, ambient_credentials: 'present' }, expected));
+  assert.throws(() => validateAcceptanceEvidence({ ...valid, cryptographic_session: 'plaintext' }, expected));
   assert.throws(() => validateAcceptanceEvidence({ ...valid, browsers: [...valid.browsers, valid.browsers[0]] }, expected));
   assert.throws(() => validateAcceptanceEvidence(valid, { ...expected, currentMajor: 132 }));
   const missing = structuredClone(valid);

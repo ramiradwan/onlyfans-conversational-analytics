@@ -28,9 +28,8 @@ Automation uses persistent Chromium contexts and real popup actions. It covers
 fresh install with no permissions, legal choices while analytics stays off,
 absence of HTTP requests during the observed popup actions, and deletion followed by reacceptance in
 the same worker. `OFCA_HEADLESS=1` selects headless Chromium. These tests do not
-inject consent, replace the permission API, or bypass certificate verification.
-The network observation starts after browser launch; startup traffic and TLS
-handshakes remain part of recorded production acceptance.
+inject consent or replace the permission API. The network observation starts
+after browser launch; startup traffic remains part of recorded production acceptance.
 See [Playwright's extension setup](https://playwright.dev/docs/chrome-extensions).
 
 Browser smoke tests alone do not qualify a release. Before promotion the runner
@@ -42,10 +41,12 @@ without automation bypasses. The required scenario IDs are exported by
 This records human qualification, not a substitute claim that the unit-test
 fixtures exercised the production platform.
 
-The acceptance document uses schema `ofca-extension-release-acceptance/v1` and
+The acceptance document uses schema `ofca-extension-release-acceptance/v2` and
 contains `artifact_sha256`, `source_revision`, `tester`, `performed_at`,
-`companion_version`, `companion_origin` (`https://bridge.localhost:17871`),
-`certificate_verification` (`browser_trusted`), `authentication` (`verified`),
+`companion_version`, `companion_transport` (`ws://127.0.0.1:17871/ws/agent`),
+`cryptographic_session` (`Noise_KK_25519_ChaChaPoly_SHA256`),
+`pairing` (`verified_grants_and_comparison`), `ambient_credentials` (`absent`),
+`authentication` (`verified`),
 `permission_prompt` (`native`), and `bypasses_used` (`false`). Its `browsers` array
 contains `{ major, installation: "supported", scenarios }` for each browser;
 each scenario is `{ id, result: "passed", evidence: "<report reference>" }`.
@@ -56,8 +57,25 @@ candidate, then fails promotion. Use that candidate for the recorded tests and
 rerun with the resulting evidence. Production inputs must be used for production
 acceptance; synthetic legal/signing fixtures only validate implementation.
 
-Full capture also requires a validated platform-to-companion account mapping and
-a companion actually serving browser-trusted authenticated HTTPS/WSS. The
-extension fails closed while either dependency is absent. Companion deployment,
-and its origin migration from the older HTTP profile in ADR 0009 remain separate
-deployment work. Signer integration tests do not qualify that deployment.
+Full capture requires a validated platform-to-companion account mapping and an
+authenticated Noise session with the provisioned, locally approved Brain key.
+The extension fails closed while either dependency is absent. The WebSocket
+upgrade carries no cookies, authorization header, or credential subprotocol.
+Bridge stays at `http://bridge.localhost:17871`; its browser security is a
+separate architecture boundary. See [companion transport](../../docs/companion-session-transport.md).
+
+`companion-origin-browser.mjs` loads the packaged WASM under the production CSP
+and verifies cookie isolation and refusal of a hostile listener on port 17871.
+`companion-production-browser.mjs` runs the production client and Brain routes
+with pinned, reconstructable test grants and their declared verifier clock. It
+checks code comparison, local approval, encrypted authentication, storage access,
+config retrieval, rotation, browser restart, revocation, and 512 KiB records in
+both directions. These test tools
+never enter the shipped artifact or replace exact-ZIP production acceptance.
+Both browser gates run on Chrome 132 and current Chromium. Set `PYTHON` to the
+test interpreter with `requirements-dev.txt` installed, then run from `extension/`:
+
+```powershell
+node qualification/companion-origin-browser.mjs <browser-executable> <origin-report.json>
+node qualification/companion-production-browser.mjs <browser-executable> <session-report.json>
+```

@@ -67,16 +67,21 @@ export async function within(label, action, timeoutMs) {
   }
 }
 
-// Playwright discovers a worker before module evaluation necessarily finishes.
-// Wait for the entry point, not for a successful qualification operation.
+// Chrome <143 exposes a worker execution context before its module is loaded.
+// Keep clocks and timers in the controller; worker readiness reads are scalar
+// evaluations that do not hold an awaitPromise operation across module startup.
+// This only waits for the entry point, never retries qualification operations.
 export async function waitForWorkerEntry(worker, entry, timeoutMs = 5000) {
-  return within('worker_initialization', () => worker.evaluate(async ({ entry, timeoutMs }) => {
-    const deadline = performance.now() + timeoutMs;
-    while (typeof globalThis[entry] !== 'function') {
-      if (performance.now() >= deadline) throw new Error('worker_initialization_timeout');
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-  }, { entry, timeoutMs }), timeoutMs + 500);
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) throw new Error('worker_initialization_timeout');
+    const ready = await within('worker_initialization',
+      () => worker.evaluate((name) => typeof globalThis[name] === 'function', entry), remaining);
+    if (performance.now() >= deadline) throw new Error('worker_initialization_timeout');
+    if (ready) return;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(10, deadline - performance.now())));
+  }
 }
 
 export async function stopChild(child, label = 'child') {

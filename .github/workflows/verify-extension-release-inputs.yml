@@ -2,6 +2,7 @@ name: Verify extension release inputs
 
 # Qualification only: no publication, release tag, or Store submission.
 on:
+  workflow_dispatch:
   push:
     branches: [extension/production-readiness]
     paths: [.github/workflows/verify-extension-release-inputs.yml]

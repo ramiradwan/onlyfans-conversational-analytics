@@ -37,7 +37,7 @@ The four failure states (`declined`, `cancelled`, `expired`, `revoked`) require 
 
 `open_authorized_window()` requires a current Bridge session and approved account, and freezes the two grants when opening the window. Migration 0012 records the opening authority and first request claim. A second request cancels the window even if the first is still signing its offer.
 
-`confirm_and_admit()` rechecks the session, account, grant references, deadline, and version. One transaction revokes any previous pin for the same Agent installation and account, writes the new pin, and consumes the staging row. The generation high-water mark survives cancellation and revocation. The new pin remains ineligible for the existing plaintext Agent activation and challenge APIs.
+`confirm_and_admit()` rechecks the session, account, grant references, deadline, and version. One transaction revokes any previous pin for the same Agent installation and account, writes the new pin, and consumes the staging row. The generation high-water mark survives cancellation and revocation. Agent activation and challenges require a completed authenticated Noise session using the admitted pin.
 
 `app/security/companion_pairing.py` generates and protects candidate Noise keys, constructs and signs offers, verifies Agent proofs, and delegates state changes to persistence. The pairing WebSocket adapter enforces origin, frame bounds, message deadlines, and cancellation, including late signing completion. Bridge uses `/api/v1/companion/pairings` to open and inspect a window and the versioned `confirm`, `decline`, and `cancel` actions. Its settings panel requires explicit code and account comparison; approval is not reported as an encrypted connection.
 

@@ -5,18 +5,21 @@
   "rust": "1.98.1",
   "wasm_bindgen": "0.2.128",
   "target": "wasm32-unknown-unknown",
+  "source_paths": "complete-filenames/v1",
+  "debug_sections": false,
   "inputs": {
     "Cargo.toml": "a98512e746362bd11411c4750780c6f42ee66c42f38a17c906b543a2dc9494e6",
     "Cargo.lock": "cdd782c5340859546479428497596ce66c3140de11ead5f3955da8e6e1d92294",
     "rust-toolchain.toml": "285f52b2ffc4216dd148af7430782c22cc85d70313e3b77ea1d9f59c41c2bb4b",
     "src/lib.rs": "55c4d8763f7d90107fa6841ac38122bcaf3105bb9dbd97ae32d7c30b4c8e60e2",
-    "build.mjs": "b505c7bb5eaa383581fafdf435d2d07ac66cb73dccccc9d0b4e3d6fdd1b7cebb"
+    "build.mjs": "d724e7dd3fae8565ffa2b4969318c4fb0234ccba8d8fcfc3426e754823097f24",
+    "build-inputs.mjs": "2b48461ab866aecdba7efd654638179ab08fd093d561e517e072361c41ea4046"
   },
   "outputs": {
     "ofca_snow_wasm.js": "81a0f7e63f3db8ff745abb5fc32f58b6914cc37b3e4c5d4fbb48233a895970a0",
-    "ofca_snow_wasm_bg.wasm": "94e2381374f841fb987cd428e4c57c0da00809142f8e47c8c5ec6819fe2a0436",
+    "ofca_snow_wasm_bg.wasm": "23246d8221c8476edb522c6b76536dd9a30a5c8b1b4c6436c42df116410e16ef",
     "package.json": "1239d4d885dcad42201a27ed9324f8f0f760b78700d8db9ced39a511cffe7eae",
-    "THIRD_PARTY_NOTICES.txt": "40d140539134a49b9b1cfe32c2f16028d2891448600ea14d1184a604613f3d34"
+    "THIRD_PARTY_NOTICES.txt": "1595b04fffebb33221e42a46e57f7595ad975425a7e1f036090947a9223268dc"
   },
   "dependencies": [
     {
@@ -194,7 +197,7 @@
       "license": "MIT/Apache-2.0"
     },
     {
-      "name": "wasm-bindgen",
+      "name": "wasm-bindgen-macro-support",
       "version": "0.2.128",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "license": "MIT OR Apache-2.0"
@@ -206,13 +209,13 @@
       "license": "MIT OR Apache-2.0"
     },
     {
-      "name": "wasm-bindgen-macro-support",
+      "name": "wasm-bindgen-shared",
       "version": "0.2.128",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "license": "MIT OR Apache-2.0"
     },
     {
-      "name": "wasm-bindgen-shared",
+      "name": "wasm-bindgen",
       "version": "0.2.128",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "license": "MIT OR Apache-2.0"

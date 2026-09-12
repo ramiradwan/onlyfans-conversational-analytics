@@ -6,14 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { readArchiveEntries } from './archive-entries.mjs';
 import { auditLegalBindingLiterals } from './legal-binding-literals.mjs';
 import { auditSignerMetadata } from './signer-release.mjs';
+import { auditPackagedSnow, SNOW_WASM_FILE } from './companion-snow-release.mjs';
 
 import { canonicalLegalBindingsJson } from '../../tools/legal-release-bindings/canonical-json.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const EXTENSION_ROOT = path.dirname(ROOT);
-const SECURE_ORIGIN = 'https://bridge.localhost:17871';
-const SECURE_WS = 'wss://bridge.localhost:17871/ws/agent';
-const EXPECTED_CSP = "script-src 'self'; object-src 'self'; connect-src 'self' https://bridge.localhost:17871 wss://bridge.localhost:17871;";
+const BRIDGE_ORIGIN = 'http://bridge.localhost:17871';
+const COMPANION_WS = 'ws://127.0.0.1:17871/ws/agent';
+const EXPECTED_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;";
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -57,18 +58,24 @@ export async function auditReleaseArchive({ artifact, legalBindings }) {
   assert.equal(manifest.minimum_chrome_version, '132');
   assert.deepEqual(manifest.optional_host_permissions, [
     'https://onlyfans.com/*',
-    `${SECURE_ORIGIN}/*`,
   ]);
-  assert.deepEqual(manifest.externally_connectable?.matches, [`${SECURE_ORIGIN}/*`]);
+  assert.deepEqual(manifest.externally_connectable?.matches, [`${BRIDGE_ORIGIN}/*`]);
   assert.equal(manifest.content_security_policy?.extension_pages, EXPECTED_CSP);
   assert.equal(manifest.host_permissions, undefined);
 
   const config = json(entries, 'extension-config.json');
-  assert.equal(config.dashboard_url, `${SECURE_ORIGIN}/`);
-  assert.equal(config.history_settings_url, `${SECURE_ORIGIN}/settings`);
+  assert.equal(config.dashboard_url, `${BRIDGE_ORIGIN}/`);
+  assert.equal(config.history_settings_url, `${BRIDGE_ORIGIN}/settings`);
 
   const metadata = json(entries, 'build-meta.json');
   auditSignerMetadata(metadata);
+  const snow = await auditPackagedSnow();
+  assert.deepEqual(metadata.companion_snow, snow.release);
+  assert.deepEqual(Buffer.from(entries.get(SNOW_WASM_FILE) ?? []), snow.files.get(SNOW_WASM_FILE));
+  assert.equal(metadata.outputs[SNOW_WASM_FILE], `sha256:${sha256(entries.get(SNOW_WASM_FILE))}`);
+  const trust = await readFile(new URL('../../contracts/production/grant-profile-v1/trust-set.json', import.meta.url));
+  assert.deepEqual(Buffer.from(entries.get('companion-grant-trust.json') ?? []), trust);
+  assert.equal(metadata.outputs['companion-grant-trust.json'], `sha256:${sha256(trust)}`);
   assert.equal(metadata.target, `chrome${manifest.minimum_chrome_version}`);
   assert.equal(metadata.determinism_verified, true);
 
@@ -81,8 +88,9 @@ export async function auditReleaseArchive({ artifact, legalBindings }) {
 
   const background = text(entries, 'background.js');
   auditLegalBindingLiterals(background, { canonical, digest: legalDigest });
-  assert.equal(background.includes(SECURE_ORIGIN), true, 'built background omits secure companion origin');
-  assert.equal(background.includes(SECURE_WS), true, 'built background omits secure Agent WebSocket');
+  assert.equal(background.includes(COMPANION_WS), true, 'built background omits companion Noise transport');
+  assert.match(background, /session\.authorization/);
+  assert.doesNotMatch(background, /ofca_full_storage_bootstrap_v1|ofca\.brain\.bind/);
 
   return Object.freeze({
     artifact: path.resolve(artifact),
@@ -92,6 +100,8 @@ export async function auditReleaseArchive({ artifact, legalBindings }) {
     target: metadata.target,
     archive_files: Object.freeze([...entries.keys()].sort()),
     legal_bindings_digest: legalDigest,
+    companion_wasm_sha256: sha256(entries.get(SNOW_WASM_FILE)),
+    companion_trust_sha256: sha256(trust),
   });
 }
 

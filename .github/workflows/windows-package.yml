@@ -187,7 +187,12 @@ jobs:
             frontend/package-lock.json
             extension/package-lock.json
 
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+
       - name: Create isolated build environment
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
         run: |
           python -m venv .build-venv
           .\.build-venv\Scripts\python.exe -m pip install `
@@ -198,6 +203,8 @@ jobs:
       # the isolated build environment through -BuildPython, so the test
       # dependencies stay out of the environment that freezes the artifact.
       - name: Install the test dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
         run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
 
       # Every release input the script demands is passed from a verified
@@ -224,13 +231,36 @@ jobs:
           BRAIN_PACKAGED_BUILD_PYTHON: ${{ github.workspace }}\.build-venv\Scripts\python.exe
         run: python -m pytest -m slow tests/test_packaged_runtime.py::test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener
 
-      - name: Qualify the frozen SQLCipher runtime
+      - name: Qualify the frozen SQLCipher and companion Noise runtimes
         env:
           BRAIN_PACKAGED_ARTIFACT_DIR: ${{ runner.temp }}\windows-package\dist\Brain
         run: >
           python -m pytest
           tests/test_packaged_runtime.py::test_frozen_executable_reports_the_fixed_sqlcipher_runtime
+          tests/test_packaged_runtime.py::test_frozen_executable_loads_the_production_companion_noise_factory
           -vv
+
+      - name: Record the shipped native companion artifact identity
+        shell: pwsh
+        run: |
+          $artifact = Join-Path $env:RUNNER_TEMP "windows-package\dist\Brain"
+          $report = Join-Path $env:RUNNER_TEMP "windows-package-companion-runtime.json"
+          $env:BRAIN_COMPANION_RUNTIME_REPORT_PATH = $report
+          $probe = Start-Process -FilePath (Join-Path $artifact "Brain.exe") -ArgumentList "--companion-runtime-report" -WorkingDirectory $artifact -WindowStyle Hidden -Wait -PassThru
+          if ($probe.ExitCode -ne 0 -or -not (Test-Path $report -PathType Leaf)) { throw "frozen companion identity probe failed" }
+          Get-Content $report
+
+      - name: Retain production companion native evidence
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: windows-package-companion-${{ inputs.product_revision }}
+          path: |
+            ${{ runner.temp }}\windows-package-companion-runtime.json
+            native/companion-snow/Cargo.lock
+            native/companion-snow/THIRD_PARTY_NOTICES.txt
+            extension/vendor/companion-snow/release.json
+          retention-days: 90
+          if-no-files-found: error
 
       # The release candidate's native dependency evidence travels separately
       # from the installer because signing later rewrites only the installer.

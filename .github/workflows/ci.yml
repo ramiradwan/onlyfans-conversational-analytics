@@ -51,7 +51,12 @@ jobs:
           restore-keys: |
             build-${{ runner.os }}-
 
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+
       - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
         run: python -m pip install -r requirements-dev.txt
 
       - name: Run Brain Tier A general state machine
@@ -306,7 +311,12 @@ jobs:
             frontend/package-lock.json
             extension/package-lock.json
 
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+
       - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
         run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
 
       - name: Qualify the fixed SQLCipher runtime
@@ -430,7 +440,12 @@ jobs:
             extension/package-lock.json
             tools/e2e-capture/package-lock.json
 
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+
       - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
         run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
 
       - name: Install frontend dependencies

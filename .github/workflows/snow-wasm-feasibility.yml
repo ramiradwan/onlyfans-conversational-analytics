@@ -1,10 +1,14 @@
-name: Snow WASM feasibility
+name: Packaged companion Snow WASM qualification
 
 on:
   push:
     branches: [extension/production-readiness]
     paths:
       - 'extension/qualification/snow-wasm-spike/**'
+      - 'extension/crypto/snow/**'
+      - 'extension/vendor/companion-snow/**'
+      - 'extension/runtime/packaged-snow.mjs'
+      - 'extension/qualification/companion-snow-release.mjs'
       - 'extension/qualification/pairing-storage-*.mjs'
       - 'extension/transport/*pairing*.mjs'
       - 'extension/transport/grant-verifier.mjs'
@@ -113,7 +117,7 @@ jobs:
           const cp = require('child_process');
           const cmd = c => { try { return cp.execSync(c,{encoding:'utf8'}).trim(); } catch { return null; } };
           const report = {
-            verdict_basis: 'research-only',
+            verdict_basis: 'production-packaged-wasm',
             snow: { version: '0.10.0', release_commit: '4bb43f50370bdb3e8b1b57814ac662864db2704f' },
             rustc: cmd('rustc --version'), cargo: cmd('cargo --version'), wasm_bindgen: cmd('wasm-bindgen --version'),
             package_audit: read('package-audit.json'),
@@ -131,8 +135,8 @@ jobs:
           name: snow-wasm-feasibility
           if-no-files-found: warn
           path: |
-            extension/qualification/snow-wasm-spike/Cargo.lock
-            extension/qualification/snow-wasm-spike/pkg/
+            extension/crypto/snow/Cargo.lock
+            extension/vendor/companion-snow/
             extension/qualification/snow-wasm-spike/package-audit.json
             extension/qualification/snow-wasm-spike/dependency-metadata.json
             extension/qualification/snow-wasm-spike/qualification-results.json
