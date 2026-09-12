@@ -251,7 +251,8 @@
       "id": "brain-transport",
       "path_patterns": [
         "app/transport/**",
-        "app/api/endpoints/transport_ws.py"
+        "app/api/endpoints/transport_ws.py",
+        "app/api/endpoints/companion_pairing.py"
       ],
       "role": "Brain network admission, WebSocket connection lifecycle, protocol framing, and session dispatch to canonical persistence.",
       "authority": "authoritative",

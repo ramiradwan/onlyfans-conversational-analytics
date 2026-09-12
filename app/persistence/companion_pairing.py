@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -105,6 +106,36 @@ class CompanionPairingWindow:
     confirmed_at: datetime | None = None
     terminal_at: datetime | None = None
     terminal_reason: str | None = None
+    request_claimed_at: datetime | None = None
+    opening_principal_id: str | None = None
+    opening_session_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CompanionPin:
+    pairing_id: bytes
+    generation: int
+    version: int
+    installation_id: str
+    organization_id: str
+    installation_key_id: str
+    installation_key_jkt: str
+    creator_account_id: str
+    agent_installation_id: str
+    agent_identity_jwk: str
+    agent_identity_thumbprint: str
+    agent_noise_public_key: bytes
+    brain_noise_public_key: bytes
+    wrapped_brain_noise_private_key: bytes = field(repr=False, compare=False)
+    pairing_digest: bytes
+    grant_digest: bytes
+    installation_grant_reference_id: str
+    creator_account_binding_reference_id: str
+    confirmation_principal_id: str
+    confirmation_session_id: str
+    confirmed_at: datetime
+    opened_at: datetime
+    expires_at: datetime
 
 
 class CompanionPairingPersistence:
@@ -217,6 +248,169 @@ class CompanionPairingPersistence:
             ).fetchone()
         return None if row is None else _window(row)
 
+    def open_authorized_window(
+        self,
+        *,
+        session_id: str,
+        creator_account_id: str,
+        pairing_id: bytes,
+        opened_at: datetime,
+        expires_at: datetime,
+        brain_nonce: bytes,
+        brain_noise_public_key: bytes,
+        wrapped_brain_noise_private_key: bytes,
+    ) -> CompanionPairingWindow:
+        """Open and freeze authority in the same transaction as the generation."""
+        _require_text(session_id, name="session_id")
+        _require_text(creator_account_id, name="creator_account_id")
+        _require_bytes32(pairing_id, name="pairing_id")
+        _require_bytes32(brain_nonce, name="brain_nonce")
+        _require_bytes32(brain_noise_public_key, name="brain_noise_public_key")
+        _require_bounded_blob(
+            wrapped_brain_noise_private_key,
+            name="wrapped_brain_noise_private_key",
+            maximum=_MAX_PROTECTED_KEY_BYTES,
+        )
+        _require_interval(opened_at, expires_at)
+        if expires_at - opened_at > _MAX_WINDOW_LIFETIME:
+            raise ValueError("pairing window exceeds the contract lifetime")
+        with self.database.transaction() as connection:
+            now = self.authentication._now()
+            if opened_at > now or expires_at <= now:
+                raise ValueError("pairing window must be live when opened")
+            session, credential = self._require_bridge_authority(
+                connection, session_id, creator_account_id, now
+            )
+            installation_id = str(credential["installation_id"])
+            self._require_approved_account(
+                connection, creator_account_id, installation_id
+            )
+            refs = self.authentication._session_grants(connection, session_id)
+            selected: dict[str, str] = {}
+            for reference_id in refs:
+                grant = connection.execute(
+                    "SELECT grant_type, compact_jws FROM verified_grant_references "
+                    "WHERE reference_id = ?",
+                    (reference_id,),
+                ).fetchone()
+                if (
+                    grant is not None
+                    and grant["grant_type"]
+                    in {"installation_grant", "creator_account_binding"}
+                    and grant["compact_jws"] is not None
+                ):
+                    grant_type = str(grant["grant_type"])
+                    if grant_type in selected:
+                        raise CompanionPairingGrantUnavailable(
+                            "Companion pairing grant authority is ambiguous"
+                        )
+                    selected[grant_type] = reference_id
+            if set(selected) != {"installation_grant", "creator_account_binding"}:
+                raise CompanionPairingGrantUnavailable(
+                    "Companion pairing grants are not current and retained"
+                )
+            installation_ref = selected["installation_grant"]
+            account_ref = selected["creator_account_binding"]
+            self._require_pairing_grants(
+                connection,
+                installation_grant_reference_id=installation_ref,
+                creator_account_binding_reference_id=account_ref,
+                installation_id=installation_id,
+                creator_account_id=creator_account_id,
+                now=now,
+            )
+            grant = connection.execute(
+                "SELECT organization_id FROM verified_grant_references WHERE reference_id = ?",
+                (installation_ref,),
+            ).fetchone()
+            self._require_approved_account(
+                connection,
+                creator_account_id,
+                installation_id,
+                organization_id=str(grant["organization_id"]),
+            )
+            self._expire_live_window_if_due(connection, installation_id, now)
+            if (
+                connection.execute(
+                    "SELECT 1 FROM companion_pairing_windows WHERE installation_id = ? "
+                    "AND state IN ('open', 'offered', 'awaiting_confirmation')",
+                    (installation_id,),
+                ).fetchone()
+                is not None
+            ):
+                raise CompanionPairingConflict(
+                    "A live companion pairing window already exists"
+                )
+            generation = self._allocate_generation(connection, installation_id)
+            try:
+                connection.execute(
+                    """INSERT INTO companion_pairing_windows (
+                        pairing_id, installation_id, creator_account_id, generation,
+                        state, version, opened_at, expires_at, brain_nonce,
+                        brain_noise_public_key, wrapped_brain_noise_private_key,
+                        installation_grant_reference_id, creator_account_binding_reference_id,
+                        opening_principal_id, opening_session_id
+                    ) VALUES (?, ?, ?, ?, 'open', 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        pairing_id,
+                        installation_id,
+                        creator_account_id,
+                        generation,
+                        _time_text(opened_at),
+                        _time_text(expires_at),
+                        brain_nonce,
+                        brain_noise_public_key,
+                        wrapped_brain_noise_private_key,
+                        installation_ref,
+                        account_ref,
+                        session["principal_id"],
+                        session_id,
+                    ),
+                )
+            except sqlite3.IntegrityError:
+                raise CompanionPairingConflict(
+                    "Companion pairing window creation conflicted"
+                ) from None
+            return self._window_in_transaction(connection, pairing_id)
+
+    def claim_request(
+        self, installation_id: str | None = None
+    ) -> CompanionPairingWindow:
+        """Claim once; a competing request commits cancellation before refusing."""
+        conflict = False
+        with self.database.transaction() as connection:
+            now = self.authentication._now()
+            rows = connection.execute(
+                "SELECT * FROM companion_pairing_windows "
+                "WHERE state IN ('open', 'offered', 'awaiting_confirmation') "
+                + ("AND installation_id = ?" if installation_id is not None else ""),
+                (installation_id,) if installation_id is not None else (),
+            ).fetchall()
+            if len(rows) != 1:
+                raise CompanionPairingStateError(
+                    "No unique companion pairing window is open"
+                )
+            row = rows[0]
+            if _parse_time(str(row["expires_at"])) <= now:
+                self._terminate_row(connection, row, CompanionPairingState.EXPIRED, now)
+                conflict = True
+            elif row["request_claimed_at"] is not None or row["state"] != "open":
+                self._terminate_row(
+                    connection, row, CompanionPairingState.CANCELLED, now
+                )
+                conflict = True
+            else:
+                self._require_frozen_pairing_grants(connection, row, now)
+                connection.execute(
+                    "UPDATE companion_pairing_windows SET request_claimed_at = ?, "
+                    "version = version + 1 WHERE pairing_id = ? AND version = ?",
+                    (_time_text(now), row["pairing_id"], row["version"]),
+                )
+            window = self._window_in_transaction(connection, bytes(row["pairing_id"]))
+        if conflict:
+            raise CompanionPairingConflict("Companion pairing request was refused")
+        return window
+
     def offer_window(
         self,
         pairing_id: bytes,
@@ -268,10 +462,28 @@ class CompanionPairingPersistence:
                 expected_version=expected_version,
                 expected_state=CompanionPairingState.OPEN,
             )
+            if (
+                row["opening_session_id"] is not None
+                and row["request_claimed_at"] is None
+            ):
+                raise CompanionPairingStateError(
+                    "Companion pairing request was not claimed"
+                )
+            if row["installation_grant_reference_id"] is not None and (
+                row["installation_grant_reference_id"]
+                != installation_grant_reference_id
+                or row["creator_account_binding_reference_id"]
+                != creator_account_binding_reference_id
+            ):
+                raise CompanionPairingGrantUnavailable(
+                    "Companion pairing grant selection changed"
+                )
             self._require_transition_time(
                 row, offered_at, lower_column="opened_at", now=now
             )
             self._require_not_expired(row, now)
+            if row["opening_session_id"] is not None:
+                self._require_frozen_pairing_grants(connection, row, now)
             self._require_pairing_grants(
                 connection,
                 installation_grant_reference_id=installation_grant_reference_id,
@@ -441,6 +653,303 @@ class CompanionPairingPersistence:
             self._require_updated(cursor)
             return self._window_in_transaction(connection, pairing_id)
 
+    def confirm_and_admit(
+        self,
+        pairing_id: bytes,
+        *,
+        expected_version: int,
+        confirmation_principal_id: str,
+        confirmation_session_id: str,
+        confirmed_at: datetime,
+    ) -> CompanionPin:
+        """Commit the confirmed pin and erase staging in one authority transaction."""
+        _require_bytes32(pairing_id, name="pairing_id")
+        _require_version(expected_version)
+        _time_text(confirmed_at)
+        with self.database.transaction() as connection:
+            now = self.authentication._now()
+            row = self._require_expected_window(
+                connection,
+                pairing_id,
+                expected_version=expected_version,
+                expected_state=CompanionPairingState.AWAITING_CONFIRMATION,
+            )
+            self._require_transition_time(
+                row,
+                confirmed_at,
+                lower_column="awaiting_confirmation_at",
+                now=now,
+            )
+            self._require_not_expired(row, now)
+            self._require_frozen_pairing_grants(connection, row, now)
+            session, credential = self._require_bridge_authority(
+                connection,
+                confirmation_session_id,
+                str(row["creator_account_id"]),
+                now,
+                installation_id=str(row["installation_id"]),
+            )
+            if session["principal_id"] != confirmation_principal_id:
+                raise CompanionPairingStateError(
+                    "Companion pairing confirmation authority does not match"
+                )
+            self._require_approved_account(
+                connection, str(row["creator_account_id"]), str(row["installation_id"])
+            )
+            grant = connection.execute(
+                "SELECT * FROM verified_grant_references WHERE reference_id = ?",
+                (row["installation_grant_reference_id"],),
+            ).fetchone()
+            self._require_approved_account(
+                connection,
+                str(row["creator_account_id"]),
+                str(row["installation_id"]),
+                organization_id=str(grant["organization_id"]),
+            )
+            if any(
+                credential[local] != grant[hosted]
+                for local, hosted in (
+                    ("external_issuer", "issuer"),
+                    ("external_subject", "subject"),
+                    ("installation_id", "installation_id"),
+                )
+            ):
+                raise CompanionPairingStateError(
+                    "Companion pairing confirmation identity does not match"
+                )
+            try:
+                self.authentication._snapshot_revocations(
+                    connection,
+                    (
+                        RevocationKey(
+                            RevocationScopeType.INSTALLATION,
+                            str(row["agent_installation_id"]),
+                        ),
+                        RevocationKey(
+                            RevocationScopeType.PRINCIPAL,
+                            "agent:" + str(row["agent_installation_id"]),
+                        ),
+                    ),
+                )
+            except AuthenticationStateError:
+                raise CompanionPairingStateError(
+                    "Companion pairing Agent identity is revoked"
+                ) from None
+            old = connection.execute(
+                "SELECT pairing_id FROM agent_pairings WHERE agent_installation_id = ? "
+                "AND creator_account_id = ? AND revoked_at IS NULL",
+                (row["agent_installation_id"], row["creator_account_id"]),
+            ).fetchall()
+            for previous in old:
+                self.authentication._revoke_in_transaction(
+                    connection,
+                    RevocationKey(
+                        RevocationScopeType.AGENT_PAIRING, str(previous["pairing_id"])
+                    ),
+                    reason="companion_replaced",
+                )
+            identifier = _encoded_pairing_id(pairing_id)
+            references = (
+                str(row["installation_grant_reference_id"]),
+                str(row["creator_account_binding_reference_id"]),
+            )
+            connection.execute(
+                """INSERT INTO agent_pairings (
+                    pairing_id, key_id, principal_id, creator_account_id,
+                    agent_installation_id, external_issuer, external_subject,
+                    installation_id, public_key, key_fingerprint, created_at,
+                    pairing_generation, pairing_digest, agent_noise_static_public_key,
+                    brain_noise_static_public_key, protected_brain_noise_static_private_key,
+                    confirmation_principal_id, confirmation_session_id, confirmed_at,
+                    companion_organization_id, companion_installation_key_id,
+                    companion_installation_key_jkt, companion_grant_digest,
+                    companion_window_version, companion_window_expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    identifier,
+                    identifier,
+                    "agent:" + str(row["agent_installation_id"]),
+                    row["creator_account_id"],
+                    row["agent_installation_id"],
+                    grant["issuer"],
+                    grant["subject"],
+                    row["installation_id"],
+                    str(row["agent_identity_jwk"]).encode("utf-8"),
+                    row["agent_identity_thumbprint"],
+                    row["opened_at"],
+                    row["generation"],
+                    row["pairing_digest"],
+                    row["agent_noise_public_key"],
+                    row["brain_noise_public_key"],
+                    row["wrapped_brain_noise_private_key"],
+                    confirmation_principal_id,
+                    confirmation_session_id,
+                    _time_text(confirmed_at),
+                    grant["organization_id"],
+                    grant["installation_key_id"],
+                    grant["installation_key_jkt"],
+                    row["grant_digest"],
+                    expected_version + 1,
+                    row["expires_at"],
+                ),
+            )
+            connection.executemany(
+                "INSERT INTO agent_pairing_grants(pairing_id, grant_reference_id) VALUES (?, ?)",
+                ((identifier, reference) for reference in references),
+            )
+            self.authentication._ensure_scope(
+                connection, RevocationKey(RevocationScopeType.AGENT_PAIRING, identifier)
+            )
+            # The confirmed pin is the durable result. Keeping a staging key or a
+            # mutable confirmed window would allow a second admission or late CAS.
+            deleted = connection.execute(
+                "DELETE FROM companion_pairing_windows WHERE pairing_id = ? AND version = ? "
+                "AND state = 'awaiting_confirmation'",
+                (pairing_id, expected_version),
+            )
+            self._require_updated(deleted)
+            self.authentication._increment_authorization_epoch(connection)
+            return self._pin_in_transaction(connection, pairing_id)
+
+    def companion_pin(self, pairing_id: bytes) -> CompanionPin | None:
+        _require_bytes32(pairing_id, name="pairing_id")
+        with self.database.read() as connection:
+            return self._optional_pin_in_transaction(connection, pairing_id)
+
+    def authorized_record(
+        self, session_id: str, pairing_id: bytes
+    ) -> CompanionPairingWindow | CompanionPin:
+        _require_bytes32(pairing_id, name="pairing_id")
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM companion_pairing_windows WHERE pairing_id = ?",
+                (pairing_id,),
+            ).fetchone()
+            record = (
+                _window(row)
+                if row is not None
+                else self._optional_pin_in_transaction(connection, pairing_id)
+            )
+            if record is None:
+                raise CompanionPairingStateError("Companion pairing is unavailable")
+            now = self.authentication._now()
+            self._require_bridge_authority(
+                connection,
+                session_id,
+                record.creator_account_id,
+                now,
+                installation_id=record.installation_id,
+            )
+            if (
+                row is not None
+                and record.state in _LIVE_STATES
+                and record.expires_at <= now
+            ):
+                self._terminate_row(connection, row, CompanionPairingState.EXPIRED, now)
+                return self._window_in_transaction(connection, pairing_id)
+            return record
+
+    def cancel_authorized_window(
+        self,
+        pairing_id: bytes,
+        *,
+        expected_version: int,
+        session_id: str,
+        decline: bool = False,
+    ) -> CompanionPairingWindow:
+        _require_bytes32(pairing_id, name="pairing_id")
+        _require_version(expected_version)
+        with self.database.transaction() as connection:
+            now = self.authentication._now()
+            row = connection.execute(
+                "SELECT * FROM companion_pairing_windows WHERE pairing_id = ?",
+                (pairing_id,),
+            ).fetchone()
+            if (
+                row is None
+                or expected_version > int(row["version"])
+                or CompanionPairingState(str(row["state"])) not in _LIVE_STATES
+            ):
+                raise CompanionPairingCASMismatch(
+                    "Companion pairing window no longer matches expected state"
+                )
+            self._require_bridge_authority(
+                connection,
+                session_id,
+                str(row["creator_account_id"]),
+                now,
+                installation_id=str(row["installation_id"]),
+            )
+            # A request may advance while Bridge is closing its view. Cancel the
+            # current immutable window, not only the version Bridge last saw.
+            # Confirmation remains a strict compare-and-set on its reviewed view.
+            state = (
+                CompanionPairingState.DECLINED
+                if decline
+                else CompanionPairingState.CANCELLED
+            )
+            if now >= _parse_time(str(row["expires_at"])):
+                state = CompanionPairingState.EXPIRED
+            self._terminate_row(connection, row, state, now)
+            return self._window_in_transaction(connection, pairing_id)
+
+    def revoke_companion_pin(
+        self, pairing_id: bytes, *, session_id: str, expected_version: int | None = None
+    ) -> bool:
+        _require_bytes32(pairing_id, name="pairing_id")
+        if expected_version is not None:
+            _require_version(expected_version)
+        with self.database.transaction() as connection:
+            pin = self._optional_pin_in_transaction(connection, pairing_id)
+            if pin is None:
+                return False
+            if expected_version is not None and pin.version != expected_version:
+                raise CompanionPairingCASMismatch(
+                    "Companion pin no longer matches expected state"
+                )
+            self._require_bridge_authority(
+                connection,
+                session_id,
+                pin.creator_account_id,
+                self.authentication._now(),
+                installation_id=pin.installation_id,
+            )
+            self._revoke_pin(connection, pairing_id)
+            return True
+
+    def abort_candidate(self, pairing_id: bytes) -> bool:
+        """Fence cancellation by the owning pairing socket, including late admission."""
+        _require_bytes32(pairing_id, name="pairing_id")
+        with self.database.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM companion_pairing_windows WHERE pairing_id = ?",
+                (pairing_id,),
+            ).fetchone()
+            if row is not None and CompanionPairingState(
+                str(row["state"])
+            ) in _LIVE_STATES | {CompanionPairingState.CONFIRMED}:
+                self._terminate_row(
+                    connection,
+                    row,
+                    CompanionPairingState.CANCELLED,
+                    self.authentication._now(),
+                )
+                return True
+            if self._optional_pin_in_transaction(connection, pairing_id) is not None:
+                self._revoke_pin(connection, pairing_id)
+                return True
+            return False
+
+    def _revoke_pin(self, connection: sqlite3.Connection, pairing_id: bytes) -> None:
+        self.authentication._revoke_in_transaction(
+            connection,
+            RevocationKey(
+                RevocationScopeType.AGENT_PAIRING, _encoded_pairing_id(pairing_id)
+            ),
+            reason="companion_revoked",
+        )
+        self.authentication._increment_authorization_epoch(connection)
+
     def terminate_window(
         self,
         pairing_id: bytes,
@@ -558,6 +1067,152 @@ class CompanionPairingPersistence:
                 "Companion pairing generation allocation failed"
             )
         return next_generation
+
+    @staticmethod
+    def _terminate_row(
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+        state: CompanionPairingState,
+        now: datetime,
+    ) -> None:
+        updated = connection.execute(
+            "UPDATE companion_pairing_windows SET state = ?, version = version + 1, "
+            "wrapped_brain_noise_private_key = NULL, confirmation_principal_id = NULL, "
+            "confirmation_session_id = NULL, confirmed_at = NULL, terminal_at = ?, terminal_reason = ? "
+            "WHERE pairing_id = ? AND version = ?",
+            (
+                state.value,
+                _time_text(now),
+                state.value,
+                row["pairing_id"],
+                row["version"],
+            ),
+        )
+        CompanionPairingPersistence._require_updated(updated)
+
+    def _require_bridge_authority(
+        self,
+        connection: sqlite3.Connection,
+        session_id: str,
+        creator_account_id: str,
+        now: datetime,
+        *,
+        installation_id: str | None = None,
+    ) -> tuple[sqlite3.Row, sqlite3.Row]:
+        try:
+            session = self.authentication._require_session_current(
+                connection, session_id, now
+            )
+        except AuthenticationStateError:
+            raise CompanionPairingStateError(
+                "Companion pairing requires a current Bridge session"
+            ) from None
+        if session["creator_account_id"] != creator_account_id or session[
+            "role"
+        ] not in {"creator", "operator"}:
+            raise CompanionPairingStateError(
+                "Companion pairing authority does not match"
+            )
+        credential = connection.execute(
+            "SELECT * FROM webauthn_credentials WHERE credential_id = ? AND revoked_at IS NULL",
+            (session["credential_id"],),
+        ).fetchone()
+        if credential is None or (
+            installation_id is not None
+            and credential["installation_id"] != installation_id
+        ):
+            raise CompanionPairingStateError(
+                "Companion pairing installation authority does not match"
+            )
+        return session, credential
+
+    @staticmethod
+    def _require_approved_account(
+        connection: sqlite3.Connection,
+        creator_account_id: str,
+        installation_id: str,
+        *,
+        organization_id: str | None = None,
+    ) -> None:
+        binding = connection.execute(
+            "SELECT 1 FROM authorized_account_bindings AS binding "
+            "JOIN provisioning_candidates AS candidate "
+            "ON candidate.association_request_id = binding.association_request_id "
+            "WHERE binding.creator_account_id = ? AND binding.installation_id = ? "
+            "AND binding.revoked_at IS NULL AND candidate.state = 'approved' "
+            "AND candidate.creator_account_id = binding.creator_account_id "
+            "AND candidate.installation_id = binding.installation_id "
+            + (
+                "AND candidate.organization_id = ?"
+                if organization_id is not None
+                else ""
+            ),
+            (
+                (creator_account_id, installation_id, organization_id)
+                if organization_id is not None
+                else (creator_account_id, installation_id)
+            ),
+        ).fetchone()
+        if binding is None:
+            raise CompanionPairingStateError(
+                "Companion pairing requires an approved creator account"
+            )
+
+    def _optional_pin_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        pairing_id: bytes,
+    ) -> CompanionPin | None:
+        row = connection.execute(
+            "SELECT * FROM agent_pairings WHERE pairing_id = ? AND pairing_generation IS NOT NULL "
+            "AND revoked_at IS NULL AND protected_brain_noise_static_private_key IS NOT NULL",
+            (_encoded_pairing_id(pairing_id),),
+        ).fetchone()
+        if row is None:
+            return None
+        references = {
+            str(grant["grant_type"]): str(grant["reference_id"])
+            for grant in connection.execute(
+                "SELECT grant_type, reference_id FROM verified_grant_references "
+                "JOIN agent_pairing_grants ON grant_reference_id = reference_id WHERE pairing_id = ?",
+                (row["pairing_id"],),
+            ).fetchall()
+        }
+        return CompanionPin(
+            pairing_id=pairing_id,
+            generation=int(row["pairing_generation"]),
+            version=int(row["companion_window_version"]),
+            installation_id=str(row["installation_id"]),
+            organization_id=str(row["companion_organization_id"]),
+            installation_key_id=str(row["companion_installation_key_id"]),
+            installation_key_jkt=str(row["companion_installation_key_jkt"]),
+            creator_account_id=str(row["creator_account_id"]),
+            agent_installation_id=str(row["agent_installation_id"]),
+            agent_identity_jwk=bytes(row["public_key"]).decode("utf-8"),
+            agent_identity_thumbprint=str(row["key_fingerprint"]),
+            agent_noise_public_key=bytes(row["agent_noise_static_public_key"]),
+            brain_noise_public_key=bytes(row["brain_noise_static_public_key"]),
+            wrapped_brain_noise_private_key=bytes(
+                row["protected_brain_noise_static_private_key"]
+            ),
+            pairing_digest=bytes(row["pairing_digest"]),
+            grant_digest=bytes(row["companion_grant_digest"]),
+            installation_grant_reference_id=references["installation_grant"],
+            creator_account_binding_reference_id=references["creator_account_binding"],
+            confirmation_principal_id=str(row["confirmation_principal_id"]),
+            confirmation_session_id=str(row["confirmation_session_id"]),
+            confirmed_at=_parse_time(str(row["confirmed_at"])),
+            opened_at=_parse_time(str(row["created_at"])),
+            expires_at=_parse_time(str(row["companion_window_expires_at"])),
+        )
+
+    def _pin_in_transaction(
+        self, connection: sqlite3.Connection, pairing_id: bytes
+    ) -> CompanionPin:
+        pin = self._optional_pin_in_transaction(connection, pairing_id)
+        if pin is None:
+            raise CompanionPairingPersistenceError("Companion pairing pin disappeared")
+        return pin
 
     def _expire_live_window_if_due(
         self,
@@ -700,6 +1355,14 @@ class CompanionPairingPersistence:
             raise CompanionPairingStateError(
                 "Companion pairing offer has no frozen grant references"
             )
+        if row["opening_session_id"] is not None:
+            self._require_bridge_authority(
+                connection,
+                str(row["opening_session_id"]),
+                str(row["creator_account_id"]),
+                now,
+                installation_id=str(row["installation_id"]),
+            )
         self._require_pairing_grants(
             connection,
             installation_grant_reference_id=str(installation_reference),
@@ -809,6 +1472,9 @@ def _window(row: sqlite3.Row) -> CompanionPairingWindow:
         confirmed_at=_optional_time(row["confirmed_at"]),
         terminal_at=_optional_time(row["terminal_at"]),
         terminal_reason=_optional_text(row["terminal_reason"]),
+        request_claimed_at=_optional_time(row["request_claimed_at"]),
+        opening_principal_id=_optional_text(row["opening_principal_id"]),
+        opening_session_id=_optional_text(row["opening_session_id"]),
     )
 
 
@@ -816,6 +1482,10 @@ def _require_bytes32(value: bytes, *, name: str) -> bytes:
     if not isinstance(value, bytes) or len(value) != _BYTES32:
         raise ValueError(f"{name} must contain exactly 32 bytes")
     return value
+
+
+def _encoded_pairing_id(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
 
 def _require_bounded_blob(value: bytes, *, name: str, maximum: int) -> bytes:

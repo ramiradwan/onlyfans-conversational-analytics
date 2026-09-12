@@ -1107,6 +1107,7 @@ class SQLiteAuthenticationStore:
                 """
                 SELECT * FROM agent_pairings
                 WHERE pairing_id = ? AND activated_at IS NULL AND revoked_at IS NULL
+                  AND pairing_generation IS NULL
                 """,
                 (pairing_id,),
             ).fetchone()
@@ -1689,11 +1690,10 @@ class SQLiteAuthenticationStore:
             # A revoked grant may no longer authorize a companion session, so the
             # retained bytes are erased by the statement that revokes it. Refresh
             # supersedes through this path too, leaving only the replacement current.
-            cleared = (
-                ", compact_jws = NULL"
-                if table == "verified_grant_references"
-                else ""
-            )
+            cleared = {
+                "verified_grant_references": ", compact_jws = NULL",
+                "agent_pairings": ", protected_brain_noise_static_private_key = NULL",
+            }.get(table, "")
             connection.execute(
                 f"UPDATE {table} SET revoked_at = COALESCE(revoked_at, ?){cleared} "
                 f"WHERE {id_column} = ?",
@@ -1715,10 +1715,10 @@ class SQLiteAuthenticationStore:
         # Staging keys cannot survive withdrawal of their frozen authority,
         # including the interval between confirmation and final admission.
         window_scope = {
-            RevocationScopeType.INSTALLATION: "installation_id = ?",
+            RevocationScopeType.INSTALLATION: "? IN (installation_id, agent_installation_id)",
             RevocationScopeType.CREATOR_ACCOUNT: "creator_account_id = ?",
-            RevocationScopeType.PRINCIPAL: "confirmation_principal_id = ?",
-            RevocationScopeType.BRIDGE_SESSION: "confirmation_session_id = ?",
+            RevocationScopeType.PRINCIPAL: "? IN (confirmation_principal_id, opening_principal_id)",
+            RevocationScopeType.BRIDGE_SESSION: "? IN (confirmation_session_id, opening_session_id)",
             RevocationScopeType.VERIFIED_GRANT: (
                 "? IN (installation_grant_reference_id, creator_account_binding_reference_id)"
             ),
@@ -1734,10 +1734,27 @@ class SQLiteAuthenticationStore:
                 WHERE state IN ('open', 'offered', 'awaiting_confirmation', 'confirmed')
                   AND (({window_scope or '0'}) OR confirmation_session_id IN (
                       SELECT session_id FROM bridge_sessions WHERE revoked_at IS NOT NULL
+                  ) OR opening_session_id IN (
+                      SELECT session_id FROM bridge_sessions WHERE revoked_at IS NOT NULL
                   ))
                 """,
             (timestamp, key.scope_id) if window_scope is not None else (timestamp,),
         )
+        # Pins outlive the confirming browser session and ordinary grant refresh,
+        # but explicit identity, account, installation, or pin revocation erases
+        # the private Noise key in the same transaction that invalidates tickets.
+        pin_scope = {
+            RevocationScopeType.INSTALLATION: "? IN (installation_id, agent_installation_id)",
+            RevocationScopeType.CREATOR_ACCOUNT: "creator_account_id = ?",
+            RevocationScopeType.PRINCIPAL: "? IN (principal_id, confirmation_principal_id)",
+        }.get(key.scope_type)
+        if pin_scope is not None:
+            connection.execute(
+                f"UPDATE agent_pairings SET revoked_at = COALESCE(revoked_at, ?), "
+                f"protected_brain_noise_static_private_key = NULL "
+                f"WHERE pairing_generation IS NOT NULL AND ({pin_scope})",
+                (timestamp, key.scope_id),
+            )
         return self._revocation_version(connection, key)
 
     def revocation_version(self, key: RevocationKey) -> int:
@@ -1853,6 +1870,7 @@ class SQLiteAuthenticationStore:
         grants = self._pairing_grants(connection, pairing_id)
         if (
             row is None
+            or row["pairing_generation"] is not None
             or row["activated_at"] is None
             or _parse_time(row["activated_at"]) > now
             or row["revoked_at"] is not None
