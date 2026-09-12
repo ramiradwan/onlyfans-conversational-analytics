@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin==1.15.0"]
+build-backend = "maturin"
+
+[project]
+name = "ofca-native-snow"
+version = "0.0.0"
+requires-python = ">=3.11,<3.12"
+
+[tool.maturin]
+module-name = "ofca_native_snow"
+features = ["pyo3/extension-module"]

@@ -1,0 +1,20 @@
+[package]
+name = "ofca-native-snow"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[lib]
+name = "ofca_native_snow"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "=0.29.2", features = ["extension-module"] }
+snow = { version = "=0.10.0", default-features = false, features = ["default-resolver", "use-curve25519", "use-chacha20poly1305", "use-sha2", "use-getrandom"] }
+
+[profile.release]
+codegen-units = 1
+debug = 0
+incremental = false
+strip = "symbols"

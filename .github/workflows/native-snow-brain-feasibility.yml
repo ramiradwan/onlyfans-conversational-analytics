@@ -1,0 +1,229 @@
+name: Native Snow Brain feasibility
+
+on:
+  push:
+    branches:
+      - extension/production-readiness
+    paths:
+      - 'tools/native-snow-brain-spike/**'
+      - 'extension/qualification/snow-wasm-spike/**'
+      - 'contracts/companion-pairing-profile/**'
+      - 'contracts/companion-pairing-v1/**'
+      - '.gitattributes'
+      - '.github/workflows/native-snow-brain-feasibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-windows-native:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup production Python line
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Pin Rust to extension-qualified toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --target wasm32-unknown-unknown
+          rustup default 1.98.1
+          rustc -Vv
+          cargo --version
+
+      - name: Create isolated qualification environment
+        shell: pwsh
+        run: |
+          $venv = Join-Path $env:RUNNER_TEMP "native-snow-venv"
+          python -m venv $venv
+          $python = Join-Path $venv "Scripts\python.exe"
+          & $python -m pip install -r tools/native-snow-brain-spike/requirements-qualification.txt
+          "QUAL_PYTHON=$python" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $python --version
+          & $python -m pip show maturin pyinstaller websockets noiseprotocol cryptography
+
+      - name: Verify committed native Cargo lock
+        shell: pwsh
+        run: |
+          $expected = "053b1eb0b32ca706e76c685e71ecb0f2007a949ddeea5f7624910c34b06a6d0a"
+          $actual = (Get-FileHash tools/native-snow-brain-spike/Cargo.lock -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "native Cargo.lock digest mismatch: $actual" }
+          cargo metadata --format-version 1 --locked --manifest-path tools/native-snow-brain-spike/Cargo.toml | Out-Null
+          Write-Host "native Cargo.lock sha256=$actual"
+
+      - name: Build native extension twice and require identical module bytes
+        shell: pwsh
+        run: |
+          $wheelA = Join-Path $env:RUNNER_TEMP "native-snow-wheel-a"
+          $wheelB = Join-Path $env:RUNNER_TEMP "native-snow-wheel-b"
+          $target = Join-Path $env:RUNNER_TEMP "native-snow-repro-target"
+          $extractA = Join-Path $env:RUNNER_TEMP "native-snow-extract-a"
+          $extractB = Join-Path $env:RUNNER_TEMP "native-snow-extract-b"
+          New-Item -ItemType Directory -Path $wheelA,$wheelB,$extractA,$extractB | Out-Null
+          $repo = (Get-Location).Path
+          $env:CARGO_TARGET_DIR = $target
+          $env:CARGO_INCREMENTAL = "0"
+          $env:SOURCE_DATE_EPOCH = "0"
+          $env:RUSTFLAGS = "-C link-arg=/Brepro -C debuginfo=0 --remap-path-prefix=$repo=/src"
+
+          & $env:QUAL_PYTHON -m maturin build --manifest-path tools/native-snow-brain-spike/Cargo.toml --release --locked --interpreter $env:QUAL_PYTHON --out $wheelA
+          if ($LASTEXITCODE -ne 0) { throw "first native build failed" }
+          Remove-Item -Recurse -Force $target
+          & $env:QUAL_PYTHON -m maturin build --manifest-path tools/native-snow-brain-spike/Cargo.toml --release --locked --interpreter $env:QUAL_PYTHON --out $wheelB
+          if ($LASTEXITCODE -ne 0) { throw "second native build failed" }
+          Remove-Item Env:CARGO_TARGET_DIR
+
+          $a = (Get-ChildItem $wheelA -Filter *.whl | Select-Object -First 1).FullName
+          $b = (Get-ChildItem $wheelB -Filter *.whl | Select-Object -First 1).FullName
+          & $env:QUAL_PYTHON -m zipfile -e $a $extractA
+          & $env:QUAL_PYTHON -m zipfile -e $b $extractB
+          $pydA = (Get-ChildItem $extractA -Recurse -Filter ofca_native_snow*.pyd | Select-Object -First 1).FullName
+          $pydB = (Get-ChildItem $extractB -Recurse -Filter ofca_native_snow*.pyd | Select-Object -First 1).FullName
+          $hashA = (Get-FileHash $pydA -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hashB = (Get-FileHash $pydB -Algorithm SHA256).Hash.ToLowerInvariant()
+          Copy-Item $pydA tools/native-snow-brain-spike/repro-a.pyd
+          Copy-Item $pydB tools/native-snow-brain-spike/repro-b.pyd
+          "REPRO_A_SHA256=$hashA" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "REPRO_B_SHA256=$hashB" | Out-File -FilePath $env:GITHUB_ENV -Append
+          if ($hashA -ne $hashB) { throw "native extension rebuild digest mismatch: $hashA != $hashB" }
+          $wheelHash = (Get-FileHash $a -Algorithm SHA256).Hash.ToLowerInvariant()
+          "NATIVE_MODULE_SHA256=$hashA" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "NATIVE_WHEEL_SHA256=$wheelHash" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "NATIVE_WHEEL=$a" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $env:QUAL_PYTHON -m pip install $a
+          if ($LASTEXITCODE -ne 0) { throw "native wheel install failed" }
+
+      - name: Verify narrow Python surface and independent Noise oracle
+        shell: pwsh
+        run: |
+          & $env:QUAL_PYTHON tools/native-snow-brain-spike/test_native_snow.py -v
+          if ($LASTEXITCODE -ne 0) { throw "native wrapper surface qualification failed" }
+          & $env:QUAL_PYTHON tools/native-snow-brain-spike/reference_oracle.py | Tee-Object -FilePath tools/native-snow-brain-spike/reference-oracle-results.json
+          if ($LASTEXITCODE -ne 0) { throw "independent Noise oracle failed" }
+
+      - name: Record native dependency graph
+        shell: pwsh
+        run: |
+          cargo metadata --format-version 1 --locked --filter-platform x86_64-pc-windows-msvc --manifest-path tools/native-snow-brain-spike/Cargo.toml | Out-File -Encoding utf8 tools/native-snow-brain-spike/native-dependency-metadata.json
+          cargo tree --locked --target x86_64-pc-windows-msvc --manifest-path tools/native-snow-brain-spike/Cargo.toml | Out-File -Encoding utf8 tools/native-snow-brain-spike/native-cargo-tree.txt
+
+      - name: Install extension qualification dependencies and wasm-bindgen
+        shell: pwsh
+        run: |
+          npm ci --prefix extension
+          Push-Location extension
+          npx playwright install chromium
+          Pop-Location
+          cargo install wasm-bindgen-cli --version 0.2.128 --locked
+          wasm-bindgen --version
+
+      - name: Build the exact extension Snow WASM peer
+        shell: pwsh
+        run: |
+          Push-Location extension/qualification/snow-wasm-spike
+          cargo build --locked --release --target wasm32-unknown-unknown
+          if ($LASTEXITCODE -ne 0) { throw "extension Snow WASM build failed" }
+          Remove-Item -Recurse -Force pkg -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path pkg | Out-Null
+          wasm-bindgen --target web --no-typescript --out-dir pkg target/wasm32-unknown-unknown/release/ofca_snow_wasm_spike.wasm
+          node verify-glue.mjs
+          Pop-Location
+          $dist = "tools/native-snow-brain-spike/mv3-dist"
+          Remove-Item -Recurse -Force $dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path (Join-Path $dist "pkg") -Force | Out-Null
+          Copy-Item tools/native-snow-brain-spike/mv3/manifest.json $dist
+          Copy-Item tools/native-snow-brain-spike/mv3/background.mjs $dist
+          Copy-Item extension/qualification/snow-wasm-spike/web/noise-binding.mjs $dist
+          Copy-Item extension/qualification/snow-wasm-spike/web/fixture.mjs $dist
+          Copy-Item extension/qualification/snow-wasm-spike/pkg/* (Join-Path $dist "pkg")
+
+      - name: Freeze qualification Brain in PyInstaller one-directory mode
+        shell: pwsh
+        run: |
+          $dist = Join-Path $env:RUNNER_TEMP "native-snow-frozen-dist"
+          $work = Join-Path $env:RUNNER_TEMP "native-snow-frozen-work"
+          $spec = Join-Path $env:RUNNER_TEMP "native-snow-frozen-spec"
+          $data = "$pwd\contracts\companion-pairing-profile\profile.json;contracts\companion-pairing-profile"
+          & $env:QUAL_PYTHON -m PyInstaller `
+            --noconfirm --clean --onedir --console `
+            --name BrainSnowQualification `
+            --distpath $dist --workpath $work --specpath $spec `
+            --paths "$pwd\tools\native-snow-brain-spike" `
+            --add-data $data `
+            tools/native-snow-brain-spike/frozen_server.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller qualification build failed" }
+          $exe = Join-Path $dist "BrainSnowQualification\BrainSnowQualification.exe"
+          if (-not (Test-Path $exe -PathType Leaf)) { throw "frozen qualification executable missing" }
+          "FROZEN_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $forbidden = Get-ChildItem (Split-Path $exe -Parent) -Recurse | Where-Object { $_.Name -match 'maturin|noiseprotocol' }
+          if ($forbidden) { throw "build/test-only dependency entered frozen runtime: $($forbidden.FullName -join ', ')" }
+
+      - name: Qualify actual MV3 Snow WASM against frozen native Brain
+        shell: pwsh
+        run: |
+          node tools/native-snow-brain-spike/qualify-mv3-native.mjs playwright "$env:FROZEN_EXE"
+          if ($LASTEXITCODE -ne 0) { throw "MV3/native frozen interoperability failed" }
+
+      - name: Record toolchain, hashes, and qualification verdict
+        if: always()
+        shell: pwsh
+        run: |
+          @'
+          import hashlib, json, os, pathlib, subprocess
+          root = pathlib.Path('tools/native-snow-brain-spike')
+          def sha(path): return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+          def cmd(*args):
+              try: return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+              except Exception as exc: return f'ERROR:{exc}'
+          oracle = json.loads((root/'reference-oracle-results.json').read_text(encoding='utf-8')) if (root/'reference-oracle-results.json').exists() else None
+          mv3 = json.loads((root/'mv3-native-results.json').read_text(encoding='utf-8')) if (root/'mv3-native-results.json').exists() else None
+          report = {
+              'result': 'passed' if oracle and oracle.get('result') == 'passed' and mv3 and mv3.get('result') == 'passed' and os.environ.get('REPRO_A_SHA256') == os.environ.get('REPRO_B_SHA256') else 'failed',
+              'suite': 'Noise_KK_25519_ChaChaPoly_SHA256',
+              'snow': {'version':'0.10.0','source':'crates.io','crate_sha256':'599b506ccc4aff8cf7844bc42cf783009a434c1e26c964432560fb6d6ad02d82','release_commit':'4bb43f50370bdb3e8b1b57814ac662864db2704f'},
+              'pyo3': '0.29.2', 'maturin': cmd(os.environ['QUAL_PYTHON'],'-m','maturin','--version'),
+              'python': cmd(os.environ['QUAL_PYTHON'],'--version'), 'pyinstaller':'6.11.1',
+              'rustc': cmd('rustc','-Vv'), 'cargo':cmd('cargo','--version'), 'target':'x86_64-pc-windows-msvc',
+              'cargo_lock_sha256': sha(root/'Cargo.lock') if (root/'Cargo.lock').exists() else None,
+              'native_module_sha256': os.environ.get('NATIVE_MODULE_SHA256'),
+              'native_wheel_sha256': os.environ.get('NATIVE_WHEEL_SHA256'),
+              'reproducibility': {'first_module_sha256': os.environ.get('REPRO_A_SHA256'), 'second_module_sha256': os.environ.get('REPRO_B_SHA256')},
+              'frozen_executable_sha256': sha(os.environ['FROZEN_EXE']) if os.environ.get('FROZEN_EXE') and pathlib.Path(os.environ['FROZEN_EXE']).exists() else None,
+              'independent_oracle': oracle, 'mv3_native': mv3,
+          }
+          (root/'qualification-results.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          if report['result'] != 'passed': raise SystemExit(1)
+          '@ | & $env:QUAL_PYTHON -
+
+      - name: Upload native Snow feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-snow-brain-feasibility
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            tools/native-snow-brain-spike/Cargo.lock
+            tools/native-snow-brain-spike/native-dependency-metadata.json
+            tools/native-snow-brain-spike/native-cargo-tree.txt
+            tools/native-snow-brain-spike/reference-oracle-results.json
+            tools/native-snow-brain-spike/native-server-results.json
+            tools/native-snow-brain-spike/mv3-native-results.json
+            tools/native-snow-brain-spike/qualification-results.json
+            tools/native-snow-brain-spike/repro-a.pyd
+            tools/native-snow-brain-spike/repro-b.pyd
+            ${{ env.NATIVE_WHEEL }}
+            ${{ env.FROZEN_EXE }}

@@ -83,6 +83,15 @@ impl SnowSession {
         !self.closed && self.handshake.as_ref().is_some_and(HandshakeState::is_handshake_finished)
     }
 
+    // Qualification peers compare this digest to prove both ends reached the
+    // same authenticated session before any transport record is produced.
+    pub fn handshake_hash(&mut self) -> Result<Vec<u8>, JsValue> {
+        if self.closed || self.transport.is_some() { return Err(failure("session_closed")); }
+        let handshake = self.handshake.as_ref().ok_or_else(|| failure("session_closed"))?;
+        if !handshake.is_handshake_finished() { return Err(failure("handshake_incomplete")); }
+        Ok(handshake.get_handshake_hash().to_vec())
+    }
+
     pub fn enter_transport(&mut self) -> Result<(), JsValue> {
         if self.closed || self.transport.is_some() { return Err(failure("session_closed")); }
         if !self.handshake_finished() { return Err(failure("handshake_incomplete")); }
