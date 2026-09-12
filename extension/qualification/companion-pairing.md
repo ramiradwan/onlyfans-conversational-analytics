@@ -1,24 +1,28 @@
-# Agent companion pairing components
+# Agent companion pairing
 
-<!-- CODE-VERIFY: Check companion-agent-identity.mjs, companion-pairing-store.mjs, pairing-contract.mjs, grant-verifier.mjs, companion-noise-session.mjs, the MV3 storage harness, and the shipping background/build imports before changing implementation or qualification claims. -->
+<!-- CODE-VERIFY: Check background-read-only.js, background.js, runtime/companion-client.mjs, runtime/companion-pairing-store.mjs, runtime/packaged-snow.mjs, transport/companion-noise-session.mjs, build.mjs, manifest.json, the companion browser drivers, and .github/workflows/native-snow-brain-feasibility.yml before changing shipping or qualification claims. -->
 
-The Agent pairing modules implement the local [pairing contract](../../docs/companion-pairing-contract.md): offer verification, the Agent pairing proof, transactional pin storage, and a Snow session adapter. They are not connected to the shipping background entry or Full-mode routing. Preview and the shipping manifest/CSP remain unchanged.
+The shipping read-only background connects Full mode through `createCompanionClient`. Agent verifies Brain's installation proof and grants. The operator compares Agent's pairing code with Bridge before approving the peer key.
 
-## Contract input
+Full-mode configuration, credentials, storage-key operations and protocol traffic use the authenticated Noise session. Preview requires no companion connection.
 
-`test-fixtures/pairing/vendored-vector.mjs` loads the vendored companion-pairing contract from `contracts/companion-pairing-v1/`, refusing any file whose size or digest differs from the contract manifest and the consumer pin. The vectors contain synthetic keys and a synthetic grant trust set, never a production trust anchor; the production trust-set loader refuses it. Tests reproduce the grant digest, transcript, proof messages, comparison code, and prologue byte for byte, verify both proofs, and check every negative offer, request, confirmation, and session-authorization case against its expected refusal.
+The [pairing contract](../../docs/companion-pairing-contract.md) defines the identities and approval rules. The [session transport contract](../../docs/companion-session-transport.md) defines encrypted operations, framing, deadlines and lifecycle checks.
 
-Grants verify under the packaged grant trust set with `grant-verifier.mjs`. No trust set is shipped by these modules.
+## Shipping composition
 
-## Local state and session ownership
+`background-read-only.js` supplies the companion client's storage, configuration and WebSocket adapters to the read-only runtime. `background.js` uses the same client for the authoring runtime. The popup opens a persistent comparison window; Bridge provides the authenticated confirmation and revocation controls.
 
-`openPairingStore` retains a dedicated non-exportable P-256 identity and AES-GCM wrapping key as IndexedDB CryptoKeys. Snow generates X25519 candidate material; the store encrypts its private bytes before persistence and clears the temporary buffer. JavaScript buffer clearing does not prove complete memory erasure.
+The build packages the production grant trust set, static Snow glue and WASM. Directory and ZIP audits check their identities and the exact manifest policy. The CSP permits locally packaged WASM and `ws://127.0.0.1:17871`; the manifest grants no local host permission. Brain rejects credentials on socket opening and serves no Bridge HTTP content on that origin. Bridge remains at `http://bridge.localhost:17871`.
 
-`begin` creates a pending pairing with a fresh Noise key and nonce and returns `pair.request`. `acceptOffer` verifies `pair.offer` without writing, signs the Agent proof, and records the verified offer in one IndexedDB transaction that rechecks the attempt, epoch, deadline, and generation high-water. The pending pairing becomes the pin only when its first session authorizes, through a commit that repeats those checks. The store holds at most one pin and refuses to begin while it has one. `cancel` drops the pending pairing; `forget` drops the pin and pending pairing and advances the epoch, keeping the generation high-water. A root in any other format is refused and left unchanged.
+## Local state
 
-The Agent session adapter accepts only store material and a locally packaged Snow constructor. It requires encrypted confirmations, caps frames at 4 KiB, bounds handshake and confirmation to two seconds, and admits no application record before Brain's `session.authorization` verifies against the pinned identity. Each session ends at the earlier of 900 seconds and the earliest grant's `exp` plus grace. Wall-clock rollback, monotonic-clock rollback, cancellation, invalidation, malformed records, replay, or authentication failure closes the session. The conservative record cap is 1,048,576 combined application records.
+`openPairingStore` retains a dedicated non-exportable P-256 identity and AES-GCM wrapping key as IndexedDB CryptoKeys. Snow generates the candidate X25519 key pair; the store wraps private bytes before persistence and clears the temporary buffer. JavaScript buffer clearing does not prove complete memory erasure.
+
+Offer verification does not admit a pin. The store commits the pending pin only after the first authenticated session verifies Brain's authorization, rechecking the attempt, epoch, deadline and generation. Cancellation, forgetting and authority changes invalidate pending work and active sessions. Forgetting preserves the generation high-water mark. The store refuses an unsupported stored format without changing it.
 
 ## Qualification
+
+Run from the repository root:
 
 ```powershell
 npm test --prefix extension
@@ -28,26 +32,10 @@ npm run test:browser:pairing-storage --prefix extension
 npm run test:browser:pairing-storage --prefix extension -- <chrome.exe>
 ```
 
-The MV3 storage harness uses fresh profiles and the synthetic vector grants, with a test Brain that signs offers over the store's own requests. It checks non-exportable identity persistence across browser restart, wrapped private-key reconstruction, the absence of a pin lease, account binding, the single pin, forgetting, cancellation during verification, superseded attempts, duplicate commits, the generation high-water across forgetting, and refusal of an unsupported stored format. It does not qualify a shipping ZIP.
+The storage harness verifies identity persistence, wrapped-key reconstruction, account binding, cancellation, generation checks and transactional pin admission with synthetic grants. Its fixture trust set cannot be loaded as production trust.
 
-The Snow feasibility workflow builds the locked Rust/WASM dependency graph and runs the session adapter against real Snow records. Key-generation tests independently derive public keys through Node/OpenSSL. The Python/Noise and MV3 feasibility tests remain separate from production acceptance.
+The production browser drivers exercise the shipping client modules, production Brain routes and native Snow factory with explicit fixture grants, clock, installation-key provider and Bridge authorization. They cover comparison, encrypted authentication, storage access, configuration, rotation, browser restart, revocation and maximum-size records. Separate origin and popup drivers check hostile port ownership, ambient credential isolation and the comparison window lifecycle. See the [driver setup](../../tools/companion-session-qualification/README.md).
 
-## Integration gates
+The [recorded qualification](noise-dependency-review.md#evidence) passed these browser gates on Chrome 132 and current Chromium. That evidence identifies the exact source revisions and archive digests.
 
-Before importing these modules into shipping composition, require:
-
-1. Brain pairing window, installation-key pairing purpose, persistence, session implementation, and the Bridge confirmation view.
-2. An approved production trust-set release input packaged with the extension.
-3. WASM CSP approval, reproducible build/provenance/license review, and exact shipping ZIP allowlist/audit integration. The WASM binary remains a qualification artifact.
-4. Migration and end-to-end review of all secret-bearing Full-mode paths listed below, followed by exact-ZIP browser and bounded live-history acceptance.
-
-## Full-mode boundary inventory
-
-| Existing path | Material that must move into the authenticated session |
-| --- | --- |
-| `transport/config-http-adapter.mjs` and its read-only counterpart | Configuration requests/responses and auth tickets |
-| `transport/agent-websocket.mjs` and read-only WebSocket client | Session/reconnect tickets, captures, messages, snapshots, commands and responses |
-| `transport/chrome-adapter-core.mjs` and read-only adapter | Storage bootstrap, unseal/storage keys, credential rotation |
-| `transport/local-service-endpoints.mjs` and `secure-local-fetch.mjs` | Endpoint and HTTP routing gates that must not leave a plaintext alternative |
-
-This inventory guides the cutover review; it is not evidence that those routes have migrated. External messages, URL parameters, opening headers, error paths, and late asynchronous completions also need secret-egress checks before release.
+These harnesses qualify production module integration with test inputs. The [release gate](README.md) separately requires the exact candidate ZIP, real provisioning, supported browser installation, native permission interactions and recorded production acceptance. Scoped live-history qualification is also required; fixture results do not establish it.

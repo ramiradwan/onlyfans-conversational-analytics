@@ -11,6 +11,7 @@ export const RELEASE_SCENARIOS = Object.freeze([
   'hostile_listener_and_ambient_credential_isolation',
   'paired_worker_reconstruction_and_revocation',
   'fresh_install_companion_unavailable',
+  'scoped_live_history_deduplication_and_reconstruction',
 ]);
 
 // Fixture browser automation cannot certify production provisioning or operate

@@ -52,6 +52,10 @@ contains `{ major, installation: "supported", scenarios }` for each browser;
 each scenario is `{ id, result: "passed", evidence: "<report reference>" }`.
 The report hashes and retains this document alongside the ZIP.
 
+Each browser must include `scoped_live_history_deduplication_and_reconstruction`. Its evidence records the account operator's explicit authorization and traversal bounds, observed conversation and message counts, duplicate-handling results, and reconstruction after an interruption. Identify the exact ZIP digest and browser version in that record.
+
+Keep account identifiers and raw platform data out of public reports. The evidence reference must point to the recorded live run; synthetic pages, signer fixtures and module-level browser tests do not satisfy this scenario. Missing evidence for either browser blocks promotion.
+
 Without acceptance evidence the runner executes the automated checks, retains the
 candidate, then fails promotion. Use that candidate for the recorded tests and
 rerun with the resulting evidence. Production inputs must be used for production

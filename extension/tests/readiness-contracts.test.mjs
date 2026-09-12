@@ -60,6 +60,17 @@ test('popup smoke evidence cannot promote a release without exact-ZIP production
       RELEASE_SCENARIOS.map((id) => ({ id, result: 'passed', evidence: `local-report:${id}` })) })),
   };
   validateAcceptanceEvidence(valid, expected);
+  const liveScenario = 'scoped_live_history_deduplication_and_reconstruction';
+  assert.ok(RELEASE_SCENARIOS.includes(liveScenario), 'release acceptance must require scoped live history');
+  for (const browserIndex of [0, 1]) {
+    const withoutLiveHistory = structuredClone(valid);
+    withoutLiveHistory.browsers[browserIndex].scenarios = withoutLiveHistory.browsers[browserIndex].scenarios
+      .filter(({ id }) => id !== liveScenario);
+    assert.throws(() => validateAcceptanceEvidence(withoutLiveHistory, expected), new RegExp(liveScenario));
+    const withoutLiveRecord = structuredClone(valid);
+    withoutLiveRecord.browsers[browserIndex].scenarios.find(({ id }) => id === liveScenario).evidence = '';
+    assert.throws(() => validateAcceptanceEvidence(withoutLiveRecord, expected), new RegExp(liveScenario));
+  }
   assert.throws(() => validateAcceptanceEvidence({ ...valid, artifact_sha256: 'c'.repeat(64) }, expected));
   assert.throws(() => validateAcceptanceEvidence({ ...valid, bypasses_used: true }, expected));
   assert.throws(() => validateAcceptanceEvidence({ ...valid, pairing: 'first_listener' }, expected));
