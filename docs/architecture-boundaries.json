@@ -322,6 +322,7 @@
         "app/persistence/migrations.py",
         "app/persistence/deletion_operations.py",
         "app/persistence/auth.py",
+        "app/persistence/companion_pairing.py",
         "app/persistence/private_files.py",
         "app/persistence/sqlite_api.py",
         "app/persistence/sqlcipher_runtime.py",

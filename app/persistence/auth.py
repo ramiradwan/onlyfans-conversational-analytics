@@ -1712,6 +1712,32 @@ class SQLiteAuthenticationStore:
                 f"WHERE {scoped_column} = ? AND compact_jws IS NOT NULL",
                 (key.scope_id,),
             )
+        # Staging keys cannot survive withdrawal of their frozen authority,
+        # including the interval between confirmation and final admission.
+        window_scope = {
+            RevocationScopeType.INSTALLATION: "installation_id = ?",
+            RevocationScopeType.CREATOR_ACCOUNT: "creator_account_id = ?",
+            RevocationScopeType.PRINCIPAL: "confirmation_principal_id = ?",
+            RevocationScopeType.BRIDGE_SESSION: "confirmation_session_id = ?",
+            RevocationScopeType.VERIFIED_GRANT: (
+                "? IN (installation_grant_reference_id, creator_account_binding_reference_id)"
+            ),
+        }.get(key.scope_type)
+        connection.execute(
+            f"""
+                UPDATE companion_pairing_windows
+                SET state = 'revoked', version = version + 1,
+                    wrapped_brain_noise_private_key = NULL,
+                    confirmation_principal_id = NULL,
+                    confirmation_session_id = NULL, confirmed_at = NULL,
+                    terminal_at = ?, terminal_reason = 'authority_revoked'
+                WHERE state IN ('open', 'offered', 'awaiting_confirmation', 'confirmed')
+                  AND (({window_scope or '0'}) OR confirmation_session_id IN (
+                      SELECT session_id FROM bridge_sessions WHERE revoked_at IS NOT NULL
+                  ))
+                """,
+            (timestamp, key.scope_id) if window_scope is not None else (timestamp,),
+        )
         return self._revocation_version(connection, key)
 
     def revocation_version(self, key: RevocationKey) -> int:
