@@ -296,7 +296,7 @@ def test_migrates_a_pre_0011_auth_database(
 
     migrated = SQLiteAuthenticationStore(path, clock=clock)
     with migrated.database.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 13
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 14
         tables = {
             str(row["name"])
             for row in connection.execute(

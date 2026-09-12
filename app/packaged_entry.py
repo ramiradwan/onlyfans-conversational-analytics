@@ -60,6 +60,8 @@ def select_brain_application(
         return app
     from app.provisioning.app import create_provisioning_app
     from app.provisioning.claim_submission import durable_claim_submission
+    from app.provisioning.claim_submission import hosted_transport, installation_proof_authority
+    from app.security.grant_refresh import configured_grant_refresh
     from app.provisioning.creator_association import (
         durable_creator_association_initiation,
     )
@@ -73,6 +75,12 @@ def select_brain_application(
     )
 
     open_store = durable_authentication_store(data_directory)
+    grant_refresh = configured_grant_refresh(
+        open_store,
+        hosted_origin=os.environ.get(PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""),
+        transport_factory=hosted_transport,
+        proof_authority_factory=installation_proof_authority,
+    )
     return create_provisioning_app(
         claim_submission=durable_claim_submission(
             open_store,
@@ -101,10 +109,12 @@ def select_brain_application(
                 PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""
             ),
             data_directory=data_directory,
+            grant_refresh=grant_refresh,
         ),
         extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""),
         launcher_handoff_token=os.environ.get(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE),
         completion_exit=provisioning_completion_exit,
+        shutdown_action=grant_refresh.stop,
     )
 
 

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Callable, Protocol
+from typing import Annotated, Awaitable, Callable, Protocol
 
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from app.provisioning.session import (
     PROVISIONING_SESSION_COOKIE_NAME,
@@ -134,10 +137,18 @@ def create_provisioning_app(
     launcher_handoff_token: str | None = None,
     completion_exit: Callable[[], None] | None = None,
     session_manager: ProvisioningSessionManager | None = None,
+    shutdown_action: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     """Build the isolated provisioning surface without importing runtime modules."""
     sessions = session_manager or ProvisioningSessionManager(launcher_handoff_token)
-    application = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+    @asynccontextmanager
+    async def lifecycle(application):
+        try:
+            yield
+        finally:
+            if shutdown_action is not None:
+                await shutdown_action()
+    application = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifecycle)
 
     def provisioned_extension_id() -> str:
         """Return only a locally valid configured Chrome extension identifier."""
@@ -288,11 +299,15 @@ def create_provisioning_app(
     @application.post(PROVISIONING_FINALIZE_PATH, include_in_schema=False)
     async def finalize(request: Request, body: FinalizationBody) -> JSONResponse:
         sessions.require_mutation(request)
-        refusal = finalize_action(
-            association_request_id=body.association_request_id,
-            detected_creator_account_id=body.detected_creator_account_id,
-            reported_platform_creator_id=body.reported_platform_creator_id,
-        )
+        try:
+            refusal = await asyncio.wait_for(run_in_threadpool(
+                finalize_action,
+                association_request_id=body.association_request_id,
+                detected_creator_account_id=body.detected_creator_account_id,
+                reported_platform_creator_id=body.reported_platform_creator_id,
+            ), timeout=30.0)
+        except TimeoutError:
+            refusal = "membership_refresh_unavailable"
         if refusal is not None:
             return JSONResponse(
                 {"state": "provisioning_ready", "reason": refusal},

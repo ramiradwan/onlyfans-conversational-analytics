@@ -11,6 +11,7 @@ binding the store refuses to record twice and no configuration to boot into.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Literal
@@ -28,6 +29,7 @@ from app.provisioning.finalize import (
     authorize_finalized_account,
     finalize_provisioning,
 )
+from app.security.grant_refresh import GrantRefreshLifecycle
 
 
 # The path installation configuration pins as AUTH_DATABASE_PATH. Provisioning
@@ -87,6 +89,7 @@ def durable_finalize_action(
     extension_id: str,
     data_directory: str | Path | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    grant_refresh: GrantRefreshLifecycle | None = None,
 ) -> Callable[..., str | None]:
     """Build the action that finalizes provisioning and authorizes its account.
 
@@ -109,18 +112,27 @@ def durable_finalize_action(
         )
         store = open_store()
         try:
-            finalized = finalize_provisioning(
-                store=store,
-                request=request,
-                extension_id=extension_id,
-                data_directory=data_directory,
+            lease = None if grant_refresh is None else grant_refresh.prepare_finalization(
+                association_request_id, detected_creator_account_id
             )
-            authorize_finalized_account(
-                store=store,
-                request=request,
-                finalized=finalized,
-                authorized_at=now(),
-            )
+            if grant_refresh is not None and lease is None:
+                return "membership_refresh_unavailable"
+            guard = nullcontext(True) if grant_refresh is None else grant_refresh.guard(lease)
+            with guard as active:
+                if not active:
+                    return "membership_refresh_unavailable"
+                finalized = finalize_provisioning(
+                    store=store,
+                    request=request,
+                    extension_id=extension_id,
+                    data_directory=data_directory,
+                )
+                authorize_finalized_account(
+                    store=store,
+                    request=request,
+                    finalized=finalized,
+                    authorized_at=now(),
+                )
         except FinalizationRefused as refusal:
             return refusal.reason
         except AccountBindingRefused as refusal:
