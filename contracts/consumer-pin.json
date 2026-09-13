@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "8836509e317ba37bb305cf176cad811ee5fed631fb44f810228458e9a8f387d0",
+  "aggregate_bundle_sha256": "3c4b0a774e2fe6f3bf878c6e8434bc0e2c712630e7c89951933788d70cf1ed6c",
   "conformance_manifests": [
     {
       "export": "capability-license-v1",
@@ -24,7 +24,7 @@
   ],
   "consumer_pin_version": 3,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "61d5dd4dca99dc91a947415753c611670a16aaca1c0b1ec2322d1b2ce97861c3",
+  "contract_manifest_sha256": "6ba604cfa5b85cd75354fe6dd0ab55c89a0adfa005d6d161c659485cbd1d0878",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",

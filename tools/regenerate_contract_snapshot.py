@@ -97,7 +97,7 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 773
+EXPECTED_FILE_COUNT = 774
 EXPECTED_PUBLISHED_FILE_COUNT = 55
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",

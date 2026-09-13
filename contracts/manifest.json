@@ -1,5 +1,5 @@
 {
-  "content_digest": "8836509e317ba37bb305cf176cad811ee5fed631fb44f810228458e9a8f387d0",
+  "content_digest": "3c4b0a774e2fe6f3bf878c6e8434bc0e2c712630e7c89951933788d70cf1ed6c",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -3625,6 +3625,11 @@
       "path": "permit-consumption/wrong-installation.json",
       "sha256": "f541fefffda0f2f9c8556841f43d7394fe67bafd78664eb2b4e2cf4392cbad73",
       "size": 194
+    },
+    {
+      "path": "production/capability-license-v1/trust-set.json",
+      "sha256": "935cd51fe510065d6dc7d29ce481324e7ddf2be1a5431151bc74efc4f45a9173",
+      "size": 693
     },
     {
       "path": "production/grant-profile-v1/trust-set.json",

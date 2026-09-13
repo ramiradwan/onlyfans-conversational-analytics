@@ -48,7 +48,29 @@ _EXPECTED_CAPABILITY = "analysis-run"
 _EXPECTED_SEAT_SCOPE = "organization-installation-seat"
 _PRODUCTION_TRUST_SET = "production/capability-license-v1/trust-set.json"
 _FIXTURE_TRUST_SET = "capability-license-v1/trust-set.json"
+_PRODUCTION_TRUST_PROFILE = "urn:bridge-clean:capability-license-trust:v1"
+_PRODUCTION_TRUST_FIELDS = frozenset(
+    {
+        "profile",
+        "environment",
+        "production_usable",
+        "purpose",
+        "algorithm",
+        "curve",
+        "backend_type",
+        "custody",
+        "transition_sequence",
+        "max_retiring_overlap_seconds",
+        "keys",
+    }
+)
+_PRODUCTION_KEY_FIELDS = frozenset(
+    {"purpose", "state", "kid", "jwk", "thumbprint", "not_before", "not_after"}
+)
+_PRODUCTION_JWK_FIELDS = frozenset({"crv", "kid", "kty", "x", "y"})
+_PRODUCTION_KEY_STATES = frozenset({"active", "retiring", "historical"})
 _MAX_TRUSTED_KEYS = 8
+_MAX_RETIRING_OVERLAP_SECONDS = 2_592_000
 _PAYLOAD_FIELDS = frozenset(
     {
         "profile",
@@ -90,6 +112,11 @@ class PackagedCapabilityLicenseTrustProvider:
     def trust_set(self) -> Mapping[str, Any]:
         try:
             trust_set = load_trust_set(_PRODUCTION_TRUST_SET, environment="production")
+            if (
+                trust_set.get("profile") != _PRODUCTION_TRUST_PROFILE
+                or trust_set.get("production_usable") is not True
+            ):
+                raise ValueError("not production CapabilityLicense trust")
             _trusted_keys(trust_set)
         except (ContractsIntegrityError, ValueError) as error:
             raise CapabilityLicenseTrustUnavailable(
@@ -116,6 +143,16 @@ class FixtureCapabilityLicenseTrustProvider:
             )
         _trusted_keys(trust_set)
         return trust_set
+
+
+@dataclass(frozen=True, slots=True)
+class _TrustedCapabilityLicenseKey:
+    purpose: str
+    kid: str
+    public_key: ec.EllipticCurvePublicKey
+    thumbprint: str | None = None
+    not_before: int | None = None
+    not_after: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,17 +272,21 @@ def verify_capability_license(
     entry = keys.get(kid) if isinstance(kid, str) else None
     if entry is None:
         return _outcome(False, "unknown_kid")
-    purpose, public_key = entry
-    if purpose != "capability-license":
+    if entry.purpose != "capability-license":
         return _outcome(False, "wrong_key_purpose")
     if len(signature) != 64 or int.from_bytes(signature[32:], "big") > _P256_ORDER // 2:
         return _outcome(False, "invalid_signature")
     signing_input = f"{header_segment}.{payload_segment}".encode("ascii")
-    if not _verify_signature(public_key, signing_input, signature):
+    if not _verify_signature(entry.public_key, signing_input, signature):
         return _outcome(False, "invalid_signature")
 
     if not _valid_payload(payload):
         return _outcome(False, "schema_invalid")
+    issued_at = payload["iat"]
+    if entry.not_before is not None and issued_at < entry.not_before:
+        return _outcome(False, "issuance_before_key_not_before")
+    if entry.not_after is not None and issued_at > entry.not_after:
+        return _outcome(False, "issuance_after_key_not_after")
     if payload["sub"] != context.expected_subject:
         return _outcome(False, "subject_mismatch")
     if payload["organization_id"] != context.expected_organization_id:
@@ -348,27 +389,141 @@ def _canonical_json(value: Any) -> bytes:
 
 def _trusted_keys(
     trust_set: Mapping[str, Any],
-) -> dict[str, tuple[str, ec.EllipticCurvePublicKey]]:
+) -> dict[str, _TrustedCapabilityLicenseKey]:
+    if trust_set.get("profile") == _PRODUCTION_TRUST_PROFILE:
+        return _trusted_production_keys(trust_set)
+    if trust_set.get("production_usable") is False:
+        return _trusted_fixture_keys(trust_set)
+    raise ValueError("invalid CapabilityLicense trust set")
+
+
+def _trusted_production_keys(
+    trust_set: Mapping[str, Any],
+) -> dict[str, _TrustedCapabilityLicenseKey]:
+    if set(trust_set) != _PRODUCTION_TRUST_FIELDS:
+        raise ValueError("invalid CapabilityLicense production trust")
+    if (
+        trust_set.get("profile") != _PRODUCTION_TRUST_PROFILE
+        or trust_set.get("environment") != "production"
+        or trust_set.get("production_usable") is not True
+        or trust_set.get("purpose") != "capability-license"
+        or trust_set.get("algorithm") != "ES256"
+        or trust_set.get("curve") != "P-256"
+        or trust_set.get("custody") != "protected-non-exportable"
+        or not isinstance(trust_set.get("backend_type"), str)
+        or not trust_set["backend_type"].strip()
+    ):
+        raise ValueError("CapabilityLicense production trust is not usable")
+    sequence = trust_set.get("transition_sequence")
+    overlap = trust_set.get("max_retiring_overlap_seconds")
+    if type(sequence) is not int or sequence < 1:
+        raise ValueError("invalid CapabilityLicense trust transition sequence")
+    if (
+        type(overlap) is not int
+        or not 0 <= overlap <= _MAX_RETIRING_OVERLAP_SECONDS
+    ):
+        raise ValueError("invalid CapabilityLicense retiring-key overlap bound")
     entries = trust_set.get("keys")
     if not isinstance(entries, list) or not 1 <= len(entries) <= _MAX_TRUSTED_KEYS:
-        raise ValueError("invalid CapabilityLicense trust set")
-    keys: dict[str, tuple[str, ec.EllipticCurvePublicKey]] = {}
+        raise ValueError("invalid CapabilityLicense production trust key count")
+
+    keys: dict[str, _TrustedCapabilityLicenseKey] = {}
+    seen_thumbprints: set[str] = set()
+    active_count = 0
+    active_start: int | None = None
+    for raw in entries:
+        if not isinstance(raw, Mapping) or set(raw) != _PRODUCTION_KEY_FIELDS:
+            raise ValueError("invalid CapabilityLicense production trust key")
+        if raw.get("purpose") != "capability-license":
+            raise ValueError("CapabilityLicense trust contains wrong-purpose key")
+        state = raw.get("state")
+        if state not in _PRODUCTION_KEY_STATES:
+            raise ValueError("invalid CapabilityLicense trust key state")
+        not_before = raw.get("not_before")
+        not_after = raw.get("not_after")
+        if type(not_before) is not int or not_before < 0:
+            raise ValueError("invalid CapabilityLicense key activation time")
+        if state == "active":
+            active_count += 1
+            active_start = not_before
+            if not_after is not None:
+                raise ValueError("active CapabilityLicense key cannot have not_after")
+        elif type(not_after) is not int or not_after <= not_before:
+            raise ValueError(f"{state} CapabilityLicense key requires valid not_after")
+
+        jwk = raw.get("jwk")
+        if not isinstance(jwk, Mapping) or set(jwk) != _PRODUCTION_JWK_FIELDS:
+            raise ValueError("invalid CapabilityLicense production trust JWK")
+        public_key = _public_key(jwk)
+        thumbprint_bytes = _jwk_thumbprint_bytes(jwk)
+        derived_thumbprint = _b64u_encode(thumbprint_bytes)
+        derived_kid = f"bc1.cl.{_b64u_encode(thumbprint_bytes[:16])}"
+        entry_kid = raw.get("kid")
+        jwk_kid = jwk.get("kid")
+        entry_thumbprint = raw.get("thumbprint")
+        if not isinstance(entry_kid, str) or not isinstance(jwk_kid, str):
+            raise ValueError("CapabilityLicense trust key identity mismatch")
+        if entry_kid in keys or jwk_kid in keys:
+            raise ValueError("duplicate CapabilityLicense kid")
+        if derived_thumbprint in seen_thumbprints:
+            raise ValueError("duplicate CapabilityLicense public key")
+        if (
+            not isinstance(entry_thumbprint, str)
+            or entry_kid != derived_kid
+            or jwk_kid != derived_kid
+            or entry_thumbprint != derived_thumbprint
+        ):
+            raise ValueError("CapabilityLicense trust key identity mismatch")
+        seen_thumbprints.add(derived_thumbprint)
+        keys[derived_kid] = _TrustedCapabilityLicenseKey(
+            purpose="capability-license",
+            kid=derived_kid,
+            public_key=public_key,
+            thumbprint=derived_thumbprint,
+            not_before=not_before,
+            not_after=not_after,
+        )
+
+    if active_count != 1 or active_start is None:
+        raise ValueError("CapabilityLicense trust requires exactly one active key")
+    for raw in entries:
+        if raw["state"] != "retiring":
+            continue
+        retiring_until = raw["not_after"]
+        if not isinstance(retiring_until, int):
+            raise ValueError("retiring CapabilityLicense key requires not_after")
+        if not active_start <= retiring_until <= active_start + overlap:
+            raise ValueError("CapabilityLicense retiring-key overlap exceeds bound")
+    return keys
+
+
+def _trusted_fixture_keys(
+    trust_set: Mapping[str, Any],
+) -> dict[str, _TrustedCapabilityLicenseKey]:
+    entries = trust_set.get("keys")
+    if not isinstance(entries, list) or not 1 <= len(entries) <= _MAX_TRUSTED_KEYS:
+        raise ValueError("invalid CapabilityLicense fixture trust set")
+    keys: dict[str, _TrustedCapabilityLicenseKey] = {}
     for entry in entries:
         if not isinstance(entry, Mapping):
-            raise ValueError("invalid CapabilityLicense trust set")
+            raise ValueError("invalid CapabilityLicense fixture trust set")
         purpose = entry.get("purpose")
         jwk = entry.get("jwk")
         if not isinstance(purpose, str) or not isinstance(jwk, Mapping):
-            raise ValueError("invalid CapabilityLicense trust set")
+            raise ValueError("invalid CapabilityLicense fixture trust set")
         kid = jwk.get("kid")
         if not isinstance(kid, str) or kid in keys:
-            raise ValueError("invalid CapabilityLicense trust set")
-        keys[kid] = (purpose, _public_key(jwk))
+            raise ValueError("invalid CapabilityLicense fixture trust set")
+        keys[kid] = _TrustedCapabilityLicenseKey(
+            purpose=purpose,
+            kid=kid,
+            public_key=_public_key(jwk),
+        )
     return keys
 
 
 def _public_key(jwk: Mapping[str, Any]) -> ec.EllipticCurvePublicKey:
-    if set(jwk) != {"crv", "kid", "kty", "x", "y"}:
+    if set(jwk) != _PRODUCTION_JWK_FIELDS:
         raise ValueError("invalid CapabilityLicense trust set")
     if jwk.get("crv") != "P-256" or jwk.get("kty") != "EC":
         raise ValueError("invalid CapabilityLicense trust set")
@@ -387,6 +542,22 @@ def _public_key(jwk: Mapping[str, Any]) -> ec.EllipticCurvePublicKey:
         ).public_key()
     except ValueError as exc:
         raise ValueError("invalid CapabilityLicense trust set") from exc
+
+
+def _jwk_thumbprint_bytes(jwk: Mapping[str, Any]) -> bytes:
+    material = _canonical_json(
+        {
+            "crv": jwk["crv"],
+            "kty": jwk["kty"],
+            "x": jwk["x"],
+            "y": jwk["y"],
+        }
+    )
+    return hashlib.sha256(material).digest()
+
+
+def _b64u_encode(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
 def _verify_signature(

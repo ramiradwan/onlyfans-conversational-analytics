@@ -4,7 +4,7 @@
 
 `contracts/` contains a selected offline snapshot of external contract material. It is not a complete copy of its source.
 
-`manifest.json` records the selected files and their digests. `consumer-pin.json` independently pins the manifest, supported profiles, trust sets, vector/conformance manifests, generator versions, and the exact upstream repository commit/tree plus published source-manifest digest.
+`manifest.json` records the selected files and their digests. `consumer-pin.json` independently pins the manifest, supported profiles, trust sets, vector/conformance manifests, generator versions, and the exact upstream repository commit/tree plus published source-manifest digest. Product-owned production trust under `contracts/production/` is included in the same product manifest/package integrity closure, but it is not attributed to the pinned canonical-contracts source commit. The current CapabilityLicense production trust was copied byte-for-byte from `ramiradwan/creator-commercial-control-plane` commit `06cf60cb962fa22ac6023caf7c63231ee640b415`, path `deploy/signing/capability-license-production-trust.json`, and is pinned in the product manifest by its own SHA-256.
 
 Verify the snapshot before using it:
 

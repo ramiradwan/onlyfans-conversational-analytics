@@ -522,6 +522,20 @@ def test_contract_anchor_hashes_match_the_derived_contract_closure() -> None:
     ).hexdigest()
 
 
+def test_packaged_capability_license_production_trust_is_in_contract_closure(tmp_path: Path) -> None:
+    relative = "production/capability-license-v1/trust-set.json"
+    expected = "935cd51fe510065d6dc7d29ce481324e7ddf2be1a5431151bc74efc4f45a9173"
+    manifest = json.loads((ROOT / "contracts" / "manifest.json").read_text(encoding="utf-8"))
+    entries = {entry["path"]: entry for entry in manifest["files"]}
+    assert entries[relative]["sha256"] == expected
+
+    stage = _stage_runtime_tree(tmp_path)
+    packaged = stage / "_internal" / "contracts" / relative
+    assert packaged.is_file()
+    assert hashlib.sha256(packaged.read_bytes()).hexdigest() == expected
+    assert "contracts_closure_failed" not in _codes(verify_runtime_files(stage))
+
+
 def test_contract_support_file_hashes_match_the_derived_contract_closure() -> None:
     policy = load_runtime_policy(POLICY_PATH)
     declared_digests = policy["contracts"]["root_file_sha256"]

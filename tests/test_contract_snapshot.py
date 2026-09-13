@@ -18,6 +18,7 @@ from tools.regenerate_contract_snapshot import (
     EXPECTED_PROGRESS_VECTOR_FILES,
     EXPECTED_PUBLISHED_PROFILES,
     EXPORT_SET,
+    EXPORT_SOURCES,
     SOURCE_MANIFEST_TARGET,
     build_records,
     selected_pairing_profile,
@@ -89,8 +90,8 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "8836509e317ba37bb305cf176cad811ee5fed631fb44f810228458e9a8f387d0"
-    assert pin["contract_manifest_sha256"] == "61d5dd4dca99dc91a947415753c611670a16aaca1c0b1ec2322d1b2ce97861c3"
+    assert pin["aggregate_bundle_sha256"] == "3c4b0a774e2fe6f3bf878c6e8434bc0e2c712630e7c89951933788d70cf1ed6c"
+    assert pin["contract_manifest_sha256"] == "6ba604cfa5b85cd75354fe6dd0ab55c89a0adfa005d6d161c659485cbd1d0878"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
         "capability-license-v1": "c87d4ea9e70a856ab21888ddc048ebada5837713f97e30599af4c66536a2d5d1",
         "installation-claim-package-v1": "5bb58f5f2f3938a69d6381efeb38b0e4d6417aece0482ff337dafb8edb08483d",
@@ -192,6 +193,22 @@ def test_capability_license_fixture_trust_is_not_production_trust() -> None:
     assert load_trust_set(
         "capability-license-v1/trust-set.json", environment="development"
     )["production_usable"] is False
+
+
+@pytest.mark.contract_integrity
+def test_production_capability_license_trust_is_product_owned_and_manifest_pinned() -> None:
+    relative = "production/capability-license-v1/trust-set.json"
+    expected = "935cd51fe510065d6dc7d29ce481324e7ddf2be1a5431151bc74efc4f45a9173"
+    manifest = verify_manifest(ROOT)
+    entries = {entry["path"]: entry for entry in manifest["files"]}
+
+    assert hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == expected
+    assert entries[relative]["sha256"] == expected
+    trust_set = load_trust_set(relative)
+    assert trust_set["profile"] == "urn:bridge-clean:capability-license-trust:v1"
+    assert trust_set["production_usable"] is True
+    assert trust_set["purpose"] == "capability-license"
+    assert "production" not in EXPORT_SOURCES
 
 
 @pytest.mark.contract_integrity
