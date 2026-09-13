@@ -235,11 +235,13 @@ def _stop_brain(process: subprocess.Popen[str]) -> None:
             process.wait(timeout=5)
 
 
-def _request(path: str) -> _HttpResponse | None:
+def _request(path: str, *, host_header: str | None = None) -> _HttpResponse | None:
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{_BRAIN_PORT}{path}",
+        headers={} if host_header is None else {"Host": host_header},
+    )
     try:
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{_BRAIN_PORT}{path}", timeout=1
-        ) as response:
+        with urllib.request.urlopen(request, timeout=1) as response:
             return _HttpResponse(response.status, response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         return _HttpResponse(error.code, error.read().decode("utf-8"))
@@ -264,11 +266,15 @@ def _raw_request(
 
 
 def _wait_for_response(
-    process: subprocess.Popen[str], path: str, *, description: str
+    process: subprocess.Popen[str],
+    path: str,
+    *,
+    description: str,
+    host_header: str | None = None,
 ) -> _HttpResponse:
     deadline = time.monotonic() + _STARTUP_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
-        response = _request(path)
+        response = _request(path, host_header=host_header)
         if response is not None:
             return response
         if process.poll() is not None:
@@ -288,10 +294,18 @@ def _assert_packaged_runtime_serves_homepage(
         artifact, data_directory=data_directory, working_directory=working_directory
     )
     try:
-        health = _wait_for_response(process, "/health", description="configured runtime")
+        health = _wait_for_response(
+            process,
+            "/health",
+            description="configured runtime",
+            host_header="bridge.localhost:17871",
+        )
         assert health.status == 200, f"configured runtime health response was {health.status}"
         homepage = _wait_for_response(
-            process, "/", description="configured runtime resource witness"
+            process,
+            "/",
+            description="configured runtime resource witness",
+            host_header="bridge.localhost:17871",
         )
         assert homepage.status == 200, (
             "resource_failure: the configured frozen runtime could not render its "
@@ -753,7 +767,12 @@ def test_configured_local_session_rejects_invalid_bootstrap_token(tmp_path: Path
     _write_runtime_configuration(control_directory)
     control = _start_source_brain(control_directory)
     try:
-        health = _wait_for_response(control, "/health", description="valid control")
+        health = _wait_for_response(
+            control,
+            "/health",
+            description="valid control",
+            host_header="bridge.localhost:17871",
+        )
         assert health.status == 200, (
             "valid control: a 32-or-more-character token did not reach "
             f"configured application selection (status {health.status})"
