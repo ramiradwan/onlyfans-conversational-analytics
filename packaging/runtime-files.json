@@ -61,7 +61,10 @@
         "0010_companion_grant_retention.sql": "9bcd633c8ddfecf55083b9842242f6f676b563e2fd0bf0c23b253130231d1ca6",
         "0011_companion_pairing_persistence.sql": "bace433fa1b2e8abe7a0e3f6d4869b75fb29b4d7d2c132e8978e9dc2ed57756a",
         "0012_companion_pin_admission.sql": "9ec530acb28dff0005d47d88474a73a64a3786d241955d545901dac2d392f193",
-        "0013_companion_session_credentials.sql": "5ccc23bf5292051034e27b90caa7ae8e8e5e89b77838cfb9b8fd3ae5cb5e663c"
+        "0013_companion_session_credentials.sql": "5ccc23bf5292051034e27b90caa7ae8e8e5e89b77838cfb9b8fd3ae5cb5e663c",
+        "0014_hosted_grant_tombstones.sql": "4a68de7af6668df805b341f967518c8c61a1d9e98c338c073493a58714099d5b",
+        "0015_capability_license_authority.sql": "404689c5e258bad350210740fe2dde0c7c7dad5027b516476fb106866265a11b",
+        "0016_bootstrap_recovery_v2.sql": "7abb504e996ea02a5d6a3f2f9a1f441d9f59a0f060657098e4c2f8208b070069"
       }
     },
     {
@@ -82,10 +85,10 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "4a88d9acad47d910299b7a10999162dd5ba089d318689e3cdf20209a86eddc44",
-    "consumer_pin_sha256": "017ee31e5c739e256f107f218f595bea94b61b178daa74f46d937798b8aef55b",
+    "manifest_sha256": "61d5dd4dca99dc91a947415753c611670a16aaca1c0b1ec2322d1b2ce97861c3",
+    "consumer_pin_sha256": "03b88700eb140e32b914729cf4cf369dc1dda3bf17691c310a496464cccec18f",
     "root_file_sha256": {
-      "loader.py": "fff06e359a6fc6e1fa4f9fac584e4c7dbd67e33c713eadefa251825521df40e3",
+      "loader.py": "dc8b67ca449fcea0bbaf311d843b8ca5a1f0dda4b77aa84db466ef63b16e4cab",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [
