@@ -479,7 +479,7 @@ class CapabilityLicenseAuthorityService:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._verification_source = verification_source
 
-    def accept(
+    def verify(
         self,
         token: str,
         *,
@@ -491,7 +491,7 @@ class CapabilityLicenseAuthorityService:
         if not outcome.valid or outcome.license is None:
             raise CapabilityLicenseVerificationError(outcome.result)
         verified = outcome.license
-        reference = VerifiedCapabilityLicenseReference(
+        return VerifiedCapabilityLicenseReference(
             reference_id=_reference_id(verified.object_digest),
             license_id=verified.license_id,
             issuance_id=verified.issuance_id,
@@ -513,8 +513,20 @@ class CapabilityLicenseAuthorityService:
             verified_at=self._clock(),
             verification_source=self._verification_source,
         )
+
+    def persist(
+        self, reference: "VerifiedCapabilityLicenseReference"
+    ) -> "VerifiedCapabilityLicenseReference":
         self._store.record_verified_capability_license(reference)
         return reference
+
+    def accept(
+        self,
+        token: str,
+        *,
+        context: CapabilityLicenseVerificationContext,
+    ) -> "VerifiedCapabilityLicenseReference":
+        return self.persist(self.verify(token, context=context))
 
     def recover(
         self,
