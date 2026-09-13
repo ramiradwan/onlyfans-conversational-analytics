@@ -265,7 +265,14 @@ class InstallationClaim:
             not _UUIDV7_RE.fullmatch(self.claim_id)
             or not _ID_RE.fullmatch(self.onboarding_transaction_id)
             or not _ID_RE.fullmatch(self.organization_id)
-            or not _ID_RE.fullmatch(self.installation_id)
+            or (
+                self.claim_profile == CLAIM_PROFILE_V2
+                and not _UUIDV7_RE.fullmatch(self.installation_id)
+            )
+            or (
+                self.claim_profile == CLAIM_PROFILE_V1
+                and not _ID_RE.fullmatch(self.installation_id)
+            )
             or self.consume_path
             != f"/v1/installation-claims/{self.claim_id}:consume"
             or self.claim_profile not in {CLAIM_PROFILE_V1, CLAIM_PROFILE_V2}

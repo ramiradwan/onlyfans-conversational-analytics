@@ -28,7 +28,9 @@ from app.security.grant_types import (
     CREATOR_ACCOUNT_BINDING,
     MEMBERSHIP_SNAPSHOT,
     PRODUCTION_PROVISIONING_GRANT_TYPES,
+    PROVISIONING_GRANT_TYPES,
 )
+from app.security.hosted_grants import CLAIM_PROFILE_V2
 from app.security.runtime_policy import AuthContext
 
 
@@ -111,7 +113,10 @@ class FinalizedProvisioning:
 
 
 def grant_bundle_digest(grants: tuple[VerifiedGrantReference, ...]) -> str:
-    """Digest exactly one verified grant per required grant type.
+    """Digest exactly one verified legacy provisioning grant per required type.
+
+    The public helper retains the historical v1 four-grant contract. New v2
+    finalization selects its three-grant identity/account tuple internally.
 
     SHA-256 over canonical JSON holding the `(grant_type, grant_digest)` pairs
     sorted by grant type. The value records the provenance of initial
@@ -121,7 +126,7 @@ def grant_bundle_digest(grants: tuple[VerifiedGrantReference, ...]) -> str:
     """
 
     document = json.dumps(
-        [[grant_type, digest] for grant_type, digest in _digested_pairs(grants)],
+        [[grant_type, digest] for grant_type, digest in _digested_pairs(grants, PROVISIONING_GRANT_TYPES)],
         ensure_ascii=True,
         separators=(",", ":"),
     )
@@ -196,7 +201,10 @@ def verified_grant_bindings(
     """
 
     candidate = _approved_candidate(store, request.association_request_id)
-    selected = _one_grant_per_required_type(store.verified_grants())
+    required_grant_types = _required_provisioning_grant_types(store)
+    selected = _one_grant_per_required_type(
+        store.verified_grants(), required_grant_types
+    )
     key = store.installation_key_reference()
     if key is None:
         raise FinalizationRefused("installation_key_unavailable")
@@ -213,7 +221,7 @@ def verified_grant_bindings(
 
     bridge_role = _bridge_role(membership.membership_roles)
     references = tuple(
-        selected[grant_type].reference_id for grant_type in PRODUCTION_PROVISIONING_GRANT_TYPES
+        selected[grant_type].reference_id for grant_type in required_grant_types
     )
     identity = AuthContext(
         principal_id=membership.subject,
@@ -232,11 +240,49 @@ def verified_grant_bindings(
     account = VerifiedAccountBinding(
         creator_account_id=creator_account_id,
         platform_creator_id=creator_account_id,
-        grant_bundle_sha256=bundle_digest(
-            tuple(selected[grant_type] for grant_type in PRODUCTION_PROVISIONING_GRANT_TYPES)
+        grant_bundle_sha256=_bundle_digest_for_required_types(
+            bundle_digest,
+            tuple(selected[grant_type] for grant_type in required_grant_types),
+            required_grant_types,
         ),
     )
     return bindings, account, references
+
+
+
+
+def _required_provisioning_grant_types(
+    store: AuthenticationStore,
+) -> tuple[str, ...]:
+    """Select the v2 tuple only from durable enrollment provenance.
+
+    A v2 consumed claim is independently trusted local state describing which
+    bootstrap contract was used. Missing/ambiguous provenance remains on the
+    historical v1 path; callers cannot upgrade themselves by supplying a grant.
+    """
+
+    claims = store.consumed_claim_submissions()
+    if len(claims) == 1 and claims[0].claim_profile == CLAIM_PROFILE_V2:
+        return PRODUCTION_PROVISIONING_GRANT_TYPES
+    return PROVISIONING_GRANT_TYPES
+
+
+def _bundle_digest_for_required_types(
+    bundle_digest: GrantBundleDigest,
+    grants: tuple[VerifiedGrantReference, ...],
+    required_grant_types: tuple[str, ...],
+) -> str:
+    if bundle_digest is grant_bundle_digest:
+        document = json.dumps(
+            [
+                [grant_type, digest]
+                for grant_type, digest in _digested_pairs(grants, required_grant_types)
+            ],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(document.encode("utf-8")).hexdigest()
+    return bundle_digest(grants)
 
 
 def _approved_candidate(
@@ -250,9 +296,10 @@ def _approved_candidate(
 
 def _one_grant_per_required_type(
     grants: tuple[VerifiedGrantReference, ...],
+    required_grant_types: tuple[str, ...],
 ) -> dict[str, VerifiedGrantReference]:
     selected: dict[str, VerifiedGrantReference] = {}
-    for grant_type in PRODUCTION_PROVISIONING_GRANT_TYPES:
+    for grant_type in required_grant_types:
         matches = [grant for grant in grants if grant.grant_type == grant_type]
         if not matches:
             raise FinalizationRefused("incomplete_grant_set")
@@ -264,6 +311,7 @@ def _one_grant_per_required_type(
 
 def _digested_pairs(
     grants: tuple[VerifiedGrantReference, ...],
+    required_grant_types: tuple[str, ...],
 ) -> tuple[tuple[str, str], ...]:
     """Select one `(grant_type, grant_digest)` pair per required grant type.
 
@@ -273,12 +321,12 @@ def _digested_pairs(
 
     digests: dict[str, str] = {}
     for grant in grants:
-        if grant.grant_type not in PRODUCTION_PROVISIONING_GRANT_TYPES:
+        if grant.grant_type not in required_grant_types:
             raise FinalizationRefused("incoherent_grant_set")
         if grant.grant_type in digests:
             raise FinalizationRefused("ambiguous_grant_set")
         digests[grant.grant_type] = grant.grant_digest
-    if any(grant_type not in digests for grant_type in PRODUCTION_PROVISIONING_GRANT_TYPES):
+    if any(grant_type not in digests for grant_type in required_grant_types):
         raise FinalizationRefused("incomplete_grant_set")
     return tuple(sorted(digests.items()))
 

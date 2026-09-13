@@ -31,7 +31,11 @@ from app.persistence.auth import (
 )
 from app.provisioning import claim_submission as submission_module
 from app.provisioning.app import PROVISIONING_CLAIM_PATH
-from app.provisioning.claim_package import CLAIM_PACKAGE_PROFILE, decode_claim_package
+from app.provisioning.claim_package import (
+    CLAIM_PACKAGE_PROFILE,
+    CLAIM_PACKAGE_PROFILE_V2,
+    decode_claim_package,
+)
 from app.provisioning.claim_submission import PRODUCT_VERSION, durable_claim_submission
 from app.provisioning.session import (
     PROVISIONING_CSRF_HEADER,
@@ -39,7 +43,7 @@ from app.provisioning.session import (
     PROVISIONING_SESSION_COOKIE_NAME,
 )
 from app.security import hosted_grants as hosted_grants_module
-from app.security.hosted_grants import CLAIM_PROFILE, TransportResponse
+from app.security.hosted_grants import CLAIM_PROFILE, CLAIM_PROFILE_V2, TransportResponse
 from app.security.installation_key import (
     INSTALLATION_KEY_ALGORITHM,
     PLATFORM_CRYPTO_PROVIDER,
@@ -80,7 +84,9 @@ LOCAL_PLATFORM = {"win32": "windows", "darwin": "macos", "linux": "linux"}[sys.p
 # Every other column of that table carries claim material, so the set is stated
 # here rather than derived from the schema under test.
 CLAIM_RECORD_TABLE = "provisioning_claim_submissions"
-CLAIM_RECORD_LOCAL_COLUMNS = {"state", "outcome", "submitted_at", "resolved_at"}
+CLAIM_RECORD_LOCAL_COLUMNS = {
+    "state", "outcome", "submitted_at", "resolved_at", "claim_profile", "enrolled_at"
+}
 CLAIM_RECORD_COORDINATES = {
     "claim_id",
     "onboarding_transaction_id",
@@ -146,6 +152,12 @@ def package(document: dict[str, str]) -> str:
 
 
 PACKAGE = package(claim_document())
+V2_PACKAGE = package(
+    {
+        **claim_document(profile=CLAIM_PACKAGE_PROFILE_V2),
+        "claim_profile": CLAIM_PROFILE_V2,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -205,10 +217,21 @@ class HostedClaimTransport:
         if self.consumed:
             return _json_response(409, {"detail": "hosted claim already consumed"})
         self.consumed = True
+        request = json_body.get("request")
+        request_profile = (
+            request.get("profile") if isinstance(request, dict) else CLAIM_PROFILE
+        )
+        response_tokens = self.tokens
+        if request_profile == CLAIM_PROFILE_V2:
+            response_tokens = {
+                name: token
+                for name, token in self.tokens.items()
+                if name in {"installation_grant", "membership_snapshot"}
+            }
         return _json_response(
             200,
             {
-                "profile": CLAIM_PROFILE,
+                "profile": request_profile,
                 "status": "consumed",
                 "claim_id": CLAIM_ID,
                 "onboarding_transaction_id": ONBOARDING_TRANSACTION_ID,
@@ -221,7 +244,7 @@ class HostedClaimTransport:
                     self.grants.installation_key.installation_key_jkt
                 ),
                 "consumed_at": "2026-08-14T00:01:00.000Z",
-                "grants": self.tokens,
+                "grants": response_tokens,
                 "bootstrap_config_version": "1.0.0",
             },
         )
@@ -616,7 +639,7 @@ def test_the_composed_surface_verifies_grants_against_the_pinned_trust_set(
     client, headers = _bounded_composed_session(data_directory, monkeypatch)
 
     response = client.post(
-        PROVISIONING_CLAIM_PATH, json={"package": PACKAGE}, headers=headers
+        PROVISIONING_CLAIM_PATH, json={"package": V2_PACKAGE}, headers=headers
     )
 
     assert response.status_code == 409
@@ -648,7 +671,7 @@ def test_the_composed_surface_registers_the_installation_from_one_package(
     client, headers = _bounded_composed_session(data_directory, monkeypatch)
 
     response = client.post(
-        PROVISIONING_CLAIM_PATH, json={"package": f"  {PACKAGE}\n"}, headers=headers
+        PROVISIONING_CLAIM_PATH, json={"package": f"  {V2_PACKAGE}\n"}, headers=headers
     )
 
     assert response.status_code == 200
@@ -656,7 +679,6 @@ def test_the_composed_surface_registers_the_installation_from_one_package(
     stored = _composed_store(data_directory).verified_grants()
     assert sorted(record.grant_type for record in stored) == [
         "installation_grant",
-        "license_entitlement",
         "membership_snapshot",
     ]
     assert {record.installation_key_id for record in stored} == {
