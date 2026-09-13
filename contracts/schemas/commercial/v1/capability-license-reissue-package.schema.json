@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-reissue-package.schema.json",
+  "title": "Capability license replacement reissue handoff package v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reissue_authorization_profile",
+    "reissue_authorization_id",
+    "organization_id",
+    "prior_license_id",
+    "prior_issuance_id",
+    "replacement_installation_id",
+    "reissue_reason",
+    "proof_profile",
+    "proof_purpose",
+    "finalization_profile",
+    "proof_challenge_path",
+    "finalization_path"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-reissue-package:v1"
+    },
+    "reissue_authorization_profile": {
+      "const": "urn:bridge-clean:capability-license-reissue-authorization:v1"
+    },
+    "reissue_authorization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7",
+      "description": "Nonsecret coordinate of the durable pending customer authorization. It is not a bearer credential and cannot complete reissue without proof by the registered replacement installation key."
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "prior_license_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "prior_issuance_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "replacement_installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "reissue_reason": {
+      "enum": [
+        "replacement-installation",
+        "lost-or-destroyed-installation",
+        "inaccessible-original-hardware"
+      ]
+    },
+    "proof_profile": {
+      "const": "urn:bridge-clean:capability-license-activation-proof:v1"
+    },
+    "proof_purpose": {
+      "const": "capability-license-reissue"
+    },
+    "finalization_profile": {
+      "const": "urn:bridge-clean:capability-license-reissue:v1"
+    },
+    "proof_challenge_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^/v1/installations/[A-Za-z0-9][A-Za-z0-9._~-]{0,127}/capability-license-proof-challenges$"
+    },
+    "finalization_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^/v1/capability-license-reissue-authorizations/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:finalize$"
+    }
+  }
+}

@@ -1,0 +1,274 @@
+openapi: 3.1.0
+info:
+  title: Bridge Clean CapabilityLicense commercial delivery API
+  version: 1.0.0
+  description: >-
+    Hosted quote, explicit commercial exchange, proof-authenticated CapabilityLicense
+    activation, and cross-device replacement reissue. Customer-authorized commercial
+    mutations use the authenticated customer session plus server-held action-bound
+    authorization evidence; replacement Brain finalization never receives or presents the
+    customer's hosted bearer credential. The server derives licence scope from current commercial
+    records; callers cannot provide licence payload fields. These operations create no
+    runtime timer, usage counter, execution report, telemetry channel, or online
+    licence-check requirement.
+servers:
+  - url: https://control-plane.example.invalid
+paths:
+  /v1/capability-license-exchange-quotes:
+    post:
+      operationId: quoteCapabilityLicenseExchange
+      summary: Quote one CapabilityLicense credit exchange without changing commercial state.
+      security:
+        - CustomerSession: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-exchange-quote-request.schema.json
+      responses:
+        "201":
+          description: >-
+            A short-lived quote binding organization, immutable offer version, target
+            installation, capability, authority target, unit count, and exact credit cost.
+            Quoting does not debit credits or create licence authority. An identical
+            Idempotency-Key and canonical request returns the same quote.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-exchange-quote-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/capability-license-exchanges:
+    post:
+      operationId: exchangeCapabilityCreditsForLicense
+      summary: Confirm an exact quote and idempotently exchange credits for the licence target.
+      security:
+        - CustomerSession: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-exchange-request.schema.json
+      responses:
+        "201":
+          description: >-
+            Exchange committed only after the quote is current and the authenticated
+            customer's server-held step-up evidence is fresh, action-bound, and matches
+            quote_id plus every confirmation field exactly. The response contains a
+            nonsecret activation package. An identical Idempotency-Key and identical
+            canonical request returns the original committed response; reuse with a
+            different request is a conflict.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-exchange-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/installations/{installation_id}/capability-license-proof-challenges:
+    post:
+      operationId: issueCapabilityLicenseProofChallenge
+      summary: Issue a 60-second single-use challenge in the licence activation proof domain.
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-proof-challenge-request.schema.json
+      responses:
+        "201":
+          description: >-
+            Fresh proof challenge bound to the path installation, organization, purpose,
+            and exact hosted authority reference: committed exchange_id for activation or
+            durable committed pending reissue_authorization_id for reissue. A reissue
+            authorization identifier is a nonsecret coordinate, not a bearer credential.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-proof-challenge-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/capability-license-exchanges/{exchange_id}:activate:
+    post:
+      operationId: activateCapabilityLicense
+      summary: Issue the signed CapabilityLicense after exact target-installation key proof.
+      parameters:
+        - $ref: "#/components/parameters/ExchangeId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-activation-request.schema.json
+      responses:
+        "201":
+          description: >-
+            Current issuance created only when the path exchange_id, body exchange_id,
+            organization, target installation, proof purpose, proof authority reference,
+            and verified installation key all bind the same committed exchange. Licence
+            scope is derived from server-held exchange and offer authority. Activation
+            starts no timer and creates no usage counter. An identical idempotent retry
+            returns the original committed response even though the proof challenge has
+            already been consumed; a new idempotency key cannot replay it.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-activation-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /v1/capability-licenses/{license_id}/reissue-authorizations:
+    post:
+      operationId: authorizeCapabilityLicenseReissue
+      summary: Commit exact customer authorization for one replacement-installation reissue.
+      security:
+        - CustomerSession: []
+      parameters:
+        - $ref: "#/components/parameters/LicenseId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-reissue-authorization-request.schema.json
+      responses:
+        "201":
+          description: >-
+            Durable pending reissue authorization created only after the authenticated
+            authorized customer consumes fresh server-held step-up evidence bound to the exact
+            organization, path/prior licence, current prior issuance, replacement installation,
+            and reissue reason. The response returns a deterministic nonsecret reissue package
+            for QR or clipboard handoff. Neither the authorization ID nor the package is a
+            bearer credential and neither can finalize reissue without the replacement
+            installation key.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-reissue-authorization-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/TemporarilyUnavailable" }
+  /v1/capability-license-reissue-authorizations/{reissue_authorization_id}:finalize:
+    post:
+      operationId: finalizeCapabilityLicenseReissue
+      summary: Finalize a committed customer-approved reissue using replacement-installation key proof.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ReissueAuthorizationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-reissue-request.schema.json
+      responses:
+        "201":
+          description: >-
+            Finalization requires no customer bearer credential. The server atomically verifies
+            that the path/body authorization ID names the durable committed pending customer
+            authorization, every authorization parameter matches exactly, and the fresh
+            capability-license-reissue proof was signed by the registered replacement
+            installation key over this exact request. It then marks the prior issuance
+            superseded and the replacement issuance current. An identical idempotent retry
+            returns the original committed response before proof-replay rejection.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-reissue-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/TemporarilyUnavailable" }
+components:
+  securitySchemes:
+    CustomerSession:
+      type: http
+      scheme: bearer
+      bearerFormat: customer-session
+      description: >-
+        Authenticated customer control-plane session carried as an Authorization Bearer token.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$"
+    InstallationId:
+      name: installation_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+    ExchangeId:
+      name: exchange_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    LicenseId:
+      name: license_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    ReissueAuthorizationId:
+      name: reissue_authorization_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+  responses:
+    Error:
+      description: Closed cross-plane error.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/v1/error.schema.json
+    TemporarilyUnavailable:
+      description: Required hosted persistence or signing authority is temporarily unavailable; no authorization, proof, or commercial denial is implied.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../schemas/common/v1/error.schema.json
+              - type: object
+                properties:
+                  code:
+                    const: temporarily_unavailable

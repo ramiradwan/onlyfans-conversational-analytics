@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-exchange-quote-response.schema.json",
+  "title": "Capability license exchange quote response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "quote_id",
+    "organization_id",
+    "offer_version_id",
+    "installation_id",
+    "capability",
+    "authority_target",
+    "unit_count",
+    "credit_cost",
+    "quoted_at",
+    "valid_until",
+    "confirmation_action"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-exchange-quote:v1"
+    },
+    "quote_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "offer_version_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "capability": {
+      "enum": [
+        "analysis-run"
+      ]
+    },
+    "authority_target": {
+      "const": "capability-license"
+    },
+    "unit_count": {
+      "const": 1
+    },
+    "credit_cost": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "quoted_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "valid_until": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "confirmation_action": {
+      "const": "capability-license-exchange-confirm",
+      "description": "Fresh customer step-up for this action must be server-held and bind quote_id plus the exact organization_id, offer_version_id, installation_id, capability, authority_target, unit_count, and credit_cost shown by this quote."
+    }
+  }
+}

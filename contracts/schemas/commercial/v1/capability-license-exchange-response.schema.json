@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-exchange-response.schema.json",
+  "title": "Capability license commercial exchange response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "exchange_id",
+    "quote_id",
+    "organization_id",
+    "offer_version_id",
+    "installation_id",
+    "capability",
+    "authority_target",
+    "unit_count",
+    "credit_cost",
+    "commercial_state_version",
+    "ledger_basis_ref",
+    "exchanged_at",
+    "activation_path",
+    "activation_package",
+    "activation_package_encoded"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-exchange:v1"
+    },
+    "exchange_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "quote_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "offer_version_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "capability": {
+      "enum": [
+        "analysis-run"
+      ]
+    },
+    "authority_target": {
+      "const": "capability-license"
+    },
+    "unit_count": {
+      "const": 1
+    },
+    "credit_cost": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "commercial_state_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807
+    },
+    "ledger_basis_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "exchanged_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "activation_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^/v1/capability-license-exchanges/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:activate$"
+    },
+    "activation_package": {
+      "$ref": "capability-license-activation-package.schema.json"
+    },
+    "activation_package_encoded": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1400,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    }
+  }
+}

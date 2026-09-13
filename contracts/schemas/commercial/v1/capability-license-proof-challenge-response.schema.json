@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-proof-challenge-response.schema.json",
+  "title": "Capability license activation proof challenge response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "purpose",
+    "organization_id",
+    "authority_reference_id",
+    "installation_id",
+    "proof_challenge_id",
+    "challenge",
+    "audience",
+    "issued_at",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-activation-proof:v1"
+    },
+    "purpose": {
+      "enum": [
+        "capability-license-activate",
+        "capability-license-reissue"
+      ]
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "authority_reference_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "proof_challenge_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "challenge": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "audience": {
+      "const": "urn:bridge-clean:commercial-control-plane:capability-license-activation"
+    },
+    "issued_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

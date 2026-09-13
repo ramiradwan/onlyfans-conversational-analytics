@@ -1,0 +1,346 @@
+catalog_version: 1
+contracts:
+  - id: provisioning-proof-v1
+    owner: provisioning
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Issue a domain-separated challenge for additive ADR 0012 provisioning operations.
+    profile: urn:bridge-clean:provisioning-proof:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 4096
+    max_response_bytes: 4096
+    schema_paths:
+      - schemas/provisioning/v1/report-proof-challenge.schema.json
+    openapi_operations:
+      - issueProvisioningProofChallenge
+    governing_adr: docs/adr/0012-reconcile-provisioning-recovery-progress-retention-and-capability-permits.md
+  - id: bootstrap-recovery-v1
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Recover a committed installation enrollment after a lost consume response.
+    profile: urn:bridge-clean:bootstrap-recovery:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 16384
+    max_response_bytes: 49152
+    schema_paths:
+      - schemas/provisioning/v1/bootstrap-recovery-request.schema.json
+      - schemas/provisioning/v1/bootstrap-recovery-response.schema.json
+    openapi_operations:
+      - recoverBootstrap
+    governing_adr: docs/adr/0012-reconcile-provisioning-recovery-progress-retention-and-capability-permits.md
+  - id: creator-association-v1
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Request and read the status of an explicit creator-account association.
+    profile: urn:bridge-clean:creator-association:v1
+    classification: cross-plane-security
+    retention_class: creator-approval-history
+    max_request_bytes: 12288
+    max_response_bytes: 24576
+    schema_paths:
+      - schemas/provisioning/v1/creator-association-request.schema.json
+      - schemas/provisioning/v1/creator-association-status.schema.json
+    openapi_operations:
+      - requestCreatorAssociation
+      - getCreatorAssociationStatus
+    governing_adr: docs/adr/0012-reconcile-provisioning-recovery-progress-retention-and-capability-permits.md
+  - id: onboarding-progress-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Report one of four coarse, monotonic onboarding milestones.
+    profile: urn:bridge-clean:onboarding-progress:v1
+    classification: support/onboarding
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 4096
+    schema_paths:
+      - schemas/provisioning/v1/onboarding-progress-report.schema.json
+      - schemas/provisioning/v1/onboarding-progress-response.schema.json
+    openapi_operations:
+      - reportOnboardingProgress
+    governing_adr: docs/adr/0012-reconcile-provisioning-recovery-progress-retention-and-capability-permits.md
+  - id: installation-claim-v1
+    owner: provisioning
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Issue and consume the single-use mobile-to-PC installation claim that enrolls the installation key.
+    profile: urn:bridge-clean:installation-claim:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 8192
+    max_response_bytes: 49152
+    schema_paths:
+      - schemas/provisioning/v1/installation-claim-issue-request.schema.json
+      - schemas/provisioning/v1/installation-claim-issue-response.schema.json
+      - schemas/provisioning/v1/installation-claim-consume-request.schema.json
+      - schemas/provisioning/v1/installation-claim-consume-response.schema.json
+    openapi_operations:
+      - issueInstallationClaim
+      - consumeInstallationClaim
+    governing_adr: docs/adr/0010-signed-grant-and-provisioning-contracts.md
+  - id: installation-claim-package-v1
+    owner: provisioning
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Transfer an issued installation claim as one identical QR or clipboard package without placing claim material in a URL.
+    profile: urn:bridge-clean:installation-claim-package:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 0
+    max_response_bytes: 1400
+    schema_paths:
+      - schemas/provisioning/v1/installation-claim-package.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0017-publish-installation-claim-package.md
+  - id: capability-permit-v1
+    owner: commercial-ledger
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Authorize one installation-bound local capability execution without consumption telemetry.
+    profile: urn:bridge-clean:capability-permit:v1
+    classification: commercial-confidential
+    retention_class: payment-tax-legal-review-required
+    max_request_bytes: 0
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/commercial/v1/capability-permit.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0012-reconcile-provisioning-recovery-progress-retention-and-capability-permits.md
+  - id: capability-license-v1
+    owner: commercial-ledger
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Authorize repeatable installation-bound local capability execution at a named licensed major version without consumption telemetry.
+    profile: urn:bridge-clean:capability-license:v1
+    classification: commercial-confidential
+    retention_class: payment-tax-legal-review-required
+    max_request_bytes: 0
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/commercial/v1/capability-license.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0016-add-non-expiring-capability-license-profile.md
+  - id: grant-profile-v1
+    owner: provisioning
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Issue one of the four ADR 0010 installation-bound signed grant types for offline local verification.
+    profile: urn:bridge-clean:grant-profile:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 0
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/commercial/v1/grant-profile.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0010-signed-grant-and-provisioning-contracts.md
+  - id: release-descriptor-v1
+    owner: releases
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Describe a generic immutable release artifact and its contract pins.
+    profile: urn:bridge-clean:release-descriptor:v1
+    classification: public-release
+    retention_class: immutable-public-release
+    max_request_bytes: 0
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/releases/v1/release-descriptor.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0012-reconcile-provisioning-recovery-progress-retention-and-capability-permits.md
+  - id: companion-pairing-v1
+    owner: provisioning
+    producer: local-product
+    consumer: local-product
+    purpose: Pair the local Agent with the local Brain over loopback and bind the Noise session to a confirmed transcript.
+    profile: urn:bridge-clean:companion-pairing:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 36864
+    max_response_bytes: 36864
+    schema_paths:
+      - schemas/local/v1/companion-pairing-confirm.schema.json
+      - schemas/local/v1/companion-pairing-offer.schema.json
+      - schemas/local/v1/companion-pairing-request.schema.json
+      - schemas/local/v1/companion-pairing-result.schema.json
+      - schemas/local/v1/companion-pairing-session-authorization.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0019-publish-the-local-companion-pairing-profile.md
+  - id: installation-claim-v2
+    owner: provisioning
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Enroll an installation key and return only installation and membership bootstrap authority.
+    profile: urn:bridge-clean:installation-claim:v2
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 8192
+    max_response_bytes: 49152
+    schema_paths:
+      - schemas/provisioning/v2/installation-claim-issue-request.schema.json
+      - schemas/provisioning/v2/installation-claim-issue-response.schema.json
+      - schemas/provisioning/v2/installation-claim-consume-request.schema.json
+      - schemas/provisioning/v2/installation-claim-consume-response.schema.json
+    openapi_operations:
+      - issueInstallationClaimV2
+      - consumeInstallationClaimV2
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: installation-claim-package-v2
+    owner: provisioning
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Transfer an installation-claim:v2 handoff with an explicit claim-profile pin and identical QR or clipboard bytes.
+    profile: urn:bridge-clean:installation-claim-package:v2
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 0
+    max_response_bytes: 1400
+    schema_paths:
+      - schemas/provisioning/v2/installation-claim-package.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: bootstrap-recovery-v2
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Recover a committed installation-claim:v2 enrollment using registered-key proof and return identity-only bootstrap authority.
+    profile: urn:bridge-clean:bootstrap-recovery:v2
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 16384
+    max_response_bytes: 49152
+    schema_paths:
+      - schemas/provisioning/v2/bootstrap-recovery-request.schema.json
+      - schemas/provisioning/v2/bootstrap-recovery-response.schema.json
+    openapi_operations:
+      - recoverBootstrapV2
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: capability-license-exchange-quote-v1
+    owner: commercial-ledger
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Quote one immutable unit of CapabilityLicense credit exchange without mutating commercial state.
+    profile: urn:bridge-clean:capability-license-exchange-quote:v1
+    classification: commercial-confidential
+    retention_class: payment-tax-legal-review-required
+    max_request_bytes: 8192
+    max_response_bytes: 8192
+    schema_paths:
+      - schemas/commercial/v1/capability-license-exchange-quote-request.schema.json
+      - schemas/commercial/v1/capability-license-exchange-quote-response.schema.json
+    openapi_operations:
+      - quoteCapabilityLicenseExchange
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: capability-license-exchange-v1
+    owner: commercial-ledger
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Record an explicit idempotent credit exchange selecting the CapabilityLicense authority target.
+    profile: urn:bridge-clean:capability-license-exchange:v1
+    classification: commercial-confidential
+    retention_class: payment-tax-legal-review-required
+    max_request_bytes: 8192
+    max_response_bytes: 8192
+    schema_paths:
+      - schemas/commercial/v1/capability-license-exchange-request.schema.json
+      - schemas/commercial/v1/capability-license-exchange-response.schema.json
+    openapi_operations:
+      - exchangeCapabilityCreditsForLicense
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: capability-license-activation-package-v1
+    owner: commercial-ledger
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Transfer nonsecret activation coordinates for one committed CapabilityLicense exchange without embedding authority credentials.
+    profile: urn:bridge-clean:capability-license-activation-package:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 0
+    max_response_bytes: 1400
+    schema_paths:
+      - schemas/commercial/v1/capability-license-activation-package.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: capability-license-activation-proof-v1
+    owner: commercial-ledger
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Issue a licence-specific single-use challenge for installation-key proof of activation or reissue.
+    profile: urn:bridge-clean:capability-license-activation-proof:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 4096
+    max_response_bytes: 4096
+    schema_paths:
+      - schemas/commercial/v1/capability-license-proof-challenge-request.schema.json
+      - schemas/commercial/v1/capability-license-proof-challenge-response.schema.json
+    openapi_operations:
+      - issueCapabilityLicenseProofChallenge
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: capability-license-activation-v1
+    owner: commercial-ledger
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Activate a committed licence exchange using exact target-installation key proof and server-held commercial authority.
+    profile: urn:bridge-clean:capability-license-activation:v1
+    classification: commercial-confidential
+    retention_class: payment-tax-legal-review-required
+    max_request_bytes: 8192
+    max_response_bytes: 24576
+    schema_paths:
+      - schemas/commercial/v1/capability-license-activation-request.schema.json
+      - schemas/commercial/v1/capability-license-activation-response.schema.json
+    openapi_operations:
+      - activateCapabilityLicense
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: capability-license-reissue-authorization-v1
+    owner: commercial-ledger
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Commit an authenticated customer-approved exact replacement reissue and return nonsecret handoff coordinates.
+    profile: urn:bridge-clean:capability-license-reissue-authorization:v1
+    classification: commercial-confidential
+    retention_class: payment-tax-legal-review-required
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/commercial/v1/capability-license-reissue-authorization-request.schema.json
+      - schemas/commercial/v1/capability-license-reissue-authorization-response.schema.json
+    openapi_operations:
+      - authorizeCapabilityLicenseReissue
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: capability-license-reissue-package-v1
+    owner: commercial-ledger
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Transfer deterministic nonsecret coordinates for one committed pending CapabilityLicense replacement reissue.
+    profile: urn:bridge-clean:capability-license-reissue-package:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 0
+    max_response_bytes: 1400
+    schema_paths:
+      - schemas/commercial/v1/capability-license-reissue-package.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: capability-license-reissue-v1
+    owner: commercial-ledger
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Finalize a committed customer-approved replacement reissue with replacement-installation key proof and expose current/superseded hosted issuance state.
+    profile: urn:bridge-clean:capability-license-reissue:v1
+    classification: commercial-confidential
+    retention_class: payment-tax-legal-review-required
+    max_request_bytes: 8192
+    max_response_bytes: 32768
+    schema_paths:
+      - schemas/commercial/v1/capability-license-reissue-request.schema.json
+      - schemas/commercial/v1/capability-license-reissue-response.schema.json
+    openapi_operations:
+      - finalizeCapabilityLicenseReissue
+    governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md

@@ -9,12 +9,19 @@ import json
 import shutil
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
-APPROVED_SOURCE_COMMIT = "a16096cf776646f4ce1efdf08fe7fb078d330d2e"
+APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
+APPROVED_SOURCE_COMMIT = "50c08ee8b3f3dbb1364b875e876a32ab7c641f9a"
+APPROVED_SOURCE_TREE = "15b821c361f4bc1077a0e1ef5689f5916ff75f51"
+APPROVED_SOURCE_MANIFEST_SHA256 = "d50e961dd421bdb8be4fd8860653c5bd1a8f7759b2fd60ed263b3245aff0fd07"
+SOURCE_MANIFEST = "contract-manifest.json"
+SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
+SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
+PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
+
 EXPORT_SET = [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -24,7 +31,18 @@ EXPORT_SET = [
     "onboarding-progress",
     "companion-pairing-v1",
     "companion-pairing-profile",
+    "profiles",
+    "openapi",
+    "catalog",
+    "capability-license-v1",
+    "installation-claim-v1",
+    "installation-claim-package-v1",
+    "installation-key-proof-v1",
+    "bootstrap-recovery-v2",
+    "capability-license-hosted-api-v1",
+    SOURCE_MANIFEST_EXPORT,
 ]
+
 EXPORT_SOURCES = {
     "grant-profile-v1": "test-vectors/grant-profile-v1",
     "capability-permit-v1": "test-vectors/capability-permit-v1",
@@ -32,26 +50,29 @@ EXPORT_SOURCES = {
     "onboarding-progress": "test-vectors/adr-0012-v1/onboarding-progress",
     "companion-pairing-v1": "test-vectors/companion-pairing-v1",
     "companion-pairing-profile": "profiles/companion-pairing/v1",
+    "capability-license-v1": "test-vectors/capability-license-v1",
+    "installation-claim-v1": "test-vectors/installation-claim-v1",
+    "installation-claim-package-v1": "test-vectors/installation-claim-package-v1",
+    "installation-key-proof-v1": "test-vectors/installation-key-proof-v1",
+    "bootstrap-recovery-v2": "api-vectors/bootstrap-recovery-v2",
+    "capability-license-hosted-api-v1": "api-vectors/capability-license-hosted-api-v1",
 }
-SCHEMA_EXPORT = "schemas"
-SCHEMA_ROOT = Path("schemas")
-SCHEMA_ENTRYPOINTS = (
-    Path("commercial/v1/capability-permit.schema.json"),
-    Path("local/v1/companion-pairing-confirm.schema.json"),
-    Path("local/v1/companion-pairing-offer.schema.json"),
-    Path("local/v1/companion-pairing-request.schema.json"),
-    Path("local/v1/companion-pairing-result.schema.json"),
-    Path("local/v1/companion-pairing-session-authorization.schema.json"),
-    Path("provisioning/v1/onboarding-progress-report.schema.json"),
-    Path("provisioning/v1/onboarding-progress-response.schema.json"),
-    Path("provisioning/v1/report-proof-challenge.schema.json"),
-)
-EXPECTED_SCHEMA_CLOSURE = frozenset(
-    {
-        *SCHEMA_ENTRYPOINTS,
-        Path("common/v1/definitions.schema.json"),
-    }
-)
+
+APPROVED_EXPORT_DIGESTS = {
+    "grant-profile-v1": "5059ee95f0c847f7a33a787c80066e84359a2d4e0d2e8774637bfc387bece09b",
+    "capability-permit-v1": "6a344d2ea66ff5af8279f6b057335829f61cd4cf8b1432c2f3bc122d4e32dae7",
+    "permit-consumption": "e5e8646a5dc0a7d51f9223ccd8ee70c66c8ba2b1ba8ff04ac40be314dc945697",
+    "onboarding-progress": "3262eeebd807930fa316389154a81a296ae4c87c216de032a0e59ee210854a75",
+    "companion-pairing-v1": "86316c523fe0afd452995fc64e355e3a42d0bc096f8d970edb7b4fb66155fd03",
+    "companion-pairing-profile": "830f46a14f6d59018b649aa4b7827fa35aafdf82433f1d6692b8ef42e3b940bc",
+    "capability-license-v1": "b6e2ea754b58f4ca73b91efc085f2f9ddec87e75ab5422a126be0a8b73cba3f2",
+    "installation-claim-v1": "770fd00b7395fb99cb315791e114ba8f6a1895013379de641dbb9dcf0f678c49",
+    "installation-claim-package-v1": "04f39c9f478db77008fb311a90c8490e2c7528cff00b3cb343199f49e9b3af61",
+    "installation-key-proof-v1": "19b9b5bfcb412086c5a03e4e6d776111420a404bba81924eeb8d0fd91bfcf799",
+    "bootstrap-recovery-v2": "96d3adb571cc3f90f93748203f601dbdaf6fad95c2a7c891ecaa3ebbfcbe81d1",
+    "capability-license-hosted-api-v1": "0ef82e619681e9beb7d0842a5a948171e3e5057ac81f498af38cf20d69a5731e",
+}
+
 EXPECTED_PROGRESS_VECTOR_FILES = frozenset(
     {
         "metadata-rejected.expected.json",
@@ -76,26 +97,34 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 450
-APPROVED_SOURCE_SHA256 = {
-    "schemas/commercial/v1/capability-permit.schema.json": "9b0bfee05eb11ed87876a43b6ee88035f67a6f3067254fcc79e23dd5c42b1aa8",
-    "schemas/common/v1/definitions.schema.json": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa",
-    "schemas/local/v1/companion-pairing-confirm.schema.json": "1e0151a75cba3951beca60371c6ccabc38ba60cb6ffbd8f7a4259ce2bce08c2b",
-    "schemas/local/v1/companion-pairing-offer.schema.json": "f36f288fa0c0c5368ba8c0e726ae02d55d2de6b508658a0f76bcdd8725673d0c",
-    "schemas/local/v1/companion-pairing-request.schema.json": "b804343351c171274d855991cc2e8b38de8429433a45bca48592f4eeedf2e78c",
-    "schemas/local/v1/companion-pairing-result.schema.json": "c6d7aeabaf196c4da38313bf6f45febb182131d7e33117debb9f625d97462c93",
-    "schemas/local/v1/companion-pairing-session-authorization.schema.json": "eef0da8194bddf76d8082e21e7ed34246e8301042b748ade6a48e6c4e38350ab",
-    "profiles/companion-pairing/v1/profile.json": "d13572d0f7fa0bfbdfdfd7445d35e87f0272070910312dc999cde87bde566388",
-    "schemas/provisioning/v1/onboarding-progress-report.schema.json": "062a9f277af0c29cdc22a469d2e35d73e306fb3f6dbf6435f942558b75987d65",
-    "schemas/provisioning/v1/onboarding-progress-response.schema.json": "fc3f762656fbbf605ca96ad4fa7c7401b3aa855194e952010e3b84a2ba2bf452",
-    "schemas/provisioning/v1/report-proof-challenge.schema.json": "96aeefee034ee710d98013b1cb2996ba84e576ec1000e40c5b24d2b28ba5f8f8",
-    "test-vectors/adr-0012-v1/onboarding-progress/metadata-rejected.expected.json": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
-    "test-vectors/adr-0012-v1/onboarding-progress/metadata-rejected.json": "b4e6637ad87e10801094be012ba0c2e6ec382e06d6f58f900473ceb9be17358f",
-    "test-vectors/adr-0012-v1/onboarding-progress/unknown-milestone.expected.json": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
-    "test-vectors/adr-0012-v1/onboarding-progress/unknown-milestone.json": "691de920f7e9b24931af356d976c9d901f38bd7772020b379279b777f182d1be",
-    "test-vectors/adr-0012-v1/onboarding-progress/valid.expected.json": "dfd9af3bf11a1bf83d5ebb81873a8fb2aa1328e5471884ad4ffd07a3779b0686",
-    "test-vectors/adr-0012-v1/onboarding-progress/valid.json": "55620d8c602da8feadabdb00e28dab91cdd500a3071f165742062f79a33e6f3f",
-}
+EXPECTED_FILE_COUNT = 773
+EXPECTED_PUBLISHED_FILE_COUNT = 55
+EXPECTED_PUBLISHED_PROFILES = (
+    "urn:bridge-clean:bootstrap-recovery:v1",
+    "urn:bridge-clean:bootstrap-recovery:v2",
+    "urn:bridge-clean:capability-license-activation-package:v1",
+    "urn:bridge-clean:capability-license-activation-proof:v1",
+    "urn:bridge-clean:capability-license-activation:v1",
+    "urn:bridge-clean:capability-license-exchange-quote:v1",
+    "urn:bridge-clean:capability-license-exchange:v1",
+    "urn:bridge-clean:capability-license-reissue-authorization:v1",
+    "urn:bridge-clean:capability-license-reissue-package:v1",
+    "urn:bridge-clean:capability-license-reissue:v1",
+    "urn:bridge-clean:capability-license:v1",
+    "urn:bridge-clean:capability-permit:v1",
+    "urn:bridge-clean:companion-pairing:v1",
+    "urn:bridge-clean:creator-association:v1",
+    "urn:bridge-clean:grant-profile:v1",
+    "urn:bridge-clean:installation-claim-package:v1",
+    "urn:bridge-clean:installation-claim-package:v2",
+    "urn:bridge-clean:installation-claim:v1",
+    "urn:bridge-clean:installation-claim:v2",
+    "urn:bridge-clean:onboarding-progress:v1",
+    "urn:bridge-clean:provisioning-proof:v1",
+    "urn:bridge-clean:release-descriptor:v1",
+)
+LEGACY_VECTOR_PROFILE_ALIASES = ("urn:bridge-clean:capability-permit-v1",)
+POLICY_PROFILES = {"permit-consumption": "permit-consumption/policy.json"}
 VECTOR_MANIFESTS = {
     "grant-profile-v1": "grant-profile-v1/manifest.json",
     "capability-permit-v1": "capability-permit-v1/manifest.json",
@@ -106,10 +135,13 @@ TRUST_SETS = {
     "capability-permit-v1": "capability-permit-v1/trust-set.json",
     "companion-pairing-v1": "companion-pairing-v1/trust-set.json",
 }
-PAIRING_PROFILE_RECORD = "companion-pairing-profile/profile.json"
-POLICY_PROFILES = {
-    "permit-consumption": "permit-consumption/policy.json",
+CONFORMANCE_MANIFESTS = {
+    "capability-license-v1": "capability-license-v1/manifest.json",
+    "installation-claim-package-v1": "installation-claim-package-v1/manifest.json",
+    "bootstrap-recovery-v2": "bootstrap-recovery-v2/manifest.json",
+    "capability-license-hosted-api-v1": "capability-license-hosted-api-v1/manifest.json",
 }
+PAIRING_PROFILE_RECORD = "companion-pairing-profile/profile.json"
 
 
 def sha256(path: Path) -> str:
@@ -118,6 +150,21 @@ def sha256(path: Path) -> str:
 
 def encode(value: dict[str, Any]) -> bytes:
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _tree_digest(root: Path) -> str:
+    files = sorted(
+        (path for path in root.rglob("*") if path.is_file()),
+        key=lambda path: path.relative_to(root).as_posix().encode("utf-8"),
+    )
+    material = b"".join(
+        path.relative_to(root).as_posix().encode("utf-8")
+        + b"\0"
+        + sha256(path).encode("ascii")
+        + b"\n"
+        for path in files
+    )
+    return hashlib.sha256(material).hexdigest()
 
 
 def fixture_entries() -> list[dict[str, Any]]:
@@ -151,159 +198,74 @@ def aggregate_digest(entries: list[dict[str, Any]]) -> str:
     return hashlib.sha256(material).hexdigest()
 
 
-def _schema_references(value: Any) -> list[str]:
-    if isinstance(value, dict):
-        references = [value["$ref"]] if isinstance(value.get("$ref"), str) else []
-        for child in value.values():
-            references.extend(_schema_references(child))
-        return references
-    if isinstance(value, list):
-        return [reference for child in value for reference in _schema_references(child)]
-    return []
-
-
-def schema_dependency_closure(schema_root: Path) -> set[Path]:
-    """Resolve the selected permit and onboarding-progress schema closure."""
-
-    pending = [schema_root / entrypoint for entrypoint in SCHEMA_ENTRYPOINTS]
-    resolved: set[Path] = set()
-    while pending:
-        schema = pending.pop()
-        try:
-            relative = schema.resolve().relative_to(schema_root.resolve())
-        except ValueError as exc:
-            raise SystemExit(f"schema reference escapes schema root: {schema}") from exc
-        if relative in resolved:
-            continue
-        if not schema.is_file():
-            raise SystemExit(f"schema reference is missing: {relative.as_posix()}")
-        resolved.add(relative)
-        document = json.loads(schema.read_text(encoding="utf-8"))
-        for reference in _schema_references(document):
-            reference_path, _fragment = reference.split("#", 1) if "#" in reference else (reference, "")
-            if not reference_path:
-                continue
-            parsed = urlsplit(reference_path)
-            if parsed.scheme or parsed.netloc:
-                raise SystemExit(f"schema reference is not local: {reference}")
-            pending.append(schema.parent / parsed.path)
-    return resolved
-
-
-def copy_schema_closure(source_root: Path, target_root: Path) -> None:
-    source_schemas = source_root / SCHEMA_ROOT
-    closure = schema_dependency_closure(source_schemas)
-    if closure != EXPECTED_SCHEMA_CLOSURE:
-        difference = sorted(
-            closure ^ EXPECTED_SCHEMA_CLOSURE,
-            key=lambda path: path.as_posix().encode("utf-8"),
-        )
+def _load_source_manifest(source_root: Path) -> dict[str, Any]:
+    source_manifest_path = source_root / SOURCE_MANIFEST
+    if not source_manifest_path.is_file():
+        raise SystemExit(f"approved source checkout is missing {SOURCE_MANIFEST}")
+    if sha256(source_manifest_path) != APPROVED_SOURCE_MANIFEST_SHA256:
         raise SystemExit(
-            "selected schema closure does not match approved closure: "
-            + ", ".join(path.as_posix() for path in difference)
+            f"source manifest does not match {APPROVED_SOURCE_COMMIT}: {SOURCE_MANIFEST}"
         )
-    existing = (
-        {
-            path.relative_to(target_root)
+    value = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+    if set(value) != {"files", "manifest_version", "profiles"} or value["manifest_version"] != 1:
+        raise SystemExit("approved source contract manifest has an invalid envelope")
+    if len(value["files"]) != EXPECTED_PUBLISHED_FILE_COUNT:
+        raise SystemExit("approved source contract manifest has an unexpected file count")
+    if tuple(value["profiles"]) != EXPECTED_PUBLISHED_PROFILES:
+        raise SystemExit("approved source contract manifest profiles drifted")
+    for entry in value["files"]:
+        if set(entry) != {"path", "sha256", "size"}:
+            raise SystemExit("approved source contract manifest contains an invalid file record")
+        source = source_root / entry["path"]
+        if (
+            not source.is_file()
+            or source.stat().st_size != entry["size"]
+            or sha256(source) != entry["sha256"]
+        ):
+            raise SystemExit(
+                f"approved source file does not match {APPROVED_SOURCE_COMMIT}: {entry['path']}"
+            )
+    return value
+
+
+def _copy_exact_file(source: Path, target: Path, source_label: str) -> None:
+    if target.is_file():
+        if target.read_bytes() != source.read_bytes():
+            raise SystemExit(f"existing vendored upstream file is immutable: {source_label}")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+
+
+def copy_published_contracts(source_root: Path) -> None:
+    source_manifest = _load_source_manifest(source_root)
+    expected_by_root: dict[str, set[Path]] = {root: set() for root in PUBLISHED_ROOTS}
+    for entry in source_manifest["files"]:
+        relative = Path(entry["path"])
+        root = relative.parts[0]
+        if root not in expected_by_root:
+            raise SystemExit(f"published source manifest names an unexpected root: {root}")
+        expected_by_root[root].add(relative)
+        _copy_exact_file(source_root / relative, CONTRACTS_ROOT / relative, entry["path"])
+
+    for root, expected in expected_by_root.items():
+        target_root = CONTRACTS_ROOT / root
+        actual = {
+            path.relative_to(CONTRACTS_ROOT)
             for path in target_root.rglob("*")
             if path.is_file()
         }
-        if target_root.exists()
-        else set()
-    )
-    unexpected = existing - closure
-    if unexpected:
-        first = min(unexpected, key=lambda path: path.as_posix().encode("utf-8"))
-        raise SystemExit(f"selected schema export contains an unexpected file: {first.as_posix()}")
-    for relative in sorted(closure, key=lambda path: path.as_posix().encode("utf-8")):
-        source = source_schemas / relative
-        destination = target_root / relative
-        if destination.is_file():
-            if destination.read_bytes() != source.read_bytes():
-                raise SystemExit(f"existing vendored schema differs from approved source: {relative.as_posix()}")
-            continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination)
-
-
-def selected_progress_profile() -> str:
-    progress_root = CONTRACTS_ROOT / "onboarding-progress"
-    actual = {
-        path.relative_to(progress_root).as_posix()
-        for path in progress_root.rglob("*")
-        if path.is_file()
-    }
-    if actual != EXPECTED_PROGRESS_VECTOR_FILES:
-        difference = sorted(actual ^ EXPECTED_PROGRESS_VECTOR_FILES)
-        raise SystemExit(
-            "selected onboarding-progress export does not match approved file set: "
-            + ", ".join(difference)
-        )
-    profiles = {
-        json.loads((progress_root / name).read_text("utf-8"))["request"]["profile"]
-        for name in actual
-        if name.endswith(".json") and not name.endswith(".expected.json")
-    }
-    if profiles != {EXPECTED_PROGRESS_PROFILE}:
-        raise SystemExit("selected onboarding-progress vectors have an unexpected profile")
-    return EXPECTED_PROGRESS_PROFILE
-
-
-def selected_pairing_profile() -> str:
-    """Return the pairing profile the vendored record and its vectors agree on."""
-
-    record_root = CONTRACTS_ROOT / "companion-pairing-profile"
-    actual = {
-        path.relative_to(record_root).as_posix()
-        for path in record_root.rglob("*")
-        if path.is_file()
-    }
-    if actual != EXPECTED_PAIRING_PROFILE_FILES:
-        difference = sorted(actual ^ EXPECTED_PAIRING_PROFILE_FILES)
-        raise SystemExit(
-            "selected companion-pairing profile export does not match approved file set: "
-            + ", ".join(difference)
-        )
-    vector_root = CONTRACTS_ROOT / "companion-pairing-v1"
-    vendored = {
-        path.relative_to(vector_root).as_posix()
-        for path in vector_root.rglob("*")
-        if path.is_file()
-    }
-    if vendored != EXPECTED_PAIRING_VECTOR_FILES:
-        difference = sorted(vendored ^ EXPECTED_PAIRING_VECTOR_FILES)
-        raise SystemExit(
-            "selected companion-pairing vectors do not match approved file set: "
-            + ", ".join(difference)
-        )
-    record = json.loads((CONTRACTS_ROOT / PAIRING_PROFILE_RECORD).read_text("utf-8"))
-    vectors = json.loads(
-        (CONTRACTS_ROOT / VECTOR_MANIFESTS["companion-pairing-v1"]).read_text("utf-8")
-    )
-    if record["profile"] != EXPECTED_PAIRING_PROFILE or vectors["profile"] != record["profile"]:
-        raise SystemExit("selected companion-pairing record and vectors name different profiles")
-    messages = record["messages"]
-    missing = [
-        path
-        for path in messages.values()
-        if not (CONTRACTS_ROOT / SCHEMA_EXPORT / Path(path).relative_to(SCHEMA_ROOT)).is_file()
-    ]
-    if missing:
-        raise SystemExit(
-            "selected companion-pairing record names an unvendored schema: " + ", ".join(missing)
-        )
-    return EXPECTED_PAIRING_PROFILE
-
-
-def verify_approved_source_bytes(source_root: Path) -> None:
-    for relative, expected_digest in APPROVED_SOURCE_SHA256.items():
-        source = source_root / relative
-        if not source.is_file():
-            raise SystemExit(f"approved source checkout is missing pinned blob: {relative}")
-        if sha256(source) != expected_digest:
-            raise SystemExit(
-                f"approved source blob does not match {APPROVED_SOURCE_COMMIT}: {relative}"
+        if actual != expected:
+            difference = sorted(
+                actual ^ expected, key=lambda path: path.as_posix().encode("utf-8")
             )
+            raise SystemExit(
+                f"published {root} export differs from pinned source manifest: "
+                + ", ".join(path.as_posix() for path in difference)
+            )
+
+    source_manifest_target = CONTRACTS_ROOT / SOURCE_MANIFEST_TARGET
+    _copy_exact_file(source_root / SOURCE_MANIFEST, source_manifest_target, SOURCE_MANIFEST)
 
 
 def copy_immutable_export(source: Path, target: Path, source_path: str) -> None:
@@ -331,41 +293,103 @@ def copy_immutable_export(source: Path, target: Path, source_path: str) -> None:
             raise SystemExit(f"existing vendored upstream fixture is immutable: {target / relative}")
 
 
+def verify_approved_source_exports(source_root: Path) -> None:
+    for export, source_path in EXPORT_SOURCES.items():
+        source = source_root / source_path
+        if not source.is_dir():
+            raise SystemExit(f"approved source checkout does not contain export source: {source_path}")
+        actual = _tree_digest(source)
+        expected = APPROVED_EXPORT_DIGESTS[export]
+        if actual != expected:
+            raise SystemExit(
+                f"approved source export does not match {APPROVED_SOURCE_COMMIT}: {source_path}"
+            )
+
+
+def selected_progress_profile() -> str:
+    progress_root = CONTRACTS_ROOT / "onboarding-progress"
+    actual = {
+        path.relative_to(progress_root).as_posix()
+        for path in progress_root.rglob("*")
+        if path.is_file()
+    }
+    if actual != EXPECTED_PROGRESS_VECTOR_FILES:
+        difference = sorted(actual ^ EXPECTED_PROGRESS_VECTOR_FILES)
+        raise SystemExit("selected onboarding-progress export drifted: " + ", ".join(difference))
+    return EXPECTED_PROGRESS_PROFILE
+
+
+def selected_pairing_profile() -> str:
+    profile_root = CONTRACTS_ROOT / "companion-pairing-profile"
+    actual_profile = {
+        path.relative_to(profile_root).as_posix()
+        for path in profile_root.rglob("*")
+        if path.is_file()
+    }
+    if actual_profile != EXPECTED_PAIRING_PROFILE_FILES:
+        difference = sorted(actual_profile ^ EXPECTED_PAIRING_PROFILE_FILES)
+        raise SystemExit("selected companion-pairing profile export drifted: " + ", ".join(difference))
+    pairing_root = CONTRACTS_ROOT / "companion-pairing-v1"
+    actual_vectors = {
+        path.relative_to(pairing_root).as_posix()
+        for path in pairing_root.rglob("*")
+        if path.is_file()
+    }
+    if actual_vectors != EXPECTED_PAIRING_VECTOR_FILES:
+        difference = sorted(actual_vectors ^ EXPECTED_PAIRING_VECTOR_FILES)
+        raise SystemExit("selected companion-pairing vector export drifted: " + ", ".join(difference))
+    record = json.loads((CONTRACTS_ROOT / PAIRING_PROFILE_RECORD).read_text("utf-8"))
+    vectors = json.loads(
+        (CONTRACTS_ROOT / VECTOR_MANIFESTS["companion-pairing-v1"]).read_text("utf-8")
+    )
+    if record["profile"] != EXPECTED_PAIRING_PROFILE or vectors["profile"] != record["profile"]:
+        raise SystemExit("selected companion-pairing record and vectors name different profiles")
+    return EXPECTED_PAIRING_PROFILE
+
+
+def _published_profiles() -> list[str]:
+    source_manifest_path = CONTRACTS_ROOT / SOURCE_MANIFEST_TARGET
+    value = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+    if sha256(source_manifest_path) != APPROVED_SOURCE_MANIFEST_SHA256:
+        raise SystemExit("vendored source contract manifest does not match approved authority")
+    profiles = list(value["profiles"])
+    if tuple(profiles) != EXPECTED_PUBLISHED_PROFILES:
+        raise SystemExit("vendored published profile inventory drifted")
+    profiles.extend(LEGACY_VECTOR_PROFILE_ALIASES)
+    profiles.extend(
+        json.loads((CONTRACTS_ROOT / path).read_text("utf-8"))["profile"]
+        for path in POLICY_PROFILES.values()
+    )
+    return profiles
+
+
 def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
     vector_manifests = [
-        {
-            "export": export,
-            "path": path,
-            "sha256": sha256(CONTRACTS_ROOT / path),
-        }
+        {"export": export, "path": path, "sha256": sha256(CONTRACTS_ROOT / path)}
         for export, path in VECTOR_MANIFESTS.items()
     ]
     generator_versions = [
         {
             "export": entry["export"],
-            "version": json.loads((CONTRACTS_ROOT / entry["path"]).read_text("utf-8"))["generator_version"],
+            "version": json.loads((CONTRACTS_ROOT / entry["path"]).read_text("utf-8"))[
+                "generator_version"
+            ],
         }
         for entry in vector_manifests
     ]
     trust_sets = [
-        {
-            "export": export,
-            "path": path,
-            "sha256": sha256(CONTRACTS_ROOT / path),
-        }
+        {"export": export, "path": path, "sha256": sha256(CONTRACTS_ROOT / path)}
         for export, path in TRUST_SETS.items()
     ]
-    profiles = [
-        json.loads((CONTRACTS_ROOT / entry["path"]).read_text("utf-8"))["profile"]
-        for entry in vector_manifests
+    conformance_manifests = [
+        {"export": export, "path": path, "sha256": sha256(CONTRACTS_ROOT / path)}
+        for export, path in CONFORMANCE_MANIFESTS.items()
     ]
-    profiles.extend(
-        json.loads((CONTRACTS_ROOT / path).read_text("utf-8"))["profile"]
-        for path in POLICY_PROFILES.values()
-    )
-    profiles.append(selected_progress_profile())
+    profiles = _published_profiles()
+    if selected_progress_profile() not in profiles:
+        raise SystemExit("selected onboarding-progress profile is absent from published profiles")
     if selected_pairing_profile() not in profiles:
-        raise SystemExit("selected companion-pairing profile is absent from the manifest")
+        raise SystemExit("selected companion-pairing profile is absent from published profiles")
     entries = fixture_entries()
     manifest = {
         "content_digest": aggregate_digest(entries),
@@ -377,7 +401,7 @@ def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
     manifest_bytes = encode(manifest)
     pin = {
         "aggregate_bundle_sha256": manifest["content_digest"],
-        "consumer_pin_version": 2,
+        "consumer_pin_version": 3,
         "contract_manifest_path": "manifest.json",
         "contract_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "export_set": EXPORT_SET,
@@ -385,19 +409,24 @@ def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
         "supported_profiles": profiles,
         "trust_sets": trust_sets,
         "vector_manifests": vector_manifests,
+        "conformance_manifests": conformance_manifests,
+        "source_repository": APPROVED_SOURCE_REPOSITORY,
+        "source_commit": APPROVED_SOURCE_COMMIT,
+        "source_tree": APPROVED_SOURCE_TREE,
+        "source_contract_manifest_path": SOURCE_MANIFEST_TARGET,
+        "source_contract_manifest_sha256": APPROVED_SOURCE_MANIFEST_SHA256,
     }
     return manifest, pin
 
 
 def copy_selected_export(source_root: Path) -> None:
-    verify_approved_source_bytes(source_root)
+    _load_source_manifest(source_root)
+    verify_approved_source_exports(source_root)
     for export, source_path in EXPORT_SOURCES.items():
         source = source_root / source_path
         target = CONTRACTS_ROOT / export
-        if not source.is_dir():
-            raise SystemExit(f"approved source checkout does not contain export source: {source_path}")
         copy_immutable_export(source, target, source_path)
-    copy_schema_closure(source_root, CONTRACTS_ROOT / SCHEMA_EXPORT)
+    copy_published_contracts(source_root)
 
     count = len(fixture_entries())
     if count != EXPECTED_FILE_COUNT:
@@ -424,7 +453,11 @@ def main() -> int:
         CONTRACTS_ROOT / "manifest.json": encode(manifest),
         CONTRACTS_ROOT / "consumer-pin.json": encode(pin),
     }
-    stale = [path.name for path, content in expected.items() if not path.is_file() or path.read_bytes() != content]
+    stale = [
+        path.name
+        for path, content in expected.items()
+        if not path.is_file() or path.read_bytes() != content
+    ]
     if args.check:
         if stale:
             raise SystemExit(f"selected contract snapshot is stale: {', '.join(stale)}")

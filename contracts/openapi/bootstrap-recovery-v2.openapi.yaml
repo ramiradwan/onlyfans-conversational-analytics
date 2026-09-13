@@ -1,0 +1,72 @@
+openapi: 3.1.0
+info:
+  title: Bridge Clean bootstrap recovery v2 API
+  version: 2.0.0
+  description: >-
+    Additive recovery contract for committed installation-claim:v2 enrollment. It preserves
+    the existing bootstrap recovery route and registered-installation-key proof model while
+    returning only installation and membership bootstrap authority. It creates no new
+    installation and no CapabilityLicense or other commercial authority.
+servers:
+  - url: https://control-plane.example.invalid
+paths:
+  /v1/installations/{installation_id}/bootstrap:recover:
+    post:
+      operationId: recoverBootstrapV2
+      summary: Recover identity/bootstrap authority for one committed installation-claim:v2 enrollment.
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/provisioning/v2/bootstrap-recovery-request.schema.json
+      responses:
+        "200":
+          description: >-
+            Recovery succeeded after validating a committed v2 enrollment and proof by the
+            already registered installation key. The original enrolled_at remains authoritative;
+            fresh bootstrap identity grants may be issued, no new installation is created, and
+            the response contains exactly installation_grant and membership_snapshot authority.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v2/bootstrap-recovery-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/TemporarilyUnavailable" }
+components:
+  parameters:
+    InstallationId:
+      name: installation_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+  responses:
+    Error:
+      description: Closed cross-plane error.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/v1/error.schema.json
+    TemporarilyUnavailable:
+      description: >-
+        Required hosted enrollment persistence or signing authority is temporarily unavailable;
+        the failure is not claim rejection, authorization denial, revocation, or a commercial decision.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../schemas/common/v1/error.schema.json
+              - type: object
+                properties:
+                  code:
+                    const: temporarily_unavailable

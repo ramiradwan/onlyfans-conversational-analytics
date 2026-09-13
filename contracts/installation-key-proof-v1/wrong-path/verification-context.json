@@ -1,0 +1,27 @@
+{
+  "challenge_state": "fresh",
+  "expected_fields": {
+    "account_id": "",
+    "audience": "urn:bridge-clean:commercial-control-plane:provisioning",
+    "body_digest": "mH9qi0IxqpiXcm9mdfVlwcnnEwazmDJt8YQNUVC2X0k",
+    "challenge": "PNSFZxhyVn0jSA6BYLtDEwv2gjxm5s0tLPaKbGRCPRI",
+    "installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+    "key_id": "ik1.jcWDzvJIkKO1XtDL-Mp1vw",
+    "method": "POST",
+    "path": "/v1/grants/installation:refresh",
+    "purpose": "installation-grant-refresh"
+  },
+  "mode": "contract",
+  "presented_fields": {
+    "account_id": "",
+    "audience": "urn:bridge-clean:commercial-control-plane:provisioning",
+    "body_digest": "mH9qi0IxqpiXcm9mdfVlwcnnEwazmDJt8YQNUVC2X0k",
+    "challenge": "PNSFZxhyVn0jSA6BYLtDEwv2gjxm5s0tLPaKbGRCPRI",
+    "installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+    "key_id": "ik1.jcWDzvJIkKO1XtDL-Mp1vw",
+    "method": "POST",
+    "path": "/v1/grants/license:refresh",
+    "purpose": "installation-grant-refresh"
+  },
+  "trust_domain": "ADR-0010-TEST-VECTORS-ONLY"
+}

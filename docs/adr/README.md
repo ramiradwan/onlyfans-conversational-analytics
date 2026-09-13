@@ -21,6 +21,7 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0020: Separate the Bridge read model from the analytics projection store](0020-projection-store-topology-and-activation.md)
 - [ADR 0021: Encrypt Full-mode extension persistence with a Brain-sealed key](0021-encrypted-extension-persistence.md)
 - [ADR 0022: Keep activation Legal evidence append-only in the Extension](0022-append-only-legal-activation-evidence.md)
+- [ADR 0025: Adopt CapabilityLicense delivery contracts](0025-adopt-capability-license-delivery-contracts.md)
 
 ## Proposed
 

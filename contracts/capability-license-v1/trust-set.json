@@ -1,0 +1,29 @@
+{
+  "environment": "TEST-VECTORS-ONLY-NOT-A-PRODUCTION-TRUST-SET",
+  "keys": [
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.cl.zqzGpwkQlnfOpQwCLF41xA",
+        "kty": "EC",
+        "x": "N14CGe6eT8Bg76r_Xpng5FyXCGpu1RBJm_drEjLp8Tc",
+        "y": "pU4kJogP2WQeGd1iTd4HtWeu3RcT3LYoNNuhYH2sxFg"
+      },
+      "purpose": "capability-license"
+    },
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.cp.C7O2oL8pMJ2At7rumiRptg",
+        "kty": "EC",
+        "x": "_yO8vPrsB2rV_76xDlFQn3gjijqtgsa9e_df9Acv3bk",
+        "y": "_pxz9KZ5KcHLBeO4NiSUEDq159hfaKy5UnJZAovbX4g"
+      },
+      "purpose": "capability-permit"
+    }
+  ],
+  "production_usable": false,
+  "profile": "urn:bridge-clean:capability-license-test-trust:v1"
+}

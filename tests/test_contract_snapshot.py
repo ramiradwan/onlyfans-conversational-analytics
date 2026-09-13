@@ -8,13 +8,18 @@ from pathlib import Path
 import pytest
 
 from tools.regenerate_contract_snapshot import (
+    APPROVED_SOURCE_COMMIT,
+    APPROVED_SOURCE_MANIFEST_SHA256,
+    APPROVED_SOURCE_REPOSITORY,
+    APPROVED_SOURCE_TREE,
+    EXPECTED_FILE_COUNT,
     EXPECTED_PAIRING_PROFILE,
     EXPECTED_PAIRING_VECTOR_FILES,
     EXPECTED_PROGRESS_VECTOR_FILES,
-    EXPECTED_SCHEMA_CLOSURE,
+    EXPECTED_PUBLISHED_PROFILES,
+    EXPORT_SET,
+    SOURCE_MANIFEST_TARGET,
     build_records,
-    copy_schema_closure,
-    schema_dependency_closure,
     selected_pairing_profile,
     selected_progress_profile,
 )
@@ -29,13 +34,14 @@ from contracts.loader import (
 ROOT = Path(__file__).resolve().parents[1] / "contracts"
 PROGRESS_PROFILE = "urn:bridge-clean:onboarding-progress:v1"
 PAIRING_PROFILE = "urn:bridge-clean:companion-pairing:v1"
-INSTALLATION_CLAIM_PROFILE = "urn:bridge-clean:installation-claim:v1"
+INSTALLATION_CLAIM_V1_PROFILE = "urn:bridge-clean:installation-claim:v1"
+INSTALLATION_CLAIM_V2_PROFILE = "urn:bridge-clean:installation-claim:v2"
+BOOTSTRAP_RECOVERY_V2_PROFILE = "urn:bridge-clean:bootstrap-recovery:v2"
+CAPABILITY_LICENSE_PROFILE = "urn:bridge-clean:capability-license:v1"
 SELECTED_PROFILES = [
-    "urn:bridge-clean:grant-profile:v1",
+    *EXPECTED_PUBLISHED_PROFILES,
     "urn:bridge-clean:capability-permit-v1",
-    PAIRING_PROFILE,
     "urn:bridge-clean:capability-permit-consumption-policy:v1",
-    PROGRESS_PROFILE,
 ]
 EXPECTED_APPROVED_BYTES = {
     "onboarding-progress/metadata-rejected.expected.json": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
@@ -55,28 +61,42 @@ EXPECTED_APPROVED_BYTES = {
 @pytest.mark.contract_integrity
 def test_selected_snapshot_matches_its_independent_consumer_pin() -> None:
     manifest = verify_snapshot_integrity(ROOT)
-    assert len(manifest["files"]) == 450
+    assert len(manifest["files"]) == EXPECTED_FILE_COUNT
     assert manifest["profiles"] == SELECTED_PROFILES
-    assert manifest["export_set"] == [
-        "grant-profile-v1",
-        "capability-permit-v1",
-        "permit-consumption",
-        "production",
-        "schemas",
-        "onboarding-progress",
-        "companion-pairing-v1",
-        "companion-pairing-profile",
-    ]
+    assert manifest["export_set"] == EXPORT_SET
 
 
 @pytest.mark.contract_integrity
-def test_onboarding_progress_is_an_independently_supported_profile_without_t2() -> None:
+def test_published_delivery_profiles_are_adopted_without_dropping_v1_compatibility() -> None:
     manifest, pin = build_records()
 
     assert selected_progress_profile() == PROGRESS_PROFILE
     assert manifest["profiles"] == SELECTED_PROFILES
     assert pin["supported_profiles"] == SELECTED_PROFILES
-    assert INSTALLATION_CLAIM_PROFILE not in manifest["profiles"]
+    assert INSTALLATION_CLAIM_V1_PROFILE in manifest["profiles"]
+    assert INSTALLATION_CLAIM_V2_PROFILE in manifest["profiles"]
+    assert BOOTSTRAP_RECOVERY_V2_PROFILE in manifest["profiles"]
+    assert CAPABILITY_LICENSE_PROFILE in manifest["profiles"]
+
+
+@pytest.mark.contract_integrity
+def test_consumer_pin_names_exact_published_contract_authority() -> None:
+    pin = json.loads((ROOT / "consumer-pin.json").read_text("utf-8"))
+
+    assert pin["consumer_pin_version"] == 3
+    assert pin["source_repository"] == APPROVED_SOURCE_REPOSITORY
+    assert pin["source_commit"] == APPROVED_SOURCE_COMMIT
+    assert pin["source_tree"] == APPROVED_SOURCE_TREE
+    assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
+    assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
+    assert pin["aggregate_bundle_sha256"] == "8836509e317ba37bb305cf176cad811ee5fed631fb44f810228458e9a8f387d0"
+    assert pin["contract_manifest_sha256"] == "61d5dd4dca99dc91a947415753c611670a16aaca1c0b1ec2322d1b2ce97861c3"
+    assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
+        "capability-license-v1": "c87d4ea9e70a856ab21888ddc048ebada5837713f97e30599af4c66536a2d5d1",
+        "installation-claim-package-v1": "5bb58f5f2f3938a69d6381efeb38b0e4d6417aece0482ff337dafb8edb08483d",
+        "bootstrap-recovery-v2": "f4205383eee5d5fcf7b6a394fdad3e3cab1a5ccb02ea63dece068a6f02e04596",
+        "capability-license-hosted-api-v1": "b128955756b737ebfb58896d5fdd0b23430070817da9ab06bb970010aa125f0c",
+    }
 
 
 @pytest.mark.contract_integrity
@@ -164,6 +184,17 @@ def test_fixture_trust_set_can_be_loaded_only_in_development() -> None:
 
 
 @pytest.mark.contract_integrity
+def test_capability_license_fixture_trust_is_not_production_trust() -> None:
+    fixture = json.loads((ROOT / "capability-license-v1/trust-set.json").read_text("utf-8"))
+    assert fixture["production_usable"] is False
+    with pytest.raises(ContractsIntegrityError, match="not production usable"):
+        load_trust_set("capability-license-v1/trust-set.json")
+    assert load_trust_set(
+        "capability-license-v1/trust-set.json", environment="development"
+    )["production_usable"] is False
+
+
+@pytest.mark.contract_integrity
 def test_production_grant_trust_set_is_manifest_pinned() -> None:
     trust_set = load_trust_set("production/grant-profile-v1/trust-set.json")
 
@@ -221,31 +252,46 @@ def test_integrity_check_fails_closed_on_stale_promotion(tmp_path: Path) -> None
 
 
 @pytest.mark.contract_integrity
-def test_selected_schema_closure_contains_only_deliberate_dependencies() -> None:
-    closure = schema_dependency_closure(ROOT / "schemas")
+def test_published_schema_references_resolve_inside_pinned_source_manifest() -> None:
+    source_manifest = json.loads((ROOT / SOURCE_MANIFEST_TARGET).read_text("utf-8"))
+    published = {entry["path"] for entry in source_manifest["files"]}
+    schema_paths = {path for path in published if path.startswith("schemas/")}
 
-    assert closure == EXPECTED_SCHEMA_CLOSURE
+    def references(value: object) -> list[str]:
+        if isinstance(value, dict):
+            found = [value["$ref"]] if isinstance(value.get("$ref"), str) else []
+            for child in value.values():
+                found.extend(references(child))
+            return found
+        if isinstance(value, list):
+            return [ref for child in value for ref in references(child)]
+        return []
+
+    for relative in schema_paths:
+        document = json.loads((ROOT / relative).read_text("utf-8"))
+        source = Path(relative)
+        for ref in references(document):
+            path_part = ref.split("#", 1)[0]
+            if not path_part:
+                continue
+            resolved = (source.parent / path_part).as_posix()
+            while "/../" in resolved or resolved.startswith("../"):
+                resolved = str(Path(resolved))
+                break
+            resolved = Path(resolved).as_posix()
+            # pathlib keeps '..' lexically; resolve against the contracts root instead.
+            resolved = (ROOT / source.parent / path_part).resolve().relative_to(ROOT.resolve()).as_posix()
+            assert resolved in schema_paths
 
 
 @pytest.mark.contract_integrity
-def test_schema_closure_assertion_rejects_an_unpromoted_reference(tmp_path: Path) -> None:
-    source = tmp_path / "source"
-    schemas = source / "schemas"
-    capability = schemas / "commercial" / "v1" / "capability-permit.schema.json"
-    extra = schemas / "common" / "v1" / "extra.schema.json"
-    for relative in EXPECTED_SCHEMA_CLOSURE:
-        schema = schemas / relative
-        schema.parent.mkdir(parents=True, exist_ok=True)
-        schema.write_text("{}", encoding="utf-8")
-    capability.write_text(
-        '{"$ref":"../../common/v1/definitions.schema.json",'
-        '"properties":{"extra":{"$ref":"../../common/v1/extra.schema.json"}}}',
-        encoding="utf-8",
-    )
-    extra.write_text("{}", encoding="utf-8")
+def test_source_provenance_drift_fails_closed(tmp_path: Path) -> None:
+    snapshot = tmp_path / "contracts"
+    shutil.copytree(ROOT, snapshot, ignore=shutil.ignore_patterns("__pycache__"))
+    pin_path = snapshot / "consumer-pin.json"
+    pin = json.loads(pin_path.read_text("utf-8"))
+    pin["source_commit"] = "0" * 40
+    pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    with pytest.raises(
-        SystemExit,
-        match=r"selected schema closure does not match approved closure: common/v1/extra.schema.json",
-    ):
-        copy_schema_closure(source, tmp_path / "exported-schemas")
+    with pytest.raises(ContractsIntegrityError, match="source provenance drifted"):
+        verify_snapshot_integrity(snapshot)

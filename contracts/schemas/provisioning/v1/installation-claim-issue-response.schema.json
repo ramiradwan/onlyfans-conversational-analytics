@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v1/installation-claim-issue-response.schema.json",
+  "title": "Installation claim issue response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "claim_id",
+    "claim_secret",
+    "challenge",
+    "onboarding_transaction_id",
+    "organization_id",
+    "installation_id",
+    "issued_at",
+    "expires_at",
+    "consume_path"
+  ],
+  "properties": {
+    "profile": {"const": "urn:bridge-clean:installation-claim:v1"},
+    "claim_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"},
+    "claim_secret": {"$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"},
+    "challenge": {"$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"},
+    "onboarding_transaction_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "organization_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "installation_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"},
+    "issued_at": {"$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"},
+    "expires_at": {"$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"},
+    "consume_path": {
+      "type": "string",
+      "minLength": 61,
+      "maxLength": 61,
+      "pattern": "^/v1/installation-claims/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:consume$"
+    }
+  }
+}

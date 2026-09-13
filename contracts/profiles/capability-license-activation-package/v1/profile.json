@@ -1,0 +1,29 @@
+{
+  "profile": "urn:bridge-clean:capability-license-activation-package:v1",
+  "governing_adr": "docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md",
+  "messages": {
+    "package": "schemas/commercial/v1/capability-license-activation-package.schema.json"
+  },
+  "encoding": {
+    "serialization": "compact-json",
+    "member_order": [
+      "profile",
+      "exchange_id",
+      "organization_id",
+      "installation_id",
+      "capability",
+      "authority_target",
+      "proof_profile",
+      "proof_purpose",
+      "proof_challenge_path",
+      "activation_path"
+    ],
+    "text_encoding": "utf-8",
+    "transport_encoding": "base64url-unpadded",
+    "max_encoded_characters": 1400
+  },
+  "security": {
+    "contains_bearer_secret": false,
+    "qr_and_clipboard_bytes_identical": true
+  }
+}

@@ -1,0 +1,90 @@
+openapi: 3.1.0
+info:
+  title: Bridge Clean installation-claim v2 provisioning API
+  version: 2.0.0
+  description: >-
+    Additive installation enrollment contract. It preserves the v1 issue and consume
+    route coordinates while publishing a v2 handoff package whose claim_profile explicitly
+    selects installation-claim:v2. The v2 consume response returns only installation and
+    membership bootstrap authority and never embeds CapabilityLicense or a replacement
+    licence entitlement.
+servers:
+  - url: https://control-plane.example.invalid
+paths:
+  /v1/installation-claims:
+    post:
+      operationId: issueInstallationClaimV2
+      summary: Issue an installation claim selecting installation-claim:v2 semantics.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/provisioning/v2/installation-claim-issue-request.schema.json
+      responses:
+        "201":
+          description: >-
+            Claim issued. The secret appears in this response only and the response includes
+            the deterministic installation-claim-package:v2 handoff bytes for QR or clipboard
+            transfer.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v2/installation-claim-issue-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/TemporarilyUnavailable" }
+  /v1/installation-claims/{claim_id}:consume:
+    post:
+      operationId: consumeInstallationClaimV2
+      summary: Consume the v2 claim once and register the installation public key.
+      parameters:
+        - $ref: "#/components/parameters/ClaimId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/provisioning/v2/installation-claim-consume-request.schema.json
+      responses:
+        "200":
+          description: >-
+            Claim consumed and installation key registered. The response contains only
+            the existing installation_grant and membership_snapshot bootstrap authorities.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v2/installation-claim-consume-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/TemporarilyUnavailable" }
+components:
+  parameters:
+    ClaimId:
+      name: claim_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+  responses:
+    Error:
+      description: Closed cross-plane error.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/v1/error.schema.json
+    TemporarilyUnavailable:
+      description: Required hosted persistence or signing authority is temporarily unavailable; the failure is not a claim rejection, authorization denial, or commercial revocation.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../schemas/common/v1/error.schema.json
+              - type: object
+                properties:
+                  code:
+                    const: temporarily_unavailable
