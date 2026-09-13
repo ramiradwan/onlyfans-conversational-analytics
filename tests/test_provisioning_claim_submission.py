@@ -335,6 +335,7 @@ def submission(
         proof_authority_factory=lambda _: authority,
         device_display_name=lambda: DEVICE_NAME,
         trust_set=grants.trust_set,
+        legacy_v1_compatibility=True,
     )
 
 
@@ -487,6 +488,7 @@ def test_an_unusable_hosted_origin_is_refused_rather_than_raised(
         ),
         device_display_name=lambda: DEVICE_NAME,
         trust_set=grants.trust_set,
+        legacy_v1_compatibility=True,
     )
 
     assert submit(package=PACKAGE) == "hosted_origin_unavailable"
@@ -510,6 +512,7 @@ def test_an_unusable_installation_key_is_refused_rather_than_raised(
             proof_authority_factory=refusing_factory,
             device_display_name=lambda: DEVICE_NAME,
             trust_set=grants.trust_set,
+        legacy_v1_compatibility=True,
         )
         if stage == "construction"
         else submission(
@@ -535,8 +538,8 @@ def test_the_decoded_claim_is_dropped_when_consumption_never_reaches_the_plane(
     decoded: list[Any] = []
     real_decoder = submission_module.decode_claim_package
 
-    def recording_decoder(pasted: str) -> Any:
-        package_object = real_decoder(pasted)
+    def recording_decoder(pasted: str, **kwargs: Any) -> Any:
+        package_object = real_decoder(pasted, **kwargs)
         decoded.append(package_object)
         return package_object
 
@@ -549,6 +552,7 @@ def test_the_decoded_claim_is_dropped_when_consumption_never_reaches_the_plane(
         ),
         device_display_name=lambda: DEVICE_NAME,
         trust_set=grants.trust_set,
+        legacy_v1_compatibility=True,
     )
 
     assert submit(package=PACKAGE) == "hosted_origin_unavailable"
@@ -574,6 +578,7 @@ def test_a_packaged_trust_set_defect_is_not_reported_as_a_customer_refusal(
             grants.installation_key
         ),
         device_display_name=lambda: DEVICE_NAME,
+        legacy_v1_compatibility=True,
     )
 
     with pytest.raises(ContractsIntegrityError):
@@ -719,6 +724,7 @@ def test_a_claim_consumed_without_a_usable_local_result_stays_recoverable(
         ),
         device_display_name=lambda: DEVICE_NAME,
         trust_set=grants.trust_set,
+        legacy_v1_compatibility=True,
     )
 
     with pytest.raises(GrantStorageFailure):
@@ -765,6 +771,7 @@ def test_a_claim_that_cannot_reach_the_plane_is_never_recorded(
         ),
         device_display_name=lambda: DEVICE_NAME,
         trust_set=grants.trust_set,
+        legacy_v1_compatibility=True,
     )
 
     assert submit(package=pasted) is not None

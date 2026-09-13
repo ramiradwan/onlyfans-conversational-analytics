@@ -417,6 +417,8 @@ class ClaimSubmission:
     organization_id: str
     installation_id: str
     submitted_at: datetime
+    claim_profile: str = "urn:bridge-clean:installation-claim:v1"
+    enrolled_at: datetime | None = None
     state: ClaimSubmissionState = ClaimSubmissionState.SUBMITTED
     outcome: str | None = None
     resolved_at: datetime | None = None
@@ -621,7 +623,8 @@ class AuthenticationStore(Protocol):
     def record_claim_submission(self, submission: ClaimSubmission) -> None: ...
 
     def resolve_claim_submission(
-        self, claim_id: str, *, outcome: str | None, resolved_at: datetime
+        self, claim_id: str, *, outcome: str | None, resolved_at: datetime,
+        enrolled_at: datetime | None = None,
     ) -> bool: ...
 
     def claim_submission(self, claim_id: str) -> ClaimSubmission | None: ...
@@ -3208,8 +3211,9 @@ class SQLiteAuthenticationStore:
                     """
                     INSERT INTO provisioning_claim_submissions (
                         claim_id, onboarding_transaction_id, organization_id,
-                        installation_id, state, outcome, submitted_at, resolved_at
-                    ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)
+                        installation_id, state, outcome, submitted_at, resolved_at,
+                        claim_profile, enrolled_at
+                    ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?, NULL)
                     """,
                     (
                         submission.claim_id,
@@ -3218,6 +3222,7 @@ class SQLiteAuthenticationStore:
                         submission.installation_id,
                         ClaimSubmissionState.SUBMITTED.value,
                         _time_text(submission.submitted_at),
+                        submission.claim_profile,
                     ),
                 )
                 self._enqueue_onboarding_progress_in_transaction(
@@ -3250,7 +3255,8 @@ class SQLiteAuthenticationStore:
             )
 
     def resolve_claim_submission(
-        self, claim_id: str, *, outcome: str | None, resolved_at: datetime
+        self, claim_id: str, *, outcome: str | None, resolved_at: datetime,
+        enrolled_at: datetime | None = None,
     ) -> bool:
         """Record what became of one submitted claim.
 
@@ -3261,6 +3267,10 @@ class SQLiteAuthenticationStore:
 
         if outcome is not None and not outcome:
             raise ValueError("Claim submission outcome must not be empty")
+        if enrolled_at is not None:
+            _time_text(enrolled_at)
+        if outcome is not None and enrolled_at is not None:
+            raise ValueError("Refused claim cannot record enrollment time")
         state = (
             ClaimSubmissionState.CONSUMED
             if outcome is None
@@ -3270,13 +3280,15 @@ class SQLiteAuthenticationStore:
             cursor = connection.execute(
                 """
                 UPDATE provisioning_claim_submissions
-                SET state = ?, outcome = ?, resolved_at = ?
+                SET state = ?, outcome = ?, resolved_at = ?,
+                    enrolled_at = COALESCE(enrolled_at, ?)
                 WHERE claim_id = ? AND state <> ?
                 """,
                 (
                     state.value,
                     outcome,
                     _time_text(resolved_at),
+                    None if enrolled_at is None else _time_text(enrolled_at),
                     claim_id,
                     ClaimSubmissionState.CONSUMED.value,
                 ),
@@ -3850,15 +3862,23 @@ def _require_claim_submission(submission: ClaimSubmission) -> None:
         raise ValueError("A newly recorded claim submission must start submitted")
     if submission.outcome is not None or submission.resolved_at is not None:
         raise ValueError("A newly recorded claim submission must not be resolved")
+    if submission.enrolled_at is not None:
+        raise ValueError("A newly recorded claim submission must not be enrolled")
+    if submission.claim_profile not in {
+        "urn:bridge-clean:installation-claim:v1",
+        "urn:bridge-clean:installation-claim:v2",
+    }:
+        raise ValueError("Claim submission profile is invalid")
     _time_text(submission.submitted_at)
 
 
-def _claim_coordinates(submission: ClaimSubmission) -> tuple[str, str, str, str]:
+def _claim_coordinates(submission: ClaimSubmission) -> tuple[str, str, str, str, str]:
     return (
         submission.claim_id,
         submission.onboarding_transaction_id,
         submission.organization_id,
         submission.installation_id,
+        submission.claim_profile,
     )
 
 
@@ -3871,6 +3891,10 @@ def _claim_submission(row: sqlite3.Row) -> ClaimSubmission:
         organization_id=str(row["organization_id"]),
         installation_id=str(row["installation_id"]),
         submitted_at=_parse_time(str(row["submitted_at"])),
+        claim_profile=str(row["claim_profile"]),
+        enrolled_at=(
+            None if row["enrolled_at"] is None else _parse_time(str(row["enrolled_at"]))
+        ),
         state=ClaimSubmissionState(str(row["state"])),
         outcome=None if outcome is None else str(outcome),
         resolved_at=None if resolved is None else _parse_time(str(resolved)),

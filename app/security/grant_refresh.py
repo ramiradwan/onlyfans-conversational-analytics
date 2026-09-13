@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Callable, Iterator
 
 from app.persistence.auth import AuthenticationStore, ProvisioningCandidateState, VerifiedGrantReference
+from app.security.grant_types import LICENSE_ENTITLEMENT
 from app.security.hosted_grants import (
     GrantRefresh, HostedGrantClient, HostedTransport, InstallationProofAuthority,
     grant_offline_grace_seconds,
@@ -78,7 +79,8 @@ class GrantRefreshLifecycle:
             return ()
         selected = tuple(
             grant for grant in grants
-            if grant.installation_key_id == key.installation_key_id
+            if grant.grant_type != LICENSE_ENTITLEMENT
+            and grant.installation_key_id == key.installation_key_id
             and grant.installation_key_jkt == key.installation_key_jkt
         )
         identities = {(grant.organization_id, grant.installation_id) for grant in selected}

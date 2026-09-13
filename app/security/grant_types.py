@@ -65,4 +65,12 @@ AGENT_PAIRING_GRANT_TYPES = (INSTALLATION_GRANT, CREATOR_ACCOUNT_BINDING)
 
 # The grant types one redeemed installation claim delivers. The account binding
 # is not among them: it is issued once an account is approved, not at redemption.
-HOSTED_CLAIM_GRANT_TYPES = ACTIVATION_GRANT_TYPES + (LICENSE_ENTITLEMENT,)
+# Historical installation-claim:v1 delivery includes legacy commercial entitlement.
+# New production installation-claim:v2 returns bootstrap identity authority only.
+LEGACY_V1_HOSTED_CLAIM_GRANT_TYPES = ACTIVATION_GRANT_TYPES + (LICENSE_ENTITLEMENT,)
+HOSTED_CLAIM_V2_GRANT_TYPES = ACTIVATION_GRANT_TYPES
+HOSTED_CLAIM_GRANT_TYPES = LEGACY_V1_HOSTED_CLAIM_GRANT_TYPES
+
+# New production account finalization is identity/account authority only.
+# CapabilityLicense is composed separately by RuntimePolicy.
+PRODUCTION_PROVISIONING_GRANT_TYPES = tuple(sorted(ACCOUNT_AUTHORITY_GRANT_TYPES))
