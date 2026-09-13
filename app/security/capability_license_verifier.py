@@ -9,7 +9,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
@@ -17,6 +17,12 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from contracts.loader import ContractsIntegrityError, load_trust_set
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from app.persistence.auth import AuthenticationStore, VerifiedCapabilityLicenseReference
+    from app.security.runtime_policy import AuthContext, RuntimePolicy
 
 
 _P256_ORDER = int(
@@ -446,3 +452,138 @@ def _integer_in_range(value: object, minimum: int, maximum: int) -> bool:
         and not isinstance(value, bool)
         and minimum <= value <= maximum
     )
+
+class CapabilityLicenseVerificationError(ValueError):
+    """Raised when signed commercial authority cannot be accepted locally."""
+
+    def __init__(self, result: str) -> None:
+        super().__init__(f"CapabilityLicense verification failed: {result}")
+        self.result = result
+
+
+class CapabilityLicenseAuthorityService:
+    """Verify, persist, recover, and compose local CapabilityLicense authority."""
+
+    def __init__(
+        self,
+        store: "AuthenticationStore",
+        verifier: CapabilityLicenseVerifier,
+        *,
+        clock: "Callable[[], datetime] | None" = None,
+        verification_source: "Literal['production', 'development', 'conformance']" = "production",
+    ) -> None:
+        from datetime import datetime, timezone
+
+        self._store = store
+        self._verifier = verifier
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._verification_source = verification_source
+
+    def accept(
+        self,
+        token: str,
+        *,
+        context: CapabilityLicenseVerificationContext,
+    ) -> "VerifiedCapabilityLicenseReference":
+        from app.persistence.auth import VerifiedCapabilityLicenseReference
+
+        outcome = self._verifier.verify(token, context=context)
+        if not outcome.valid or outcome.license is None:
+            raise CapabilityLicenseVerificationError(outcome.result)
+        verified = outcome.license
+        reference = VerifiedCapabilityLicenseReference(
+            reference_id=_reference_id(verified.object_digest),
+            license_id=verified.license_id,
+            issuance_id=verified.issuance_id,
+            object_digest=verified.object_digest,
+            compact_jws=verified.compact_jws,
+            subject=verified.subject,
+            organization_id=verified.organization_id,
+            installation_id=verified.installation_id,
+            installation_key_id=verified.installation_key_id,
+            installation_key_jkt=verified.installation_key_jkt,
+            seat_id=verified.seat_id,
+            seat_scope=verified.seat_scope,
+            capability=verified.capability,
+            licensed_major_version=verified.licensed_major_version,
+            compatible_artifact_family=verified.compatible_artifact_family,
+            update_rights=verified.update_rights,
+            fallback_major_versions=verified.fallback_major_versions,
+            signer_kid=verified.signer_kid,
+            verified_at=self._clock(),
+            verification_source=self._verification_source,
+        )
+        self._store.record_verified_capability_license(reference)
+        return reference
+
+    def recover(
+        self,
+        reference_id: str,
+        *,
+        context: CapabilityLicenseVerificationContext,
+    ) -> "VerifiedCapabilityLicenseReference":
+        reference = self._store.verified_capability_license(reference_id)
+        if reference is None:
+            raise CapabilityLicenseVerificationError("reference_unavailable")
+        outcome = self._verifier.verify(reference.compact_jws, context=context)
+        if not outcome.valid or outcome.license is None:
+            raise CapabilityLicenseVerificationError(outcome.result)
+        verified = outcome.license
+        durable = (
+            reference.object_digest,
+            reference.license_id,
+            reference.issuance_id,
+            reference.subject,
+            reference.organization_id,
+            reference.installation_id,
+            reference.installation_key_id,
+            reference.installation_key_jkt,
+            reference.seat_id,
+            reference.seat_scope,
+            reference.capability,
+            reference.licensed_major_version,
+            reference.compatible_artifact_family,
+            reference.update_rights,
+            reference.fallback_major_versions,
+            reference.signer_kid,
+        )
+        current = (
+            verified.object_digest,
+            verified.license_id,
+            verified.issuance_id,
+            verified.subject,
+            verified.organization_id,
+            verified.installation_id,
+            verified.installation_key_id,
+            verified.installation_key_jkt,
+            verified.seat_id,
+            verified.seat_scope,
+            verified.capability,
+            verified.licensed_major_version,
+            verified.compatible_artifact_family,
+            verified.update_rights,
+            verified.fallback_major_versions,
+            verified.signer_kid,
+        )
+        if durable != current:
+            raise CapabilityLicenseVerificationError("persisted_authority_mismatch")
+        return reference
+
+    def runtime_policy(
+        self,
+        identity: "AuthContext",
+        grant_reference_ids: tuple[str, ...],
+        capability_reference_id: str,
+        *,
+        context: CapabilityLicenseVerificationContext,
+    ) -> "RuntimePolicy":
+        self.recover(capability_reference_id, context=context)
+        return self._store.build_runtime_policy_with_capability(
+            identity,
+            grant_reference_ids,
+            capability_reference_id,
+        )
+
+
+def _reference_id(object_digest: str) -> str:
+    return "caplic." + object_digest
