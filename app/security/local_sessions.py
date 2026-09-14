@@ -14,7 +14,8 @@ from typing import Any
 
 from app.core.config import settings
 from app.persistence.auth import SQLiteAuthenticationStore
-from app.security.runtime_policy import AuthContext, RuntimePolicy
+from app.security.analysis_authorization import build_current_analysis_policy
+from app.security.runtime_policy import AuthContext, RuntimeAuthorizationDenied, RuntimePolicy
 
 
 class LocalSessionError(ValueError):
@@ -117,7 +118,14 @@ def build_runtime_policy(
     *,
     signed_object_digests: tuple[str, ...] = (),
 ) -> RuntimePolicy:
-    return _store(str(settings.auth_database_path.resolve())).build_runtime_policy(
+    store = _store(str(settings.auth_database_path.resolve()))
+    if identity is not None and identity.role == "agent":
+        if signed_object_digests:
+            raise RuntimeAuthorizationDenied(
+                "Agent analysis policy does not accept ad hoc signed-object digests"
+            )
+        return build_current_analysis_policy(store, identity)
+    return store.build_runtime_policy(
         identity,
         signed_object_digests=signed_object_digests,
     )
