@@ -10,7 +10,7 @@ from app.security.runtime_policy import (
 
 _ANALYSIS_CAPABILITY = "analysis-run"
 _ANALYSIS_ARTIFACT_FAMILY = "analysis-artifact"
-_ANALYSIS_MAJOR_VERSION = 1
+_ANALYSIS_MAJOR_VERSION = 3
 
 
 def require_current_analysis_run(policy: RuntimePolicy) -> None:
