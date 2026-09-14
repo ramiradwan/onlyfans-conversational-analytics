@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from threading import RLock
 
 from app.persistence.auth import (
     AuthenticationStateError,
@@ -19,6 +20,8 @@ from app.security.runtime_policy import (
 _ANALYSIS_CAPABILITY = "analysis-run"
 _ANALYSIS_ARTIFACT_FAMILY = "analysis-artifact"
 _ANALYSIS_MAJOR_VERSION = 3
+_ANALYSIS_POLICIES: dict[str, RuntimePolicy] = {}
+_ANALYSIS_POLICIES_LOCK = RLock()
 
 
 def _denied(message: str) -> RuntimeAuthorizationDenied:
@@ -84,17 +87,56 @@ def _matching_capability_reference_ids(
     return tuple(matches)
 
 
+def _analysis_context(policy: RuntimePolicy) -> AnalysisRunContext:
+    identity = policy.identity_authority
+    commercial = policy.commercial_authority
+    return AnalysisRunContext(
+        organization_id=(
+            identity.organization_id if identity is not None else "missing"
+        ),
+        installation_id=(
+            identity.installation_id if identity is not None else "missing"
+        ),
+        installation_key_id=(
+            identity.installation_key_id if identity is not None else "missing"
+        ),
+        installation_key_jkt=(
+            identity.installation_key_jkt if identity is not None else "missing"
+        ),
+        seat_id=commercial.seat_id if commercial is not None else "missing",
+        seat_scope=(
+            commercial.seat_scope if commercial is not None else "missing"
+        ),
+        capability=_ANALYSIS_CAPABILITY,
+        selected_major_version=_ANALYSIS_MAJOR_VERSION,
+        artifact_family=_ANALYSIS_ARTIFACT_FAMILY,
+    )
+
+
+def require_current_analysis_run(policy: RuntimePolicy) -> None:
+    """Require current identity/account and CapabilityLicense authority."""
+
+    require_analysis_run(policy, _analysis_context(policy))
+
+
+def _cache_analysis_policy(policy: RuntimePolicy) -> None:
+    identity = policy.identity
+    if identity is None:
+        raise _denied("Authenticated analysis identity is required")
+    with _ANALYSIS_POLICIES_LOCK:
+        _ANALYSIS_POLICIES[identity.creator_account_id] = policy
+
+
 def build_current_analysis_policy(
     store: SQLiteAuthenticationStore,
     identity: AuthContext,
 ) -> RuntimePolicy:
-    """Compose current identity/account and commercial authority for one run.
+    """Compose and cache current authority for one account's new analysis work.
 
-    The durable account binding supplies the full current grant tuple. The
-    CapabilityLicense is selected only when exactly one persisted verified
-    object matches that tuple's installation/key and the locally selected
-    analysis capability, artifact family, and major version. No recency or
-    insertion order is used to resolve ambiguity.
+    The durable account binding supplies the full current grant tuple. Exactly
+    one persisted verified CapabilityLicense must match that tuple's
+    installation/key plus the locally selected capability, artifact family,
+    and major version. Ambiguity fails closed; no recency rule is used.
     """
 
     if identity.role != "agent":
@@ -140,46 +182,45 @@ def build_current_analysis_policy(
     except (AuthenticationStateError, ValueError) as error:
         raise _denied("CapabilityLicense authority is required") from error
 
-    # Recheck both uniqueness and the composed epoch after composition. This
-    # closes the normal race where authority changes between selection and use;
-    # the decision still fails closed if another matching license appears.
     if _matching_capability_reference_ids(store, policy) != reference_ids:
         raise _denied("CapabilityLicense authority changed during composition")
     if not store.runtime_policy_is_current(policy):
         raise _denied("Runtime policy authority changed during composition")
+    require_current_analysis_run(policy)
+    _cache_analysis_policy(policy)
     return policy
 
 
-def require_current_analysis_run(policy: RuntimePolicy) -> None:
-    """Require current identity/account and CapabilityLicense authority.
+def require_cached_analysis_run(
+    store: SQLiteAuthenticationStore,
+    creator_account_id: str,
+) -> RuntimePolicy:
+    """Revalidate the admitted policy immediately before candidate construction."""
 
-    Installation coordinates come from the independently verified identity
-    plane. The selected capability, artifact family, and major are local runtime
-    inputs. The uniquely selected commercial authority contributes the licensed
-    seat that is then bound to those local inputs by ``require_analysis_run``.
-    """
+    with _ANALYSIS_POLICIES_LOCK:
+        policy = _ANALYSIS_POLICIES.get(creator_account_id)
+    if policy is None:
+        raise _denied("Current analysis admission is required")
+    identity = policy.identity
+    if identity is None or identity.creator_account_id != creator_account_id:
+        clear_analysis_policy(creator_account_id)
+        raise _denied("Current analysis admission does not match the account")
+    if not store.runtime_policy_is_current(policy):
+        clear_analysis_policy(creator_account_id)
+        raise _denied("Current analysis admission is stale")
+    try:
+        require_current_analysis_run(policy)
+    except RuntimeAuthorizationDenied:
+        clear_analysis_policy(creator_account_id)
+        raise
+    return policy
 
-    identity = policy.identity_authority
-    commercial = policy.commercial_authority
-    context = AnalysisRunContext(
-        organization_id=(
-            identity.organization_id if identity is not None else "missing"
-        ),
-        installation_id=(
-            identity.installation_id if identity is not None else "missing"
-        ),
-        installation_key_id=(
-            identity.installation_key_id if identity is not None else "missing"
-        ),
-        installation_key_jkt=(
-            identity.installation_key_jkt if identity is not None else "missing"
-        ),
-        seat_id=commercial.seat_id if commercial is not None else "missing",
-        seat_scope=(
-            commercial.seat_scope if commercial is not None else "missing"
-        ),
-        capability=_ANALYSIS_CAPABILITY,
-        selected_major_version=_ANALYSIS_MAJOR_VERSION,
-        artifact_family=_ANALYSIS_ARTIFACT_FAMILY,
-    )
-    require_analysis_run(policy, context)
+
+def clear_analysis_policy(creator_account_id: str) -> None:
+    with _ANALYSIS_POLICIES_LOCK:
+        _ANALYSIS_POLICIES.pop(creator_account_id, None)
+
+
+def clear_analysis_policies() -> None:
+    with _ANALYSIS_POLICIES_LOCK:
+        _ANALYSIS_POLICIES.clear()
