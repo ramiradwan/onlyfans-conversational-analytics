@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
@@ -79,20 +78,36 @@ class ProofAuthority:
 
     def sign_challenge(self, challenge: bytes) -> InstallationProof:
         self.signed.append(challenge)
-        return InstallationProof(self.key.installation_key_id, "ES256", b"\x00" * 31 + b"\x01" + b"\x00" * 31 + b"\x01")
+        return InstallationProof(
+            self.key.installation_key_id,
+            "ES256",
+            b"\x00" * 31 + b"\x01" + b"\x00" * 31 + b"\x01",
+        )
 
 
 class QueueTransport:
-    def __init__(self, responses: list[TransportResponse]) -> None:
+    def __init__(self, responses: list[TransportResponse | BaseException]) -> None:
         self.responses = responses
         self.requests: list[tuple[str, Mapping[str, object]]] = []
+        self.headers: list[Mapping[str, str] | None] = []
 
-    def request(self, method: str, path: str, *, json_body: Mapping[str, object]) -> TransportResponse:
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: Mapping[str, object],
+        headers: Mapping[str, str] | None = None,
+    ) -> TransportResponse:
         assert method == "POST"
         self.requests.append((path, json_body))
+        self.headers.append(headers)
         if not self.responses:
             raise OSError("offline")
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 class Authority:
@@ -100,12 +115,19 @@ class Authority:
         self.reference = reference
         self.persisted: list[VerifiedCapabilityLicenseReference] = []
 
-    def verify(self, token: str, *, context: CapabilityLicenseVerificationContext) -> VerifiedCapabilityLicenseReference:
+    def verify(
+        self,
+        token: str,
+        *,
+        context: CapabilityLicenseVerificationContext,
+    ) -> VerifiedCapabilityLicenseReference:
         assert token
         assert context.expected_installation_id == self.reference.installation_id
         return self.reference
 
-    def persist(self, reference: VerifiedCapabilityLicenseReference) -> VerifiedCapabilityLicenseReference:
+    def persist(
+        self, reference: VerifiedCapabilityLicenseReference
+    ) -> VerifiedCapabilityLicenseReference:
         self.persisted.append(reference)
         return reference
 
@@ -138,7 +160,11 @@ def _reference(context: CapabilityLicenseVerificationContext) -> VerifiedCapabil
 
 
 def _json_response(status: int, value: Mapping[str, object]) -> TransportResponse:
-    return TransportResponse(status, json.dumps(value, separators=(",", ":")).encode(), "application/json")
+    return TransportResponse(
+        status,
+        json.dumps(value, separators=(",", ":")).encode(),
+        "application/json",
+    )
 
 
 def test_activation_package_is_exact_and_path_bound() -> None:
@@ -219,8 +245,65 @@ def test_activation_proof_uses_capability_license_domain_and_persists_only_after
 
     assert accepted == reference
     assert authority.persisted == [reference]
-    assert proof.signed and proof.signed[0].startswith(b"BRIDGE-CLEAN-CAPABILITY-LICENSE-ACTIVATION-PROOF-V1\x00")
+    assert proof.signed and proof.signed[0].startswith(
+        b"BRIDGE-CLEAN-CAPABILITY-LICENSE-ACTIVATION-PROOF-V1\x00"
+    )
     assert not proof.signed[0].startswith(b"BRIDGE-CLEAN-INSTALLATION-PROOF-V1\x00")
+    assert transport.headers[0] is None
+    assert transport.headers[1] is not None
+    assert transport.headers[1].get("Idempotency-Key")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v1/capability-license-exchanges/0198a1b2-c3d4-7300-8000-000000000002:activate",
+        "/v1/capability-license-reissue-authorizations/0198a1b2-c3d4-7300-8000-000000000011:finalize",
+    ],
+)
+def test_commit_retry_reuses_one_idempotency_key(path: str) -> None:
+    context = _context()
+    reference = _reference(context)
+    transport = QueueTransport(
+        [
+            _json_response(503, {"error": "temporarily_unavailable"}),
+            _json_response(201, {"ok": True}),
+        ]
+    )
+    client = CapabilityLicenseDeliveryClient(
+        transport,
+        ProofAuthority(_key(context)),
+        Authority(reference),  # type: ignore[arg-type]
+    )
+
+    response = client._request(path, {"request": {}})
+
+    assert response.status_code == 201
+    assert len(transport.headers) == 2
+    assert transport.headers[0] == transport.headers[1]
+    assert transport.headers[0] is not None
+    assert transport.headers[0].get("Idempotency-Key")
+
+
+def test_commit_transport_retry_reuses_one_idempotency_key() -> None:
+    context = _context()
+    reference = _reference(context)
+    transport = QueueTransport(
+        [OSError("connection reset"), _json_response(201, {"ok": True})]
+    )
+    client = CapabilityLicenseDeliveryClient(
+        transport,
+        ProofAuthority(_key(context)),
+        Authority(reference),  # type: ignore[arg-type]
+    )
+
+    response = client._request(
+        "/v1/capability-license-exchanges/0198a1b2-c3d4-7300-8000-000000000002:activate",
+        {"request": {}},
+    )
+
+    assert response.status_code == 201
+    assert transport.headers[0] == transport.headers[1]
 
 
 def test_transport_failure_does_not_withdraw_existing_local_authority() -> None:
@@ -241,7 +324,11 @@ def test_transport_failure_does_not_withdraw_existing_local_authority() -> None:
         "proof_challenge_path": f"/v1/installations/{context.expected_installation_id}/capability-license-proof-challenges",
         "activation_path": f"/v1/capability-license-exchanges/{exchange}:activate",
     }
-    client = CapabilityLicenseDeliveryClient(QueueTransport([]), ProofAuthority(_key(context)), authority)  # type: ignore[arg-type]
+    client = CapabilityLicenseDeliveryClient(
+        QueueTransport([]),
+        ProofAuthority(_key(context)),
+        authority,  # type: ignore[arg-type]
+    )
     with pytest.raises(CapabilityLicenseDeliveryUnavailable):
         client.activate(_encode(package), context=context)
     assert authority.persisted == [reference]
@@ -249,7 +336,12 @@ def test_transport_failure_does_not_withdraw_existing_local_authority() -> None:
 
 def test_published_reissue_handoff_package_decodes_deterministically() -> None:
     vectors = json.loads(
-        (Path(__file__).resolve().parents[1] / "contracts" / "capability-license-hosted-api-v1" / "reissue-positive-handoff.json").read_text("utf-8")
+        (
+            Path(__file__).resolve().parents[1]
+            / "contracts"
+            / "capability-license-hosted-api-v1"
+            / "reissue-positive-handoff.json"
+        ).read_text("utf-8")
     )
     positive = next(item for item in vectors if item.get("response"))
     encoded = positive["response"]["handoff_package_encoded"]
@@ -257,7 +349,6 @@ def test_published_reissue_handoff_package_decodes_deterministically() -> None:
     assert isinstance(package, ReissuePackage)
     assert package.replacement_installation_id == "install.replacement"
     assert package.reissue_reason == "replacement-installation"
-
 
 
 def _replacement_context() -> CapabilityLicenseVerificationContext:
@@ -330,18 +421,7 @@ def test_published_activation_package_decodes_directly() -> None:
     assert package.authority_target == "capability-license"
 
 
-def test_published_reissue_authorization_response_is_bound_to_prior_authority() -> None:
-    vectors = json.loads(
-        (
-            Path(__file__).resolve().parents[1]
-            / "contracts"
-            / "capability-license-hosted-api-v1"
-            / "reissue-positive-handoff.json"
-        ).read_text("utf-8")
-    )
-    case = next(item for item in vectors if item.get("case_id") == "reissue-authorization-positive")
-    request = case["request"]
-    response = case["response"]
+def test_replacement_brain_cannot_authorize_customer_reissue() -> None:
     prior_context = CapabilityLicenseVerificationContext(
         expected_subject=(
             "organization:org.acme:installation:install.primary:"
@@ -360,29 +440,25 @@ def test_published_reissue_authorization_response_is_bound_to_prior_authority() 
     )
     prior = _synthetic_reference(
         prior_context,
-        license_id=request["prior_license_id"],
-        issuance_id=request["prior_issuance_id"],
+        license_id="0198a1b2-c3d4-7300-8000-000000000007",
+        issuance_id="0198a1b2-c3d4-7300-8000-000000000008",
     )
-    transport = QueueTransport([_json_response(201, response)])
+    transport = QueueTransport([])
     client = CapabilityLicenseDeliveryClient(
         transport,
         ProofAuthority(_key(prior_context)),
         Authority(prior),  # type: ignore[arg-type]
     )
 
-    authorization = client.authorize_reissue(
-        prior,
-        replacement_installation_id=request["replacement_installation_id"],
-        customer_step_up_ref=request["customer_step_up_ref"],
-        reissue_reason=request["reissue_reason"],
-    )
+    with pytest.raises(CapabilityLicenseDeliveryRefused) as refused:
+        client.authorize_reissue(
+            prior,
+            replacement_installation_id="install.replacement",
+            customer_step_up_ref="stepup-001",
+        )
 
-    assert authorization.package_encoded == response["handoff_package_encoded"]
-    assert authorization.package.reissue_authorization_id == response["reissue_authorization_id"]
-    assert authorization.decision_audit_ref == response["decision_audit_ref"]
-    path, submitted = transport.requests[0]
-    assert path == f"/v1/capability-licenses/{prior.license_id}/reissue-authorizations"
-    assert submitted == request
+    assert refused.value.result == "customer_reissue_authorization_required"
+    assert transport.requests == []
 
 
 def test_published_reissue_finalization_proves_replacement_key_and_persists_replacement_only() -> None:
@@ -439,6 +515,9 @@ def test_published_reissue_finalization_proves_replacement_key_and_persists_repl
         "/0198a1b2-c3d4-7300-8000-000000000011:finalize"
     )
     assert transport.requests[1][1]["request"] == final_case["request"]["request"]
+    assert transport.headers[0] is None
+    assert transport.headers[1] is not None
+    assert transport.headers[1].get("Idempotency-Key")
 
 
 def test_unsigned_reissue_refusal_never_mutates_existing_signed_authority() -> None:

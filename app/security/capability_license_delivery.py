@@ -9,7 +9,8 @@ import json
 import re
 import struct
 from dataclasses import dataclass, fields
-from typing import Literal, Mapping
+from typing import Literal, Mapping, Protocol
+from uuid import uuid4
 
 from app.persistence.auth import InstallationKeyReference, VerifiedCapabilityLicenseReference
 from app.security.capability_license_verifier import (
@@ -17,7 +18,6 @@ from app.security.capability_license_verifier import (
     CapabilityLicenseVerificationContext,
 )
 from app.security.hosted_grants import (
-    HostedTransport,
     InstallationProofAuthority,
     TransportResponse,
 )
@@ -68,6 +68,19 @@ class CapabilityLicenseDeliveryRefused(CapabilityLicenseDeliveryError):
         self.result = result
 
 
+class CapabilityLicenseTransport(Protocol):
+    """Hosted transport that can carry operation-scoped idempotency headers."""
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: Mapping[str, object],
+        headers: Mapping[str, str] | None = None,
+    ) -> TransportResponse: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ActivationPackage:
     profile: str
@@ -112,7 +125,7 @@ class CapabilityLicenseDeliveryClient:
 
     def __init__(
         self,
-        transport: HostedTransport,
+        transport: CapabilityLicenseTransport,
         installation_key: InstallationProofAuthority,
         authority: CapabilityLicenseAuthorityService,
     ) -> None:
@@ -192,66 +205,16 @@ class CapabilityLicenseDeliveryClient:
         customer_step_up_ref: str,
         reissue_reason: str = "replacement-installation",
     ) -> ReissueAuthorization:
-        if not _ID.fullmatch(replacement_installation_id) or not _ID.fullmatch(customer_step_up_ref):
-            raise ValueError("Reissue authorization bindings are invalid")
-        if reissue_reason not in _REASONS:
-            raise ValueError("Reissue reason is invalid")
-        path = f"/v1/capability-licenses/{prior.license_id}/reissue-authorizations"
-        request: dict[str, object] = {
-            "profile": _REISSUE_AUTH_PROFILE,
-            "organization_id": prior.organization_id,
-            "prior_license_id": prior.license_id,
-            "prior_issuance_id": prior.issuance_id,
-            "replacement_installation_id": replacement_installation_id,
-            "customer_step_up_ref": customer_step_up_ref,
-            "reissue_reason": reissue_reason,
-        }
-        response = self._request(path, request)
-        if _retryable(response.status_code):
-            raise CapabilityLicenseDeliveryUnavailable("Reissue authorization is unavailable")
-        if response.status_code != 201:
-            raise CapabilityLicenseDeliveryRefused("reissue_authorization_refused")
-        document = _response_object(response)
-        expected = {
-            "profile", "reissue_authorization_id", "authorization_state", "authorized_at",
-            "organization_id", "prior_license_id", "prior_issuance_id",
-            "replacement_installation_id", "reissue_reason", "customer_step_up_ref",
-            "decision_audit_ref", "handoff_package", "handoff_package_encoded",
-        }
-        if (
-            set(document) != expected
-            or document.get("profile") != _REISSUE_AUTH_PROFILE
-            or document.get("authorization_state") != "pending"
-            or document.get("organization_id") != prior.organization_id
-            or document.get("prior_license_id") != prior.license_id
-            or document.get("prior_issuance_id") != prior.issuance_id
-            or document.get("replacement_installation_id") != replacement_installation_id
-            or document.get("reissue_reason") != reissue_reason
-            or document.get("customer_step_up_ref") != customer_step_up_ref
-            or not _timestamp(document.get("authorized_at"))
-            or not _uuid(document.get("reissue_authorization_id"))
-            or not _identifier(document.get("decision_audit_ref"))
-            or not isinstance(document.get("handoff_package"), dict)
-            or not isinstance(document.get("handoff_package_encoded"), str)
-        ):
-            raise CapabilityLicenseDeliveryUnavailable("Reissue authorization response is invalid")
-        package = decode_reissue_package(str(document["handoff_package_encoded"]))
-        if _dataclass_mapping(package) != document["handoff_package"]:
-            raise CapabilityLicenseDeliveryUnavailable("Reissue handoff encodings disagree")
-        if (
-            package.reissue_authorization_id != document["reissue_authorization_id"]
-            or package.organization_id != prior.organization_id
-            or package.prior_license_id != prior.license_id
-            or package.prior_issuance_id != prior.issuance_id
-            or package.replacement_installation_id != replacement_installation_id
-            or package.reissue_reason != reissue_reason
-        ):
-            raise CapabilityLicenseDeliveryUnavailable("Reissue handoff bindings are invalid")
-        return ReissueAuthorization(
-            package=package,
-            package_encoded=str(document["handoff_package_encoded"]),
-            customer_step_up_ref=customer_step_up_ref,
-            decision_audit_ref=str(document["decision_audit_ref"]),
+        """Reject customer-side authorization on the local replacement Brain.
+
+        Customer authentication and step-up belong to the hosted control plane.
+        The replacement Brain only consumes the resulting signed/bound handoff
+        package through ``finalize_reissue``.
+        """
+
+        del prior, replacement_installation_id, customer_step_up_ref, reissue_reason
+        raise CapabilityLicenseDeliveryRefused(
+            "customer_reissue_authorization_required"
         )
 
     def finalize_reissue(
@@ -411,10 +374,35 @@ class CapabilityLicenseDeliveryClient:
         }
 
     def _request(self, path: str, body: Mapping[str, object]) -> TransportResponse:
-        try:
-            response = self._transport.request("POST", path, json_body=body)
-        except Exception as error:
-            raise CapabilityLicenseDeliveryUnavailable("CapabilityLicense transport failed") from error
+        idempotency_headers = (
+            {"Idempotency-Key": str(uuid4())}
+            if path.endswith((":activate", ":finalize"))
+            else None
+        )
+        attempts = 2 if idempotency_headers is not None else 1
+        response: TransportResponse | None = None
+        for attempt in range(attempts):
+            try:
+                if idempotency_headers is None:
+                    response = self._transport.request(
+                        "POST", path, json_body=body
+                    )
+                else:
+                    response = self._transport.request(
+                        "POST",
+                        path,
+                        json_body=body,
+                        headers=idempotency_headers,
+                    )
+            except Exception as error:
+                if attempt + 1 < attempts:
+                    continue
+                raise CapabilityLicenseDeliveryUnavailable(
+                    "CapabilityLicense transport failed"
+                ) from error
+            if _retryable(response.status_code) and attempt + 1 < attempts:
+                continue
+            break
         if (
             not isinstance(response, TransportResponse)
             or not isinstance(response.status_code, int)
