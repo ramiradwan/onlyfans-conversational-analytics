@@ -1,0 +1,123 @@
+name: Apply capability runtime interoperability fix
+
+on:
+  push:
+    branches:
+      - feat/capability-license-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/capability-license-runtime
+          fetch-depth: 0
+      - name: Apply focused interoperability patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          hosted = Path('app/security/hosted_grants.py')
+          text = hosted.read_text()
+          needle = '''        *,\n        json_body: Mapping[str, object],\n    ) -> TransportResponse:\n'''
+          replacement = '''        *,\n        json_body: Mapping[str, object],\n        headers: Mapping[str, str] | None = None,\n    ) -> TransportResponse:\n'''
+          assert text.count(needle) == 2, text.count(needle)
+          text = text.replace(needle, replacement)
+          old_stream = '            with self._client.stream(method, path, json=json_body) as response:\n'
+          new_stream = '            with self._client.stream(method, path, json=json_body, headers=headers) as response:\n'
+          assert old_stream in text
+          text = text.replace(old_stream, new_stream, 1)
+          hosted.write_text(text)
+
+          delivery = Path('app/security/capability_license_delivery.py')
+          text = delivery.read_text()
+          import_needle = 'from typing import Literal, Mapping\n'
+          assert import_needle in text
+          text = text.replace(import_needle, import_needle + 'from uuid import uuid4\n', 1)
+
+          auth_pattern = re.compile(r'\n    def authorize_reissue\(.*?\n    def finalize_reissue\(', re.S)
+          auth_replacement = '''\n    def authorize_reissue(\n        self,\n        prior: VerifiedCapabilityLicenseReference,\n        *,\n        replacement_installation_id: str,\n        customer_step_up_ref: str,\n        reissue_reason: str = "replacement-installation",\n    ) -> ReissueAuthorization:\n        """Reject customer-side reissue authorization on the replacement Brain.\n\n        The authenticated customer/hosted onboarding surface owns authorization\n        and step-up.  A replacement Brain may only consume the resulting handoff\n        package via ``finalize_reissue``.\n        """\n        del prior, replacement_installation_id, customer_step_up_ref, reissue_reason\n        raise CapabilityLicenseDeliveryRefused(\n            "customer_reissue_authorization_required"\n        )\n\n    def finalize_reissue('''
+          text, count = auth_pattern.subn(auth_replacement, text, count=1)
+          assert count == 1, count
+
+          request_pattern = re.compile(
+              r'    def _request\(self, path: str, body: Mapping\[str, object\]\) -> TransportResponse:\n'
+              r'        try:\n'
+              r'            response = self\._transport\.request\("POST", path, json_body=body\)\n'
+              r'        except Exception as error:\n'
+              r'            raise CapabilityLicenseDeliveryUnavailable\("CapabilityLicense transport failed"\) from error\n'
+              r'        if \(\n'
+              r'            not isinstance\(response, TransportResponse\).*?\n'
+              r'        return response\n',
+              re.S,
+          )
+          request_replacement = '''    def _request(self, path: str, body: Mapping[str, object]) -> TransportResponse:\n        idempotency_headers = (\n            {"Idempotency-Key": str(uuid4())}\n            if path.endswith((":activate", ":finalize"))\n            else None\n        )\n        attempts = 2 if idempotency_headers is not None else 1\n        response: TransportResponse | None = None\n        for attempt in range(attempts):\n            try:\n                response = self._transport.request(\n                    "POST",\n                    path,\n                    json_body=body,\n                    headers=idempotency_headers,\n                )\n            except Exception as error:\n                if attempt + 1 < attempts:\n                    continue\n                raise CapabilityLicenseDeliveryUnavailable(\n                    "CapabilityLicense transport failed"\n                ) from error\n            if _retryable(response.status_code) and attempt + 1 < attempts:\n                continue\n            break\n        if (\n            not isinstance(response, TransportResponse)\n            or not isinstance(response.status_code, int)\n            or isinstance(response.status_code, bool)\n            or not isinstance(response.body, bytes)\n            or len(response.body) > 65_536\n            or response.content_type.split(";", 1)[0].strip().lower() != "application/json"\n        ):\n            raise CapabilityLicenseDeliveryUnavailable("CapabilityLicense transport response is invalid")\n        return response\n'''
+          text, count = request_pattern.subn(request_replacement, text, count=1)
+          assert count == 1, count
+          delivery.write_text(text)
+
+          tests = Path('tests/test_capability_license_delivery.py')
+          text = tests.read_text()
+          old_queue = '''class QueueTransport:\n    def __init__(self, responses: list[TransportResponse]) -> None:\n        self.responses = responses\n        self.requests: list[tuple[str, Mapping[str, object]]] = []\n\n    def request(self, method: str, path: str, *, json_body: Mapping[str, object]) -> TransportResponse:\n        assert method == "POST"\n        self.requests.append((path, json_body))\n        if not self.responses:\n            raise OSError("offline")\n        return self.responses.pop(0)\n'''
+          new_queue = '''class QueueTransport:\n    def __init__(self, responses: list[TransportResponse]) -> None:\n        self.responses = responses\n        self.requests: list[tuple[str, Mapping[str, object]]] = []\n        self.headers: list[Mapping[str, str] | None] = []\n\n    def request(\n        self,\n        method: str,\n        path: str,\n        *,\n        json_body: Mapping[str, object],\n        headers: Mapping[str, str] | None = None,\n    ) -> TransportResponse:\n        assert method == "POST"\n        self.requests.append((path, json_body))\n        self.headers.append(headers)\n        if not self.responses:\n            raise OSError("offline")\n        return self.responses.pop(0)\n'''
+          assert old_queue in text
+          text = text.replace(old_queue, new_queue, 1)
+
+          auth_test_pattern = re.compile(
+              r'\ndef test_published_reissue_authorization_response_is_bound_to_prior_authority\(\) -> None:\n.*?\n\ndef test_published_reissue_finalization_proves_replacement_key_and_persists_replacement_only',
+              re.S,
+          )
+          auth_test_replacement = '''\ndef test_replacement_brain_cannot_authorize_customer_reissue() -> None:\n    context = _replacement_context()\n    prior = _synthetic_reference(\n        context,\n        license_id="0198a1b2-c3d4-7300-8000-000000000007",\n        issuance_id="0198a1b2-c3d4-7300-8000-000000000008",\n    )\n    client = CapabilityLicenseDeliveryClient(\n        QueueTransport([]),\n        ProofAuthority(_key(context)),\n        Authority(prior),  # type: ignore[arg-type]\n    )\n\n    with pytest.raises(CapabilityLicenseDeliveryRefused) as caught:\n        client.authorize_reissue(\n            prior,\n            replacement_installation_id="install.replacement",\n            customer_step_up_ref="step-up-001",\n        )\n\n    assert caught.value.result == "customer_reissue_authorization_required"\n\n\ndef test_published_reissue_finalization_proves_replacement_key_and_persists_replacement_only'''
+          text, count = auth_test_pattern.subn(auth_test_replacement, text, count=1)
+          assert count == 1, count
+
+          retry_test = '''\n\ndef test_idempotency_key_is_present_and_stable_across_activation_retry() -> None:\n    context = _context()\n    reference = _reference(context)\n    transport = QueueTransport(\n        [\n            _json_response(503, {"error": "temporarily_unavailable"}),\n            _json_response(201, {"ok": True}),\n        ]\n    )\n    client = CapabilityLicenseDeliveryClient(\n        transport,\n        ProofAuthority(_key(context)),\n        Authority(reference),  # type: ignore[arg-type]\n    )\n\n    response = client._request(\n        "/v1/capability-license-exchanges/0198a1b2-c3d4-7300-8000-000000000002:activate",\n        {"request": {"profile": "test"}},\n    )\n\n    assert response.status_code == 201\n    assert transport.headers[0] is not None\n    assert transport.headers[0] == transport.headers[1]\n    assert transport.headers[0]["Idempotency-Key"]\n'''
+          text += retry_test
+          tests.write_text(text)
+
+          authorization = Path('app/security/analysis_authorization.py')
+          authorization.write_text('''"""Commercial admission for new local analytics processing."""\n\nfrom __future__ import annotations\n\nfrom app.security.runtime_policy import (\n    AnalysisRunContext,\n    RuntimePolicy,\n    require_analysis_run,\n)\n\n\ndef require_current_analysis_run(policy: RuntimePolicy) -> None:\n    """Require both identity/account authority and CapabilityLicense authority.\n\n    The local processing coordinates are selected from the independently\n    verified identity and commercial objects already composed into the policy.\n    Missing authority uses inert coordinates so ``require_analysis_run`` remains\n    the single fail-closed decision function.\n    """\n\n    identity = policy.identity_authority\n    commercial = policy.commercial_authority\n    organization_id = (\n        identity.organization_id\n        if identity is not None\n        else commercial.organization_id if commercial is not None else "missing"\n    )\n    installation_id = (\n        identity.installation_id\n        if identity is not None\n        else commercial.installation_id if commercial is not None else "missing"\n    )\n    installation_key_id = (\n        identity.installation_key_id\n        if identity is not None\n        else commercial.installation_key_id if commercial is not None else "missing"\n    )\n    installation_key_jkt = (\n        identity.installation_key_jkt\n        if identity is not None\n        else commercial.installation_key_jkt if commercial is not None else "missing"\n    )\n    context = AnalysisRunContext(\n        organization_id=organization_id,\n        installation_id=installation_id,\n        installation_key_id=installation_key_id,\n        installation_key_jkt=installation_key_jkt,\n        seat_id=commercial.seat_id if commercial is not None else "missing",\n        seat_scope=(\n            commercial.seat_scope\n            if commercial is not None\n            else "organization-installation-seat"\n        ),\n        capability="analysis-run",\n        selected_major_version=(\n            commercial.licensed_major_version if commercial is not None else 0\n        ),\n        artifact_family=(\n            commercial.compatible_artifact_family\n            if commercial is not None\n            else "analysis-artifact"\n        ),\n    )\n    require_analysis_run(policy, context)\n''')
+
+          ws = Path('app/api/endpoints/transport_ws.py')
+          text = ws.read_text()
+          import_anchor = 'from app.persistence.history import InvariantViolation\n'
+          assert import_anchor in text
+          text = text.replace(
+              import_anchor,
+              import_anchor
+              + 'from app.security.analysis_authorization import require_current_analysis_run\n'
+              + 'from app.security.local_sessions import build_runtime_policy\n'
+              + 'from app.security.runtime_policy import AuthContext, RuntimeAuthorizationDenied\n',
+              1,
+          )
+          old_call = '            await _schedule_analytics_rebuild(lease.creator_account_id)\n'
+          new_call = '            await _schedule_analytics_rebuild(lease.creator_account_id, lease.principal_id)\n'
+          assert old_call in text
+          text = text.replace(old_call, new_call, 1)
+          old_func = '''async def _schedule_analytics_rebuild(account_id: str) -> None:\n    """Queue a coalesced analytics rebuild after acknowledgement."""\n\n    from app.analytics.runtime import request_projection_rebuild\n\n    try:\n        await request_projection_rebuild(account_id)\n    except Exception:\n        logger.exception(\n            "[ANALYTICS] post-commit projection rebuild scheduling failed"\n        )\n'''
+          new_func = '''async def _schedule_analytics_rebuild(account_id: str, principal_id: str) -> None:\n    """Queue new analytics processing only with current commercial authority."""\n\n    from app.analytics.runtime import request_projection_rebuild\n\n    try:\n        policy = build_runtime_policy(\n            AuthContext(\n                principal_id=principal_id,\n                creator_account_id=account_id,\n                role="agent",\n            )\n        )\n        require_current_analysis_run(policy)\n        await request_projection_rebuild(account_id)\n    except RuntimeAuthorizationDenied:\n        logger.warning(\n            "[ANALYTICS] post-commit projection rebuild denied: "\n            "current CapabilityLicense and identity/account authority are required"\n        )\n    except Exception:\n        logger.exception(\n            "[ANALYTICS] post-commit projection rebuild scheduling failed"\n        )\n'''
+          assert old_func in text
+          text = text.replace(old_func, new_func, 1)
+          ws.write_text(text)
+
+          policy_tests = Path('tests/test_analysis_authorization.py')
+          policy_tests.write_text('''from __future__ import annotations\n\nimport pytest\n\nfrom app.security.analysis_authorization import require_current_analysis_run\nfrom app.security.grant_types import ACCOUNT_AUTHORITY_GRANT_TYPES\nfrom app.security.runtime_policy import (\n    AuthContext,\n    AuthorizationEpoch,\n    CapabilityLicenseAuthority,\n    IdentityAccountAuthority,\n    RuntimeAuthorizationDenied,\n    RuntimePolicy,\n)\n\n\ndef _identity_authority() -> IdentityAccountAuthority:\n    return IdentityAccountAuthority(\n        organization_id="org.acme",\n        installation_id="install.primary",\n        installation_key_id="ik1.CCCCCCCCCCCCCCCCCCCCCC",\n        installation_key_jkt="A" * 43,\n        grant_reference_ids=("installation", "membership", "binding"),\n        grant_types=tuple(ACCOUNT_AUTHORITY_GRANT_TYPES),\n    )\n\n\ndef _commercial() -> CapabilityLicenseAuthority:\n    return CapabilityLicenseAuthority(\n        reference_id="caplic.ref",\n        object_digest="d" * 64,\n        license_id="license-001",\n        issuance_id="issuance-001",\n        subject="organization:org.acme:installation:install.primary:seat:seat.analysis.001:capability:analysis-run",\n        organization_id="org.acme",\n        installation_id="install.primary",\n        installation_key_id="ik1.CCCCCCCCCCCCCCCCCCCCCC",\n        installation_key_jkt="A" * 43,\n        seat_id="seat.analysis.001",\n        seat_scope="organization-installation-seat",\n        capability="analysis-run",\n        licensed_major_version=1,\n        compatible_artifact_family="analysis-artifact",\n        update_rights=False,\n        fallback_major_versions=(),\n        signer_kid="bc1.cl.test",\n    )\n\n\ndef _policy(*, identity_authority=True, commercial=True) -> RuntimePolicy:\n    return RuntimePolicy(\n        identity=AuthContext("principal-1", "creator-1", "agent"),\n        authorization_epoch=AuthorizationEpoch(1),\n        identity_authority=_identity_authority() if identity_authority else None,\n        commercial_authority=_commercial() if commercial else None,\n    )\n\n\ndef test_new_analysis_denied_without_capability_license() -> None:\n    with pytest.raises(RuntimeAuthorizationDenied):\n        require_current_analysis_run(_policy(commercial=False))\n\n\ndef test_new_analysis_denied_without_identity_account_authority() -> None:\n    with pytest.raises(RuntimeAuthorizationDenied):\n        require_current_analysis_run(_policy(identity_authority=False))\n\n\ndef test_new_analysis_allowed_with_both_authorities() -> None:\n    require_current_analysis_run(_policy())\n''')
+          PY
+
+      - name: Syntax-check changed Python
+        run: python -m compileall -q app/security app/api/endpoints/transport_ws.py tests/test_capability_license_delivery.py tests/test_analysis_authorization.py
+      - name: Commit interoperability fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/security/hosted_grants.py app/security/capability_license_delivery.py app/security/analysis_authorization.py app/api/endpoints/transport_ws.py tests/test_capability_license_delivery.py tests/test_analysis_authorization.py
+          git commit -m 'fix: enforce capability license delivery and runtime policy'
+          git push origin HEAD:feat/capability-license-runtime
