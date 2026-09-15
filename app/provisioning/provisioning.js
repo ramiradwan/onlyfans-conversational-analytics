@@ -8,16 +8,30 @@ const IDENTITY_QUERY = Object.freeze({
 });
 
 const DECODER_REFUSALS = Object.freeze({
-  size: 'This installation package is too large. Return to setup, create a new package, and paste it here.',
-  encoding: 'This installation package is incomplete or was changed. Copy it again and paste it without changes.',
-  profile: 'This installation package is for a different setup. Return to setup and create a new package.',
-  schema: 'This installation package is incomplete or out of date. Return to setup and create a new package.',
-  device: 'This installation package cannot be used on this device. Run setup on a supported device or contact your administrator.',
-  consumed: 'This installation package has already been used. Return to setup and create a new package.',
+  size: 'This setup code is too large. Return to secure setup, create a new code, and paste it here.',
+  encoding: 'This setup code is incomplete or was changed. Copy it again and paste it without changes.',
+  profile: 'This setup code is for a different setup. Return to secure setup and create a new code.',
+  schema: 'This setup code is incomplete or out of date. Return to secure setup and create a new code.',
+  device: 'This setup code cannot be used on this computer. Run setup on a supported computer or contact support.',
+  consumed: 'This setup code has already been used. Return to secure setup and create a new code.',
 });
 
-const GENERIC_REFUSAL = 'Bridge could not accept this request. Check the current step and try again. If it continues, restart provisioning from the launcher.';
-const REQUEST_FAILURE = 'Bridge could not complete the request. Check that Bridge is still running, then try again.';
+const OPERATION_REFUSALS = Object.freeze({
+  binding_acquisition_unavailable: 'Creator approval is still pending. Complete approval in secure setup, then choose Check approval again.',
+  hosted_origin_unavailable: 'Secure setup is not configured for this desktop app. Contact support before continuing.',
+  hosted_unavailable: 'Secure setup could not be reached. Check your internet connection, then try again.',
+  installation_key_unavailable: 'This computer’s secure device protection is unavailable. Restart the desktop app and try again.',
+  membership_reference_unavailable: 'Desktop setup is incomplete. Close this page, reopen the desktop app, and continue setup.',
+  candidate_resolution_conflict: 'This setup changed while approval was being checked. Close this page, reopen the desktop app, and continue setup.',
+  grant_verification_refused: 'Secure setup could not be verified. Return to secure setup and try again.',
+  claim_already_consumed: 'This setup code has already been used. Return to secure setup and create a new code.',
+  claim_refused: 'This setup code is no longer valid. Return to secure setup and create a new code.',
+  incomplete_grant_set: 'Secure setup did not return everything this computer needs. Return to secure setup and try again.',
+  membership_refresh_unavailable: 'The final approval check could not reach secure setup. Check your internet connection and try again.',
+});
+
+const GENERIC_REFUSAL = 'This step could not be completed. Check the current step and try again. If it continues, close this page and reopen the desktop app.';
+const REQUEST_FAILURE = 'The desktop app could not complete this step. Make sure it is still running, check your internet connection, and try again.';
 const MUTATION_FAILED = Symbol('mutation failed');
 
 function hasOnlyKeys(value, expected) {
@@ -88,45 +102,48 @@ function removeAttribute(element, name) {
 export function validateClaimPackageInput(rawValue) {
   const value = rawValue.trim();
   if (value.length === 0) {
-    return { valid: false, value, message: 'Paste the installation package before submitting.' };
+    return { valid: false, value, message: 'Paste the setup code before continuing.' };
   }
   if (value.length > MAX_PACKAGE_CHARACTERS) {
     return {
       valid: false,
       value,
-      message: 'The installation package must be 1,400 characters or fewer. Copy a new package and paste it again.',
+      message: 'The setup code must be 1,400 characters or fewer. Copy a new code and paste it again.',
     };
   }
   if (!CLAIM_PACKAGE_PATTERN.test(value)) {
     return {
       valid: false,
       value,
-      message: 'Paste the package exactly as provided, using only letters, numbers, hyphens, and underscores.',
+      message: 'Paste the setup code exactly as provided, using only letters, numbers, hyphens, and underscores.',
     };
   }
   if (value.length % 4 === 1) {
     return {
       valid: false,
       value,
-      message: 'The installation package appears incomplete. Copy the complete package and paste it again.',
+      message: 'The setup code appears incomplete. Copy the complete code and paste it again.',
     };
   }
-  return { valid: true, value, message: 'Package format is ready to submit.' };
+  return { valid: true, value, message: 'Setup code is ready.' };
 }
 
 export function explainProvisioningFailure(response, payload) {
-  if (response.status === 409 && isRecord(payload)) {
+  if ((response.status === 409 || response.status === 503) && isRecord(payload)) {
     const reason = payload.reason;
     if (typeof reason === 'string' && Object.hasOwn(DECODER_REFUSALS, reason)) {
       return DECODER_REFUSALS[reason];
     }
+    if (typeof reason === 'string' && Object.hasOwn(OPERATION_REFUSALS, reason)) {
+      return OPERATION_REFUSALS[reason];
+    }
     return GENERIC_REFUSAL;
   }
   if (response.status === 401 || response.status === 403) {
-    return 'The provisioning session is no longer valid. Restart provisioning from the launcher.';
+    return 'This setup page has expired. Close it and reopen the desktop app to continue.';
   }
   if (response.status === 421) {
-    return 'Open provisioning at bridge.localhost:17871 and continue there.';
+    return 'Open the desktop app setup page and continue there.';
   }
   return REQUEST_FAILURE;
 }
@@ -190,7 +207,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
 
   function setStepState(step, stateOutput, state) {
     step.dataset.state = state;
-    stateOutput.textContent = state === 'current' ? 'Current step' : state === 'completed' ? 'Completed' : 'Locked';
+    stateOutput.textContent = state === 'current' ? 'Current step' : state === 'completed' ? 'Done' : 'Complete the step above first';
     if (state === 'current') setAttribute(step, 'aria-current', 'step');
     else removeAttribute(step, 'aria-current');
   }
@@ -231,35 +248,35 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
       || !approvalAcquired;
 
     if (mutationInFlight) {
-      elements.claimActionHelp.textContent = 'Wait for the current request to finish.';
-      elements.identityConfirmHelp.textContent = 'Wait for the current request to finish.';
-      elements.bindingActionHelp.textContent = 'Wait for the current request to finish.';
-      elements.finalizeActionHelp.textContent = 'Wait for the current request to finish.';
+      elements.claimActionHelp.textContent = 'Finishing the current step…';
+      elements.identityConfirmHelp.textContent = 'Finishing the current step…';
+      elements.bindingActionHelp.textContent = 'Finishing the current step…';
+      elements.finalizeActionHelp.textContent = 'Finishing the current step…';
     } else if (configurationComplete) {
-      const restartHelp = 'Configuration is complete. Restart Bridge before making changes.';
+      const restartHelp = 'Setup is complete. The desktop app will restart before more changes can be made.';
       elements.claimActionHelp.textContent = restartHelp;
       elements.identityConfirmHelp.textContent = restartHelp;
       elements.bindingActionHelp.textContent = restartHelp;
       elements.finalizeActionHelp.textContent = restartHelp;
     } else {
       elements.claimActionHelp.textContent = installationRegistered
-        ? 'Registration is complete. Continue to the account step.'
-        : 'Available now.';
+        ? 'This computer is connected. Continue to your creator account.'
+        : 'Paste the setup code from secure setup.';
       elements.identityConfirmHelp.textContent = associationRequestId !== null
-        ? 'The account is confirmed. Continue to approval.'
+        ? 'Your creator account is confirmed. Continue to approval.'
         : !installationRegistered
-          ? 'Register this installation before confirming an account.'
+          ? 'Connect this computer before confirming your creator account.'
           : detectedAccountId === null
-            ? 'Check the extension and sign in before confirming an account.'
-            : 'The detected account is ready to confirm.';
+            ? 'Open OnlyFans, sign in to your creator account, then check again.'
+            : 'The signed-in creator account is ready to confirm.';
       elements.bindingActionHelp.textContent = approvalAcquired
-        ? 'Approval is acquired. Continue to final configuration.'
+        ? 'Creator approval is complete. Continue to finish setup.'
         : associationRequestId === null
-          ? 'Confirm the creator account before acquiring approval.'
-          : 'The confirmed account is ready for approval.';
+          ? 'Confirm your creator account before checking approval.'
+          : 'Complete creator approval in secure setup, then check again here.';
       elements.finalizeActionHelp.textContent = approvalAcquired
-        ? 'Approval is complete. Configuration can now be finished.'
-        : 'Acquire approval before finishing configuration.';
+        ? 'Everything required on this page is complete.'
+        : 'Creator approval must complete before desktop setup can finish.';
     }
   }
 
@@ -318,31 +335,31 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
   async function refreshIdentity() {
     if (configurationComplete || associationRequestId !== null) return;
     detectedAccountId = null;
-    elements.detectedIdentity.textContent = 'None detected';
+    elements.detectedIdentity.textContent = 'Not detected yet';
     renderState();
     if (!EXTENSION_ID_PATTERN.test(extensionId)) {
-      setIdentityStatus('Install or enable the provisioning extension, then check again.');
+      setIdentityStatus('Make sure the Conversation Analytics extension is installed and enabled, then check again.');
       return;
     }
     try {
       const response = await sendExtensionMessage(extensionId, IDENTITY_QUERY);
       const identity = parseIdentityResponse(response);
       if (identity === null) {
-        setIdentityStatus('The extension returned an unexpected account response. Install or enable the extension, then check again.');
+        setIdentityStatus('The extension could not identify the signed-in creator account. Make sure it is enabled, then check again.');
         return;
       }
       if (identity.accountId === null) {
-        setIdentityStatus('Sign in, in a tab, to the account being onboarded, then check again.');
+        setIdentityStatus('Open OnlyFans in another tab and sign in to the creator account you want to analyze, then check again.');
         return;
       }
       detectedAccountId = identity.accountId;
-      elements.detectedIdentity.textContent = detectedAccountId;
+      elements.detectedIdentity.textContent = 'Signed-in creator account detected';
       setIdentityStatus(installationRegistered
-        ? 'Confirm the exact account shown before it is associated.'
-        : 'Account detected. Register this installation before confirming it.');
+        ? 'Check the OnlyFans tab, then confirm that this is the creator account you want to analyze.'
+        : 'Creator account detected. Connect this computer before confirming it.');
       renderState();
     } catch {
-      setIdentityStatus('Install or enable the provisioning extension, then check again.');
+      setIdentityStatus('Make sure the Conversation Analytics extension is installed and enabled, then check again.');
     }
   }
 
@@ -353,16 +370,16 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
       const state = response.ok ? parseStatusResponse(payload) : null;
       if (state === 'configured_restart') {
         configurationComplete = true;
-        setStatus('Configuration is complete. Restart Bridge to continue.');
-        setIdentityStatus('Configuration is complete. Restart Bridge before checking the account again.');
+        setStatus('Desktop setup is complete. The desktop app will restart; then return to the extension.');
+        setIdentityStatus('Setup is complete. Return to the extension after the desktop app restarts.');
         renderState();
       } else if (!response.ok) {
         setStatus(explainProvisioningFailure(response, payload), true);
       } else if (state !== 'provisioning_ready') {
-        setStatus('Bridge returned an unexpected status. Restart provisioning from the launcher.', true);
+        setStatus('Desktop setup returned an unexpected state. Close this page and reopen the desktop app.', true);
       }
     } catch {
-      setStatus('The provisioning status could not be checked. Confirm Bridge is running, then reload this page.', true);
+      setStatus('Desktop setup could not be checked. Make sure the desktop app is still running, then reload this page.', true);
     }
   }
 
@@ -377,13 +394,13 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
     const payload = await mutate('/api/v1/provisioning/claim', { package: packageResult.value });
     if (isInstallationRegisteredResponse(payload)) {
       installationRegistered = true;
-      setStatus('Installation registered. Confirm the detected creator account.');
+      setStatus('This computer is connected to secure setup. Confirm your signed-in creator account.');
       if (detectedAccountId !== null) {
-        setIdentityStatus('Confirm the exact account shown before it is associated.');
+        setIdentityStatus('Check the OnlyFans tab, then confirm that this is the creator account you want to analyze.');
       }
       renderState();
     } else if (payload !== MUTATION_FAILED) {
-      setStatus('Bridge returned an unexpected result. Try registering the installation again.', true);
+      setStatus('The desktop app returned an unexpected result. Try the setup code again.', true);
     }
   }
 
@@ -397,11 +414,11 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
     if (createdAssociationRequestId !== null) {
       associationRequestId = createdAssociationRequestId;
       associatedAccountId = confirmedAccountId;
-      setStatus('Creator account confirmed. Acquire approval to continue.');
-      setIdentityStatus('Account confirmed. Continue to approval.');
+      setStatus('Creator account confirmed. Complete creator approval in secure setup, then come back and check approval.');
+      setIdentityStatus('Creator account confirmed. Continue to approval.');
       renderState();
     } else if (payload !== MUTATION_FAILED) {
-      setStatus('Bridge returned an unexpected result. Check the account and try again.', true);
+      setStatus('The desktop app returned an unexpected result. Check the signed-in account and try again.', true);
     }
   }
 
@@ -410,10 +427,10 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
     const payload = await mutate('/api/v1/provisioning/creator-association/acquire', {});
     if (isApprovedAssociationResponse(payload, associationRequestId)) {
       approvalAcquired = true;
-      setStatus('Approval acquired. Finish configuration to complete setup.');
+      setStatus('Creator account approved. Finish desktop setup.');
       renderState();
     } else if (payload !== MUTATION_FAILED) {
-      setStatus('Bridge returned an unexpected result. Try acquiring approval again.', true);
+      setStatus('The desktop app returned an unexpected approval result. Check approval again.', true);
     }
   }
 
@@ -425,11 +442,11 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
     });
     if (isConfiguredRestartResponse(payload)) {
       configurationComplete = true;
-      setStatus('Configuration is complete. Restart Bridge to continue.');
-      setIdentityStatus('Configuration is complete. Restart Bridge before checking the account again.');
+      setStatus('Desktop setup is complete. The desktop app will restart; then return to the extension.');
+      setIdentityStatus('Setup is complete. Return to the extension after the desktop app restarts.');
       renderState();
     } else if (payload !== MUTATION_FAILED) {
-      setStatus('Bridge returned an unexpected result. Try finishing configuration again.', true);
+      setStatus('The desktop app returned an unexpected result. Try finishing setup again.', true);
     }
   }
 
