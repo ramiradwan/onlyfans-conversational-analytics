@@ -5,6 +5,10 @@ import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
+import {
+  PROVISIONING_IDENTITY_STORAGE_KEY,
+  PROVISIONING_IDENTITY_STORAGE_SCHEMA,
+} from '../../../extension/transport/provisioning-identity.mjs';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
 import {
   LOCAL_SERVICE_ORIGIN,
@@ -116,6 +120,15 @@ function expectNoOptionalAccess(snapshot) {
   expect(snapshot.permissions.permissions ?? []).not.toContain('webRequest');
 }
 
+function expectEmptyProvisioningIdentitySession(snapshot) {
+  expect(snapshot.session).toEqual({
+    [PROVISIONING_IDENTITY_STORAGE_KEY]: {
+      schema: PROVISIONING_IDENTITY_STORAGE_SCHEMA,
+      contexts: [],
+    },
+  });
+}
+
 
 test('standalone preview survives pause, deletion, and restart without a local service', async () => {
   test.slow();
@@ -158,7 +171,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(snapshot.state.runtimeReady).toBe(false);
       expect(snapshot.scriptIds).toEqual([]);
       expect(snapshot.local).toEqual({});
-      expect(snapshot.session).toEqual({});
+      expectEmptyProvisioningIdentitySession(snapshot);
       expect(snapshot.databaseNames).toEqual([]);
       expectNoOptionalAccess(snapshot);
     });
@@ -274,7 +287,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(restarted.state.runtimeReady).toBe(false);
       expect(restarted.scriptIds).toEqual([]);
       expect(restarted.local).toEqual({});
-      expect(restarted.session).toEqual({});
+      expectEmptyProvisioningIdentitySession(restarted);
       expect(restarted.databaseNames).toEqual([]);
       expectNoOptionalAccess(restarted);
     });
