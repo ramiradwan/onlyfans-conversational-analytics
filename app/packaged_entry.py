@@ -7,11 +7,15 @@ import sys
 from pathlib import Path
 from typing import Callable, Sequence
 
+from app.core.customer_release import load_customer_release_config
 from app.core.runtime_paths import runtime_configuration_file
 
 
 PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HANDOFF_TOKEN"
 PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_EXTENSION_ID"
+# Development/test compatibility only. A production package binds the hosted
+# origin through app/core/customer-release.json so customer setup is not
+# dependent on a machine-specific environment variable.
 PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
 SQLCIPHER_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE = "BRAIN_SQLCIPHER_RUNTIME_REPORT_PATH"
 COMPANION_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE = "BRAIN_COMPANION_RUNTIME_REPORT_PATH"
@@ -66,7 +70,10 @@ def select_brain_application(
     )
 
     open_store = durable_authentication_store(data_directory)
-    hosted_origin = os.environ.get(PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, "")
+    customer_release = load_customer_release_config()
+    hosted_origin = customer_release.hosted_api_origin or os.environ.get(
+        PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""
+    )
     grant_refresh = configured_grant_refresh(
         open_store,
         hosted_origin=hosted_origin,
@@ -95,6 +102,7 @@ def select_brain_application(
             open_store, hosted_origin=hosted_origin
         ),
         extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""),
+        hosted_onboarding_url=customer_release.hosted_onboarding_url,
         launcher_handoff_token=os.environ.get(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE),
         completion_exit=provisioning_completion_exit,
         shutdown_action=grant_refresh.stop,

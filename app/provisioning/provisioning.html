@@ -236,9 +236,13 @@
         margin-block-start: var(--space-1);
       }
 
-      button {
+      button,
+      .primary-link {
+        display: inline-flex;
         min-height: 3rem;
         min-width: 3rem;
+        align-items: center;
+        justify-content: center;
         padding: var(--space-1) var(--space-2);
         border: 1px solid transparent;
         border-radius: var(--radius-medium);
@@ -246,8 +250,13 @@
         color: var(--color-on-primary);
         font: inherit;
         font-weight: 600;
+        text-decoration: none;
         cursor: pointer;
         transition: transform var(--motion-duration) var(--motion-easing), opacity var(--motion-duration) var(--motion-easing);
+      }
+
+      .primary-link[hidden] {
+        display: none;
       }
 
       button.secondary {
@@ -256,7 +265,8 @@
         color: var(--color-primary-strong);
       }
 
-      button:active:not(:disabled) {
+      button:active:not(:disabled),
+      .primary-link:active {
         transform: scale(0.98);
       }
 
@@ -296,7 +306,8 @@
           --elevation-surface: 0 2px 4px rgba(0, 0, 0, 0.50), 0 20px 48px -24px rgba(0, 0, 0, 0.85);
         }
 
-        button {
+        button,
+        .primary-link {
           color: var(--color-on-primary);
         }
 
@@ -316,7 +327,8 @@
         }
 
         .actions,
-        .actions button {
+        .actions button,
+        .actions .primary-link {
           width: 100%;
         }
       }
@@ -336,7 +348,8 @@
         .step,
         .page-status,
         textarea,
-        button {
+        button,
+        .primary-link {
           border: 1px solid CanvasText;
           box-shadow: none;
           forced-color-adjust: auto;
@@ -378,10 +391,21 @@
               <p id="claim-step-state" class="step-state">Current step</p>
             </div>
           </div>
-          <p class="step-description">Paste the setup code from secure setup. The desktop app checks it before continuing.</p>
+          <p class="step-description">Start in secure setup to verify this computer and get its setup code. Then return here to continue.</p>
+          <div class="actions" {{HOSTED_ONBOARDING_VISIBILITY}}>
+            <a
+              id="open-secure-setup"
+              class="primary-link"
+              href="{{HOSTED_ONBOARDING_URL}}"
+              target="_blank"
+              rel="noopener noreferrer"
+              {{HOSTED_ONBOARDING_VISIBILITY}}
+            >Open secure setup</a>
+          </div>
+          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Secure setup opens in a new tab. Complete sign-in there, then copy the setup code back here.</p>
           <form id="claim-form" novalidate>
             <label for="claim-package">Setup code</label>
-            <p id="claim-package-help" class="help">Copy the complete code and paste it here without editing it.</p>
+            <p id="claim-package-help" class="help">Copy the complete code from secure setup and paste it here without editing it.</p>
             <textarea
               id="claim-package"
               name="package"

@@ -76,7 +76,16 @@
       "customer_surface": "brain.provisioning",
       "customer_distinction": "distinct",
       "customer_label": "Connect this computer",
-      "blocked_by": ["hosted.onboarding_entry", "contracts.installation_package_profile_compatibility"]
+      "customer_action": "Open secure setup",
+      "entry_source": "release-owned ofca-customer-release/v1 configuration",
+      "brain_claim_profile": "urn:bridge-clean:installation-claim:v2",
+      "brain_package_profile": "urn:bridge-clean:installation-claim-package:v2",
+      "product_side_complete": true,
+      "production_complete": false,
+      "blocked_by": [
+        "hosted.onboarding_entry",
+        "contracts.installation_package_profile_compatibility"
+      ]
     },
     {
       "id": "creator.detected",
@@ -187,14 +196,18 @@
     {
       "id": "hosted.onboarding_entry",
       "priority": "P0",
-      "owner": "control-plane",
-      "description": "Provide a supported customer entry/handoff from desktop setup to secure hosted onboarding."
+      "owner": "control-plane+release",
+      "product_action_present": true,
+      "production_binding_present": false,
+      "description": "Publish the real customer secure-setup URL and API origin into the release-owned customer configuration and prove the deployed hosted surface accepts the customer journey."
     },
     {
       "id": "contracts.installation_package_profile_compatibility",
       "priority": "P0",
       "owner": "control-plane+contracts",
-      "description": "Hosted onboarding and Brain must emit/accept the same production installation handoff profile."
+      "brain_v2_acceptance_proven": true,
+      "production_hosted_v2_verified": false,
+      "description": "Brain production accepts installation-claim-package:v2 / installation-claim:v2 and production-shaped local E2E exercises it; the deployed hosted onboarding must still be proven to issue that same v2 handoff."
     },
     {
       "id": "hosted.creator_approval_continuation",
@@ -223,7 +236,14 @@
     "brain_first_run_unit": [
       "app/provisioning/provisioning.test.mjs",
       "app/provisioning/provisioning-resume.test.mjs",
-      "tests/test_provisioning_progress.py"
+      "tests/test_provisioning_progress.py",
+      "tests/test_customer_release.py",
+      "tests/test_customer_onboarding_entry.py"
+    ],
+    "brain_v2_handoff": [
+      "tests/test_provisioning_claim_submission.py::test_the_composed_surface_registers_the_installation_from_one_package",
+      "tools/e2e-capture/helpers/provisioning_grant_authority.py",
+      "tools/e2e-capture/tests/provisioning-registration.spec.mjs"
     ],
     "brain_connection_unit": ["frontend/tests/CompanionPairingControls.test.tsx"],
     "acceptance_review": ["docs/acceptance-ux-onboarding.md"]

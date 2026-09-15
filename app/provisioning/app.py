@@ -168,6 +168,7 @@ def create_provisioning_app(
     capability_license_delivery: CapabilityLicenseDelivery | None = None,
     provisioning_progress: Callable[[], dict[str, str | None]] | None = None,
     extension_id: str | None = None,
+    hosted_onboarding_url: str = "",
     launcher_handoff_token: str | None = None,
     completion_exit: Callable[[], None] | None = None,
     session_manager: ProvisioningSessionManager | None = None,
@@ -225,6 +226,12 @@ def create_provisioning_app(
         ).replace(
             "{{PROVISIONING_EXTENSION_ID}}",
             html.escape(provisioned_extension_id(), quote=True),
+        ).replace(
+            "{{HOSTED_ONBOARDING_URL}}",
+            html.escape(hosted_onboarding_url, quote=True),
+        ).replace(
+            "{{HOSTED_ONBOARDING_VISIBILITY}}",
+            "" if hosted_onboarding_url else "hidden",
         )
         return HTMLResponse(document, headers={"Cache-Control": "no-store"})
 
