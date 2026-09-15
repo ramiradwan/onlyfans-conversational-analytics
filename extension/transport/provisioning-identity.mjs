@@ -278,12 +278,19 @@ export function createProvisioningIdentityBridge({
     invalidateDocument(tabId);
     observedDocuments.delete(tabId);
     notifyAccount();
-    void serializeContext(async () => {
-      const retained = (await loadContexts()).filter((context) => context.tab_id !== tabId);
-      await storageSet(sessionStorage, {
-        [PROVISIONING_IDENTITY_STORAGE_KEY]: storedDocument(retained),
-      }, chromeApi);
-    }).catch(() => undefined);
+    void (async () => {
+      // A tab lifecycle event can be the event that wakes a cold MV3 worker.
+      // Wait until persisted consent has been restored before filtering durable
+      // session contexts by consent_epoch, otherwise the controller's fresh
+      // default epoch can erase valid contexts from the previous worker.
+      await ensureReady();
+      return serializeContext(async () => {
+        const retained = (await loadContexts()).filter((context) => context.tab_id !== tabId);
+        await storageSet(sessionStorage, {
+          [PROVISIONING_IDENTITY_STORAGE_KEY]: storedDocument(retained),
+        }, chromeApi);
+      });
+    })().catch(() => undefined);
   };
   const tabUpdated = (tabId, changeInfo) => {
     if (changeInfo.status === 'loading' || changeInfo.url !== undefined) removeTab(tabId);
