@@ -4,6 +4,7 @@ export const CUSTOMER_STATES = Object.freeze({
   PREVIEW_AVAILABLE: 'preview_available',
   DESKTOP_APP_NEEDED: 'desktop_app_needed',
   DESKTOP_APP_UNAVAILABLE: 'desktop_app_unavailable',
+  SETUP_INCOMPLETE: 'setup_incomplete',
   PAIRING_REQUIRED: 'pairing_required',
   PAIRING_IN_PROGRESS: 'pairing_in_progress',
   PAIRING_FAILED: 'pairing_failed',
@@ -73,7 +74,7 @@ export function deriveCustomerJourney({
       return Object.freeze({
         id: CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE,
         tone: 'warning',
-        title: 'Desktop app is not available',
+        title: 'Desktop app is not running',
         body: 'Your previous connection is saved. Start the desktop app, then retry. Preview remains available while Full analysis is offline.',
         primaryAction: 'retry_full',
         primaryLabel: 'Retry connection',
@@ -87,11 +88,24 @@ export function deriveCustomerJourney({
       title: 'Desktop app needed for Full analysis',
       body: desktopDownloadAvailable
         ? 'Full analysis runs through the desktop app on this computer. Install it first; Preview can still be used without it.'
-        : 'Full analysis runs through the desktop app on this computer. This build does not yet include the customer download link; Preview still works independently.',
+        : 'The desktop app download is not available from this release yet. You can keep using Preview in the meantime.',
       primaryAction: desktopDownloadAvailable ? 'install_desktop' : null,
       primaryLabel: desktopDownloadAvailable ? 'Install desktop app' : null,
       secondaryAction: null,
       secondaryLabel: null,
+    });
+  }
+
+  if (pairing?.state === 'unavailable') {
+    return Object.freeze({
+      id: CUSTOMER_STATES.SETUP_INCOMPLETE,
+      tone: 'warning',
+      title: 'Open your creator account to continue',
+      body: 'Open OnlyFans and sign in to the creator account you want to analyze. Then return here to connect the extension.',
+      primaryAction: 'open_creator_account',
+      primaryLabel: 'Open creator account',
+      secondaryAction: 'open_dashboard',
+      secondaryLabel: 'Open desktop app',
     });
   }
 
