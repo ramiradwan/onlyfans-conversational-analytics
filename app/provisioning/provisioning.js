@@ -21,7 +21,7 @@ const DECODER_REFUSALS = Object.freeze({
 });
 
 const OPERATION_REFUSALS = Object.freeze({
-  binding_acquisition_unavailable: 'Creator approval is still pending. Complete approval in secure setup, then choose Check approval again.',
+  binding_acquisition_unavailable: 'Creator approval is still pending and waiting for completion. Continue approval in secure setup, then choose Check approval again.',
   hosted_origin_unavailable: 'Secure setup is not configured for this desktop app. Contact support before continuing.',
   hosted_unavailable: 'Secure setup could not be reached. Check your internet connection, then try again.',
   installation_key_unavailable: 'This computer’s secure device protection is unavailable. Restart the desktop app and try again.',
@@ -237,7 +237,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
       elements.bindingActionHelp.textContent = approvalAcquired
         ? 'Creator approval is complete. Continue to finish setup.'
         : associationRequestId === null ? 'Confirm your creator account before checking approval.'
-          : 'Complete creator approval in secure setup, then check again here.';
+          : 'Creator approval is still pending and waiting for completion. Continue approval in secure setup, then check again here.';
       elements.finalizeActionHelp.textContent = approvalAcquired
         ? 'Everything required on this page is complete.'
         : 'Creator approval must complete before desktop setup can finish.';
@@ -265,7 +265,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
       associationRequestId = progress.association_request_id;
       associatedAccountId = progress.creator_account_id;
       approvalAcquired = false;
-      setStatus('Creator account confirmed. Complete creator approval in secure setup, then come back and check approval.');
+      setStatus('Creator account confirmed. Complete creator approval in secure setup. Approval is still waiting for completion; then check approval here.');
       setIdentityStatus('Creator account confirmed. Continue to approval.');
       elements.detectedIdentity.textContent = 'Creator account already confirmed';
     } else if (progress.stage === 'finalization_ready') {
@@ -299,7 +299,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
 
   async function readJson(response) { try { return await response.json(); } catch { return null; } }
 
-  async function mutate(path, body) {
+  async function mutate(path, body, { neutralReasons = [] } = {}) {
     if (recoveryRequired || mutationInFlight || configurationComplete) return MUTATION_FAILED;
     setBusy(true);
     try {
@@ -309,7 +309,11 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
         body: JSON.stringify(body),
       });
       const payload = await readJson(response);
-      if (!response.ok) { setStatus(explainProvisioningFailure(response, payload), true); return MUTATION_FAILED; }
+      if (!response.ok) {
+        const reason = isRecord(payload) && typeof payload.reason === 'string' ? payload.reason : null;
+        setStatus(explainProvisioningFailure(response, payload), !neutralReasons.includes(reason));
+        return MUTATION_FAILED;
+      }
       return payload;
     } catch {
       setStatus(REQUEST_FAILURE, true); return MUTATION_FAILED;
@@ -382,14 +386,18 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
     const created = parseAssociationCreationResponse(payload);
     if (created !== null) {
       associationRequestId = created; associatedAccountId = confirmedAccountId;
-      setStatus('Creator account confirmed. Complete creator approval in secure setup, then come back and check approval.');
+      setStatus('Creator account confirmed. Complete creator approval in secure setup. Approval is still waiting for completion; then check approval here.');
       setIdentityStatus('Creator account confirmed. Continue to approval.'); renderState();
     } else if (payload !== MUTATION_FAILED) setStatus('The desktop app returned an unexpected result. Check the signed-in account and try again.', true);
   }
 
   async function acquireAssociation() {
     if (recoveryRequired || associationRequestId === null || approvalAcquired) return;
-    const payload = await mutate('/api/v1/provisioning/creator-association/acquire', {});
+    const payload = await mutate(
+      '/api/v1/provisioning/creator-association/acquire',
+      {},
+      { neutralReasons: ['binding_acquisition_unavailable'] },
+    );
     if (isApprovedAssociationResponse(payload, associationRequestId)) {
       approvalAcquired = true; setStatus('Creator account approved. Finish desktop setup.'); renderState();
     } else if (payload !== MUTATION_FAILED) setStatus('The desktop app returned an unexpected approval result. Check approval again.', true);

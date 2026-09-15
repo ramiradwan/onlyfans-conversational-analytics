@@ -61,9 +61,11 @@ from tests.test_hosted_grants import (
 )
 
 
-# No request leaves this process: every hosted path is answered in memory. The
-# origin is still required to be a bare origin by the actions that carry it.
+# No request leaves this process: every hosted API path is answered in memory.
+# The customer continuation URL below is intercepted by Playwright and is
+# deliberately an invalid test-only host, never a release/customer default.
 HOSTED_ORIGIN = "https://control.invalid"
+HOSTED_ONBOARDING_URL = "https://secure-setup.e2e.invalid/start"
 
 BIND_HOST = "127.0.0.1"
 BIND_PORT = 17871
@@ -224,6 +226,7 @@ def build_application(
             data_directory=data_directory,
         ),
         extension_id=extension_id,
+        hosted_onboarding_url=HOSTED_ONBOARDING_URL,
         launcher_handoff_token=handoff_token,
     )
 
@@ -253,6 +256,7 @@ def main() -> int:
             {
                 "claim_package": claim_package(claim),
                 "creator_account_id": creator_account_id,
+                "hosted_onboarding_url": HOSTED_ONBOARDING_URL,
                 "installation_id": claim.installation_id,
                 "installation_key_id": bundle.installation_key.installation_key_id,
                 "organization_id": claim.organization_id,

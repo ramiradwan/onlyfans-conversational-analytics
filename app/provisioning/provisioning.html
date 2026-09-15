@@ -236,6 +236,20 @@
         margin-block-start: var(--space-1);
       }
 
+      .approval-continuation {
+        display: grid;
+        gap: var(--space-1);
+        margin-block: var(--space-2) var(--space-1);
+      }
+
+      .step:not([data-state="current"]) .approval-continuation {
+        display: none;
+      }
+
+      #continue-creator-approval:not([hidden]) + .approval-unavailable {
+        display: none;
+      }
+
       button,
       .primary-link {
         display: inline-flex;
@@ -328,7 +342,8 @@
 
         .actions,
         .actions button,
-        .actions .primary-link {
+        .actions .primary-link,
+        .approval-continuation .primary-link {
           width: 100%;
         }
       }
@@ -457,7 +472,19 @@
               <p id="binding-step-state" class="step-state">Complete the step above first</p>
             </div>
           </div>
-          <p class="step-description">Approval confirms that this computer can use Full analysis for the creator account you confirmed. Complete creator approval in secure setup, then return here.</p>
+          <p class="step-description">Approval is required after your creator account is confirmed. Continue approval in secure setup, then return here. This page advances only after the desktop app confirms approval.</p>
+          <div class="approval-continuation">
+            <a
+              id="continue-creator-approval"
+              class="primary-link"
+              href="{{HOSTED_ONBOARDING_URL}}"
+              target="_blank"
+              rel="noopener noreferrer"
+              {{HOSTED_ONBOARDING_VISIBILITY}}
+            >Continue approval</a>
+            <p id="creator-approval-unavailable" class="control-help approval-unavailable">Creator approval cannot be opened right now. If you already completed it in secure setup, choose Check approval. Otherwise contact support.</p>
+            <p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Secure setup opens in a new tab. Returning here does not complete approval; choose Check approval to confirm it.</p>
+          </div>
           <div class="actions">
             <button id="acquire-association" type="button" disabled aria-describedby="binding-action-help">Check approval</button>
           </div>
