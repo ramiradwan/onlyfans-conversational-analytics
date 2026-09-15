@@ -44,7 +44,7 @@
       </section>
 
       <section id="pre-mode" class="hidden" aria-labelledby="activation-title">
-        <h2 id="activation-title">Before you start</h2>
+        <h2 id="activation-title">Before activating</h2>
         <label class="check-row">
           <input id="terms-accepted" type="checkbox">
           <span>I agree to the <a id="terms-link" href="#">Software Terms</a>.</span>
@@ -53,13 +53,16 @@
           <input id="risk-acknowledged" type="checkbox">
           <span>
             I have read the <a id="risk-link" href="#">Creator Platform &amp; Data Risk Disclosure</a>
-            and understand the platform, account, privacy, data-security, and technical risks.
+            and acknowledge the platform, account, privacy, data-security, and technical risks
+            described in it.
           </span>
         </label>
         <button id="activate-software" class="primary" type="button" disabled>
-          Continue
+          Activate Software
         </button>
-        <p class="fine-print">You will choose Preview or Full analysis next.</p>
+        <p class="fine-print">
+          Activate Software only advances to mode selection. It does not enable Full analytics.
+        </p>
       </section>
 
       <section id="mode-choice" class="hidden" aria-labelledby="mode-choice-title">
@@ -67,23 +70,27 @@
 
         <div id="preview-disclosure" class="disclosure">
           <h3>Preview</h3>
-          <p>Use limited seven-day activity counts without installing the desktop app.</p>
+          <p>Preview watches supported chat and message activity to create limited daily counts.</p>
           <p>
             Preview retains limited counts, <strong>never message text</strong>, conversation
             identifiers, participant identifiers, participant display names, or other message-level
             identifiers.
           </p>
+          <p>
+            Preview metrics are kept on a rolling seven-day basis and older records are
+            automatically removed.
+          </p>
           <p>Preview needs access to the supported platform while it is enabled.</p>
           <p><a class="extension-privacy-link" href="#">Extension Privacy Notice</a></p>
-          <button id="enable-preview" class="primary" type="button">Use Preview</button>
+          <button id="enable-preview" class="primary" type="button">Enable Preview</button>
           <button id="not-now-preview" class="secondary" type="button">Not now</button>
         </div>
 
         <div id="full-disclosure" class="disclosure">
-          <h3>Full analysis</h3>
-          <p>Use message-level analysis through the desktop app on this computer.</p>
+          <h3>Full analytics</h3>
+          <p>Full analytics handles substantially more information than Preview.</p>
           <details>
-            <summary>What Full analysis handles</summary>
+            <summary>Review Full analytics data handling</summary>
             <ul>
               <li>
                 <strong>Message content:</strong> Full stores supported conversation and participant
@@ -92,29 +99,31 @@
                 retrieve supported conversation history when history access is enabled.
               </li>
               <li>
-                <strong>Same-computer transfer:</strong> the extension sends conversation information,
-                including message text, to the desktop analytics service running on this computer.
-                This information <strong>leaves the extension but remains on the same computer</strong>.
+                <strong>Same-computer transfer:</strong> the Extension sends conversation information,
+                including message text, to the companion analytics service running on this computer.
+                This information <strong>leaves the Extension but remains on the same computer</strong>.
                 The normal conversation dataset is not sent to Provider-hosted analytics or storage
-                infrastructure through the extension’s normal workflow.
+                infrastructure through the Extension’s normal workflow.
               </li>
               <li>
                 <strong>Local storage and retention:</strong> Full-mode information is stored locally
-                in extension storage and in the desktop app. No general automatic expiry period
-                currently applies to the main Full-mode conversation data stored in either location.
+                in Extension storage and in the companion analytics service. No general automatic
+                expiry period currently applies to the main Full-mode conversation data stored in
+                either location.
               </li>
               <li>
                 <strong>Deletion boundary:</strong>
                 <strong>
-                  Delete all extension data does not delete conversation information already stored
-                  by the desktop app. The extension does not currently provide a complete deletion
-                  process for that separately stored desktop data.
+                  Delete all Extension data does not delete conversation information already stored
+                  by the companion analytics service. The Extension does not currently provide a
+                  complete deletion process for that separately stored companion data.
                 </strong>
               </li>
               <li>
                 <strong>Other people’s information:</strong> messages can contain private or sensitive
                 information about people you communicate with. Enabling Full is your choice to
-                activate this data handling; it is <strong>not consent on behalf of those people</strong>.
+                activate this Extension data handling; it is
+                <strong>not consent on behalf of those people</strong>.
               </li>
             </ul>
           </details>
@@ -122,7 +131,7 @@
             Read the <a class="extension-privacy-link" href="#"><strong>Extension Privacy Notice</strong></a>
             for the complete description of Full-mode data handling.
           </p>
-          <button id="enable-full" class="primary" type="button">Set up Full analysis</button>
+          <button id="enable-full" class="primary" type="button">Enable Full analytics</button>
           <button id="full-secondary" class="secondary" type="button">Not now</button>
         </div>
       </section>
@@ -180,6 +189,6 @@
         <a id="privacy-link" href="#" aria-disabled="true">Privacy information unavailable</a>
       </footer>
     </main>
-    <script type="module" src="popup.js"></script>
+    <script src="popup.js"></script>
   </body>
 </html>
