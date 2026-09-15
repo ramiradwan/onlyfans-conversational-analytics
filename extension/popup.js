@@ -74,7 +74,7 @@ function secureExternalUrl(value) {
 
 function phaseLabel(status) {
   return ({
-    off: 'Analytics off',
+    off: 'Analytics off — no OnlyFans access',
     preview: 'Activity preview enabled',
     identity: 'Full setup in progress',
     full: status.delivery?.transport_state === 'authenticated' ? 'Full mode ready' : 'Full mode connecting',
@@ -254,6 +254,11 @@ function render(status) {
 }
 
 async function probeDesktop() {
+  if (currentStatus?.consent?.mode !== 'full') {
+    desktopRuntimeReachable = false;
+    renderJourney();
+    return false;
+  }
   desktopRuntimeReachable = await probeDesktopRuntime();
   if (currentStatus !== null) render(currentStatus);
   return desktopRuntimeReachable;
