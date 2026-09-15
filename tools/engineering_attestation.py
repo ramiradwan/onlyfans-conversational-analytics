@@ -85,6 +85,7 @@ REQUIRED_WINDOWS_JOB_NAMES = {
 }
 REQUIRED_PRODUCT_CI_JOB_NAMES = {
     "build-and-test",
+    "fixed-sqlcipher-wheel",
     "windows-browser-e2e",
     "windows-tests",
 }
@@ -969,16 +970,23 @@ def qualify_windows_package_source(
     if artifacts_document.get("total_count") != len(artifacts):
         raise ContractError("Windows package run has more than 100 artifacts")
     expected_name = f"windows-package-{release_tag}"
-    expected_artifact_names = {
+    required_artifact_names = {
         expected_name,
         f"windows-package-unsigned-{release_tag}",
+    }
+    allowed_artifact_names = required_artifact_names | {
+        f"windows-package-sqlcipher-{source_commit}",
+        f"windows-package-companion-{source_commit}",
     }
     observed_artifact_names = [
         item.get("name") for item in artifacts if isinstance(item, dict)
     ]
+    observed_artifact_name_set = set(observed_artifact_names)
     if (
-        len(artifacts) != len(expected_artifact_names)
-        or set(observed_artifact_names) != expected_artifact_names
+        len(observed_artifact_names) != len(artifacts)
+        or len(observed_artifact_names) != len(observed_artifact_name_set)
+        or not required_artifact_names.issubset(observed_artifact_name_set)
+        or not observed_artifact_name_set.issubset(allowed_artifact_names)
     ):
         raise ContractError(
             "Windows package run artifact identity/count does not match the workflow contract"
