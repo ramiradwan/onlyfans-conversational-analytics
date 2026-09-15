@@ -17,7 +17,18 @@ async function auditedExtensionId() {
   return meta.extension_id;
 }
 
-test('first-run setup resumes each durable step after browser reload', async () => {
+async function installHostedApprovalFixture(context, hostedUrl) {
+  const origin = new URL(hostedUrl).origin;
+  await context.route(`${origin}/**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: '<!doctype html><title>Secure creator approval</title><h1>Secure creator approval</h1>',
+    });
+  });
+}
+
+test('first-run setup preserves authoritative creator approval across return and browser restart', async () => {
   test.slow();
   assertBuiltSpa();
   const extensionId = await auditedExtensionId();
@@ -26,13 +37,15 @@ test('first-run setup resumes each durable step after browser reload', async () 
   const browserProfile = path.join(temporaryRoot, 'browser-profile');
   const provisioning = new ProvisioningHost({ dataDirectory, extensionId });
   let context = null;
+  let page = null;
 
   try {
     const descriptor = await provisioning.start();
     context = await launchProvisioningBrowser(browserProfile, {
       creatorAccountId: descriptor.creator_account_id,
     });
-    const page = await context.newPage();
+    await installHostedApprovalFixture(context, descriptor.hosted_onboarding_url);
+    page = await context.newPage();
     const code = await provisioning.issueHandoffCode();
     await page.goto(
       `${BRAIN_ORIGIN}/provisioning/handoff?code=${encodeURIComponent(code)}`,
@@ -50,22 +63,57 @@ test('first-run setup resumes each durable step after browser reload', async () 
       await expect(page.locator('#detected-identity')).toHaveText('Signed-in creator account detected');
     });
 
-    await test.step('creator confirmation resumes at approval without exposing coordinates', async () => {
+    await test.step('creator confirmation resumes at pending approval without exposing coordinates', async () => {
       await page.locator('#confirm-identity').click();
-      await expect(page.locator('#provisioning-status')).toContainText('Complete creator approval');
+      await expect(page.locator('#provisioning-status')).toContainText('Approval is still waiting for completion');
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.locator('#identity-step')).toHaveAttribute('data-state', 'completed');
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
+      await expect(page.locator('#continue-creator-approval')).toBeVisible();
+      await expect(page.locator('#continue-creator-approval')).toHaveAttribute('href', descriptor.hosted_onboarding_url);
       await expect(page.locator('#acquire-association')).toBeEnabled();
       await expect(page.locator('#detected-identity')).toHaveText('Creator account already confirmed');
       await expect(page.locator('body')).not.toContainText(descriptor.creator_account_id);
+      await expect(page.locator('body')).not.toContainText(descriptor.installation_id);
+      await expect(page.locator('body')).not.toContainText(descriptor.organization_id);
     });
 
-    await test.step('durable approval resumes directly at finalization', async () => {
+    await test.step('opening and returning from hosted approval does not itself approve the account', async () => {
+      const [hostedPage] = await Promise.all([
+        context.waitForEvent('page'),
+        page.locator('#continue-creator-approval').click(),
+      ]);
+      await hostedPage.waitForLoadState('domcontentloaded');
+      await expect(hostedPage).toHaveURL(descriptor.hosted_onboarding_url);
+      await expect(hostedPage.getByRole('heading', { name: 'Secure creator approval' })).toBeVisible();
+      await hostedPage.close();
+      await page.bringToFront();
+      await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
+      await expect(page.locator('#finalize-step')).toHaveAttribute('data-state', 'locked');
+      await expect(page.locator('#finalize-provisioning')).toBeDisabled();
+      await expect(page.locator('#provisioning-status')).toContainText('Approval is still waiting for completion');
+    });
+
+    await test.step('pending approval survives closing and reopening the browser profile', async () => {
+      await context.close();
+      context = await launchProvisioningBrowser(browserProfile, {
+        creatorAccountId: descriptor.creator_account_id,
+      });
+      await installHostedApprovalFixture(context, descriptor.hosted_onboarding_url);
+      page = await context.newPage();
+      await page.goto(`${BRAIN_ORIGIN}/provisioning`, { waitUntil: 'domcontentloaded' });
+      await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
+      await expect(page.locator('#continue-creator-approval')).toBeVisible();
+      await expect(page.locator('#acquire-association')).toBeEnabled();
+      await expect(page.locator('#finalize-provisioning')).toBeDisabled();
+    });
+
+    await test.step('authoritative approval acquisition advances durable state to finalization', async () => {
       await page.locator('#acquire-association').click();
       await expect(page.locator('#provisioning-status')).toHaveText('Creator account approved. Finish desktop setup.');
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'completed');
+      await expect(page.locator('#continue-creator-approval')).not.toBeVisible();
       await expect(page.locator('#finalize-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#finalize-provisioning')).toBeEnabled();
     });
