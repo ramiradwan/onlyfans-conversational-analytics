@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v1/installation-claim-consume-response.schema.json",
+  "title": "Installation claim consume response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "status",
+    "claim_id",
+    "onboarding_transaction_id",
+    "organization_id",
+    "installation_id",
+    "installation_key_id",
+    "installation_key_jkt",
+    "consumed_at",
+    "grants",
+    "bootstrap_config_version"
+  ],
+  "properties": {
+    "profile": {"const": "urn:bridge-clean:installation-claim:v1"},
+    "status": {"const": "consumed"},
+    "claim_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"},
+    "onboarding_transaction_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "organization_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "installation_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "installation_key_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"},
+    "installation_key_jkt": {"$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"},
+    "consumed_at": {"$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"},
+    "grants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installation_grant", "membership_snapshot", "license_entitlement"],
+      "properties": {
+        "installation_grant": {"$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"},
+        "membership_snapshot": {"$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"},
+        "license_entitlement": {"$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"}
+      }
+    },
+    "bootstrap_config_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    }
+  }
+}

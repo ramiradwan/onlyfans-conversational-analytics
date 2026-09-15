@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-exchange-request.schema.json",
+  "title": "Capability license commercial exchange request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "quote_id",
+    "confirmation",
+    "customer_authorization_ref"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-exchange:v1"
+    },
+    "quote_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "confirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization_id",
+        "offer_version_id",
+        "installation_id",
+        "capability",
+        "authority_target",
+        "unit_count",
+        "credit_cost"
+      ],
+      "properties": {
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "offer_version_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "capability": {
+          "enum": [
+            "analysis-run"
+          ]
+        },
+        "authority_target": {
+          "const": "capability-license"
+        },
+        "unit_count": {
+          "const": 1
+        },
+        "credit_cost": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "customer_authorization_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId",
+      "description": "Opaque identifier of server-held, already verified action-bound customer authorization evidence. It is not a bearer credential and possession alone grants no authority. The evidence must bind the quote_id and every confirmation field exactly."
+    }
+  }
+}

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
+from app.security.grant_types import ACCOUNT_AUTHORITY_GRANT_TYPES
+
 
 RuntimeRole = Literal["creator", "operator", "agent"]
 
@@ -39,6 +41,66 @@ class RevocationObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class IdentityAccountAuthority:
+    """Verified identity/account authority kept distinct from commercial authority."""
+
+    organization_id: str
+    installation_id: str
+    installation_key_id: str
+    installation_key_jkt: str
+    grant_reference_ids: tuple[str, ...]
+    grant_types: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "grant_reference_ids", tuple(self.grant_reference_ids))
+        object.__setattr__(self, "grant_types", tuple(self.grant_types))
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityLicenseAuthority:
+    """Verified local commercial authority for one licensed capability."""
+
+    reference_id: str
+    object_digest: str
+    license_id: str
+    issuance_id: str
+    subject: str
+    organization_id: str
+    installation_id: str
+    installation_key_id: str
+    installation_key_jkt: str
+    seat_id: str
+    seat_scope: str
+    capability: str
+    licensed_major_version: int
+    compatible_artifact_family: str
+    update_rights: bool
+    fallback_major_versions: tuple[int, ...]
+    signer_kid: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "fallback_major_versions", tuple(self.fallback_major_versions)
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisRunContext:
+    """Independently trusted local selection for a new licensed analysis run."""
+
+    organization_id: str
+    installation_id: str
+    installation_key_id: str
+    installation_key_jkt: str
+    seat_id: str
+    seat_scope: str
+    capability: str
+    selected_major_version: int
+    artifact_family: str
+    requires_update_rights: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimePolicy:
     """One immutable snapshot for a local authorization decision."""
 
@@ -48,6 +110,8 @@ class RuntimePolicy:
     signed_object_reference_ids: tuple[str, ...] = ()
     expires_at: datetime | None = None
     revocations: tuple[RevocationObservation, ...] = ()
+    identity_authority: IdentityAccountAuthority | None = None
+    commercial_authority: CapabilityLicenseAuthority | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "signed_object_digests", tuple(self.signed_object_digests))
@@ -89,3 +153,42 @@ def authorized_account(
             "The runtime policy cannot access the requested account"
         )
     return account_id
+
+
+def require_analysis_run(policy: RuntimePolicy, context: AnalysisRunContext) -> None:
+    """Authorize a new analysis run from separate identity and commercial predicates."""
+
+    require_identity(policy)
+    identity_authority = policy.identity_authority
+    if identity_authority is None:
+        raise RuntimeAuthorizationDenied("Current identity/account authority is required")
+    if not set(ACCOUNT_AUTHORITY_GRANT_TYPES).issubset(identity_authority.grant_types):
+        raise RuntimeAuthorizationDenied("Current identity/account authority is incomplete")
+    if (
+        identity_authority.organization_id != context.organization_id
+        or identity_authority.installation_id != context.installation_id
+        or identity_authority.installation_key_id != context.installation_key_id
+        or identity_authority.installation_key_jkt != context.installation_key_jkt
+    ):
+        raise RuntimeAuthorizationDenied("Identity/account authority does not match local runtime")
+
+    commercial = policy.commercial_authority
+    if commercial is None:
+        raise RuntimeAuthorizationDenied("CapabilityLicense authority is required")
+    if (
+        commercial.organization_id != context.organization_id
+        or commercial.installation_id != context.installation_id
+        or commercial.installation_key_id != context.installation_key_id
+        or commercial.installation_key_jkt != context.installation_key_jkt
+        or commercial.seat_id != context.seat_id
+        or commercial.seat_scope != context.seat_scope
+        or commercial.capability != context.capability
+        or commercial.compatible_artifact_family != context.artifact_family
+    ):
+        raise RuntimeAuthorizationDenied("CapabilityLicense does not match local runtime")
+    if context.selected_major_version != commercial.licensed_major_version and (
+        context.selected_major_version not in commercial.fallback_major_versions
+    ):
+        raise RuntimeAuthorizationDenied("CapabilityLicense does not authorize selected major version")
+    if context.requires_update_rights and not commercial.update_rights:
+        raise RuntimeAuthorizationDenied("CapabilityLicense does not authorize update mode")

@@ -1,0 +1,219 @@
+{
+  "canonical_encoding": {
+    "domain_terminator_byte": 0,
+    "field_length_prefix": "uint32_be",
+    "hash": "sha256",
+    "integer_field_encoding": "uint64_be",
+    "text_field_encoding": "utf-8"
+  },
+  "comparison_code": {
+    "digest_prefix_bytes": 4,
+    "digits": 6,
+    "domain": "code",
+    "fields": [
+      {
+        "kind": "bytes32",
+        "name": "pairing_digest"
+      }
+    ],
+    "modulus": 1000000,
+    "prefix_encoding": "uint32_be"
+  },
+  "detailed_refusal_codes": [
+    "pairing_grant_refused"
+  ],
+  "domains": {
+    "code": "OFCA-LOCAL-PAIRING-CODE-V1",
+    "grants": "OFCA-LOCAL-PAIRING-GRANTS-V1",
+    "proof": "OFCA-LOCAL-PAIRING-PROOF-V1",
+    "transcript": "OFCA-LOCAL-PAIRING-TRANSCRIPT-V1"
+  },
+  "governing_adr": "docs/adr/0019-publish-the-local-companion-pairing-profile.md",
+  "grant_digest": {
+    "domain": "grants",
+    "fields": [
+      {
+        "kind": "text",
+        "name": "creator_account_binding"
+      },
+      {
+        "kind": "bytes32",
+        "name": "creator_account_binding_jws_sha256"
+      },
+      {
+        "kind": "text",
+        "name": "installation_grant"
+      },
+      {
+        "kind": "bytes32",
+        "name": "installation_grant_jws_sha256"
+      }
+    ]
+  },
+  "grant_verification_order": [
+    "installation_grant",
+    "creator_account_binding"
+  ],
+  "grants": {
+    "creator_account_binding": {
+      "audience": "urn:bridge-clean:local-brain:creator-binding",
+      "grace_seconds": 259200
+    },
+    "installation_grant": {
+      "audience": "urn:bridge-clean:local-brain:installation",
+      "grace_seconds": 604800
+    }
+  },
+  "limits": {
+    "max_application_frame_bytes": 4096,
+    "max_application_record_plaintext_bytes": 4079,
+    "max_authorization_envelope_bytes": 32853,
+    "max_authorization_record_plaintext_bytes": 36847,
+    "max_frame_bytes": 36864,
+    "max_grant_characters": 16384,
+    "noise_tag_bytes": 16,
+    "record_discriminator_bytes": 1
+  },
+  "messages": {
+    "pair.confirm": "schemas/local/v1/companion-pairing-confirm.schema.json",
+    "pair.offer": "schemas/local/v1/companion-pairing-offer.schema.json",
+    "pair.request": "schemas/local/v1/companion-pairing-request.schema.json",
+    "pair.result": "schemas/local/v1/companion-pairing-result.schema.json",
+    "session.authorization": "schemas/local/v1/companion-pairing-session-authorization.schema.json"
+  },
+  "offer_check_order": [
+    "message",
+    "noise_key",
+    "nonce",
+    "grants",
+    "account",
+    "generation",
+    "proof"
+  ],
+  "profile": "urn:bridge-clean:companion-pairing:v1",
+  "proof": {
+    "algorithm": "ES256",
+    "domain": "proof",
+    "fields": [
+      {
+        "kind": "text",
+        "name": "role"
+      },
+      {
+        "kind": "bytes32",
+        "name": "pairing_digest"
+      }
+    ],
+    "rendering": "base64url-unpadded",
+    "require_low_s": true,
+    "roles": [
+      "agent",
+      "brain"
+    ],
+    "signature_bytes": 64,
+    "signature_encoding": "p1363"
+  },
+  "refusal_codes": [
+    "pairing_account_refused",
+    "pairing_generation_refused",
+    "pairing_grant_refused",
+    "pairing_key_refused",
+    "pairing_message_invalid",
+    "pairing_nonce_refused",
+    "pairing_proof_refused",
+    "pairing_state_refused",
+    "pairing_storage_refused"
+  ],
+  "session_prologue": {
+    "separator_byte": 0,
+    "suffix": "pairing_digest",
+    "text": "ofca-companion-session/v1;agent-to-brain;no-early-data"
+  },
+  "small_order_noise_keys": {
+    "comparison": "clear_bit_255",
+    "keys": [
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "0100000000000000000000000000000000000000000000000000000000000000",
+      "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800",
+      "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157",
+      "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+    ]
+  },
+  "suite": "Noise_KK_25519_ChaChaPoly_SHA256",
+  "test_fixture_derivation": {
+    "governing_adr": "docs/adr/0015-clarify-reconstructable-test-fixture-signing-scalars.md",
+    "label_prefix": "OFCA TEST VECTORS ONLY - NEVER PRODUCTION - ",
+    "material": "sha256",
+    "opaque_32_bytes": "material",
+    "p256_scalar": "material_be mod (n - 1) + 1",
+    "x25519_private": "material"
+  },
+  "transcript": {
+    "digest": "sha256",
+    "domain": "transcript",
+    "fields": [
+      {
+        "kind": "text",
+        "name": "suite"
+      },
+      {
+        "kind": "bytes32",
+        "name": "pairing_id"
+      },
+      {
+        "kind": "uint64",
+        "name": "generation"
+      },
+      {
+        "kind": "text",
+        "name": "organization_id"
+      },
+      {
+        "kind": "text",
+        "name": "installation_id"
+      },
+      {
+        "kind": "text",
+        "name": "installation_key_id"
+      },
+      {
+        "kind": "text",
+        "name": "installation_key_jkt"
+      },
+      {
+        "kind": "text",
+        "name": "creator_account_id"
+      },
+      {
+        "kind": "text",
+        "name": "agent_installation_id"
+      },
+      {
+        "kind": "text",
+        "name": "agent_identity_key_jkt"
+      },
+      {
+        "kind": "bytes32",
+        "name": "agent_noise_key"
+      },
+      {
+        "kind": "bytes32",
+        "name": "brain_noise_key"
+      },
+      {
+        "kind": "bytes32",
+        "name": "agent_nonce"
+      },
+      {
+        "kind": "bytes32",
+        "name": "brain_nonce"
+      },
+      {
+        "kind": "bytes32",
+        "name": "grant_digest"
+      }
+    ]
+  }
+}

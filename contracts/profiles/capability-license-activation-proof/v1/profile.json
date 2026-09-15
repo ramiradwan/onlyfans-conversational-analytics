@@ -1,0 +1,95 @@
+{
+  "profile": "urn:bridge-clean:capability-license-activation-proof:v1",
+  "governing_adr": "docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md",
+  "messages": {
+    "challenge.request": "schemas/commercial/v1/capability-license-proof-challenge-request.schema.json",
+    "challenge.response": "schemas/commercial/v1/capability-license-proof-challenge-response.schema.json"
+  },
+  "canonical_encoding": {
+    "domain": "BRIDGE-CLEAN-CAPABILITY-LICENSE-ACTIVATION-PROOF-V1",
+    "domain_terminator_byte": 0,
+    "field_length_prefix": "uint32_be",
+    "text_field_encoding": "utf-8",
+    "body_digest": "sha256-jcs-request"
+  },
+  "proof": {
+    "algorithm": "ES256",
+    "signature_encoding": "p1363",
+    "signature_bytes": 64,
+    "rendering": "base64url-unpadded",
+    "require_low_s": true,
+    "audience": "urn:bridge-clean:commercial-control-plane:capability-license-activation",
+    "challenge_ttl_seconds": 60,
+    "challenge_single_use": true,
+    "fields": [
+      {
+        "name": "challenge",
+        "kind": "bytes32"
+      },
+      {
+        "name": "method",
+        "kind": "ascii"
+      },
+      {
+        "name": "path",
+        "kind": "ascii"
+      },
+      {
+        "name": "body_digest",
+        "kind": "bytes32"
+      },
+      {
+        "name": "purpose",
+        "kind": "ascii"
+      },
+      {
+        "name": "installation_id",
+        "kind": "text"
+      },
+      {
+        "name": "account_id",
+        "kind": "text",
+        "source": "organization_id"
+      },
+      {
+        "name": "key_id",
+        "kind": "text"
+      },
+      {
+        "name": "audience",
+        "kind": "ascii"
+      }
+    ]
+  },
+  "purposes": {
+    "capability-license-activate": {
+      "method": "POST",
+      "path_template": "/v1/capability-license-exchanges/{exchange_id}:activate",
+      "authority_reference": {
+        "kind": "exchange_id",
+        "required_state": "committed",
+        "must_match_request_field": "exchange_id"
+      }
+    },
+    "capability-license-reissue": {
+      "method": "POST",
+      "path_template": "/v1/capability-license-reissue-authorizations/{reissue_authorization_id}:finalize",
+      "authority_reference": {
+        "kind": "reissue_authorization_id",
+        "required_state": "pending",
+        "require_durable_commit": true,
+        "must_match_request_field": "reissue_authorization_id",
+        "must_bind_replacement_installation": true,
+        "reference_is_bearer_credential": false
+      }
+    }
+  },
+  "domain_separation": {
+    "must_not_accept_domains": [
+      "BRIDGE-CLEAN-INSTALLATION-PROOF-V1"
+    ],
+    "must_not_accept_audiences": [
+      "urn:bridge-clean:commercial-control-plane:provisioning"
+    ]
+  }
+}

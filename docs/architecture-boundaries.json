@@ -558,6 +558,7 @@
       "path_patterns": [
         "app/analytics/canonical_source.py",
         "app/analytics/pipeline.py",
+        "app/analytics/licensed_pipeline.py",
         "app/analytics/graph_*.py",
         "app/analytics/*projection_store.py",
         "app/analytics/*graph_store.py",

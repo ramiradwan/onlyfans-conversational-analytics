@@ -1,0 +1,23 @@
+{
+  "profile": "urn:bridge-clean:capability-license-reissue-authorization:v1",
+  "governing_adr": "docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md",
+  "messages": {
+    "request": "schemas/commercial/v1/capability-license-reissue-authorization-request.schema.json",
+    "response": "schemas/commercial/v1/capability-license-reissue-authorization-response.schema.json"
+  },
+  "customer_authorization": {
+    "customer_session_required": true,
+    "step_up_action": "capability-license-reissue",
+    "step_up_server_held": true,
+    "step_up_reference_is_bearer_credential": false,
+    "exact_bindings": [
+      "organization_id",
+      "prior_license_id",
+      "prior_issuance_id",
+      "replacement_installation_id",
+      "reissue_reason"
+    ],
+    "created_authorization_state": "pending",
+    "durable_commit_required_before_handoff": true
+  }
+}

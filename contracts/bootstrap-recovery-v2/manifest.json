@@ -1,0 +1,45 @@
+{
+  "additional_governing_adr": "docs/adr/0012-reconcile-provisioning-recovery-progress-retention-and-capability-permits.md",
+  "case_count": 7,
+  "files": [
+    {
+      "path": "bootstrap-recovery-v2-positive.json",
+      "sha256": "aa825fa5a4f1d74dc226111439a043f51d92631ddd1b7027b817e687305852d7",
+      "size": 2650
+    },
+    {
+      "path": "bootstrap-recovery-v2-wrong-installation.json",
+      "sha256": "7cf1da8ce18a07516e934f8e3db5596936943974e7bf0783dbfafb2d78131511",
+      "size": 1283
+    },
+    {
+      "path": "bootstrap-recovery-v2-wrong-key.json",
+      "sha256": "89fd219b184da71f999f6f16bd749b7eded8be1a3801a259fc1ad35420d5a72a",
+      "size": 1317
+    },
+    {
+      "path": "bootstrap-recovery-v2-unknown-enrollment.json",
+      "sha256": "f11db9f2a5411c79018d8a141b166fdfb324e5d0dfb0bf99fc21e20497482e00",
+      "size": 1111
+    },
+    {
+      "path": "bootstrap-recovery-v2-proof-replay.json",
+      "sha256": "c3385770e3f0517dcede9bede7ba1f0ea40e7ea9ef1a1bdad4561d82fedb56d1",
+      "size": 1381
+    },
+    {
+      "path": "bootstrap-recovery-v2-lost-consume-response.json",
+      "sha256": "08e8e3093bf3a495a52a3d677e4c7080e576ff1e9d9f37652540fadb20e8135d",
+      "size": 2576
+    },
+    {
+      "path": "bootstrap-recovery-v2-temporarily-unavailable.json",
+      "sha256": "9433a673de6e78abdab8154e7c32e85925a2025cd0cec51f5ced8973382a5193",
+      "size": 496
+    }
+  ],
+  "governing_adr": "docs/adr/0020-bootstrap-recovery-v2-amendment.md",
+  "manifest_tool": "tools/build_bootstrap_recovery_v2_vector_manifest.py",
+  "profile": "urn:bridge-clean:bootstrap-recovery-v2-vectors:v1",
+  "test_only": true
+}

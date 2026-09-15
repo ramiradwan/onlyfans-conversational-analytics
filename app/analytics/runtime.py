@@ -15,9 +15,12 @@ from app.analytics.errors import (
 )
 from app.analytics.factory import create_analytics_stores
 from app.analytics.identity import canonical_identity
+from app.analytics.licensed_pipeline import LicensedAnalyticsPipeline
 from app.analytics.pipeline import AnalyticsPipeline, CanonicalReadModelSource
 from app.analytics.scheduling import InProcessProjectionScheduler
+from app.core.config import settings
 from app.persistence.projection_activation import ProjectionActivationRepository
+from app.security.analysis_authorization import clear_analysis_policies
 
 
 AnalyticsBackend = Literal["memory", "sqlite"]
@@ -153,13 +156,25 @@ def _runtime_for_source_locked(
     return runtime
 
 
+def _pipeline_type(
+    configuration: _DefaultRuntimeConfiguration | None,
+):
+    if (
+        configuration is not None
+        and settings.identity_binding_source == "verified_grants"
+    ):
+        return LicensedAnalyticsPipeline
+    return AnalyticsPipeline
+
+
 def _build_pipeline(
     source: CanonicalReadModelSource,
     *,
     configuration: _DefaultRuntimeConfiguration | None,
 ) -> AnalyticsPipeline:
+    pipeline_type = _pipeline_type(configuration)
     if configuration is None or configuration.backend == "memory":
-        return AnalyticsPipeline(source)
+        return pipeline_type(source)
     stores = create_analytics_stores(
         "sqlite",
         projections_path=configuration.projections_path,
@@ -172,7 +187,7 @@ def _build_pipeline(
         ),
         lazy=True,
     )
-    return AnalyticsPipeline(
+    return pipeline_type(
         source,
         projections=stores.projections,
         graph=stores.graph,
@@ -289,6 +304,7 @@ def reset_analytics_runtimes() -> None:
         for runtime in _RUNTIMES.values():
             runtime.scheduler.abort()
         _RUNTIMES.clear()
+    clear_analysis_policies()
     if _STARTUP_TASK is not None and not _STARTUP_TASK.done():
         _STARTUP_TASK.cancel()
     _STARTUP_TASK = None

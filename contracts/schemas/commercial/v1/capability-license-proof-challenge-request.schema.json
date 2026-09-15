@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-proof-challenge-request.schema.json",
+  "title": "Capability license activation proof challenge request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "purpose",
+    "organization_id",
+    "authority_reference_id"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-activation-proof:v1"
+    },
+    "purpose": {
+      "enum": [
+        "capability-license-activate",
+        "capability-license-reissue"
+      ]
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "authority_reference_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7",
+      "description": "For capability-license-activate, the exact committed exchange_id. For capability-license-reissue, the exact durable pending reissue_authorization_id previously committed by the authenticated customer flow. The identifier is not a bearer credential; the server validates referenced authority state, organization, exact replacement installation, and registered key before issuing a challenge."
+    }
+  }
+}

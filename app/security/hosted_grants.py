@@ -21,6 +21,7 @@ import httpx
 from app.persistence.auth import (
     AuthenticationStateError,
     AuthenticationStore,
+    ClaimSubmissionState,
     InstallationKeyReference,
     OnboardingProgressEvent,
     VerifiedGrantReference,
@@ -34,7 +35,8 @@ from app.security.grant_verifier import (
 )
 from app.security.grant_types import (
     AGENT_PAIRING_GRANT_TYPES,
-    HOSTED_CLAIM_GRANT_TYPES,
+    HOSTED_CLAIM_V2_GRANT_TYPES,
+    LEGACY_V1_HOSTED_CLAIM_GRANT_TYPES,
     MAX_GRANT_CHARACTERS,
     VerifiedGrantDenial,
 )
@@ -42,7 +44,10 @@ from app.security.installation_key import InstallationProof
 from app.security.runtime_policy import AuthContext, RuntimePolicy
 
 
-CLAIM_PROFILE = "urn:bridge-clean:installation-claim:v1"
+CLAIM_PROFILE_V1 = "urn:bridge-clean:installation-claim:v1"
+CLAIM_PROFILE_V2 = "urn:bridge-clean:installation-claim:v2"
+CLAIM_PROFILE = CLAIM_PROFILE_V1
+BOOTSTRAP_RECOVERY_PROFILE = "urn:bridge-clean:bootstrap-recovery:v2"
 PROOF_PROFILE = "urn:bridge-clean:installation-key-proof:v1"
 REFRESH_PROFILE = "urn:bridge-clean:grant-refresh:v1"
 CREATOR_ASSOCIATION_PROFILE = "urn:bridge-clean:creator-association:v1"
@@ -126,6 +131,14 @@ class InstallationClaimRefused(HostedGrantError):
 
 class InstallationClaimReplay(InstallationClaimRefused):
     """The hosted claim store refused a repeated consumption."""
+
+
+class BootstrapRecoveryRefused(HostedGrantError):
+    """An authoritative bootstrap-recovery refusal."""
+
+    def __init__(self, result: str) -> None:
+        super().__init__("Bootstrap recovery was refused")
+        self.result = result
 
 
 class GrantVerificationRefused(HostedGrantError):
@@ -245,15 +258,24 @@ class InstallationClaim:
     organization_id: str
     installation_id: str
     consume_path: str
+    claim_profile: str = CLAIM_PROFILE_V1
 
     def __post_init__(self) -> None:
         if (
             not _UUIDV7_RE.fullmatch(self.claim_id)
             or not _ID_RE.fullmatch(self.onboarding_transaction_id)
             or not _ID_RE.fullmatch(self.organization_id)
-            or not _ID_RE.fullmatch(self.installation_id)
+            or (
+                self.claim_profile == CLAIM_PROFILE_V2
+                and not _UUIDV7_RE.fullmatch(self.installation_id)
+            )
+            or (
+                self.claim_profile == CLAIM_PROFILE_V1
+                and not _ID_RE.fullmatch(self.installation_id)
+            )
             or self.consume_path
             != f"/v1/installation-claims/{self.claim_id}:consume"
+            or self.claim_profile not in {CLAIM_PROFILE_V1, CLAIM_PROFILE_V2}
         ):
             raise ValueError("Installation claim bindings are invalid")
         _decode_32(self.claim_secret)
@@ -315,6 +337,15 @@ class DeviceMetadata:
 class ClaimConsumption:
     grant_reference_ids: tuple[str, ...]
     policy: RuntimePolicy | None
+    enrolled_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BootstrapRecovery:
+    grant_reference_ids: tuple[str, ...]
+    enrolled_at: datetime
+    recovered_at: datetime
+    selected_profiles: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,7 +400,7 @@ class HostedGrantClient:
         key = self._installation_key.ensure_ready()
         public_jwk = _public_jwk(key)
         request_body: dict[str, object] = {
-            "profile": CLAIM_PROFILE,
+            "profile": claim.claim_profile,
             "claim_secret": claim.claim_secret,
             "onboarding_transaction_id": claim.onboarding_transaction_id,
             "organization_id": claim.organization_id,
@@ -404,9 +435,17 @@ class HostedGrantClient:
         if response.status_code != 200:
             raise InstallationClaimRefused("Installation claim was refused")
         document = _response_object(response)
-        tokens = self._validated_claim_response(document, claim, key)
+        grant_types = (
+            HOSTED_CLAIM_V2_GRANT_TYPES
+            if claim.claim_profile == CLAIM_PROFILE_V2
+            else LEGACY_V1_HOSTED_CLAIM_GRANT_TYPES
+        )
+        tokens, consumed_at = self._validated_claim_response(
+            document, claim, key, grant_types=grant_types
+        )
         references = self._verify_bundle(
             tokens,
+            grant_types=grant_types,
             organization_id=claim.organization_id,
             installation_id=claim.installation_id,
             key=key,
@@ -419,7 +458,119 @@ class HostedGrantClient:
             if identity is None
             else self._store.build_runtime_policy_from_grants(identity, reference_ids)
         )
-        return ClaimConsumption(reference_ids, policy)
+        return ClaimConsumption(reference_ids, policy, consumed_at)
+
+    def recover_bootstrap_v2(
+        self,
+        *,
+        claim_id: str,
+        recovery_request_id: str,
+        supported_profiles: tuple[str, ...] = (
+            "urn:bridge-clean:grant-profile:v1",
+            "urn:bridge-clean:onboarding-progress:v1",
+        ),
+    ) -> BootstrapRecovery:
+        """Recover bootstrap identity authority for one possibly committed v2 enrollment."""
+
+        submission = self._store.claim_submission(claim_id)
+        if (
+            submission is None
+            or submission.claim_profile != CLAIM_PROFILE_V2
+            or submission.state is ClaimSubmissionState.REFUSED
+        ):
+            raise BootstrapRecoveryRefused("enrollment_not_found")
+        if not _UUIDV7_RE.fullmatch(recovery_request_id):
+            raise ValueError("Bootstrap recovery request identifier is invalid")
+        if (
+            not supported_profiles
+            or len(supported_profiles) > 16
+            or len(set(supported_profiles)) != len(supported_profiles)
+            or not all(isinstance(value, str) and value.startswith("urn:bridge-clean:") for value in supported_profiles)
+        ):
+            raise ValueError("Bootstrap recovery supported profiles are invalid")
+        key = self._installation_key.ensure_ready()
+        if key.installation_key_id == "" or key.installation_key_jkt == "":
+            raise AuthenticationStateError("Installation key is unavailable")
+        challenge_path = f"/v1/installations/{submission.installation_id}/proof-challenges"
+        challenge_response = self._request(
+            challenge_path,
+            {"profile": PROGRESS_PROOF_PROFILE, "purpose": "bootstrap-recovery"},
+        )
+        if _retryable(challenge_response.status_code):
+            raise HostedGrantUnavailable("Bootstrap recovery proof challenge is unavailable")
+        if challenge_response.status_code != 201:
+            raise BootstrapRecoveryRefused("proof_challenge_refused")
+        challenge = self._validated_challenge(
+            _response_object(challenge_response),
+            installation_id=submission.installation_id,
+            purpose="bootstrap-recovery",
+            profile=PROGRESS_PROOF_PROFILE,
+            audience=PROGRESS_PROOF_AUDIENCE,
+        )
+        request_body: dict[str, object] = {
+            "profile": BOOTSTRAP_RECOVERY_PROFILE,
+            "recovery_request_id": recovery_request_id,
+            "claim_id": submission.claim_id,
+            "onboarding_transaction_id": submission.onboarding_transaction_id,
+            "organization_id": submission.organization_id,
+            "installation_id": submission.installation_id,
+            "installation_key_id": key.installation_key_id,
+            "supported_profiles": list(supported_profiles),
+        }
+        path = f"/v1/installations/{submission.installation_id}/bootstrap:recover"
+        response = self._request(
+            path,
+            {
+                "request": request_body,
+                "proof": self._proof(
+                    challenge=challenge,
+                    request_body=request_body,
+                    path=path,
+                    purpose="bootstrap-recovery",
+                    installation_id=submission.installation_id,
+                    key=key,
+                    audience=PROGRESS_PROOF_AUDIENCE,
+                ),
+            },
+        )
+        if _retryable(response.status_code):
+            raise HostedGrantUnavailable("Bootstrap recovery is temporarily unavailable")
+        refusal = {
+            401: "registered_key_mismatch",
+            403: "installation_binding_mismatch",
+            404: "enrollment_not_found",
+            409: "proof_challenge_replayed",
+        }.get(response.status_code)
+        if refusal is not None:
+            raise BootstrapRecoveryRefused(refusal)
+        if response.status_code != 200:
+            raise BootstrapRecoveryRefused("recovery_refused")
+        document = _response_object(response)
+        tokens, enrolled_at, recovered_at, selected = self._validated_bootstrap_recovery_response(
+            document,
+            submission=submission,
+            recovery_request_id=recovery_request_id,
+            key=key,
+            supported_profiles=supported_profiles,
+        )
+        references = self._verify_bundle(
+            tokens,
+            grant_types=HOSTED_CLAIM_V2_GRANT_TYPES,
+            organization_id=submission.organization_id,
+            installation_id=submission.installation_id,
+            key=key,
+            identity=None,
+        )
+        self._store.record_verified_grants(references)
+        self._store.resolve_claim_submission(
+            claim_id, outcome=None, resolved_at=recovered_at, enrolled_at=enrolled_at
+        )
+        return BootstrapRecovery(
+            tuple(reference.reference_id for reference in references),
+            enrolled_at,
+            recovered_at,
+            selected,
+        )
 
     def runtime_policy(
         self,
@@ -1009,7 +1160,9 @@ class HostedGrantClient:
         document: Mapping[str, object],
         claim: InstallationClaim,
         key: InstallationKeyReference,
-    ) -> dict[str, str]:
+        *,
+        grant_types: tuple[str, ...],
+    ) -> tuple[dict[str, str], datetime]:
         expected = {
             "profile",
             "status",
@@ -1025,7 +1178,7 @@ class HostedGrantClient:
         }
         if set(document) != expected or any(
             (
-                document.get("profile") != CLAIM_PROFILE,
+                document.get("profile") != claim.claim_profile,
                 document.get("status") != "consumed",
                 document.get("claim_id") != claim.claim_id,
                 document.get("onboarding_transaction_id")
@@ -1040,18 +1193,21 @@ class HostedGrantClient:
         grants = document.get("grants")
         if (
             not isinstance(grants, dict)
-            or set(grants) != set(HOSTED_CLAIM_GRANT_TYPES)
-            or not all(isinstance(grants[name], str) for name in HOSTED_CLAIM_GRANT_TYPES)
+            or set(grants) != set(grant_types)
+            or not all(isinstance(grants[name], str) for name in grant_types)
             or not isinstance(document.get("consumed_at"), str)
+            or _TIMESTAMP_RE.fullmatch(str(document.get("consumed_at"))) is None
             or not isinstance(document.get("bootstrap_config_version"), str)
         ):
             raise HostedGrantUnavailable("Hosted claim response is invalid")
-        return {name: grants[name] for name in HOSTED_CLAIM_GRANT_TYPES}
+        consumed_at = _parse_contract_timestamp(str(document["consumed_at"]))
+        return ({name: grants[name] for name in grant_types}, consumed_at)
 
     def _verify_bundle(
         self,
         tokens: Mapping[str, str],
         *,
+        grant_types: tuple[str, ...],
         organization_id: str,
         installation_id: str,
         key: InstallationKeyReference,
@@ -1059,7 +1215,7 @@ class HostedGrantClient:
     ) -> tuple[VerifiedGrantReference, ...]:
         payloads = {
             grant_type: _untrusted_payload(tokens[grant_type])
-            for grant_type in HOSTED_CLAIM_GRANT_TYPES
+            for grant_type in grant_types
         }
         membership = payloads["membership_snapshot"]
         external_issuer = _required_string(membership, "ciam_issuer")
@@ -1083,9 +1239,70 @@ class HostedGrantClient:
                     else ()
                 ),
             )
-            for grant_type in HOSTED_CLAIM_GRANT_TYPES
+            for grant_type in grant_types
         )
         return references
+
+    def _validated_bootstrap_recovery_response(
+        self,
+        document: Mapping[str, object],
+        *,
+        submission: object,
+        recovery_request_id: str,
+        key: InstallationKeyReference,
+        supported_profiles: tuple[str, ...],
+    ) -> tuple[dict[str, str], datetime, datetime, tuple[str, ...]]:
+        expected = {
+            "profile", "status", "recovery_request_id", "claim_id",
+            "onboarding_transaction_id", "organization_id", "installation_id",
+            "installation_key_id", "installation_key_jkt", "enrolled_at",
+            "recovered_at", "grants", "bootstrap_config_version", "selected_profiles",
+        }
+        if set(document) != expected:
+            raise HostedGrantUnavailable("Bootstrap recovery response is invalid")
+        # ClaimSubmission is kept structurally typed here to avoid granting it authority.
+        if (
+            document.get("profile") != BOOTSTRAP_RECOVERY_PROFILE
+            or document.get("status") != "recovered"
+            or document.get("recovery_request_id") != recovery_request_id
+            or document.get("claim_id") != getattr(submission, "claim_id")
+            or document.get("onboarding_transaction_id") != getattr(submission, "onboarding_transaction_id")
+            or document.get("organization_id") != getattr(submission, "organization_id")
+            or document.get("installation_id") != getattr(submission, "installation_id")
+            or document.get("installation_key_id") != key.installation_key_id
+            or document.get("installation_key_jkt") != key.installation_key_jkt
+        ):
+            raise HostedGrantUnavailable("Bootstrap recovery response bindings are invalid")
+        enrolled_text = document.get("enrolled_at")
+        recovered_text = document.get("recovered_at")
+        selected_value = document.get("selected_profiles")
+        grants = document.get("grants")
+        if (
+            not isinstance(enrolled_text, str)
+            or not isinstance(recovered_text, str)
+            or not isinstance(document.get("bootstrap_config_version"), str)
+            or not isinstance(selected_value, list)
+            or not selected_value
+            or len(selected_value) > 16
+            or len(set(selected_value)) != len(selected_value)
+            or not all(isinstance(value, str) for value in selected_value)
+            or not set(selected_value).issubset(supported_profiles)
+            or not isinstance(grants, dict)
+            or set(grants) != set(HOSTED_CLAIM_V2_GRANT_TYPES)
+            or not all(isinstance(grants[name], str) for name in HOSTED_CLAIM_V2_GRANT_TYPES)
+        ):
+            raise HostedGrantUnavailable("Bootstrap recovery response is invalid")
+        enrolled_at = _parse_contract_timestamp(enrolled_text)
+        recovered_at = _parse_contract_timestamp(recovered_text)
+        recorded_enrolled = getattr(submission, "enrolled_at")
+        if recorded_enrolled is not None and recorded_enrolled != enrolled_at:
+            raise HostedGrantUnavailable("Bootstrap recovery enrollment time changed")
+        return (
+            {name: grants[name] for name in HOSTED_CLAIM_V2_GRANT_TYPES},
+            enrolled_at,
+            recovered_at,
+            tuple(selected_value),
+        )
 
     def _verified_reference(
         self,
@@ -1328,6 +1545,12 @@ def _contract_timestamp(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
     )
+
+
+def _parse_contract_timestamp(value: str) -> datetime:
+    if _TIMESTAMP_RE.fullmatch(value) is None:
+        raise ValueError("Contract timestamp is invalid")
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
 def _response_object(response: TransportResponse) -> dict[str, object]:

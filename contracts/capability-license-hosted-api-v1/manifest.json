@@ -1,0 +1,55 @@
+{
+  "additional_governing_adr": "docs/adr/0016-add-non-expiring-capability-license-profile.md",
+  "case_count": 54,
+  "files": [
+    {
+      "path": "activation-positive.json",
+      "sha256": "c62b1a2fc24ffb47978e446a1a28c7378c2723c94e28a3563b40cc9766e23785",
+      "size": 3397
+    },
+    {
+      "path": "reissue-positive-handoff.json",
+      "sha256": "7a1ae89bd266eadd1fdd70245c848643d46e5f555b33bd496d382b9efec4d40e",
+      "size": 6487
+    },
+    {
+      "path": "reissue-positive-finalization.json",
+      "sha256": "a7f1bdb7d3c7dce685d9682ebf1a6b5bccc2fab06b3480b8f8868d3d9b37e5ff",
+      "size": 4895
+    },
+    {
+      "path": "idempotency-replay.json",
+      "sha256": "a33fe525d44af4f6bd66b6d775e6f3b11ead8240295745dc6745e96ecbc8ad06",
+      "size": 2204
+    },
+    {
+      "path": "invalid-request.json",
+      "sha256": "17ba6f5032df5139f19cc228a26c24ba33e24329d0d4c8cb5f3b94eec88aa0b3",
+      "size": 5170
+    },
+    {
+      "path": "activation-exchange-refusal.json",
+      "sha256": "a69a1a971dac84921d6f98409619d25011662679b2f58e187e80d3113ef9e78d",
+      "size": 7916
+    },
+    {
+      "path": "reissue-authorization-refusal.json",
+      "sha256": "272f027aeedcb0c157da53694ab81564048dcfa76e30e3e5c18a3ea1bffae845",
+      "size": 4945
+    },
+    {
+      "path": "reissue-finalization-refusal.json",
+      "sha256": "28f84c8f4dd59da84ec74eab5a65e0516591bff87c113abe9e48d937bbe5ea53",
+      "size": 7029
+    },
+    {
+      "path": "provisioning-quote-exchange.json",
+      "sha256": "750921330a6bf5825d27af562211992f03a1da460bbce8aaad45c134842903c1",
+      "size": 9326
+    }
+  ],
+  "governing_adr": "docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md",
+  "manifest_tool": "tools/build_capability_license_hosted_api_vector_manifest.py",
+  "profile": "urn:bridge-clean:capability-license-hosted-api-vectors:v1",
+  "test_only": true
+}

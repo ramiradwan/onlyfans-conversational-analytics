@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-activation-response.schema.json",
+  "title": "Capability license activation response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "exchange_id",
+    "activation_id",
+    "organization_id",
+    "installation_id",
+    "installation_key_id",
+    "installation_key_jkt",
+    "seat_id",
+    "seat_scope",
+    "capability",
+    "licensed_major_version",
+    "license_id",
+    "issuance_id",
+    "issuance_state",
+    "activated_at",
+    "capability_license"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-activation:v1"
+    },
+    "exchange_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "activation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_key_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+    },
+    "installation_key_jkt": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "seat_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "seat_scope": {
+      "const": "organization-installation-seat"
+    },
+    "capability": {
+      "enum": [
+        "analysis-run"
+      ]
+    },
+    "licensed_major_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "license_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "issuance_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "issuance_state": {
+      "const": "current"
+    },
+    "activated_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "capability_license": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+    }
+  }
+}

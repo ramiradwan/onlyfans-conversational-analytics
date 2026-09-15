@@ -24,6 +24,12 @@ from app.protocol import (
     MAX_SNAPSHOT_FRAME_BYTES,
 )
 from app.persistence.history import InvariantViolation
+from app.security.analysis_authorization import require_current_analysis_run
+from app.security.local_sessions import build_runtime_policy
+from app.security.runtime_policy import (
+    AuthContext,
+    RuntimeAuthorizationDenied,
+)
 from app.utils.logger import logger
 from app.transport.manager import (
     HEARTBEAT_INTERVAL_SECONDS,
@@ -290,7 +296,10 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
         )
         if outcome.canonical_revision is not None:
             transport_manager.schedule_projection(lease.creator_account_id)
-            await _schedule_analytics_rebuild(lease.creator_account_id)
+            await _schedule_analytics_rebuild(
+                lease.creator_account_id,
+                lease.principal_id,
+            )
         return True
 
     if message.type == "config.applied":
@@ -317,10 +326,34 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
     return True
 
 
-async def _schedule_analytics_rebuild(account_id: str) -> None:
-    """Queue a coalesced analytics rebuild after acknowledgement."""
+async def _schedule_analytics_rebuild(
+    account_id: str,
+    principal_id: str,
+) -> None:
+    """Queue new analytics work only under current local commercial authority."""
 
     from app.analytics.runtime import request_projection_rebuild
+
+    try:
+        policy = build_runtime_policy(
+            AuthContext(
+                principal_id=principal_id,
+                creator_account_id=account_id,
+                role="agent",
+            )
+        )
+        require_current_analysis_run(policy)
+    except RuntimeAuthorizationDenied:
+        logger.warning(
+            "[ANALYTICS] post-commit projection rebuild denied: "
+            "analysis_run_not_authorized"
+        )
+        return
+    except Exception:
+        logger.exception(
+            "[ANALYTICS] post-commit authorization evaluation failed"
+        )
+        return
 
     try:
         await request_projection_rebuild(account_id)

@@ -38,7 +38,7 @@ from app.provisioning.app import create_provisioning_app
 from app.provisioning.binding_acquisition import (
     durable_creator_account_binding_acquisition,
 )
-from app.provisioning.claim_package import CLAIM_PACKAGE_PROFILE
+from app.provisioning.claim_package import CLAIM_PACKAGE_PROFILE_V2
 from app.provisioning.claim_submission import durable_claim_submission
 from app.provisioning.completion import (
     durable_authentication_store,
@@ -48,7 +48,12 @@ from app.provisioning.completion import (
 from app.provisioning.creator_association import (
     durable_creator_association_initiation,
 )
-from app.security.hosted_grants import HostedGrantClient, InstallationClaim
+from app.security.hosted_grants import (
+    CLAIM_PROFILE_V2,
+    HostedGrantClient,
+    InstallationClaim,
+    TransportResponse,
+)
 from tests.test_hosted_grants import (
     FakeProofAuthority,
     SignedBundle,
@@ -70,12 +75,31 @@ BIND_PORT = 17871
 # is already in the past when the first verification runs.
 MINTING_BACKDATE_SECONDS = 60
 
+V2_BOOTSTRAP_GRANT_TYPES = ("installation_grant", "membership_snapshot")
+
+
+def v2_claim() -> InstallationClaim:
+    """Promote the shared claim coordinates onto the production v2 profile."""
+
+    legacy = signed_claim()
+    return InstallationClaim(
+        claim_id=legacy.claim_id,
+        claim_secret=legacy.claim_secret,
+        challenge=legacy.challenge,
+        onboarding_transaction_id=legacy.onboarding_transaction_id,
+        organization_id=legacy.organization_id,
+        installation_id=legacy.installation_id,
+        consume_path=legacy.consume_path,
+        claim_profile=CLAIM_PROFILE_V2,
+    )
+
 
 def claim_package(claim: InstallationClaim) -> str:
-    """Encode one claim as the canonical base64url package the page accepts."""
+    """Encode one production-v2 claim as the canonical pasted package."""
 
     document = {
-        "profile": CLAIM_PACKAGE_PROFILE,
+        "profile": CLAIM_PACKAGE_PROFILE_V2,
+        "claim_profile": CLAIM_PROFILE_V2,
         "claim_id": claim.claim_id,
         "claim_secret": claim.claim_secret,
         "challenge": claim.challenge,
@@ -92,6 +116,38 @@ def claim_package(claim: InstallationClaim) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+class V2StoredClaimTransport(StoredClaimTransport):
+    """Adapt the shared hosted fixture to the production v2 bootstrap contract."""
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, object],
+    ) -> TransportResponse:
+        response = super().request(method, path, json_body=json_body)
+        if path != self.claim.consume_path or response.status_code != 200:
+            return response
+        document = json.loads(response.body)
+        document["profile"] = CLAIM_PROFILE_V2
+        document["grants"] = {
+            grant_type: self.bundle.tokens[grant_type]
+            for grant_type in V2_BOOTSTRAP_GRANT_TYPES
+        }
+        return TransportResponse(
+            response.status_code,
+            json.dumps(
+                document,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8"),
+            "application/json",
+        )
 
 
 def activate_minted_installation_key(
@@ -140,7 +196,7 @@ def build_application(
 
     open_store = durable_authentication_store(data_directory)
     activate_minted_installation_key(open_store(), bundle.installation_key)
-    transport = StoredClaimTransport(bundle, claim)
+    transport = V2StoredClaimTransport(bundle, claim)
     proof_authority = FakeProofAuthority(bundle.installation_key)
 
     def hosted_client(store: AuthenticationStore) -> HostedGrantClient:
@@ -190,7 +246,7 @@ def main() -> int:
 
     minted_at = int(datetime.now(timezone.utc).timestamp()) - MINTING_BACKDATE_SECONDS
     bundle = signed_bundle(iat=minted_at)
-    claim = signed_claim()
+    claim = v2_claim()
     application = build_application(
         data_directory=arguments.data_directory,
         extension_id=arguments.extension_id,

@@ -1,0 +1,34 @@
+{
+  "profile": "urn:bridge-clean:capability-license-reissue-package:v1",
+  "governing_adr": "docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md",
+  "messages": {
+    "package": "schemas/commercial/v1/capability-license-reissue-package.schema.json"
+  },
+  "encoding": {
+    "serialization": "compact-json",
+    "member_order": [
+      "profile",
+      "reissue_authorization_profile",
+      "reissue_authorization_id",
+      "organization_id",
+      "prior_license_id",
+      "prior_issuance_id",
+      "replacement_installation_id",
+      "reissue_reason",
+      "proof_profile",
+      "proof_purpose",
+      "finalization_profile",
+      "proof_challenge_path",
+      "finalization_path"
+    ],
+    "text_encoding": "utf-8",
+    "transport_encoding": "base64url-unpadded",
+    "max_encoded_characters": 1400
+  },
+  "security": {
+    "contains_bearer_secret": false,
+    "authorization_reference_is_bearer_credential": false,
+    "replacement_installation_key_required_to_finalize": true,
+    "qr_and_clipboard_bytes_identical": true
+  }
+}

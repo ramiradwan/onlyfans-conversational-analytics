@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-reissue-authorization-request.schema.json",
+  "title": "Capability license replacement reissue customer authorization request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "organization_id",
+    "prior_license_id",
+    "prior_issuance_id",
+    "replacement_installation_id",
+    "customer_step_up_ref",
+    "reissue_reason"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-reissue-authorization:v1"
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "prior_license_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "prior_issuance_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "replacement_installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "customer_step_up_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId",
+      "description": "Opaque reference to fresh server-held capability-license-reissue step-up evidence. The reference is not a bearer credential and is accepted only with the authenticated authorized customer session and exact parameter binding."
+    },
+    "reissue_reason": {
+      "enum": [
+        "replacement-installation",
+        "lost-or-destroyed-installation",
+        "inaccessible-original-hardware"
+      ]
+    }
+  }
+}

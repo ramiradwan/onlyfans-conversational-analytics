@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-activation-package.schema.json",
+  "title": "Capability license activation handoff package v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "exchange_id",
+    "organization_id",
+    "installation_id",
+    "capability",
+    "authority_target",
+    "proof_profile",
+    "proof_purpose",
+    "proof_challenge_path",
+    "activation_path"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-activation-package:v1"
+    },
+    "exchange_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "capability": {
+      "enum": [
+        "analysis-run"
+      ]
+    },
+    "authority_target": {
+      "const": "capability-license"
+    },
+    "proof_profile": {
+      "const": "urn:bridge-clean:capability-license-activation-proof:v1"
+    },
+    "proof_purpose": {
+      "const": "capability-license-activate"
+    },
+    "proof_challenge_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^/v1/installations/[A-Za-z0-9][A-Za-z0-9._~-]{0,127}/capability-license-proof-challenges$"
+    },
+    "activation_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^/v1/capability-license-exchanges/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:activate$"
+    }
+  }
+}

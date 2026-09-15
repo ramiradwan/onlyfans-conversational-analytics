@@ -30,6 +30,8 @@ from app.security.grant_types import (
 from app.security.runtime_policy import (
     AuthContext,
     AuthorizationEpoch,
+    CapabilityLicenseAuthority,
+    IdentityAccountAuthority,
     RevocationObservation,
     RuntimePolicy,
     StaleRuntimePolicyError,
@@ -116,6 +118,37 @@ class VerifiedGrantReference:
     # Equality uses the verified digest; diagnostic field comparisons must not
     # expand the secret bytes either.
     compact_jws: str | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedCapabilityLicenseReference:
+    """Durable verified commercial authority, separate from ADR-0010 grants."""
+
+    reference_id: str
+    license_id: str
+    issuance_id: str
+    object_digest: str
+    compact_jws: str = field(repr=False, compare=False)
+    subject: str
+    organization_id: str
+    installation_id: str
+    installation_key_id: str
+    installation_key_jkt: str
+    seat_id: str
+    seat_scope: str
+    capability: str
+    licensed_major_version: int
+    compatible_artifact_family: str
+    update_rights: bool
+    fallback_major_versions: tuple[int, ...]
+    signer_kid: str
+    verified_at: datetime
+    verification_source: Literal["production", "development", "conformance"]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "fallback_major_versions", tuple(self.fallback_major_versions)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -384,6 +417,8 @@ class ClaimSubmission:
     organization_id: str
     installation_id: str
     submitted_at: datetime
+    claim_profile: str = "urn:bridge-clean:installation-claim:v1"
+    enrolled_at: datetime | None = None
     state: ClaimSubmissionState = ClaimSubmissionState.SUBMITTED
     outcome: str | None = None
     resolved_at: datetime | None = None
@@ -479,6 +514,18 @@ class AuthenticationStore(Protocol):
         self, *, include_revoked: bool = False, limit: int | None = None
     ) -> tuple[VerifiedGrantReference, ...]: ...
 
+    def record_verified_capability_license(
+        self, reference: VerifiedCapabilityLicenseReference
+    ) -> None: ...
+
+    def verified_capability_license(
+        self, reference_id: str
+    ) -> VerifiedCapabilityLicenseReference | None: ...
+
+    def capability_license_by_license_id(
+        self, license_id: str
+    ) -> VerifiedCapabilityLicenseReference | None: ...
+
     def companion_pairing_grants_are_eligible(self, grants: tuple[str, ...]) -> bool: ...
 
     def register_agent_pairing(self, pairing: AgentPairing) -> None: ...
@@ -528,6 +575,13 @@ class AuthenticationStore(Protocol):
         grant_reference_ids: tuple[str, ...],
     ) -> RuntimePolicy: ...
 
+    def build_runtime_policy_with_capability(
+        self,
+        identity: AuthContext,
+        grant_reference_ids: tuple[str, ...],
+        capability_reference_id: str,
+    ) -> RuntimePolicy: ...
+
     def runtime_policy_is_current(self, policy: RuntimePolicy) -> bool: ...
 
     def revoke(self, key: RevocationKey, *, reason: str | None = None) -> int: ...
@@ -569,7 +623,8 @@ class AuthenticationStore(Protocol):
     def record_claim_submission(self, submission: ClaimSubmission) -> None: ...
 
     def resolve_claim_submission(
-        self, claim_id: str, *, outcome: str | None, resolved_at: datetime
+        self, claim_id: str, *, outcome: str | None, resolved_at: datetime,
+        enrolled_at: datetime | None = None,
     ) -> bool: ...
 
     def claim_submission(self, claim_id: str) -> ClaimSubmission | None: ...
@@ -2019,7 +2074,8 @@ class SQLiteAuthenticationStore:
                 connection.execute(
                     """
                     SELECT reference_id, grant_type, creator_account_id,
-                           allowed_creator_account_ids, expires_at
+                           allowed_creator_account_ids, expires_at, organization_id,
+                           installation_id, installation_key_id, installation_key_jkt
                     FROM verified_grant_references
                     WHERE reference_id = ?
                     """,
@@ -2068,13 +2124,106 @@ class SQLiteAuthenticationStore:
                     ),
                 )
             )
+            grant_types = tuple(sorted(str(row["grant_type"]) for row in rows if row))
+            identity_authority: IdentityAccountAuthority | None = None
+            if set(ACCOUNT_AUTHORITY_GRANT_TYPES).issubset(grant_types):
+                authority_rows = [
+                    row
+                    for row in rows
+                    if row is not None
+                    and row["grant_type"] in ACCOUNT_AUTHORITY_GRANT_TYPES
+                ]
+                modern_bindings = all(
+                    row["organization_id"] is not None
+                    and row["installation_key_id"] is not None
+                    and row["installation_key_jkt"] is not None
+                    for row in authority_rows
+                )
+                bindings = {
+                    (
+                        row["organization_id"],
+                        row["installation_id"],
+                        row["installation_key_id"],
+                        row["installation_key_jkt"],
+                    )
+                    for row in authority_rows
+                }
+                if modern_bindings and len(bindings) != 1:
+                    raise AuthenticationStateError(
+                        "Runtime policy identity/account authority bindings are inconsistent"
+                    )
+                if modern_bindings:
+                    organization_id, installation_id, key_id, key_jkt = next(iter(bindings))
+                    identity_authority = IdentityAccountAuthority(
+                        organization_id=str(organization_id),
+                        installation_id=str(installation_id),
+                        installation_key_id=str(key_id),
+                        installation_key_jkt=str(key_jkt),
+                        grant_reference_ids=tuple(
+                            str(row["reference_id"])
+                            for row in rows
+                            if row is not None
+                            and row["grant_type"] in ACCOUNT_AUTHORITY_GRANT_TYPES
+                        ),
+                        grant_types=tuple(
+                            sorted(
+                                str(row["grant_type"])
+                                for row in rows
+                                if row is not None
+                                and row["grant_type"] in ACCOUNT_AUTHORITY_GRANT_TYPES
+                            )
+                        ),
+                    )
             return self._runtime_policy(
                 connection,
                 identity=identity,
                 expires_at=expiry,
                 revocations=revocations,
                 grant_reference_ids=references,
+                identity_authority=identity_authority,
             )
+
+    def build_runtime_policy_with_capability(
+        self,
+        identity: AuthContext,
+        grant_reference_ids: tuple[str, ...],
+        capability_reference_id: str,
+    ) -> RuntimePolicy:
+        policy = self.build_runtime_policy_from_grants(identity, grant_reference_ids)
+        with self.database.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM capability_license_references WHERE reference_id = ?",
+                (capability_reference_id,),
+            ).fetchone()
+            if row is None:
+                raise AuthenticationStateError("CapabilityLicense reference is unavailable")
+            reference = _verified_capability_license_reference(row)
+            if self._authorization_epoch(connection) != policy.authorization_epoch:
+                raise AuthenticationStateError("Runtime policy authority changed during composition")
+        authority = CapabilityLicenseAuthority(
+            reference_id=reference.reference_id,
+            object_digest=reference.object_digest,
+            license_id=reference.license_id,
+            issuance_id=reference.issuance_id,
+            subject=reference.subject,
+            organization_id=reference.organization_id,
+            installation_id=reference.installation_id,
+            installation_key_id=reference.installation_key_id,
+            installation_key_jkt=reference.installation_key_jkt,
+            seat_id=reference.seat_id,
+            seat_scope=reference.seat_scope,
+            capability=reference.capability,
+            licensed_major_version=reference.licensed_major_version,
+            compatible_artifact_family=reference.compatible_artifact_family,
+            update_rights=reference.update_rights,
+            fallback_major_versions=reference.fallback_major_versions,
+            signer_kid=reference.signer_kid,
+        )
+        return replace(
+            policy,
+            signed_object_digests=_unique((*policy.signed_object_digests, reference.object_digest)),
+            commercial_authority=authority,
+        )
 
     def revoke(self, key: RevocationKey, *, reason: str | None = None) -> int:
         with self.database.transaction() as connection:
@@ -2524,6 +2673,90 @@ class SQLiteAuthenticationStore:
                 "Required verified grant reference types are missing"
             )
 
+    def record_verified_capability_license(
+        self, reference: VerifiedCapabilityLicenseReference
+    ) -> None:
+        _validate_capability_license_reference(reference)
+        with self.database.transaction() as connection:
+            existing = connection.execute(
+                "SELECT * FROM capability_license_references WHERE license_id = ?",
+                (reference.license_id,),
+            ).fetchone()
+            if existing is not None:
+                current = _verified_capability_license_reference(existing)
+                if (
+                    current.object_digest != reference.object_digest
+                    or current.compact_jws != reference.compact_jws
+                    or replace(current, verified_at=reference.verified_at)
+                    != replace(reference, verified_at=reference.verified_at)
+                ):
+                    raise AuthenticationStateError(
+                        "CapabilityLicense identifier is already bound to different signed bytes"
+                    )
+                return
+            digest_row = connection.execute(
+                "SELECT license_id FROM capability_license_references WHERE object_digest = ?",
+                (reference.object_digest,),
+            ).fetchone()
+            if digest_row is not None:
+                raise AuthenticationStateError(
+                    "CapabilityLicense signed bytes are already bound to another identifier"
+                )
+            connection.execute(
+                """
+                INSERT INTO capability_license_references (
+                    reference_id, license_id, issuance_id, object_digest, compact_jws,
+                    subject, organization_id, installation_id, installation_key_id,
+                    installation_key_jkt, seat_id, seat_scope, capability,
+                    licensed_major_version, compatible_artifact_family, update_rights,
+                    fallback_major_versions, signer_kid, verified_at, verification_source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    reference.reference_id,
+                    reference.license_id,
+                    reference.issuance_id,
+                    reference.object_digest,
+                    reference.compact_jws,
+                    reference.subject,
+                    reference.organization_id,
+                    reference.installation_id,
+                    reference.installation_key_id,
+                    reference.installation_key_jkt,
+                    reference.seat_id,
+                    reference.seat_scope,
+                    reference.capability,
+                    reference.licensed_major_version,
+                    reference.compatible_artifact_family,
+                    1 if reference.update_rights else 0,
+                    json.dumps(list(reference.fallback_major_versions), separators=(",", ":")),
+                    reference.signer_kid,
+                    _time_text(reference.verified_at),
+                    reference.verification_source,
+                ),
+            )
+            self._increment_authorization_epoch(connection)
+
+    def verified_capability_license(
+        self, reference_id: str
+    ) -> VerifiedCapabilityLicenseReference | None:
+        with self.database.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM capability_license_references WHERE reference_id = ?",
+                (reference_id,),
+            ).fetchone()
+        return None if row is None else _verified_capability_license_reference(row)
+
+    def capability_license_by_license_id(
+        self, license_id: str
+    ) -> VerifiedCapabilityLicenseReference | None:
+        with self.database.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM capability_license_references WHERE license_id = ?",
+                (license_id,),
+            ).fetchone()
+        return None if row is None else _verified_capability_license_reference(row)
+
     def companion_pairing_grants_are_eligible(
         self, grants: tuple[str, ...]
     ) -> bool:
@@ -2627,6 +2860,7 @@ class SQLiteAuthenticationStore:
         revocations: tuple[RevocationObservation, ...] = (),
         grant_reference_ids: tuple[str, ...] = (),
         signed_object_digests: tuple[str, ...] = (),
+        identity_authority: IdentityAccountAuthority | None = None,
     ) -> RuntimePolicy:
         references = _unique(grant_reference_ids)
         grant_digests: list[str] = []
@@ -2650,6 +2884,7 @@ class SQLiteAuthenticationStore:
             signed_object_reference_ids=references,
             expires_at=expires_at,
             revocations=revocations,
+            identity_authority=identity_authority,
         )
 
     def _policy_is_current(
@@ -2976,8 +3211,9 @@ class SQLiteAuthenticationStore:
                     """
                     INSERT INTO provisioning_claim_submissions (
                         claim_id, onboarding_transaction_id, organization_id,
-                        installation_id, state, outcome, submitted_at, resolved_at
-                    ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL)
+                        installation_id, state, outcome, submitted_at, resolved_at,
+                        claim_profile, enrolled_at
+                    ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, ?, NULL)
                     """,
                     (
                         submission.claim_id,
@@ -2986,6 +3222,7 @@ class SQLiteAuthenticationStore:
                         submission.installation_id,
                         ClaimSubmissionState.SUBMITTED.value,
                         _time_text(submission.submitted_at),
+                        submission.claim_profile,
                     ),
                 )
                 self._enqueue_onboarding_progress_in_transaction(
@@ -3018,7 +3255,8 @@ class SQLiteAuthenticationStore:
             )
 
     def resolve_claim_submission(
-        self, claim_id: str, *, outcome: str | None, resolved_at: datetime
+        self, claim_id: str, *, outcome: str | None, resolved_at: datetime,
+        enrolled_at: datetime | None = None,
     ) -> bool:
         """Record what became of one submitted claim.
 
@@ -3029,6 +3267,10 @@ class SQLiteAuthenticationStore:
 
         if outcome is not None and not outcome:
             raise ValueError("Claim submission outcome must not be empty")
+        if enrolled_at is not None:
+            _time_text(enrolled_at)
+        if outcome is not None and enrolled_at is not None:
+            raise ValueError("Refused claim cannot record enrollment time")
         state = (
             ClaimSubmissionState.CONSUMED
             if outcome is None
@@ -3038,13 +3280,15 @@ class SQLiteAuthenticationStore:
             cursor = connection.execute(
                 """
                 UPDATE provisioning_claim_submissions
-                SET state = ?, outcome = ?, resolved_at = ?
+                SET state = ?, outcome = ?, resolved_at = ?,
+                    enrolled_at = COALESCE(enrolled_at, ?)
                 WHERE claim_id = ? AND state <> ?
                 """,
                 (
                     state.value,
                     outcome,
                     _time_text(resolved_at),
+                    None if enrolled_at is None else _time_text(enrolled_at),
                     claim_id,
                     ClaimSubmissionState.CONSUMED.value,
                 ),
@@ -3618,15 +3862,23 @@ def _require_claim_submission(submission: ClaimSubmission) -> None:
         raise ValueError("A newly recorded claim submission must start submitted")
     if submission.outcome is not None or submission.resolved_at is not None:
         raise ValueError("A newly recorded claim submission must not be resolved")
+    if submission.enrolled_at is not None:
+        raise ValueError("A newly recorded claim submission must not be enrolled")
+    if submission.claim_profile not in {
+        "urn:bridge-clean:installation-claim:v1",
+        "urn:bridge-clean:installation-claim:v2",
+    }:
+        raise ValueError("Claim submission profile is invalid")
     _time_text(submission.submitted_at)
 
 
-def _claim_coordinates(submission: ClaimSubmission) -> tuple[str, str, str, str]:
+def _claim_coordinates(submission: ClaimSubmission) -> tuple[str, str, str, str, str]:
     return (
         submission.claim_id,
         submission.onboarding_transaction_id,
         submission.organization_id,
         submission.installation_id,
+        submission.claim_profile,
     )
 
 
@@ -3639,6 +3891,10 @@ def _claim_submission(row: sqlite3.Row) -> ClaimSubmission:
         organization_id=str(row["organization_id"]),
         installation_id=str(row["installation_id"]),
         submitted_at=_parse_time(str(row["submitted_at"])),
+        claim_profile=str(row["claim_profile"]),
+        enrolled_at=(
+            None if row["enrolled_at"] is None else _parse_time(str(row["enrolled_at"]))
+        ),
         state=ClaimSubmissionState(str(row["state"])),
         outcome=None if outcome is None else str(outcome),
         resolved_at=None if resolved is None else _parse_time(str(resolved)),
@@ -3768,6 +4024,85 @@ def _installation_key_reference(row: sqlite3.Row) -> InstallationKeyReference:
         public_key_jwk=str(row["public_key_jwk"]),
         created_at=_parse_time(str(row["created_at"])),
         activated_at=_parse_time(str(row["activated_at"])),
+    )
+
+
+def _validate_capability_license_reference(
+    reference: VerifiedCapabilityLicenseReference,
+) -> None:
+    for name in (
+        "reference_id",
+        "license_id",
+        "issuance_id",
+        "object_digest",
+        "compact_jws",
+        "subject",
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt",
+        "seat_id",
+        "seat_scope",
+        "capability",
+        "compatible_artifact_family",
+        "signer_kid",
+    ):
+        if not getattr(reference, name):
+            raise ValueError(f"CapabilityLicense {name} must not be empty")
+    if _SHA256_TEXT.fullmatch(reference.object_digest) is None:
+        raise ValueError("CapabilityLicense object_digest is invalid")
+    if hashlib.sha256(reference.compact_jws.encode("ascii")).hexdigest() != reference.object_digest:
+        raise ValueError("CapabilityLicense object digest does not match signed bytes")
+    _require_uuid7(reference.license_id, name="license_id")
+    _require_uuid7(reference.issuance_id, name="issuance_id")
+    if reference.capability != "analysis-run":
+        raise ValueError("CapabilityLicense capability is unsupported")
+    if reference.licensed_major_version < 1:
+        raise ValueError("CapabilityLicense licensed major version is invalid")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 1
+        for value in reference.fallback_major_versions
+    ) or len(set(reference.fallback_major_versions)) != len(reference.fallback_major_versions):
+        raise ValueError("CapabilityLicense fallback major versions are invalid")
+    if reference.verification_source not in {"production", "development", "conformance"}:
+        raise ValueError("CapabilityLicense verification source is invalid")
+    _time_text(reference.verified_at)
+
+
+def _verified_capability_license_reference(
+    row: sqlite3.Row,
+) -> VerifiedCapabilityLicenseReference:
+    try:
+        fallback = json.loads(str(row["fallback_major_versions"]))
+    except json.JSONDecodeError as error:
+        raise AuthenticationStateError(
+            "CapabilityLicense fallback versions are invalid"
+        ) from error
+    if not isinstance(fallback, list) or not all(
+        isinstance(value, int) and not isinstance(value, bool) for value in fallback
+    ):
+        raise AuthenticationStateError("CapabilityLicense fallback versions are invalid")
+    return VerifiedCapabilityLicenseReference(
+        reference_id=str(row["reference_id"]),
+        license_id=str(row["license_id"]),
+        issuance_id=str(row["issuance_id"]),
+        object_digest=str(row["object_digest"]),
+        compact_jws=str(row["compact_jws"]),
+        subject=str(row["subject"]),
+        organization_id=str(row["organization_id"]),
+        installation_id=str(row["installation_id"]),
+        installation_key_id=str(row["installation_key_id"]),
+        installation_key_jkt=str(row["installation_key_jkt"]),
+        seat_id=str(row["seat_id"]),
+        seat_scope=str(row["seat_scope"]),
+        capability=str(row["capability"]),
+        licensed_major_version=int(row["licensed_major_version"]),
+        compatible_artifact_family=str(row["compatible_artifact_family"]),
+        update_rights=bool(row["update_rights"]),
+        fallback_major_versions=tuple(fallback),
+        signer_kid=str(row["signer_kid"]),
+        verified_at=_parse_time(str(row["verified_at"])),
+        verification_source=str(row["verification_source"]),  # type: ignore[arg-type]
     )
 
 

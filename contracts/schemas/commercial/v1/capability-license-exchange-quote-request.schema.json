@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-exchange-quote-request.schema.json",
+  "title": "Capability license exchange quote request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "organization_id",
+    "offer_version_id",
+    "installation_id",
+    "capability",
+    "authority_target",
+    "unit_count"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-exchange-quote:v1"
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "offer_version_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "capability": {
+      "enum": [
+        "analysis-run"
+      ]
+    },
+    "authority_target": {
+      "const": "capability-license"
+    },
+    "unit_count": {
+      "const": 1
+    }
+  }
+}

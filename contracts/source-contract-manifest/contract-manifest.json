@@ -1,0 +1,304 @@
+{
+  "files": [
+    {
+      "path": "catalog/contracts.yaml",
+      "sha256": "cf190180c1a0e40de83ab53d26d5705bee2e1f2980cc97604bed2a9f0467947e",
+      "size": 16529
+    },
+    {
+      "path": "openapi/bootstrap-recovery-v2.openapi.yaml",
+      "sha256": "2a05638975b6656bfe48dae7585c188783312cbdd08c9e0315db511cdd5b3afd",
+      "size": 2887
+    },
+    {
+      "path": "openapi/commercial-v1.openapi.yaml",
+      "sha256": "1a887ebfa06c9f6836fd68320fbef0768148bb5e518df02fbb8c725e552e97dd",
+      "size": 12319
+    },
+    {
+      "path": "openapi/provisioning-v1.openapi.yaml",
+      "sha256": "5a0454010e1ac28323819d94b2f5f155eb7ccdb2753514d48491d2ed0fa5b569",
+      "size": 8614
+    },
+    {
+      "path": "openapi/provisioning-v2.openapi.yaml",
+      "sha256": "6ba09b55de1365c566276906d2421cad44e449b18ecf46065c15d14d6f404918",
+      "size": 3638
+    },
+    {
+      "path": "profiles/capability-license-activation-package/v1/profile.json",
+      "sha256": "6185cbb28a4b43463cce981878d3802b9024b3e6e8cbdf703d82625b840d23e4",
+      "size": 823
+    },
+    {
+      "path": "profiles/capability-license-activation-proof/v1/profile.json",
+      "sha256": "8126281da24fbda41eb215ef269963a80a4b9fcf231ad43fd47ebd557048dfda",
+      "size": 2714
+    },
+    {
+      "path": "profiles/capability-license-reissue-authorization/v1/profile.json",
+      "sha256": "1af33eb878b1668b790e0e62018c61d9c74faf0f4cb02530ef544c5508e70f9c",
+      "size": 881
+    },
+    {
+      "path": "profiles/capability-license-reissue-package/v1/profile.json",
+      "sha256": "5100501c86147e39366f5e7de4dd7b7f606ae586f549bfec6bc407380909d948",
+      "size": 1066
+    },
+    {
+      "path": "profiles/companion-pairing/v1/profile.json",
+      "sha256": "d13572d0f7fa0bfbdfdfd7445d35e87f0272070910312dc999cde87bde566388",
+      "size": 5654
+    },
+    {
+      "path": "profiles/installation-claim-package/v2/profile.json",
+      "sha256": "e58782ce0b749bf5ba0efe081a7e731fd4887548d8cf5626bc82df6c7a850c63",
+      "size": 773
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-activation-package.schema.json",
+      "sha256": "be6eb108320710f4e05a64afeb223f84799a1c9062b98a0fdd41ac07dc295d6b",
+      "size": 1743
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-activation-request.schema.json",
+      "sha256": "64629481f212fdce7ed1b20f05898ec97c3914ad0f08d85c7f75dd68172df4d2",
+      "size": 1147
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-activation-response.schema.json",
+      "sha256": "415edaca2c6a34510c4398009470747e05ffd3589eee12aba153cd03dece17fd",
+      "size": 2238
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-exchange-quote-request.schema.json",
+      "sha256": "bc4160056a963378582b5acb21568beced46386a3ffd1567fe235bb0b7264c3f",
+      "size": 1097
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-exchange-quote-response.schema.json",
+      "sha256": "fea14af9f1dfd532538c672993c2d6f03b2e6b9d832275e04a6ce72ec875cdbb",
+      "size": 1935
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-exchange-request.schema.json",
+      "sha256": "0b8e102951358780001cbaa44920b2a5331e4686095289e3b909543cb9a67871",
+      "size": 2042
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-exchange-response.schema.json",
+      "sha256": "76173693f4d03b0dc9208354291babaa26f00589d136037a978d6cfc4ee02e01",
+      "size": 2423
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-proof-challenge-request.schema.json",
+      "sha256": "1169e9476e38b82ffe1de36aaf8ca9f0aa59e568bd57f9ead10bcec92221899b",
+      "size": 1294
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-proof-challenge-response.schema.json",
+      "sha256": "1d69a46f05381434ec5a67f4ba64af477ad951e82ef01ab4aaab5b58ed6b4ae3",
+      "size": 1625
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-reissue-authorization-request.schema.json",
+      "sha256": "651d9981bf455660e639b270f4c8d8b4572228f8418236f5a2600d484341a3bc",
+      "size": 1625
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-reissue-authorization-response.schema.json",
+      "sha256": "69565404aa1494925cba49cfe0d466ada7c5b8a2edfc66d08281df98c1f947d4",
+      "size": 2324
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-reissue-package.schema.json",
+      "sha256": "444d65e02ac520df8ccbfc3698be072d26e97bb655e8aa8a29ce1b18592c1f7d",
+      "size": 2581
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-reissue-request.schema.json",
+      "sha256": "f96b96d5254a62ee8f13337958c9480ea971520b1ad05bfc9ef6cb688bac80ed",
+      "size": 1915
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-reissue-response.schema.json",
+      "sha256": "30b1acb48a0b15c87c5b7ed9b87522623c9fdcc18158b45e7d497c3d708bc121",
+      "size": 4268
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license.schema.json",
+      "sha256": "62ea5ee696e8f238f1676da048fbdaac3d1ab3f65f4ade7ce24fff70d93d7711",
+      "size": 2431
+    },
+    {
+      "path": "schemas/commercial/v1/capability-permit.schema.json",
+      "sha256": "9b0bfee05eb11ed87876a43b6ee88035f67a6f3067254fcc79e23dd5c42b1aa8",
+      "size": 1943
+    },
+    {
+      "path": "schemas/commercial/v1/grant-profile.schema.json",
+      "sha256": "4c6e68f5215c505edca8fd6954a7d19dd2ad81d22c47c2a359b9574e0f19b2f6",
+      "size": 6987
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa",
+      "size": 2321
+    },
+    {
+      "path": "schemas/common/v1/error.schema.json",
+      "sha256": "1f3415a25520b2a516c2735c194af8c08d547384721b00f928c9ab552a28f5a2",
+      "size": 786
+    },
+    {
+      "path": "schemas/local/v1/companion-pairing-confirm.schema.json",
+      "sha256": "1e0151a75cba3951beca60371c6ccabc38ba60cb6ffbd8f7a4259ce2bce08c2b",
+      "size": 618
+    },
+    {
+      "path": "schemas/local/v1/companion-pairing-offer.schema.json",
+      "sha256": "f36f288fa0c0c5368ba8c0e726ae02d55d2de6b508658a0f76bcdd8725673d0c",
+      "size": 1534
+    },
+    {
+      "path": "schemas/local/v1/companion-pairing-request.schema.json",
+      "sha256": "b804343351c171274d855991cc2e8b38de8429433a45bca48592f4eeedf2e78c",
+      "size": 904
+    },
+    {
+      "path": "schemas/local/v1/companion-pairing-result.schema.json",
+      "sha256": "c6d7aeabaf196c4da38313bf6f45febb182131d7e33117debb9f625d97462c93",
+      "size": 677
+    },
+    {
+      "path": "schemas/local/v1/companion-pairing-session-authorization.schema.json",
+      "sha256": "eef0da8194bddf76d8082e21e7ed34246e8301042b748ade6a48e6c4e38350ab",
+      "size": 688
+    },
+    {
+      "path": "schemas/provisioning/v1/bootstrap-recovery-request.schema.json",
+      "sha256": "ad244df9a9684b11b00363c5c96a3dbf18792305205385a9418db10ee3caccb2",
+      "size": 1727
+    },
+    {
+      "path": "schemas/provisioning/v1/bootstrap-recovery-response.schema.json",
+      "sha256": "0bec00a923c4c3620595f04f95fa2e8b54db1dd83feeeff80a59eb5a52b85822",
+      "size": 2471
+    },
+    {
+      "path": "schemas/provisioning/v1/creator-association-request.schema.json",
+      "sha256": "619081e8a5919ae12682ed2ca2a85669d50ab371c7dda58837c2d2a53f909c71",
+      "size": 1457
+    },
+    {
+      "path": "schemas/provisioning/v1/creator-association-status.schema.json",
+      "sha256": "ca9aa2b53c4853a0ad3511184ee55f675acf447f89b53248d00b707959726d57",
+      "size": 1503
+    },
+    {
+      "path": "schemas/provisioning/v1/installation-claim-consume-request.schema.json",
+      "sha256": "a892500176fb814934c00a18fd63cf0011b191bcc0514de37ebd5b3332294583",
+      "size": 2325
+    },
+    {
+      "path": "schemas/provisioning/v1/installation-claim-consume-response.schema.json",
+      "sha256": "c8d3d214d61b455006d02f22514c9118ddad8172057fef458c79a5c0abd036d8",
+      "size": 2028
+    },
+    {
+      "path": "schemas/provisioning/v1/installation-claim-issue-request.schema.json",
+      "sha256": "d33348129ba67c6a9b5cea02ea235447be5190716f9b5eafee9afeecae2c78f1",
+      "size": 654
+    },
+    {
+      "path": "schemas/provisioning/v1/installation-claim-issue-response.schema.json",
+      "sha256": "e358a3b7e2e72f32655bec9b0192a6c41351e83d9411b268da930a353bd13a4c",
+      "size": 1552
+    },
+    {
+      "path": "schemas/provisioning/v1/installation-claim-package.schema.json",
+      "sha256": "55c253b66d43387e3442ccb3e16ecef0a9ad011b7e90aa16b772157091766b95",
+      "size": 1344
+    },
+    {
+      "path": "schemas/provisioning/v1/onboarding-progress-report.schema.json",
+      "sha256": "062a9f277af0c29cdc22a469d2e35d73e306fb3f6dbf6435f942558b75987d65",
+      "size": 1514
+    },
+    {
+      "path": "schemas/provisioning/v1/onboarding-progress-response.schema.json",
+      "sha256": "fc3f762656fbbf605ca96ad4fa7c7401b3aa855194e952010e3b84a2ba2bf452",
+      "size": 764
+    },
+    {
+      "path": "schemas/provisioning/v1/report-proof-challenge.schema.json",
+      "sha256": "96aeefee034ee710d98013b1cb2996ba84e576ec1000e40c5b24d2b28ba5f8f8",
+      "size": 1077
+    },
+    {
+      "path": "schemas/provisioning/v2/bootstrap-recovery-request.schema.json",
+      "sha256": "16df928382997cd214d2a17fcfa0d8e0f619476b4ba05f94bac23ce11215d56a",
+      "size": 1951
+    },
+    {
+      "path": "schemas/provisioning/v2/bootstrap-recovery-response.schema.json",
+      "sha256": "fdfbea911e4d4a54a17612e43d8cb7557ba669f4ac4333dcd6ad7ced04fbbced",
+      "size": 2612
+    },
+    {
+      "path": "schemas/provisioning/v2/installation-claim-consume-request.schema.json",
+      "sha256": "a34b5b57dad9b725ee580f8ae4f8da08bce2afa9ddfe69d9606916e5c2a07ae7",
+      "size": 2721
+    },
+    {
+      "path": "schemas/provisioning/v2/installation-claim-consume-response.schema.json",
+      "sha256": "5b4c8baa69c93a3f5ed6259cd3e50e74bd664c9a2839c366a6b51144e61a7e85",
+      "size": 2075
+    },
+    {
+      "path": "schemas/provisioning/v2/installation-claim-issue-request.schema.json",
+      "sha256": "20504832f583603cac6a20e10a872e0dfc88c74d1a4cdb838d3183b77fa85480",
+      "size": 706
+    },
+    {
+      "path": "schemas/provisioning/v2/installation-claim-issue-response.schema.json",
+      "sha256": "d8049e9629525e5eeb545ee454741c0617a596a81fa57796ef6da95e08e31bea",
+      "size": 1948
+    },
+    {
+      "path": "schemas/provisioning/v2/installation-claim-package.schema.json",
+      "sha256": "889df340036dc96d0642195d2c466d098283a242d9a7ab9554974045fa451482",
+      "size": 1535
+    },
+    {
+      "path": "schemas/releases/v1/release-descriptor.schema.json",
+      "sha256": "648744189191d6fedd2ddcbe8420bea3a712545737c20f43342f0e9108fa33c5",
+      "size": 2520
+    }
+  ],
+  "manifest_version": 1,
+  "profiles": [
+    "urn:bridge-clean:bootstrap-recovery:v1",
+    "urn:bridge-clean:bootstrap-recovery:v2",
+    "urn:bridge-clean:capability-license-activation-package:v1",
+    "urn:bridge-clean:capability-license-activation-proof:v1",
+    "urn:bridge-clean:capability-license-activation:v1",
+    "urn:bridge-clean:capability-license-exchange-quote:v1",
+    "urn:bridge-clean:capability-license-exchange:v1",
+    "urn:bridge-clean:capability-license-reissue-authorization:v1",
+    "urn:bridge-clean:capability-license-reissue-package:v1",
+    "urn:bridge-clean:capability-license-reissue:v1",
+    "urn:bridge-clean:capability-license:v1",
+    "urn:bridge-clean:capability-permit:v1",
+    "urn:bridge-clean:companion-pairing:v1",
+    "urn:bridge-clean:creator-association:v1",
+    "urn:bridge-clean:grant-profile:v1",
+    "urn:bridge-clean:installation-claim-package:v1",
+    "urn:bridge-clean:installation-claim-package:v2",
+    "urn:bridge-clean:installation-claim:v1",
+    "urn:bridge-clean:installation-claim:v2",
+    "urn:bridge-clean:onboarding-progress:v1",
+    "urn:bridge-clean:provisioning-proof:v1",
+    "urn:bridge-clean:release-descriptor:v1"
+  ]
+}

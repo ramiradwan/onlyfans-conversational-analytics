@@ -1,0 +1,10 @@
+{
+  "profile": "urn:bridge-clean:installation-claim-package:v1",
+  "claim_id": "0198a1b2-c3d4-7000-8000-000000000010",
+  "claim_secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "challenge": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+  "onboarding_transaction_id": "onboarding-fixture-claim-package-001",
+  "organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+  "installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+  "consume_path": "/v1/installation-claims/0198a1b2-c3d4-7000-8000-000000000010:consume"
+}

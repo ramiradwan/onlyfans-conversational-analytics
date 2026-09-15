@@ -30,6 +30,12 @@ PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH = (
     "/api/v1/provisioning/creator-association/acquire"
 )
 PROVISIONING_FINALIZE_PATH = "/api/v1/provisioning/finalize"
+PROVISIONING_CAPABILITY_LICENSE_ACTIVATE_PATH = (
+    "/api/v1/provisioning/capability-license/activate"
+)
+PROVISIONING_CAPABILITY_LICENSE_REISSUE_PATH = (
+    "/api/v1/provisioning/capability-license/reissue"
+)
 PROVISIONING_DISCLOSURE_PATH = (
     "/provisioning/creator-platform-data-risk-disclosure.html"
 )
@@ -48,6 +54,17 @@ BoundedIdentifier = Annotated[str, StringConstraints(min_length=1, max_length=20
 # maximum so that an oversized package is refused by the decoder, which reports
 # a nonsecret reason, rather than by request validation.
 BoundedClaimPackage = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
+BoundedCapabilityLicensePackage = Annotated[
+    str, StringConstraints(min_length=1, max_length=1400)
+]
+BoundedSeatIdentifier = Annotated[
+    str,
+    StringConstraints(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$",
+    ),
+]
 
 
 class ClaimSubmissionBody(BaseModel):
@@ -62,6 +79,23 @@ class ClaimSubmission(Protocol):
     """Seam to claim consumption: `None` on success, a nonsecret reason otherwise."""
 
     def __call__(self, *, package: str) -> str | None: ...
+
+
+class CapabilityLicenseDeliveryBody(BaseModel):
+    """Locally selected seat plus one hosted activation/reissue handoff package."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    package: BoundedCapabilityLicensePackage
+    seat_id: BoundedSeatIdentifier
+
+
+class CapabilityLicenseDelivery(Protocol):
+    """Injected seam to the durable CapabilityLicense production composition."""
+
+    def activate(self, *, package: str, seat_id: str) -> object: ...
+
+    def finalize_reissue(self, *, package: str, seat_id: str) -> object: ...
 
 
 class CreatorAssociationBody(BaseModel):
@@ -133,6 +167,7 @@ def create_provisioning_app(
     creator_binding_acquisition: CreatorBindingAcquisition,
     completion_ready: Callable[[], bool],
     finalize_action: FinalizeAction,
+    capability_license_delivery: CapabilityLicenseDelivery | None = None,
     extension_id: str | None = None,
     launcher_handoff_token: str | None = None,
     completion_exit: Callable[[], None] | None = None,
@@ -141,6 +176,7 @@ def create_provisioning_app(
 ) -> FastAPI:
     """Build the isolated provisioning surface without importing runtime modules."""
     sessions = session_manager or ProvisioningSessionManager(launcher_handoff_token)
+
     @asynccontextmanager
     async def lifecycle(application):
         try:
@@ -148,6 +184,7 @@ def create_provisioning_app(
         finally:
             if shutdown_action is not None:
                 await shutdown_action()
+
     application = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifecycle)
 
     def provisioned_extension_id() -> str:
@@ -246,6 +283,76 @@ def create_provisioning_app(
         return JSONResponse(
             {"state": "installation_registered"}, headers={"Cache-Control": "no-store"}
         )
+
+    if capability_license_delivery is not None:
+        async def capability_license_response(
+            request: Request,
+            body: CapabilityLicenseDeliveryBody,
+            *,
+            reissue: bool,
+        ) -> JSONResponse:
+            sessions.require_mutation(request)
+            try:
+                result = await asyncio.wait_for(
+                    run_in_threadpool(
+                        capability_license_delivery.finalize_reissue
+                        if reissue
+                        else capability_license_delivery.activate,
+                        package=body.package.strip(),
+                        seat_id=body.seat_id,
+                    ),
+                    timeout=30.0,
+                )
+            except TimeoutError:
+                result = "hosted_unavailable"
+            if isinstance(result, str):
+                status_code = (
+                    503
+                    if result in {"hosted_origin_unavailable", "hosted_unavailable"}
+                    else 409
+                )
+                return JSONResponse(
+                    {"state": "provisioning_ready", "reason": result},
+                    status_code=status_code,
+                    headers={"Cache-Control": "no-store"},
+                )
+            return JSONResponse(
+                {
+                    "state": "capability_license_active",
+                    "reference_id": result.reference_id,
+                    "license_id": result.license_id,
+                    "issuance_id": result.issuance_id,
+                },
+                headers={"Cache-Control": "no-store"},
+            )
+
+        @application.post(
+            PROVISIONING_CAPABILITY_LICENSE_ACTIVATE_PATH,
+            include_in_schema=False,
+        )
+        async def activate_capability_license(
+            request: Request,
+            body: CapabilityLicenseDeliveryBody,
+        ) -> JSONResponse:
+            return await capability_license_response(
+                request,
+                body,
+                reissue=False,
+            )
+
+        @application.post(
+            PROVISIONING_CAPABILITY_LICENSE_REISSUE_PATH,
+            include_in_schema=False,
+        )
+        async def finalize_capability_license_reissue(
+            request: Request,
+            body: CapabilityLicenseDeliveryBody,
+        ) -> JSONResponse:
+            return await capability_license_response(
+                request,
+                body,
+                reissue=True,
+            )
 
     @application.post(PROVISIONING_CREATOR_ASSOCIATION_PATH, include_in_schema=False)
     async def initiate_creator_association(

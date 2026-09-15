@@ -1,8 +1,30 @@
 {
-  "aggregate_bundle_sha256": "caffb2d2c72bf99fe9c88bcbd56f806eaed6d9c5da509acf8ff9c3adfce90f14",
-  "consumer_pin_version": 2,
+  "aggregate_bundle_sha256": "3c4b0a774e2fe6f3bf878c6e8434bc0e2c712630e7c89951933788d70cf1ed6c",
+  "conformance_manifests": [
+    {
+      "export": "capability-license-v1",
+      "path": "capability-license-v1/manifest.json",
+      "sha256": "c87d4ea9e70a856ab21888ddc048ebada5837713f97e30599af4c66536a2d5d1"
+    },
+    {
+      "export": "installation-claim-package-v1",
+      "path": "installation-claim-package-v1/manifest.json",
+      "sha256": "5bb58f5f2f3938a69d6381efeb38b0e4d6417aece0482ff337dafb8edb08483d"
+    },
+    {
+      "export": "bootstrap-recovery-v2",
+      "path": "bootstrap-recovery-v2/manifest.json",
+      "sha256": "f4205383eee5d5fcf7b6a394fdad3e3cab1a5ccb02ea63dece068a6f02e04596"
+    },
+    {
+      "export": "capability-license-hosted-api-v1",
+      "path": "capability-license-hosted-api-v1/manifest.json",
+      "sha256": "b128955756b737ebfb58896d5fdd0b23430070817da9ab06bb970010aa125f0c"
+    }
+  ],
+  "consumer_pin_version": 3,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "4a88d9acad47d910299b7a10999162dd5ba089d318689e3cdf20209a86eddc44",
+  "contract_manifest_sha256": "6ba604cfa5b85cd75354fe6dd0ab55c89a0adfa005d6d161c659485cbd1d0878",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -11,7 +33,17 @@
     "schemas",
     "onboarding-progress",
     "companion-pairing-v1",
-    "companion-pairing-profile"
+    "companion-pairing-profile",
+    "profiles",
+    "openapi",
+    "catalog",
+    "capability-license-v1",
+    "installation-claim-v1",
+    "installation-claim-package-v1",
+    "installation-key-proof-v1",
+    "bootstrap-recovery-v2",
+    "capability-license-hosted-api-v1",
+    "source-contract-manifest"
   ],
   "generator_versions": [
     {
@@ -27,12 +59,36 @@
       "version": "1.0.0"
     }
   ],
+  "source_commit": "50c08ee8b3f3dbb1364b875e876a32ab7c641f9a",
+  "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
+  "source_contract_manifest_sha256": "d50e961dd421bdb8be4fd8860653c5bd1a8f7759b2fd60ed263b3245aff0fd07",
+  "source_repository": "ramiradwan/creator-platform-contracts",
+  "source_tree": "15b821c361f4bc1077a0e1ef5689f5916ff75f51",
   "supported_profiles": [
-    "urn:bridge-clean:grant-profile:v1",
-    "urn:bridge-clean:capability-permit-v1",
+    "urn:bridge-clean:bootstrap-recovery:v1",
+    "urn:bridge-clean:bootstrap-recovery:v2",
+    "urn:bridge-clean:capability-license-activation-package:v1",
+    "urn:bridge-clean:capability-license-activation-proof:v1",
+    "urn:bridge-clean:capability-license-activation:v1",
+    "urn:bridge-clean:capability-license-exchange-quote:v1",
+    "urn:bridge-clean:capability-license-exchange:v1",
+    "urn:bridge-clean:capability-license-reissue-authorization:v1",
+    "urn:bridge-clean:capability-license-reissue-package:v1",
+    "urn:bridge-clean:capability-license-reissue:v1",
+    "urn:bridge-clean:capability-license:v1",
+    "urn:bridge-clean:capability-permit:v1",
     "urn:bridge-clean:companion-pairing:v1",
-    "urn:bridge-clean:capability-permit-consumption-policy:v1",
-    "urn:bridge-clean:onboarding-progress:v1"
+    "urn:bridge-clean:creator-association:v1",
+    "urn:bridge-clean:grant-profile:v1",
+    "urn:bridge-clean:installation-claim-package:v1",
+    "urn:bridge-clean:installation-claim-package:v2",
+    "urn:bridge-clean:installation-claim:v1",
+    "urn:bridge-clean:installation-claim:v2",
+    "urn:bridge-clean:onboarding-progress:v1",
+    "urn:bridge-clean:provisioning-proof:v1",
+    "urn:bridge-clean:release-descriptor:v1",
+    "urn:bridge-clean:capability-permit-v1",
+    "urn:bridge-clean:capability-permit-consumption-policy:v1"
   ],
   "trust_sets": [
     {

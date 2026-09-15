@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v1/installation-claim-issue-request.schema.json",
+  "title": "Installation claim issue request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "onboarding_transaction_id", "organization_id"],
+  "properties": {
+    "profile": {"const": "urn:bridge-clean:installation-claim:v1"},
+    "onboarding_transaction_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "organization_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"}
+  }
+}
