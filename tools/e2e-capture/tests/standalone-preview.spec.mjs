@@ -186,7 +186,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       await expect(popup.locator('#mode-label')).toHaveText('Analytics off — no OnlyFans access');
       await expect(popup.locator('#messages-count')).toHaveText('0');
       await expect(popup.locator('#chats-count')).toHaveText('0');
-      await expect(popup.locator('#brain-status')).toHaveText('Not detected');
+      await expect(popup.locator('#brain-status')).toHaveText('Not connected');
       const snapshot = await extensionSnapshot(worker);
       expect(snapshot.state.consentMode).toBe('off');
       expect(snapshot.state.capturePhase).toBe('off');
