@@ -96,7 +96,7 @@ export function deriveCustomerJourney({
     });
   }
 
-  if (pairing?.state === 'unavailable') {
+  if (pairing?.state === 'setup_incomplete') {
     return Object.freeze({
       id: CUSTOMER_STATES.SETUP_INCOMPLETE,
       tone: 'warning',
