@@ -41,6 +41,49 @@ def _denied(message: str) -> RuntimeAuthorizationDenied:
     return RuntimeAuthorizationDenied(message)
 
 
+def _bound_capability_reference_ids(
+    store: SQLiteAuthenticationStore,
+    policy: RuntimePolicy,
+) -> tuple[str, ...]:
+    """Return verified local commercial references bound to this runtime.
+
+    Commercial activation is intentionally evaluated separately from whether the
+    locally selected analysis major is currently admissible.  This keeps an
+    accepted commercial authority visible as active even when analysis is
+    independently blocked by version/capability policy.
+    """
+
+    identity_authority = policy.identity_authority
+    if identity_authority is None:
+        raise _denied("Current identity/account authority is required")
+    try:
+        with store.database.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT reference_id
+                FROM capability_license_references
+                WHERE organization_id = ?
+                  AND installation_id = ?
+                  AND installation_key_id = ?
+                  AND installation_key_jkt = ?
+                  AND capability = ?
+                  AND compatible_artifact_family = ?
+                ORDER BY reference_id
+                """,
+                (
+                    identity_authority.organization_id,
+                    identity_authority.installation_id,
+                    identity_authority.installation_key_id,
+                    identity_authority.installation_key_jkt,
+                    _ANALYSIS_CAPABILITY,
+                    _ANALYSIS_ARTIFACT_FAMILY,
+                ),
+            ).fetchall()
+    except Exception as error:
+        raise _denied("CapabilityLicense authority is unavailable") from error
+    return tuple(str(row["reference_id"]) for row in rows)
+
+
 def _matching_capability_reference_ids(
     store: SQLiteAuthenticationStore,
     policy: RuntimePolicy,
@@ -171,6 +214,47 @@ def _current_identity_policy(
     return policy
 
 
+def _current_bound_commercial_policy(
+    store: SQLiteAuthenticationStore,
+    identity: AuthContext,
+    identity_policy: RuntimePolicy,
+) -> RuntimePolicy:
+    """Compose current commercial authority without deciding analysis admission."""
+
+    reference_ids = _bound_capability_reference_ids(store, identity_policy)
+    if not reference_ids:
+        raise _denied("CapabilityLicense authority is required")
+    if len(reference_ids) != 1:
+        raise _denied("CapabilityLicense authority is ambiguous")
+
+    bindings = tuple(
+        binding
+        for binding in store.authorized_account_bindings()
+        if binding.creator_account_id == identity.creator_account_id
+        and binding.revoked_at is None
+    )
+    if len(bindings) != 1:
+        raise _denied("Current identity/account authority is required")
+    binding = bindings[0]
+    try:
+        policy = store.build_runtime_policy_with_capability(
+            identity,
+            tuple(binding.grant_reference_ids),
+            reference_ids[0],
+        )
+    except (AuthenticationStateError, ValueError) as error:
+        raise _denied("CapabilityLicense authority is unavailable") from error
+
+    commercial = policy.commercial_authority
+    if commercial is None or commercial.reference_id != reference_ids[0]:
+        raise _denied("CapabilityLicense authority is unavailable")
+    if _bound_capability_reference_ids(store, policy) != reference_ids:
+        raise _denied("CapabilityLicense authority changed during composition")
+    if not store.runtime_policy_is_current(policy):
+        raise _denied("Runtime policy authority changed during composition")
+    return policy
+
+
 def _current_commercial_policy(
     store: SQLiteAuthenticationStore,
     identity: AuthContext,
@@ -220,14 +304,27 @@ def current_analysis_readiness(
     store: SQLiteAuthenticationStore,
     identity: AuthContext,
 ) -> AnalysisReadiness:
-    """Evaluate licensed readiness without caching or exporting authority material."""
+    """Evaluate commercial activation and analysis admission independently.
+
+    The returned values contain no authority material.  Commercial activation is
+    active only after a verified local CapabilityLicense reference can be
+    reconstructed for the current account/installation/key.  Licensed-analysis
+    admission is then evaluated as a separate predicate for the current Product
+    major and artifact family.
+    """
 
     try:
-        _compose_current_analysis_policy(store, identity)
+        identity_policy = _current_identity_policy(store, identity)
+        _current_bound_commercial_policy(store, identity, identity_policy)
     except RuntimeAuthorizationDenied as error:
         if str(error) == "CapabilityLicense authority is required":
             return AnalysisReadiness("required", "blocked")
         return AnalysisReadiness("unavailable", "blocked")
+
+    try:
+        _current_commercial_policy(store, identity, identity_policy)
+    except RuntimeAuthorizationDenied:
+        return AnalysisReadiness("active", "blocked")
     return AnalysisReadiness("active", "admitted")
 
 
