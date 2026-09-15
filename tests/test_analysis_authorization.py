@@ -266,7 +266,7 @@ def test_policy_composition_fails_closed_for_revoked_account_binding() -> None:
         build_current_analysis_policy(store, IDENTITY)  # type: ignore[arg-type]
 
 
-def test_customer_readiness_reports_activation_required_without_compatible_license() -> None:
+def test_customer_readiness_reports_activation_required_without_local_commercial_authority() -> None:
     store = _Store([])
 
     assert current_analysis_readiness(store, IDENTITY) == AnalysisReadiness(
@@ -274,7 +274,15 @@ def test_customer_readiness_reports_activation_required_without_compatible_licen
     )
 
 
-def test_customer_readiness_reports_active_only_when_analysis_is_admitted() -> None:
+def test_customer_readiness_keeps_activation_active_when_analysis_is_blocked() -> None:
+    store = _Store([_row("caplic.v4", licensed_major_version=4)])
+
+    assert current_analysis_readiness(store, IDENTITY) == AnalysisReadiness(
+        "active", "blocked"
+    )
+
+
+def test_customer_readiness_reports_active_when_analysis_is_admitted() -> None:
     store = _Store([_row("caplic.unique")])
 
     assert current_analysis_readiness(store, IDENTITY) == AnalysisReadiness(
