@@ -15,171 +15,180 @@ Preview remains independent. Full mode continues to fail closed when required de
 
 `Install extension` → `Open popup` → Preview is usable.
 
-Choosing Full saved authorization and opened the local desktop URL. When the desktop app was not installed or not running, the customer reached a browser connection failure with no product-owned next step. If the desktop app was obtained separately, first-run setup started with an “Installation package” field, creator approval failures collapsed into generic refusal copy, and the extension could later present authenticated local delivery as if paid Full analytics were ready.
+Choosing Full could send the customer to an unavailable local page. Desktop first-run setup exposed architecture-oriented steps, intermediate browser state was not resumable, and authenticated local delivery could be presented as if paid Full analysis were ready.
 
 ### Current branch
 
 `Install extension` → `Open popup` → one readiness card explains the current state and next step.
 
-- Preview: the desktop app is not required and no desktop probe is made.
-- Full requested, desktop runtime not reachable: the desktop app is required; the extension does not open a dead localhost page automatically.
-- Returning connected user, desktop app stopped: the saved connection remains and **Retry connection** is offered.
-- Desktop app running but creator context unavailable: the customer is asked to open the creator account before connection controls appear.
-- Connection required: the extension and desktop app are connected through the existing authenticated pairing flow.
-- Connection in progress: both views explain the six-digit comparison.
-- Connection failed/cancelled/timed out: the UI gives a concrete retry path.
-- Authenticated local delivery: the popup says **Desktop connected**. It does not call this paid Full readiness.
-- Commercial authority missing: the popup says **Activate Full analysis**.
-- Commercial authority cannot be confirmed: the popup says **Full activation needs attention** and offers recovery.
-- **Full mode is ready** only when the desktop connection is authenticated, current commercial authority is active, and current licensed-analysis admission is admitted.
+- Preview works without the desktop app and makes no desktop readiness probe.
+- Full requested with no reachable desktop app explains that the desktop app is required rather than opening a dead local page.
+- A previously connected but stopped desktop app has a distinct retry state.
+- Missing signed-in creator context is explained before connection controls are offered.
+- The extension and desktop app use the existing authenticated connection ceremony with a six-digit comparison.
+- Connection cancellation, mismatch, timeout, and status-check failures have explicit recovery.
+- Authenticated local delivery is shown as **Desktop connected**, not as paid Full readiness.
+- Missing commercial authority is shown as **Activate Full analysis**.
+- Commercial authority that cannot be confirmed is shown as **Full activation needs attention**.
+- **Full mode is ready** appears only when secure local delivery is authenticated, current commercial authority is active, and current licensed-analysis admission is admitted.
 
 Desktop first-run setup uses customer language:
 
 `Connect this computer` → `Confirm your creator account` → `Approve your creator account` → `Finish desktop setup`.
 
-The normal desktop settings screen uses the same connection model as the extension: **Connect browser extension** → **Open connection window** → compare the six-digit code → **Confirm connection**. Technical extension identity thumbprints and raw creator account IDs are not presented to the customer.
+A browser or desktop restart now resumes normal durable first-run checkpoints instead of returning the customer to the beginning.
 
-## Implemented extension changes
-
-- Added `extension/runtime/customer-journey.mjs` as the popup-facing readiness model.
-- Added a bounded desktop-runtime reachability probe over the existing local pairing WebSocket origin. It adds no extension permission or authority path.
-- Added a prominent status/next-step card to the popup.
-- Removed automatic localhost navigation after the customer first chooses Full.
-- Preserved the existing Legal-gated Full activation selection and approved Full data-handling disclosure.
-- Added clearer connection comparison, progress, failure and returning-user recovery copy.
-- Added a nonsecret `setup_incomplete` status from the existing signed-in creator-account detection signal.
-- Pairing controls remain hidden until the desktop runtime is reachable and creator context is usable.
-- Kept Preview fully usable without the desktop app and avoided desktop network probes until Full has been selected.
-- Added a customer-safe licensed-readiness query over the already-authenticated companion channel. The extension receives only the closed `ofca-analysis-readiness/v1` enums; it receives no CapabilityLicense bytes, package, grant, license, issuance, seat or reference identifiers.
-- Added separate visible rows for **Secure connection**, **Full activation**, and **Licensed analysis**.
-- Removed transport-authenticated `Full mode is ready` semantics. Transport authentication now means only **Desktop connected**.
-
-## Licensed-readiness authority
+## Truthful Full readiness
 
 Brain evaluates customer readiness from the same current identity/account and CapabilityLicense predicates used by licensed analysis admission.
 
-`app/security/analysis_authorization.py` exposes a read-only status evaluation:
+The closed `ofca-analysis-readiness/v1` status contains only:
 
 - `commercial_authority = required | active | unavailable`
 - `analysis_admission = blocked | admitted`
 
-The evaluation does not cache or create an analysis admission. Actual processing still requires the existing `build_current_analysis_policy` / `require_cached_analysis_run` path.
+The status read does not cache or create analysis admission. Actual processing still requires the existing admitted current policy path. The status travels only through the already-authenticated companion channel after matching Agent/account authentication and exposes no CapabilityLicense bytes, packages, grants, tickets, seat IDs, license IDs, issuance IDs, or reference IDs.
 
-`app/api/endpoints/companion_session.py` exposes that status only as encrypted `agent.analysis.readiness` after Agent authentication and matching creator-account authority. There is no new plaintext/HTTP credential or readiness authority.
+The extension independently validates that closed response and refuses malformed, extended, or impossible combinations such as `admitted` without active commercial authority.
 
-## Implemented desktop onboarding changes
+## Resumable first-run setup
 
-### First run
+Brain now derives a read-only progress state from existing durable provisioning records rather than browser memory:
 
-- Renamed architecture-oriented first-run steps to customer goals.
-- Replaced “Installation package” in visible copy with “Setup code.”
-- Stopped displaying the raw detected creator account identifier while retaining it only for the existing protected backend request.
-- Changed “Acquire association approval” to **Check approval** and explains that approval must be completed in secure setup first.
-- Added explicit recovery copy for approval pending, hosted service unavailable, missing hosted configuration, device protection unavailable, invalid/used setup codes, and expired setup sessions.
-- Clarified completion: the desktop app restarts and the customer returns to the extension.
+- `registration_required`
+- `creator_confirmation_required`
+- `creator_approval_pending`
+- `finalization_ready`
+- `recovery_required`
 
-### Normal connection screen
+The browser restores the appropriate step after reload/restart. Association/account coordinates needed for protected follow-up requests stay hidden from visible copy.
 
-- Renamed the surface from “Pair extension” to **Connect browser extension**.
-- Removed the customer-visible raw creator account ID and extension identity thumbprint.
-- Kept the six-digit comparison code as the customer confirmation signal.
-- Reworded success, timeout, mismatch, cancellation, status-check failure, disconnect, and retry states in plain language.
-- Renamed normal actions without changing their API semantics.
+If a claim submission has an unresolved hosted outcome, or durable state is ambiguous, setup enters **recovery required**. Mutation is disabled and the customer is explicitly told not to reuse the setup code. This avoids spending or replaying one-time setup material merely to reconstruct UI progress.
 
-## Unresolved P0 dependencies
+No schema migration or browser-owned provisioning authority was added.
+
+## Implemented customer-facing changes
+
+### Extension
+
+- Prominent current-state/next-step card.
+- Preview independence preserved.
+- Desktop-required and stopped-desktop recovery states.
+- Setup-incomplete state when creator context is missing.
+- Progressive disclosure of connection controls.
+- Clear six-digit connection comparison and recovery.
+- Separate **Desktop app**, **Secure connection**, **Full activation**, and **Licensed analysis** status rows.
+- Full-ready reserved for licensed readiness, not transport authentication.
+- Accessible focus treatment, forced-colors/reduced-motion support, bounded popup dimensions, and responsive width behavior.
+
+### Desktop first run
+
+- Customer goals instead of architecture terminology.
+- Visible “Setup code” language instead of “Installation package.”
+- No raw creator account identifier in visible copy.
+- Approval pending and hosted/offline failures have specific recovery guidance.
+- Durable resume after registration, account confirmation, and approval.
+- Interrupted/ambiguous claim recovery prevents code replay.
+
+### Normal desktop connection screen
+
+- **Connect browser extension** instead of architecture-heavy pairing language.
+- No raw creator account ID or extension identity thumbprint shown to the customer.
+- Six-digit code is the customer confirmation signal.
+- Customer-language actions for open, confirm, check, disconnect, and refresh.
+
+## Remaining P0 dependencies
 
 These are not bypassed on this branch.
 
-1. **Desktop installer distribution is missing.** No authoritative customer installer/download URL is bound into the Store candidate yet.
-2. **Hosted setup discovery is missing.** The product repository does not contain an authoritative customer entry/handoff into hosted secure onboarding.
-3. **Installation handoff profile compatibility still requires cross-repository closure.** The product must consume the same production profile that hosted onboarding emits; Brain must not weaken its decoder.
-4. **Creator approval continuation is still hosted-plane work.** Brain can represent approval pending, but the customer needs the actual hosted continuation.
-5. **Commercial activation continuation is still missing.** The branch can now truthfully detect `Activation required`, `Activation unavailable`, and `licensed ready`, but there is not yet an in-product customer handoff that completes CapabilityLicense activation/reissue without internal package/seat terminology.
-6. **Intermediate desktop setup is not fully resumable.** Server status still needs nonsecret intermediate progress across browser/Brain restart.
-7. **A customer-recognizable creator label is unavailable.** The current contract provides an internal account identifier, which the UI intentionally does not expose.
-8. **Installed-but-stopped versus not-installed is not trustworthy before a prior connection.** Current wording/retry is used instead of guessing installation presence.
+1. **Authoritative desktop installer distribution.** A Store candidate still needs a release-owned latest-supported desktop installer URL. No production URL is available in this repository today, so none is invented.
+2. **Authoritative hosted onboarding entry.** The desktop app still needs a supported customer handoff into the hosted setup surface rather than documentation or an engineer-provided route.
+3. **Cross-repository installation handoff compatibility.** Hosted onboarding and Brain must emit/accept the same production installation package profile. Brain must not weaken its decoder to hide a mismatch.
+4. **Creator approval continuation.** The desktop UI can represent approval pending and resume it, but the hosted customer surface must provide the actual approval ceremony.
+5. **Commercial activation continuation.** The product can now truthfully detect `Activation required`, `Activation unavailable`, and `licensed ready`, but it still needs a customer-facing hosted activation/reissue continuation that does not expose package/seat terminology.
+6. **Customer-recognizable creator label.** Current contracts expose an internal account coordinate; the UI intentionally hides it. A safe handle/display label is required if customers must distinguish multiple creator accounts visually.
 
-## Tests added / updated
+Installed-versus-stopped before any prior connection remains a lower-priority contract question. Current copy avoids guessing: first-time state says the desktop app is needed; after a saved connection it can truthfully say the desktop app is not running.
 
-### Licensed readiness
+## Tests and evidence
+
+### Readiness authority
 
 `tests/test_analysis_authorization.py`
 
-- activation required without a compatible license;
-- active/admitted only with current compatible commercial authority;
-- ambiguous authority fails to unavailable/blocked;
-- checking readiness does not create cached analysis admission.
+- activation required without compatible commercial authority;
+- active/admitted only with current compatible authority;
+- ambiguous authority fails closed;
+- readiness checks do not create cached analysis admission.
 
 `tests/test_companion_analysis_readiness_rpc.py`
 
-- readiness requires fresh Agent authentication;
-- response contains only closed nonsecret state;
-- cross-account identity is refused.
+- fresh Agent authentication required;
+- only closed nonsecret state returned;
+- cross-account identity refused.
 
 `extension/tests/analysis-readiness-client.test.mjs`
 
-- readiness travels only after the authenticated companion handshake;
+- readiness is queried only after the authenticated companion handshake;
 - malformed, extended, or impossible ready responses fail closed.
 
 `extension/tests/customer-journey.test.mjs`
 
-- authenticated transport alone is never Full-ready;
-- activation-required and activation-unavailable are distinct;
+- transport authentication alone is never Full-ready;
+- activation required/unavailable are distinct;
 - active commercial authority alone does not imply analysis admission;
-- Full-ready requires authenticated delivery + active commercial authority + admitted licensed analysis.
+- Full-ready requires authenticated delivery plus commercial and licensed-analysis readiness.
 
-### Existing journey coverage
+### Provisioning restart/recovery
 
-`extension/tests/companion-customer-status.test.mjs` covers setup-incomplete and Preview independence.
+`tests/test_provisioning_progress.py`
 
-`app/provisioning/provisioning.test.mjs` covers first-run customer-language progression, approval pending, hosted/offline recovery, malformed response fail-closed behavior, and the currently documented resume limitation.
+- registration, creator confirmation, approval pending, and finalization-ready progress;
+- unresolved claims and ambiguous active candidates fail to recovery.
 
-`frontend/tests/CompanionPairingControls.test.tsx` covers customer connection terminology, explicit six-digit confirmation, identity-data non-disclosure, mismatch/cancel/timeout recovery, and status retry.
+`app/provisioning/provisioning-resume.test.mjs`
 
-The Windows browser E2E assertions have been aligned to the reviewed customer copy while retaining their underlying runtime identity, provisioning and authorization assertions.
+- browser restart resumes after registration;
+- approval pending resumes without re-querying or displaying internal IDs;
+- approved setup resumes finalization using hidden durable coordinates;
+- uncertain state disables mutation and says not to reuse the setup code.
 
-## Browser / screenshot evidence
+`tests/test_provisioning_resume_browser_module.py` keeps the resume browser module in ordinary CI while the historical provisioning suite remains intact.
 
-`extension/qualification/customer-journey-visual.spec.mjs` renders the production popup HTML/CSS with deterministic states for:
+### Existing production-shaped browser coverage
 
-1. Preview ready.
-2. Desktop app required.
-3. Creator account/setup incomplete.
-4. Six-digit connection comparison.
-5. Connection failed.
-6. Previously connected desktop app stopped.
-7. Full activation required.
-8. Full activation unavailable.
-9. Full mode ready with licensed analysis admitted.
+The Windows browser E2E assertions were aligned to reviewed customer copy while retaining their underlying authority checks. The provisioning browser scenario still proves configured runtime identity after WebAuthn; Preview still proves no local-service traffic; the Full journey still uses the production-shaped authenticated companion path.
 
-Do not substitute fixture screenshots for final exact-artifact acceptance. The UX pass changes extension bytes, so previous Store ZIP evidence is intentionally invalidated.
+`extension/qualification/customer-journey-visual.spec.mjs` now contains deterministic visual states for Preview, desktop required, setup incomplete, connection compare/failure, stopped desktop, activation required, activation unavailable, and genuinely licensed Full-ready.
+
+Fixture screenshots are not final release evidence. The final Store candidate must generate fresh exact-artifact browser evidence after all remaining P0 dependencies are closed.
 
 ## New-user acceptance checklist
 
 Starting from a clean supported machine and the Chrome Web Store:
 
-- [x] Open the extension and understand Preview without documentation.
-- [x] Use Preview independently of the desktop app.
+- [x] Understand and use Preview without the desktop app.
 - [x] Understand that Full requires the desktop app.
-- [ ] Install the desktop app from an authoritative in-product customer download path. **Blocked: distribution URL.**
+- [ ] Install the latest supported desktop app from an authoritative in-product link. **Blocked: release distribution.**
 - [x] Understand desktop first-run steps without architecture terminology.
-- [ ] Enter hosted secure setup from an authoritative in-product handoff. **Blocked: hosted onboarding entry.**
-- [ ] Complete production installation registration with cross-repository profile compatibility. **Blocked outside this repo.**
+- [x] Resume normal durable first-run checkpoints after browser/desktop restart.
+- [ ] Enter hosted secure setup from an authoritative product handoff. **Blocked: hosted entry.**
+- [ ] Complete installation registration against one compatible production handoff profile. **Blocked cross-repository.**
 - [x] Detect/confirm the signed-in creator account without asking the customer to type an internal ID.
 - [ ] Complete creator approval from the connected hosted customer surface. **Blocked: hosted continuation.**
-- [x] Distinguish secure desktop connection from commercial Full activation and licensed-analysis admission.
-- [ ] Complete commercial activation without package/seat terminology. **Blocked: hosted activation continuation.**
-- [x] Show **Full mode is ready** only when current commercial authority and licensed analysis admission are both confirmed.
-- [x] Recover from connection cancellation, mismatch, timeout, stopped desktop app, and readiness-check failure.
-- [ ] Resume intermediate first-run setup after browser/Brain restart without repeating consumed work. **Blocked: resumable provisioning status.**
+- [x] Distinguish secure desktop connection, Full activation, and licensed-analysis admission.
+- [ ] Complete commercial Full activation without internal package/seat terminology. **Blocked: hosted activation continuation.**
+- [x] Show **Full mode is ready** only when current commercial authority and licensed analysis admission are confirmed.
+- [x] Recover from normal connection and setup failures without generic “Something went wrong” copy.
 - [ ] Prove first licensed analysis from only “Install this extension from the Chrome Web Store.” **Blocked by the remaining external P0s.**
 
 ## Validation status
 
-- Branch is based on `main` at `01461b598aacdcd54d33bb5abc93f687225a4780` and remains isolated on `feat/acceptance-ux-onboarding`.
-- Draft PR #36 is the qualification path; it remains Draft and must not be merged yet.
-- No signed integration commit or final Store package has been created.
+- Active branch remains `feat/acceptance-ux-onboarding`, based on `main@01461b598aacdcd54d33bb5abc93f687225a4780`.
+- Draft PR #36 remains the qualification path and must stay Draft.
+- No signed integration commit has been created.
+- No final Chrome Store package has been frozen.
 
 ## Release position
 
-Do not freeze or submit a new Store ZIP from this branch yet. Truthful paid-readiness semantics are implemented, but the remaining distribution/hosted/resume P0s must be closed and exact-artifact acceptance must pass first.
+Do not freeze or submit a new Store ZIP yet. Truthful paid readiness and normal restart resume are implemented, but release/control-plane handoffs and exact-artifact acceptance remain open.
