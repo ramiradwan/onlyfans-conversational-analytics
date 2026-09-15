@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 
@@ -44,6 +45,24 @@ function portAcceptsConnections(port) {
       socket.destroy();
       resolve(false);
     });
+  });
+}
+
+function brainHealthIsReady() {
+  return new Promise((resolve) => {
+    const request = httpRequest({
+      host: BRAIN_HOST,
+      port: BRAIN_PORT,
+      path: '/health',
+      method: 'GET',
+      headers: { Host: new URL(BRAIN_ORIGIN).host },
+    }, (response) => {
+      response.resume();
+      resolve((response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300);
+    });
+    request.once('error', () => resolve(false));
+    request.setTimeout(500, () => request.destroy());
+    request.end();
   });
 }
 
@@ -142,12 +161,7 @@ export class BrainProcess {
         this.child = null;
         throw new Error(`Brain exited during startup.\n${this.recentOutput()}`);
       }
-      try {
-        const response = await fetch(`${BRAIN_LOOPBACK_URL}/health`, { cache: 'no-store' });
-        if (response.ok) return;
-      } catch {
-        // The listener is not ready yet.
-      }
+      if (await brainHealthIsReady()) return;
       await delay(100);
     }
     await this.stop();

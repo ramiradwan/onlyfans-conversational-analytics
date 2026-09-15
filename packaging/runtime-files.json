@@ -61,7 +61,8 @@
         "0010_companion_grant_retention.sql": "9bcd633c8ddfecf55083b9842242f6f676b563e2fd0bf0c23b253130231d1ca6",
         "0011_companion_pairing_persistence.sql": "bace433fa1b2e8abe7a0e3f6d4869b75fb29b4d7d2c132e8978e9dc2ed57756a",
         "0012_companion_pin_admission.sql": "9ec530acb28dff0005d47d88474a73a64a3786d241955d545901dac2d392f193",
-        "0013_companion_session_credentials.sql": "5ccc23bf5292051034e27b90caa7ae8e8e5e89b77838cfb9b8fd3ae5cb5e663c"
+        "0013_companion_session_credentials.sql": "5ccc23bf5292051034e27b90caa7ae8e8e5e89b77838cfb9b8fd3ae5cb5e663c",
+        "0014_hosted_grant_tombstones.sql": "4a68de7af6668df805b341f967518c8c61a1d9e98c338c073493a58714099d5b"
       }
     },
     {
