@@ -105,7 +105,7 @@ class _MismatchStore:
             reference_id="membership-1",
         )
         self.candidate = SimpleNamespace(
-            association_request_id="association-1",
+            association_request_id="0198a1b2-c3d4-7800-8000-000000000011",
             onboarding_transaction_id="onboarding-1",
             organization_id="organization-1",
             installation_id="installation-1",

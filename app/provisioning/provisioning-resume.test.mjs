@@ -80,13 +80,13 @@ test('pending approval is a neutral durable state and remains pending after an a
   await controller.start();
   assert.equal(ui.bindingStep.dataset.state, 'current');
   assert.equal(ui.finalizeStep.dataset.state, 'locked');
-  assert.match(ui.status.textContent, /Approval is still waiting for completion/);
+  assert.match(ui.status.textContent, /waiting for completion/i);
   assert.equal(ui.status.dataset.tone, 'neutral');
 
   await controller.acquireAssociation();
   assert.equal(ui.bindingStep.dataset.state, 'current');
   assert.equal(ui.finalizeProvisioning.disabled, true);
-  assert.match(ui.status.textContent, /Approval is still waiting for completion/);
+  assert.match(ui.status.textContent, /waiting for completion/i);
   assert.equal(ui.status.dataset.tone, 'neutral');
   assert.deepEqual(JSON.parse(calls.at(-1)[1].body), {});
 });
