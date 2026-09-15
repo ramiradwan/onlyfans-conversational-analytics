@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
+import { LEGAL_ACTIVATION_FLOW_STORAGE_KEY } from '../../../extension/runtime/legal-activation-controller.mjs';
 import {
   PROVISIONING_IDENTITY_STORAGE_KEY,
   PROVISIONING_IDENTITY_STORAGE_SCHEMA,
@@ -30,6 +31,7 @@ import { EXTENSION_DIST, assertBuiltExtension } from '../lib/paths.mjs';
 const IDENTITY_PATH = '/api2/v2/users/me';
 const CHATS_PATH = '/api2/v2/chats';
 const MESSAGES_PATH = `/api2/v2/chats/${SYNTHETIC.chatId}/messages`;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 function localServiceAcceptsConnections() {
   return new Promise((resolve) => {
@@ -127,6 +129,24 @@ function expectEmptyProvisioningIdentitySession(snapshot) {
       contexts: [],
     },
   });
+}
+
+function expectFreshLegalActivationFlow(snapshot, previousTransactionId) {
+  expect(Object.keys(snapshot.local)).toEqual([LEGAL_ACTIVATION_FLOW_STORAGE_KEY]);
+  const flow = snapshot.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY];
+  expect(flow.schema).toBe('ofca-legal-activation-flow/v1');
+  expect(typeof flow.binding_scope).toBe('string');
+  expect(flow.binding_scope.length).toBeGreaterThan(0);
+  expect(flow.terms_reacceptance_required).toBe(false);
+  expect(flow.transaction_id).toMatch(UUID_V4);
+  expect(flow.transaction_id).not.toBe(previousTransactionId);
+  expect(flow.terms_event_id).toBeNull();
+  expect(flow.risk_event_id).toBeNull();
+  expect(flow.stage).toBe('pre_mode');
+  expect(flow.pending_mode).toBeNull();
+  expect(flow.pending_event_type).toBeNull();
+  expect(flow.completed_mode).toBeNull();
+  expect(flow.completed_event_id).toBeNull();
 }
 
 
@@ -252,11 +272,16 @@ test('standalone preview survives pause, deletion, and restart without a local s
         await chrome.storage.local.set({ standalone_e2e_local: true });
         await chrome.storage.session.set({ standalone_e2e_session: true });
       });
-      expect((await extensionSnapshot(worker)).databaseNames).toEqual([
+      const beforeDelete = await extensionSnapshot(worker);
+      expect(beforeDelete.databaseNames).toEqual([
         'ofca_legal_evidence_v1',
         'standalone-e2e-a',
         'standalone-e2e-b',
       ]);
+      const previousFlow = beforeDelete.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY];
+      expect(typeof previousFlow?.terms_event_id).toBe('string');
+      expect(typeof previousFlow?.risk_event_id).toBe('string');
+      expect(typeof previousFlow?.completed_event_id).toBe('string');
 
       popup.once('dialog', (dialog) => dialog.accept());
       await popup.getByRole('button', { name: 'Delete all extension data' }).click();
@@ -268,7 +293,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(deleted.state.preview.message_observations).toBe(0);
       expect(deleted.state.preview.chat_observations).toBe(0);
       expect(deleted.scriptIds).toEqual([]);
-      expect(deleted.local).toEqual({});
+      expectFreshLegalActivationFlow(deleted, previousFlow.transaction_id);
       expect(deleted.session).toEqual({});
       expect(deleted.databaseNames).toEqual([]);
       expectNoOptionalAccess(deleted);

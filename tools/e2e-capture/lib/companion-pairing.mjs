@@ -328,6 +328,7 @@ async function installLegacyBindNoop(worker, accountId) {
  */
 export async function requestAgentPairingTicket(context) {
   const bridge = bridgePage(context);
+  await bridge.reload({ waitUntil: 'domcontentloaded' });
   const config = await servedRuntimeConfig(bridge);
   const worker = activeWorker(context);
   installQualificationTrust(context);

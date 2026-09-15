@@ -185,49 +185,49 @@ jobs:
                   run for run in runs
                   if run.get("name") == "CI" and run.get("head_sha") == sha
               ]
-              last = [
-                  {
-                      "id": run.get("id"),
-                      "status": run.get("status"),
-                      "conclusion": run.get("conclusion"),
-                      "run_attempt": run.get("run_attempt"),
-                  }
-                  for run in matches
-              ]
-              successful = [
-                  run for run in matches
-                  if run.get("status") == "completed"
-                  and run.get("conclusion") == "success"
-              ]
-              if successful:
+              if matches:
                   run = max(
-                      successful,
+                      matches,
                       key=lambda item: (
                           int(item.get("run_number") or 0),
                           int(item.get("run_attempt") or 0),
+                          int(item.get("id") or 0),
                       ),
                   )
-                  payload = {
-                      "schema_version": 1,
-                      "source_commit": sha,
-                      "workflow": run["name"],
-                      "run_id": int(run["id"]),
-                      "run_number": int(run["run_number"]),
-                      "run_attempt": int(run.get("run_attempt") or 1),
-                      "event": run["event"],
-                      "status": run["status"],
-                      "conclusion": run["conclusion"],
-                      "html_url": run["html_url"],
-                  }
-                  (root / "ordinary-ci.json").write_text(
-                      json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
-                      encoding="utf-8",
-                  )
-                  break
+                  last = [{
+                      "id": run.get("id"),
+                      "status": run.get("status"),
+                      "conclusion": run.get("conclusion"),
+                      "run_number": run.get("run_number"),
+                      "run_attempt": run.get("run_attempt"),
+                  }]
+                  if run.get("status") == "completed":
+                      if run.get("conclusion") != "success":
+                          raise SystemExit(
+                              "ordinary CI completed unsuccessfully for exact source commit: "
+                              + json.dumps(last, sort_keys=True)
+                          )
+                      payload = {
+                          "schema_version": 1,
+                          "source_commit": sha,
+                          "workflow": run["name"],
+                          "run_id": int(run["id"]),
+                          "run_number": int(run["run_number"]),
+                          "run_attempt": int(run.get("run_attempt") or 1),
+                          "event": run["event"],
+                          "status": run["status"],
+                          "conclusion": run["conclusion"],
+                          "html_url": run["html_url"],
+                      }
+                      (root / "ordinary-ci.json").write_text(
+                          json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+                          encoding="utf-8",
+                      )
+                      break
               time.sleep(15)
           else:
               raise SystemExit(
-                  "ordinary CI did not complete successfully for exact source commit: "
+                  "ordinary CI did not complete for exact source commit before timeout: "
                   + json.dumps(last, sort_keys=True)
               )
           PY
