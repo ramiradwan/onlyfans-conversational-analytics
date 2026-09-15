@@ -54,7 +54,22 @@
       "id": "desktop.provisioning_required",
       "customer_surface": "brain.provisioning",
       "customer_distinction": "distinct",
+      "resume_source": "durable provisioning status",
+      "resume_supported": true,
+      "resume_stages": [
+        "registration_required",
+        "creator_confirmation_required",
+        "creator_approval_pending",
+        "finalization_ready"
+      ],
       "next": ["installation.handoff_required"]
+    },
+    {
+      "id": "provisioning.recovery_required",
+      "customer_surface": "brain.provisioning",
+      "customer_distinction": "distinct",
+      "trigger": "unresolved or ambiguous durable provisioning state",
+      "recovery": "Do not reuse the setup code. Restart the desktop app and return to setup."
     },
     {
       "id": "installation.handoff_required",
@@ -74,6 +89,7 @@
       "id": "creator.approval_pending",
       "customer_surface": "brain.provisioning",
       "customer_distinction": "distinct",
+      "resumable": true,
       "recovery": "Complete creator approval in secure setup, then choose Check approval.",
       "blocked_by": ["hosted.creator_approval_continuation"]
     },
@@ -191,12 +207,6 @@
       "priority": "P0",
       "owner": "control-plane",
       "description": "Provide a customer-facing commercial activation continuation compatible with Brain production activation."
-    },
-    {
-      "id": "brain.resumable_provisioning_status",
-      "priority": "P0",
-      "owner": "brain",
-      "description": "Persist and expose nonsecret intermediate first-run progress across browser/Brain restart."
     }
   ],
   "evidence": {
@@ -210,7 +220,11 @@
       "tests/test_analysis_authorization.py",
       "tests/test_companion_analysis_readiness_rpc.py"
     ],
-    "brain_first_run_unit": ["app/provisioning/provisioning.test.mjs"],
+    "brain_first_run_unit": [
+      "app/provisioning/provisioning.test.mjs",
+      "app/provisioning/provisioning-resume.test.mjs",
+      "tests/test_provisioning_progress.py"
+    ],
     "brain_connection_unit": ["frontend/tests/CompanionPairingControls.test.tsx"],
     "acceptance_review": ["docs/acceptance-ux-onboarding.md"]
   }
