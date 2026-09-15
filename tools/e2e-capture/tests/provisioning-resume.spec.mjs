@@ -28,6 +28,14 @@ async function installHostedApprovalFixture(context, hostedUrl) {
   });
 }
 
+async function enterProvisioning(page, provisioning) {
+  const code = await provisioning.issueHandoffCode();
+  await page.goto(
+    `${BRAIN_ORIGIN}/provisioning/handoff?code=${encodeURIComponent(code)}`,
+    { waitUntil: 'domcontentloaded' },
+  );
+}
+
 test('first-run setup preserves authoritative creator approval across return and browser restart', async () => {
   test.slow();
   assertBuiltSpa();
@@ -46,11 +54,7 @@ test('first-run setup preserves authoritative creator approval across return and
     });
     await installHostedApprovalFixture(context, descriptor.hosted_onboarding_url);
     page = await context.newPage();
-    const code = await provisioning.issueHandoffCode();
-    await page.goto(
-      `${BRAIN_ORIGIN}/provisioning/handoff?code=${encodeURIComponent(code)}`,
-      { waitUntil: 'domcontentloaded' },
-    );
+    await enterProvisioning(page, provisioning);
 
     await test.step('registration survives browser reload without replaying the setup code', async () => {
       await page.locator('#claim-package').fill(descriptor.claim_package);
@@ -94,14 +98,14 @@ test('first-run setup preserves authoritative creator approval across return and
       await expect(page.locator('#provisioning-status')).toContainText('Approval is still waiting for completion');
     });
 
-    await test.step('pending approval survives closing and reopening the browser profile', async () => {
+    await test.step('pending approval survives browser restart through a fresh secure handoff', async () => {
       await context.close();
       context = await launchProvisioningBrowser(browserProfile, {
         creatorAccountId: descriptor.creator_account_id,
       });
       await installHostedApprovalFixture(context, descriptor.hosted_onboarding_url);
       page = await context.newPage();
-      await page.goto(`${BRAIN_ORIGIN}/provisioning`, { waitUntil: 'domcontentloaded' });
+      await enterProvisioning(page, provisioning);
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#continue-creator-approval')).toBeVisible();
       await expect(page.locator('#acquire-association')).toBeEnabled();
