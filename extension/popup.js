@@ -122,10 +122,16 @@ function renderJourney() {
 
 function renderPairing(value = pairingStatus) {
   pairingStatus = value;
-  show(elements['companion-pairing'], currentStatus?.consent?.mode === 'full');
+  const fullSelected = currentStatus?.consent?.mode === 'full';
   const pending = ['pairing', 'compare'].includes(value.state);
   const paired = value.state === 'paired';
-  show(elements['pair-companion'], !pending && !paired);
+  const failed = value.state === 'pairing_failed';
+  const pairingActionable = desktopRuntimeReachable
+    && !pending
+    && !paired
+    && !['setup_incomplete', 'unavailable'].includes(value.state);
+  show(elements['companion-pairing'], fullSelected && (desktopRuntimeReachable || paired || pending || failed));
+  show(elements['pair-companion'], pairingActionable);
   show(elements['cancel-pairing'], pending);
   show(elements['forget-companion'], paired);
   const code = typeof value.comparison_code === 'string' && /^\d{6}$/u.test(value.comparison_code) ? value.comparison_code : null;
