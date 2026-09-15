@@ -185,7 +185,7 @@ export async function assertFullProminentDisclosure(popup) {
 }
 
 export async function upgradePreviewToFull(context, popup, worker) {
-  await popup.getByRole('button', { name: 'Review Full analytics' }).click();
+  await popup.getByRole('button', { name: 'Activate Full analysis' }).click();
   await assertFullProminentDisclosure(popup);
   await acceptPermissionFor(
     context,
