@@ -75,7 +75,7 @@ function secureExternalUrl(value) {
 function phaseLabel(status) {
   return ({
     off: 'Analytics off',
-    preview: 'Preview ready',
+    preview: 'Activity preview enabled',
     identity: 'Full setup in progress',
     full: status.delivery?.transport_state === 'authenticated' ? 'Full mode ready' : 'Full mode connecting',
     paused: 'Analytics paused',
@@ -91,6 +91,7 @@ function journeyBadge(state) {
     preview_available: 'Preview',
     desktop_app_needed: 'Next step',
     desktop_app_unavailable: 'Needs attention',
+    setup_incomplete: 'Setup needed',
     pairing_required: 'Next step',
     pairing_in_progress: 'Connecting',
     pairing_failed: 'Try again',
@@ -135,7 +136,7 @@ function renderPairing(value = pairingStatus) {
     pairing: 'Connecting… Keep this window open.',
     compare: 'Compare this code with the desktop app. Confirm there only if both codes match.',
     pairing_failed: 'Connection did not complete. Open a new connection window in the desktop app and try again.',
-    unavailable: 'Set up Full analysis and open your creator account before connecting.',
+    unavailable: 'Open your creator account in OnlyFans, then return here to continue.',
   })[value.state] ?? 'Open a connection window in the desktop app, then pair this device.';
   renderJourney();
 }
@@ -351,6 +352,10 @@ async function runJourneyAction(action) {
     await chrome.tabs.create({ url: download });
     return;
   }
+  if (action === 'open_creator_account') {
+    await chrome.tabs.create({ url: 'https://onlyfans.com/' });
+    return;
+  }
   if (action === 'pair') {
     openPairingWindow();
     return;
@@ -363,8 +368,8 @@ async function runJourneyAction(action) {
     await chrome.tabs.create({ url: companionConfig.dashboard_url });
     return;
   }
-  if (action === 'retry_full') {
-    await transition('full');
+  if (action === 'retry_full' && currentStatus?.consent?.mode === 'full') {
+    await transition(currentStatus.consent.mode);
   }
 }
 
