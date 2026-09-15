@@ -13,6 +13,7 @@ import {
   LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE,
   LEGAL_CHOOSE_MODE_MESSAGE_TYPE,
 } from './runtime/legal-activation-controller.mjs';
+import { customerReleaseConfig } from './runtime/customer-release-config.mjs';
 import { requiredOriginsForMode } from './runtime/permission-recovery.mjs';
 import { deriveCustomerJourney, probeDesktopRuntime } from './runtime/customer-journey.mjs';
 import { LOCAL_SERVICE_ORIGIN, assertLocalServiceUrl } from './transport/local-service-endpoints.mjs';
@@ -35,7 +36,7 @@ let companionConfig = {
   dashboard_url: `${LOCAL_SERVICE_ORIGIN}/`,
   history_settings_url: `${LOCAL_SERVICE_ORIGIN}/settings`,
   privacy_policy_url: '',
-  desktop_app_download_url: '',
+  desktop_app_download_url: customerReleaseConfig.desktop_app_download_url,
 };
 let currentStatus = null;
 let legalStatus = null;
@@ -584,7 +585,6 @@ async function loadCompanionConfig() {
     privacy_policy_url: candidate.privacy_policy_url,
     dashboard_url: assertLocalServiceUrl(candidate.dashboard_url).href,
     history_settings_url: assertLocalServiceUrl(candidate.history_settings_url).href,
-    desktop_app_download_url: secureExternalUrl(candidate.desktop_app_download_url) ?? '',
   };
   const privacyUrl = secureExternalUrl(companionConfig.privacy_policy_url);
   if (privacyUrl !== null) {
