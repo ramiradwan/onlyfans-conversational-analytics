@@ -236,10 +236,12 @@ def _stop_brain(process: subprocess.Popen[str]) -> None:
 
 
 def _request(path: str) -> _HttpResponse | None:
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{_BRAIN_PORT}{path}",
+        headers={"Host": f"bridge.localhost:{_BRAIN_PORT}"},
+    )
     try:
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{_BRAIN_PORT}{path}", timeout=1
-        ) as response:
+        with urllib.request.urlopen(request, timeout=1) as response:
             return _HttpResponse(response.status, response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         return _HttpResponse(error.code, error.read().decode("utf-8"))
