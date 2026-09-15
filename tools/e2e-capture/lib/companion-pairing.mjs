@@ -342,7 +342,6 @@ export async function requestAgentPairingTicket(context) {
     await pairingPage.goto(`chrome-extension://${config.EXTENSION_ID}/popup.html#pairing`, {
       waitUntil: 'domcontentloaded',
     });
-    await pairingPage.getByRole('button', { name: 'Connect desktop app' }).click({ timeout: 10_000 });
     const awaiting = await waitForPairingState(
       bridge,
       opened.pairing_id,

@@ -161,6 +161,8 @@ test('standalone preview survives pause, deletion, and restart without a local s
   const pageErrors = [];
   let context = null;
   let localServiceTraffic = null;
+  let deletedLegalTransactionId = null;
+  let freshLegalTransactionId = null;
 
   try {
     context = await launchExtensionBrowser(browserProfile);
@@ -282,6 +284,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(typeof previousFlow?.terms_event_id).toBe('string');
       expect(typeof previousFlow?.risk_event_id).toBe('string');
       expect(typeof previousFlow?.completed_event_id).toBe('string');
+      deletedLegalTransactionId = previousFlow.transaction_id;
 
       popup.once('dialog', (dialog) => dialog.accept());
       await popup.getByRole('button', { name: 'Delete all extension data' }).click();
@@ -293,7 +296,8 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(deleted.state.preview.message_observations).toBe(0);
       expect(deleted.state.preview.chat_observations).toBe(0);
       expect(deleted.scriptIds).toEqual([]);
-      expectFreshLegalActivationFlow(deleted, previousFlow.transaction_id);
+      expectFreshLegalActivationFlow(deleted, deletedLegalTransactionId);
+      freshLegalTransactionId = deleted.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY].transaction_id;
       expect(deleted.session).toEqual({});
       expect(deleted.databaseNames).toEqual([]);
       expectNoOptionalAccess(deleted);
@@ -317,7 +321,9 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(restarted.state.capturePhase).toBe('off');
       expect(restarted.state.runtimeReady).toBe(false);
       expect(restarted.scriptIds).toEqual([]);
-      expect(restarted.local).toEqual({});
+      expectFreshLegalActivationFlow(restarted, deletedLegalTransactionId);
+      expect(restarted.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY].transaction_id)
+        .toBe(freshLegalTransactionId);
       expectEmptyProvisioningIdentitySession(restarted);
       expect(restarted.databaseNames).toEqual([]);
       expectNoOptionalAccess(restarted);
