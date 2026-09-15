@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v2/bootstrap-recovery-response.schema.json",
+  "title": "Bootstrap recovery response v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "status",
+    "recovery_request_id",
+    "claim_id",
+    "onboarding_transaction_id",
+    "organization_id",
+    "installation_id",
+    "installation_key_id",
+    "installation_key_jkt",
+    "enrolled_at",
+    "recovered_at",
+    "grants",
+    "bootstrap_config_version",
+    "selected_profiles"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:bootstrap-recovery:v2"
+    },
+    "status": {
+      "const": "recovered"
+    },
+    "recovery_request_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "claim_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "onboarding_transaction_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_key_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+    },
+    "installation_key_jkt": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "enrolled_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "recovered_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "grants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installation_grant",
+        "membership_snapshot"
+      ],
+      "properties": {
+        "installation_grant": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+        },
+        "membership_snapshot": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+        }
+      }
+    },
+    "bootstrap_config_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._~-]+$"
+    },
+    "selected_profiles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^urn:bridge-clean:[A-Za-z0-9:._~-]+$"
+      }
+    }
+  }
+}

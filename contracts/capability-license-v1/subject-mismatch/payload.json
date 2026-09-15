@@ -1,0 +1,23 @@
+{
+  "aud": "urn:bridge-clean:local-brain:capability-license",
+  "capability": "analysis-run",
+  "compatible_artifact_family": "analysis-artifact",
+  "fallback_major_versions": [
+    2
+  ],
+  "iat": 1784419200,
+  "installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+  "installation_key_id": "ik1.AAAAAAAAAAAAAAAAAAAAAA",
+  "installation_key_jkt": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "iss": "urn:bridge-clean:commercial-control-plane",
+  "issuance_id": "0198a1b2-c3d4-7500-8000-000000000002",
+  "license_id": "0198a1b2-c3d4-7500-8000-000000000001",
+  "license_type": "capability_license",
+  "licensed_major_version": 3,
+  "organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+  "profile": "urn:bridge-clean:capability-license:v1",
+  "seat_id": "0198a1b2-c3d4-7000-8000-000000000003",
+  "seat_scope": "organization-installation-seat",
+  "sub": "organization:0198a1b2-c3d4-7000-8000-000000000001:installation:0198a1b2-c3d4-7000-8000-000000000002:seat:wrong-seat:capability:analysis-run",
+  "update_rights": true
+}

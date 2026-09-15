@@ -84,6 +84,7 @@ def durable_claim_submission(
     ] = installation_proof_authority,
     device_display_name: Callable[[], str] = platform.node,
     trust_set: Mapping[str, object] | None = None,
+    legacy_v1_compatibility: bool = False,
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
 ) -> Callable[..., str | None]:
     """Build the action that consumes one pasted claim into verified grants.
@@ -140,15 +141,18 @@ def durable_claim_submission(
         store.record_claim_submission(
             ClaimSubmission(**coordinates, submitted_at=now())
         )
-        outcome = _hosted_outcome(client, decoded, device)
+        outcome, enrolled_at = _hosted_outcome(client, decoded, device)
         store.resolve_claim_submission(
-            coordinates["claim_id"], outcome=outcome, resolved_at=now()
+            coordinates["claim_id"],
+            outcome=outcome,
+            resolved_at=now(),
+            enrolled_at=enrolled_at,
         )
         return outcome
 
     def submit_claim(*, package: str) -> str | None:
         try:
-            decoded = decode_claim_package(package)
+            decoded = decode_claim_package(package, production=not legacy_v1_compatibility)
         except ClaimPackageError as refusal:
             return refusal.reason
         try:
@@ -163,23 +167,23 @@ def _hosted_outcome(
     client: HostedGrantClient,
     decoded: DecodedClaimPackage,
     device: DeviceMetadata,
-) -> str | None:
-    """Consume one released claim and name the outcome, or None on success.
+) -> tuple[str | None, datetime | None]:
+    """Consume one released claim and return its outcome plus enrollment time.
 
     An exception outside this set leaves the claim record unresolved, which is
     the accurate state: the hosted plane may have consumed the claim.
     """
 
     try:
-        client.consume_claim(decoded.release_claim(), device)
+        consumption = client.consume_claim(decoded.release_claim(), device)
     except InstallationKeyError:
-        return "installation_key_unavailable"
+        return "installation_key_unavailable", None
     except InstallationClaimReplay:
-        return "claim_already_consumed"
+        return "claim_already_consumed", None
     except InstallationClaimRefused:
-        return "claim_refused"
+        return "claim_refused", None
     except GrantVerificationRefused:
-        return "grant_verification_refused"
+        return "grant_verification_refused", None
     except HostedGrantUnavailable:
-        return "hosted_unavailable"
-    return None
+        return "hosted_unavailable", None
+    return None, consumption.enrolled_at

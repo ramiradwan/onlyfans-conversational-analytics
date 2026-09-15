@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Callable, Iterator
 
 from app.persistence.auth import AuthenticationStore, ProvisioningCandidateState, VerifiedGrantReference
+from app.security.grant_types import LICENSE_ENTITLEMENT
 from app.security.hosted_grants import (
     GrantRefresh, HostedGrantClient, HostedTransport, InstallationProofAuthority,
     grant_offline_grace_seconds,
@@ -41,6 +42,7 @@ class GrantRefreshLifecycle:
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         monotonic: Callable[[], float] = time.monotonic,
         jitter: Callable[[], float] = random.random,
+        include_legacy_license_entitlement: bool = True,
     ) -> None:
         self._open_store = open_store
         self._client_factory = client_factory
@@ -52,6 +54,7 @@ class GrantRefreshLifecycle:
         self._generation = 0
         self._worker: threading.Thread | None = None
         self._retries: dict[str, tuple[int, float]] = {}
+        self._include_legacy_license_entitlement = include_legacy_license_entitlement
 
     def lease(self) -> RefreshLease:
         with self._fence:
@@ -78,7 +81,11 @@ class GrantRefreshLifecycle:
             return ()
         selected = tuple(
             grant for grant in grants
-            if grant.installation_key_id == key.installation_key_id
+            if (
+                self._include_legacy_license_entitlement
+                or grant.grant_type != LICENSE_ENTITLEMENT
+            )
+            and grant.installation_key_id == key.installation_key_id
             and grant.installation_key_jkt == key.installation_key_jkt
         )
         identities = {(grant.organization_id, grant.installation_id) for grant in selected}
@@ -233,4 +240,6 @@ def configured_grant_refresh(
             if callable(close):
                 close()
             raise
-    return GrantRefreshLifecycle(open_store, client)
+    return GrantRefreshLifecycle(
+        open_store, client, include_legacy_license_entitlement=False
+    )

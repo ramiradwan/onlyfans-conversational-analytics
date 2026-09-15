@@ -1,0 +1,241 @@
+openapi: 3.1.0
+info:
+  title: Bridge Clean cross-plane provisioning API
+  version: 1.0.0
+  description: >-
+    Additive ADR 0012 provisioning operations. This API cannot carry creator-fan
+    data, local analytics, credentials, commands, logs, or runtime telemetry.
+servers:
+  - url: https://control-plane.example.invalid
+paths:
+  /v1/installations/{installation_id}/proof-challenges:
+    post:
+      operationId: issueProvisioningProofChallenge
+      summary: Issue a short-lived, single-use domain-separated proof challenge.
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [profile, purpose]
+              properties:
+                profile:
+                  const: urn:bridge-clean:provisioning-proof:v1
+                purpose:
+                  enum: [bootstrap-recovery, creator-association-request, creator-association-status, onboarding-progress-report]
+      responses:
+        "201":
+          description: Challenge issued.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v1/report-proof-challenge.schema.json
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/installations/{installation_id}/bootstrap:recover:
+    post:
+      operationId: recoverBootstrap
+      summary: Recover a committed enrollment using a fresh registered-key proof.
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/provisioning/v1/bootstrap-recovery-request.schema.json
+      responses:
+        "200":
+          description: Fresh bootstrap material issued; original enrollment time preserved.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v1/bootstrap-recovery-response.schema.json
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/installations/{installation_id}/creator-associations:
+    post:
+      operationId: requestCreatorAssociation
+      summary: Request customer approval of one detected creator-account association.
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/provisioning/v1/creator-association-request.schema.json
+      responses:
+        "202":
+          description: Association is pending customer action.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v1/creator-association-status.schema.json
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/installations/{installation_id}/creator-associations/{association_request_id}:
+    post:
+      operationId: getCreatorAssociationStatus
+      summary: Read association status through a fresh installation-key proof.
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+        - name: association_request_id
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request, proof]
+              properties:
+                request:
+                  type: object
+                  additionalProperties: false
+                  required: [profile, association_request_id, installation_id]
+                  properties:
+                    profile:
+                      const: urn:bridge-clean:creator-association:v1
+                    association_request_id:
+                      type: string
+                      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                    installation_id:
+                      type: string
+                      pattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+                proof:
+                  $ref: ../schemas/common/v1/definitions.schema.json#/$defs/proof
+      responses:
+        "200":
+          description: Current association status.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v1/creator-association-status.schema.json
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/installations/{installation_id}/onboarding-progress:
+    post:
+      operationId: reportOnboardingProgress
+      summary: Report one of the exhaustive four coarse onboarding milestones.
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/provisioning/v1/onboarding-progress-report.schema.json
+      responses:
+        "200":
+          description: Milestone recorded or recognized as an idempotent duplicate.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v1/onboarding-progress-response.schema.json
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/installation-claims:
+    post:
+      operationId: issueInstallationClaim
+      summary: Issue a single-use installation claim after action-bound step-up.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/provisioning/v1/installation-claim-issue-request.schema.json
+      responses:
+        "201":
+          description: Claim issued. The secret appears in this response only.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v1/installation-claim-issue-response.schema.json
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/installation-claims/{claim_id}:consume:
+    post:
+      operationId: consumeInstallationClaim
+      summary: Consume the claim once and register the installation public key.
+      parameters:
+        - $ref: "#/components/parameters/ClaimId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/provisioning/v1/installation-claim-consume-request.schema.json
+      responses:
+        "200":
+          description: Claim consumed, key registered, grants issued.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/provisioning/v1/installation-claim-consume-response.schema.json
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+components:
+  parameters:
+    ClaimId:
+      name: claim_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    InstallationId:
+      name: installation_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+  responses:
+    Error:
+      description: Closed cross-plane error.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/v1/error.schema.json

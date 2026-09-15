@@ -16,6 +16,10 @@ class ContractsIntegrityError(RuntimeError):
 
 _MANIFEST = "manifest.json"
 _PIN = "consumer-pin.json"
+_APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
+_APPROVED_SOURCE_COMMIT = "50c08ee8b3f3dbb1364b875e876a32ab7c641f9a"
+_APPROVED_SOURCE_TREE = "15b821c361f4bc1077a0e1ef5689f5916ff75f51"
+_APPROVED_SOURCE_MANIFEST_SHA256 = "d50e961dd421bdb8be4fd8860653c5bd1a8f7759b2fd60ed263b3245aff0fd07"
 _MANIFEST_KEYS = {
     "content_digest",
     "export_set",
@@ -33,6 +37,12 @@ _PIN_KEYS = {
     "supported_profiles",
     "trust_sets",
     "vector_manifests",
+    "conformance_manifests",
+    "source_repository",
+    "source_commit",
+    "source_tree",
+    "source_contract_manifest_path",
+    "source_contract_manifest_sha256",
 }
 
 
@@ -163,7 +173,7 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
     contract_root = _contracts_root(root)
     manifest = verify_manifest(contract_root)
     pin = _read_json(contract_root / _PIN)
-    if set(pin) != _PIN_KEYS or pin.get("consumer_pin_version") != 2:
+    if set(pin) != _PIN_KEYS or pin.get("consumer_pin_version") != 3:
         raise ContractsIntegrityError("consumer pin has an invalid envelope")
     manifest_path = contract_root / _MANIFEST
     if pin["contract_manifest_path"] != _MANIFEST or pin["contract_manifest_sha256"] != _sha256(manifest_path):
@@ -176,6 +186,39 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
         raise ContractsIntegrityError("consumer pin does not match aggregate bundle")
     listed = {entry["path"]: entry for entry in manifest["files"]}
     exports = set(manifest["export_set"])
+    if (
+        pin.get("source_repository") != _APPROVED_SOURCE_REPOSITORY
+        or pin.get("source_commit") != _APPROVED_SOURCE_COMMIT
+        or pin.get("source_tree") != _APPROVED_SOURCE_TREE
+        or pin.get("source_contract_manifest_sha256") != _APPROVED_SOURCE_MANIFEST_SHA256
+    ):
+        raise ContractsIntegrityError("consumer pin source provenance drifted")
+    source_manifest_relative = pin.get("source_contract_manifest_path")
+    if not isinstance(source_manifest_relative, str) or not _valid_relative_path(source_manifest_relative):
+        raise ContractsIntegrityError("consumer pin has an invalid source contract manifest path")
+    source_manifest_entry = listed.get(source_manifest_relative)
+    if (
+        source_manifest_entry is None
+        or source_manifest_entry["sha256"] != _APPROVED_SOURCE_MANIFEST_SHA256
+        or _sha256(contract_root / source_manifest_relative) != _APPROVED_SOURCE_MANIFEST_SHA256
+    ):
+        raise ContractsIntegrityError("consumer pin does not match source contract manifest")
+    source_contract_manifest = _read_json(contract_root / source_manifest_relative)
+    if set(source_contract_manifest) != {"files", "manifest_version", "profiles"}:
+        raise ContractsIntegrityError("source contract manifest has an invalid envelope")
+    if source_contract_manifest.get("manifest_version") != 1:
+        raise ContractsIntegrityError("source contract manifest has an invalid version")
+    if source_contract_manifest.get("profiles") + [
+        "urn:bridge-clean:capability-permit-v1",
+        "urn:bridge-clean:capability-permit-consumption-policy:v1",
+    ] != manifest["profiles"]:
+        raise ContractsIntegrityError("source contract manifest profiles do not match product profiles")
+    for source_entry in source_contract_manifest.get("files", []):
+        if not isinstance(source_entry, dict) or set(source_entry) != {"path", "sha256", "size"}:
+            raise ContractsIntegrityError("source contract manifest contains an invalid file entry")
+        product_entry = listed.get(source_entry.get("path"))
+        if product_entry != source_entry:
+            raise ContractsIntegrityError("vendored published contract does not match source manifest")
 
     def verify_artifact_collection(value: Any, label: str) -> dict[str, dict[str, str]]:
         if not isinstance(value, list):
@@ -206,8 +249,32 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
 
     vector_manifests = verify_artifact_collection(pin.get("vector_manifests"), "vector manifests")
     trust_sets = verify_artifact_collection(pin.get("trust_sets"), "trust sets")
+    conformance_manifests = verify_artifact_collection(
+        pin.get("conformance_manifests"), "conformance manifests"
+    )
     if set(vector_manifests) != set(trust_sets):
         raise ContractsIntegrityError("consumer pin artifact exports do not match")
+    for export, item in conformance_manifests.items():
+        vector_manifest = _read_json(contract_root / item["path"])
+        files = vector_manifest.get("files")
+        if not isinstance(files, list):
+            raise ContractsIntegrityError("conformance manifest has an invalid file inventory")
+        for entry in files:
+            if (
+                not isinstance(entry, dict)
+                or set(entry) != {"path", "sha256", "size"}
+                or not isinstance(entry.get("path"), str)
+                or not _valid_relative_path(entry["path"])
+            ):
+                raise ContractsIntegrityError("conformance manifest has an invalid file entry")
+            bundled_path = f"{export}/{entry['path']}"
+            product_entry = listed.get(bundled_path)
+            if product_entry != {
+                "path": bundled_path,
+                "sha256": entry.get("sha256"),
+                "size": entry.get("size"),
+            }:
+                raise ContractsIntegrityError("conformance manifest does not match bundled vectors")
     generator_versions = pin.get("generator_versions")
     if not isinstance(generator_versions, list):
         raise ContractsIntegrityError("consumer pin has invalid generator versions")

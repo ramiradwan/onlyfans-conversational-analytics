@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v1/installation-claim-consume-request.schema.json",
+  "title": "Installation claim consume request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request", "proof"],
+  "properties": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "claim_secret",
+        "onboarding_transaction_id",
+        "organization_id",
+        "installation_id",
+        "installation_key",
+        "device"
+      ],
+      "properties": {
+        "profile": {"const": "urn:bridge-clean:installation-claim:v1"},
+        "claim_secret": {"$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"},
+        "onboarding_transaction_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "organization_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "installation_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "installation_key": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["alg", "kid", "jwk"],
+          "properties": {
+            "alg": {"const": "ES256"},
+            "kid": {"$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"},
+            "jwk": {"$ref": "../../common/v1/definitions.schema.json#/$defs/publicP256Jwk"}
+          }
+        },
+        "device": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "product_version", "display_name"],
+          "properties": {
+            "platform": {"enum": ["windows", "macos", "linux"]},
+            "product_version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$"
+            },
+            "display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]{1,128}$"
+            }
+          }
+        }
+      }
+    },
+    "proof": {"$ref": "../../common/v1/definitions.schema.json#/$defs/proof"}
+  }
+}

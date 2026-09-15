@@ -10,10 +10,17 @@ import sys
 from dataclasses import dataclass
 from typing import Literal
 
-from app.security.hosted_grants import DeviceMetadata, InstallationClaim
+from app.security.hosted_grants import (
+    CLAIM_PROFILE_V1,
+    CLAIM_PROFILE_V2,
+    DeviceMetadata,
+    InstallationClaim,
+)
 
 
-CLAIM_PACKAGE_PROFILE = "urn:bridge-clean:installation-claim-package:v1"
+CLAIM_PACKAGE_PROFILE_V1 = "urn:bridge-clean:installation-claim-package:v1"
+CLAIM_PACKAGE_PROFILE_V2 = "urn:bridge-clean:installation-claim-package:v2"
+CLAIM_PACKAGE_PROFILE = CLAIM_PACKAGE_PROFILE_V1
 
 # The strict document with maximum-length bindings is 771 bytes, or 1028
 # canonical base64url characters.
@@ -28,12 +35,14 @@ _CLAIM_FIELDS = (
     "installation_id",
     "consume_path",
 )
-_PACKAGE_KEYS = frozenset(_CLAIM_FIELDS) | {"profile"}
+_PACKAGE_KEYS_V1 = frozenset(_CLAIM_FIELDS) | {"profile"}
+_PACKAGE_KEYS_V2 = frozenset(_CLAIM_FIELDS) | {"profile", "claim_profile"}
 _DURABLE_COORDINATES = (
     "claim_id",
     "onboarding_transaction_id",
     "organization_id",
     "installation_id",
+    "claim_profile",
 )
 _BASE64URL_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _LOCAL_PLATFORMS = {"win32": "windows", "darwin": "macos", "linux": "linux"}
@@ -64,6 +73,7 @@ class ClaimRecoveryCoordinates:
     onboarding_transaction_id: str
     organization_id: str
     installation_id: str
+    claim_profile: str
 
 
 class DecodedClaimPackage:
@@ -78,6 +88,7 @@ class DecodedClaimPackage:
             onboarding_transaction_id=claim.onboarding_transaction_id,
             organization_id=claim.organization_id,
             installation_id=claim.installation_id,
+            claim_profile=claim.claim_profile,
         )
 
     @property
@@ -89,10 +100,13 @@ class DecodedClaimPackage:
         return self._claim is None
 
     def durable_state(self) -> dict[str, str]:
-        """Serialize exactly the nonsecret recovery coordinates."""
-        return {
-            name: getattr(self._coordinates, name) for name in _DURABLE_COORDINATES
-        }
+        """Serialize nonsecret recovery coordinates; v1 keeps its historical shape."""
+        names = (
+            _DURABLE_COORDINATES
+            if self._coordinates.claim_profile == CLAIM_PROFILE_V2
+            else _DURABLE_COORDINATES[:-1]
+        )
+        return {name: getattr(self._coordinates, name) for name in names}
 
     def release_claim(self) -> InstallationClaim:
         """Hand the claim to consumption once and drop the local reference."""
@@ -116,15 +130,26 @@ class DecodedClaimPackage:
         raise TypeError("Decoded claim packages are not serializable")
 
 
-def decode_claim_package(package: str) -> DecodedClaimPackage:
-    """Decode one pasted package into the existing installation-claim value object."""
+def decode_claim_package(
+    package: str, *, production: bool = False
+) -> DecodedClaimPackage:
+    """Decode v2 production handoff, with v1 accepted only by compatibility callers."""
     if not isinstance(package, str) or not 1 <= len(package) <= MAX_PACKAGE_CHARACTERS:
         raise ClaimPackageError("size")
     document = _decode_document(package)
-    if document.get("profile") != CLAIM_PACKAGE_PROFILE:
+    package_profile = document.get("profile")
+    if production and package_profile != CLAIM_PACKAGE_PROFILE_V2:
         raise ClaimPackageError("profile")
-    if set(document) != _PACKAGE_KEYS:
-        raise ClaimPackageError("schema")
+    if package_profile == CLAIM_PACKAGE_PROFILE_V2:
+        if set(document) != _PACKAGE_KEYS_V2 or document.get("claim_profile") != CLAIM_PROFILE_V2:
+            raise ClaimPackageError("schema")
+        claim_profile = CLAIM_PROFILE_V2
+    elif package_profile == CLAIM_PACKAGE_PROFILE_V1 and not production:
+        if set(document) != _PACKAGE_KEYS_V1:
+            raise ClaimPackageError("schema")
+        claim_profile = CLAIM_PROFILE_V1
+    else:
+        raise ClaimPackageError("profile")
     values: dict[str, str] = {}
     for name in _CLAIM_FIELDS:
         value = document.get(name)
@@ -132,7 +157,7 @@ def decode_claim_package(package: str) -> DecodedClaimPackage:
             raise ClaimPackageError("schema")
         values[name] = value
     try:
-        claim = InstallationClaim(**values)
+        claim = InstallationClaim(**values, claim_profile=claim_profile)
     except (TypeError, ValueError):
         raise ClaimPackageError("schema") from None
     return DecodedClaimPackage(claim)

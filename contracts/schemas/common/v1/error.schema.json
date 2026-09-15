@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/common/v1/error.schema.json",
+  "title": "Closed cross-plane error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "request_id", "code", "detail"],
+  "properties": {
+    "profile": {"const": "urn:bridge-clean:error:v1"},
+    "request_id": {"$ref": "definitions.schema.json#/$defs/uuidV7"},
+    "code": {
+      "enum": [
+        "invalid_request",
+        "unauthorized",
+        "forbidden",
+        "not_found",
+        "conflict",
+        "expired",
+        "unsupported_profile",
+        "security_hold",
+        "temporarily_unavailable"
+      ]
+    },
+    "detail": {"type": "string", "minLength": 1, "maxLength": 256}
+  }
+}

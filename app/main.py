@@ -8,7 +8,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.endpoints import companion_pairing, creator_vault, frontend, history, insights, transport_ws, webauthn
+from app.api.endpoints import (
+    capability_license,
+    companion_pairing,
+    creator_vault,
+    frontend,
+    history,
+    insights,
+    transport_ws,
+    webauthn,
+)
 from app.analytics import runtime as analytics_runtime
 from app.bootstrap import history_source, transport_manager
 from app.core.config import settings
@@ -18,6 +27,9 @@ from app.persistence.auth import InstallationKeyReference, SQLiteAuthenticationS
 from app.security.activation_gate import (
     evaluate_runtime_activation,
     record_activation,
+)
+from app.security.capability_license_composition import (
+    durable_capability_license_delivery,
 )
 from app.security.installation_key import (
     InstallationKeyAuthority,
@@ -34,6 +46,22 @@ logger = logging.getLogger(__name__)
 _installation_key_authority: InstallationKeyAuthority | None = None
 _installation_key_reference: InstallationKeyReference | None = None
 _grant_refresh: GrantRefreshLifecycle | None = None
+
+
+@lru_cache(maxsize=1)
+def _capability_license_store() -> SQLiteAuthenticationStore:
+    return SQLiteAuthenticationStore(settings.auth_database_path)
+
+
+def configure_capability_license_delivery() -> None:
+    """Wire the shipping local CapabilityLicense activation/reissue action."""
+
+    capability_license.configure_capability_license_delivery(
+        durable_capability_license_delivery(
+            _capability_license_store,
+            hosted_origin=os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""),
+        )
+    )
 
 
 def start_grant_refresh() -> None:
@@ -74,6 +102,7 @@ def configure_analytics_runtime():
 
 # Register dependencies before handlers request the default runtime.
 configure_analytics_runtime()
+configure_capability_license_delivery()
 
 
 def initialize_installation_key() -> InstallationKeyReference:
@@ -166,6 +195,7 @@ app.include_router(insights.router)
 app.include_router(webauthn.router)
 app.include_router(creator_vault.router)
 app.include_router(companion_pairing.router)
+app.include_router(capability_license.router)
 
 # -------------------------------------------------
 # Startup & Shutdown events — manage Broadcast lifecycle

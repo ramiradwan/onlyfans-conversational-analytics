@@ -1,0 +1,98 @@
+{
+  "files": [
+    {
+      "path": "extra-issued-at/decoded.json",
+      "sha256": "c33a1cc5ae6191ce14e5199ddca07f0f8c1a9340a648a9c4af8556e7ddc43a11",
+      "size": 573
+    },
+    {
+      "path": "extra-issued-at/expected.json",
+      "sha256": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
+      "size": 51
+    },
+    {
+      "path": "extra-issued-at/package.txt",
+      "sha256": "53d189f52a00206a4dad8e07bcd297ef6fdaa1b9dfe0bd279e55071c7e7e4ed7",
+      "size": 714
+    },
+    {
+      "path": "noncanonical-trailing-bits/decoded.json",
+      "sha256": "415c3c6649a2a2a5a582db0a993d1f8e3fadf69dba6ac694afa565cfe38a2e2b",
+      "size": 530
+    },
+    {
+      "path": "noncanonical-trailing-bits/expected.json",
+      "sha256": "27b96edf0f8e357b4f91aececdff594391eaaa20a35aa029a78da88c0e6dd4be",
+      "size": 59
+    },
+    {
+      "path": "noncanonical-trailing-bits/package.txt",
+      "sha256": "8be7ddb262c2bec88705ad8584866bc54c1b10b3ae4c79cbcef2ccf87efc66c2",
+      "size": 662
+    },
+    {
+      "path": "over-1400/decoded.json",
+      "sha256": "415c3c6649a2a2a5a582db0a993d1f8e3fadf69dba6ac694afa565cfe38a2e2b",
+      "size": 530
+    },
+    {
+      "path": "over-1400/expected.json",
+      "sha256": "c8d6fb408a3e46bbf22359bd0ea1c47322552d3d1ab9187873ac79949eca715d",
+      "size": 53
+    },
+    {
+      "path": "over-1400/package.txt",
+      "sha256": "d10c9b4d6069259a2257df1c031ec059d7904254b85a6435c4330b1babf53f06",
+      "size": 1401
+    },
+    {
+      "path": "padded/decoded.json",
+      "sha256": "415c3c6649a2a2a5a582db0a993d1f8e3fadf69dba6ac694afa565cfe38a2e2b",
+      "size": 530
+    },
+    {
+      "path": "padded/expected.json",
+      "sha256": "8234699cebfacee47e74ebfd5dd88fa88b7d80dec974dca10afb36957a38a284",
+      "size": 54
+    },
+    {
+      "path": "padded/package.txt",
+      "sha256": "8de909069b0e70439c8fe6146da602638f3aa5a1b8b92bed836a1ce95b8f7ccd",
+      "size": 663
+    },
+    {
+      "path": "valid/decoded.json",
+      "sha256": "415c3c6649a2a2a5a582db0a993d1f8e3fadf69dba6ac694afa565cfe38a2e2b",
+      "size": 530
+    },
+    {
+      "path": "valid/expected.json",
+      "sha256": "dfd9af3bf11a1bf83d5ebb81873a8fb2aa1328e5471884ad4ffd07a3779b0686",
+      "size": 44
+    },
+    {
+      "path": "valid/package.txt",
+      "sha256": "da16c25ce4b1beb947dd208f9fe05fe2b2cf2997f7c64dfafb2a69556290de89",
+      "size": 662
+    },
+    {
+      "path": "wrong-profile/decoded.json",
+      "sha256": "52d670fd2bdaf98a50d831a703ffe4eaec2993dfb38a6d50ec70e9cea7a58545",
+      "size": 530
+    },
+    {
+      "path": "wrong-profile/expected.json",
+      "sha256": "b7c4939dd45172327a9d082b2349a861938a33aaebb6b5580932b0351c954b6d",
+      "size": 53
+    },
+    {
+      "path": "wrong-profile/package.txt",
+      "sha256": "6c59b5d164948394b218abe3f8bb545ed526455de55a7877334e14a9ee161fbd",
+      "size": 662
+    }
+  ],
+  "generator": "tools/generate_installation_claim_package_vectors.py",
+  "generator_version": "1.0.0",
+  "profile": "urn:bridge-clean:installation-claim-package:v1",
+  "test_only": true
+}

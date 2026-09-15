@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v1/creator-association-request.schema.json",
+  "title": "Creator association request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request", "proof"],
+  "properties": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "association_request_id",
+        "onboarding_transaction_id",
+        "organization_id",
+        "installation_id",
+        "creator_account_id",
+        "installation_key_id"
+      ],
+      "properties": {
+        "profile": {"const": "urn:bridge-clean:creator-association:v1"},
+        "association_request_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"},
+        "onboarding_transaction_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "organization_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "installation_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "creator_account_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+        "installation_key_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"}
+      }
+    },
+    "proof": {"$ref": "../../common/v1/definitions.schema.json#/$defs/proof"}
+  }
+}

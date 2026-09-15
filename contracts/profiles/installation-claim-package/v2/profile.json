@@ -1,0 +1,28 @@
+{
+  "profile": "urn:bridge-clean:installation-claim-package:v2",
+  "governing_adr": "docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md",
+  "messages": {
+    "package": "schemas/provisioning/v2/installation-claim-package.schema.json"
+  },
+  "encoding": {
+    "serialization": "compact-json",
+    "member_order": [
+      "profile",
+      "claim_profile",
+      "claim_id",
+      "claim_secret",
+      "challenge",
+      "onboarding_transaction_id",
+      "organization_id",
+      "installation_id",
+      "consume_path"
+    ],
+    "text_encoding": "utf-8",
+    "transport_encoding": "base64url-unpadded",
+    "max_encoded_characters": 1400
+  },
+  "security": {
+    "contains_bearer_secret": true,
+    "qr_and_clipboard_bytes_identical": true
+  }
+}

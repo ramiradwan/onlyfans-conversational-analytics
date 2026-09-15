@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-reissue-response.schema.json",
+  "title": "Capability license replacement-installation reissue response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reissue_id",
+    "reissue_authorization_id",
+    "originating_exchange_id",
+    "organization_id",
+    "seat_id",
+    "seat_scope",
+    "capability",
+    "licensed_major_version",
+    "customer_step_up_ref",
+    "decision_audit_ref",
+    "replacement_proof_ref",
+    "reissue_reason",
+    "reissued_at",
+    "prior_issuance",
+    "replacement_issuance",
+    "capability_license"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-reissue:v1"
+    },
+    "reissue_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "reissue_authorization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "originating_exchange_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "organization_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "seat_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "seat_scope": {
+      "const": "organization-installation-seat"
+    },
+    "capability": {
+      "enum": [
+        "analysis-run"
+      ]
+    },
+    "licensed_major_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "customer_step_up_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "decision_audit_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "replacement_proof_ref": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "reissue_reason": {
+      "enum": [
+        "replacement-installation",
+        "lost-or-destroyed-installation",
+        "inaccessible-original-hardware"
+      ]
+    },
+    "reissued_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "prior_issuance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "license_id",
+        "issuance_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt",
+        "state"
+      ],
+      "properties": {
+        "license_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "issuance_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "state": {
+          "const": "superseded"
+        }
+      }
+    },
+    "replacement_issuance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "license_id",
+        "issuance_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt",
+        "state"
+      ],
+      "properties": {
+        "license_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "issuance_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "state": {
+          "const": "current"
+        }
+      }
+    },
+    "capability_license": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+    }
+  }
+}

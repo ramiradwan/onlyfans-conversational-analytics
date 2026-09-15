@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/provisioning/v1/creator-association-status.schema.json",
+  "title": "Creator association status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "association_request_id",
+    "organization_id",
+    "installation_id",
+    "creator_account_id",
+    "status",
+    "updated_at"
+  ],
+  "properties": {
+    "profile": {"const": "urn:bridge-clean:creator-association:v1"},
+    "association_request_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"},
+    "organization_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "installation_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "creator_account_id": {"$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"},
+    "status": {"enum": ["pending", "approved", "rejected", "revoked", "expired"]},
+    "updated_at": {"$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"},
+    "action": {"type": "string", "minLength": 1, "maxLength": 256},
+    "creator_account_binding": {"$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "approved"}}, "required": ["status"]},
+      "then": {"required": ["creator_account_binding"]},
+      "else": {"not": {"required": ["creator_account_binding"]}}
+    }
+  ]
+}

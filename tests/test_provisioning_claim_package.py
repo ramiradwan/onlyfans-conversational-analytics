@@ -82,7 +82,7 @@ def test_valid_package_decodes_into_the_existing_claim_value_object() -> None:
 
 
 def test_unknown_profile_version_is_refused() -> None:
-    package = _encode(_document(profile="urn:bridge-clean:installation-claim-package:v2"))
+    package = _encode(_document(profile="urn:bridge-clean:installation-claim-package:v3"))
 
     with pytest.raises(ClaimPackageError) as refusal:
         decode_claim_package(package)
