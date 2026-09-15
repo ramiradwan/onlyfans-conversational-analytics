@@ -8,7 +8,11 @@ import pytest
 
 from app.persistence.auth import AuthorizedAccountBinding
 from app.security.analysis_authorization import (
+    AnalysisReadiness,
     build_current_analysis_policy,
+    clear_analysis_policies,
+    current_analysis_readiness,
+    require_cached_analysis_run,
     require_current_analysis_run,
 )
 from app.security.grant_types import ACCOUNT_AUTHORITY_GRANT_TYPES
@@ -260,3 +264,38 @@ def test_policy_composition_fails_closed_for_revoked_account_binding() -> None:
 
     with pytest.raises(RuntimeAuthorizationDenied, match="identity/account"):
         build_current_analysis_policy(store, IDENTITY)  # type: ignore[arg-type]
+
+
+def test_customer_readiness_reports_activation_required_without_compatible_license() -> None:
+    store = _Store([])
+
+    assert current_analysis_readiness(store, IDENTITY) == AnalysisReadiness(
+        "required", "blocked"
+    )
+
+
+def test_customer_readiness_reports_active_only_when_analysis_is_admitted() -> None:
+    store = _Store([_row("caplic.unique")])
+
+    assert current_analysis_readiness(store, IDENTITY) == AnalysisReadiness(
+        "active", "admitted"
+    )
+
+
+def test_customer_readiness_fails_closed_on_ambiguous_commercial_authority() -> None:
+    store = _Store([_row("caplic.one"), _row("caplic.two")])
+
+    assert current_analysis_readiness(store, IDENTITY) == AnalysisReadiness(
+        "unavailable", "blocked"
+    )
+
+
+def test_customer_readiness_does_not_create_analysis_admission() -> None:
+    clear_analysis_policies()
+    store = _Store([_row("caplic.unique")])
+    try:
+        assert current_analysis_readiness(store, IDENTITY).analysis_admission == "admitted"
+        with pytest.raises(RuntimeAuthorizationDenied, match="Current analysis admission"):
+            require_cached_analysis_run(store, IDENTITY.creator_account_id)  # type: ignore[arg-type]
+    finally:
+        clear_analysis_policies()
