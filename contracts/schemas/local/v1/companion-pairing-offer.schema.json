@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/local/v1/companion-pairing-offer.schema.json",
+  "title": "Companion pairing offer v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "pairing_id",
+    "generation",
+    "creator_account_id",
+    "brain_noise_key",
+    "brain_nonce",
+    "installation_jwk",
+    "installation_grant",
+    "creator_account_binding",
+    "brain_proof"
+  ],
+  "properties": {
+    "type": {
+      "const": "pair.offer"
+    },
+    "pairing_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "creator_account_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "brain_noise_key": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "brain_nonce": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "installation_jwk": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/publicP256Jwk"
+    },
+    "installation_grant": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+    },
+    "creator_account_binding": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+    },
+    "brain_proof": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url64"
+    }
+  }
+}

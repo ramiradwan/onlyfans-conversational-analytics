@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/local/v1/companion-pairing-result.schema.json",
+  "title": "Companion pairing result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "pairing_id",
+    "outcome"
+  ],
+  "properties": {
+    "type": {
+      "const": "pair.result"
+    },
+    "pairing_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "outcome": {
+      "type": "string",
+      "maxLength": 9,
+      "enum": [
+        "confirmed",
+        "declined",
+        "expired",
+        "cancelled"
+      ]
+    }
+  }
+}

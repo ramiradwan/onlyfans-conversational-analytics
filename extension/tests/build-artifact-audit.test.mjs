@@ -95,6 +95,10 @@ test('read-only module graph excludes full command and protocol modules', () => 
   ];
   assert.deepEqual(auditReadOnlyModuleGraph(allowed), [...allowed].sort());
   for (const forbidden of [
+    'transport/chrome-adapter-core.mjs',
+    'transport/read-only-chrome-adapter.mjs',
+    'transport/read-only-config-http-adapter.mjs',
+    'transport/secure-local-fetch.mjs',
     'background.js',
     'protocol/index.mjs',
     'protocol/validation.mjs',

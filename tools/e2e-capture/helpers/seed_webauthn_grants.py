@@ -9,7 +9,6 @@ authorizes no account, which is a valid state that holds no configuration.
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
 import sys
@@ -19,7 +18,8 @@ from uuid import uuid4
 
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(PRODUCT_ROOT))
+HELPER_ROOT = Path(__file__).resolve().parent
+sys.path[:0] = [str(PRODUCT_ROOT), str(HELPER_ROOT)]
 
 from app.persistence.auth import (
     AuthorizedAccountBinding,
@@ -37,13 +37,16 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
 )
+from pairing_fixture import sign_pairing_grant, synthetic_installation_key_material
 
 
 ACCOUNT_ID = "dev-creator-account"
 INSTALLATION_ID = "e2e-temporary-installation"
 ORGANIZATION_ID = "e2e-organization"
 ASSOCIATION_REQUEST_ID = "e2e-association-request"
-PLATFORM_CREATOR_ID = "e2e-platform-creator"
+# Production finalization derives the local platform identity from the signed
+# creator account and deliberately ignores a client-reported platform value.
+PLATFORM_CREATOR_ID = ACCOUNT_ID
 
 SYNTHETIC_KEY_PROVIDER_NAME = "E2E Synthetic Installation Key Provider"
 SYNTHETIC_KEY_NAME = "e2e-temporary-installation-key"
@@ -63,19 +66,39 @@ def _grant(
     now = datetime.now(timezone.utc)
     account_id = ACCOUNT_ID
     reference_id = f"e2e-{grant_type}{reference_suffix}"
+    compact_jws = None
+    grant_identifier = f"{reference_id}-identifier"
+    grant_digest = hashlib.sha256(reference_id.encode("utf-8")).hexdigest()
+    valid_from = now - timedelta(minutes=1)
+    expires_at = now + timedelta(hours=1)
+    if grant_type in {"installation_grant", "creator_account_binding"}:
+        issued_at = int(now.timestamp()) - 30
+        compact_jws, grant_identifier, expires = sign_pairing_grant(
+            grant_type,
+            organization_id=ORGANIZATION_ID,
+            installation_id=INSTALLATION_ID,
+            installation_key_id=installation_key_id,
+            installation_key_jkt=installation_key_jkt,
+            creator_account_id=(account_id if grant_type == "creator_account_binding" else None),
+            issued_at=issued_at,
+            unique_suffix=("1" if reference_suffix else "0"),
+        )
+        grant_digest = hashlib.sha256(compact_jws.encode("ascii")).hexdigest()
+        valid_from = datetime.fromtimestamp(issued_at, timezone.utc)
+        expires_at = datetime.fromtimestamp(expires, timezone.utc)
     return VerifiedGrantReference(
         reference_id=reference_id,
-        grant_identifier=f"{reference_id}-identifier",
+        grant_identifier=grant_identifier,
         grant_type=grant_type,
-        grant_digest=hashlib.sha256(reference_id.encode("utf-8")).hexdigest(),
+        grant_digest=grant_digest,
         issuer="https://e2e.invalid/verified-grant-store",
         subject="e2e-local-principal",
         installation_id=INSTALLATION_ID,
         creator_account_id=(
             account_id if grant_type == "creator_account_binding" else None
         ),
-        valid_from=now - timedelta(minutes=1),
-        expires_at=now + timedelta(hours=1),
+        valid_from=valid_from,
+        expires_at=expires_at,
         verified_at=now,
         organization_id=ORGANIZATION_ID,
         installation_key_id=installation_key_id,
@@ -87,6 +110,7 @@ def _grant(
         membership_roles=(
             ("owner",) if grant_type == "membership_snapshot" else None
         ),
+        compact_jws=compact_jws,
     )
 
 
@@ -150,22 +174,9 @@ def _real_key_provider_available() -> bool:
 
 
 def _synthetic_installation_key_material(installation_key_id: str) -> tuple[str, str]:
-    """Return a syntactically valid (jkt, public_key_jwk) pair backed by no real key.
+    """Return a reconstructable P-256 public reference backed only by E2E code."""
 
-    Nothing on this harness path re-derives or cryptographically verifies the
-    thumbprint; ``app.persistence.auth``'s validators only require every field
-    to be non-empty and the two values to be recorded together.
-    """
-
-    digest = hashlib.sha256(installation_key_id.encode("utf-8")).digest()
-    half = len(digest) // 2
-    x = base64.urlsafe_b64encode(digest[:half]).rstrip(b"=").decode("ascii")
-    y = base64.urlsafe_b64encode(digest[half:]).rstrip(b"=").decode("ascii")
-    jwk = json.dumps({"crv": "P-256", "kty": "EC", "x": x, "y": y}, sort_keys=True)
-    jkt = base64.urlsafe_b64encode(
-        hashlib.sha256(jwk.encode("utf-8")).digest()
-    ).rstrip(b"=").decode("ascii")
-    return jkt, jwk
+    return synthetic_installation_key_material(installation_key_id)
 
 
 def _release_unusable_platform_reservation(
@@ -259,8 +270,6 @@ def _ensure_installation_key_active(
             "Installation key reservation is held by "
             f"{reserved.provider_name}, not the e2e synthetic provider"
         )
-    # Activation is bound to the reservation the store kept, whose creation
-    # instant is its own, so the reference restates it rather than this run's.
     store.activate_installation_key(
         InstallationKeyReference(
             provider_name=reserved.provider_name,
@@ -285,7 +294,6 @@ def main() -> int:
     store = SQLiteAuthenticationStore(arguments.auth_database)
     key = _ensure_installation_key_active(store)
     if key is None:
-        # A usable provider is the only reason seeding is refused.
         raise RuntimeError(
             "Temporary installation key is not active; the TPM-backed "
             "platform provider probe succeeded, so no synthetic key was seeded"
@@ -312,8 +320,6 @@ def main() -> int:
             )
         )
     store.record_verified_grants(tuple(grants))
-    # The authorization rests on one grant per required type, so the ambiguous
-    # extra binding stays out of it and keeps falsifying only the ceremony.
     authorized = _authorize_account(
         store,
         tuple(

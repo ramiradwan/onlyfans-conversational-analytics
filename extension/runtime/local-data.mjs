@@ -1,3 +1,5 @@
+import { DELETE_INTENT_KEY } from './deletion-state.mjs';
+
 function deleteDatabase(indexedDb, databaseName) {
   return new Promise((resolve, reject) => {
     const request = indexedDb.deleteDatabase(databaseName);
@@ -17,18 +19,61 @@ export async function extensionDatabaseNames(indexedDb = globalThis.indexedDB) {
     .filter((name) => typeof name === 'string' && name.length > 0);
 }
 
+async function clearLocalStoragePreservingIntent(storage) {
+  const stored = await storage.get(null);
+  const keys = Object.keys(stored ?? {}).filter((key) => key !== DELETE_INTENT_KEY);
+  if (keys.length > 0) await storage.remove(keys);
+}
+
 export async function clearExtensionLocalData({
   chromeApi = globalThis.chrome,
   indexedDb = globalThis.indexedDB,
 } = {}) {
-  if (!chromeApi?.storage?.local?.clear || !chromeApi?.storage?.session?.clear) {
+  if (
+    !chromeApi?.storage?.local?.get
+    || !chromeApi?.storage?.local?.remove
+    || !chromeApi?.storage?.session?.clear
+  ) {
     throw new Error('Chrome storage clearing is unavailable');
   }
-  const databaseNames = await extensionDatabaseNames(indexedDb);
-  for (const databaseName of databaseNames) {
-    await deleteDatabase(indexedDb, databaseName);
+
+  const failures = [];
+  let databaseNames = [];
+  try {
+    databaseNames = await extensionDatabaseNames(indexedDb);
+  } catch (error) {
+    failures.push({ stage: 'database_enumeration', error });
   }
-  await chromeApi.storage.local.clear();
-  await chromeApi.storage.session.clear();
+
+  for (const databaseName of databaseNames) {
+    try {
+      await deleteDatabase(indexedDb, databaseName);
+    } catch (error) {
+      failures.push({ stage: 'database_delete', database_name: databaseName, error });
+    }
+  }
+
+  try {
+    await clearLocalStoragePreservingIntent(chromeApi.storage.local);
+  } catch (error) {
+    failures.push({ stage: 'local_storage_clear', error });
+  }
+
+  try {
+    await chromeApi.storage.session.clear();
+  } catch (error) {
+    failures.push({ stage: 'session_storage_clear', error });
+  }
+
+  if (failures.length > 0) {
+    const error = new Error('Extension local-data deletion is incomplete');
+    error.code = 'delete_incomplete';
+    error.failures = failures.map((failure) => ({
+      stage: failure.stage,
+      ...(failure.database_name === undefined ? {} : { database_name: failure.database_name }),
+    }));
+    throw error;
+  }
+
   return Object.freeze({ deleted_databases: databaseNames.length });
 }

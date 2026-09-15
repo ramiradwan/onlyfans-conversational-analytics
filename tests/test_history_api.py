@@ -14,6 +14,7 @@ from app.api.security import AuthContext, csrf_token, get_runtime_policy
 from app.bootstrap import transport_manager
 from app.core.config import settings
 from app.main import app
+from inner_protocol_harness import inner_protocol_app
 from app.persistence.history import StreamKey
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
@@ -36,7 +37,7 @@ PUBLISHED_CONFIG_REVISION = (
 
 
 @pytest.fixture(autouse=True)
-def reset_manager():
+def reset_manager(inner_protocol_app):
     transport_manager.reset()
     app.dependency_overrides.clear()
     yield
@@ -180,7 +181,7 @@ def creator_csrf() -> str:
     )
 
 
-def test_runtime_exposes_only_bridge_ticket_and_pairing_is_single_use() -> None:
+def test_runtime_exposes_only_bridge_ticket() -> None:
     with TestClient(app) as client:
         root = client.get("/")
         assert root.status_code == 200
@@ -191,64 +192,6 @@ def test_runtime_exposes_only_bridge_ticket_and_pairing_is_single_use() -> None:
         assert "local-v2." in root.text
         assert "AGENT_AUTH_TICKET" not in root.text
         assert DEV_AGENT_AUTH_TICKET not in root.text
-
-        pairing = client.post(
-            "/api/v1/agent/pairing", headers={"X-CSRF-Token": creator_csrf()}
-        )
-        assert pairing.status_code == 200
-        assert pairing.headers["cache-control"] == "no-store"
-        pairing_ticket = pairing.json()["pairing_ticket"]
-
-        with client.websocket_connect("/ws/agent") as agent:
-            agent.send_json(agent_hello(pairing_ticket))
-            session = agent.receive_json()
-            assert session["type"] == "agent.session"
-            config_ticket = session["payload"]["config_auth_ticket"]
-            assert config_ticket != pairing_ticket
-            assert pairing_ticket not in json.dumps(session)
-            assert agent.receive_json()["type"] == "sync.required"
-
-        config = client.get(
-            "/api/v1/agent/config",
-            headers={"Authorization": f"Bearer {config_ticket}"},
-            params={
-                "protocol_version": "2",
-                "agent_installation_id": str(INSTALLATION_ID),
-                "creator_account_id": DEV_ACCOUNT_ID,
-                "supported_config_schema_versions": "2",
-            },
-        )
-        assert config.status_code == 200
-        wrong_installation = client.get(
-            "/api/v1/agent/config",
-            headers={"Authorization": f"Bearer {config_ticket}"},
-            params={
-                "protocol_version": "2",
-                "agent_installation_id": str(uuid4()),
-                "creator_account_id": DEV_ACCOUNT_ID,
-                "supported_config_schema_versions": "2",
-            },
-        )
-        assert wrong_installation.status_code == 401
-        query_credential = client.get(
-            "/api/v1/agent/config",
-            headers={"Authorization": f"Bearer {config_ticket}"},
-            params={
-                "auth_ticket": config_ticket,
-                "protocol_version": "2",
-                "agent_installation_id": str(INSTALLATION_ID),
-                "creator_account_id": DEV_ACCOUNT_ID,
-                "supported_config_schema_versions": "2",
-            },
-        )
-        assert query_credential.status_code == 400
-        assert "must not appear in the URL" in query_credential.json()["detail"]
-
-        with client.websocket_connect("/ws/agent") as replay:
-            replay.send_json(agent_hello(pairing_ticket))
-            rejected = replay.receive_json()
-            assert rejected["type"] == "protocol.error"
-            assert rejected["payload"]["code"] == "unauthorized"
 
 
 def test_settings_are_csrf_cas_and_matching_config_revision_bound() -> None:
@@ -341,7 +284,7 @@ def test_settings_are_csrf_cas_and_matching_config_revision_bound() -> None:
 
 def test_non_ceremony_state_changing_route_requires_csrf() -> None:
     with TestClient(app) as client:
-        response = client.post("/api/v1/agent/pairing")
+        response = client.delete("/api/v1/settings/history/consent")
 
     assert response.status_code == 403
     assert response.json() == {"detail": "CSRF token is required"}
@@ -370,7 +313,7 @@ def test_history_config_ack_is_reconciled_after_bind_and_on_heartbeat(
         values={
             "consent_policy_version": "history-consent-v1",
             "consent_revision": "consent-1",
-            "authorized_platform_creator_id": "platform-creator-1",
+            "authorized_platform_creator_id": settings.development_platform_creator_id,
             "desired_state": "running",
             "recent_window_days": 30,
             "page_size": 100,
@@ -428,7 +371,7 @@ def test_history_config_ack_is_reconciled_after_bind_and_on_heartbeat(
                 history_acquisition={
                     "enabled": False,
                     "consent_revision": "consent-1",
-                    "authorized_platform_creator_id": "platform-creator-1",
+                    "authorized_platform_creator_id": settings.development_platform_creator_id,
                     "recent_window_days": 30,
                     "page_size": 100,
                     "pages_per_wake": 2,
@@ -751,7 +694,7 @@ def test_hmac_cursor_pages_ties_and_old_generation_returns_409() -> None:
 
 
 def test_websocket_rejects_snapshot_frame_over_512_kib() -> None:
-    with TestClient(app) as client, client.websocket_connect("/ws/agent") as agent:
+    with TestClient(app) as client, client.websocket_connect("/__test__/agent-protocol") as agent:
         agent.send_json(agent_hello(DEV_AGENT_AUTH_TICKET))
         session = agent.receive_json()
         assert session["type"] == "agent.session"

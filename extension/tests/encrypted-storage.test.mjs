@@ -217,3 +217,40 @@ test('Full-mode IndexedDB refuses to open without a Brain-unsealed key', () => {
     /encryption key is required/,
   );
 });
+
+for (const [name, factory] of [
+  ['authoring', createIndexedDbIngestionStorage], ['read-only', createReadOnlyIndexedDbIngestionStorage],
+]) {
+  test(`${name} receipts remain encrypted across restart and support expiry paging`, async () => {
+    const indexedDb = new FakeIndexedDb();
+    const databaseName = `receipt-${name}`;
+    const options = { databaseName, encryptionKey: KEY_A };
+    const storage = factory(indexedDb, options);
+    const receipt = { delivery_id: 'private-delivery-id', expires_at: 1234,
+      payload_digest: 'private-digest', result: { accepted: true, source_seq: 1 } };
+    await storage.runTransaction('readwrite', ['delivery_receipts'], (tx) => tx.put('delivery_receipts', receipt));
+    const raw = serializedRecords(indexedDb, databaseName);
+    assert.equal(raw.includes(receipt.delivery_id), false);
+    assert.equal(raw.includes(receipt.payload_digest), false);
+    const restarted = factory(indexedDb, options);
+    await restarted.runTransaction('readonly', ['delivery_receipts'], async (tx) => {
+      assert.deepEqual(await tx.get('delivery_receipts', receipt.delivery_id), receipt);
+      const rows = await tx.getPageFromIndex('delivery_receipts', 'expires_at', { limit: 10 });
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].key, receipt.delivery_id);
+    });
+  });
+
+  test(`${name} cancellation aborts the native transaction before completion`, async () => {
+    const indexedDb = new FakeIndexedDb();
+    const databaseName = `abort-${name}`;
+    const storage = factory(indexedDb, { databaseName, encryptionKey: KEY_A });
+    await storage.runTransaction('readwrite', ['chats'], async () => {});
+    const controller = new AbortController();
+    await assert.rejects(storage.runTransaction('readwrite', ['chats'], async (tx) => {
+      await tx.put('chats', { chat_id: 'cancelled-chat' });
+      controller.abort(new Error('cancelled'));
+    }, { signal: controller.signal }), /cancelled|abort/i);
+    assert.equal(await storage.runTransaction('readonly', ['chats'], (tx) => tx.get('chats', 'cancelled-chat')), undefined);
+  });
+}

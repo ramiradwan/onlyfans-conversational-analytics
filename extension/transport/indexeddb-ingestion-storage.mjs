@@ -6,10 +6,11 @@ import {
   ENCRYPTION_KEY_CHECK_STORE,
   createEncryptedIndexedDbStorage,
 } from './encrypted-indexeddb-storage.mjs';
+import { scheduleIndexedDbRequests } from './indexeddb-transaction-scheduler.mjs';
 
 export const LEGACY_INGESTION_DATABASE_NAME_PREFIX = 'onlyfans-agent-account-v2';
 export const INGESTION_DATABASE_NAME_PREFIX = 'onlyfans-agent-encrypted-account-v1';
-export const INGESTION_DATABASE_VERSION = 4;
+export const INGESTION_DATABASE_VERSION = 5;
 
 const STORE_SPECS = Object.freeze({
   [INGESTION_STORES.meta]: Object.freeze({
@@ -46,6 +47,11 @@ const STORE_SPECS = Object.freeze({
     primaryField: 'key',
     primaryProtection: 'hmac',
     indexes: Object.freeze({}),
+  }),
+  [INGESTION_STORES.deliveryReceipts]: Object.freeze({
+    primaryField: 'delivery_id',
+    primaryProtection: 'hmac',
+    indexes: Object.freeze({ expires_at: 'clear' }),
   }),
   [INGESTION_STORES.config]: Object.freeze({
     primaryField: 'key',
@@ -140,6 +146,10 @@ function openDatabase(indexedDb, databaseName) {
             { unique: true },
           );
         }
+      }
+      if (!database.objectStoreNames.contains(INGESTION_STORES.deliveryReceipts)) {
+        const receipts = database.createObjectStore(INGESTION_STORES.deliveryReceipts, { keyPath: 'delivery_id' });
+        receipts.createIndex('expires_at', 'expires_at', { unique: false });
       }
       const keyedStores = [
         [INGESTION_STORES.historyJobs, 'job_id'],
@@ -310,7 +320,9 @@ function createRawIndexedDbIngestionStorage(
 
   return Object.freeze({
     databaseName: resolvedName,
-    async runTransaction(mode, storeNames, work) {
+    async runTransaction(mode, storeNames, work, { signal, assertCurrent } = {}) {
+      signal?.throwIfAborted();
+      assertCurrent?.();
       if (mode !== 'readonly' && mode !== 'readwrite') {
         throw new Error(`Unsupported IndexedDB transaction mode ${String(mode)}`);
       }
@@ -323,22 +335,34 @@ function createRawIndexedDbIngestionStorage(
       const database = await openDatabase(indexedDb, openedName);
       let active = true;
       let transaction;
+      let requests;
+      const abort = () => {
+        try { transaction?.abort(); } catch { /* Already completed. */ }
+      };
       try {
+        signal?.throwIfAborted();
+        assertCurrent?.();
         const transactionStores = [...new Set([...storeNames, ENCRYPTION_KEY_CHECK_STORE])];
         transaction = database.transaction(transactionStores, mode);
         const releaseAsyncWorkHold = transaction.__ofca_hold_for_async_work?.() ?? (() => {});
         const completion = transactionCompletion(transaction);
+        void completion.catch(() => undefined);
+        signal?.addEventListener('abort', abort, { once: true });
         const handle = transactionHandle(
           transaction,
           transactionStores,
           () => active,
           ranges,
         );
+        requests = scheduleIndexedDbRequests(transaction, transactionStores[0], handle);
         let result;
         try {
-          result = await work(handle);
+          result = await work(requests.handle);
+          signal?.throwIfAborted();
+          assertCurrent?.();
         } catch (error) {
           active = false;
+          requests.stop();
           releaseAsyncWorkHold();
           try {
             transaction.abort();
@@ -349,11 +373,14 @@ function createRawIndexedDbIngestionStorage(
           throw error;
         }
         active = false;
+        requests.stop();
         releaseAsyncWorkHold();
         await completion;
         return result;
       } finally {
         active = false;
+        requests?.stop();
+        signal?.removeEventListener('abort', abort);
         database.close();
       }
     },

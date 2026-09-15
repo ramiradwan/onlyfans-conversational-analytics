@@ -8,10 +8,8 @@ import {
   AgentWebSocketClient,
   LEASE_EXPIRED_CLOSE_CODE,
 } from '../transport/agent-websocket.mjs';
-import {
-  RECONCILE_ALARM_NAME,
-  createChromeAdapter,
-} from '../transport/chrome-adapter.mjs';
+import { ReadOnlyAgentWebSocketClient } from '../transport/read-only-agent-websocket.mjs';
+
 import {
   parseAgentToBrainMessage,
   parseBrainToAgentMessage,
@@ -23,6 +21,13 @@ const INSTALLATION_ID = '20000000-0000-4000-8000-000000000001';
 const STREAM_ID = '30000000-0000-4000-8000-000000000001';
 const TEST_ACCOUNT_ID = 'dev-creator-account';
 const TEST_AUTH_TICKET = 'test-agent-auth-ticket';
+
+test('protocol clients refuse construction without an explicitly authenticated socket adapter', () => {
+  for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
+    assert.throws(() => new Client({ creatorAccountId: TEST_ACCOUNT_ID, authTicket: TEST_AUTH_TICKET,
+      extensionVersion: '2.0.1', identity: {} }), /authenticated companion socket factory/);
+  }
+});
 
 async function fixture(name) {
   return JSON.parse(await readFile(path.join(FIXTURE_ROOT, `${name}.json`), 'utf8'));
@@ -103,7 +108,9 @@ function harness(overrides = {}) {
   const sockets = [];
   const scheduler = createScheduler();
   let id = 1;
-  const client = new AgentWebSocketClient({
+  const Client = overrides.Client ?? AgentWebSocketClient;
+  const client = new Client({
+    extensionVersion: '2.0.1',
     creatorAccountId: TEST_ACCOUNT_ID,
     authTicket: TEST_AUTH_TICKET,
     identity: {
@@ -239,7 +246,7 @@ test('connection drop rotates and persists reconnect auth separately from config
   assert.deepEqual(persisted, ['agent-reconnect-ticket-42']);
   assert.deepEqual(configBindings, ['agent-config-ticket-42']);
   first.drop();
-  assert.equal(h.scheduler.timeouts[0].delay, 500);
+  assert.equal(h.scheduler.timeouts.find((task) => !task.cleared).delay, 500);
   h.scheduler.runNextTimeout();
   assert.equal(h.sockets.length, 2);
 
@@ -340,7 +347,7 @@ test('stale-fence rejection closes the session and schedules a fresh handshake',
 
   assert.equal(socket.closeCode, LEASE_EXPIRED_CLOSE_CODE);
   assert.equal(socket.closeReason, 'Agent lease fencing token is stale');
-  assert.equal(h.scheduler.timeouts.length, 1);
+  assert.equal(h.scheduler.timeouts.filter((task) => !task.cleared).length, 1);
   h.scheduler.runNextTimeout();
   assert.equal(h.sockets.length, 2);
   h.sockets[1].open();
@@ -389,59 +396,9 @@ test('invalid fixtures and fatal protocol errors close safely without crashing',
   error.payload.retryable = false;
   fatalSocket.receive(error);
   assert.equal(fatalSocket.closeCode, 4002);
-  assert.equal(fatalHarness.scheduler.timeouts.length, 0);
+  assert.equal(fatalHarness.scheduler.timeouts.filter((task) => !task.cleared).length, 0);
 });
 
-test('Chrome adapter identity initialization persists only stable identity and exposes wake events', async () => {
-  const values = {};
-  const listeners = [];
-  const alarmListeners = [];
-  const alarms = [];
-  const event = {
-    addListener(listener) { listeners.push(listener); },
-    removeListener() {},
-  };
-  const chromeMock = {
-    runtime: { onStartup: event, onInstalled: event, onMessage: event },
-    tabs: { onUpdated: event },
-    alarms: {
-      create(name, options) { alarms.push({ name, options }); },
-      onAlarm: {
-        addListener(listener) { alarmListeners.push(listener); },
-        removeListener() {},
-      },
-    },
-    storage: {
-      local: {
-        get(_keys, callback) { callback({ ...values }); },
-        set(update, callback) { Object.assign(values, update); callback?.(); },
-      },
-    },
-  };
-  let generated = 0;
-  const adapter = createChromeAdapter(
-    chromeMock,
-    () => `90000000-0000-4000-8000-${String(++generated).padStart(12, '0')}`,
-  );
-  const identity = await adapter.loadAgentIdentity();
-  assert.equal(identity.agentInstallationId, '90000000-0000-4000-8000-000000000001');
-  assert.deepEqual(Object.keys(values), ['agent_installation_id']);
-  assert.equal(adapter.saveAcknowledgedSourceSeq, undefined);
-  assert.equal(adapter.saveCommandState, undefined);
-
-  let wakes = 0;
-  adapter.onWake(() => { wakes += 1; });
-  assert.deepEqual(alarms, [{
-    name: RECONCILE_ALARM_NAME,
-    options: { delayInMinutes: 1, periodInMinutes: 1 },
-  }]);
-  listeners[0]();
-  assert.equal(wakes, 1);
-  alarmListeners[0]({ name: 'unrelated-alarm' });
-  assert.equal(wakes, 1);
-  alarmListeners[0]({ name: RECONCILE_ALARM_NAME });
-  assert.equal(wakes, 2);
-});
 
 test('MV3 manifest grants the alarms permission used for reconciliation', async () => {
   const manifest = JSON.parse(
@@ -463,3 +420,58 @@ test('all Brain-to-Agent fixtures remain accepted before client routing', async 
   ];
   for (const name of names) assert.ok(parseBrainToAgentMessage(await fixture(name)));
 });
+
+
+for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
+  test(`${Client.name}: direct construction enforces the secure endpoint and explicit version`, () => {
+    assert.throws(() => harness({ Client, url: 'ws://bridge.localhost:17871/ws/agent' }), /invalid_agent_websocket_endpoint/);
+    assert.throws(() => harness({ Client, url: 'wss://bridge.localhost:17871/ws/agent?ticket=secret' }), /invalid_agent_websocket_endpoint/);
+    assert.throws(() => harness({ Client, extensionVersion: undefined }), /explicit extension version/);
+  });
+
+  test(`${Client.name}: the session deadline clears on acceptance and expires a stalled handshake`, async () => {
+    const h = harness({ Client });
+    await connectAndBind(h);
+    assert.equal(h.scheduler.timeouts.filter((task) => !task.cleared).length, 0);
+    h.client.stop();
+    const stalled = harness({ Client });
+    stalled.client.start();
+    assert.equal(stalled.scheduler.runNextTimeout(), 10_000);
+    assert.equal(stalled.sockets[0].closeCode, 4008);
+    stalled.client.stop();
+    assert.equal(stalled.scheduler.timeouts.filter((task) => !task.cleared).length, 0);
+  });
+
+  test(`${Client.name}: a delayed acknowledgement cannot commit after its connection closes`, async () => {
+    let resume;
+    let entered;
+    let committed = false;
+    let persistenceWrites = 0;
+    const gate = new Promise((resolve) => { resume = resolve; });
+    const started = new Promise((resolve) => { entered = resolve; });
+    const h = harness({
+      Client,
+      outbox: {
+        async entries() { return []; },
+        async acknowledge(_seq, _snapshot, _progress, controls) {
+          entered();
+          await gate;
+          controls.assertCurrent();
+          committed = true;
+          return { snapshotAcknowledged: false };
+        },
+      },
+      persistence: { async saveAcknowledgedSourceSeq() { persistenceWrites += 1; } },
+    });
+    const socket = await connectAndBind(h);
+    socket.receive(await fixture('ingest.ack'));
+    await started;
+    socket.drop();
+    resume();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(committed, false);
+    assert.equal(persistenceWrites, 0);
+    assert.equal(h.client.identity.lastAcknowledgedSourceSeq, 10);
+    h.client.stop();
+  });
+}

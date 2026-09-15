@@ -208,7 +208,8 @@
         "extension/tests/**",
         "extension/qa/**",
         "extension/qualification/**",
-        "extension/README.md"
+        "extension/README.md",
+        "extension/crypto/**"
       ],
       "role": "Agent durable delivery, WebSocket connection management, outbox persistence, signing/history coordination, preview UI, and MV3 service worker runtime.",
       "authority": "authoritative",
@@ -251,7 +252,9 @@
       "id": "brain-transport",
       "path_patterns": [
         "app/transport/**",
-        "app/api/endpoints/transport_ws.py"
+        "app/api/endpoints/transport_ws.py",
+        "app/api/endpoints/companion_pairing.py",
+        "app/api/endpoints/companion_session.py"
       ],
       "role": "Brain network admission, WebSocket connection lifecycle, protocol framing, and session dispatch to canonical persistence.",
       "authority": "authoritative",
@@ -322,6 +325,7 @@
         "app/persistence/migrations.py",
         "app/persistence/deletion_operations.py",
         "app/persistence/auth.py",
+        "app/persistence/companion_pairing.py",
         "app/persistence/private_files.py",
         "app/persistence/sqlite_api.py",
         "app/persistence/sqlcipher_runtime.py",
@@ -387,7 +391,8 @@
       "id": "security-trust",
       "path_patterns": [
         "app/security/**",
-        "app/api/security.py"
+        "app/api/security.py",
+        "native/companion-snow/**"
       ],
       "role": "Side authority governing local authentication, device-bound keys, activation gate, grant verification, and capability permits.",
       "authority": "authoritative",

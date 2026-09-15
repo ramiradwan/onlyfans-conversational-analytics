@@ -6,8 +6,9 @@ import hashlib
 import json
 import re
 import secrets
+from contextlib import contextmanager
 from app.persistence import sqlite_api as sqlite3
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -20,7 +21,11 @@ from app.security.grant_types import (
     ACCOUNT_AUTHORITY_GRANT_TYPES,
     AGENT_PAIRING_GRANT_TYPES,
     CREATOR_ACCOUNT_BINDING,
+    INSTALLATION_GRANT,
     LICENSE_ENTITLEMENT,
+    MAX_GRANT_CHARACTERS,
+    MEMBERSHIP_SNAPSHOT,
+    VerifiedGrantDenial,
 )
 from app.security.runtime_policy import (
     AuthContext,
@@ -104,6 +109,13 @@ class VerifiedGrantReference:
     product_id: str | None = None
     allowed_creator_account_ids: tuple[str, ...] | None = None
     membership_roles: tuple[str, ...] | None = None
+    # The exact verified compact JWS. Companion pairing binds a Noise session to
+    # these bytes, so they are retained as secret data: never rendered, logged,
+    # exported, or carried into exception text. References recorded before
+    # retention existed hold None and cannot pair until refreshed.
+    # Equality uses the verified digest; diagnostic field comparisons must not
+    # expand the secret bytes either.
+    compact_jws: str | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +333,21 @@ class ConsumedTicket:
 
 
 @dataclass(frozen=True, slots=True)
+class CompanionSessionBinding:
+    """Immutable authority selected for one established Noise handshake."""
+
+    session_id: str
+    pairing_id: str
+    generation: int
+    pairing_digest: bytes
+    principal_id: str
+    creator_account_id: str
+    agent_installation_id: str
+    grant_reference_ids: tuple[str, ...]
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class ProvisioningCandidate:
     """One locally detected upstream account awaiting or holding hosted approval.
 
@@ -436,14 +463,23 @@ class AuthenticationStore(Protocol):
     ) -> bool: ...
 
     def replace_verified_grant(
-        self, previous_reference_id: str, grant: VerifiedGrantReference
+        self, previous_reference_id: str, grant: VerifiedGrantReference,
+        *, expected: VerifiedGrantReference | None = None,
     ) -> None: ...
+
+    def apply_hosted_grant_denial(
+        self, expected: VerifiedGrantReference, denial: VerifiedGrantDenial
+    ) -> Literal["applied", "already_applied", "stale"]: ...
 
     def verified_grant(
         self, reference_id: str
     ) -> VerifiedGrantReference | None: ...
 
-    def verified_grants(self) -> tuple[VerifiedGrantReference, ...]: ...
+    def verified_grants(
+        self, *, include_revoked: bool = False, limit: int | None = None
+    ) -> tuple[VerifiedGrantReference, ...]: ...
+
+    def companion_pairing_grants_are_eligible(self, grants: tuple[str, ...]) -> bool: ...
 
     def register_agent_pairing(self, pairing: AgentPairing) -> None: ...
 
@@ -576,6 +612,10 @@ class AuthenticationStateError(ValueError):
 
 class _ProvisioningCandidateResolutionConflict(Exception):
     """Roll back a compound binding write when approval cannot be applied."""
+
+
+class _HostedDenialCommitExpired(Exception):
+    """Roll back a denial that reaches its boundary during persistence."""
 
 
 AccountBindingRefusal = Literal[
@@ -879,10 +919,17 @@ class SQLiteAuthenticationStore:
                         "SELECT * FROM verified_grant_references WHERE reference_id = ?",
                         (grant.reference_id,),
                     ).fetchone()
-                    if row is None or replace(
-                        _verified_grant_reference(row), verified_at=grant.verified_at
+                    existing = (
+                        None if row is None else _verified_grant_reference(row)
+                    )
+                    if existing is None or replace(
+                        existing,
+                        verified_at=grant.verified_at,
                     ) != grant:
                         raise
+                    # Replays preserve retention state. NULL may mean that a
+                    # broader revocation scope cleared the bytes; only a fresh
+                    # replacement grant may restore companion eligibility.
                 if not self._approve_provisioning_candidate_in_transaction(
                     connection,
                     association_request_id,
@@ -895,7 +942,8 @@ class SQLiteAuthenticationStore:
         return True
 
     def replace_verified_grant(
-        self, previous_reference_id: str, grant: VerifiedGrantReference
+        self, previous_reference_id: str, grant: VerifiedGrantReference,
+        *, expected: VerifiedGrantReference | None = None,
     ) -> None:
         self._validate_verified_grant(grant)
         if previous_reference_id == grant.reference_id:
@@ -903,7 +951,7 @@ class SQLiteAuthenticationStore:
         with self.database.transaction() as connection:
             previous = connection.execute(
                 """
-                SELECT grant_type, revoked_at FROM verified_grant_references
+                SELECT * FROM verified_grant_references
                 WHERE reference_id = ?
                 """,
                 (previous_reference_id,),
@@ -916,6 +964,32 @@ class SQLiteAuthenticationStore:
                 raise AuthenticationStateError(
                     "Verified grant replacement does not match an active reference"
                 )
+            previous_grant = _verified_grant_reference(previous)
+            keys = [
+                RevocationKey(RevocationScopeType.VERIFIED_GRANT, previous_reference_id),
+                RevocationKey(RevocationScopeType.INSTALLATION, previous_grant.installation_id),
+            ]
+            if previous_grant.creator_account_id is not None:
+                keys.append(RevocationKey(
+                    RevocationScopeType.CREATOR_ACCOUNT, previous_grant.creator_account_id
+                ))
+            if any(self._scope_is_revoked(connection, key) for key in keys):
+                raise AuthenticationStateError("Verified grant replacement authority is revoked")
+            if expected is not None:
+                immutable = (
+                    "grant_type", "issuer", "subject", "organization_id", "installation_id",
+                    "installation_key_id", "installation_key_jkt", "creator_account_id",
+                    "membership_id", "approval_id", "approval_revision", "entitlement_id", "product_id",
+                )
+                now = self._now()
+                if (
+                    previous_grant != expected
+                    or expected.grant_identifier == grant.grant_identifier
+                    or not expected.valid_from <= now < expected.expires_at
+                    or not grant.valid_from <= now < grant.expires_at
+                    or any(getattr(expected, field) != getattr(grant, field) for field in immutable)
+                ):
+                    raise AuthenticationStateError("Verified grant replacement context is stale")
             self._insert_verified_grant(connection, grant)
             self._revoke_in_transaction(
                 connection,
@@ -926,6 +1000,155 @@ class SQLiteAuthenticationStore:
                 reason="replaced",
             )
             self._increment_authorization_epoch(connection)
+            if expected is not None:
+                now = self._now()
+                if not (
+                    expected.valid_from <= now < expected.expires_at
+                    and grant.valid_from <= now < grant.expires_at
+                ):
+                    raise AuthenticationStateError("Verified grant replacement context is stale")
+
+    def apply_hosted_grant_denial(
+        self, expected: VerifiedGrantReference, denial: VerifiedGrantDenial
+    ) -> Literal["applied", "already_applied", "stale"]:
+        """Commit verified denial evidence and its authority withdrawal atomically."""
+        try:
+            return self._apply_hosted_grant_denial(expected, denial)
+        except _HostedDenialCommitExpired:
+            return "stale"
+
+    def _apply_hosted_grant_denial(
+        self, expected: VerifiedGrantReference, denial: VerifiedGrantDenial
+    ) -> Literal["applied", "already_applied", "stale"]:
+        scope_type, scope_id = _hosted_denial_scope(expected, denial)
+        evidence = {
+            "grant_reference_id": expected.reference_id,
+            "grant_type": expected.grant_type,
+            "grant_jti": expected.grant_identifier,
+            "grant_digest": expected.grant_digest,
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "organization_id": expected.organization_id,
+            "installation_id": expected.installation_id,
+            "creator_account_id": expected.creator_account_id,
+            "effective_at": denial.effective_at,
+            "reason_code": denial.reason_code,
+            "evidence_id": denial.denial_jti,
+            "evidence_sha256": denial.evidence_sha256,
+            "denial_issued_at": denial.issued_at,
+            "denial_expires_at": denial.expires_at,
+            "retain_through": _time_text(expected.expires_at),
+        }
+        with self.database.transaction() as connection:
+            recorded = connection.execute(
+                "SELECT * FROM hosted_grant_tombstones WHERE evidence_id = ?",
+                (denial.denial_jti,),
+            ).fetchone()
+            current = connection.execute(
+                "SELECT * FROM verified_grant_references WHERE reference_id = ?",
+                (expected.reference_id,),
+            ).fetchone()
+            if current is None or _verified_grant_reference(current) != expected:
+                return "stale"
+            if recorded is not None:
+                return (
+                    "already_applied"
+                    if all(recorded[name] == value for name, value in evidence.items())
+                    else "stale"
+                )
+            now = self._now()
+            instant = now.timestamp()
+            keys = [
+                RevocationKey(RevocationScopeType.VERIFIED_GRANT, expected.reference_id),
+                RevocationKey(RevocationScopeType.INSTALLATION, expected.installation_id),
+            ]
+            if expected.creator_account_id is not None:
+                keys.append(
+                    RevocationKey(
+                        RevocationScopeType.CREATOR_ACCOUNT, expected.creator_account_id
+                    )
+                )
+            if (
+                current["revoked_at"] is not None
+                or not _hosted_denial_is_current(expected, denial, now)
+                or any(self._scope_is_revoked(connection, key) for key in keys)
+                or self._grant_has_hosted_tombstone(connection, expected)
+            ):
+                return "stale"
+            connection.execute(
+                """
+                INSERT INTO hosted_grant_tombstones (
+                    tombstone_id, grant_reference_id, grant_type, grant_jti,
+                    grant_digest, scope_type, scope_id, organization_id,
+                    installation_id, creator_account_id, effective_at,
+                    recorded_at, reason_code, source, evidence_id, evidence_sha256,
+                    denial_issued_at, denial_expires_at, retain_through
+                ) VALUES (
+                    :tombstone_id, :grant_reference_id, :grant_type, :grant_jti,
+                    :grant_digest, :scope_type, :scope_id, :organization_id,
+                    :installation_id, :creator_account_id, :effective_at,
+                    :recorded_at, :reason_code, 'hosted_refresh', :evidence_id,
+                    :evidence_sha256, :denial_issued_at, :denial_expires_at,
+                    :retain_through
+                )
+                """,
+                dict(evidence, tombstone_id=_new_uuid7(now), recorded_at=int(instant)),
+            )
+            rows = connection.execute(
+                """
+                SELECT * FROM verified_grant_references
+                WHERE organization_id = ? AND installation_id = ?
+                  AND revoked_at IS NULL
+                """,
+                (expected.organization_id, expected.installation_id),
+            ).fetchall()
+            for row in rows:
+                grant = _verified_grant_reference(row)
+                if self._grant_has_hosted_tombstone(connection, grant):
+                    self._revoke_in_transaction(
+                        connection,
+                        RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id),
+                        reason="hosted_grant_denial",
+                    )
+            if scope_type == "installation":
+                self._revoke_in_transaction(
+                    connection,
+                    RevocationKey(RevocationScopeType.INSTALLATION, expected.installation_id),
+                    reason="hosted_grant_denial",
+                )
+            self._increment_authorization_epoch(connection)
+            if not _hosted_denial_is_current(expected, denial, self._now()):
+                raise _HostedDenialCommitExpired
+        return "applied"
+
+    @staticmethod
+    def _grant_has_hosted_tombstone(
+        connection: sqlite3.Connection, grant: VerifiedGrantReference
+    ) -> bool:
+        # Scope identifiers are never reused. Signed-object expiry and audit
+        # retention therefore cannot remove an effective scope withdrawal.
+        return connection.execute(
+            """
+            SELECT 1 FROM hosted_grant_tombstones
+            WHERE grant_jti = ? OR (
+                organization_id = ? AND installation_id = ? AND (
+                    scope_type = 'installation'
+                    OR (scope_type = 'membership' AND scope_id = ?
+                        AND ? = 'membership_snapshot')
+                    OR (scope_type = 'creator-approval' AND scope_id = ?
+                        AND creator_account_id = ? AND ? = 'creator_account_binding')
+                    OR (scope_type = 'entitlement' AND scope_id = ?
+                        AND ? = 'license_entitlement')
+                )
+            ) LIMIT 1
+            """,
+            (
+                grant.grant_identifier, grant.organization_id, grant.installation_id,
+                grant.membership_id, grant.grant_type, grant.approval_id,
+                grant.creator_account_id, grant.grant_type, grant.entitlement_id,
+                grant.grant_type,
+            ),
+        ).fetchone() is not None
 
     def verified_grant(
         self, reference_id: str
@@ -937,16 +1160,23 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _verified_grant_reference(row)
 
-    def verified_grants(self) -> tuple[VerifiedGrantReference, ...]:
-        """Return every verified grant reference that is not revoked."""
-
+    def verified_grants(
+        self, *, include_revoked: bool = False, limit: int | None = None
+    ) -> tuple[VerifiedGrantReference, ...]:
+        """Read grant references in stable order, excluding revoked by default."""
+        if limit is not None and (
+            type(limit) is not int or not 0 < limit <= (1 << 63) - 1
+        ):
+            raise ValueError("grant reference limit must be a positive SQLite integer")
+        where = "" if include_revoked else "WHERE revoked_at IS NULL"
+        bounded = "" if limit is None else "LIMIT ?"
         with self.database.read() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT * FROM verified_grant_references
-                WHERE revoked_at IS NULL
-                ORDER BY verified_at, reference_id
-                """
+                {where} ORDER BY verified_at, reference_id {bounded}
+                """,
+                () if limit is None else (limit,),
             ).fetchall()
         return tuple(_verified_grant_reference(row) for row in rows)
 
@@ -962,11 +1192,24 @@ class SQLiteAuthenticationStore:
             )
         if grant.approval_revision is not None and grant.approval_revision <= 0:
             raise ValueError("approval revision must be positive")
+        token = grant.compact_jws
+        if token is None:
+            return
+        if not isinstance(token, str) or not token.isascii():
+            raise ValueError("retained grant must be a compact JWS")
+        if len(token) > MAX_GRANT_CHARACTERS:
+            raise ValueError("retained grant exceeds the contract maximum")
+        if re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", token) is None:
+            raise ValueError("retained grant must be a compact JWS")
+        if hashlib.sha256(token.encode("ascii")).hexdigest() != grant.grant_digest:
+            raise ValueError("retained grant digest does not match")
 
     @staticmethod
     def _insert_verified_grant(
         connection: sqlite3.Connection, grant: VerifiedGrantReference
     ) -> None:
+        if SQLiteAuthenticationStore._grant_has_hosted_tombstone(connection, grant):
+            raise AuthenticationStateError("Verified grant authority is revoked")
         allowed_accounts = (
             None
             if grant.allowed_creator_account_ids is None
@@ -993,8 +1236,8 @@ class SQLiteAuthenticationStore:
                 valid_from, expires_at, verified_at, organization_id,
                 installation_key_id, installation_key_jkt, membership_id,
                 approval_id, approval_revision, entitlement_id, product_id,
-                allowed_creator_account_ids, membership_roles
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                allowed_creator_account_ids, membership_roles, compact_jws
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 grant.reference_id,
@@ -1018,6 +1261,7 @@ class SQLiteAuthenticationStore:
                 grant.product_id,
                 allowed_accounts,
                 membership_roles,
+                grant.compact_jws,
             ),
         )
         SQLiteAuthenticationStore._ensure_scope(
@@ -1078,6 +1322,7 @@ class SQLiteAuthenticationStore:
                 """
                 SELECT * FROM agent_pairings
                 WHERE pairing_id = ? AND activated_at IS NULL AND revoked_at IS NULL
+                  AND pairing_generation IS NULL
                 """,
                 (pairing_id,),
             ).fetchone()
@@ -1163,15 +1408,47 @@ class SQLiteAuthenticationStore:
     def issue_agent_challenge(
         self, binding: AgentChallengeBinding, *, expires_at: datetime
     ) -> IssuedChallenge:
+        return self._issue_agent_challenge(binding, expires_at=expires_at)
+
+    def issue_companion_challenge(
+        self,
+        session: CompanionSessionBinding,
+        binding: AgentChallengeBinding,
+        *,
+        expires_at: datetime,
+    ) -> IssuedChallenge:
+        return self._issue_agent_challenge(
+            binding, expires_at=expires_at, companion=session
+        )
+
+    def _issue_agent_challenge(
+        self,
+        binding: AgentChallengeBinding,
+        *,
+        expires_at: datetime,
+        companion: CompanionSessionBinding | None = None,
+    ) -> IssuedChallenge:
         if binding.ticket_purpose is TicketPurpose.BRIDGE_WEBSOCKET:
             raise ValueError("Agent challenge requires an Agent ticket purpose")
         challenge_id, value, digest = _new_secret()
         with self.database.transaction() as connection:
             now = self._now()
             _require_interval(now, expires_at)
-            pairing, grants = self._require_pairing_current(
-                connection, binding.pairing_id, now
-            )
+            if companion is None:
+                pairing, grants = self._require_pairing_current(
+                    connection, binding.pairing_id, now
+                )
+            else:
+                pairing, grants = self._require_companion_session_current(
+                    connection, companion, now
+                )
+                if (
+                    binding.pairing_id != companion.pairing_id
+                    or expires_at > companion.expires_at
+                ):
+                    raise AuthenticationStateError(
+                        "Companion challenge binding does not match"
+                    )
             expected = (
                 binding.principal_id,
                 binding.creator_account_id,
@@ -1194,8 +1471,8 @@ class SQLiteAuthenticationStore:
                     challenge_id, challenge_kind, secret_digest, principal_id,
                     pairing_id, request_method, request_path, request_body_digest,
                     ticket_purpose, agent_installation_id, creator_account_id,
-                    key_id, brain_audience, issued_at, expires_at
-                ) VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    key_id, brain_audience, issued_at, expires_at, companion_session_id
+                ) VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     challenge_id,
@@ -1212,6 +1489,7 @@ class SQLiteAuthenticationStore:
                     binding.brain_audience,
                     _time_text(now),
                     _time_text(expires_at),
+                    None if companion is None else companion.session_id,
                 ),
             )
             self._insert_bindings(connection, "challenge", challenge_id, snapshots)
@@ -1233,6 +1511,23 @@ class SQLiteAuthenticationStore:
     def consume_agent_challenge(
         self, value: str, binding: AgentChallengeBinding
     ) -> ConsumedChallenge | None:
+        return self._consume_agent_challenge(value, binding)
+
+    def consume_companion_challenge(
+        self,
+        session: CompanionSessionBinding,
+        value: str,
+        binding: AgentChallengeBinding,
+    ) -> ConsumedChallenge | None:
+        return self._consume_agent_challenge(value, binding, companion=session)
+
+    def _consume_agent_challenge(
+        self,
+        value: str,
+        binding: AgentChallengeBinding,
+        *,
+        companion: CompanionSessionBinding | None = None,
+    ) -> ConsumedChallenge | None:
         expected = {
             "challenge_kind": "agent",
             "principal_id": binding.principal_id,
@@ -1245,10 +1540,15 @@ class SQLiteAuthenticationStore:
             "creator_account_id": binding.creator_account_id,
             "key_id": binding.key_id,
             "brain_audience": binding.brain_audience,
+            "companion_session_id": None if companion is None else companion.session_id,
         }
         with self.database.read() as connection:
-            grants = self._pairing_grants(connection, binding.pairing_id)
-        return self._consume_challenge(value, expected, grants)
+            grants = (
+                self._pairing_grants(connection, binding.pairing_id)
+                if companion is None
+                else companion.grant_reference_ids
+            )
+        return self._consume_challenge(value, expected, grants, companion=companion)
 
     def issue_bridge_session(self, issue: BridgeSessionIssue) -> IssuedBridgeSession:
         if issue.role not in {"creator", "operator"}:
@@ -1378,6 +1678,20 @@ class SQLiteAuthenticationStore:
             return ActiveBridgeSession(row["session_id"], policy)
 
     def issue_ticket(self, issue: TicketIssue) -> IssuedTicket:
+        return self._issue_ticket(issue)
+
+    def issue_companion_ticket(
+        self, session: CompanionSessionBinding, issue: TicketIssue
+    ) -> IssuedTicket:
+        if issue.purpose is TicketPurpose.BRIDGE_WEBSOCKET:
+            raise AuthenticationStateError(
+                "Companion session cannot issue a Bridge ticket"
+            )
+        return self._issue_ticket(issue, companion=session)
+
+    def _issue_ticket(
+        self, issue: TicketIssue, *, companion: CompanionSessionBinding | None = None
+    ) -> IssuedTicket:
         self._validate_ticket_issue(issue)
         ticket_id, value, digest = _new_secret()
         with self.database.transaction() as connection:
@@ -1401,9 +1715,21 @@ class SQLiteAuthenticationStore:
                     connection, "bridge_session", parent["session_id"]
                 )
             else:
-                parent, grants = self._require_pairing_current(
-                    connection, issue.parent_pairing_id or "", now
-                )
+                if companion is None:
+                    parent, grants = self._require_pairing_current(
+                        connection, issue.parent_pairing_id or "", now
+                    )
+                else:
+                    parent, grants = self._require_companion_session_current(
+                        connection, companion, now
+                    )
+                    if (
+                        issue.parent_pairing_id != companion.pairing_id
+                        or issue.expires_at > companion.expires_at
+                    ):
+                        raise AuthenticationStateError(
+                            "Companion ticket binding does not match"
+                        )
                 actual = (
                     parent["principal_id"],
                     parent["creator_account_id"],
@@ -1431,8 +1757,8 @@ class SQLiteAuthenticationStore:
                     ticket_id, secret_digest, purpose, principal_id, role,
                     creator_account_id, parent_session_id, parent_pairing_id,
                     expected_bridge_session_id, expected_agent_installation_id,
-                    issued_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    issued_at, expires_at, companion_session_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     ticket_id,
@@ -1447,6 +1773,7 @@ class SQLiteAuthenticationStore:
                     issue.expected_agent_installation_id,
                     _time_text(now),
                     _time_text(issue.expires_at),
+                    None if companion is None else companion.session_id,
                 ),
             )
             self._insert_grants(
@@ -1459,6 +1786,20 @@ class SQLiteAuthenticationStore:
     def consume_ticket(
         self, value: str, binding: TicketBinding
     ) -> ConsumedTicket | None:
+        return self._consume_ticket(value, binding)
+
+    def consume_companion_ticket(
+        self, session: CompanionSessionBinding, value: str, binding: TicketBinding
+    ) -> ConsumedTicket | None:
+        return self._consume_ticket(value, binding, companion=session)
+
+    def _consume_ticket(
+        self,
+        value: str,
+        binding: TicketBinding,
+        *,
+        companion: CompanionSessionBinding | None = None,
+    ) -> ConsumedTicket | None:
         with self.database.transaction() as connection:
             now = self._now()
             row = connection.execute(
@@ -1467,6 +1808,14 @@ class SQLiteAuthenticationStore:
             ).fetchone()
             if row is None:
                 return None
+            if row["companion_session_id"] != (
+                None if companion is None else companion.session_id
+            ):
+                return None
+            if companion is not None:
+                self._require_companion_session_current(connection, companion, now)
+                if row["parent_pairing_id"] != companion.pairing_id:
+                    return None
             expected = (
                 binding.purpose.value,
                 binding.creator_account_id,
@@ -1530,6 +1879,131 @@ class SQLiteAuthenticationStore:
     def runtime_policy_is_current(self, policy: RuntimePolicy) -> bool:
         with self.database.read() as connection:
             return self._policy_is_current(connection, policy, self._now())
+
+    def companion_session_policy(
+        self, session: CompanionSessionBinding
+    ) -> RuntimePolicy:
+        with self.database.transaction() as connection:
+            return self._companion_session_policy(connection, session)
+
+    @contextmanager
+    def companion_session_operation(self, session: CompanionSessionBinding):
+        """Serialize a synchronous protected write with all auth revocations."""
+        with self.database.transaction() as connection:
+            yield self._companion_session_policy(connection, session)
+
+    def close_companion_session(self, session_id: str) -> None:
+        with self.database.transaction() as connection:
+            now = _time_text(self._now())
+            for table in ("auth_challenges", "runtime_tickets"):
+                connection.execute(
+                    f"UPDATE {table} SET invalidated_at = COALESCE(invalidated_at, ?) "
+                    "WHERE companion_session_id = ? AND consumed_at IS NULL",
+                    (now, session_id),
+                )
+            self._increment_authorization_epoch(connection)
+
+    def _companion_session_policy(
+        self, connection: sqlite3.Connection, session: CompanionSessionBinding
+    ) -> RuntimePolicy:
+        row, grants = self._require_companion_session_current(
+            connection, session, self._now()
+        )
+        return self._runtime_policy(
+            connection,
+            identity=AuthContext(
+                principal_id=session.principal_id,
+                creator_account_id=session.creator_account_id,
+                role="agent",
+                session_id=session.session_id,
+            ),
+            expires_at=session.expires_at,
+            revocations=self._snapshot_revocations(
+                connection, self._agent_keys(row, grants)
+            ),
+            grant_reference_ids=grants,
+        )
+
+    def _require_companion_session_current(
+        self,
+        connection: sqlite3.Connection,
+        session: CompanionSessionBinding,
+        now: datetime,
+    ) -> tuple[sqlite3.Row, tuple[str, ...]]:
+        row = connection.execute(
+            "SELECT * FROM agent_pairings WHERE pairing_id = ?", (session.pairing_id,)
+        ).fetchone()
+        if (
+            now >= session.expires_at
+            or row is None
+            or row["revoked_at"] is not None
+            or row["pairing_generation"] != session.generation
+            or row["pairing_digest"] != session.pairing_digest
+            or row["protected_brain_noise_static_private_key"] is None
+            or row["principal_id"] != session.principal_id
+            or row["creator_account_id"] != session.creator_account_id
+            or row["agent_installation_id"] != session.agent_installation_id
+        ):
+            raise AuthenticationStateError("Companion session authority is unavailable")
+        grants = _unique(session.grant_reference_ids)
+        if len(grants) != 2:
+            raise AuthenticationStateError(
+                "Companion session grant authority is invalid"
+            )
+        self._require_retained_pairing_grants(connection, grants, now)
+        self._require_agent_grants(connection, grants, now, row)
+        for reference_id in grants:
+            grant = connection.execute(
+                "SELECT * FROM verified_grant_references WHERE reference_id = ?",
+                (reference_id,),
+            ).fetchone()
+            if any(
+                grant[field] != row[pinned]
+                for field, pinned in (
+                    ("organization_id", "companion_organization_id"),
+                    ("installation_key_id", "companion_installation_key_id"),
+                    ("installation_key_jkt", "companion_installation_key_jkt"),
+                )
+            ):
+                raise AuthenticationStateError(
+                    "Companion session grant identity changed"
+                )
+            if session.expires_at > _parse_time(str(grant["expires_at"])):
+                raise AuthenticationStateError(
+                    "Companion session exceeds grant lifetime"
+                )
+        key = connection.execute(
+            "SELECT * FROM installation_key_reference WHERE singleton = 1 AND activated_at IS NOT NULL"
+        ).fetchone()
+        if key is None or any(
+            key[field] != row[pinned]
+            for field, pinned in (
+                ("installation_key_id", "companion_installation_key_id"),
+                ("installation_key_jkt", "companion_installation_key_jkt"),
+            )
+        ):
+            raise AuthenticationStateError(
+                "Companion session installation identity changed"
+            )
+        approved = connection.execute(
+            "SELECT 1 FROM authorized_account_bindings AS binding "
+            "JOIN provisioning_candidates AS candidate ON candidate.association_request_id = binding.association_request_id "
+            "WHERE binding.creator_account_id = ? AND binding.installation_id = ? "
+            "AND binding.revoked_at IS NULL AND candidate.state = 'approved' "
+            "AND candidate.creator_account_id = binding.creator_account_id "
+            "AND candidate.installation_id = binding.installation_id AND candidate.organization_id = ?",
+            (
+                row["creator_account_id"],
+                row["installation_id"],
+                row["companion_organization_id"],
+            ),
+        ).fetchone()
+        if approved is None:
+            raise AuthenticationStateError(
+                "Companion session account authority is unavailable"
+            )
+        self._snapshot_revocations(connection, self._agent_keys(row, grants))
+        return row, grants
 
     def build_runtime_policy_from_grants(
         self,
@@ -1657,9 +2131,72 @@ class SQLiteAuthenticationStore:
         }.get(key.scope_type)
         if direct_table is not None:
             table, id_column = direct_table
+            # A revoked grant may no longer authorize a companion session, so the
+            # retained bytes are erased by the statement that revokes it. Refresh
+            # supersedes through this path too, leaving only the replacement current.
+            cleared = {
+                "verified_grant_references": ", compact_jws = NULL",
+                "agent_pairings": ", protected_brain_noise_static_private_key = NULL",
+            }.get(table, "")
             connection.execute(
-                f"UPDATE {table} SET revoked_at = COALESCE(revoked_at, ?) "
+                f"UPDATE {table} SET revoked_at = COALESCE(revoked_at, ?){cleared} "
                 f"WHERE {id_column} = ?",
+                (timestamp, key.scope_id),
+            )
+        # A scope that advances over a grant withdraws that grant's authority to
+        # open a companion session, so its retained bytes go with it even though
+        # the reference itself stays the authorization record it always was.
+        scoped_column = {
+            RevocationScopeType.CREATOR_ACCOUNT: "creator_account_id",
+            RevocationScopeType.INSTALLATION: "installation_id",
+        }.get(key.scope_type)
+        if scoped_column is not None:
+            connection.execute(
+                f"UPDATE verified_grant_references SET compact_jws = NULL "
+                f"WHERE {scoped_column} = ? AND compact_jws IS NOT NULL",
+                (key.scope_id,),
+            )
+        # Staging keys cannot survive withdrawal of their frozen authority,
+        # including the interval between confirmation and final admission.
+        window_scope = {
+            RevocationScopeType.INSTALLATION: "? IN (installation_id, agent_installation_id)",
+            RevocationScopeType.CREATOR_ACCOUNT: "creator_account_id = ?",
+            RevocationScopeType.PRINCIPAL: "? IN (confirmation_principal_id, opening_principal_id)",
+            RevocationScopeType.BRIDGE_SESSION: "? IN (confirmation_session_id, opening_session_id)",
+            RevocationScopeType.VERIFIED_GRANT: (
+                "? IN (installation_grant_reference_id, creator_account_binding_reference_id)"
+            ),
+        }.get(key.scope_type)
+        connection.execute(
+            f"""
+                UPDATE companion_pairing_windows
+                SET state = 'revoked', version = version + 1,
+                    wrapped_brain_noise_private_key = NULL,
+                    confirmation_principal_id = NULL,
+                    confirmation_session_id = NULL, confirmed_at = NULL,
+                    terminal_at = ?, terminal_reason = 'authority_revoked'
+                WHERE state IN ('open', 'offered', 'awaiting_confirmation', 'confirmed')
+                  AND (({window_scope or '0'}) OR confirmation_session_id IN (
+                      SELECT session_id FROM bridge_sessions WHERE revoked_at IS NOT NULL
+                  ) OR opening_session_id IN (
+                      SELECT session_id FROM bridge_sessions WHERE revoked_at IS NOT NULL
+                  ))
+                """,
+            (timestamp, key.scope_id) if window_scope is not None else (timestamp,),
+        )
+        # Pins outlive the confirming browser session and ordinary grant refresh,
+        # but explicit identity, account, installation, or pin revocation erases
+        # the private Noise key in the same transaction that invalidates tickets.
+        pin_scope = {
+            RevocationScopeType.INSTALLATION: "? IN (installation_id, agent_installation_id)",
+            RevocationScopeType.CREATOR_ACCOUNT: "creator_account_id = ?",
+            RevocationScopeType.PRINCIPAL: "? IN (principal_id, confirmation_principal_id)",
+        }.get(key.scope_type)
+        if pin_scope is not None:
+            connection.execute(
+                f"UPDATE agent_pairings SET revoked_at = COALESCE(revoked_at, ?), "
+                f"protected_brain_noise_static_private_key = NULL "
+                f"WHERE pairing_generation IS NOT NULL AND ({pin_scope})",
                 (timestamp, key.scope_id),
             )
         return self._revocation_version(connection, key)
@@ -1675,9 +2212,7 @@ class SQLiteAuthenticationStore:
             return self._scope_is_revoked(connection, key)
 
     @staticmethod
-    def _scope_is_revoked(
-        connection: sqlite3.Connection, key: RevocationKey
-    ) -> bool:
+    def _scope_is_revoked(connection: sqlite3.Connection, key: RevocationKey) -> bool:
         row = connection.execute(
             """
             SELECT revoked_at FROM auth_revocation_state
@@ -1688,9 +2223,7 @@ class SQLiteAuthenticationStore:
         return row is not None and row["revoked_at"] is not None
 
     @staticmethod
-    def _revocation_version(
-        connection: sqlite3.Connection, key: RevocationKey
-    ) -> int:
+    def _revocation_version(connection: sqlite3.Connection, key: RevocationKey) -> int:
         row = connection.execute(
             """
             SELECT version FROM auth_revocation_state
@@ -1705,9 +2238,12 @@ class SQLiteAuthenticationStore:
         value: str,
         expected: dict[str, object],
         grants: tuple[str, ...],
+        *, companion: CompanionSessionBinding | None = None,
     ) -> ConsumedChallenge | None:
         with self.database.transaction() as connection:
             now = self._now()
+            if companion is not None:
+                self._require_companion_session_current(connection, companion, now)
             row = connection.execute(
                 "SELECT * FROM auth_challenges WHERE secret_digest = ?",
                 (_secret_digest(value),),
@@ -1777,6 +2313,7 @@ class SQLiteAuthenticationStore:
         grants = self._pairing_grants(connection, pairing_id)
         if (
             row is None
+            or row["pairing_generation"] is not None
             or row["activated_at"] is None
             or _parse_time(row["activated_at"]) > now
             or row["revoked_at"] is not None
@@ -1986,6 +2523,56 @@ class SQLiteAuthenticationStore:
             raise AuthenticationStateError(
                 "Required verified grant reference types are missing"
             )
+
+    def companion_pairing_grants_are_eligible(
+        self, grants: tuple[str, ...]
+    ) -> bool:
+        """Report whether these grants can authorize a companion session.
+
+        A companion session transmits the grants themselves, so a digest is
+        not enough: both required grant types must hold retained bytes. A
+        reference recorded before retention existed keeps every authority
+        ADR 0008 gives it and is simply not eligible until it is refreshed.
+        This is a retention/currentness precondition, not account or identity
+        authorization; companion admission must recheck those in its transaction.
+        """
+
+        with self.database.read() as connection:
+            try:
+                self._require_retained_pairing_grants(
+                    connection, _unique(grants), self._now()
+                )
+            except AuthenticationStateError:
+                return False
+            return True
+
+    def _require_retained_pairing_grants(
+        self, connection: sqlite3.Connection, grants: tuple[str, ...], now: datetime
+    ) -> None:
+        self._require_grants_current(connection, grants, now)
+        found = SQLiteAuthenticationStore._retained_pairing_grant_types(
+            connection, grants
+        )
+        if not set(AGENT_PAIRING_GRANT_TYPES) <= found:
+            raise AuthenticationStateError(
+                "Companion pairing requires refreshed verified grants"
+            )
+
+    @staticmethod
+    def _retained_pairing_grant_types(
+        connection: sqlite3.Connection, grants: tuple[str, ...]
+    ) -> set[str]:
+        return {
+            str(row["grant_type"])
+            for reference_id in grants
+            for row in connection.execute(
+                """
+                SELECT grant_type FROM verified_grant_references
+                WHERE reference_id = ? AND compact_jws IS NOT NULL
+                """,
+                (reference_id,),
+            ).fetchall()
+        }
 
     @staticmethod
     def _grants_are_current(
@@ -2898,6 +3485,58 @@ class SQLiteAuthenticationStore:
         return value.astimezone(timezone.utc)
 
 
+def _hosted_denial_is_current(
+    grant: VerifiedGrantReference, denial: VerifiedGrantDenial, now: datetime
+) -> bool:
+    instant = now.timestamp()
+    return (
+        grant.valid_from <= now < grant.expires_at
+        and denial.issued_at <= instant + 60
+        and instant < denial.expires_at
+        and denial.effective_at <= instant
+    )
+
+
+def _hosted_denial_scope(
+    grant: VerifiedGrantReference, denial: VerifiedGrantDenial
+) -> tuple[str, str]:
+    reasons = {
+        INSTALLATION_GRANT: {"revoked"},
+        MEMBERSHIP_SNAPSHOT: {"revoked", "membership_removed", "role_reduced"},
+        CREATOR_ACCOUNT_BINDING: {"revoked", "approval_revoked"},
+        LICENSE_ENTITLEMENT: {"revoked", "entitlement_inactive"},
+    }
+    if (
+        denial.grant_type != grant.grant_type
+        or denial.revoked_jti != grant.grant_identifier
+        or denial.reason_code not in reasons.get(grant.grant_type, set())
+        or not grant.organization_id
+        or not grant.installation_id
+        or not _SHA256_TEXT.fullmatch(denial.evidence_sha256)
+        or not _SHA256_TEXT.fullmatch(grant.grant_digest)
+        or any(
+            type(value) is not int or value < 0
+            for value in (denial.issued_at, denial.expires_at, denial.effective_at)
+        )
+        or denial.expires_at != denial.issued_at + 600
+    ):
+        raise AuthenticationStateError("Verified grant denial metadata is invalid")
+    _require_uuid7(denial.denial_jti, name="denial identifier")
+    _require_uuid7(denial.revoked_jti, name="denied grant identifier")
+    if grant.grant_type == INSTALLATION_GRANT:
+        return "installation", grant.installation_id
+    selected = {
+        "membership_removed": ("membership", grant.membership_id),
+        "approval_revoked": ("creator-approval", grant.approval_id),
+        "entitlement_inactive": ("entitlement", grant.entitlement_id),
+    }.get(denial.reason_code)
+    if selected is None:
+        return "jti", grant.grant_identifier
+    if not selected[1]:
+        raise AuthenticationStateError("Verified grant denial scope is incomplete")
+    return selected[0], selected[1]
+
+
 def _new_secret() -> tuple[str, str, str]:
     object_id = str(uuid4())
     value = secrets.token_urlsafe(32)
@@ -3201,6 +3840,9 @@ def _verified_grant_reference(row: sqlite3.Row) -> VerifiedGrantReference:
         ),
         allowed_creator_account_ids=allowed_accounts,
         membership_roles=membership_roles,
+        compact_jws=(
+            None if row["compact_jws"] is None else str(row["compact_jws"])
+        ),
     )
 
 

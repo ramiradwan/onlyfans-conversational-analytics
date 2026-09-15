@@ -1176,8 +1176,21 @@ def qualify_downloaded_artifact(
         or metadata.get("extension_id") != derived_extension_id
     ):
         raise ContractError("Chrome ZIP carries the wrong extension identity")
-    if manifest.get("manifest_version") != 3 or metadata.get("target") != "chrome116":
+    if (
+        manifest.get("manifest_version") != 3
+        or manifest.get("minimum_chrome_version") != "132"
+        or metadata.get("target") != "chrome132"
+    ):
         raise ContractError("Chrome ZIP is not the qualified Manifest V3 Chrome target")
+    if (
+        manifest.get("optional_host_permissions") != ["https://onlyfans.com/*"]
+        or "host_permissions" in manifest
+        or manifest.get("externally_connectable") != {"matches": ["http://bridge.localhost:17871/*"]}
+        or manifest.get("content_security_policy") != {
+            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;"
+        }
+    ):
+        raise ContractError("Chrome ZIP does not carry the qualified companion transport policy")
     if metadata.get("extension_version") != version or manifest.get("version") != version:
         raise ContractError("Chrome ZIP filename, manifest, and metadata versions differ")
     outputs = metadata.get("outputs")

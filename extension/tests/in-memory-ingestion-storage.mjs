@@ -11,6 +11,7 @@ const PRIMARY_KEYS = Object.freeze({
   [INGESTION_STORES.historyJobs]: 'job_id',
   [INGESTION_STORES.commandResults]: 'key',
   [INGESTION_STORES.config]: 'key',
+  [INGESTION_STORES.deliveryReceipts]: 'delivery_id',
   [INGESTION_STORES.snapshotManifests]: 'snapshot_id',
   [INGESTION_STORES.snapshotChunks]: 'key',
   [INGESTION_STORES.snapshotOverrides]: 'key',

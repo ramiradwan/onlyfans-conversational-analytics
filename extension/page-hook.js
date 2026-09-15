@@ -1,3 +1,5 @@
+import { CAPTURE_LIMITS, fitsUtf8 } from './capture/limits.mjs';
+import { readBoundedJson, parseBoundedJson } from './capture/bounded-json.mjs';
 import {
   identifier,
   normalizeChatRecord,
@@ -28,6 +30,8 @@ import {
   const socketListeners = new Set();
   let active = true;
   let creatorPlatformUserId = null;
+  let pageEpoch = crypto.randomUUID();
+  let identityRequestSequence = 0;
   let installedFetch = null;
   let installedWebSocket = null;
   let installedXhrOpen = null;
@@ -47,6 +51,18 @@ import {
   }
 
   function postObservation(observation) {
+    const sourceEventType = observation.source_path?.startsWith('/api2/')
+      ? 'http.response' : 'websocket.message';
+    if (observation.record?.text !== undefined
+      && !fitsUtf8(observation.record.text, CAPTURE_LIMITS.textBytes)) {
+      postDiagnostic(sourceEventType, 'capture_too_large', observation.source_path);
+      return;
+    }
+    if (observation.record?.display_name !== undefined && observation.record.display_name !== null
+      && !fitsUtf8(observation.record.display_name, CAPTURE_LIMITS.displayNameBytes)) {
+      postDiagnostic(sourceEventType, 'capture_too_large', observation.source_path);
+      return;
+    }
     postPageMessage({
       type: CAPTURE_MESSAGE_TYPE,
       protocol_version: CAPTURE_PROTOCOL_VERSION,
@@ -68,6 +84,7 @@ import {
     postPageMessage({
       type: PROVISIONING_IDENTITY_MESSAGE_TYPE,
       version: PROVISIONING_IDENTITY_VERSION,
+      page_epoch: pageEpoch,
       authenticated_profile: authenticatedProfile,
     });
   }
@@ -99,6 +116,29 @@ import {
     if (/^\/api2\/v2\/(?:chats|users\/[^/]+\/chats)\/?$/.test(pathname)) return 'chats';
     if (/^\/api2\/v2\/chats\/[^/]+\/messages\/?$/.test(pathname)) return 'messages';
     return null;
+  }
+
+  function requestOwnership() {
+    return Object.freeze({
+      creatorPlatformUserId,
+      pageEpoch,
+    });
+  }
+
+  function ownershipIsCurrent(ownership) {
+    return ownership?.creatorPlatformUserId === creatorPlatformUserId
+      && ownership?.pageEpoch === pageEpoch;
+  }
+
+  function replaceCreatorIdentity(nextId) {
+    const normalized = typeof nextId === 'string' && nextId.length <= 200 ? nextId : null;
+    if (normalized !== creatorPlatformUserId) {
+      creatorPlatformUserId = normalized;
+      pageEpoch = crypto.randomUUID();
+    }
+    postProvisioningIdentity(
+      normalized === null ? null : { creator_account_id: normalized },
+    );
   }
 
   function boundedPayloads(value) {
@@ -180,21 +220,18 @@ import {
     }
   }
 
-  function updateCreatorIdentity(pathname, body) {
+  function updateCreatorIdentity(pathname, body, requestSequence) {
+    if (requestSequence !== identityRequestSequence) return;
     const rawId = /^\/api2\/v2\/users\/me\/?$/.test(pathname)
       ? body?.id
       : body?.user?.id;
-    const detected = identifier(rawId);
-    if (detected !== null) creatorPlatformUserId = detected;
-    postProvisioningIdentity(
-      detected !== null && detected.length <= 200
-        ? { creator_account_id: detected }
-        : null,
-    );
+    replaceCreatorIdentity(identifier(rawId));
   }
 
-  function emitRecords(resource, pathname, body, sourceEventType) {
+  function emitRecords(resource, pathname, body, sourceEventType, ownership) {
     if (mode === 'identity') return;
+    if (mode === 'full' && (!ownershipIsCurrent(ownership)
+      || ownership.creatorPlatformUserId === null)) return;
     const extraction = resource === 'chats' ? chatRecords(body) : messageRecords(body);
     if (!extraction.recognized) {
       postDiagnostic(sourceEventType, 'unrecognized_payload', pathname);
@@ -212,8 +249,9 @@ import {
           event_type: 'chat.observed',
           observed_at: observedAt,
           source_path: pathname,
-          creator_platform_user_id: creatorPlatformUserId,
+          creator_platform_user_id: ownership.creatorPlatformUserId,
           context_chat_id: null,
+          page_epoch: ownership.pageEpoch,
           record,
         });
         continue;
@@ -227,30 +265,40 @@ import {
         event_type: 'message.observed',
         observed_at: observedAt,
         source_path: pathname,
-        creator_platform_user_id: creatorPlatformUserId,
+        creator_platform_user_id: ownership.creatorPlatformUserId,
         context_chat_id: record.chat_id,
+        page_epoch: ownership.pageEpoch,
         record,
       });
     }
   }
 
-  function handleResponseBody(url, body, sourceEventType) {
+  function handleResponseBody(url, body, sourceEventType, ownership, identitySequence = null) {
     if (!active) return;
     const resource = classifyPath(url.pathname);
     if (resource === 'identity') {
-      updateCreatorIdentity(url.pathname, body);
+      updateCreatorIdentity(url.pathname, body, identitySequence);
       return;
     }
     if (resource === 'chats' || resource === 'messages') {
-      emitRecords(resource, url.pathname, body, sourceEventType);
+      emitRecords(resource, url.pathname, body, sourceEventType, ownership);
     }
   }
 
-  async function observeFetchResponse(url, response) {
+  async function observeFetchResponse(url, response, ownership, identitySequence) {
     try {
-      handleResponseBody(url, await response.clone().json(), 'http.response');
+      if (response.ok === false) throw new Error('capture_http_error');
+      handleResponseBody(
+        url,
+        await readBoundedJson(response.clone(), CAPTURE_LIMITS.responseBytes),
+        'http.response',
+        ownership,
+        identitySequence,
+      );
     } catch (_error) {
-      postDiagnostic('http.response', 'invalid_json', url.pathname);
+      if (identitySequence !== null && identitySequence === identityRequestSequence) replaceCreatorIdentity(null);
+      postDiagnostic('http.response', _error?.message === 'capture_response_too_large'
+        ? 'capture_too_large' : 'invalid_json', url.pathname);
     }
   }
 
@@ -277,7 +325,7 @@ import {
     return extraction.recognized ? extraction.records : [];
   }
 
-  function webSocketContextChatId(record, frame) {
+  function webSocketContextChatId(record, frame, creatorId) {
     const explicit = identifier(
       record.chat_id ?? record.chatId ?? record.chat?.id ?? frame.chat_id ?? frame.chatId,
     );
@@ -298,9 +346,9 @@ import {
       ?? record.recipient_id
       ?? record.recipientId,
     );
-    if (creatorPlatformUserId === null) return null;
-    if (senderId !== null && senderId !== creatorPlatformUserId) return senderId;
-    return recipientId !== null && recipientId !== creatorPlatformUserId ? recipientId : null;
+    if (creatorId === null) return null;
+    if (senderId !== null && senderId !== creatorId) return senderId;
+    return recipientId !== null && recipientId !== creatorId ? recipientId : null;
   }
 
   const originalWebSocket = window.WebSocket;
@@ -310,13 +358,16 @@ import {
         const socket = Reflect.construct(target, argumentsList, newTarget);
         const url = resolveUrl(argumentsList[0]);
         if (url?.protocol === 'wss:' && url.hostname === 'ws2.onlyfans.com') {
+          const ownership = requestOwnership();
           const listener = (event) => {
-            if (!active || typeof event.data !== 'string') return;
+            if (!active || typeof event.data !== 'string'
+              || (mode === 'full' && !ownershipIsCurrent(ownership))) return;
             let frame;
             try {
-              frame = JSON.parse(event.data);
+              frame = parseBoundedJson(event.data, CAPTURE_LIMITS.responseBytes);
             } catch (_error) {
-              postDiagnostic('websocket.message', 'invalid_json', url.pathname);
+              postDiagnostic('websocket.message', _error?.message === 'capture_response_too_large'
+                ? 'capture_too_large' : 'invalid_json', url.pathname);
               return;
             }
             const records = webSocketMessageRecords(frame);
@@ -324,17 +375,22 @@ import {
             const observedAt = new Date().toISOString();
             for (const rawRecord of records) {
               postPreview(previewMessageObservation(rawRecord, observedAt));
-              if (mode !== 'full') continue;
+              if (mode !== 'full' || ownership.creatorPlatformUserId === null) continue;
               const record = normalizeMessageRecord(rawRecord, {
-                contextChatId: webSocketContextChatId(rawRecord, frame),
+                contextChatId: webSocketContextChatId(
+                  rawRecord,
+                  frame,
+                  ownership.creatorPlatformUserId,
+                ),
               });
               if (record === null) continue;
               postObservation({
                 event_type: 'message.observed',
                 observed_at: observedAt,
                 source_path: url.pathname,
-                creator_platform_user_id: creatorPlatformUserId,
+                creator_platform_user_id: ownership.creatorPlatformUserId,
                 context_chat_id: record.chat_id,
+                page_epoch: ownership.pageEpoch,
                 record,
               });
             }
@@ -352,13 +408,20 @@ import {
   if (typeof originalFetch === 'function') {
     installedFetch = async function observedFetch(...args) {
       const url = resolveUrl(args[0]);
-      const response = await originalFetch.apply(this, args);
+      const resource = url?.origin === targetOrigin ? classifyPath(url.pathname) : null;
+      const ownership = requestOwnership();
+      const identitySequence = resource === 'identity' ? ++identityRequestSequence : null;
+      let response;
+      try { response = await originalFetch.apply(this, args); }
+      catch (error) {
+        if (identitySequence !== null && identitySequence === identityRequestSequence) replaceCreatorIdentity(null);
+        throw error;
+      }
       if (
         active
-        && url?.origin === targetOrigin
-        && classifyPath(url.pathname) !== null
-        && (mode !== 'identity' || classifyPath(url.pathname) === 'identity')
-      ) void observeFetchResponse(url, response);
+        && resource !== null
+        && (mode !== 'identity' || resource === 'identity')
+      ) void observeFetchResponse(url, response, ownership, identitySequence);
       return response;
     };
     window.fetch = installedFetch;
@@ -372,19 +435,25 @@ import {
   };
   installedXhrSend = function observedSend(...args) {
     const url = xhrUrls.get(this);
+    const resource = url?.origin === targetOrigin ? classifyPath(url.pathname) : null;
     if (
       active
-      && url?.origin === targetOrigin
-      && classifyPath(url.pathname) !== null
-      && (mode !== 'identity' || classifyPath(url.pathname) === 'identity')
+      && resource !== null
+      && (mode !== 'identity' || resource === 'identity')
     ) {
-      this.addEventListener('load', () => {
+      const ownership = requestOwnership();
+      const identitySequence = resource === 'identity' ? ++identityRequestSequence : null;
+      this.addEventListener('loadend', () => {
         if (!active) return;
         try {
-          const body = this.responseType === 'json' ? this.response : JSON.parse(this.responseText);
-          handleResponseBody(url, body, 'http.response');
+          if (this.status < 200 || this.status >= 300) throw new Error('capture_http_error');
+          const body = parseBoundedJson(this.responseType === 'json'
+            ? JSON.stringify(this.response) : this.responseText, CAPTURE_LIMITS.responseBytes);
+          handleResponseBody(url, body, 'http.response', ownership, identitySequence);
         } catch (_error) {
-          postDiagnostic('http.response', 'invalid_json', url.pathname);
+          if (identitySequence !== null && identitySequence === identityRequestSequence) replaceCreatorIdentity(null);
+          postDiagnostic('http.response', _error?.message === 'capture_response_too_large'
+        ? 'capture_too_large' : 'invalid_json', url.pathname);
         }
       }, { once: true });
     }
@@ -392,6 +461,27 @@ import {
   };
   XMLHttpRequest.prototype.open = installedXhrOpen;
   XMLHttpRequest.prototype.send = installedXhrSend;
+
+  const navigationChanged = () => {
+    identityRequestSequence += 1;
+    pageEpoch = crypto.randomUUID();
+    replaceCreatorIdentity(null);
+  };
+  const historyWrappers = [];
+  for (const method of ['pushState', 'replaceState']) {
+    const original = window.history?.[method];
+    if (typeof original !== 'function') continue;
+    const wrapped = function (...args) {
+      const previous = window.location.href;
+      const result = original.apply(this, args);
+      if (window.location.href !== previous) navigationChanged();
+      return result;
+    };
+    window.history[method] = wrapped;
+    historyWrappers.push({ method, original, wrapped });
+  }
+  window.addEventListener('popstate', navigationChanged);
+  window.addEventListener('hashchange', navigationChanged);
 
   function stop() {
     if (!active) return;
@@ -411,6 +501,11 @@ import {
     }
     socketListeners.clear();
     window.removeEventListener('message', controlListener);
+    window.removeEventListener('popstate', navigationChanged);
+    window.removeEventListener('hashchange', navigationChanged);
+    for (const { method, original, wrapped } of historyWrappers) {
+      if (window.history[method] === wrapped) window.history[method] = original;
+    }
     delete globalThis.__OFCA_CAPTURE_MODE__;
     delete globalThis.__OFCA_PAGE_HOOK_CONTROLLER__;
   }

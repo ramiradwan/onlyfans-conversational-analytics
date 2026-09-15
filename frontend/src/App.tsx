@@ -5,8 +5,6 @@ import { useEffect } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 
 import { getConfig } from '@/config/fastapiConfig';
-import { requestAgentPairingTicket } from '@services/agentPairingApi';
-import { bindAgentToBrain } from '@services/extensionBinding';
 import { websocketService } from '@services/websocketService';
 import { analyticsStoreActions } from '@store/analyticsStore';
 import { useUserStore } from '@store/userStore';
@@ -50,7 +48,6 @@ export function App() {
     const {
       BRIDGE_AUTH_TICKET,
       CREATOR_ID,
-      EXTENSION_ID,
       FASTAPI_WS_URL,
     } = config;
     useUserStore.getState().actions.setUserRole(userRole);
@@ -59,29 +56,10 @@ export function App() {
       return;
     }
     const creatorAccountId = CREATOR_ID;
-    const controller = new AbortController();
-    if (EXTENSION_ID && EXTENSION_ID !== 'dev-extension-id') {
-      void requestAgentPairingTicket(controller.signal)
-        .then((ticket) => {
-          if (ticket.storage_bootstrap === null) {
-            throw new Error('Brain did not provide encrypted Agent storage bootstrap');
-          }
-          return bindAgentToBrain({
-            extensionId: EXTENSION_ID,
-            creatorAccountId,
-            authTicket: ticket.pairing_ticket,
-            storageBootstrap: ticket.storage_bootstrap,
-          });
-        })
-        .catch(() => {
-          // Brain-owned Agent state presents pairing failures; never log credentials.
-        });
-    }
     websocketService.connect(FASTAPI_WS_URL, creatorAccountId, BRIDGE_AUTH_TICKET);
     void analyticsStoreActions.activate();
 
     return () => {
-      controller.abort();
       websocketService.disconnect();
       analyticsStoreActions.deactivate();
       useUserStore.getState().actions.setUserRole(null);

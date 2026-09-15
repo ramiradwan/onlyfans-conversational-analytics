@@ -1,11 +1,17 @@
+import { CAPTURE_LIMITS, fitsUtf8 } from './limits.mjs';
+
 export const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
 export const CAPTURE_PROTOCOL_VERSION = '2';
+export const CAPTURE_DELIVERY_TYPE = 'ofca.capture.delivery';
+export const CAPTURE_DELIVERY_VERSION = 1;
 export const PREVIEW_MESSAGE_TYPE = 'ofca.preview.observation';
 export const PREVIEW_PROTOCOL_VERSION = 1;
 export const PAGE_CONTROL_MESSAGE_TYPE = 'ofca.capture.control';
 export const PAGE_CONTROL_VERSION = 1;
 export const PROVISIONING_IDENTITY_MESSAGE_TYPE = 'ofca.provisioning.identity.update';
 export const PROVISIONING_IDENTITY_VERSION = 1;
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -24,6 +30,10 @@ function isTimestamp(value) {
   return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
 
+function isPageEpoch(value) {
+  return typeof value === 'string' && UUID_V4.test(value);
+}
+
 function isSourcePath(value) {
   return typeof value === 'string'
     && value.startsWith('/')
@@ -35,7 +45,7 @@ function isChatRecord(value) {
     && hasExactKeys(value, ['chat_id', 'platform_user_id', 'display_name', 'updated_at'])
     && isIdentifier(value.chat_id)
     && isIdentifier(value.platform_user_id)
-    && (value.display_name === null || typeof value.display_name === 'string')
+    && (value.display_name === null || fitsUtf8(value.display_name, CAPTURE_LIMITS.displayNameBytes))
     && isTimestamp(value.updated_at);
 }
 
@@ -52,12 +62,12 @@ function isMessageRecord(value) {
     && isIdentifier(value.message_id)
     && isIdentifier(value.chat_id)
     && isIdentifier(value.sender_platform_user_id)
-    && typeof value.text === 'string'
+    && fitsUtf8(value.text, CAPTURE_LIMITS.textBytes)
     && isTimestamp(value.sent_at)
     && ['inbound', 'outbound'].includes(value.direction);
 }
 
-function isCaptureObservation(value) {
+export function isCaptureObservation(value) {
   if (!isRecord(value)) return false;
   if (value.event_type === 'hook.diagnostic') {
     return hasExactKeys(value, [
@@ -68,7 +78,7 @@ function isCaptureObservation(value) {
       'source_path',
     ])
       && ['http.response', 'websocket.message'].includes(value.source_event_type)
-      && ['invalid_json', 'unrecognized_payload'].includes(value.code)
+      && ['invalid_json', 'unrecognized_payload', 'capture_too_large'].includes(value.code)
       && isTimestamp(value.observed_at)
       && isSourcePath(value.source_path);
   }
@@ -78,11 +88,13 @@ function isCaptureObservation(value) {
     'source_path',
     'creator_platform_user_id',
     'context_chat_id',
+    'page_epoch',
     'record',
   ])) return false;
   if (
     !isTimestamp(value.observed_at)
     || !isSourcePath(value.source_path)
+    || !isPageEpoch(value.page_epoch)
     || (value.creator_platform_user_id !== null && !isIdentifier(value.creator_platform_user_id))
     || (value.context_chat_id !== null && !isIdentifier(value.context_chat_id))
   ) return false;
@@ -96,7 +108,21 @@ export function isCaptureEnvelope(value) {
     && hasExactKeys(value, ['type', 'protocol_version', 'observation'])
     && value.type === CAPTURE_MESSAGE_TYPE
     && value.protocol_version === CAPTURE_PROTOCOL_VERSION
-    && isCaptureObservation(value.observation);
+    && isCaptureObservation(value.observation)
+    && fitsUtf8(JSON.stringify(value), CAPTURE_LIMITS.envelopeBytes);
+}
+
+export function isCaptureDelivery(value) {
+  return isRecord(value)
+    && hasExactKeys(value, ['type', 'version', 'delivery_id', 'created_at_ms', 'consent_epoch', 'observation'])
+    && value.type === CAPTURE_DELIVERY_TYPE
+    && value.version === CAPTURE_DELIVERY_VERSION
+    && isPageEpoch(value.delivery_id)
+    && isPageEpoch(value.consent_epoch)
+    && Number.isSafeInteger(value.created_at_ms)
+    && value.created_at_ms >= 0
+    && isCaptureObservation(value.observation)
+    && fitsUtf8(JSON.stringify(value), CAPTURE_LIMITS.envelopeBytes);
 }
 
 export function isPreviewObservation(value) {
@@ -120,9 +146,10 @@ export function isPreviewEnvelope(value) {
 export function isProvisioningIdentityEnvelope(value) {
   if (
     !isRecord(value)
-    || !hasExactKeys(value, ['type', 'version', 'authenticated_profile'])
+    || !hasExactKeys(value, ['type', 'version', 'page_epoch', 'authenticated_profile'])
     || value.type !== PROVISIONING_IDENTITY_MESSAGE_TYPE
     || value.version !== PROVISIONING_IDENTITY_VERSION
+    || !isPageEpoch(value.page_epoch)
   ) return false;
   if (value.authenticated_profile === null) return true;
   return isRecord(value.authenticated_profile)

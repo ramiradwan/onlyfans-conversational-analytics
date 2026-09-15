@@ -29,8 +29,8 @@ from app.provisioning.session import (
 )
 from app.security.hosted_grants import (
     CREATOR_ASSOCIATION_PROFILE,
-    PROOF_AUDIENCE,
-    PROOF_PROFILE,
+    PROGRESS_PROOF_AUDIENCE,
+    PROGRESS_PROOF_PROFILE,
     CreatorAssociationRequest,
     CreatorAssociationStatus,
     HostedGrantClient,
@@ -96,11 +96,11 @@ class RecordingAssociationTransport:
             return _transport_response(
                 201,
                 {
-                    "profile": PROOF_PROFILE,
+                    "profile": PROGRESS_PROOF_PROFILE,
                     "purpose": "creator-association-request",
                     "installation_id": INSTALLATION_ID,
                     "challenge": PROOF_CHALLENGE,
-                    "audience": PROOF_AUDIENCE,
+                    "audience": PROGRESS_PROOF_AUDIENCE,
                     "issued_at": UPDATED_AT,
                     "expires_at": UPDATED_AT,
                 },

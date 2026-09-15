@@ -135,6 +135,7 @@ function worker(fakeIndexedDb) {
     async deleteLegacyIngestionState() {},
   };
   const runtime = createAgentRuntime({
+    extensionVersion: '2.0.1',
     creatorAccountId: ACCOUNT_ID,
     authTicket: 'synthetic-ticket',
     chromeAdapter,
@@ -151,6 +152,7 @@ function worker(fakeIndexedDb) {
       healthSummary() { return { status: 'healthy', detail: null }; },
     }),
     transportFactory: (options) => new AgentWebSocketClient({
+    extensionVersion: '2.0.1',
       ...options,
       onValidationError: (error) => validationErrors.push(error),
       scheduler: scheduler(),

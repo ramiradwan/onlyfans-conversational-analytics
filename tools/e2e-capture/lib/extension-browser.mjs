@@ -273,13 +273,18 @@ async function waitForTargetClosure(cdp, targetId, timeoutMs = 10_000) {
   throw new Error('Extension service worker CDP target did not terminate.');
 }
 
-export async function terminateExtensionWorker(context, worker) {
+export async function terminateExtensionWorker(
+  context,
+  worker,
+  { deferControlPageClose = true } = {},
+) {
   const browser = context.browser();
   if (!browser) throw new Error('Chromium browser connection is unavailable.');
   const cdp = await browser.newBrowserCDPSession();
   let controlPage = null;
   let serviceWorkerCdp = null;
   let stopMethod = null;
+  let retainedControlPage = null;
   try {
     const { targetInfos } = await cdp.send('Target.getTargets');
     const target = targetInfos.find((candidate) => (
@@ -327,11 +332,20 @@ export async function terminateExtensionWorker(context, worker) {
       }
       await waitForTargetClosure(cdp, target.targetId);
     }
+    if (deferControlPageClose) {
+      retainedControlPage = controlPage;
+      controlPage = null;
+    }
     return {
       targetId: target.targetId,
       extensionOrigin: extensionOrigin(worker.url()),
       stoppedNormally,
       stopMethod,
+      async releaseControlPage() {
+        const page = retainedControlPage;
+        retainedControlPage = null;
+        await page?.close().catch(() => undefined);
+      },
     };
   } finally {
     await serviceWorkerCdp?.detach().catch(() => undefined);

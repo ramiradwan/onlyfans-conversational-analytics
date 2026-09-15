@@ -1,12 +1,14 @@
 {
-  "content_digest": "3645915c29f9ddcd7cff88166148a0bfcf9286fdd21bf10636e537ee8116d615",
+  "content_digest": "caffb2d2c72bf99fe9c88bcbd56f806eaed6d9c5da509acf8ff9c3adfce90f14",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
     "permit-consumption",
     "production",
     "schemas",
-    "onboarding-progress"
+    "onboarding-progress",
+    "companion-pairing-v1",
+    "companion-pairing-profile"
   ],
   "files": [
     {
@@ -243,6 +245,46 @@
       "path": "capability-permit-v1/wrong-subject/verification-context.json",
       "sha256": "47c2b6cea901ce36316f7917526b59188dffff0ae20f21df0e4958df1c1ca081",
       "size": 479
+    },
+    {
+      "path": "companion-pairing-profile/profile.json",
+      "sha256": "d13572d0f7fa0bfbdfdfd7445d35e87f0272070910312dc999cde87bde566388",
+      "size": 5654
+    },
+    {
+      "path": "companion-pairing-v1/authorization-cases.json",
+      "sha256": "171d502d1430815a91fb2f747c0ad0351696452799197a4c80f81f4cb8ee8f8c",
+      "size": 21909
+    },
+    {
+      "path": "companion-pairing-v1/confirm-cases.json",
+      "sha256": "821ac26b5c4b1dbd1134bcdfd4ac9456d0954cf6e6300d25c75ce9eaf154d91b",
+      "size": 1452
+    },
+    {
+      "path": "companion-pairing-v1/manifest.json",
+      "sha256": "2dc0cba74c745af62adc58f6f96b884233dac593d61c27b71d1e42f3133662dc",
+      "size": 1096
+    },
+    {
+      "path": "companion-pairing-v1/offer-cases.json",
+      "sha256": "a4170760be91a8a07da3cca2314dd3242f85203c6ac126f1249d81c0e21b09c2",
+      "size": 82150
+    },
+    {
+      "path": "companion-pairing-v1/request-cases.json",
+      "sha256": "0d96216e30a95bc254fbf2242dc943aa51ef0e2d90d9c69b8edf9bfbbc16a1bc",
+      "size": 3488
+    },
+    {
+      "path": "companion-pairing-v1/trust-set.json",
+      "sha256": "2ce4719773749147b7bcb5459e20f257721acee61b27e19e68eb3a88e03a4e7f",
+      "size": 563
+    },
+    {
+      "path": "companion-pairing-v1/vector.json",
+      "sha256": "75855e783027bc7c96e7d636bc95b09fb2602671cd02ed32da0e8c0ab5e72107",
+      "size": 10045
     },
     {
       "path": "grant-profile-v1/creator_account_binding/at-grace-end/expected.json",
@@ -2180,6 +2222,31 @@
       "size": 2321
     },
     {
+      "path": "schemas/local/v1/companion-pairing-confirm.schema.json",
+      "sha256": "1e0151a75cba3951beca60371c6ccabc38ba60cb6ffbd8f7a4259ce2bce08c2b",
+      "size": 618
+    },
+    {
+      "path": "schemas/local/v1/companion-pairing-offer.schema.json",
+      "sha256": "f36f288fa0c0c5368ba8c0e726ae02d55d2de6b508658a0f76bcdd8725673d0c",
+      "size": 1534
+    },
+    {
+      "path": "schemas/local/v1/companion-pairing-request.schema.json",
+      "sha256": "b804343351c171274d855991cc2e8b38de8429433a45bca48592f4eeedf2e78c",
+      "size": 904
+    },
+    {
+      "path": "schemas/local/v1/companion-pairing-result.schema.json",
+      "sha256": "c6d7aeabaf196c4da38313bf6f45febb182131d7e33117debb9f625d97462c93",
+      "size": 677
+    },
+    {
+      "path": "schemas/local/v1/companion-pairing-session-authorization.schema.json",
+      "sha256": "eef0da8194bddf76d8082e21e7ed34246e8301042b748ade6a48e6c4e38350ab",
+      "size": 688
+    },
+    {
       "path": "schemas/provisioning/v1/onboarding-progress-report.schema.json",
       "sha256": "062a9f277af0c29cdc22a469d2e35d73e306fb3f6dbf6435f942558b75987d65",
       "size": 1514
@@ -2199,6 +2266,7 @@
   "profiles": [
     "urn:bridge-clean:grant-profile:v1",
     "urn:bridge-clean:capability-permit-v1",
+    "urn:bridge-clean:companion-pairing:v1",
     "urn:bridge-clean:capability-permit-consumption-policy:v1",
     "urn:bridge-clean:onboarding-progress:v1"
   ]

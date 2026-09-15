@@ -2,6 +2,8 @@
 
 - Status: accepted
 
+Agent transport amendment: [ADR 0024](0024-authenticated-companion-sessions.md) moves Agent configuration, authentication and storage operations into the authenticated companion session. References below to Agent HTTP transport are superseded by the [session transport contract](../companion-session-transport.md).
+
 ## Context and problem statement
 
 The protocol needs one normative answer to “who may send this message, to whom, and what happens if it is lost or invalid?” Mixed unions and generic forwarding make routing semantics implicit and permit role-confused messages to reach handlers. Role-specific contracts make direction, ownership, and recovery behavior explicit.

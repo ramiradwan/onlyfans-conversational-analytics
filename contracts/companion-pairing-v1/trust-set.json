@@ -1,0 +1,19 @@
+{
+  "environment": "TEST-VECTORS-ONLY-NOT-A-PRODUCTION-TRUST-SET",
+  "keys": [
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kty": "EC",
+        "x": "kk7pYnerwyWlgk6xvTnOf_WL-ODmoSg9BTW5S-n_5fs",
+        "y": "AIJIsDATE2WPe4_LolHxRuaktsQHPz2mE66BneXJk60",
+        "kid": "bc1.ib.lieBKwKUb4XJjbk0GhaosQ"
+      },
+      "purpose": "installation-binding",
+      "thumbprint": "lieBKwKUb4XJjbk0GhaosT8tKOo9nEzofyYAGVvPw1M"
+    }
+  ],
+  "production_usable": false,
+  "profile": "urn:bridge-clean:companion-pairing-test-trust:v1"
+}

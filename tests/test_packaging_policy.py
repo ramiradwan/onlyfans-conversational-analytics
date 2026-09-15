@@ -67,6 +67,10 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
     (stage / "Brain.exe").write_bytes(b"frozen-entry")
     (stage / "release-manifest.json").write_text("{}", encoding="utf-8")
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", stage / "THIRD_PARTY_NOTICES.md")
+    shutil.copy2(
+        ROOT / "native/companion-snow/THIRD_PARTY_NOTICES.txt",
+        stage / "NATIVE_SNOW_NOTICES.txt",
+    )
     (stage / "Agent").mkdir()
     (stage / AGENT_BUILD_METADATA).write_text(
         json.dumps(_agent_build_metadata(), sort_keys=True) + "\n", encoding="utf-8"

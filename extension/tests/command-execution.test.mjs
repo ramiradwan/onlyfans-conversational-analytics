@@ -9,7 +9,6 @@ import {
   UnsupportedCommandExecutor,
 } from '../transport/agent-command-service.mjs';
 import { AgentWebSocketClient } from '../transport/agent-websocket.mjs';
-import { createChromeAdapter } from '../transport/chrome-adapter.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = path.resolve(HERE, '../../shared/fixtures/protocol/v2');
@@ -269,6 +268,7 @@ function scheduler() {
 
 function websocketClient(persistence, executor, socket, idFactory, config = appliedConfig()) {
   return new AgentWebSocketClient({
+    extensionVersion: '2.0.1',
     creatorAccountId: 'dev-creator-account',
     authTicket: 'brain-ticket-1',
     identity: {
@@ -393,29 +393,4 @@ test('unacknowledged result is rebound and resent after worker restarts until ac
     fourthSocket.sent.filter((message) => message.type === 'command.result').length,
     0,
   );
-});
-
-test('Chrome adapter never stores account command state in installation-global storage', async () => {
-  const values = {};
-  const chromeMock = {
-    runtime: {},
-    storage: {
-      local: {
-        get(keys, callback) {
-          callback(Object.fromEntries(
-            keys.filter((key) => key in values).map((key) => [key, clone(values[key])]),
-          ));
-        },
-        set(update, callback) {
-          Object.assign(values, clone(update));
-          callback?.();
-        },
-      },
-    },
-  };
-  const adapter = createChromeAdapter(chromeMock);
-  await adapter.loadAgentInstallationId();
-  assert.equal(adapter.saveCommandState, undefined);
-  assert.equal(adapter.loadCommandState, undefined);
-  assert.deepEqual(Object.keys(values), ['agent_installation_id']);
 });

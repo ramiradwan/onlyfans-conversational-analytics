@@ -11,3 +11,6 @@ import-linter==2.15
 
 # Stateful property-based testing for ingestion and analytics assurance
 hypothesis==6.128.0
+
+# Independent protocol oracle for the production native Noise responder.
+noiseprotocol==0.3.1

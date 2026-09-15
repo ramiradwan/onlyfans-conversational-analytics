@@ -81,12 +81,21 @@ def _chrome_zip(
     *,
     timestamp=(1980, 1, 1, 0, 0, 0),
     external_attr: int = 0,
+    manifest_update: dict | None = None,
+    target: str = "chrome132",
 ) -> tuple[str, bytes]:
     manifest = {
         "key": MANIFEST_KEY,
         "manifest_version": 3,
         "version": "2.0.0",
+        "minimum_chrome_version": "132",
+        "optional_host_permissions": ["https://onlyfans.com/*"],
+        "externally_connectable": {"matches": ["http://bridge.localhost:17871/*"]},
+        "content_security_policy": {
+            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;"
+        },
     }
+    manifest.update(manifest_update or {})
     outputs = {
         "background.js": b"export const ready = true;\n",
         "manifest.json": (json.dumps(manifest, sort_keys=True) + "\n").encode(),
@@ -100,7 +109,7 @@ def _chrome_zip(
             name: f"sha256:{hashlib.sha256(data).hexdigest()}"
             for name, data in outputs.items()
         },
-        "target": "chrome116",
+        "target": target,
     }
     entries = outputs | {
         "build-meta.json": (json.dumps(metadata, sort_keys=True) + "\n").encode()
@@ -479,6 +488,24 @@ def test_secret_key_files_are_created_once_with_owner_only_permissions(
         assert stat.S_IMODE(destination.stat().st_mode) == 0o600
     with pytest.raises(producer.ContractError, match="unable to restrict"):
         producer._decode_secret_to_file("TEST_PRIVATE_KEY_B64", destination)
+
+
+@pytest.mark.parametrize(
+    "manifest_update,target",
+    [
+        ({"minimum_chrome_version": "116"}, "chrome132"),
+        ({}, "chrome116"),
+        ({"optional_host_permissions": ["https://onlyfans.com/*", "http://127.0.0.1:17871/*"]}, "chrome132"),
+        ({"host_permissions": []}, "chrome132"),
+        ({"content_security_policy": {"extension_pages": "script-src 'self'; connect-src *;"}}, "chrome132"),
+        ({"externally_connectable": {"matches": ["http://127.0.0.1:17871/*"]}}, "chrome132"),
+    ],
+)
+def test_attestation_refuses_an_unqualified_companion_transport_policy(manifest_update, target):
+    _, archive = _chrome_zip(manifest_update=manifest_update, target=target)
+    outer, digest = _actions_artifact(chrome_zip=archive)
+    with pytest.raises(producer.ContractError, match="qualified"):
+        producer.qualify_downloaded_artifact(outer, expected_server_digest=digest, release_tag="v2.0.0")
 
 
 def test_qualified_actions_artifact_binds_exact_inner_chrome_zip() -> None:

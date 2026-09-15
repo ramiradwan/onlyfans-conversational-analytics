@@ -1,9 +1,9 @@
 import {
-  LOCAL_ANALYTICS_ORIGIN_PATTERN,
   ONLYFANS_ORIGIN_PATTERN,
   UI_CLEAR_PREVIEW_MESSAGE_TYPE,
   UI_DELETE_LOCAL_DATA_MESSAGE_TYPE,
   UI_STATUS_MESSAGE_TYPE,
+  UI_RELOAD_TABS_MESSAGE_TYPE,
   UI_TRANSITION_MESSAGE_TYPE,
 } from './runtime/consent-controller.mjs';
 import {
@@ -13,58 +13,67 @@ import {
   LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE,
   LEGAL_CHOOSE_MODE_MESSAGE_TYPE,
 } from './runtime/legal-activation-controller.mjs';
+import { requiredOriginsForMode } from './runtime/permission-recovery.mjs';
+import { LOCAL_SERVICE_ORIGIN, assertLocalServiceUrl } from './transport/local-service-endpoints.mjs';
 
 const ids = [
-  'mode-label',
-  'messages-count',
-  'chats-count',
-  'inbound-count',
-  'outbound-count',
-  'brain-status',
-  'delivery-status',
-  'pending-count',
-  'feedback',
-  'legal-unavailable',
-  'pre-mode',
-  'terms-accepted',
-  'risk-acknowledged',
-  'terms-link',
-  'risk-link',
-  'activate-software',
-  'mode-choice',
-  'preview-disclosure',
-  'full-disclosure',
-  'enable-preview',
-  'enable-full',
-  'not-now-preview',
-  'full-secondary',
-  'review-full',
-  'resume',
-  'pause',
-  'history',
-  'open-dashboard',
-  'revoke',
-  'clear-preview',
-  'delete-local-data',
-  'privacy-link',
+  'mode-label', 'messages-count', 'chats-count', 'inbound-count', 'outbound-count',
+  'brain-status', 'delivery-status', 'pending-count', 'capture-health', 'history-health',
+  'feedback', 'legal-unavailable', 'pre-mode', 'terms-accepted', 'risk-acknowledged',
+  'terms-link', 'risk-link', 'activate-software', 'mode-choice', 'preview-disclosure',
+  'full-disclosure', 'enable-preview', 'enable-full', 'not-now-preview', 'full-secondary',
+  'restore-access', 'reload-tabs', 'review-full', 'resume', 'pause', 'history', 'open-dashboard', 'revoke',
+  'clear-preview', 'delete-local-data', 'privacy-link',
+  'companion-pairing', 'pairing-status', 'pairing-code', 'pair-companion', 'cancel-pairing', 'forget-companion',
 ];
 const elements = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 
 let companionConfig = {
-  dashboard_url: 'http://bridge.localhost:17871/',
-  history_settings_url: 'http://bridge.localhost:17871/settings',
+  dashboard_url: `${LOCAL_SERVICE_ORIGIN}/`,
+  history_settings_url: `${LOCAL_SERVICE_ORIGIN}/settings`,
   privacy_policy_url: '',
 };
 let currentStatus = null;
 let legalStatus = null;
 let fullReviewRequested = false;
 let initialModeChoiceDismissed = false;
+let busy = false;
+let pairingStatus = { state: 'unpaired', comparison_code: null };
+const isPairingWindow = window.location.hash === '#pairing';
+const pairingPort = chrome.runtime.connect({ name: 'ofca.companion.pairing' });
+function renderPairing(value = pairingStatus) {
+  pairingStatus = value;
+  show(elements['companion-pairing'], currentStatus?.consent?.mode === 'full');
+  const pending = ['pairing', 'compare'].includes(value.state);
+  const paired = value.state === 'paired';
+  show(elements['pair-companion'], !pending && !paired);
+  show(elements['cancel-pairing'], pending);
+  show(elements['forget-companion'], paired);
+  const code = typeof value.comparison_code === 'string' && /^\d{6}$/u.test(value.comparison_code) ? value.comparison_code : null;
+  show(elements['pairing-code'], code !== null);
+  elements['pairing-code'].textContent = code === null ? '' : `${code.slice(0, 3)} ${code.slice(3)}`;
+  elements['pairing-status'].textContent = ({
+    paired: 'Desktop app identity is verified and saved.',
+    pairing: 'Connecting… Keep this window open.',
+    compare: 'Check that this code matches the desktop app. Confirm there only if both codes match. Keep this window open.',
+    pairing_failed: 'Connection was not approved. Open a new connection window in the desktop app and retry.',
+    unavailable: 'Enable Full analytics and open your creator account before connecting.',
+  })[value.state] ?? 'Open a connection window in the desktop app, then connect here.';
+}
+pairingPort.onMessage.addListener((value) => renderPairing(value));
+pairingPort.onDisconnect.addListener(() => renderPairing({ state: 'pairing_failed', comparison_code: null }));
 
 function show(element, visible) {
   element.classList.toggle('hidden', !visible);
 }
 
-function setBusy(busy) {
+function setLocked(element, locked) {
+  element.dataset.locked = locked ? 'true' : 'false';
+  element.disabled = busy || locked;
+}
+
+function setBusy(value) {
+  busy = value;
   document.querySelectorAll('button,input').forEach((control) => {
     control.disabled = busy || control.dataset.locked === 'true';
   });
@@ -97,8 +106,8 @@ async function sendLegal(message) {
 }
 
 async function requestAnalyticsAccess(mode) {
-  const origins = [ONLYFANS_ORIGIN_PATTERN];
-  if (mode === 'full') origins.push(LOCAL_ANALYTICS_ORIGIN_PATTERN);
+  const origins = requiredOriginsForMode(mode);
+  if (origins.length === 0) throw new Error('There is no active analytics mode to authorize.');
   const granted = await chrome.permissions.request({ origins });
   if (!granted) throw new Error('Required site access was not granted. Nothing was enabled.');
 }
@@ -122,18 +131,14 @@ function renderLegal(status) {
   const normalPaused = mode === 'paused' && !status.requires_reauthorization;
   const needsPreMode = !active
     && !normalPaused
-    && (
-      flow.terms_event_id === null
-      || flow.risk_event_id === null
-      || flow.stage === 'pre_mode'
-    );
+    && (flow.terms_event_id === null || flow.risk_event_id === null || flow.stage === 'pre_mode');
 
   show(elements['pre-mode'], status.configured && needsPreMode);
   elements['terms-accepted'].checked = flow.terms_event_id !== null;
   elements['risk-acknowledged'].checked = flow.risk_event_id !== null;
-  elements['terms-accepted'].dataset.locked = flow.terms_event_id !== null ? 'true' : 'false';
-  elements['risk-acknowledged'].dataset.locked = flow.risk_event_id !== null ? 'true' : 'false';
-  elements['activate-software'].disabled = flow.terms_event_id === null || flow.risk_event_id === null;
+  setLocked(elements['terms-accepted'], flow.terms_event_id !== null);
+  setLocked(elements['risk-acknowledged'], flow.risk_event_id !== null);
+  setLocked(elements['activate-software'], flow.terms_event_id === null || flow.risk_event_id === null);
 
   const binding = status.bindings ?? null;
   if (binding !== null) {
@@ -156,23 +161,37 @@ function renderLegal(status) {
   elements['full-secondary'].textContent = mode === 'preview' ? 'Keep Preview' : 'Not now';
   show(elements['review-full'], mode === 'preview' && !fullReviewRequested);
   show(elements.resume, normalPaused);
+  if (status.requires_reauthorization === true) {
+    elements.feedback.textContent = 'Data-handling information changed. Review it before restarting analytics.';
+  }
 }
 
 function render(status) {
   currentStatus = status;
+  renderPairing();
   elements['mode-label'].textContent = phaseLabel(status);
   elements['messages-count'].textContent = String(status.preview.message_observations);
   elements['chats-count'].textContent = String(status.preview.chat_observations);
   elements['inbound-count'].textContent = String(status.preview.inbound_observations);
   elements['outbound-count'].textContent = String(status.preview.outbound_observations);
   elements['brain-status'].textContent = status.brain_reachable ? 'Available locally' : 'Not detected';
-  elements['delivery-status'].textContent = status.delivery.socket_open
+  elements['delivery-status'].textContent = status.delivery.transport_state === 'authenticated'
     ? 'Connected locally'
     : status.delivery.runtime_ready ? 'Waiting locally' : 'Inactive';
   elements['pending-count'].textContent = String(status.delivery.pending_entries);
+  const dropCount = Object.values(status.delivery.capture_drop_counts ?? {})
+    .reduce((total, value) => total + (Number.isSafeInteger(value) ? value : 0), 0);
+  elements['capture-health'].textContent = status.delivery.startup_error_code === 'startup_failed'
+    ? 'Capture runtime could not start; a later authorized wake will retry.'
+    : dropCount > 0 ? `${dropCount} capture observation${dropCount === 1 ? '' : 's'} dropped.` : '';
+  elements['history-health'].textContent = !status.delivery.history_error_code
+    ? ''
+    : 'History synchronization needs attention.';
   const mode = status.consent.mode;
   const active = ['preview', 'full'].includes(mode);
   const permissionRequired = status.phase === 'permission_required';
+  show(elements['restore-access'], permissionRequired && active);
+  show(elements['reload-tabs'], status.reload_required === true);
   show(elements.pause, active && !permissionRequired);
   show(elements.history, status.phase === 'full');
   show(elements.revoke, mode !== 'off' && mode !== 'revoked');
@@ -229,10 +248,7 @@ async function transition(mode) {
   setBusy(true);
   elements.feedback.textContent = '';
   try {
-    if (mode === 'resume') {
-      const requestedMode = currentStatus?.consent?.resume_mode;
-      await requestAnalyticsAccess(requestedMode);
-    }
+    if (mode === 'resume') await requestAnalyticsAccess(currentStatus?.consent?.resume_mode);
     const status = await send({ type: UI_TRANSITION_MESSAGE_TYPE, mode });
     render(status);
   } catch (error) {
@@ -243,20 +259,39 @@ async function transition(mode) {
 }
 
 elements['terms-accepted'].addEventListener('change', () => {
-  if (elements['terms-accepted'].checked) {
-    void legalAction(LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, elements['terms-accepted']);
-  }
+  if (elements['terms-accepted'].checked) void legalAction(LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, elements['terms-accepted']);
 });
 elements['risk-acknowledged'].addEventListener('change', () => {
-  if (elements['risk-acknowledged'].checked) {
-    void legalAction(LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE, elements['risk-acknowledged']);
-  }
+  if (elements['risk-acknowledged'].checked) void legalAction(LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE, elements['risk-acknowledged']);
 });
-elements['activate-software'].addEventListener('click', () => {
-  void legalAction(LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE);
-});
+elements['activate-software'].addEventListener('click', () => { void legalAction(LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE); });
 elements['enable-preview'].addEventListener('click', () => { void chooseMode('preview'); });
 elements['enable-full'].addEventListener('click', () => { void chooseMode('full'); });
+elements['restore-access'].addEventListener('click', async () => {
+  const mode = currentStatus?.consent?.mode;
+  if (!['preview', 'full'].includes(mode)) return;
+  setBusy(true);
+  elements.feedback.textContent = '';
+  try {
+    await requestAnalyticsAccess(mode);
+    render(await send({ type: UI_TRANSITION_MESSAGE_TYPE, mode }));
+    elements.feedback.textContent = 'Required site access was restored.';
+  } catch (error) {
+    elements.feedback.textContent = error.message ?? 'Site access could not be restored.';
+  } finally {
+    setBusy(false);
+  }
+});
+elements['reload-tabs'].addEventListener('click', async () => {
+  setBusy(true);
+  try {
+    render(await send({ type: UI_RELOAD_TABS_MESSAGE_TYPE }));
+  } catch (_error) {
+    elements.feedback.textContent = 'OnlyFans tabs could not be reloaded.';
+  } finally {
+    setBusy(false);
+  }
+});
 elements['review-full'].addEventListener('click', () => {
   fullReviewRequested = true;
   renderLegal(legalStatus);
@@ -307,6 +342,17 @@ elements['delete-local-data'].addEventListener('click', async () => {
 elements['open-dashboard'].addEventListener('click', () => {
   void chrome.tabs.create({ url: companionConfig.dashboard_url });
 });
+elements['pair-companion'].addEventListener('click', () => {
+  if (isPairingWindow) pairingPort.postMessage({ type: 'pair' });
+  else void chrome.windows.create({ url: chrome.runtime.getURL('popup.html#pairing'), type: 'popup', width: 440, height: 760 })
+    .catch(() => { elements.feedback.textContent = 'The connection window could not be opened.'; });
+});
+elements['cancel-pairing'].addEventListener('click', () => pairingPort.postMessage({ type: 'cancel' }));
+elements['forget-companion'].addEventListener('click', () => {
+  if (window.confirm('Forget the desktop app and stop this connection? A new approval will be required to reconnect.')) {
+    pairingPort.postMessage({ type: 'forget' });
+  }
+});
 elements.history.addEventListener('click', async () => {
   setBusy(true);
   try {
@@ -327,7 +373,12 @@ async function loadCompanionConfig() {
   const response = await fetch(chrome.runtime.getURL('extension-config.json'));
   const candidate = await response.json();
   if (candidate?.schema !== 'ofca-extension-config/v1') return;
-  companionConfig = { ...companionConfig, ...candidate };
+  companionConfig = {
+    ...companionConfig,
+    privacy_policy_url: candidate.privacy_policy_url,
+    dashboard_url: assertLocalServiceUrl(candidate.dashboard_url).href,
+    history_settings_url: assertLocalServiceUrl(candidate.history_settings_url).href,
+  };
   try {
     const privacy = new URL(companionConfig.privacy_policy_url);
     if (privacy.protocol === 'https:' && !privacy.hostname.endsWith('.invalid')) {
@@ -351,6 +402,10 @@ async function initialize() {
   try {
     await loadCompanionConfig();
     await refresh();
+    if (isPairingWindow && currentStatus?.consent?.mode === 'full') {
+      pairingPort.postMessage({ type: 'pair' });
+      elements['companion-pairing'].scrollIntoView({ block: 'center' });
+    }
   } catch (_error) {
     elements.feedback.textContent = 'Local extension status is temporarily unavailable.';
   } finally {

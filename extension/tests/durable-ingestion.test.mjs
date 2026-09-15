@@ -142,6 +142,7 @@ async function harness(storage = new InMemoryIngestionStorage(), log = []) {
   const sockets = [];
   const clock = scheduler();
   const client = new AgentWebSocketClient({
+    extensionVersion: '2.0.1',
     creatorAccountId: ACCOUNT,
     authTicket: 'ticket-1',
     identity: {

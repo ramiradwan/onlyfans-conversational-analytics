@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/local/v1/companion-pairing-request.schema.json",
+  "title": "Companion pairing request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "agent_installation_id",
+    "agent_identity_jwk",
+    "agent_noise_key",
+    "agent_nonce"
+  ],
+  "properties": {
+    "type": {
+      "const": "pair.request"
+    },
+    "agent_installation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "agent_identity_jwk": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/publicP256Jwk"
+    },
+    "agent_noise_key": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "agent_nonce": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    }
+  }
+}

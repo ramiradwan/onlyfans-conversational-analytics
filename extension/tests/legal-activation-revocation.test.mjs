@@ -60,7 +60,7 @@ function consentHarness(activeModeAuthorization) {
       onRemoved: event(),
       async contains(query) {
         if (query.origins?.includes('https://onlyfans.com/*')) return permissionState.onlyFans;
-        if (query.origins?.includes('http://bridge.localhost:17871/*')) return permissionState.localService;
+        if (query.origins?.includes('https://bridge.localhost:17871/*')) return permissionState.localService;
         if (query.permissions) return permissionState.history;
         return false;
       },
@@ -103,7 +103,6 @@ function consentHarness(activeModeAuthorization) {
       async loadBrainBinding() { return { creator_account_id: 'synthetic-account' }; },
       async clearBrainBinding() {},
     },
-    brainBindingBridge: bridge,
     provisioningIdentityBridge: bridge,
     previewMetrics,
     async clearLocalData() {},
@@ -134,7 +133,13 @@ test('AE-06 real revoke transition leaves Terms, risk, and Full evidence byte-fo
     uuid: () => uuids[uuidIndex++],
     now: () => new Date(times[Math.min(timeIndex++, times.length - 1)]),
   });
-  const activeModeAuthorization = new LegalConsentAuthorization({ evidenceStore });
+  const authorizationValues = {};
+  const activeModeAuthorization = new LegalConsentAuthorization({
+    evidenceStore,
+    bindings: () => bindings,
+    storage: storageArea(authorizationValues),
+    now: () => new Date('2030-01-08T12:00:00.000Z'),
+  });
   const { controller, removedPermissions } = consentHarness(activeModeAuthorization);
   const transactionId = '70000000-0000-4000-8000-000000000001';
   const terms = await evidenceStore.recordTermsAcceptance({ transactionId, bindings });

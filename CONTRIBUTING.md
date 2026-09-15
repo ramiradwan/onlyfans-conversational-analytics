@@ -6,14 +6,19 @@ Keep changes focused and preserve the repository's architecture and data boundar
 
 CI uses Python 3.11 and Node.js 22. From the repository root:
 
+Install Rustup and a native compiler before installing Python dependencies. Windows builds require MSVC Build Tools. The pinned native Noise package is built during `pip install`; its [build instructions](native/companion-snow/README.md) describe the toolchain.
+
 ```powershell
 python -m venv .venv
+rustup toolchain install 1.98.1 --profile minimal
 .\.venv\Scripts\python -m pip install -r requirements-dev.txt
 npm ci --prefix frontend
 npm ci --prefix extension
 ```
 
 Use the equivalent virtual-environment path on non-Windows systems.
+
+Normal extension builds audit the checked-in WASM and need no Rust compiler. Rebuilding it requires the pinned [WASM toolchain](extension/crypto/snow/README.md).
 
 ## Before changing code
 

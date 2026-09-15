@@ -64,14 +64,14 @@ function harness() {
       onRemoved: event(),
       async contains(query) {
         if (query.origins?.includes('https://onlyfans.com/*')) return permissionState.onlyFans;
-        if (query.origins?.includes('http://bridge.localhost:17871/*')) return permissionState.localService;
+        if (query.origins?.includes('https://bridge.localhost:17871/*')) return permissionState.localService;
         if (query.permissions?.includes('webRequest')) return permissionState.history;
         return false;
       },
       async remove(query) {
         if (query.permissions?.includes('webRequest')) permissionState.history = false;
         if (query.origins?.includes('https://onlyfans.com/*')) permissionState.onlyFans = false;
-        if (query.origins?.includes('http://bridge.localhost:17871/*')) permissionState.localService = false;
+        if (query.origins?.includes('https://bridge.localhost:17871/*')) permissionState.localService = false;
         return true;
       },
     },
@@ -93,7 +93,6 @@ function harness() {
       async loadBrainBinding() { return { bound: true }; },
       async clearBrainBinding() {},
     },
-    brainBindingBridge: bridge(),
     provisioningIdentityBridge: bridge(),
     previewMetrics: {
       async record() {},
@@ -127,7 +126,7 @@ function harness() {
 }
 
 async function enterFull(h) {
-  await h.controller.setMode('full', { evidenceEventId: 'mode-choice-full' });
+  await h.controller.setMode('full', { evidenceEventId: '70000000-0000-4000-8000-000000000001' });
   const status = await h.controller.status();
   assert.equal(status.phase, 'full');
   assert.equal(status.consent.mode, 'full');
@@ -150,7 +149,7 @@ test('Full to Preview leaves Creator Vault lifecycle untouched', async () => {
   const h = harness();
   await enterFull(h);
 
-  await h.controller.setMode('preview', { evidenceEventId: 'mode-choice-preview' });
+  await h.controller.setMode('preview', { evidenceEventId: '70000000-0000-4000-8000-000000000002' });
 
   const status = await h.controller.status();
   assert.equal(status.phase, 'preview');

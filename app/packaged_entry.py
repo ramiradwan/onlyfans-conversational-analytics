@@ -14,6 +14,7 @@ PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HANDOFF_TOKEN"
 PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_EXTENSION_ID"
 PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
 SQLCIPHER_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE = "BRAIN_SQLCIPHER_RUNTIME_REPORT_PATH"
+COMPANION_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE = "BRAIN_COMPANION_RUNTIME_REPORT_PATH"
 
 # The Windows installer reads this name from its AppMutex directive to detect a
 # running instance. Both process modes publish it, and changing it here requires
@@ -59,6 +60,8 @@ def select_brain_application(
         return app
     from app.provisioning.app import create_provisioning_app
     from app.provisioning.claim_submission import durable_claim_submission
+    from app.provisioning.claim_submission import hosted_transport, installation_proof_authority
+    from app.security.grant_refresh import configured_grant_refresh
     from app.provisioning.creator_association import (
         durable_creator_association_initiation,
     )
@@ -72,6 +75,12 @@ def select_brain_application(
     )
 
     open_store = durable_authentication_store(data_directory)
+    grant_refresh = configured_grant_refresh(
+        open_store,
+        hosted_origin=os.environ.get(PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""),
+        transport_factory=hosted_transport,
+        proof_authority_factory=installation_proof_authority,
+    )
     return create_provisioning_app(
         claim_submission=durable_claim_submission(
             open_store,
@@ -100,10 +109,12 @@ def select_brain_application(
                 PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""
             ),
             data_directory=data_directory,
+            grant_refresh=grant_refresh,
         ),
         extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""),
         launcher_handoff_token=os.environ.get(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE),
         completion_exit=provisioning_completion_exit,
+        shutdown_action=grant_refresh.stop,
     )
 
 
@@ -114,7 +125,8 @@ def run_brain() -> int:
     if runtime_configuration_file().exists():
         application = select_brain_application()
         configuration = uvicorn.Config(
-            application, host="127.0.0.1", port=17871, workers=1, access_log=False
+            application, host="127.0.0.1", port=17871, workers=1, access_log=False,
+            ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
         )
         uvicorn.Server(configuration).run()
         return 0
@@ -128,7 +140,8 @@ def run_brain() -> int:
         provisioning_completion_exit=request_exit,
     )
     configuration = uvicorn.Config(
-        application, host="127.0.0.1", port=17871, workers=1, access_log=False
+        application, host="127.0.0.1", port=17871, workers=1, access_log=False,
+        ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
     )
     server = uvicorn.Server(configuration)
     server.run()
@@ -138,6 +151,18 @@ def run_brain() -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     """Start the local launcher or the internal Brain process mode."""
     arguments = tuple(sys.argv[1:] if argv is None else argv)
+    if arguments == ("--companion-runtime-report",):
+        import json
+
+        from app.security.companion_noise import qualification_report
+
+        rendered_report = json.dumps(qualification_report(), sort_keys=True)
+        report_path = os.environ.get(COMPANION_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE)
+        if report_path:
+            Path(report_path).write_text(rendered_report + "\n", encoding="utf-8")
+        if sys.stdout is not None:
+            print(rendered_report)
+        return 0
     if arguments == ("--sqlcipher-runtime-report",):
         # Report the packaged SQLCipher runtime without starting the service.
         import json
@@ -155,7 +180,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments == ("--brain",):
         return run_brain()
     if arguments:
-        raise SystemExit("usage: Brain.exe [--brain|--sqlcipher-runtime-report]")
+        raise SystemExit("usage: Brain.exe [--brain|--sqlcipher-runtime-report|--companion-runtime-report]")
     from app.launcher import main as launcher_main
 
     return launcher_main()

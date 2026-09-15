@@ -1,0 +1,7 @@
+/pkg/
+/target/
+/mv3-dist/
+/dependency-metadata.json
+/package-audit.json
+/qualification-results.json
+/chrome-*.json

@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
 BRAIN_ROOT = PRODUCT_ROOT / "app"
 
@@ -26,6 +25,8 @@ _AUTHORITY_TABLES = frozenset(
         "bridge_sessions",
         "runtime_tickets",
         "authorization_epoch",
+        "companion_pairing_windows",
+        "companion_pairing_generations",
     }
 )
 _SIGNED_OBJECT_VERIFIERS = frozenset(
@@ -38,7 +39,10 @@ _SIGNED_OBJECT_VERIFIERS = frozenset(
 
 def _is_kernel_path(path: Path) -> bool:
     normalized = path.as_posix()
-    return normalized.startswith("security/") or normalized == "persistence/auth.py"
+    return normalized.startswith("security/") or normalized in {
+        "persistence/auth.py",
+        "persistence/companion_pairing.py",
+    }
 
 
 def _annotation_name(annotation: ast.expr | None) -> str | None:
@@ -131,4 +135,19 @@ def test_guard_rejects_endpoint_role_decision(tmp_path: Path) -> None:
 
     assert _runtime_policy_boundary_violations(tmp_path / "app") == [
         "api/endpoint.py: ['line 2 makes a role decision outside the kernel']"
+    ]
+
+
+def test_companion_authority_persistence_has_an_exact_kernel_owner(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "app"
+    persistence = root / "persistence"
+    persistence.mkdir(parents=True)
+    authority = 'TABLE = "companion_pairing_windows"\n'
+    (persistence / "companion_pairing.py").write_text(authority, encoding="utf-8")
+    assert _runtime_policy_boundary_violations(root) == []
+    (persistence / "unapproved_pairing.py").write_text(authority, encoding="utf-8")
+    assert _runtime_policy_boundary_violations(root) == [
+        "persistence/unapproved_pairing.py: ['references authorization row companion_pairing_windows']"
     ]

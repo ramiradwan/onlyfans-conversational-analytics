@@ -10,8 +10,6 @@ import {
   calculateConfigDigest,
 } from '../transport/agent-config-client.mjs';
 import { AgentWebSocketClient } from '../transport/agent-websocket.mjs';
-import { createChromeAdapter } from '../transport/chrome-adapter.mjs';
-import { createConfigHttpAdapter } from '../transport/config-http-adapter.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = path.resolve(HERE, '../../shared/fixtures/protocol/v2');
@@ -386,6 +384,7 @@ test('applied revision is echoed by subsequent heartbeat and reconnect hello', a
   const wsScheduler = scheduler();
   let id = 1;
   websocketClient = new AgentWebSocketClient({
+    extensionVersion: '2.0.1',
     identity,
     creatorAccountId: ACCOUNT_ID,
     authTicket: 'test-agent-auth-ticket',
@@ -464,63 +463,8 @@ test('persistence failure rolls atomic activation back to last known good', asyn
   assert.deepEqual(activator.current(), good);
 });
 
-test('HTTP adapter keeps the config ticket out of the URL and sends it as authorization', async () => {
-  const seen = [];
-  const adapter = createConfigHttpAdapter({
-    endpoint: 'https://brain.example/api/v1/agent/config',
-    fetchImpl: async (url, options) => {
-      seen.push({ url, options });
-      return {
-        status: 304,
-        headers: { get: () => 'config-8' },
-      };
-    },
-  });
-  const result = await adapter.fetchConfig({
-    authTicket: 'agent-config-ticket-42',
-    agentInstallationId: INSTALLATION_ID,
-    creatorAccountId: ACCOUNT_ID,
-    currentEtag: 'config-8',
-    currentConfigRevision: 'config-8',
-    supportedSchemaVersions: ['2'],
-  });
-  assert.equal(result.status, 304);
-  assert.equal(seen[0].options.headers['If-None-Match'], 'config-8');
-  assert.equal(seen[0].options.headers.Authorization, 'Bearer agent-config-ticket-42');
-  const url = new URL(seen[0].url);
-  assert.equal(url.searchParams.has('auth_ticket'), false);
-  assert.equal(seen[0].url.includes('agent-config-ticket-42'), false);
-  assert.equal(url.searchParams.get('agent_installation_id'), INSTALLATION_ID);
-  assert.equal(url.searchParams.get('creator_account_id'), ACCOUNT_ID);
-});
 
-test('Chrome adapter identity initialization persists only the installation-global identifier', async () => {
-  const values = {};
-  const writes = [];
-  const chromeMock = {
-    runtime: {},
-    storage: {
-      local: {
-        get(keys, callback) {
-          callback(Object.fromEntries(keys.filter((key) => key in values).map((key) => [
-            key,
-            values[key],
-          ])));
-        },
-        set(update, callback) {
-          writes.push(clone(update));
-          Object.assign(values, clone(update));
-          callback?.();
-        },
-      },
-    },
-  };
-  const adapter = createChromeAdapter(chromeMock, () => INSTALLATION_ID);
-  assert.deepEqual(await adapter.loadAgentIdentity(), { agentInstallationId: INSTALLATION_ID });
-  assert.deepEqual(writes, [{ agent_installation_id: INSTALLATION_ID }]);
-  assert.equal(adapter.saveAppliedConfig, undefined);
-  assert.deepEqual(Object.keys(values), ['agent_installation_id']);
-});
+
 test('config.available is routed to a forced conditional refresh', async () => {
   const calls = [];
   const identity = {
@@ -531,6 +475,7 @@ test('config.available is routed to a forced conditional refresh', async () => {
   };
   const sockets = [];
   const client = new AgentWebSocketClient({
+    extensionVersion: '2.0.1',
     identity,
     creatorAccountId: ACCOUNT_ID,
     authTicket: 'test-agent-auth-ticket',
@@ -660,4 +605,27 @@ test('message-only capture configuration is rejected without replacing the last 
   assert.equal(result.error.code, 'unsafe_capture_policy');
   assert.equal(h.identity.appliedConfigRevision, 'config-7');
   assert.deepEqual(h.activator.current(), good);
+});
+
+
+test('session loss cancels an in-flight configuration fetch without writes, reports, or retries', async () => {
+  let complete;
+  let requestSignal;
+  const initial = await configDocument('config-1');
+  const response = await configDocument('config-2');
+  const h = await clientHarness({
+    initial,
+    fetchConfig: (request) => {
+      requestSignal = request.signal;
+      return new Promise((resolve) => { complete = resolve; });
+    },
+  });
+  const refresh = h.client.requireConfig({ required_config_revision: 'config-2' });
+  h.client.clearSessionAuthorization();
+  assert.equal(requestSignal.aborted, true);
+  complete({ status: 200, etag: response.etag, document: response });
+  assert.equal((await refresh).status, 'cancelled');
+  assert.deepEqual(h.persistence.writes, []);
+  assert.equal(h.client.activeDocument.config_revision, 'config-1');
+  assert.deepEqual(h.reports, []);
 });

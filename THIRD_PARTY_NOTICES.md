@@ -11,6 +11,14 @@ The analytics graph adapter adds the following direct dependency:
 
 NetworkX has no mandatory runtime dependencies.
 
+## Companion Noise runtime
+
+The native Brain module and packaged extension WebAssembly use Snow 0.10.0.
+The native dependency notices ship as `NATIVE_SNOW_NOTICES.txt`; the extension
+retains its dependency notices in `THIRD_PARTY_NOTICES.txt` inside the Agent package.
+The corresponding locked source manifests are `native/companion-snow/Cargo.lock`
+and `extension/crypto/snow/Cargo.lock`.
+
 ## Fixed SQLCipher Windows runtime
 
 Windows packages build `sqlcipher3==0.6.2+ofca.1` with SQLCipher Community Edition 4.17.0 and statically linked OpenSSL. The pinned inputs are recorded in `packaging/sqlcipher/fixed-runtime-sources.json`.

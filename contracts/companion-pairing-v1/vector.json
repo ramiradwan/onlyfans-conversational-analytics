@@ -1,0 +1,92 @@
+{
+  "profile": "urn:bridge-clean:companion-pairing:v1",
+  "test_only": true,
+  "note": "Fixture keys derive from the published labels under ADR 0015 and no private key value is published. A case that carries pad_to_bytes is its text followed by ASCII spaces up to that total byte length.",
+  "now": 1788003600,
+  "detected_account_id": "creator-account-fixture-001",
+  "fixture_labels": {
+    "agent_identity_key": "companion-pairing/agent-identity-key",
+    "agent_noise_key": "companion-pairing/agent-noise-key",
+    "agent_nonce": "companion-pairing/agent-nonce",
+    "brain_noise_key": "companion-pairing/brain-noise-key",
+    "brain_nonce": "companion-pairing/brain-nonce",
+    "installation_key": "installation-proof",
+    "issuer_key": "installation-binding",
+    "other_brain_nonce": "companion-pairing/other-brain-nonce",
+    "other_installation_key": "companion-pairing/other-installation-key",
+    "other_pairing_id": "companion-pairing/other-pairing-id",
+    "pairing_id": "companion-pairing/pairing-id",
+    "unknown_issuer_key": "companion-pairing/unknown-issuer-key"
+  },
+  "request": {
+    "type": "pair.request",
+    "agent_installation_id": "6f1c2c9e-3b1a-4d55-9a8e-2f0c7b1d4e10",
+    "agent_identity_jwk": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "J_SLh9HYk5J-uQMHwc68lukFzruvsAgDZ5f_j-LOUSU",
+      "y": "DbqSzemRKF3WygukHuj7mIir7dYuzuehxpbBRJ5jHRQ"
+    },
+    "agent_noise_key": "hk9P6iy6ujTrDWGtSH1V-FqkYxNkWHcNQdzAp7VF1B8",
+    "agent_nonce": "hQBuKgofu_JV6Ty3IvSDebC1ORNcZqNwRYy4YqNla-4"
+  },
+  "offer": {
+    "type": "pair.offer",
+    "pairing_id": "gZv8haCjVgEWmTY1muSr-WSCKZ2Vm-5eBrVb1L_63II",
+    "generation": 1,
+    "creator_account_id": "creator-account-fixture-001",
+    "brain_noise_key": "q_0FnFuu_IpSOzUUf07PV4TzyMJZz6Q22nzt1owBZxk",
+    "brain_nonce": "vEwXcvBOY_v0NOmMWiq3lR86ztr75VPP4ryEoU-LbfA",
+    "installation_jwk": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_b58uwNwwzyx8Ar4kG10neXD73nTO7FSOoLCXMbcMO8",
+      "y": "mr85OjwayeNLPgKafv9LYjrLmCbG5etLshjrzlTsmro"
+    },
+    "installation_grant": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS5pYi5saWVCS3dLVWI0WEpqYmswR2hhb3NRIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjpncmFudDppbnN0YWxsYXRpb246djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOmluc3RhbGxhdGlvbiIsImV4cCI6MTc5MDU5MjAwMCwiZ3JhbnRfdHlwZSI6Imluc3RhbGxhdGlvbl9ncmFudCIsImlhdCI6MTc4ODAwMDAwMCwiaW5zdGFsbGF0aW9uX2lkIjoiMDE5OGExYjItYzNkNC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwiaW5zdGFsbGF0aW9uX2tleV9pZCI6ImlrMS5qY1dEenZKSWtLTzFYdERMLU1wMXZ3IiwiaW5zdGFsbGF0aW9uX2tleV9qa3QiOiJqY1dEenZKSWtLTzFYdERMLU1wMXZ5cmxIc1Q4a3VBeWo0RFlibEMxQnlBIiwiaXNzIjoidXJuOmJyaWRnZS1jbGVhbjpjb21tZXJjaWFsLWNvbnRyb2wtcGxhbmUiLCJqdGkiOiIwMTk4YTFiMi1jM2Q0LTcxMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJuYmYiOjE3ODgwMDAwMDAsIm9yZ2FuaXphdGlvbl9pZCI6IjAxOThhMWIyLWMzZDQtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOmdyYW50LXByb2ZpbGU6djEiLCJzdWIiOiJpbnN0YWxsYXRpb246MDE5OGExYjItYzNkNC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIn0.YcBMCt5_EfpPpf4jlYKqIIvbc5CED8Br2xwc20ZUcKgZF8iehwk_lKssGMaJJnsYi_F7wkCpZjcFXF0BriBkXA",
+    "creator_account_binding": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS5pYi5saWVCS3dLVWI0WEpqYmswR2hhb3NRIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjpncmFudDpjcmVhdG9yLWJpbmRpbmc6djEifQ.eyJhcHByb3ZhbF9pZCI6IjAxOThhMWIyLWMzZDQtNzIwMC04MDAwLTAwMDAwMDAwMDAwMSIsImFwcHJvdmFsX3JldmlzaW9uIjoxLCJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOmNyZWF0b3ItYmluZGluZyIsImNyZWF0b3JfYWNjb3VudF9pZCI6ImNyZWF0b3ItYWNjb3VudC1maXh0dXJlLTAwMSIsImV4cCI6MTc4ODYwNDgwMCwiZ3JhbnRfdHlwZSI6ImNyZWF0b3JfYWNjb3VudF9iaW5kaW5nIiwiaWF0IjoxNzg4MDAwMDAwLCJpbnN0YWxsYXRpb25faWQiOiIwMTk4YTFiMi1jM2Q0LTcwMDAtODAwMC0wMDAwMDAwMDAwMDIiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLmpjV0R6dkpJa0tPMVh0REwtTXAxdnciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6ImpjV0R6dkpJa0tPMVh0REwtTXAxdnlybEhzVDhrdUF5ajREWWJsQzFCeUEiLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImp0aSI6IjAxOThhMWIyLWMzZDQtNzEwMC04MDAwLTAwMDAwMDAwMDAwMiIsIm5iZiI6MTc4ODAwMDAwMCwib3JnYW5pemF0aW9uX2lkIjoiMDE5OGExYjItYzNkNC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46Z3JhbnQtcHJvZmlsZTp2MSIsInN1YiI6Imluc3RhbGxhdGlvbjowMTk4YTFiMi1jM2Q0LTcwMDAtODAwMC0wMDAwMDAwMDAwMDI6Y3JlYXRvcjpjcmVhdG9yLWFjY291bnQtZml4dHVyZS0wMDEifQ.Hwwyxhsl9kA8Uv4LSzlyIKi87PCKrPTHPN0is1wsPNcOaMbgRZuo1-ayzDokxCUZwvy4bgrU3WQxlg6xlX2rLQ",
+    "brain_proof": "EcsY_x5K1IinuuS7DOh6qetGM5ZMq_InxJ_Mj0AK5pN5CxNuuiuVGu5G_bIwuv-FIohk7Z_XR7em-lkkx4wK7g"
+  },
+  "confirm": {
+    "type": "pair.confirm",
+    "pairing_id": "gZv8haCjVgEWmTY1muSr-WSCKZ2Vm-5eBrVb1L_63II",
+    "agent_proof": "N_OaFilFVSHqhb-zjf9jubyP1wvQfIHZ9rxq6m_4gJ9hDZEpicEryI4E2oaLDHEUEOCmPd8texDNxzQKkOIKwg"
+  },
+  "result": {
+    "type": "pair.result",
+    "pairing_id": "gZv8haCjVgEWmTY1muSr-WSCKZ2Vm-5eBrVb1L_63II",
+    "outcome": "confirmed"
+  },
+  "session_authorization": {
+    "type": "session.authorization",
+    "installation_grant": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS5pYi5saWVCS3dLVWI0WEpqYmswR2hhb3NRIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjpncmFudDppbnN0YWxsYXRpb246djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOmluc3RhbGxhdGlvbiIsImV4cCI6MTc5MDU5MjAwMCwiZ3JhbnRfdHlwZSI6Imluc3RhbGxhdGlvbl9ncmFudCIsImlhdCI6MTc4ODAwMDAwMCwiaW5zdGFsbGF0aW9uX2lkIjoiMDE5OGExYjItYzNkNC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwiaW5zdGFsbGF0aW9uX2tleV9pZCI6ImlrMS5qY1dEenZKSWtLTzFYdERMLU1wMXZ3IiwiaW5zdGFsbGF0aW9uX2tleV9qa3QiOiJqY1dEenZKSWtLTzFYdERMLU1wMXZ5cmxIc1Q4a3VBeWo0RFlibEMxQnlBIiwiaXNzIjoidXJuOmJyaWRnZS1jbGVhbjpjb21tZXJjaWFsLWNvbnRyb2wtcGxhbmUiLCJqdGkiOiIwMTk4YTFiMi1jM2Q0LTcxMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJuYmYiOjE3ODgwMDAwMDAsIm9yZ2FuaXphdGlvbl9pZCI6IjAxOThhMWIyLWMzZDQtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOmdyYW50LXByb2ZpbGU6djEiLCJzdWIiOiJpbnN0YWxsYXRpb246MDE5OGExYjItYzNkNC03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIn0.YcBMCt5_EfpPpf4jlYKqIIvbc5CED8Br2xwc20ZUcKgZF8iehwk_lKssGMaJJnsYi_F7wkCpZjcFXF0BriBkXA",
+    "creator_account_binding": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS5pYi5saWVCS3dLVWI0WEpqYmswR2hhb3NRIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjpncmFudDpjcmVhdG9yLWJpbmRpbmc6djEifQ.eyJhcHByb3ZhbF9pZCI6IjAxOThhMWIyLWMzZDQtNzIwMC04MDAwLTAwMDAwMDAwMDAwMSIsImFwcHJvdmFsX3JldmlzaW9uIjoxLCJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOmNyZWF0b3ItYmluZGluZyIsImNyZWF0b3JfYWNjb3VudF9pZCI6ImNyZWF0b3ItYWNjb3VudC1maXh0dXJlLTAwMSIsImV4cCI6MTc4ODYwNDgwMCwiZ3JhbnRfdHlwZSI6ImNyZWF0b3JfYWNjb3VudF9iaW5kaW5nIiwiaWF0IjoxNzg4MDAwMDAwLCJpbnN0YWxsYXRpb25faWQiOiIwMTk4YTFiMi1jM2Q0LTcwMDAtODAwMC0wMDAwMDAwMDAwMDIiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLmpjV0R6dkpJa0tPMVh0REwtTXAxdnciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6ImpjV0R6dkpJa0tPMVh0REwtTXAxdnlybEhzVDhrdUF5ajREWWJsQzFCeUEiLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImp0aSI6IjAxOThhMWIyLWMzZDQtNzEwMC04MDAwLTAwMDAwMDAwMDAwMiIsIm5iZiI6MTc4ODAwMDAwMCwib3JnYW5pemF0aW9uX2lkIjoiMDE5OGExYjItYzNkNC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46Z3JhbnQtcHJvZmlsZTp2MSIsInN1YiI6Imluc3RhbGxhdGlvbjowMTk4YTFiMi1jM2Q0LTcwMDAtODAwMC0wMDAwMDAwMDAwMDI6Y3JlYXRvcjpjcmVhdG9yLWFjY291bnQtZml4dHVyZS0wMDEifQ.Hwwyxhsl9kA8Uv4LSzlyIKi87PCKrPTHPN0is1wsPNcOaMbgRZuo1-ayzDokxCUZwvy4bgrU3WQxlg6xlX2rLQ"
+  },
+  "expected": {
+    "identity": {
+      "organization_id": "0198a1b2-c3d4-7000-8000-000000000001",
+      "installation_id": "0198a1b2-c3d4-7000-8000-000000000002",
+      "installation_key_id": "ik1.jcWDzvJIkKO1XtDL-Mp1vw",
+      "installation_key_jkt": "jcWDzvJIkKO1XtDL-Mp1vyrlHsT8kuAyj4DYblC1ByA",
+      "creator_account_id": "creator-account-fixture-001"
+    },
+    "agent_identity_key_jkt": "Pz1znKHlhpbfGZHshLO9Ok7eTzGAqOD779cdRxCt214",
+    "grant_digest": "acab9527c7f31286b1a2a91ae0f7a519d9a366cc0630713e15b44d9d2d291d71",
+    "transcript": "4f4643412d4c4f43414c2d50414952494e472d5452414e5343524950542d563100000000204e6f6973655f4b4b5f32353531395f436861436861506f6c795f53484132353600000020819bfc85a0a35601169936359ae4abf96482299d959bee5e06b55bd4bffadc820000000800000000000000010000002430313938613162322d633364342d373030302d383030302d3030303030303030303030310000002430313938613162322d633364342d373030302d383030302d3030303030303030303030320000001a696b312e6a6357447a764a496b4b4f315874444c2d4d703176770000002b6a6357447a764a496b4b4f315874444c2d4d70317679726c487354386b7541796a344459626c43314279410000001b63726561746f722d6163636f756e742d666978747572652d3030310000002436663163326339652d336231612d346435352d396138652d3266306337623164346531300000002b507a317a6e4b486c68706266475a4873684c4f394f6b3765547a4741714f4437373963645278437432313400000020864f4fea2cbaba34eb0d61ad487d55f85aa463136458770d41dcc0a7b545d41f00000020abfd059c5baefc8a523b35147f4ecf5784f3c8c259cfa436da7cedd68c0167190000002085006e2a0a1fbbf255e93cb722f48379b0b539135c66a370458cb862a3656bee00000020bc4c1772f04e63fbf434e98c5a2ab7951f3acedafbe553cfe2bc84a14f8b6df000000020acab9527c7f31286b1a2a91ae0f7a519d9a366cc0630713e15b44d9d2d291d71",
+    "pairing_digest": "da282a55e299bcd3893680db428f699bff8e340a8f87e5cb20e9808b1dc1c62f",
+    "brain_proof_message": "4f4643412d4c4f43414c2d50414952494e472d50524f4f462d56310000000005627261696e00000020da282a55e299bcd3893680db428f699bff8e340a8f87e5cb20e9808b1dc1c62f",
+    "agent_proof_message": "4f4643412d4c4f43414c2d50414952494e472d50524f4f462d563100000000056167656e7400000020da282a55e299bcd3893680db428f699bff8e340a8f87e5cb20e9808b1dc1c62f",
+    "comparison_code": "661336",
+    "session_prologue": "6f6663612d636f6d70616e696f6e2d73657373696f6e2f76313b6167656e742d746f2d627261696e3b6e6f2d6561726c792d6461746100da282a55e299bcd3893680db428f699bff8e340a8f87e5cb20e9808b1dc1c62f",
+    "grants_not_after": 1788864000
+  },
+  "small_order_points": [
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800",
+    "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+  ]
+}

@@ -1,0 +1,156 @@
+name: Packaged companion Snow WASM qualification
+
+on:
+  push:
+    branches: [extension/production-readiness]
+    paths:
+      - 'extension/qualification/snow-wasm-spike/**'
+      - 'extension/crypto/snow/**'
+      - 'extension/vendor/companion-snow/**'
+      - 'extension/runtime/packaged-snow.mjs'
+      - 'extension/qualification/companion-snow-release.mjs'
+      - 'extension/qualification/pairing-storage-*.mjs'
+      - 'extension/transport/*pairing*.mjs'
+      - 'extension/transport/grant-verifier.mjs'
+      - 'extension/transport/companion-noise-session.mjs'
+      - 'tools/companion-session-spike/**'
+      - 'docs/companion-pairing-contract.md'
+      - 'extension/runtime/companion-*.mjs'
+      - 'extension/tests/companion-pairing-contract.test.mjs'
+      - 'extension/test-fixtures/pairing/**'
+      - 'contracts/companion-pairing-v1/**'
+      - 'contracts/companion-pairing-profile/**'
+      - 'contracts/manifest.json'
+      - 'contracts/consumer-pin.json'
+      - '.github/workflows/snow-wasm-feasibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin Rust and WASM target
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --target wasm32-unknown-unknown
+          rustup default 1.98.1
+          rustc --version
+          cargo --version
+
+      - name: Install pinned wasm-bindgen CLI
+        shell: bash
+        run: |
+          cargo install wasm-bindgen-cli --version 0.2.128 --locked
+          wasm-bindgen --version
+
+      - name: Install independent Python peer dependencies
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/snow-python"
+          "$RUNNER_TEMP/snow-python/bin/python" -m pip install -r tools/companion-session-spike/requirements.txt
+
+      - name: Verify the Python pairing reference against the vendored contract
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/snow-python/bin/python" -m unittest discover -s tools/companion-session-spike -p "test_*.py" -v
+
+      - name: Install existing extension qualification dependencies
+        shell: bash
+        run: |
+          npm ci --prefix extension
+          cd extension
+          npx playwright install chromium
+
+      - name: Verify Agent pairing contract and MV3 durable state
+        shell: bash
+        run: |
+          node --test extension/tests/companion-pairing-contract.test.mjs
+          node extension/qualification/pairing-storage-browser.mjs
+
+      - name: Build WASM and run vector, interoperability, and negative tests
+        shell: bash
+        run: |
+          export PYTHON="$RUNNER_TEMP/snow-python/bin/python"
+          extension/qualification/snow-wasm-spike/build-spike.sh
+
+      - name: Qualify current Chromium MV3 service worker
+        id: current
+        continue-on-error: true
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHON="$RUNNER_TEMP/snow-python/bin/python"
+          cd extension
+          timeout --signal=TERM --kill-after=5s 60s node qualification/snow-wasm-spike/qualify-mv3.mjs playwright current
+
+      - name: Attempt Chrome 132 qualification
+        id: chrome132
+        continue-on-error: true
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHON="$RUNNER_TEMP/snow-python/bin/python"
+          mkdir -p "$RUNNER_TEMP/chrome132"
+          npx --yes @puppeteer/browsers@latest install chrome@132 --path "$RUNNER_TEMP/chrome132" | tee "$RUNNER_TEMP/chrome132-install.txt"
+          BROWSER="$(find "$RUNNER_TEMP/chrome132" -type f -name chrome -path '*/chrome-linux64/chrome' | head -n1)"
+          test -x "$BROWSER"
+          "$BROWSER" --version
+          node extension/qualification/pairing-storage-browser.mjs "$BROWSER"
+          timeout --signal=TERM --kill-after=5s 60s xvfb-run -a node extension/qualification/snow-wasm-spike/qualify-mv3.mjs "$BROWSER" chrome132
+
+      - name: Record qualification summary
+        if: always()
+        shell: bash
+        run: |
+          cd extension/qualification/snow-wasm-spike
+          node - <<'NODE'
+          const fs = require('fs');
+          const read = p => fs.existsSync(p) ? JSON.parse(fs.readFileSync(p,'utf8')) : null;
+          const cp = require('child_process');
+          const cmd = c => { try { return cp.execSync(c,{encoding:'utf8'}).trim(); } catch { return null; } };
+          const report = {
+            verdict_basis: 'production-packaged-wasm',
+            snow: { version: '0.10.0', release_commit: '4bb43f50370bdb3e8b1b57814ac662864db2704f' },
+            rustc: cmd('rustc --version'), cargo: cmd('cargo --version'), wasm_bindgen: cmd('wasm-bindgen --version'),
+            package_audit: read('package-audit.json'),
+            chrome_current: read('chrome-current.json'), current_attempt_outcome: '${{ steps.current.outcome }}',
+            chrome_132: read('chrome-chrome132.json'), chrome_132_attempt_outcome: '${{ steps.chrome132.outcome }}',
+          };
+          fs.writeFileSync('qualification-results.json', JSON.stringify(report,null,2)+'\n');
+          console.log(JSON.stringify(report,null,2));
+          NODE
+
+      - name: Upload feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snow-wasm-feasibility
+          if-no-files-found: warn
+          path: |
+            extension/crypto/snow/Cargo.lock
+            extension/vendor/companion-snow/
+            extension/qualification/snow-wasm-spike/package-audit.json
+            extension/qualification/snow-wasm-spike/dependency-metadata.json
+            extension/qualification/snow-wasm-spike/qualification-results.json
+            extension/qualification/snow-wasm-spike/chrome-*.json
+
+      - name: Require both browser qualifications
+        if: always()
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const report = JSON.parse(fs.readFileSync('extension/qualification/snow-wasm-spike/qualification-results.json', 'utf8'));
+          if (report.current_attempt_outcome !== 'success' || report.chrome_132_attempt_outcome !== 'success'
+              || report.chrome_current?.result !== 'passed' || report.chrome_132?.result !== 'passed') {
+            throw new Error('browser_qualification_required');
+          }
+          NODE

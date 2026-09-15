@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /* JSON-lines test boundary around the production outbox; contains no delivery rules. */
 import readline from 'node:readline';
+import { readFile } from 'node:fs/promises';
 import { DurableIngestOutbox, INGESTION_STORES } from '../transport/durable-outbox.mjs';
 import { createIndexedDbIngestionStorage } from '../transport/indexeddb-ingestion-storage.mjs';
 import { FakeIndexedDb } from '../tests/fake-indexeddb.mjs';
 import { AgentWebSocketClient } from '../transport/agent-websocket.mjs';
 
 const ACCOUNT = 'qualification-account';
+const { version: extensionVersion } = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
 const KEY = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 const stores = [INGESTION_STORES.outbox, INGESTION_STORES.chats, INGESTION_STORES.messages,
   INGESTION_STORES.coverageEvidence, INGESTION_STORES.snapshotManifests,
@@ -34,7 +36,7 @@ async function connect(fence, committed, resumeAction='resume', pendingSnapshotI
   // Stop the previous client before opening the next session.
   client?.stop();
   transportErrors=[];
-  client=new AgentWebSocketClient({ creatorAccountId:ACCOUNT, authTicket:'ticket', outbox,
+  client=new AgentWebSocketClient({ extensionVersion, creatorAccountId:ACCOUNT, authTicket:'ticket', outbox,
     identity:{agentInstallationId:'50000000-0000-4000-8000-000000000001',agentStreamId:identity.agent_stream_id,lastAcknowledgedSourceSeq:identity.acknowledged_source_seq,appliedConfigRevision:'config-1'},
     idFactory:id, webSocketFactory:()=>{ socket=new Socket(); return socket; }, scheduler:{setTimeout:(callback)=>{ scheduledCallbacks.push(callback); return callback; },clearTimeout:(callback)=>{ scheduledCallbacks=scheduledCallbacks.filter((item)=>item!==callback); },setInterval:()=>null,clearInterval:()=>{}},
     persistReconnectAuthTicket:async()=>{}, onValidationError:(error)=>transportErrors.push(error.message) });

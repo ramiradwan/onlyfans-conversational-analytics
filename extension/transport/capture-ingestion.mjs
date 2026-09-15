@@ -26,6 +26,13 @@ const KNOWN_EVENT_TYPES = new Set([
 ]);
 const KNOWN_DROP_REASONS = new Set([
   'capture_disabled',
+  'capture_too_large',
+  'account_mismatch',
+  'identity_required',
+  'invalid_sender',
+  'stale_capture_context',
+  'delivery_expired',
+  'delivery_id_conflict',
   'enqueue_failed',
   'hook_invalid_json',
   'hook_unrecognized_payload',
@@ -251,13 +258,13 @@ export function mapPlatformObservation(observation) {
     if (
       !hasExactKeys(observation, HOOK_DIAGNOSTIC_KEYS)
       || !['http.response', 'websocket.message'].includes(observation.source_event_type)
-      || !['invalid_json', 'unrecognized_payload'].includes(observation.code)
+      || !['invalid_json', 'unrecognized_payload', 'capture_too_large'].includes(observation.code)
       || timestamp(observation.observed_at) === null
       || typeof observation.source_path !== 'string'
       || !observation.source_path.startsWith('/')
     ) return invalid('malformed_observation', 'hook.diagnostic');
     return invalid(
-      observation.code === 'invalid_json'
+      observation.code === 'capture_too_large' ? 'capture_too_large' : observation.code === 'invalid_json'
         ? 'hook_invalid_json'
         : 'hook_unrecognized_payload',
       'hook.diagnostic',

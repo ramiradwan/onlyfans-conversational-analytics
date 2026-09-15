@@ -5,6 +5,11 @@ import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
+import { LEGAL_ACTIVATION_FLOW_STORAGE_KEY } from '../../../extension/runtime/legal-activation-controller.mjs';
+import {
+  PROVISIONING_IDENTITY_STORAGE_KEY,
+  PROVISIONING_IDENTITY_STORAGE_SCHEMA,
+} from '../../../extension/transport/provisioning-identity.mjs';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
 import {
   LOCAL_SERVICE_ORIGIN,
@@ -26,6 +31,7 @@ import { EXTENSION_DIST, assertBuiltExtension } from '../lib/paths.mjs';
 const IDENTITY_PATH = '/api2/v2/users/me';
 const CHATS_PATH = '/api2/v2/chats';
 const MESSAGES_PATH = `/api2/v2/chats/${SYNTHETIC.chatId}/messages`;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 function localServiceAcceptsConnections() {
   return new Promise((resolve) => {
@@ -116,6 +122,33 @@ function expectNoOptionalAccess(snapshot) {
   expect(snapshot.permissions.permissions ?? []).not.toContain('webRequest');
 }
 
+function expectEmptyProvisioningIdentitySession(snapshot) {
+  expect(snapshot.session).toEqual({
+    [PROVISIONING_IDENTITY_STORAGE_KEY]: {
+      schema: PROVISIONING_IDENTITY_STORAGE_SCHEMA,
+      contexts: [],
+    },
+  });
+}
+
+function expectFreshLegalActivationFlow(snapshot, previousTransactionId) {
+  expect(Object.keys(snapshot.local)).toEqual([LEGAL_ACTIVATION_FLOW_STORAGE_KEY]);
+  const flow = snapshot.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY];
+  expect(flow.schema).toBe('ofca-legal-activation-flow/v1');
+  expect(typeof flow.binding_scope).toBe('string');
+  expect(flow.binding_scope.length).toBeGreaterThan(0);
+  expect(flow.terms_reacceptance_required).toBe(false);
+  expect(flow.transaction_id).toMatch(UUID_V4);
+  expect(flow.transaction_id).not.toBe(previousTransactionId);
+  expect(flow.terms_event_id).toBeNull();
+  expect(flow.risk_event_id).toBeNull();
+  expect(flow.stage).toBe('pre_mode');
+  expect(flow.pending_mode).toBeNull();
+  expect(flow.pending_event_type).toBeNull();
+  expect(flow.completed_mode).toBeNull();
+  expect(flow.completed_event_id).toBeNull();
+}
+
 
 test('standalone preview survives pause, deletion, and restart without a local service', async () => {
   test.slow();
@@ -128,6 +161,8 @@ test('standalone preview survives pause, deletion, and restart without a local s
   const pageErrors = [];
   let context = null;
   let localServiceTraffic = null;
+  let deletedLegalTransactionId = null;
+  let freshLegalTransactionId = null;
 
   try {
     context = await launchExtensionBrowser(browserProfile);
@@ -157,8 +192,8 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(snapshot.state.capturePhase).toBe('off');
       expect(snapshot.state.runtimeReady).toBe(false);
       expect(snapshot.scriptIds).toEqual([]);
-      expect(snapshot.local).toEqual({});
-      expect(snapshot.session).toEqual({});
+      expectFreshLegalActivationFlow(snapshot, null);
+      expectEmptyProvisioningIdentitySession(snapshot);
       expect(snapshot.databaseNames).toEqual([]);
       expectNoOptionalAccess(snapshot);
     });
@@ -175,6 +210,12 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(snapshot.permissions.permissions ?? []).not.toContain('webRequest');
       expect(snapshot.scriptIds).toEqual(['ofca-preview-isolated', 'ofca-preview-main']);
       expect(snapshot.state.runtimeReady).toBe(false);
+      const reload = popup.getByRole('button', { name: 'Reload OnlyFans tabs to apply access' });
+      await expect(reload).toBeVisible();
+      const reloaded = platformPage.waitForEvent('domcontentloaded');
+      await reload.click();
+      await reloaded;
+      await expect(reload).toBeHidden();
       await expect.poll(() => platformPage.evaluate(
         () => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode ?? null,
       )).toBe('preview');
@@ -233,11 +274,17 @@ test('standalone preview survives pause, deletion, and restart without a local s
         await chrome.storage.local.set({ standalone_e2e_local: true });
         await chrome.storage.session.set({ standalone_e2e_session: true });
       });
-      expect((await extensionSnapshot(worker)).databaseNames).toEqual([
+      const beforeDelete = await extensionSnapshot(worker);
+      expect(beforeDelete.databaseNames).toEqual([
         'ofca_legal_evidence_v1',
         'standalone-e2e-a',
         'standalone-e2e-b',
       ]);
+      const previousFlow = beforeDelete.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY];
+      expect(typeof previousFlow?.terms_event_id).toBe('string');
+      expect(typeof previousFlow?.risk_event_id).toBe('string');
+      expect(typeof previousFlow?.completed_event_id).toBe('string');
+      deletedLegalTransactionId = previousFlow.transaction_id;
 
       popup.once('dialog', (dialog) => dialog.accept());
       await popup.getByRole('button', { name: 'Delete all extension data' }).click();
@@ -249,7 +296,8 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(deleted.state.preview.message_observations).toBe(0);
       expect(deleted.state.preview.chat_observations).toBe(0);
       expect(deleted.scriptIds).toEqual([]);
-      expect(deleted.local).toEqual({});
+      expectFreshLegalActivationFlow(deleted, deletedLegalTransactionId);
+      freshLegalTransactionId = deleted.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY].transaction_id;
       expect(deleted.session).toEqual({});
       expect(deleted.databaseNames).toEqual([]);
       expectNoOptionalAccess(deleted);
@@ -273,8 +321,10 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(restarted.state.capturePhase).toBe('off');
       expect(restarted.state.runtimeReady).toBe(false);
       expect(restarted.scriptIds).toEqual([]);
-      expect(restarted.local).toEqual({});
-      expect(restarted.session).toEqual({});
+      expectFreshLegalActivationFlow(restarted, deletedLegalTransactionId);
+      expect(restarted.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY].transaction_id)
+        .toBe(freshLegalTransactionId);
+      expectEmptyProvisioningIdentitySession(restarted);
       expect(restarted.databaseNames).toEqual([]);
       expectNoOptionalAccess(restarted);
     });

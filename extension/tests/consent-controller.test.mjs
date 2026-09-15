@@ -75,7 +75,7 @@ function harness({ unregisterFails = false } = {}) {
       onRemoved: event(),
       async contains(query) {
         if (query.origins?.includes('https://onlyfans.com/*')) return permissionState.onlyFans;
-        if (query.origins?.includes('http://bridge.localhost:17871/*')) return permissionState.localService;
+        if (query.origins?.includes('https://bridge.localhost:17871/*')) return permissionState.localService;
         if (query.permissions) return permissionState.history;
         return false;
       },
@@ -129,7 +129,6 @@ function harness({ unregisterFails = false } = {}) {
       async loadBrainBinding() { throw new Error('not bound'); },
       async clearBrainBinding() { counters.bindingClears += 1; },
     },
-    brainBindingBridge: bridge(),
     provisioningIdentityBridge: bridge(),
     previewMetrics: preview,
     async clearLocalData() {
@@ -214,12 +213,11 @@ test('saved preview consent enters permission-required state and can be re-grant
   assert.equal(h.registeredScripts.length, 2);
 });
 
-test('full analytics requires separate local service access', async () => {
+test('Full requires authenticated pairing without local HTTP host access', async () => {
   const h = harness();
   h.permissionState.onlyFans = true;
-  await assert.rejects(h.controller.setMode('full'), /Local analytics service access/);
-  h.permissionState.localService = true;
   await h.controller.setMode('full');
+  assert.equal(h.permissionState.localService, false);
   assert.equal((await h.controller.status()).phase, 'identity');
 });
 
@@ -242,11 +240,11 @@ test('delete attempts permission and storage cleanup after content-script teardo
   const h = harness({ unregisterFails: true });
   h.permissionState.onlyFans = true;
   await h.controller.setMode('preview');
-  await assert.rejects(h.controller.deleteLocalData(), /scripting teardown failed/);
+  await assert.rejects(h.controller.deleteLocalData(), { code: 'delete_incomplete' });
   assert.equal((await h.controller.status()).phase, 'unavailable');
   assert.equal(h.removedPermissions.length, 1);
   assert.equal(h.counters.bindingClears, 1);
   assert.equal(h.counters.deletes, 1);
-  assert.deepEqual(h.local, {});
+  assert.equal(h.local.ofca_delete_intent_v1.schema, 'ofca-delete-intent/v1');
   assert.deepEqual(h.session, {});
 });

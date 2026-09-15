@@ -17,10 +17,8 @@ from app.api.security import (
     verify_csrf_token,
 )
 from app.security.runtime_policy import RuntimePolicy
-from app.security.extension_storage import seal_extension_storage_bootstrap
 from app.core.config import settings
 from app.models.history import (
-    AgentPairingResponse,
     HistorySettingsResponse,
     MessagePageResponse,
     UpdateHistorySettingsRequest,
@@ -70,37 +68,6 @@ def _expected_revision(if_match: str | None) -> int:
     if revision < 0:
         raise HTTPException(status_code=400, detail="If-Match must be non-negative")
     return revision
-
-
-@router.post("/agent/pairing", response_model=AgentPairingResponse)
-def create_agent_pairing(
-    request: Request,
-    response: Response,
-    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
-    csrf: str | None = Header(None, alias="X-CSRF-Token"),
-) -> AgentPairingResponse:
-    """Issue one short-lived, exact-account ticket consumed by one Agent handshake."""
-    require_creator(policy)
-    verify_same_origin(request)
-    verify_csrf_token(policy, csrf)
-    ticket, expires_at = transport_manager.issue_agent_pairing_ticket(
-        principal_id=policy.identity.principal_id,
-        creator_account_id=policy.identity.creator_account_id,
-    )
-    response.headers["Cache-Control"] = "no-store"
-    storage_bootstrap = None
-    if settings.extension_id:
-        storage_bootstrap = seal_extension_storage_bootstrap(
-            extension_id=settings.extension_id,
-            creator_account_id=policy.identity.creator_account_id,
-            credential_kind="pairing",
-            auth_ticket=ticket,
-        )
-    return AgentPairingResponse(
-        pairing_ticket=ticket,
-        storage_bootstrap=storage_bootstrap,
-        expires_at=expires_at,
-    )
 
 
 @router.get(

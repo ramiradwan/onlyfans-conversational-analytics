@@ -12,8 +12,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
-import { unzipSync, zipSync } from 'fflate';
+import { zipSync } from 'fflate';
 import { validatePackagedSigningRule } from 'local-authenticated-read-connector/browser-signing';
+import { auditLegalBindingLiterals } from './qualification/legal-binding-literals.mjs';
+import { readArchiveEntries } from './qualification/archive-entries.mjs';
+import { SIGNER_RELEASE, signerReleaseFiles, auditInstalledSigner, auditSignerMetadata } from './qualification/signer-release.mjs';
+import { auditPackagedSnow, SNOW_WASM_FILE } from './qualification/companion-snow-release.mjs';
 
 import { canonicalLegalBindingsJson } from '../tools/legal-release-bindings/canonical-json.mjs';
 import {
@@ -23,18 +27,21 @@ import {
 } from './runtime/legal-instruments.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.join(ROOT, 'dist');
-const SIGNER_PACKAGE = 'local-authenticated-read-connector';
-const SIGNER_VERSION = '0.2.0-beta.11';
-const SIGNER_SPEC =
-  'file:vendor/local-authenticated-read-connector-0.2.0-beta.11.tgz';
-const SIGNER_TARBALL = path.join(
-  ROOT,
-  'vendor',
-  'local-authenticated-read-connector-0.2.0-beta.11.tgz',
-);
+const DIST = path.resolve(argumentValue('--outdir') ?? path.join(ROOT, 'dist'));
+const SOURCE_MANIFEST = JSON.parse(await readFile(path.join(ROOT, 'manifest.json'), 'utf8'));
+assert.equal(SOURCE_MANIFEST.minimum_chrome_version, '132');
+const CHROME_TARGET = `chrome${SOURCE_MANIFEST.minimum_chrome_version}`;
+const SIGNER_PACKAGE = SIGNER_RELEASE.package;
+const SIGNER_VERSION = SIGNER_RELEASE.version;
+const SIGNER_SPEC = `file:vendor/${SIGNER_RELEASE.archive}`;
+const SIGNER_TARBALL = path.join(ROOT, 'vendor', SIGNER_RELEASE.archive);
+const SIGNER_ROOT = path.join(ROOT, 'node_modules', SIGNER_PACKAGE);
+let verifiedSignerFiles = null;
+let verifiedSnow = null;
 const SIGNER_ENTRY = fileURLToPath(import.meta.resolve(`${SIGNER_PACKAGE}/browser-signing`));
 const SIGNING_RULE_FILE = 'packaged-signing-rule.json';
+const COMPANION_TRUST_FILE = 'companion-grant-trust.json';
+const COMPANION_TRUST_SOURCE = path.join(ROOT, '../contracts/production/grant-profile-v1/trust-set.json');
 const BUILD_METADATA_FILE = 'build-meta.json';
 const BUILD_METADATA_SCHEMA = 'ofca-extension-build/v4';
 const EXPECTED_EXTENSION_ID = 'mldllkjpnnjhdccpofhebhlhigpefcba';
@@ -53,10 +60,9 @@ const EXPECTED_PERMISSIONS = Object.freeze([
 const EXPECTED_OPTIONAL_PERMISSIONS = Object.freeze(['webRequest']);
 const EXPECTED_OPTIONAL_HOST_PERMISSIONS = Object.freeze([
   'https://onlyfans.com/*',
-  'http://bridge.localhost:17871/*',
 ]);
 const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['http://bridge.localhost:17871/*']);
-const EXPECTED_EXTENSION_CSP = "script-src 'self'; object-src 'self'; connect-src 'self' http://bridge.localhost:17871 ws://bridge.localhost:17871;";
+const EXPECTED_EXTENSION_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;";
 const FORBIDDEN_PERMISSIONS = Object.freeze([
   'cookies',
   'debugger',
@@ -314,10 +320,14 @@ const LEGAL_BINDINGS_MODULE = /(^|[\\/])runtime[\\/]legal-release-bindings\.mjs$
  */
 export function legalBindingsModuleSource(legalBindings) {
   return [
-    `const BINDINGS = Object.freeze(JSON.parse(${JSON.stringify(legalBindings.canonical)}));`,
+    `const LEGAL_RELEASE_BINDINGS_B64 = ${JSON.stringify(Buffer.from(legalBindings.canonical, 'utf8').toString('base64'))};`,
     `export const LEGAL_RELEASE_BINDINGS_SHA256 = ${JSON.stringify(legalBindings.digest)};`,
     'export function legalReleaseBindings() {',
-    '  return BINDINGS;',
+    '  if (!/^[a-f0-9]{64}$/.test(LEGAL_RELEASE_BINDINGS_SHA256)) {',
+    "    throw new Error('Invalid Legal release binding digest');",
+    '  }',
+    '  const bytes = Uint8Array.from(atob(LEGAL_RELEASE_BINDINGS_B64), (character) => character.charCodeAt(0));',
+    '  return JSON.parse(new TextDecoder().decode(bytes));',
     '}',
     '',
   ].join('\n');
@@ -339,6 +349,17 @@ function packagedSignerPlugin(signingRule) {
   return {
     name: 'packaged-signer-rule',
     setup(context) {
+      context.onLoad(
+        { filter: /[\\/]node_modules[\\/]local-authenticated-read-connector[\\/].*\.js$/ },
+        async ({ path: filename }) => {
+          const relative = path.relative(SIGNER_ROOT, filename).replaceAll('\\', '/');
+          const expected = verifiedSignerFiles?.get(relative);
+          assert.ok(expected, 'signer compilation requested a file outside the reviewed archive');
+          const actual = await readFile(filename);
+          assert.equal(Buffer.compare(actual, expected), 0, `signer source changed before compilation: ${relative}`);
+          return { contents: expected.toString('utf8'), loader: 'js', resolveDir: path.dirname(filename) };
+        },
+      );
       context.onResolve(
         { filter: /^local-authenticated-read-connector\/browser-signing$/ },
         () => ({ path: 'packaged-signer-rule', namespace: 'packaged-signer-rule' }),
@@ -364,7 +385,11 @@ const FORBIDDEN_BACKGROUND_INPUTS = Object.freeze([
   /(^|\/)transport\/agent-websocket\.mjs$/,
   /(^|\/)transport\/capture-ingestion\.mjs$/,
   /(^|\/)transport\/chrome-adapter\.mjs$/,
+  /(^|\/)transport\/chrome-adapter-core\.mjs$/,
+  /(^|\/)transport\/read-only-chrome-adapter\.mjs$/,
   /(^|\/)transport\/config-http-adapter\.mjs$/,
+  /(^|\/)transport\/read-only-config-http-adapter\.mjs$/,
+  /(^|\/)transport\/secure-local-fetch\.mjs$/,
   /(^|\/)transport\/durable-outbox\.mjs$/,
   /(^|\/)transport\/history-coordinator\.mjs$/,
   /(^|\/)transport\/indexeddb-ingestion-storage\.mjs$/,
@@ -407,7 +432,7 @@ async function compileOnce(signingRule, legalBindings) {
     platform: 'browser',
     plugins,
     sourcemap: false,
-    target: ['chrome116'],
+    target: [CHROME_TARGET],
     treeShaking: true,
     write: false,
   };
@@ -439,6 +464,10 @@ async function compileOnce(signingRule, legalBindings) {
   ]);
 
   auditReadOnlyModuleGraph(Object.keys(background.metafile.inputs));
+  const backgroundInputs = Object.keys(background.metafile.inputs).map((input) => input.replaceAll('\\', '/'));
+  for (const required of ['runtime/packaged-snow.mjs', 'vendor/companion-snow/ofca_snow_wasm.js']) {
+    assert.ok(backgroundInputs.some((input) => input.endsWith(required)), `background omitted ${required}`);
+  }
 
   const signerInputs = Object.keys(background.metafile.inputs)
     .map((input) => input.replaceAll('\\', '/'))
@@ -466,7 +495,8 @@ function verifyIdenticalBuilds(first, second) {
 
 function auditManifest(manifest) {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.minimum_chrome_version, '116');
+  assert.equal(manifest.minimum_chrome_version, SOURCE_MANIFEST.minimum_chrome_version);
+  assert.equal(manifest.version, SOURCE_MANIFEST.version);
   assert.equal(manifest.name, 'Conversation Analytics');
   assert.equal(deriveExtensionId(manifest.key), EXPECTED_EXTENSION_ID);
   assert.deepEqual(manifest.permissions, EXPECTED_PERMISSIONS);
@@ -580,11 +610,15 @@ export function auditSigningRuleBinding(source, signingRule, { required }) {
 }
 
 async function auditDependencyLock() {
+  const archiveBytes = await readFile(SIGNER_TARBALL);
+  verifiedSignerFiles = signerReleaseFiles(archiveBytes);
+  await auditInstalledSigner({ files: verifiedSignerFiles, root: SIGNER_ROOT, entry: SIGNER_ENTRY });
   const packageDocument = await readJson(path.join(ROOT, 'package.json'));
+  assert.equal(packageDocument.version, SOURCE_MANIFEST.version, 'package and manifest versions differ');
   assert.equal(packageDocument.dependencies?.[SIGNER_PACKAGE], SIGNER_SPEC);
   assert.equal(packageDocument.dependencies?.[packageDocument.name], undefined);
   assert.equal(packageDocument.devDependencies?.esbuild, '0.25.6');
-  assert.equal(packageDocument.devDependencies?.fflate, '0.8.2');
+  assert.equal(packageDocument.devDependencies?.fflate, '0.8.3');
 
   const lock = await readJson(path.join(ROOT, 'package-lock.json'));
   const root = lock.packages?.[''];
@@ -592,10 +626,10 @@ async function auditDependencyLock() {
   assert.equal(root?.dependencies?.[SIGNER_PACKAGE], SIGNER_SPEC);
   assert.equal(root?.dependencies?.[packageDocument.name], undefined);
   assert.equal(lock.packages?.[`node_modules/${packageDocument.name}`], undefined);
-  assert.equal(root?.devDependencies?.fflate, '0.8.2');
+  assert.equal(root?.devDependencies?.fflate, '0.8.3');
   assert.equal(signer?.version, SIGNER_VERSION);
   assert.equal(signer?.resolved, SIGNER_SPEC);
-  assert.equal(signer?.integrity, sha512Integrity(await readFile(SIGNER_TARBALL)));
+  assert.equal(signer?.integrity, sha512Integrity(archiveBytes));
 
   const installed = await readJson(path.join(
     ROOT,
@@ -655,11 +689,19 @@ async function auditArtifactView(view, {
 
   const metadata = await jsonFromView(view, BUILD_METADATA_FILE);
   assert.equal(metadata.schema, BUILD_METADATA_SCHEMA);
-  assert.equal(metadata.signer, `${SIGNER_PACKAGE}@${SIGNER_VERSION}`);
-  assert.equal(metadata.signer_tarball, sha256(await readFile(SIGNER_TARBALL)));
+  auditSignerMetadata(metadata);
   assert.equal(metadata.extension_id, EXPECTED_EXTENSION_ID);
-  assert.equal(metadata.target, 'chrome116');
+  assert.equal(metadata.target, CHROME_TARGET);
+  assert.equal(metadata.extension_version, manifest.version);
   assert.equal(metadata.determinism_verified, true);
+  verifiedSnow = await auditPackagedSnow();
+  assert.deepEqual(metadata.companion_snow, verifiedSnow.release);
+  const snowBytes = await view.read(SNOW_WASM_FILE);
+  assert.equal(sha256Hex(snowBytes), verifiedSnow.release.outputs[SNOW_WASM_FILE]);
+  assert.equal(metadata.outputs[SNOW_WASM_FILE], sha256(snowBytes));
+  const trustBytes = await view.read(COMPANION_TRUST_FILE);
+  assert.equal(sha256(trustBytes), sha256(await readFile(COMPANION_TRUST_SOURCE)));
+  assert.equal(metadata.outputs[COMPANION_TRUST_FILE], sha256(trustBytes));
 
   let artifactSigningRule = null;
   if (metadata.signing_rule !== null) {
@@ -738,18 +780,20 @@ async function auditArtifactView(view, {
           /__OFCA_TEST_LEGAL_RELEASE_BINDINGS__/,
           'the built background carries the unbound Legal release bindings module',
         );
-        assert.ok(
-          source.includes(expectedLegalBindings.document.legal_repository_revision),
-          'the built background does not carry the verified Legal release bindings',
-        );
+        auditLegalBindingLiterals(source, expectedLegalBindings);
       }
       assert.match(source, /createChromeBrowserSigningProvider/);
+      assert.match(source, /ofca_snow_wasm_bg\.wasm/);
+      assert.match(source, /companion-grant-trust\.json/);
       assert.match(source, /signer-state/);
       assert.match(source, /browser-signing-read\/v1/);
       assert.match(source, /active_account_partition_v5/);
-      assert.match(source, /ofca_full_storage_bootstrap_v1/);
+      assert.match(source, /ofca-companion-pairing\/v1/);
+      assert.match(source, /session\.authorization/);
+      assert.match(source, /agent\.authenticate/);
+      assert.doesNotMatch(source, /ofca_full_storage_bootstrap_v1|ofca\.brain\.bind/);
       assert.match(source, /ofca-idb-aesgcm\/v1/);
-      assert.match(source, /\/api\/v1\/agent\/storage\/unseal/);
+      assert.match(source, /agent\.storage\.unseal/);
       assert.doesNotMatch(source, /pairing_auth_ticket/);
       assert.doesNotMatch(source, /browser_signing_state_v2:/);
       assert.doesNotMatch(source, /bridge-clean-dev-ticket|DEV_AUTH_TICKET|DEV_ACCOUNT_ID/);
@@ -781,6 +825,7 @@ async function auditArtifactView(view, {
   const notice = TEXT_DECODER.decode(noticeBytes);
   assert.match(notice, /local-authenticated-read-connector/);
   assert.match(notice, /MIT License/);
+  assert.match(notice, /snow 0\.10\.0/);
   assert.equal(metadata.outputs[NOTICE_FILE], sha256(noticeBytes));
   assert.equal(metadata.outputs['manifest.json'], sha256(await view.read('manifest.json')));
 
@@ -790,6 +835,8 @@ async function auditArtifactView(view, {
     'manifest.json',
     ...ICON_FILES,
     NOTICE_FILE,
+    SNOW_WASM_FILE,
+    COMPANION_TRUST_FILE,
     ...(artifactSigningRule === null ? [] : [SIGNING_RULE_FILE]),
   ].sort();
   assert.deepEqual(Object.keys(metadata.outputs).sort(), expectedOutputNames);
@@ -816,7 +863,7 @@ export async function auditChromeArchive(
   await auditDependencyLock();
   assert.notEqual(expectedSigningRule, null, 'archive audit requires an expected signing rule');
   const bytes = await readFile(filename);
-  const view = archiveView(unzipSync(bytes));
+  const view = archiveView(readArchiveEntries(bytes));
   const metadata = await auditArtifactView(view, {
     expectedSigningRule,
     expectedLegalBindings,
@@ -832,7 +879,35 @@ export async function auditChromeArchive(
 async function writeArtifact(compiled, signingRule, extensionConfig, legalBindings) {
   const sourceManifest = await readJson(path.join(ROOT, 'manifest.json'));
   auditManifest(sourceManifest);
-  await rm(DIST, { force: true, recursive: true });
+  // An output option must never turn a build into deletion of an arbitrary tree.
+  // Reuse only a directory owned by a prior build; candidates start empty.
+  assert.notEqual(DIST, ROOT, 'build output must not be the source directory');
+  const relativeRoot = path.relative(DIST, ROOT);
+  assert.ok(relativeRoot.startsWith('..') || path.isAbsolute(relativeRoot), 'build output must not contain source');
+  const { readdir } = await import('node:fs/promises');
+  const existing = await readdir(DIST).catch((error) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  if (existing.length > 0) {
+    const previous = await readJson(path.join(DIST, BUILD_METADATA_FILE));
+    assert.equal(previous.schema, BUILD_METADATA_SCHEMA, 'output directory is not an extension build');
+    assert.deepEqual(existing.sort(), [...new Set([
+      ...Object.keys(previous.outputs).map((name) => name.split('/')[0]),
+      BUILD_METADATA_FILE,
+      ...existing.filter((name) => /^conversation-analytics-[0-9.]+\.zip$/.test(name)),
+      ...existing.filter((name) => name === 'release'),
+    ])].sort(), 'output directory contains unrelated files');
+    // Preserve promoted releases and delete only known previous output files.
+    for (const filename of Object.keys(previous.outputs)) {
+      assert.ok(!path.isAbsolute(filename) && !filename.includes('..') && !filename.includes('\\'));
+      await rm(path.join(DIST, filename), { force: true });
+    }
+    for (const name of existing.filter((name) => /^conversation-analytics-[0-9.]+\.zip$/.test(name))) {
+      await rm(path.join(DIST, name), { force: true });
+    }
+    await rm(path.join(DIST, BUILD_METADATA_FILE), { force: true });
+  }
   await mkdir(path.join(DIST, 'icons'), { recursive: true });
 
   for (const [filename, bytes] of compiled) {
@@ -852,19 +927,18 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     const details = await stat(path.join(DIST, filename));
     assert.ok(details.size > 0, `${filename} is empty`);
   }
-  const signerLicense = await readFile(path.join(
-    ROOT,
-    'node_modules',
-    SIGNER_PACKAGE,
-    'LICENSE',
-  ), 'utf8');
+  const signerLicense = verifiedSignerFiles.get('LICENSE').toString('utf8');
   const notice = [
     `${SIGNER_PACKAGE}@${SIGNER_VERSION}`,
     '',
     signerLicense.trim(),
     '',
+    verifiedSnow.files.get('THIRD_PARTY_NOTICES.txt').toString('utf8').trim(),
+    '',
   ].join('\n');
   await writeFile(path.join(DIST, NOTICE_FILE), notice, 'utf8');
+  await writeFile(path.join(DIST, SNOW_WASM_FILE), verifiedSnow.files.get(SNOW_WASM_FILE));
+  await copyFile(COMPANION_TRUST_SOURCE, path.join(DIST, COMPANION_TRUST_FILE));
   if (signingRule !== null) {
     await writeFile(path.join(DIST, SIGNING_RULE_FILE), signingRule.bytes);
   }
@@ -875,6 +949,8 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     'manifest.json',
     ...ICON_FILES,
     NOTICE_FILE,
+    SNOW_WASM_FILE,
+    COMPANION_TRUST_FILE,
     ...(signingRule === null ? [] : [SIGNING_RULE_FILE]),
   ];
   const outputs = {};
@@ -887,13 +963,15 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     extension_id: deriveExtensionId(sourceManifest.key),
     signer: `${SIGNER_PACKAGE}@${SIGNER_VERSION}`,
     signer_tarball: sha256(await readFile(SIGNER_TARBALL)),
+    signer_release: SIGNER_RELEASE,
+    companion_snow: verifiedSnow.release,
     signing_rule: signingRule === null ? null : {
       schema: signingRule.document.schema,
       source_revision: signingRule.document.source_revision,
       sha256: signingRule.digest,
     },
     legal_bindings: legalBindingsMetadata(legalBindings),
-    target: 'chrome116',
+    target: CHROME_TARGET,
     determinism_verified: true,
     privacy_policy_configured: extensionConfig.privacy_policy_url !== '',
     outputs,
@@ -922,6 +1000,8 @@ async function buildArtifact(
   legalBindings,
   { requirePrivacyPolicy },
 ) {
+  await auditDependencyLock();
+  verifiedSnow = await auditPackagedSnow();
   const first = await compileOnce(signingRule, legalBindings);
   const second = await compileOnce(signingRule, legalBindings);
   verifyIdenticalBuilds(first, second);

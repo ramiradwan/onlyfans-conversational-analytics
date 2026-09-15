@@ -1,12 +1,14 @@
 """FastAPI application for ingestion, analytics, Agent, and Bridge traffic."""
 
 import logging
+import os
+from functools import lru_cache
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.endpoints import creator_vault, frontend, history, insights, transport_ws, webauthn
+from app.api.endpoints import companion_pairing, creator_vault, frontend, history, insights, transport_ws, webauthn
 from app.analytics import runtime as analytics_runtime
 from app.bootstrap import history_source, transport_manager
 from app.core.config import settings
@@ -22,11 +24,37 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
 )
+from app.transport.companion_origin import CompanionOriginBoundary
+from app.security.grant_refresh import (
+    GrantRefreshLifecycle, HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, configured_grant_refresh,
+)
 
 logger = logging.getLogger(__name__)
 
 _installation_key_authority: InstallationKeyAuthority | None = None
 _installation_key_reference: InstallationKeyReference | None = None
+_grant_refresh: GrantRefreshLifecycle | None = None
+
+
+def start_grant_refresh() -> None:
+    """Renew verified installation grants without delaying local startup."""
+    global _grant_refresh
+    if (_grant_refresh is not None or settings.identity_binding_source != "verified_grants"
+            or settings.websocket_auth_mode != "local_session"):
+        return
+    from app.provisioning.claim_submission import hosted_transport, installation_proof_authority
+
+    @lru_cache(maxsize=1)
+    def open_store():
+        return SQLiteAuthenticationStore(settings.auth_database_path)
+
+    _grant_refresh = configured_grant_refresh(
+        open_store,
+        hosted_origin=os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""),
+        transport_factory=hosted_transport,
+        proof_authority_factory=installation_proof_authority,
+    )
+    _grant_refresh.start()
 
 
 def configure_analytics_runtime():
@@ -122,6 +150,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(CompanionOriginBoundary)
 
 # -------------------------------------------------
 # Static file mount (Vite build output in app/static/dist)
@@ -136,6 +165,7 @@ app.include_router(history.router)
 app.include_router(insights.router)
 app.include_router(webauthn.router)
 app.include_router(creator_vault.router)
+app.include_router(companion_pairing.router)
 
 # -------------------------------------------------
 # Startup & Shutdown events — manage Broadcast lifecycle
@@ -145,6 +175,7 @@ async def startup_event():
     activate_runtime()
     await broadcast.connect()
     await transport_manager.start()
+    start_grant_refresh()
     # Use resources created for this application lifecycle.
     configure_analytics_runtime()
     # Recover every canonical account's analytics projection in the
@@ -153,6 +184,10 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    global _grant_refresh
+    if _grant_refresh is not None:
+        await _grant_refresh.stop()
+        _grant_refresh = None
     await transport_manager.stop()
     drained = await analytics_runtime.shutdown_default_analytics_runtime(
         timeout=5.0

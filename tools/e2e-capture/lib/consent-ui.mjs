@@ -135,9 +135,19 @@ export async function completePreModeLegalActions(popup) {
   await expect(popup.locator('#mode-choice')).toBeVisible();
 }
 
+async function hasOrigins(worker, origins) {
+  return worker.evaluate(async (patterns) => {
+    const results = await Promise.all(
+      patterns.map((origin) => chrome.permissions.contains({ origins: [origin] })),
+    );
+    return results.every(Boolean);
+  }, origins);
+}
+
 async function acceptPermissionFor(context, popup, worker, buttonName, origins) {
+  const alreadyGranted = await hasOrigins(worker, origins);
   await popup.getByRole('button', { name: buttonName }).click();
-  await acceptNativeHostPermissionPrompt(context);
+  if (!alreadyGranted) await acceptNativeHostPermissionPrompt(context);
   for (const origin of origins) {
     await expect.poll(
       () => worker.evaluate(
@@ -182,7 +192,7 @@ export async function upgradePreviewToFull(context, popup, worker) {
     popup,
     worker,
     'Enable Full analytics',
-    [ONLYFANS_ORIGIN_PATTERN, LOCAL_SERVICE_ORIGIN_PATTERN],
+    [ONLYFANS_ORIGIN_PATTERN],
   );
 }
 
@@ -195,6 +205,6 @@ export async function connectFullAnalytics(context, popup, worker) {
     popup,
     worker,
     'Enable Full analytics',
-    [ONLYFANS_ORIGIN_PATTERN, LOCAL_SERVICE_ORIGIN_PATTERN],
+    [ONLYFANS_ORIGIN_PATTERN],
   );
 }

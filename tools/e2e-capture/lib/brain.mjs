@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 
@@ -11,6 +12,13 @@ export const BRAIN_PORT = 17_871;
 export const BRAIN_ORIGIN = `http://bridge.localhost:${BRAIN_PORT}`;
 export const BRAIN_LOOPBACK_URL = `http://${BRAIN_HOST}:${BRAIN_PORT}`;
 export const BRAIN_HTTP_URL = BRAIN_ORIGIN;
+const E2E_BRAIN_ENTRY = path.join(
+  PRODUCT_ROOT,
+  'tools',
+  'e2e-capture',
+  'helpers',
+  'brain_entry.py',
+);
 
 function bootstrapConfigRevision() {
   const source = readFileSync(
@@ -44,6 +52,24 @@ function portAcceptsConnections(port) {
       socket.destroy();
       resolve(false);
     });
+  });
+}
+
+function brainHealthIsReady() {
+  return new Promise((resolve) => {
+    const request = httpRequest({
+      host: BRAIN_HOST,
+      port: BRAIN_PORT,
+      path: '/health',
+      method: 'GET',
+      headers: { Host: new URL(BRAIN_ORIGIN).host },
+    }, (response) => {
+      response.resume();
+      resolve((response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300);
+    });
+    request.once('error', () => resolve(false));
+    request.setTimeout(500, () => request.destroy());
+    request.end();
   });
 }
 
@@ -86,20 +112,7 @@ export class BrainProcess {
 
     const child = spawn(
       pythonExecutable(),
-      [
-        '-m',
-        'uvicorn',
-        'app.main:app',
-        '--host',
-        BRAIN_HOST,
-        '--port',
-        String(BRAIN_PORT),
-        '--workers',
-        '1',
-        '--no-access-log',
-        '--log-level',
-        'warning',
-      ],
+      [E2E_BRAIN_ENTRY],
       {
         cwd: PRODUCT_ROOT,
         env: {
@@ -142,12 +155,7 @@ export class BrainProcess {
         this.child = null;
         throw new Error(`Brain exited during startup.\n${this.recentOutput()}`);
       }
-      try {
-        const response = await fetch(`${BRAIN_LOOPBACK_URL}/health`, { cache: 'no-store' });
-        if (response.ok) return;
-      } catch {
-        // The listener is not ready yet.
-      }
+      if (await brainHealthIsReady()) return;
       await delay(100);
     }
     await this.stop();

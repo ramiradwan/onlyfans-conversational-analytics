@@ -1,0 +1,77 @@
+name: Verify extension release inputs
+
+# Qualification only: no publication, release tag, or Store submission.
+on:
+  workflow_dispatch:
+  push:
+    branches: [extension/production-readiness]
+    paths: [.github/workflows/verify-extension-release-inputs.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  authenticated-inputs:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Declare ephemeral paths
+        shell: pwsh
+        run: |
+          "LEGAL_BINDINGS_DOCUMENT=$(Join-Path $env:RUNNER_TEMP 'qualification-legal.json')" >> $env:GITHUB_ENV
+          "PACKAGED_SIGNING_RULE=$(Join-Path $env:RUNNER_TEMP 'qualification-rule.json')" >> $env:GITHUB_ENV
+          "QUALIFICATION_OUTPUT=$(Join-Path $env:RUNNER_TEMP 'qualification-extension')" >> $env:GITHUB_ENV
+      - name: Verify approved Legal bindings through authenticated gate
+        shell: pwsh
+        env:
+          PRODUCT_REVISION: ${{ github.sha }}
+          LEGAL_REPOSITORY_REVISION: ad4f38ddd82f55bc054a756212385dd22655270b
+          LEGAL_BINDINGS_REPOSITORY_REVISION: 1af27b19efa1f4701bd6d619530f9d44dc431148
+          LEGAL_BINDINGS_PATH: compliance/cws/releases/2.0.1/legal-release-bindings.json
+          LEGAL_BINDINGS_DIGEST: a42899ee8b86b978ef52dfb473c8b93b297f1fa49d1d4bf00322a72d09f1771f
+          LEGAL_BINDINGS_REPOSITORY: ${{ secrets.LEGAL_BINDINGS_REPOSITORY }}
+          LEGAL_BINDINGS_APP_ID: ${{ secrets.LEGAL_BINDINGS_APP_ID }}
+          LEGAL_BINDINGS_APP_PRIVATE_KEY_B64: ${{ secrets.LEGAL_BINDINGS_APP_PRIVATE_KEY_B64 }}
+          LEGAL_BINDINGS_INSTALLATION_ID: ${{ secrets.LEGAL_BINDINGS_INSTALLATION_ID }}
+        run: node tools/legal-release-bindings/verify.mjs --output="$env:LEGAL_BINDINGS_DOCUMENT" --environment-file="$env:GITHUB_ENV"
+      - name: Verify approved signing rule through authenticated gate
+        shell: pwsh
+        env:
+          SIGNING_RULE_RELEASE_TAG: signing-rule-202609101529-ed4efd662b
+          SIGNING_RULE_RELEASE_ASSET_ID: '557256152'
+          SIGNING_RULE_DIGEST: 218faeca41e0cd1ee649ad59100a10df2ea6789393dd075c76c50e2fc66b9ea4
+          SIGNING_RULE_SOURCE_REVISION: 202609101529-ed4efd662b
+          SIGNING_RULE_REPOSITORY: ${{ secrets.SIGNING_RULE_REPOSITORY }}
+          SIGNING_RULE_APP_ID: ${{ secrets.SIGNING_RULE_APP_ID }}
+          SIGNING_RULE_APP_PRIVATE_KEY_B64: ${{ secrets.SIGNING_RULE_APP_PRIVATE_KEY_B64 }}
+          SIGNING_RULE_INSTALLATION_ID: ${{ secrets.SIGNING_RULE_INSTALLATION_ID }}
+        run: node tools/packaged-signing-rule/verify.mjs --output="$env:PACKAGED_SIGNING_RULE"
+      - name: Test Legal gate
+        run: node --test tools/legal-release-bindings/verify.test.mjs
+      - name: Install extension dependencies
+        working-directory: extension
+        run: npm ci --ignore-scripts
+      - name: Build and audit verified inputs
+        shell: pwsh
+        run: |
+          node extension/build.mjs --package --outdir="$env:QUALIFICATION_OUTPUT" --packaged-signing-rule="$env:PACKAGED_SIGNING_RULE" --legal-release-bindings="$env:LEGAL_BINDINGS_DOCUMENT" --privacy-policy-url="$env:RELEASE_PRIVACY_POLICY_URL"
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate build failed' }
+          $artifact = Join-Path $env:QUALIFICATION_OUTPUT 'conversation-analytics-2.0.1.zip'
+          node extension/build.mjs --audit-package --artifact="$artifact" --packaged-signing-rule="$env:PACKAGED_SIGNING_RULE" --legal-release-bindings="$env:LEGAL_BINDINGS_DOCUMENT" --privacy-policy-url="$env:RELEASE_PRIVACY_POLICY_URL"
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate audit failed' }
+          # Publish identities only; private inputs and the candidate stay ephemeral.
+          [ordered]@{ product_revision = $env:GITHUB_SHA; legal_bindings_digest = (Get-FileHash -LiteralPath $env:LEGAL_BINDINGS_DOCUMENT -Algorithm SHA256).Hash.ToLowerInvariant(); signing_rule_digest = (Get-FileHash -LiteralPath $env:PACKAGED_SIGNING_RULE -Algorithm SHA256).Hash.ToLowerInvariant(); privacy_policy_url = $env:RELEASE_PRIVACY_POLICY_URL; candidate_sha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant() } | ConvertTo-Json -Compress
+      - name: Remove staged private inputs
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($name in @('qualification-legal.json', 'qualification-rule.json')) {
+            $target = Join-Path $env:RUNNER_TEMP $name
+            if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }
+          }

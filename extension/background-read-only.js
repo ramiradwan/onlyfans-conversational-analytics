@@ -1,70 +1,91 @@
 import { createReadOnlyAgentRuntime } from './transport/read-only-agent-runtime.mjs';
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
-import {
-  createBrainBindingBridge,
-  createChromeAdapter,
-} from './transport/read-only-chrome-adapter.mjs';
-import {
-  CaptureDiagnostics,
-  CaptureIngestionService,
-  createCaptureMessageBridge,
-} from './transport/read-only-capture-ingestion.mjs';
+import { ReadOnlyAgentWebSocketClient } from './transport/read-only-agent-websocket.mjs';
+import { createCompanionClient } from './runtime/companion-client.mjs';
+import { createProvisioningCompanionGuard } from './runtime/provisioning-companion-guard.mjs';
+import { accountDatabaseName } from './transport/read-only-indexeddb-ingestion-storage.mjs';
+import { CaptureDiagnostics } from './transport/read-only-capture-ingestion.mjs';
+import { DeliveryCaptureIngestionService } from './transport/read-only-delivery-capture-ingestion.mjs';
+import { createAccountBoundCaptureMessageBridge } from './transport/account-bound-capture-bridge.mjs';
 import { createProvisioningIdentityBridge } from './transport/provisioning-identity.mjs';
-import { ConsentController } from './runtime/consent-controller.mjs';
+import { LOCAL_SERVICE_ORIGIN } from './transport/local-service-endpoints.mjs';
+import { PartitionAwareConsentController } from './runtime/partition-aware-consent-controller.mjs';
 import { PreviewMetricsStore } from './runtime/preview-metrics.mjs';
 import { clearExtensionLocalData } from './runtime/local-data.mjs';
+import { OperationScope, SerialExecutor } from './runtime/operation-scope.mjs';
 import { ActivationEvidenceStore } from './runtime/activation-evidence.mjs';
 import { LegalActivationController } from './runtime/legal-activation-controller.mjs';
 import { LegalConsentAuthorization } from './runtime/legal-consent-authorization.mjs';
 import { legalReleaseBindings } from './runtime/legal-release-bindings.mjs';
 
-export const chromeAdapter = createChromeAdapter();
-export const agentRuntime = createReadOnlyAgentRuntime({
-  chromeAdapter,
-  signerFactory: (options) => createChromeBrowserSigningProvider(options),
-  onStartupError: () => {
-    console.error('[Conversation Analytics] local Agent startup failed; a later consented wake will retry');
-  },
+let lastStartupErrorCode = null;
+export const companionClient = createCompanionClient({
+  accountDatabaseName,
+  allowsFull: () => consentController?.state.mode === 'full',
+  detectedAccountId: () => provisioningIdentityBridge.currentAccountId(),
 });
-
-let consentController = null;
-export const brainBindingBridge = createBrainBindingBridge({
-  adapter: chromeAdapter,
-  runtime: agentRuntime,
-  onBound: () => consentController?.reconcile(),
-});
-export const provisioningIdentityBridge = createProvisioningIdentityBridge();
-
+export const chromeAdapter = companionClient.adapter;
 export const captureDiagnostics = new CaptureDiagnostics((diagnostic) => {
   console.warn('[Conversation Analytics] capture observation dropped', diagnostic);
 });
-export const captureIngestion = new CaptureIngestionService({
+export const agentRuntime = createReadOnlyAgentRuntime({
+  chromeAdapter,
+  chromeApi: chrome,
+  configHttpFactory: () => companionClient.configAdapter,
+  transportFactory: (options) => new ReadOnlyAgentWebSocketClient({ ...options, webSocketFactory: companionClient.webSocketFactory }),
+  signerFactory: (options) => createChromeBrowserSigningProvider(options),
+  onStartupError: () => {
+    lastStartupErrorCode = 'startup_failed';
+    console.error('[Conversation Analytics] local Agent startup failed; a later consented wake will retry');
+  },
+});
+export const captureScope = new OperationScope();
+export const controlQueue = new SerialExecutor();
+
+let consentController = null;
+export const provisioningIdentityBridge = createProvisioningIdentityBridge({
+  allowedOrigins: [LOCAL_SERVICE_ORIGIN],
+  currentConsent: () => consentController?.state,
+  ensureReady: () => consentController.initialize(),
+  allowsIdentity: () => consentController?.state.mode === 'full'
+    && ['identity', 'full'].includes(consentController.phase),
+  allowsExternalIdentity: async () => {
+    if (consentController?.state.mode !== 'full' || consentController.phase !== 'identity') return false;
+    const paired = (await companionClient.status()).state === 'paired';
+    return !paired && consentController.state.mode === 'full' && consentController.phase === 'identity';
+  },
+});
+export const provisioningCompanionGuard = createProvisioningCompanionGuard({
+  chromeApi: chrome,
+  companionClient,
+  configuredPlatformIdentity: () => agentRuntime.configuration
+    ?.activeDocument
+    ?.history_acquisition
+    ?.authorized_platform_creator_id ?? null,
+});
+export const captureIngestion = new DeliveryCaptureIngestionService({
   runtime: agentRuntime,
   diagnostics: captureDiagnostics,
 });
-
-const consentGatedIngestion = Object.freeze({
-  rejectBridgeMessage: () => captureIngestion.rejectBridgeMessage(),
-  async ingest(observation) {
-    if (!consentController?.allowsFullCapture()) {
-      captureDiagnostics.record('capture_disabled', observation?.event_type);
-      return { ok: false, code: 'capture_disabled', retryable: false };
-    }
-    return captureIngestion.ingest(observation);
-  },
-});
-export const captureMessageBridge = createCaptureMessageBridge({
-  ingestion: consentGatedIngestion,
+export const captureMessageBridge = createAccountBoundCaptureMessageBridge({
+  ingestion: captureIngestion,
+  runtime: agentRuntime,
+  provisioningIdentityBridge,
+  allowsCapture: () => consentController?.allowsFullCapture() === true,
+  diagnostics: captureDiagnostics,
+  operationScope: captureScope,
+  currentConsent: () => consentController?.state,
+  ensureReady: () => consentController.initialize(),
 });
 
-export const previewMetrics = new PreviewMetricsStore({
-  storage: chrome.storage.local,
-});
+export const previewMetrics = new PreviewMetricsStore({ storage: chrome.storage.local });
 export const activationEvidenceStore = new ActivationEvidenceStore({
   softwareVersion: chrome.runtime.getManifest().version,
 });
 export const legalConsentAuthorization = new LegalConsentAuthorization({
   evidenceStore: activationEvidenceStore,
+  bindings: legalReleaseBindings,
+  storage: chrome.storage.local,
 });
 
 let agentWorkerInstanceId = null;
@@ -72,27 +93,38 @@ let agentWorkerInstanceId = null;
 function runtimeSummary() {
   const transport = agentRuntime.transport;
   const durableMeta = transport?.outbox?.meta ?? null;
-  if (transport !== null && agentWorkerInstanceId === null) {
-    agentWorkerInstanceId = crypto.randomUUID();
-  }
+  if (transport !== null && agentWorkerInstanceId === null) agentWorkerInstanceId = crypto.randomUUID();
+  if (transport !== null) lastStartupErrorCode = null;
   return {
     runtime_ready: transport !== null,
     socket_open: transport?.socket?.readyState === WebSocket.OPEN,
     pending_entries: durableMeta?.outbox_count ?? 0,
     captured_chats: durableMeta?.entity_counts?.chats ?? 0,
     captured_messages: durableMeta?.entity_counts?.messages ?? 0,
+    startup_error_code: lastStartupErrorCode,
+    history_error_code: null,
+    capture_drop_counts: captureDiagnostics.snapshot(),
+    transport_state: transport?.session
+      ? 'authenticated'
+      : transport?.socket?.readyState === WebSocket.OPEN
+        ? 'authenticating'
+        : 'disconnected',
   };
 }
 
-consentController = new ConsentController({
+consentController = new PartitionAwareConsentController({
+  chromeApi: chrome,
   runtime: agentRuntime,
   adapter: chromeAdapter,
-  brainBindingBridge,
   provisioningIdentityBridge,
   previewMetrics,
   clearLocalData: () => clearExtensionLocalData(),
   activeModeAuthorization: legalConsentAuthorization,
+  captureScope,
+  controlQueue,
+  activationEvidenceStore,
   runtimeSummary,
+  fetchImpl: async () => ({ ok: companionClient.connected }),
 });
 export { consentController };
 
@@ -104,9 +136,8 @@ export const legalActivationController = new LegalActivationController({
 });
 
 export async function legalActivationAuditSnapshot() {
-  return activationEvidenceStore.exportAuditTrail();
+  return legalActivationController.exportAuditTrail();
 }
-
 Object.defineProperty(globalThis, '__OFCA_LEGAL_ACTIVATION_AUDIT__', {
   configurable: false,
   enumerable: false,
@@ -114,7 +145,6 @@ Object.defineProperty(globalThis, '__OFCA_LEGAL_ACTIVATION_AUDIT__', {
   writable: false,
 });
 
-/** Payload-free worker diagnostics used by local health checks and the system E2E harness. */
 export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile') {
   const transport = agentRuntime.transport;
   const durableMeta = transport?.outbox?.meta ?? null;
@@ -130,12 +160,8 @@ export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile'
     sessionBound: transport?.session !== null && transport?.session !== undefined,
     heartbeatTimerPresent: transport?.heartbeatTimer !== null && transport?.heartbeatTimer !== undefined,
     syncRequired: transport?.syncRequired ?? null,
-    appliedConfigRevision:
-      agentRuntime.configuration?.activeDocument?.config_revision ?? null,
-    enabledResources: rules
-      .filter((rule) => rule.enabled === true)
-      .map((rule) => rule.resource)
-      .sort(),
+    appliedConfigRevision: agentRuntime.configuration?.activeDocument?.config_revision ?? null,
+    enabledResources: rules.filter((rule) => rule.enabled === true).map((rule) => rule.resource).sort(),
     reconcileAlarm: alarm === undefined ? null : {
       name: alarm.name,
       scheduledTime: alarm.scheduledTime,
@@ -154,7 +180,6 @@ export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile'
     },
   };
 }
-
 Object.defineProperty(globalThis, '__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__', {
   configurable: false,
   enumerable: false,
@@ -162,7 +187,12 @@ Object.defineProperty(globalThis, '__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__', {
   writable: false,
 });
 
+provisioningCompanionGuard.register();
 captureMessageBridge.register();
 legalActivationController.register();
 consentController.register();
+companionClient.registerPopup({
+  onPaired: () => consentController.reconcile(),
+  onForget: () => consentController.reconcile(),
+});
 void consentController.initialize().catch(() => undefined);

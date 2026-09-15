@@ -109,7 +109,8 @@ test('a failed bootstrap is reported and the next wake retries initialization', 
   assert.deepEqual(failures, ['temporary storage failure']);
   assert.equal(runtime.transport, null);
 
-  await listeners[0]();
+  listeners[0]();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(attempts, 2);
   assert.equal(transport.starts, 1);
   assert.strictEqual(runtime.transport, transport);
@@ -146,10 +147,11 @@ test('a new worker runtime reconstructs durable identity and checkpoint before r
     },
   };
   const options = {
+    extensionVersion: '2.0.1',
     creatorAccountId: 'creator-account-1',
     authTicket: 'brain-ticket-1',
     chromeAdapter,
-    ingestionStorageFactory: () => ({}),
+    ingestionStorageFactory: () => new InMemoryIngestionStorage(),
     outboxFactory: () => ({
       async initialize() {
         outboxLoads += 1;
@@ -245,8 +247,9 @@ test('same-account credential rotation preserves jobs while a real switch invali
     },
   };
   const runtime = createAgentRuntime({
+    extensionVersion: '2.0.1',
     chromeAdapter,
-    ingestionStorageFactory: () => ({}),
+    ingestionStorageFactory: () => new InMemoryIngestionStorage(),
     outboxFactory: ({ creatorAccountId }) => {
       const state = accountStates.get(creatorAccountId) ?? {
         jobs: [`${creatorAccountId}:history-job`],
@@ -323,4 +326,60 @@ test('same-account credential rotation preserves jobs while a real switch invali
   assert.throws(() => transports[0].outbox.assertWritable(), /invalidated/);
   assert.deepEqual(firstState.jobs, preservedJobs);
   assert.deepEqual(transports[1].authTickets, ['ticket-3']);
+});
+
+
+test('suspension before the initializer microtask prevents startup admission', async () => {
+  let calls = 0;
+  const runtime = new AgentRuntime({
+    registerWakeListeners() {},
+    async initialize() { calls += 1; return { transport: fakeTransport() }; },
+  });
+  const startup = runtime.start();
+  const rejected = assert.rejects(startup, { code: 'runtime_suspended' });
+  await runtime.suspend();
+  await rejected;
+  assert.equal(calls, 0);
+});
+
+test('an initialized runtime retains cancellation and drains before suspension completes', async () => {
+  let signal;
+  let releaseDrain;
+  const drain = new Promise((resolve) => { releaseDrain = resolve; });
+  const runtime = new AgentRuntime({
+    registerWakeListeners() {},
+    async initialize(context) {
+      signal = context.signal;
+      return { transport: fakeTransport(), drain: () => drain };
+    },
+  });
+  await runtime.start();
+  let completed = false;
+  const suspended = runtime.suspend().then(() => { completed = true; });
+  assert.equal(signal.aborted, true);
+  await Promise.resolve();
+  assert.equal(completed, false);
+  releaseDrain();
+  await suspended;
+});
+
+test('a pending binding resolution cannot restart a suspended runtime', async () => {
+  let resolveBinding;
+  let initializations = 0;
+  const transport = fakeTransport();
+  const runtime = new AgentRuntime({
+    registerWakeListeners() {},
+    resolveBindingFingerprint: () => new Promise((resolve) => { resolveBinding = resolve; }),
+    async initialize() { initializations += 1; return { transport, bindingFingerprint: 'account-a' }; },
+  });
+  await runtime.start();
+  const wake = runtime.wake();
+  const rejected = assert.rejects(wake, { code: 'runtime_suspended' });
+  const suspended = runtime.suspend();
+  resolveBinding('account-b');
+  await rejected;
+  await suspended;
+  assert.equal(initializations, 1);
+  assert.equal(transport.reconcileChecks, 0);
+  assert.equal(runtime.transport, null);
 });

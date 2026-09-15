@@ -9,7 +9,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
@@ -17,6 +17,11 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from contracts.loader import load_trust_set
+from app.security.grant_types import (
+    MAX_GRANT_CHARACTERS,
+    GrantDenialReason,
+    VerifiedGrantDenial,
+)
 
 
 _P256_ORDER = int(
@@ -109,6 +114,159 @@ class GrantVerification:
     valid: bool
     result: str
     time_state: str
+
+
+@dataclass(frozen=True, slots=True)
+class GrantDenialVerificationContext:
+    """Bindings frozen from the verified grant being refreshed."""
+
+    expected_grant_type: str
+    expected_audience: str
+    expected_subject: str
+    expected_revoked_jti: str
+    verifier_time: int
+
+
+@dataclass(frozen=True, slots=True)
+class GrantDenialVerification:
+    result: str
+    denial: VerifiedGrantDenial | None = None
+
+    @property
+    def valid(self) -> bool:
+        return self.denial is not None
+
+
+def verify_grant_denial(
+    token: str,
+    *,
+    trust_set: Mapping[str, Any],
+    context: GrantDenialVerificationContext,
+) -> GrantDenialVerification:
+    """Authenticate a currently effective denial for exactly one requested JTI."""
+
+    if not isinstance(context.expected_grant_type, str):
+        return GrantDenialVerification("invalid_context")
+    profile = _PROFILES.get(context.expected_grant_type)
+    if profile is None:
+        return GrantDenialVerification("unsupported_grant_type")
+    if (
+        type(context.verifier_time) is not int
+        or context.verifier_time < 0
+        or not isinstance(context.expected_revoked_jti, str)
+        or not _UUIDV7_RE.fullmatch(context.expected_revoked_jti)
+        or not isinstance(context.expected_subject, str)
+        or not context.expected_subject
+        or not isinstance(context.expected_audience, str)
+        or not context.expected_audience
+    ):
+        return GrantDenialVerification("invalid_context")
+    if (
+        type(token) is not str
+        or not token.isascii()
+        or len(token) > MAX_GRANT_CHARACTERS
+        or token.count(".") != 2
+    ):
+        return GrantDenialVerification("invalid_compact_jws")
+    try:
+        header_segment, payload_segment, signature_segment = token.split(".")
+        if len(header_segment) > 512:
+            return GrantDenialVerification("header_too_large")
+        header_bytes = _b64u_decode(header_segment)
+        payload_bytes = _b64u_decode(payload_segment)
+        signature = _b64u_decode(signature_segment)
+        if len(payload_bytes) > 12_288:
+            return GrantDenialVerification("payload_too_large")
+        header = _strict_json(header_bytes)
+        payload = _strict_json(payload_bytes)
+        if _canonical_json(header) != header_bytes or _canonical_json(payload) != payload_bytes:
+            return GrantDenialVerification("noncanonical_json")
+    except (ValueError, TypeError, UnicodeError, RecursionError):
+        return GrantDenialVerification("invalid_compact_jws")
+
+    denial_profile = "urn:bridge-clean:grant-denial:v1"
+    if (
+        set(header) != {"alg", "kid", "typ"}
+        or header["alg"] != "ES256"
+        or header["typ"] != denial_profile
+        or not isinstance(header["kid"], str)
+    ):
+        return GrantDenialVerification("invalid_header")
+    expected_claims = {
+        "profile", "iss", "aud", "sub", "jti", "iat", "nbf", "exp",
+        "grant_type", "revoked_jti", "effective_at", "reason_code",
+    }
+    if set(payload) != expected_claims:
+        return GrantDenialVerification("schema_invalid")
+    if payload["profile"] != denial_profile or payload["iss"] != _ISSUER:
+        return GrantDenialVerification("issuer_or_profile_mismatch")
+    if payload["grant_type"] != context.expected_grant_type:
+        return GrantDenialVerification("grant_type_mismatch")
+    if payload["aud"] != context.expected_audience:
+        return GrantDenialVerification("audience_mismatch")
+    if payload["sub"] != context.expected_subject:
+        return GrantDenialVerification("subject_mismatch")
+    if payload["revoked_jti"] != context.expected_revoked_jti:
+        return GrantDenialVerification("revoked_jti_mismatch")
+    if not isinstance(payload["jti"], str) or not _UUIDV7_RE.fullmatch(payload["jti"]):
+        return GrantDenialVerification("invalid_jti")
+    if payload["jti"] == payload["revoked_jti"]:
+        return GrantDenialVerification("invalid_jti")
+    reasons = {"revoked", "membership_removed", "role_reduced", "approval_revoked", "entitlement_inactive"}
+    if not isinstance(payload["reason_code"], str) or payload["reason_code"] not in reasons:
+        return GrantDenialVerification("invalid_reason")
+    reason_type = {
+        "membership_removed": "membership_snapshot",
+        "role_reduced": "membership_snapshot",
+        "approval_revoked": "creator_account_binding",
+        "entitlement_inactive": "license_entitlement",
+    }.get(payload["reason_code"])
+    if reason_type is not None and reason_type != context.expected_grant_type:
+        return GrantDenialVerification("invalid_reason")
+    if any(
+        type(payload[name]) is not int or not 0 <= payload[name] <= 9_007_199_254_740_991
+        for name in ("iat", "nbf", "exp", "effective_at")
+    ):
+        return GrantDenialVerification("invalid_numeric_date")
+    if payload["iat"] != payload["nbf"] or payload["exp"] != payload["iat"] + 600:
+        return GrantDenialVerification("invalid_time_contract")
+    if payload["nbf"] > context.verifier_time + 60:
+        return GrantDenialVerification("not_yet_valid")
+    if context.verifier_time >= payload["exp"]:
+        return GrantDenialVerification("expired")
+    if payload["effective_at"] > context.verifier_time:
+        return GrantDenialVerification("not_effective")
+    try:
+        keys = _trusted_keys(trust_set)
+        entry = keys.get(header["kid"])
+    except (ValueError, TypeError, KeyError):
+        return GrantDenialVerification("invalid_trust_set")
+    if entry is None:
+        return GrantDenialVerification("unknown_kid")
+    purpose, public_key = entry
+    if purpose != profile["purpose"]:
+        return GrantDenialVerification("wrong_key_purpose")
+    if len(signature) != 64:
+        return GrantDenialVerification("invalid_signature")
+    if int.from_bytes(signature[32:], "big") > _P256_ORDER // 2:
+        return GrantDenialVerification("high_s_signature")
+    if not _verify_signature(
+        public_key, f"{header_segment}.{payload_segment}".encode("ascii"), signature
+    ):
+        return GrantDenialVerification("invalid_signature")
+    return GrantDenialVerification(
+        "accepted",
+        VerifiedGrantDenial(
+            denial_jti=payload["jti"],
+            grant_type=context.expected_grant_type,
+            revoked_jti=context.expected_revoked_jti,
+            issued_at=payload["iat"],
+            expires_at=payload["exp"],
+            effective_at=payload["effective_at"],
+            reason_code=cast(GrantDenialReason, payload["reason_code"]),
+            evidence_sha256=hashlib.sha256(token.encode("ascii")).hexdigest(),
+        ),
+    )
 
 
 def load_pinned_trust_set(
@@ -250,7 +408,12 @@ def verify_grant(
     profile = _PROFILES.get(context.expected_grant_type)
     if profile is None:
         return _outcome(False, "unsupported_grant_type")
-    if not isinstance(token, str) or len(token) > 16_384 or token.count(".") != 2:
+    if (
+        not isinstance(token, str)
+        or not token.isascii()
+        or len(token) > MAX_GRANT_CHARACTERS
+        or token.count(".") != 2
+    ):
         return _outcome(False, "invalid_compact_jws")
     try:
         header_segment, payload_segment, signature_segment = token.split(".")

@@ -78,7 +78,10 @@ frontend/.design-sync/node_modules
 # ------------------------
 extension/dist/
 extension/node_modules/
+native/companion-snow/target/
+extension/crypto/snow/target/
 tools/e2e-capture/node_modules/
+tools/e2e-capture/.extension-dist/
 tools/e2e-capture/playwright-report/
 tools/e2e-capture/test-results/
 

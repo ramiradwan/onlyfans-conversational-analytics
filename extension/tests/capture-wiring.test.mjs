@@ -84,7 +84,6 @@ test('manifest keeps OnlyFans access optional and installs no static content scr
   assert.equal(manifest.host_permissions, undefined);
   assert.deepEqual(manifest.optional_host_permissions, [
     'https://onlyfans.com/*',
-    'http://bridge.localhost:17871/*',
   ]);
   assert.equal(manifest.permissions.includes('tabs'), false);
   assert.equal(manifest.permissions.includes('cookies'), false);

@@ -8,7 +8,7 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import AbstractSet, Any, Callable, Iterable
+from typing import AbstractSet, Any, Callable, Iterable, Mapping
 from uuid import UUID
 
 from app.core.config import settings
@@ -16,8 +16,8 @@ from app.protocol import AgentConfigDocumentResponse
 
 
 DEVELOPMENT_BOOTSTRAP_ACCOUNT_ID = "dev-creator-account"
-BOOTSTRAP_CONFIG_REVISION = "config-9"
-BOOTSTRAP_ISSUED_AT = datetime(2026, 7, 18, 10, 1, tzinfo=timezone.utc)
+BOOTSTRAP_CONFIG_REVISION = "config-10"
+BOOTSTRAP_ISSUED_AT = datetime(2026, 9, 15, 11, 30, tzinfo=timezone.utc)
 BOOTSTRAP_CAPTURE_POLICY = {
     "observation_interval_seconds": 30,
     "rules": [
@@ -274,7 +274,8 @@ class AgentConfigurationAuthority:
     installation with no authorized account holds no bootstrap configuration.
     `authorized_accounts` reports the accounts an installation authorizes at the
     moment it is asked, which is how an account authorized after construction
-    reaches configuration.
+    reaches configuration. `authorized_platform_identities` supplies the
+    independently verified platform identity pin for passive Full capture.
     """
 
     def __init__(
@@ -283,10 +284,12 @@ class AgentConfigurationAuthority:
         *,
         bootstrap_account_id: str | None = None,
         authorized_accounts: Callable[[], AbstractSet[str]] | None = None,
+        authorized_platform_identities: Callable[[], Mapping[str, str]] | None = None,
     ) -> None:
         self.repository = repository
         self._publish_lock = asyncio.Lock()
         self._authorized_accounts = authorized_accounts
+        self._authorized_platform_identities = authorized_platform_identities
         # The authorized account is supplied by the caller. No account is derived
         # from installation identity, and an installation may authorize none.
         if bootstrap_account_id is None and _development_bootstrap_allowed():
@@ -295,6 +298,163 @@ class AgentConfigurationAuthority:
         if self.bootstrap_account_id is not None:
             self.bootstrap()
 
+    def _account_is_authorized(self, account_id: str) -> bool:
+        if self._authorized_accounts is None:
+            return account_id == self.bootstrap_account_id
+        return account_id in self._authorized_accounts()
+
+    def _authorized_platform_identity(self, account_id: str) -> str | None:
+        if self._authorized_platform_identities is not None:
+            identity = self._authorized_platform_identities().get(account_id)
+            if identity is not None:
+                if not isinstance(identity, str) or not identity:
+                    raise ValueError("Authorized platform identity must be a non-empty string")
+                return identity
+        if (
+            _development_bootstrap_allowed()
+            and account_id == DEVELOPMENT_BOOTSTRAP_ACCOUNT_ID
+        ):
+            identity = settings.development_platform_creator_id
+            if not isinstance(identity, str) or not identity:
+                raise ValueError("Development platform identity must be a non-empty string")
+            return identity
+        return None
+
+    def _bind_platform_identity(
+        self,
+        account_id: str,
+        history_acquisition: dict[str, Any],
+    ) -> dict[str, Any]:
+        policy = dict(history_acquisition)
+        expected = self._authorized_platform_identity(account_id)
+        supplied = policy.get("authorized_platform_creator_id")
+        if expected is None:
+            if self._authorized_platform_identities is not None:
+                raise LookupError(
+                    f"No authorized platform identity is available for {account_id}"
+                )
+            return policy
+        if supplied is not None and supplied != expected:
+            raise ValueError(
+                "History platform identity disagrees with durable account authorization"
+            )
+        policy["authorized_platform_creator_id"] = expected
+        return policy
+
+    def _bootstrap_document(
+        self,
+        account_id: str,
+        revision: str,
+        issued_at: datetime,
+    ) -> AgentConfigDocumentResponse:
+        return build_config_document(
+            creator_account_id=account_id,
+            config_revision=revision,
+            issued_at=issued_at,
+            capture_policy=BOOTSTRAP_CAPTURE_POLICY,
+            command_policy=BOOTSTRAP_COMMAND_POLICY,
+            history_acquisition=self._bind_platform_identity(
+                account_id, BOOTSTRAP_HISTORY_ACQUISITION_POLICY
+            ),
+        )
+
+    def _validate_current_bootstrap_integrity(
+        self,
+        account_id: str,
+        document: AgentConfigDocumentResponse,
+    ) -> None:
+        if (
+            document.config_revision != BOOTSTRAP_CONFIG_REVISION
+            or document.issued_at != BOOTSTRAP_ISSUED_AT
+        ):
+            return
+        expected = self._bootstrap_document(
+            account_id, BOOTSTRAP_CONFIG_REVISION, BOOTSTRAP_ISSUED_AT
+        )
+        if document.digest != expected.digest:
+            raise RuntimeError("Persisted bootstrap configuration content has changed")
+
+    def _identity_upgrade_required(
+        self,
+        account_id: str,
+        document: AgentConfigDocumentResponse,
+    ) -> bool:
+        expected = self._authorized_platform_identity(account_id)
+        if expected is None:
+            if self._authorized_platform_identities is not None:
+                raise LookupError(
+                    f"No authorized platform identity is available for {account_id}"
+                )
+            return False
+        supplied = document.history_acquisition.authorized_platform_creator_id
+        if supplied is None:
+            return True
+        if supplied != expected:
+            raise ValueError(
+                "History platform identity disagrees with durable account authorization"
+            )
+        return False
+
+    def _publish_required_document(
+        self,
+        document: AgentConfigDocumentResponse,
+    ) -> None:
+        publish_document = getattr(self.repository, "publish_document", None)
+        if callable(publish_document):
+            publish_document(document)
+            return
+        self.repository.add_document(document)
+        self.repository.require_for_account(
+            document.creator_account_id, document.config_revision
+        )
+
+    def _migration_revision(self, account_id: str) -> str:
+        next_revision = self.repository.next_revision(account_id)
+        if (
+            _config_revision_sequence(next_revision)
+            <= _config_revision_sequence(BOOTSTRAP_CONFIG_REVISION)
+            and self.repository.document(account_id, BOOTSTRAP_CONFIG_REVISION) is None
+        ):
+            return BOOTSTRAP_CONFIG_REVISION
+        return next_revision
+
+    def _publish_bootstrap_revision_upgrade(
+        self,
+        account_id: str,
+    ) -> AgentConfigDocumentResponse:
+        revision = self._migration_revision(account_id)
+        document = self._bootstrap_document(
+            account_id,
+            revision,
+            (
+                BOOTSTRAP_ISSUED_AT
+                if revision == BOOTSTRAP_CONFIG_REVISION
+                else datetime.now(timezone.utc)
+            ),
+        )
+        self._publish_required_document(document)
+        return document
+
+    def _publish_identity_upgrade(
+        self,
+        account_id: str,
+        current: AgentConfigDocumentResponse,
+    ) -> AgentConfigDocumentResponse:
+        document = build_config_document(
+            creator_account_id=account_id,
+            config_revision=self.repository.next_revision(account_id),
+            issued_at=datetime.now(timezone.utc),
+            capture_policy=current.capture_policy.model_dump(mode="json"),
+            command_policy=current.command_policy.model_dump(mode="json"),
+            history_acquisition=self._bind_platform_identity(
+                account_id,
+                current.history_acquisition.model_dump(mode="json"),
+            ),
+            config_schema_version=current.config_schema_version,
+        )
+        self._publish_required_document(document)
+        return document
+
     def bootstrap(self) -> None:
         account_id = self.bootstrap_account_id
         if account_id is None:
@@ -302,66 +462,84 @@ class AgentConfigurationAuthority:
         self.bootstrap_account(account_id)
 
     def bootstrap_account(self, account_id: str) -> None:
-        """Publish the bootstrap document for one account and require it.
+        """Require current bootstrap policy and platform identity without collisions.
 
-        Idempotent: an account that already holds the bootstrap document keeps
-        it, and a persisted document whose content differs is a hard error
-        rather than a silent replacement.
+        A document older than the current bootstrap revision advances to the
+        current bootstrap policy (or the next free monotonic revision when that
+        number is already occupied). A current/newer dynamic document that only
+        lacks the durable platform identity keeps its policies and advances one
+        revision. Fixed bootstrap content remains immutable and is refused if
+        its bytes change without a bootstrap revision change.
         """
-
-        current = build_config_document(
-            creator_account_id=account_id,
-            config_revision=BOOTSTRAP_CONFIG_REVISION,
-            issued_at=BOOTSTRAP_ISSUED_AT,
-            capture_policy=BOOTSTRAP_CAPTURE_POLICY,
-            command_policy=BOOTSTRAP_COMMAND_POLICY,
-            history_acquisition=BOOTSTRAP_HISTORY_ACQUISITION_POLICY,
-        )
-
-        existing_current = self.repository.document(
-            account_id, BOOTSTRAP_CONFIG_REVISION
-        )
-        if existing_current is None:
-            publish_document = getattr(self.repository, "publish_document", None)
-            if callable(publish_document):
-                publish_document(current)
-                return
-            self.repository.add_document(current)
-        elif existing_current.digest != current.digest:
-            raise RuntimeError("Persisted bootstrap configuration content has changed")
 
         try:
             required = self.repository.required_document(account_id)
         except LookupError:
             required = None
-        if required is None or _config_revision_sequence(
-            required.config_revision
-        ) < _config_revision_sequence(BOOTSTRAP_CONFIG_REVISION):
-            self.repository.require_for_account(account_id, BOOTSTRAP_CONFIG_REVISION)
+
+        if required is not None:
+            self._validate_current_bootstrap_integrity(account_id, required)
+            if _config_revision_sequence(required.config_revision) < _config_revision_sequence(
+                BOOTSTRAP_CONFIG_REVISION
+            ):
+                self._publish_bootstrap_revision_upgrade(account_id)
+            elif self._identity_upgrade_required(account_id, required):
+                self._publish_identity_upgrade(account_id, required)
+            return
+
+        current = self._bootstrap_document(
+            account_id, BOOTSTRAP_CONFIG_REVISION, BOOTSTRAP_ISSUED_AT
+        )
+        existing_current = self.repository.document(
+            account_id, BOOTSTRAP_CONFIG_REVISION
+        )
+        if existing_current is not None:
+            if existing_current.issued_at == BOOTSTRAP_ISSUED_AT:
+                if existing_current.digest != current.digest:
+                    raise RuntimeError(
+                        "Persisted bootstrap configuration content has changed"
+                    )
+                self.repository.require_for_account(
+                    account_id, BOOTSTRAP_CONFIG_REVISION
+                )
+                return
+            revision = self.repository.next_revision(account_id)
+            current = self._bootstrap_document(
+                account_id, revision, datetime.now(timezone.utc)
+            )
+        elif (
+            _config_revision_sequence(self.repository.next_revision(account_id))
+            > _config_revision_sequence(BOOTSTRAP_CONFIG_REVISION)
+        ):
+            current = self._bootstrap_document(
+                account_id,
+                self.repository.next_revision(account_id),
+                datetime.now(timezone.utc),
+            )
+        self._publish_required_document(current)
 
     def reset(self) -> None:
         self.repository.reset()
-        if self.bootstrap_account_id is not None:
+        if self.bootstrap_account_id is not None and (
+            _development_bootstrap_allowed()
+            or self._account_is_authorized(self.bootstrap_account_id)
+        ):
             self.bootstrap()
 
     def required_document(self, creator_account_id: str) -> AgentConfigDocumentResponse:
-        """Return the required document, publishing one for a new authorization.
-
-        An account is authorized through a durable record this authority does
-        not own and can gain while the runtime is running, so its bootstrap
-        document is published on first use. The authorization is read only while
-        the account holds no configuration, which keeps the steady state off it.
-        """
+        """Return the required document, migrating authorized accounts when needed."""
 
         try:
-            return self.repository.required_document(creator_account_id)
+            current = self.repository.required_document(creator_account_id)
         except LookupError:
-            if self._authorized_accounts is None:
+            if not self._account_is_authorized(creator_account_id):
                 raise
-            if creator_account_id not in self._authorized_accounts():
-                raise
-        self.bootstrap_account(creator_account_id)
-        return self.repository.required_document(creator_account_id)
+            self.bootstrap_account(creator_account_id)
+            return self.repository.required_document(creator_account_id)
+        if self._account_is_authorized(creator_account_id):
+            self.bootstrap_account(creator_account_id)
+            return self.repository.required_document(creator_account_id)
+        return current
 
     async def publish(
         self,
@@ -374,15 +552,17 @@ class AgentConfigurationAuthority:
     ) -> AgentConfigDocumentResponse:
         _ensure_dependency_closed_capture_policy(capture_policy)
         async with self._publish_lock:
+            policy = self._bind_platform_identity(
+                creator_account_id,
+                history_acquisition or BOOTSTRAP_HISTORY_ACQUISITION_POLICY,
+            )
             document = build_config_document(
                 creator_account_id=creator_account_id,
                 config_revision=self.repository.next_revision(creator_account_id),
                 issued_at=issued_at or datetime.now(timezone.utc),
                 capture_policy=capture_policy,
                 command_policy=command_policy,
-                history_acquisition=(
-                    history_acquisition or BOOTSTRAP_HISTORY_ACQUISITION_POLICY
-                ),
+                history_acquisition=policy,
             )
             publish_document = getattr(self.repository, "publish_document", None)
             if callable(publish_document):
@@ -515,4 +695,3 @@ class AgentConfigurationAuthority:
                 creator_account_id, agent_installation_id, None
             )
         return record
-
