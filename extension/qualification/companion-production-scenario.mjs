@@ -95,7 +95,7 @@ export async function exercise() {
       type: 'agent.hello', protocol_version: '2', message_id: crypto.randomUUID(),
       payload: {
         auth_ticket: socket.authTicket, agent_installation_id: installation,
-        requested_creator_account_id: account, capabilities: ['capture.chats'], extension_version: '2.0.1',
+        requested_creator_account_id: account, capabilities: ['capture.chats'], extension_version: '2.0.3',
         agent_stream_id: crypto.randomUUID(), last_acknowledged_source_seq: 0, applied_config_revision: null,
       },
     }));
