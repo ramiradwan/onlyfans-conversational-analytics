@@ -137,17 +137,53 @@
       "customer_label": "Desktop connected",
       "proves": ["companion_authenticated", "local_delivery_authenticated"],
       "does_not_prove": ["commercial_activation", "licensed_analysis_admission"],
-      "next": ["commercial.activation_required", "commercial.activation_unavailable", "analysis.licensed_ready"]
+      "next": [
+        "commercial.activation_checking",
+        "commercial.activation_required",
+        "commercial.activation_active_analysis_blocked",
+        "commercial.activation_unavailable",
+        "analysis.licensed_ready"
+      ]
+    },
+    {
+      "id": "commercial.activation_checking",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Checking activation",
+      "status_contract": "ofca-analysis-readiness/v1",
+      "completion_inferred_from_navigation": false,
+      "next": [
+        "commercial.activation_required",
+        "commercial.activation_active_analysis_blocked",
+        "commercial.activation_unavailable",
+        "analysis.licensed_ready"
+      ]
     },
     {
       "id": "commercial.activation_required",
       "customer_surface": "extension.popup",
       "customer_distinction": "distinct",
-      "customer_label": "Activate Full analysis",
+      "customer_label": "Full activation required",
       "backend_only": false,
       "status_contract": "ofca-analysis-readiness/v1",
-      "next": ["analysis.licensed_ready"],
+      "customer_protocol_fields_visible": false,
+      "customer_action": "Check activation",
+      "safe_continuation_available": false,
+      "existing_data_gated": false,
+      "next": ["commercial.activation_checking"],
       "blocked_by": ["hosted.commercial_activation_handoff"]
+    },
+    {
+      "id": "commercial.activation_active_analysis_blocked",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Full activation active",
+      "status_contract": "ofca-analysis-readiness/v1",
+      "commercial_authority": "active",
+      "analysis_admission": "blocked",
+      "full_ready": false,
+      "existing_data_gated": false,
+      "recovery": "Check licensed readiness again or open the desktop app."
     },
     {
       "id": "commercial.activation_unavailable",
@@ -155,6 +191,8 @@
       "customer_distinction": "distinct",
       "customer_label": "Full activation needs attention",
       "status_contract": "ofca-analysis-readiness/v1",
+      "invalid_authority_claimed": false,
+      "existing_data_gated": false,
       "recovery": "Check again or open the desktop app for recovery."
     },
     {
@@ -219,7 +257,17 @@
       "id": "hosted.commercial_activation_handoff",
       "priority": "P0",
       "owner": "control-plane",
-      "description": "Provide a customer-facing commercial activation continuation compatible with Brain production activation."
+      "product_action_present": false,
+      "product_fail_closed": true,
+      "description": "Provide an authenticated, customer-safe hosted commercial continuation bound to the current customer/account and target installation. Product needs an opaque continuation/redeem result that lets the existing local delivery path receive the authorized activation or reissue material without asking the customer to copy package, seat, proof, license, issuance, key, or exchange fields. Completion must be observed by ofca-analysis-readiness/v1 after local verification and durable storage, not by navigation or hosted return."
+    },
+    {
+      "id": "hosted.commercial_reissue_disposition",
+      "priority": "P0",
+      "owner": "control-plane",
+      "product_action_present": false,
+      "product_fail_closed": true,
+      "description": "If Product is expected to label replacement/reissue separately, hosted authority must provide a customer-safe authoritative disposition for the current account and replacement installation. Product has no local signal that truthfully distinguishes new activation required from hosted-authorized replacement/reissue required and must not infer one."
     }
   ],
   "evidence": {
