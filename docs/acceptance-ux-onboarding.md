@@ -1,13 +1,28 @@
 # Chrome Store acceptance UX onboarding pass
 
 Branch: `feat/acceptance-ux-onboarding`
-Base: `main` at `01461b598aacdcd54d33bb5abc93f687225a4780`
+Base: `main` at `d4d69ee3d35b5724e8615e8b4124887948770f3a`
 
 This pass is scoped to customer acceptance from one starting instruction:
 
 > Install the extension from the Chrome Web Store.
 
-Preview remains independent. Full mode continues to fail closed when required desktop or production authority is unavailable.
+Preview remains independent. Full mode continues to fail closed when required desktop, commercial, or licensed-analysis authority is unavailable.
+
+## Current authority model
+
+The customer-facing sequence remains:
+
+`creator/account provisioning complete`
+→ `commercial authority required`
+→ `customer-safe activation/reissue continuation`
+→ `existing hosted + installation-key proof authority`
+→ `commercial authority verified and durably stored locally`
+→ `ofca-analysis-readiness/v1`
+→ `licensed-analysis admission`
+→ `Full mode is ready`.
+
+`ofca-analysis-readiness/v1` is the canonical customer-facing Full-readiness source. Desktop reachability, authenticated companion transport, creator approval, a hosted navigation return, and an activation HTTP response are not completion signals by themselves.
 
 ## Before / after journey
 
@@ -28,28 +43,79 @@ Choosing Full could send the customer to an unavailable local page. Desktop firs
 - The extension and desktop app use the existing authenticated connection ceremony with a six-digit comparison.
 - Connection cancellation, mismatch, timeout, and status-check failures have explicit recovery.
 - Authenticated local delivery is shown as **Desktop connected**, not as paid Full readiness.
-- Missing commercial authority is shown as **Activate Full analysis**.
-- Commercial authority that cannot be confirmed is shown as **Full activation needs attention**.
+- While the canonical commercial state is being read, the customer sees **Checking activation**.
+- Missing commercial authority is shown as **Full activation required** with **Check activation**. Product does not expose a fake hosted activation action while no customer-safe hosted handoff exists.
+- Verified local commercial authority with blocked licensed analysis is shown as **Full activation active**, but not Full-ready.
+- Commercial authority that cannot be confirmed is shown as **Full activation needs attention** and is not described as an invalid license.
 - **Full mode is ready** appears only when secure local delivery is authenticated, current commercial authority is active, and current licensed-analysis admission is admitted.
 
-Desktop first-run setup uses customer language:
+Desktop first-run setup remains customer language:
 
 `Connect this computer` → `Confirm your creator account` → `Approve your creator account` → `Finish desktop setup`.
 
-A browser or desktop restart now resumes normal durable first-run checkpoints instead of returning the customer to the beginning.
+A browser or desktop restart resumes normal durable first-run checkpoints instead of returning the customer to the beginning.
+
+## Gap 3 — customer-safe commercial activation/reissue continuation
+
+### Product-side status
+
+Implemented to the maximum extent supported by existing authoritative contracts:
+
+- commercial authority and licensed-analysis admission are evaluated independently;
+- accepted commercial authority can remain customer-visible as active even when the current analysis major/family is not admitted;
+- the extension reads only the closed `ofca-analysis-readiness/v1` document over the authenticated companion channel;
+- activation-required, activation-checking, activation-active/analysis-blocked, activation-unavailable, and licensed-ready states are customer-safe and contain no package/seat/license/issuance/proof/key/exchange fields;
+- activation completion is never inferred from navigation, transport authentication, or a button click;
+- Preview and existing durable desktop data remain outside the activation gate;
+- the existing low-level activation/reissue endpoints and verifier/journal paths remain unchanged and protected.
+
+The existing low-level Product delivery APIs still accept internal `package` and `seat_id` inputs and are intentionally retained as an integration seam. They are not wired to normal customer UI.
+
+### Missing hosted → Product activation handoff
+
+The existing hosted CapabilityLicense API can prepare encoded activation/reissue packages and can authorize replacement reissue. It does not currently expose a customer-safe continuation consumed by Product that transfers or redeems that authority without exposing the raw delivery package and seat coordinate.
+
+To close the customer journey, Product needs an authenticated hosted continuation bound to the current customer/account and target installation that returns an opaque continuation/redeem result. That continuation must let the existing local delivery path obtain the authorized activation/reissue material without asking the customer to copy or manipulate package, seat, proof, signed-license, issuance, installation-key, or exchange fields. Product must then use the existing installation-key proof, production verifier, durable delivery journal/replay, and local authority binding. The customer-facing completion signal remains the resulting `ofca-analysis-readiness/v1` state after durable acceptance.
+
+Until that contract exists, Product remains fail closed and exposes **Check activation**, not **Continue activation**.
+
+### Reissue distinction
+
+Product has no authoritative local state that distinguishes:
+
+- new activation required; from
+- replacement/reissue authorization required.
+
+The replacement installation key alone does not authorize reissue, and Product does not infer replacement from installation age, missing authority, browser state, or customer action.
+
+If customer copy such as **Move activation to this computer** is required, hosted authority must supply a customer-safe authoritative reissue disposition for the current customer/account and replacement installation. That is an external contract dependency; no UX-only heuristic was added.
 
 ## Truthful Full readiness
 
-Brain evaluates customer readiness from the same current identity/account and CapabilityLicense predicates used by licensed analysis admission.
+Brain evaluates customer readiness from the same durable identity/account and commercial authority used by licensed analysis admission, while preserving the distinction between commercial activation and analysis admission.
 
 The closed `ofca-analysis-readiness/v1` status contains only:
 
 - `commercial_authority = required | active | unavailable`
 - `analysis_admission = blocked | admitted`
 
-The status read does not cache or create analysis admission. Actual processing still requires the existing admitted current policy path. The status travels only through the already-authenticated companion channel after matching Agent/account authentication and exposes no CapabilityLicense bytes, packages, grants, tickets, seat IDs, license IDs, issuance IDs, or reference IDs.
+An active commercial authority no longer requires analysis admission to be admitted. Therefore:
 
-The extension independently validates that closed response and refuses malformed, extended, or impossible combinations such as `admitted` without active commercial authority. This contract is the canonical customer-facing Full-readiness source; later UI must not reconstruct Full-ready from transport, provisioning, or license fragments.
+`commercial_authority = active`
++
+`analysis_admission = blocked`
+→ **Full activation active**, not Full-ready.
+
+Only:
+
+`commercial_authority = active`
++
+`analysis_admission = admitted`
+→ **Full mode is ready**.
+
+The status read does not cache or create analysis admission. Actual processing still requires the existing admitted current policy path. The status travels only through the authenticated companion channel after matching Agent/account authentication and exposes no signed commercial material or commercial identifiers.
+
+The extension independently validates that closed response and refuses malformed, extended, or impossible combinations such as `admitted` without active commercial authority.
 
 ## Resumable first-run setup
 
@@ -65,179 +131,101 @@ The browser restores the appropriate step after reload/restart. Association/acco
 
 If a claim submission has an unresolved hosted outcome, or durable state is ambiguous, setup enters **recovery required**. Mutation is disabled and the customer is explicitly told not to reuse the setup code. This avoids spending or replaying one-time setup material merely to reconstruct UI progress.
 
-No schema migration or browser-owned provisioning authority was added.
+No schema migration or browser-owned provisioning/commercial authority was added.
 
 ## Hosted onboarding entry and v2 handoff
 
-The product-side customer entry is now release-owned rather than machine/operator configured.
+The Product-side customer entry remains release-owned through `app/core/customer-release.json`.
 
-`app/core/customer-release.json` declares exactly two nonsecret release coordinates:
+The checked-in development document is deliberately blank. Development/test composition may retain the existing local hosted-origin fallback, but a release-grade Agent/Brain artifact must have both hosted coordinates configured. No production coordinate is fabricated on this branch.
 
-- `hosted_onboarding_url`: the HTTPS page opened by **Open secure setup**;
-- `hosted_api_origin`: the HTTPS origin used by Brain's existing claim, approval, refresh, and CapabilityLicense hosted clients.
+The production Brain side of installation handoff remains v2 and the Product-side source-contract compatibility work remains closed. This does not prove the external production hosted deployment currently serves the new customer entry or issues v2 packages.
 
-The checked-in development document is deliberately blank. Development/test composition may retain the existing `LOCAL_PROVISIONING_HOSTED_ORIGIN` fallback, but a release-grade Agent/Brain artifact must have both hosted coordinates configured. The PyInstaller release closure validates the customer-release document and includes it in the packaged Brain. Partial configuration, HTTP, embedded credentials, query/fragment-bearing entry URLs, `.invalid` hosts, and API origins carrying a path are refused.
+## Creator approval
 
-The first desktop step now primes the next action: **Open secure setup** opens the release-bound hosted entry in a new tab; the customer completes hosted sign-in there, receives the setup code, and returns to the local page. No internal hosted/API URL, installation ID, organization ID, claim secret, or operator environment instruction is presented.
+Product creator-approval continuation is closed on this branch:
 
-The production Brain side of installation handoff is already v2 after the C integration:
+- durable `creator_approval_pending` is represented explicitly;
+- the hosted page may be opened only as a continuation;
+- returning/navigation cannot grant approval;
+- **Check approval** advances only through the existing authoritative binding-acquisition path after hosted approval exists;
+- browser/Brain restart resumes durable pending/finalization state.
 
-- production claim decoding defaults to `installation-claim-package:v2` / `installation-claim:v2` and does not enable v1 compatibility;
-- the v2 hosted response admits only `installation_grant` and `membership_snapshot` bootstrap authority;
-- the composed provisioning test drives a v2 package through the shipped decoder, hosted client, verifier, and durable store;
-- the Windows production-shaped provisioning helper also constructs the v2 package/profile and drives that same local path.
+The actual hosted customer approval ceremony is an external parallel control-plane dependency and is not implemented or modified in this Product task.
 
-This closes the Product-side mismatch described by the historical review. It does **not** prove the external production hosted deployment currently serves the new customer entry or issues v2 packages. The actual production hosted URL/API origin and deployed hosted v2 behavior remain external control-plane/release evidence and are not fabricated on this branch.
+## Existing data and offline behavior
 
-## Implemented customer-facing changes
+Commercial authority gates new licensed processing only.
 
-### Extension
+This Gap 3 work does not add commercial checks to:
 
-- Prominent current-state/next-step card.
-- Preview independence preserved.
-- Desktop-required and stopped-desktop recovery states.
-- Setup-incomplete state when creator context is missing.
-- Progressive disclosure of connection controls.
-- Clear six-digit connection comparison and recovery.
-- Separate **Desktop app**, **Secure connection**, **Full activation**, and **Licensed analysis** status rows.
-- Full-ready reserved for licensed readiness, not transport authentication.
-- Accessible focus treatment, forced-colors/reduced-motion support, bounded popup dimensions, and responsive width behavior.
+- existing local creator data;
+- existing durable analysis results;
+- local export/delete/access functions;
+- Preview.
 
-### Desktop first run
+After verified commercial authority has been durably stored, normal local startup/readiness reconstruction remains local. No hosted check was added solely for UX convenience.
 
-- Customer goals instead of architecture terminology.
-- Visible “Setup code” language instead of “Installation package.”
-- Release-owned **Open secure setup** entry instead of requiring a customer/operator environment variable.
-- No raw creator account identifier in visible copy.
-- Approval pending and hosted/offline failures have specific recovery guidance.
-- Durable resume after registration, account confirmation, and approval.
-- Interrupted/ambiguous claim recovery prevents code replay.
-
-### Normal desktop connection screen
-
-- **Connect browser extension** instead of architecture-heavy pairing language.
-- No raw creator account ID or extension identity thumbprint shown to the customer.
-- Six-digit code is the customer confirmation signal.
-- Customer-language actions for open, confirm, check, disconnect, and refresh.
-
-## Remaining P0 dependencies
-
-These are not bypassed on this branch.
-
-1. **Authoritative desktop installer distribution.** A Store candidate still needs the real release-owned latest-supported desktop installer URL. No production URL is available in this repository today, so none is invented.
-2. **Production hosted onboarding binding and deployment proof.** Product now owns the customer action and packaged URL/API contract, and Brain v2 acceptance is production-shaped locally. Release/control-plane still must supply the real hosted coordinates and prove the deployed customer surface issues the same v2 handoff.
-3. **Creator approval continuation.** The desktop UI can represent approval pending and resume it, but the hosted customer surface must provide the actual approval ceremony.
-4. **Commercial activation continuation.** The product can truthfully detect `Activation required`, `Activation unavailable`, and `licensed ready`, but it still needs a customer-facing hosted activation/reissue continuation that does not expose package/seat terminology.
-5. **Exceptional unresolved-claim reconciliation.** The current UX correctly blocks replay when hosted consumption may have succeeded but local completion was lost. A hosted authoritative reconciliation operation is still required to recover that state.
-6. **Customer-recognizable creator label.** Current contracts expose an internal account coordinate; the UI intentionally hides it. A safe handle/display label is required if customers must distinguish multiple creator accounts visually.
-
-Installed-versus-stopped before any prior connection remains a lower-priority contract question. Current copy avoids guessing: first-time state says the desktop app is needed; after a saved connection it can truthfully say the desktop app is not running.
-
-## Tests and evidence
+## Evidence
 
 ### Readiness authority
 
 `tests/test_analysis_authorization.py`
 
-- activation required without compatible commercial authority;
-- active/admitted only with current compatible authority;
-- ambiguous authority fails closed;
+- activation required when no verified local commercial reference exists;
+- commercial activation remains active when analysis is blocked by incompatible current analysis admission;
+- active/admitted only when the independent analysis predicate succeeds;
+- ambiguous commercial authority fails closed;
 - readiness checks do not create cached analysis admission.
 
 `tests/test_companion_analysis_readiness_rpc.py`
 
 - fresh Agent authentication required;
-- only closed nonsecret state returned;
-- cross-account identity refused.
+- only the closed nonsecret readiness state is returned;
+- cross-account identity is refused.
 
-`extension/tests/analysis-readiness-client.test.mjs`
-
-- readiness is queried only after the authenticated companion handshake;
-- malformed, extended, or impossible ready responses fail closed.
+### Customer presentation
 
 `extension/tests/customer-journey.test.mjs`
 
-- transport authentication alone is never Full-ready;
-- activation required/unavailable are distinct;
-- active commercial authority alone does not imply analysis admission;
-- Full-ready requires authenticated delivery plus commercial and licensed-analysis readiness.
+- authenticated transport alone renders **Checking activation**, never Full-ready;
+- **Full activation required** does not expose a protocol handoff;
+- activation-unavailable remains retryable and is not called an invalid license;
+- commercial-active + analysis-blocked renders **Full activation active**, not Full-ready;
+- Full-ready requires authenticated delivery + commercial active + analysis admitted.
 
-### Hosted entry / installation v2
+`extension/tests/customer-activation-copy.test.mjs`
 
-`tests/test_customer_release.py`
+- normal activation surfaces are guarded against CapabilityLicense/package/seat/license/issuance/JWS/proof/key/exchange terminology.
 
-- development configuration may be blank;
-- release-grade configuration requires the customer entry and API origin together;
-- unsafe or credential-bearing URLs are refused;
-- release-mode PyInstaller binding requires hosted routing and packages the nonsecret document.
+`extension/qualification/customer-journey-visual.spec.mjs`
 
-`tests/test_customer_onboarding_entry.py`
+- deterministic visual coverage includes activation checking, required, active-with-analysis-blocked, unavailable, and licensed Full-ready.
 
-- the configured first-run surface exposes exactly the release-bound **Open secure setup** action;
-- unconfigured development does not expose a fake hosted destination.
+Existing CapabilityLicense delivery/verifier/reissue/journal tests remain the authority evidence for production signature verification, installation/account/key matching, crash-safe replay, and hosted-authorized replacement semantics. Gap 3 does not weaken or duplicate those paths.
 
-`tests/test_provisioning_v2_contract.py` and `tests/test_provisioning_claim_submission.py`
+## Remaining P0 / external dependencies
 
-- production decoding requires the v2 package/profile without v1 compatibility;
-- the composed production path consumes a v2 handoff and persists only installation + membership bootstrap authority.
-
-`tools/e2e-capture/helpers/provisioning_grant_authority.py` and `tools/e2e-capture/tests/provisioning-registration.spec.mjs`
-
-- production-shaped browser evidence uses the shipped v2 decoder/client/store path, but the hosted responder is intentionally synthetic and therefore is not evidence of production control-plane deployment.
-
-### Provisioning restart/recovery
-
-`tests/test_provisioning_progress.py`
-
-- registration, creator confirmation, approval pending, and finalization-ready progress;
-- unresolved claims and ambiguous active candidates fail to recovery.
-
-`app/provisioning/provisioning-resume.test.mjs`
-
-- browser restart resumes after registration;
-- approval pending resumes without re-querying or displaying internal IDs;
-- approved setup resumes finalization using hidden durable coordinates;
-- uncertain state disables mutation and says not to reuse the setup code.
-
-`tests/test_provisioning_resume_browser_module.py` keeps the resume browser module in ordinary CI while the historical provisioning suite remains intact.
-
-### Existing production-shaped browser coverage
-
-The Windows browser E2E assertions were aligned to reviewed customer copy while retaining their underlying authority checks. The provisioning browser scenario still proves configured runtime identity after WebAuthn; Preview still proves no local-service traffic; the Full journey still uses the production-shaped authenticated companion path.
-
-`extension/qualification/customer-journey-visual.spec.mjs` contains deterministic visual states for Preview, desktop required, setup incomplete, connection compare/failure, stopped desktop, activation required, activation unavailable, and genuinely licensed Full-ready.
-
-Fixture screenshots are not final release evidence. The final Store candidate must generate fresh exact-artifact browser evidence after all remaining P0 dependencies are closed.
-
-## New-user acceptance checklist
-
-Starting from a clean supported machine and the Chrome Web Store:
-
-- [x] Understand and use Preview without the desktop app.
-- [x] Understand that Full requires the desktop app.
-- [ ] Install the latest supported desktop app from an authoritative in-product link. **Blocked: production release distribution URL.**
-- [x] Understand desktop first-run steps without architecture terminology.
-- [x] Resume normal durable first-run checkpoints after browser/desktop restart.
-- [x] Product first-run has a release-owned **Open secure setup** action and no environment-variable/customer URL step.
-- [x] Brain production accepts and locally proves the v2 installation handoff contract.
-- [ ] Prove the real deployed hosted entry emits the same v2 handoff. **Blocked: production control-plane URL/deployment evidence.**
-- [x] Detect/confirm the signed-in creator account without asking the customer to type an internal ID.
-- [ ] Complete creator approval from the connected hosted customer surface. **Blocked: hosted continuation.**
-- [x] Distinguish secure desktop connection, Full activation, and licensed-analysis admission.
-- [ ] Complete commercial Full activation without internal package/seat terminology. **Blocked: hosted activation continuation.**
-- [x] Show **Full mode is ready** only when current commercial authority and licensed analysis admission are confirmed.
-- [x] Recover from normal connection and setup failures without generic “Something went wrong” copy.
-- [ ] Reconcile a claim whose hosted consumption may have succeeded but whose local result was lost. **Blocked: authoritative hosted reconciliation.**
-- [ ] Prove first licensed analysis from only “Install this extension from the Chrome Web Store.” **Blocked by the remaining external P0s.**
+1. **Gap 1B — production binding/deployment evidence.** Real release-owned hosted onboarding/API coordinates plus deployed-v2 proof remain open. Source tests are not production deployment evidence.
+2. **Hosted creator-approval ceremony.** Product continuation is closed; the real hosted session-derived approval ceremony is owned externally/in parallel.
+3. **Hosted commercial activation handoff.** Product needs the authenticated opaque hosted continuation/redeem contract described above before **Continue activation** can be offered.
+4. **Hosted commercial reissue disposition.** Required only if Product must truthfully distinguish replacement/reissue from ordinary activation-required state.
+5. **Exceptional unresolved-claim reconciliation.** The current UX correctly blocks replay when hosted consumption may have succeeded but local completion was lost; authoritative hosted reconciliation remains separate Gap 4 and is not started here.
+6. **Authoritative desktop installer distribution.** A Store candidate still needs the real release-owned latest-supported desktop installer URL.
+7. **Customer-recognizable creator label.** A safe handle/display label remains needed if customers must visually distinguish multiple creator accounts.
+8. **Final exact-artifact clean-machine journey.** First licensed analysis from Store install remains blocked by the external production dependencies above.
 
 ## Validation status
 
-- Active branch remains `feat/acceptance-ux-onboarding`, based on `main@01461b598aacdcd54d33bb5abc93f687225a4780`.
+- Pre-restack branch head: `2b299068114e0f4c3cb624c176e452c03de04133`.
+- The branch was rebased onto `main@d4d69ee3d35b5724e8615e8b4124887948770f3a` before Gap 3 work.
+- Product 2.0.3 release identity/qualification changes from PR #37 are preserved.
 - Draft PR #36 remains the qualification path and must stay Draft.
 - No signed integration commit has been created.
 - No final Chrome Store package has been frozen.
-- CI is intentionally batched at coherent release-path checkpoints rather than after every development commit.
+- No production hosted coordinate has been invented.
+- `main` and the control-plane repository are not modified by this Product task.
 
 ## Release position
 
-Do not freeze or submit a new Store ZIP yet. Product-side hosted entry, truthful paid readiness, and normal restart resume are implemented, but the real hosted deployment/binding, creator approval continuation, commercial activation continuation, unresolved-claim reconciliation, installer publication, and exact-artifact acceptance remain open.
+Do not freeze or submit a new Store ZIP yet. Gap 3 Product semantics and fail-closed customer presentation are implemented to the maximum extent supported by existing contracts, but the customer-safe hosted commercial handoff/reissue disposition and Gap 1B production evidence remain external blockers. Do not begin unresolved one-time claim reconciliation Gap 4 as part of this slice.
