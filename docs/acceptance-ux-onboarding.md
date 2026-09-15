@@ -1,7 +1,7 @@
 # Chrome Store acceptance UX onboarding pass
 
-Branch: `feat/acceptance-ux-onboarding`  
-Base: `feat/capability-license-runtime` at `3bd975d5a3242c26ec9b86eb58cfe9f795987176`
+Branch: `feat/acceptance-ux-onboarding`
+Base: `main` at `01461b598aacdcd54d33bb5abc93f687225a4780`
 
 This pass is scoped to customer acceptance from one starting instruction:
 
@@ -187,9 +187,9 @@ Starting from a clean supported machine and the Chrome Web Store:
 
 ## Validation status
 
-- Branch base remains the exact qualified CapabilityLicense head; UX changes are isolated from that branch.
+- Branch base is `main` at `01461b598aacdcd54d33bb5abc93f687225a4780`; UX changes are isolated on `feat/acceptance-ux-onboarding`.
 - Focused customer-journey state tests were exercised during implementation before the later normal-desktop copy pass.
-- Repository-wide extension, provisioning, frontend and browser suites have **not** been executed by GitHub Actions on this branch because the current CI workflow runs only on `main`/`develop` pushes or pull requests targeting those branches.
+- Repository-wide extension, provisioning, frontend and browser suites are qualified through draft PR #36 before new P0 UX changes proceed.
 - No exact-artifact Chrome Store candidate has been built or frozen from this branch.
 
 ## Release position
