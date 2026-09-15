@@ -16,6 +16,10 @@ function status({ mode = 'full', phase = 'identity', transport = 'disconnected' 
 }
 
 const pairing = (state) => ({ state, comparison_code: null });
+const readiness = (commercial_authority, analysis_admission = 'blocked') => ({
+  commercial_authority,
+  analysis_admission,
+});
 
 test('Preview remains independent of the desktop app', () => {
   const result = deriveCustomerJourney({
@@ -91,11 +95,56 @@ test('pairing failure has a concrete retry path', () => {
   assert.equal(result.primaryLabel, 'Try connection again');
 });
 
-test('Full is ready only after authenticated delivery', () => {
+test('authenticated local transport alone is never Full-ready', () => {
+  const result = deriveCustomerJourney({
+    status: status({ phase: 'full', transport: 'authenticated' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+  });
+  assert.notEqual(result.id, CUSTOMER_STATES.FULL_READY);
+  assert.equal(result.id, CUSTOMER_STATES.FULL_UNAVAILABLE);
+});
+
+test('commercial activation required is distinct from connection readiness', () => {
+  const result = deriveCustomerJourney({
+    status: status({ phase: 'full', transport: 'authenticated' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+    analysisReadiness: readiness('required'),
+  });
+  assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_REQUIRED);
+  assert.equal(result.title, 'Activate Full analysis');
+  assert.match(result.body, /not activated yet/);
+});
+
+test('commercial authority failure is distinct and recoverable', () => {
+  const result = deriveCustomerJourney({
+    status: status({ phase: 'full', transport: 'authenticated' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+    analysisReadiness: readiness('unavailable'),
+  });
+  assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_UNAVAILABLE);
+  assert.equal(result.primaryLabel, 'Check again');
+});
+
+test('commercial authority alone does not imply licensed analysis admission', () => {
+  const result = deriveCustomerJourney({
+    status: status({ phase: 'full', transport: 'authenticated' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+    analysisReadiness: readiness('active', 'blocked'),
+  });
+  assert.equal(result.id, CUSTOMER_STATES.FULL_UNAVAILABLE);
+  assert.match(result.body, /licensed analysis is not admitted/);
+});
+
+test('Full is ready only after secure delivery, commercial authority, and analysis admission', () => {
   const notReady = deriveCustomerJourney({
     status: status({ phase: 'full', transport: 'authenticating' }),
     pairing: pairing('paired'),
     desktopRuntimeReachable: true,
+    analysisReadiness: readiness('active', 'admitted'),
   });
   assert.equal(notReady.id, CUSTOMER_STATES.FULL_UNAVAILABLE);
 
@@ -103,9 +152,11 @@ test('Full is ready only after authenticated delivery', () => {
     status: status({ phase: 'full', transport: 'authenticated' }),
     pairing: pairing('paired'),
     desktopRuntimeReachable: true,
+    analysisReadiness: readiness('active', 'admitted'),
   });
   assert.equal(ready.id, CUSTOMER_STATES.FULL_READY);
   assert.equal(ready.primaryLabel, 'Open analysis');
+  assert.match(ready.body, /licensed analysis is ready/);
 });
 
 test('desktop runtime probe reports an opened loopback socket and closes it', async () => {

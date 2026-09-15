@@ -5,7 +5,7 @@
       "id": "chrome-store-first",
       "entry_state": "extension.installed",
       "success_state": "analysis.licensed_ready",
-      "current_terminal_state": "full.local_delivery_ready",
+      "current_terminal_state": "commercial.activation_required",
       "production_complete": false
     }
   ],
@@ -78,13 +78,6 @@
       "blocked_by": ["hosted.creator_approval_continuation"]
     },
     {
-      "id": "commercial.activation_required",
-      "customer_surface": "missing",
-      "customer_distinction": "missing",
-      "backend_only": true,
-      "blocked_by": ["contract.customer_safe_commercial_readiness", "hosted.commercial_activation_handoff"]
-    },
-    {
       "id": "pairing.required",
       "customer_surface": "extension.popup+brain.settings",
       "customer_distinction": "distinct",
@@ -116,21 +109,50 @@
       "id": "full.local_delivery_ready",
       "customer_surface": "extension.popup",
       "customer_distinction": "distinct",
-      "customer_label": "Full mode is ready",
+      "customer_label": "Desktop connected",
+      "proves": ["companion_authenticated", "local_delivery_authenticated"],
       "does_not_prove": ["commercial_activation", "licensed_analysis_admission"],
-      "next": ["analysis.licensed_ready"]
+      "next": ["commercial.activation_required", "commercial.activation_unavailable", "analysis.licensed_ready"]
+    },
+    {
+      "id": "commercial.activation_required",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Activate Full analysis",
+      "backend_only": false,
+      "status_contract": "ofca-analysis-readiness/v1",
+      "next": ["analysis.licensed_ready"],
+      "blocked_by": ["hosted.commercial_activation_handoff"]
+    },
+    {
+      "id": "commercial.activation_unavailable",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Full activation needs attention",
+      "status_contract": "ofca-analysis-readiness/v1",
+      "recovery": "Check again or open the desktop app for recovery."
     },
     {
       "id": "full.temporarily_unavailable",
       "customer_surface": "extension.popup",
       "customer_distinction": "distinct",
-      "recovery": "Start or finish starting the desktop app, then retry."
+      "recovery": "Retry the desktop connection or licensed-readiness check according to the visible state."
     },
     {
       "id": "analysis.licensed_ready",
-      "customer_surface": "missing_end_to_end_proof",
-      "customer_distinction": "missing",
-      "blocked_by": ["commercial.activation_required"]
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Full mode is ready",
+      "status_contract": "ofca-analysis-readiness/v1",
+      "requires": [
+        "desktop_reachable",
+        "companion_authenticated",
+        "creator_account_current",
+        "commercial_authority_active",
+        "analysis_admission_admitted"
+      ],
+      "end_to_end_customer_reachable": false,
+      "blocked_by": ["hosted.commercial_activation_handoff"]
     }
   ],
   "dependencies": [
@@ -165,12 +187,6 @@
       "description": "Expose the required customer-authorized creator approval continuation."
     },
     {
-      "id": "contract.customer_safe_commercial_readiness",
-      "priority": "P0",
-      "owner": "product-contract",
-      "description": "Expose nonsecret activation/readiness state without CapabilityLicense, package, grant, seat, or installation identifiers."
-    },
-    {
       "id": "hosted.commercial_activation_handoff",
       "priority": "P0",
       "owner": "control-plane",
@@ -186,9 +202,14 @@
   "evidence": {
     "extension_unit": [
       "extension/tests/customer-journey.test.mjs",
-      "extension/tests/companion-customer-status.test.mjs"
+      "extension/tests/companion-customer-status.test.mjs",
+      "extension/tests/analysis-readiness-client.test.mjs"
     ],
     "extension_visual": ["extension/qualification/customer-journey-visual.spec.mjs"],
+    "brain_readiness_unit": [
+      "tests/test_analysis_authorization.py",
+      "tests/test_companion_analysis_readiness_rpc.py"
+    ],
     "brain_first_run_unit": ["app/provisioning/provisioning.test.mjs"],
     "brain_connection_unit": ["frontend/tests/CompanionPairingControls.test.tsx"],
     "acceptance_review": ["docs/acceptance-ux-onboarding.md"]
