@@ -46,13 +46,15 @@ _SHELL_TEMPLATE = _MODULE_DIRECTORY / "provisioning.html"
 _DISCLOSURE_ASSET = _MODULE_DIRECTORY / "creator-platform-data-risk-disclosure.html"
 _SCRIPT_ASSET = _MODULE_DIRECTORY / "provisioning.js"
 _EXTENSION_ID_PATTERN = re.compile(r"[a-p]{32}")
+_PROGRESS_STAGES = {
+    "registration_required",
+    "creator_confirmation_required",
+    "creator_approval_pending",
+    "finalization_ready",
+    "recovery_required",
+}
 
 BoundedIdentifier = Annotated[str, StringConstraints(min_length=1, max_length=200)]
-
-# Transport bound for the pasted field, stated here because this module imports
-# no runtime code. It is deliberately looser than the claim package's own
-# maximum so that an oversized package is refused by the decoder, which reports
-# a nonsecret reason, rather than by request validation.
 BoundedClaimPackage = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
 BoundedCapabilityLicensePackage = Annotated[
     str, StringConstraints(min_length=1, max_length=1400)
@@ -68,45 +70,27 @@ BoundedSeatIdentifier = Annotated[
 
 
 class ClaimSubmissionBody(BaseModel):
-    """Bounded provisioning-page body carrying one pasted claim package."""
-
     model_config = ConfigDict(extra="forbid")
-
     package: BoundedClaimPackage
 
 
 class ClaimSubmission(Protocol):
-    """Seam to claim consumption: `None` on success, a nonsecret reason otherwise."""
-
     def __call__(self, *, package: str) -> str | None: ...
 
 
 class CapabilityLicenseDeliveryBody(BaseModel):
-    """Locally selected seat plus one hosted activation/reissue handoff package."""
-
     model_config = ConfigDict(extra="forbid")
-
     package: BoundedCapabilityLicensePackage
     seat_id: BoundedSeatIdentifier
 
 
 class CapabilityLicenseDelivery(Protocol):
-    """Injected seam to the durable CapabilityLicense production composition."""
-
     def activate(self, *, package: str, seat_id: str) -> object: ...
-
     def finalize_reissue(self, *, package: str, seat_id: str) -> object: ...
 
 
 class CreatorAssociationBody(BaseModel):
-    """Bounded body for a locally detected creator account.
-
-    The coordinate fields exist solely to reject callers that try to supply an
-    outbound enrollment tuple.  The durable action never adopts them.
-    """
-
     model_config = ConfigDict(extra="forbid")
-
     detected_creator_account_id: BoundedIdentifier
     onboarding_transaction_id: BoundedIdentifier | None = None
     organization_id: BoundedIdentifier | None = None
@@ -114,8 +98,6 @@ class CreatorAssociationBody(BaseModel):
 
 
 class CreatorAssociationInitiation(Protocol):
-    """Seam to hosted association initiation and local candidate recording."""
-
     def __call__(
         self,
         *,
@@ -127,30 +109,21 @@ class CreatorAssociationInitiation(Protocol):
 
 
 class CreatorBindingAcquisitionBody(BaseModel):
-    """Empty body: acquisition coordinates come only from durable state."""
-
     model_config = ConfigDict(extra="forbid")
 
 
 class CreatorBindingAcquisition(Protocol):
-    """Seam to one hosted binding acquisition and candidate approval."""
-
     def __call__(self) -> object: ...
 
 
 class FinalizationBody(BaseModel):
-    """Bounded provisioning-page body addressing one approved association."""
-
     model_config = ConfigDict(extra="forbid")
-
     association_request_id: BoundedIdentifier
     detected_creator_account_id: BoundedIdentifier
     reported_platform_creator_id: BoundedIdentifier | None = None
 
 
 class FinalizeAction(Protocol):
-    """Seam to finalization: `None` on success, a nonsecret reason on refusal."""
-
     def __call__(
         self,
         *,
@@ -158,6 +131,31 @@ class FinalizeAction(Protocol):
         detected_creator_account_id: str,
         reported_platform_creator_id: str | None,
     ) -> str | None: ...
+
+
+def _validated_progress(value: object) -> dict[str, str | None]:
+    if not isinstance(value, dict) or set(value) != {
+        "stage", "association_request_id", "creator_account_id"
+    }:
+        raise RuntimeError("invalid provisioning progress")
+    stage = value["stage"]
+    association_request_id = value["association_request_id"]
+    creator_account_id = value["creator_account_id"]
+    if stage not in _PROGRESS_STAGES:
+        raise RuntimeError("invalid provisioning progress")
+    coordinates_required = stage in {"creator_approval_pending", "finalization_ready"}
+    if coordinates_required:
+        if not isinstance(association_request_id, str) or not 1 <= len(association_request_id) <= 200:
+            raise RuntimeError("invalid provisioning progress")
+        if not isinstance(creator_account_id, str) or not 1 <= len(creator_account_id) <= 200:
+            raise RuntimeError("invalid provisioning progress")
+    elif association_request_id is not None or creator_account_id is not None:
+        raise RuntimeError("invalid provisioning progress")
+    return {
+        "stage": stage,
+        "association_request_id": association_request_id,
+        "creator_account_id": creator_account_id,
+    }
 
 
 def create_provisioning_app(
@@ -168,13 +166,13 @@ def create_provisioning_app(
     completion_ready: Callable[[], bool],
     finalize_action: FinalizeAction,
     capability_license_delivery: CapabilityLicenseDelivery | None = None,
+    provisioning_progress: Callable[[], dict[str, str | None]] | None = None,
     extension_id: str | None = None,
     launcher_handoff_token: str | None = None,
     completion_exit: Callable[[], None] | None = None,
     session_manager: ProvisioningSessionManager | None = None,
     shutdown_action: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
-    """Build the isolated provisioning surface without importing runtime modules."""
     sessions = session_manager or ProvisioningSessionManager(launcher_handoff_token)
 
     @asynccontextmanager
@@ -188,8 +186,6 @@ def create_provisioning_app(
     application = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifecycle)
 
     def provisioned_extension_id() -> str:
-        """Return only a locally valid configured Chrome extension identifier."""
-
         if extension_id is None or _EXTENSION_ID_PATTERN.fullmatch(extension_id) is None:
             return ""
         return extension_id
@@ -230,10 +226,7 @@ def create_provisioning_app(
             "{{PROVISIONING_EXTENSION_ID}}",
             html.escape(provisioned_extension_id(), quote=True),
         )
-        return HTMLResponse(
-            document,
-            headers={"Cache-Control": "no-store"},
-        )
+        return HTMLResponse(document, headers={"Cache-Control": "no-store"})
 
     @application.get(PROVISIONING_DISCLOSURE_PATH, include_in_schema=False)
     async def disclosure(request: Request) -> HTMLResponse:
@@ -265,14 +258,17 @@ def create_provisioning_app(
                 {"state": "configured_restart"},
                 background=BackgroundTask(request_completion_exit),
             )
-        return JSONResponse({"state": "provisioning_ready"})
+        if provisioning_progress is None:
+            return JSONResponse({"state": "provisioning_ready"})
+        progress = _validated_progress(provisioning_progress())
+        return JSONResponse(
+            {"state": "provisioning_ready", **progress},
+            headers={"Cache-Control": "no-store"},
+        )
 
     @application.post(PROVISIONING_CLAIM_PATH, include_in_schema=False)
     async def submit_claim(request: Request, body: ClaimSubmissionBody) -> JSONResponse:
         sessions.require_mutation(request)
-        # Surrounding whitespace is transport, not package: a pasted field can
-        # carry it and it cannot change the decoded object. Trimming here keeps
-        # the decoder byte-strict and gives every client the same entry point.
         refusal = claim_submission(package=body.package.strip())
         if refusal is not None:
             return JSONResponse(
@@ -296,8 +292,7 @@ def create_provisioning_app(
                 result = await asyncio.wait_for(
                     run_in_threadpool(
                         capability_license_delivery.finalize_reissue
-                        if reissue
-                        else capability_license_delivery.activate,
+                        if reissue else capability_license_delivery.activate,
                         package=body.package.strip(),
                         seat_id=body.seat_id,
                     ),
@@ -306,11 +301,9 @@ def create_provisioning_app(
             except TimeoutError:
                 result = "hosted_unavailable"
             if isinstance(result, str):
-                status_code = (
-                    503
-                    if result in {"hosted_origin_unavailable", "hosted_unavailable"}
-                    else 409
-                )
+                status_code = 503 if result in {
+                    "hosted_origin_unavailable", "hosted_unavailable"
+                } else 409
                 return JSONResponse(
                     {"state": "provisioning_ready", "reason": result},
                     status_code=status_code,
@@ -326,33 +319,17 @@ def create_provisioning_app(
                 headers={"Cache-Control": "no-store"},
             )
 
-        @application.post(
-            PROVISIONING_CAPABILITY_LICENSE_ACTIVATE_PATH,
-            include_in_schema=False,
-        )
+        @application.post(PROVISIONING_CAPABILITY_LICENSE_ACTIVATE_PATH, include_in_schema=False)
         async def activate_capability_license(
-            request: Request,
-            body: CapabilityLicenseDeliveryBody,
+            request: Request, body: CapabilityLicenseDeliveryBody
         ) -> JSONResponse:
-            return await capability_license_response(
-                request,
-                body,
-                reissue=False,
-            )
+            return await capability_license_response(request, body, reissue=False)
 
-        @application.post(
-            PROVISIONING_CAPABILITY_LICENSE_REISSUE_PATH,
-            include_in_schema=False,
-        )
+        @application.post(PROVISIONING_CAPABILITY_LICENSE_REISSUE_PATH, include_in_schema=False)
         async def finalize_capability_license_reissue(
-            request: Request,
-            body: CapabilityLicenseDeliveryBody,
+            request: Request, body: CapabilityLicenseDeliveryBody
         ) -> JSONResponse:
-            return await capability_license_response(
-                request,
-                body,
-                reissue=True,
-            )
+            return await capability_license_response(request, body, reissue=True)
 
     @application.post(PROVISIONING_CREATOR_ASSOCIATION_PATH, include_in_schema=False)
     async def initiate_creator_association(
@@ -380,9 +357,7 @@ def create_provisioning_app(
             headers={"Cache-Control": "no-store"},
         )
 
-    @application.post(
-        PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH, include_in_schema=False
-    )
+    @application.post(PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH, include_in_schema=False)
     async def acquire_creator_binding(
         request: Request, body: CreatorBindingAcquisitionBody
     ) -> JSONResponse:
