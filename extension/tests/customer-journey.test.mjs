@@ -95,17 +95,18 @@ test('pairing failure has a concrete retry path', () => {
   assert.equal(result.primaryLabel, 'Try connection again');
 });
 
-test('authenticated local transport alone is never Full-ready', () => {
+test('authenticated local transport alone enters activation checking, never Full-ready', () => {
   const result = deriveCustomerJourney({
     status: status({ phase: 'full', transport: 'authenticated' }),
     pairing: pairing('paired'),
     desktopRuntimeReachable: true,
   });
   assert.notEqual(result.id, CUSTOMER_STATES.FULL_READY);
-  assert.equal(result.id, CUSTOMER_STATES.FULL_UNAVAILABLE);
+  assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_CHECKING);
+  assert.equal(result.title, 'Checking activation');
 });
 
-test('commercial activation required is distinct from connection readiness', () => {
+test('commercial activation required is customer-safe and has no protocol handoff', () => {
   const result = deriveCustomerJourney({
     status: status({ phase: 'full', transport: 'authenticated' }),
     pairing: pairing('paired'),
@@ -113,8 +114,13 @@ test('commercial activation required is distinct from connection readiness', () 
     analysisReadiness: readiness('required'),
   });
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_REQUIRED);
-  assert.equal(result.title, 'Activate Full analysis');
-  assert.match(result.body, /not activated yet/);
+  assert.equal(result.title, 'Full activation required');
+  assert.equal(result.primaryLabel, 'Check activation');
+  assert.match(result.body, /cannot be started from this release yet/);
+  assert.doesNotMatch(
+    `${result.title} ${result.body} ${result.primaryLabel}`,
+    /CapabilityLicense|package|seat[_ ]?id|license[_ ]?id|issuance[_ ]?id|JWS|proof challenge|installation key JKT|commercial exchange/i,
+  );
 });
 
 test('commercial authority failure is distinct and recoverable', () => {
@@ -126,17 +132,20 @@ test('commercial authority failure is distinct and recoverable', () => {
   });
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_UNAVAILABLE);
   assert.equal(result.primaryLabel, 'Check again');
+  assert.doesNotMatch(result.body, /invalid license/i);
 });
 
-test('commercial authority alone does not imply licensed analysis admission', () => {
+test('commercial authority alone renders activation active but not Full-ready', () => {
   const result = deriveCustomerJourney({
     status: status({ phase: 'full', transport: 'authenticated' }),
     pairing: pairing('paired'),
     desktopRuntimeReachable: true,
     analysisReadiness: readiness('active', 'blocked'),
   });
-  assert.equal(result.id, CUSTOMER_STATES.FULL_UNAVAILABLE);
-  assert.match(result.body, /licensed analysis is not admitted/);
+  assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_ACTIVE);
+  assert.equal(result.title, 'Full activation active');
+  assert.notEqual(result.id, CUSTOMER_STATES.FULL_READY);
+  assert.match(result.body, /licensed analysis is not available/);
 });
 
 test('Full is ready only after secure delivery, commercial authority, and analysis admission', () => {
