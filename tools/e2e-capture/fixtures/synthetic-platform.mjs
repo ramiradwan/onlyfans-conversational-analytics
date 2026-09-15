@@ -3,7 +3,7 @@ const PLATFORM_SOCKET = 'wss://ws2.onlyfans.com/ws3/';
 const BRAIN_ORIGIN = 'http://bridge.localhost:17871';
 
 export const SYNTHETIC = Object.freeze({
-  creatorId: 'fixture-creator',
+  creatorId: 'dev-creator-account',
   chatId: 'fixture-peer-primary',
   displayName: 'Synthetic Primary Fan',
   historyMessageIds: Object.freeze([

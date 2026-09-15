@@ -12,6 +12,13 @@ export const BRAIN_PORT = 17_871;
 export const BRAIN_ORIGIN = `http://bridge.localhost:${BRAIN_PORT}`;
 export const BRAIN_LOOPBACK_URL = `http://${BRAIN_HOST}:${BRAIN_PORT}`;
 export const BRAIN_HTTP_URL = BRAIN_ORIGIN;
+const E2E_BRAIN_ENTRY = path.join(
+  PRODUCT_ROOT,
+  'tools',
+  'e2e-capture',
+  'helpers',
+  'brain_entry.py',
+);
 
 function bootstrapConfigRevision() {
   const source = readFileSync(
@@ -105,20 +112,7 @@ export class BrainProcess {
 
     const child = spawn(
       pythonExecutable(),
-      [
-        '-m',
-        'uvicorn',
-        'app.main:app',
-        '--host',
-        BRAIN_HOST,
-        '--port',
-        String(BRAIN_PORT),
-        '--workers',
-        '1',
-        '--no-access-log',
-        '--log-level',
-        'warning',
-      ],
+      [E2E_BRAIN_ENTRY],
       {
         cwd: PRODUCT_ROOT,
         env: {

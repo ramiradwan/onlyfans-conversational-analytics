@@ -188,6 +188,12 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(snapshot.permissions.permissions ?? []).not.toContain('webRequest');
       expect(snapshot.scriptIds).toEqual(['ofca-preview-isolated', 'ofca-preview-main']);
       expect(snapshot.state.runtimeReady).toBe(false);
+      const reload = popup.getByRole('button', { name: 'Reload OnlyFans tabs to apply access' });
+      await expect(reload).toBeVisible();
+      const reloaded = platformPage.waitForEvent('domcontentloaded');
+      await reload.click();
+      await reloaded;
+      await expect(reload).toBeHidden();
       await expect.poll(() => platformPage.evaluate(
         () => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode ?? null,
       )).toBe('preview');
