@@ -136,7 +136,8 @@ function renderPairing(value = pairingStatus) {
     pairing: 'Connecting… Keep this window open.',
     compare: 'Compare this code with the desktop app. Confirm there only if both codes match.',
     pairing_failed: 'Connection did not complete. Open a new connection window in the desktop app and try again.',
-    unavailable: 'Open your creator account in OnlyFans, then return here to continue.',
+    setup_incomplete: 'Open your creator account in OnlyFans, then return here to continue.',
+    unavailable: 'Full analysis is not enabled yet.',
   })[value.state] ?? 'Open a connection window in the desktop app, then pair this device.';
   renderJourney();
 }
@@ -217,7 +218,6 @@ function renderLegal(status) {
   }
   renderJourney();
 }
-
 function render(status) {
   currentStatus = status;
   elements['mode-label'].textContent = phaseLabel(status);
