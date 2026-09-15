@@ -388,7 +388,10 @@ def test_the_composed_provisioning_surface_finalizes_and_then_reports_restart(
     )[1].split('"')[0]
 
     assert client.get(PROVISIONING_STATUS_PATH, headers=cookie).json() == {
-        "state": "provisioning_ready"
+        "state": "provisioning_ready",
+        "stage": "registration_required",
+        "association_request_id": None,
+        "creator_account_id": None,
     }
 
     finalized = client.post(

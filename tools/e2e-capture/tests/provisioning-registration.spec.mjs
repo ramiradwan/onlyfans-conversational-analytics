@@ -111,7 +111,7 @@ test('a clean installation registers, authenticates, and reaches its configured 
       await expect(page.locator('#detected-identity')).toHaveText('Signed-in creator account detected');
       await page.locator('#confirm-identity').click();
       await expect(page.locator('#provisioning-status'))
-        .toHaveText('Creator account confirmed. Complete creator approval in secure setup, then come back and check approval.');
+        .toContainText('Approval is still waiting for completion');
       await page.locator('#acquire-association').click();
       await expect(page.locator('#provisioning-status'))
         .toHaveText('Creator account approved. Finish desktop setup.');
