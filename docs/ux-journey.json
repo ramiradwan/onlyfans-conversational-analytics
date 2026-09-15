@@ -1,0 +1,299 @@
+{
+  "schema_version": "1.0.0",
+  "journeys": [
+    {
+      "id": "chrome-store-first",
+      "entry_state": "extension.installed",
+      "success_state": "analysis.licensed_ready",
+      "current_terminal_state": "commercial.activation_required",
+      "production_complete": false
+    }
+  ],
+  "states": [
+    {
+      "id": "extension.installed",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "next": ["preview.available", "full.requested"]
+    },
+    {
+      "id": "preview.available",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "independent_of_desktop": true,
+      "next": ["full.requested"]
+    },
+    {
+      "id": "full.requested",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "next": ["desktop.required", "desktop.setup_incomplete", "pairing.required"]
+    },
+    {
+      "id": "desktop.required",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "recovery": "Install the desktop app when a release-owned HTTPS download URL is configured.",
+      "blocked_by": ["release.desktop_installer_url"]
+    },
+    {
+      "id": "desktop.stopped",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct_after_prior_connection",
+      "recovery": "Start the desktop app and retry the saved connection.",
+      "blocked_by": ["contract.desktop_install_presence_for_first_run"]
+    },
+    {
+      "id": "desktop.setup_incomplete",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "recovery": "Open the creator account and sign in before attempting the desktop connection.",
+      "next": ["pairing.required"]
+    },
+    {
+      "id": "desktop.provisioning_required",
+      "customer_surface": "brain.provisioning",
+      "customer_distinction": "distinct",
+      "resume_source": "durable provisioning status",
+      "resume_supported": true,
+      "resume_stages": [
+        "registration_required",
+        "creator_confirmation_required",
+        "creator_approval_pending",
+        "finalization_ready"
+      ],
+      "next": ["installation.handoff_required"]
+    },
+    {
+      "id": "provisioning.recovery_required",
+      "customer_surface": "brain.provisioning",
+      "customer_distinction": "distinct",
+      "trigger": "unresolved or ambiguous durable provisioning state",
+      "recovery": "Do not reuse the setup code. Restart the desktop app and return to setup."
+    },
+    {
+      "id": "installation.handoff_required",
+      "customer_surface": "brain.provisioning",
+      "customer_distinction": "distinct",
+      "customer_label": "Connect this computer",
+      "customer_action": "Open secure setup",
+      "entry_source": "release-owned ofca-customer-release/v1 configuration",
+      "brain_claim_profile": "urn:bridge-clean:installation-claim:v2",
+      "brain_package_profile": "urn:bridge-clean:installation-claim-package:v2",
+      "product_side_complete": true,
+      "production_complete": false,
+      "blocked_by": [
+        "hosted.onboarding_entry",
+        "contracts.installation_package_profile_compatibility"
+      ]
+    },
+    {
+      "id": "creator.detected",
+      "customer_surface": "brain.provisioning",
+      "customer_distinction": "distinct",
+      "raw_identifier_visible": false,
+      "next": ["creator.approval_pending"]
+    },
+    {
+      "id": "creator.approval_pending",
+      "customer_surface": "brain.provisioning",
+      "customer_distinction": "distinct",
+      "resumable": true,
+      "recovery": "Complete creator approval in secure setup, then choose Check approval.",
+      "blocked_by": ["hosted.creator_approval_continuation"]
+    },
+    {
+      "id": "pairing.required",
+      "customer_surface": "extension.popup+brain.settings",
+      "customer_distinction": "distinct",
+      "customer_language": "Connect browser extension",
+      "next": ["pairing.in_progress"]
+    },
+    {
+      "id": "pairing.in_progress",
+      "customer_surface": "extension.popup+brain.settings",
+      "customer_distinction": "distinct",
+      "next": ["pairing.compare", "pairing.failed"]
+    },
+    {
+      "id": "pairing.compare",
+      "customer_surface": "extension.popup+brain.settings",
+      "customer_distinction": "distinct",
+      "comparison": "six_digit_code",
+      "technical_thumbprint_visible": false,
+      "raw_account_identifier_visible": false,
+      "next": ["full.local_delivery_ready", "pairing.failed"]
+    },
+    {
+      "id": "pairing.failed",
+      "customer_surface": "extension.popup+brain.settings",
+      "customer_distinction": "distinct",
+      "recovery": "Open a new desktop connection window and retry."
+    },
+    {
+      "id": "full.local_delivery_ready",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Desktop connected",
+      "proves": ["companion_authenticated", "local_delivery_authenticated"],
+      "does_not_prove": ["commercial_activation", "licensed_analysis_admission"],
+      "next": [
+        "commercial.activation_checking",
+        "commercial.activation_required",
+        "commercial.activation_active_analysis_blocked",
+        "commercial.activation_unavailable",
+        "analysis.licensed_ready"
+      ]
+    },
+    {
+      "id": "commercial.activation_checking",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Checking activation",
+      "status_contract": "ofca-analysis-readiness/v1",
+      "completion_inferred_from_navigation": false,
+      "next": [
+        "commercial.activation_required",
+        "commercial.activation_active_analysis_blocked",
+        "commercial.activation_unavailable",
+        "analysis.licensed_ready"
+      ]
+    },
+    {
+      "id": "commercial.activation_required",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Full activation required",
+      "backend_only": false,
+      "status_contract": "ofca-analysis-readiness/v1",
+      "customer_protocol_fields_visible": false,
+      "customer_action": "Check activation",
+      "safe_continuation_available": false,
+      "existing_data_gated": false,
+      "next": ["commercial.activation_checking"],
+      "blocked_by": ["hosted.commercial_activation_handoff"]
+    },
+    {
+      "id": "commercial.activation_active_analysis_blocked",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Full activation active",
+      "status_contract": "ofca-analysis-readiness/v1",
+      "commercial_authority": "active",
+      "analysis_admission": "blocked",
+      "full_ready": false,
+      "existing_data_gated": false,
+      "recovery": "Check licensed readiness again or open the desktop app."
+    },
+    {
+      "id": "commercial.activation_unavailable",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Full activation needs attention",
+      "status_contract": "ofca-analysis-readiness/v1",
+      "invalid_authority_claimed": false,
+      "existing_data_gated": false,
+      "recovery": "Check again or open the desktop app for recovery."
+    },
+    {
+      "id": "full.temporarily_unavailable",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "recovery": "Retry the desktop connection or licensed-readiness check according to the visible state."
+    },
+    {
+      "id": "analysis.licensed_ready",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "customer_label": "Full mode is ready",
+      "status_contract": "ofca-analysis-readiness/v1",
+      "requires": [
+        "desktop_reachable",
+        "companion_authenticated",
+        "creator_account_current",
+        "commercial_authority_active",
+        "analysis_admission_admitted"
+      ],
+      "end_to_end_customer_reachable": false,
+      "blocked_by": ["hosted.commercial_activation_handoff"]
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "release.desktop_installer_url",
+      "priority": "P0",
+      "owner": "release",
+      "description": "Publish an authoritative customer desktop installer URL and bind it into the Store candidate."
+    },
+    {
+      "id": "contract.desktop_install_presence_for_first_run",
+      "priority": "P1",
+      "owner": "product-contract",
+      "description": "Expose a nonsecret trustworthy first-run signal if installed-but-stopped must differ from not-installed before prior connection."
+    },
+    {
+      "id": "hosted.onboarding_entry",
+      "priority": "P0",
+      "owner": "control-plane+release",
+      "product_action_present": true,
+      "production_binding_present": false,
+      "description": "Publish the real customer secure-setup URL and API origin into the release-owned customer configuration and prove the deployed hosted surface accepts the customer journey."
+    },
+    {
+      "id": "contracts.installation_package_profile_compatibility",
+      "priority": "P0",
+      "owner": "control-plane+contracts",
+      "brain_v2_acceptance_proven": true,
+      "production_hosted_v2_verified": false,
+      "description": "Brain production accepts installation-claim-package:v2 / installation-claim:v2 and production-shaped local E2E exercises it; the deployed hosted onboarding must still be proven to issue that same v2 handoff."
+    },
+    {
+      "id": "hosted.creator_approval_continuation",
+      "priority": "P0",
+      "owner": "control-plane",
+      "description": "Expose the required customer-authorized creator approval continuation."
+    },
+    {
+      "id": "hosted.commercial_activation_handoff",
+      "priority": "P0",
+      "owner": "control-plane",
+      "product_action_present": false,
+      "product_fail_closed": true,
+      "description": "Provide an authenticated, customer-safe hosted commercial continuation bound to the current customer/account and target installation. Product needs an opaque continuation/redeem result that lets the existing local delivery path receive the authorized activation or reissue material without asking the customer to copy package, seat, proof, license, issuance, key, or exchange fields. Completion must be observed by ofca-analysis-readiness/v1 after local verification and durable storage, not by navigation or hosted return."
+    },
+    {
+      "id": "hosted.commercial_reissue_disposition",
+      "priority": "P0",
+      "owner": "control-plane",
+      "product_action_present": false,
+      "product_fail_closed": true,
+      "description": "If Product is expected to label replacement/reissue separately, hosted authority must provide a customer-safe authoritative disposition for the current account and replacement installation. Product has no local signal that truthfully distinguishes new activation required from hosted-authorized replacement/reissue required and must not infer one."
+    }
+  ],
+  "evidence": {
+    "extension_unit": [
+      "extension/tests/customer-journey.test.mjs",
+      "extension/tests/companion-customer-status.test.mjs",
+      "extension/tests/analysis-readiness-client.test.mjs"
+    ],
+    "extension_visual": ["extension/qualification/customer-journey-visual.spec.mjs"],
+    "brain_readiness_unit": [
+      "tests/test_analysis_authorization.py",
+      "tests/test_companion_analysis_readiness_rpc.py"
+    ],
+    "brain_first_run_unit": [
+      "app/provisioning/provisioning.test.mjs",
+      "app/provisioning/provisioning-resume.test.mjs",
+      "tests/test_provisioning_progress.py",
+      "tests/test_customer_release.py",
+      "tests/test_customer_onboarding_entry.py"
+    ],
+    "brain_v2_handoff": [
+      "tests/test_provisioning_claim_submission.py::test_the_composed_surface_registers_the_installation_from_one_package",
+      "tools/e2e-capture/helpers/provisioning_grant_authority.py",
+      "tools/e2e-capture/tests/provisioning-registration.spec.mjs"
+    ],
+    "brain_connection_unit": ["frontend/tests/CompanionPairingControls.test.tsx"],
+    "acceptance_review": ["docs/acceptance-ux-onboarding.md"]
+  }
+}

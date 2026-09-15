@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: app/api/endpoints/companion_session.py app/security/companion_session_authority.py app/transport/companion_records.py app/transport/companion_channel.py extension/transport/companion-channel.mjs extension/transport/companion-fragments.mjs extension/runtime/companion-client.mjs -->
+<!-- CODE-VERIFY: app/api/endpoints/companion_session.py app/security/companion_session_authority.py app/security/analysis_authorization.py app/transport/companion_records.py app/transport/companion_channel.py extension/transport/companion-channel.mjs extension/transport/companion-fragments.mjs extension/runtime/companion-client.mjs -->
 
 # Companion session transport
 
@@ -36,9 +36,12 @@ Responses contain exactly `type`, the same `id`, and either `result` or a fixed 
 | --- | --- |
 | `agent.challenge` | Issue a fresh session-bound challenge with a 30-second deadline. |
 | `agent.authenticate` | Verify the pinned Agent P-256 identity proof; issue an Agent ticket and opaque storage bootstrap. |
+| `agent.analysis.readiness` | After Agent authentication, return only closed nonsecret commercial-authority and licensed-analysis-admission states derived from current durable authority. |
 | `agent.config.get` | Authenticate the current Agent configuration ticket; return the immutable configuration or an ETag match. |
 | `agent.storage.unseal` | Validate the account-bound bootstrap and return the stable account storage key with this session's fresh ticket. |
 | `agent.storage.rotate` | Validate this session's reconnect and configuration credentials and reseal its bootstrap. |
+
+`agent.analysis.readiness` returns exactly `schema`, `commercial_authority`, and `analysis_admission`. It does not return CapabilityLicense bytes, license/issuance/seat/reference identifiers, grants, packages, tickets, or signing material, and evaluating readiness does not create or cache an analysis admission.
 
 After authentication and storage unlock, Agent sends the unchanged protocol v2 `agent.hello` inside the encrypted stream. Tickets cannot authorize another session or a plaintext route. The configuration credential becomes reusable only within the handle that consumed it, with authorization rechecked on every use. Agent retains session credentials and unlocked keys in memory; durable Full data remains encrypted.
 

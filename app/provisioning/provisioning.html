@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Configure Bridge</title>
+    <title>Set up desktop app</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -236,9 +236,27 @@
         margin-block-start: var(--space-1);
       }
 
-      button {
+      .approval-continuation {
+        display: grid;
+        gap: var(--space-1);
+        margin-block: var(--space-2) var(--space-1);
+      }
+
+      .step:not([data-state="current"]) .approval-continuation {
+        display: none;
+      }
+
+      #continue-creator-approval:not([hidden]) + .approval-unavailable {
+        display: none;
+      }
+
+      button,
+      .primary-link {
+        display: inline-flex;
         min-height: 3rem;
         min-width: 3rem;
+        align-items: center;
+        justify-content: center;
         padding: var(--space-1) var(--space-2);
         border: 1px solid transparent;
         border-radius: var(--radius-medium);
@@ -246,8 +264,13 @@
         color: var(--color-on-primary);
         font: inherit;
         font-weight: 600;
+        text-decoration: none;
         cursor: pointer;
         transition: transform var(--motion-duration) var(--motion-easing), opacity var(--motion-duration) var(--motion-easing);
+      }
+
+      .primary-link[hidden] {
+        display: none;
       }
 
       button.secondary {
@@ -256,7 +279,8 @@
         color: var(--color-primary-strong);
       }
 
-      button:active:not(:disabled) {
+      button:active:not(:disabled),
+      .primary-link:active {
         transform: scale(0.98);
       }
 
@@ -296,7 +320,8 @@
           --elevation-surface: 0 2px 4px rgba(0, 0, 0, 0.50), 0 20px 48px -24px rgba(0, 0, 0, 0.85);
         }
 
-        button {
+        button,
+        .primary-link {
           color: var(--color-on-primary);
         }
 
@@ -316,7 +341,9 @@
         }
 
         .actions,
-        .actions button {
+        .actions button,
+        .actions .primary-link,
+        .approval-continuation .primary-link {
           width: 100%;
         }
       }
@@ -336,7 +363,8 @@
         .step,
         .page-status,
         textarea,
-        button {
+        button,
+        .primary-link {
           border: 1px solid CanvasText;
           box-shadow: none;
           forced-color-adjust: auto;
@@ -363,25 +391,36 @@
       data-provisioning-extension-id="{{PROVISIONING_EXTENSION_ID}}"
     >
       <header class="page-header">
-        <h1>Configure Bridge</h1>
-        <p class="intro">Complete these four steps to connect this installation to the signed-in creator account. Keep this page open until configuration is complete.</p>
+        <h1>Set up desktop app</h1>
+        <p class="intro">Complete these steps to prepare Full analysis on this computer. Keep this page open until setup finishes.</p>
         <p class="intro">Review the <a class="disclosure-link" href="/provisioning/creator-platform-data-risk-disclosure.html" target="_blank" rel="noopener noreferrer">Creator platform &amp; data risk disclosure</a> before continuing. It opens in a new tab.</p>
-        <p id="provisioning-status" class="page-status" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral">Start by registering this installation.</p>
+        <p id="provisioning-status" class="page-status" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral">Start by connecting this computer.</p>
       </header>
 
-      <ol class="steps" aria-label="Configuration progress">
+      <ol class="steps" aria-label="Desktop setup progress">
         <li id="claim-step" class="step" data-step="registration" data-state="current" aria-current="step">
           <div class="step-heading">
             <span class="step-number" aria-hidden="true">1</span>
             <div class="step-title-group">
-              <h2 id="claim-heading">Register this installation</h2>
+              <h2 id="claim-heading">Connect this computer</h2>
               <p id="claim-step-state" class="step-state">Current step</p>
             </div>
           </div>
-          <p class="step-description">Paste the installation package provided during setup. Bridge checks its format here before sending it.</p>
+          <p class="step-description">Start in secure setup to verify this computer and get its setup code. Then return here to continue.</p>
+          <div class="actions" {{HOSTED_ONBOARDING_VISIBILITY}}>
+            <a
+              id="open-secure-setup"
+              class="primary-link"
+              href="{{HOSTED_ONBOARDING_URL}}"
+              target="_blank"
+              rel="noopener noreferrer"
+              {{HOSTED_ONBOARDING_VISIBILITY}}
+            >Open secure setup</a>
+          </div>
+          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Secure setup opens in a new tab. Complete sign-in there, then copy the setup code back here.</p>
           <form id="claim-form" novalidate>
-            <label for="claim-package">Installation package</label>
-            <p id="claim-package-help" class="help">Copy the complete package, then paste it without editing. Whitespace before or after it is ignored.</p>
+            <label for="claim-package">Setup code</label>
+            <p id="claim-package-help" class="help">Copy the complete code from secure setup and paste it here without editing it.</p>
             <textarea
               id="claim-package"
               name="package"
@@ -395,13 +434,13 @@
               aria-invalid="false"
             ></textarea>
             <div class="field-meta">
-              <p id="claim-package-validation" class="validation-message" data-valid="true">Ready for a package.</p>
+              <p id="claim-package-validation" class="validation-message" data-valid="true">Ready for a setup code.</p>
               <p id="claim-package-count" class="help">0 / 1,400 characters</p>
             </div>
             <div class="actions">
-              <button id="claim-submit" type="submit" aria-describedby="claim-action-help">Register installation</button>
+              <button id="claim-submit" type="submit" aria-describedby="claim-action-help">Continue setup</button>
             </div>
-            <p id="claim-action-help" class="control-help">Available now.</p>
+            <p id="claim-action-help" class="control-help">Paste the setup code from secure setup.</p>
           </form>
         </li>
 
@@ -409,19 +448,19 @@
           <div class="step-heading">
             <span class="step-number" aria-hidden="true">2</span>
             <div class="step-title-group">
-              <h2 id="identity-heading">Confirm the signed-in creator account</h2>
-              <p id="identity-step-state" class="step-state">Locked</p>
+              <h2 id="identity-heading">Confirm your creator account</h2>
+              <p id="identity-step-state" class="step-state">Complete the step above first</p>
             </div>
           </div>
           <div class="step-body">
-            <p class="step-description">Check the browser extension for the account currently signed in. You can detect it now, but confirmation unlocks only after registration.</p>
-            <p id="identity-status" class="identity-status" role="status" aria-live="polite" aria-atomic="true">No account check has completed.</p>
-            <p class="identity-line">Account to confirm: <output id="detected-identity">None detected</output></p>
+            <p class="step-description">Open OnlyFans in another tab and sign in to the creator account you want to analyze. The extension checks the signed-in account; it does not ask you to type an account ID.</p>
+            <p id="identity-status" class="identity-status" role="status" aria-live="polite" aria-atomic="true">No creator account check has completed.</p>
+            <p class="identity-line">Account: <output id="detected-identity">Not detected yet</output></p>
             <div class="actions">
-              <button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Check extension again</button>
-              <button id="confirm-identity" type="button" disabled aria-describedby="identity-confirm-help">Confirm this account</button>
+              <button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Check signed-in account</button>
+              <button id="confirm-identity" type="button" disabled aria-describedby="identity-confirm-help">Confirm account</button>
             </div>
-            <p id="identity-confirm-help" class="control-help">Register this installation before confirming an account.</p>
+            <p id="identity-confirm-help" class="control-help">Connect this computer before confirming your creator account.</p>
           </div>
         </li>
 
@@ -429,30 +468,42 @@
           <div class="step-heading">
             <span class="step-number" aria-hidden="true">3</span>
             <div class="step-title-group">
-              <h2 id="binding-heading">Acquire association approval</h2>
-              <p id="binding-step-state" class="step-state">Locked</p>
+              <h2 id="binding-heading">Approve your creator account</h2>
+              <p id="binding-step-state" class="step-state">Complete the step above first</p>
             </div>
           </div>
-          <p class="step-description">After the account is confirmed, ask Bridge to obtain approval for this installation.</p>
-          <div class="actions">
-            <button id="acquire-association" type="button" disabled aria-describedby="binding-action-help">Acquire approval</button>
+          <p class="step-description">Approval is required after your creator account is confirmed. Continue approval in secure setup, then return here. This page advances only after the desktop app confirms approval.</p>
+          <div class="approval-continuation">
+            <a
+              id="continue-creator-approval"
+              class="primary-link"
+              href="{{HOSTED_ONBOARDING_URL}}"
+              target="_blank"
+              rel="noopener noreferrer"
+              {{HOSTED_ONBOARDING_VISIBILITY}}
+            >Continue approval</a>
+            <p id="creator-approval-unavailable" class="control-help approval-unavailable">Creator approval cannot be opened right now. If you already completed it in secure setup, choose Check approval. Otherwise contact support.</p>
+            <p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Secure setup opens in a new tab. Returning here does not complete approval; choose Check approval to confirm it.</p>
           </div>
-          <p id="binding-action-help" class="control-help">Confirm the creator account before acquiring approval.</p>
+          <div class="actions">
+            <button id="acquire-association" type="button" disabled aria-describedby="binding-action-help">Check approval</button>
+          </div>
+          <p id="binding-action-help" class="control-help">Confirm your creator account before checking approval.</p>
         </li>
 
         <li id="finalize-step" class="step" data-step="finalization" data-state="locked">
           <div class="step-heading">
             <span class="step-number" aria-hidden="true">4</span>
             <div class="step-title-group">
-              <h2 id="finalize-heading">Finish configuration</h2>
-              <p id="finalize-step-state" class="step-state">Locked</p>
+              <h2 id="finalize-heading">Finish desktop setup</h2>
+              <p id="finalize-step-state" class="step-state">Complete the step above first</p>
             </div>
           </div>
-          <p class="step-description">Finish after approval is acquired. Bridge must restart before normal use.</p>
+          <p class="step-description">Finish after creator approval. The desktop app will restart before normal use.</p>
           <div class="actions">
-            <button id="finalize-provisioning" type="button" disabled aria-describedby="finalize-action-help">Finish configuration</button>
+            <button id="finalize-provisioning" type="button" disabled aria-describedby="finalize-action-help">Finish setup</button>
           </div>
-          <p id="finalize-action-help" class="control-help">Acquire approval before finishing configuration.</p>
+          <p id="finalize-action-help" class="control-help">Creator approval must complete before desktop setup can finish.</p>
         </li>
       </ol>
     </main>
