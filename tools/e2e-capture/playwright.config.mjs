@@ -1,7 +1,13 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from '@playwright/test';
+
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: path.join(ROOT, 'global-setup.mjs'),
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

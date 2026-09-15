@@ -63,14 +63,24 @@ function runtimeMessage(observation = OBSERVATION) {
   };
 }
 
-function bridgeHarness({ context = CONTEXT, configuration = CONFIGURATION } = {}) {
+function bridgeHarness({
+  context = CONTEXT,
+  configuration = CONFIGURATION,
+  currentTransport = null,
+  wakeError = null,
+} = {}) {
   const listeners = [];
   const ingested = [];
   const drops = [];
+  let wakeCalls = 0;
+  const wakeTransport = { creatorAccountId: 'companion-account-a' };
   const runtime = {
     configuration: { activeDocument: configuration },
+    transport: currentTransport,
     async wake() {
-      return { creatorAccountId: 'companion-account-a' };
+      wakeCalls += 1;
+      if (wakeError !== null) throw wakeError;
+      return wakeTransport;
     },
   };
   const ingestion = {
@@ -107,7 +117,13 @@ function bridgeHarness({ context = CONTEXT, configuration = CONFIGURATION } = {}
     chromeApi,
   });
   bridge.register();
-  return { drops, ingested, listener: listeners[0] };
+  return {
+    drops,
+    ingested,
+    listener: listeners[0],
+    runtime,
+    get wakeCalls() { return wakeCalls; },
+  };
 }
 
 function dispatch(listener, message = runtimeMessage(), sender = SENDER) {
@@ -178,6 +194,35 @@ test('account-bound bridge strips page context only after authorization succeeds
     retryable: false,
   });
   assert.deepEqual(mismatched.ingested, []);
+});
+
+test('initialized account runtime accepts locally without requiring a Brain wake', async () => {
+  const transport = { creatorAccountId: 'companion-account-a' };
+  const h = bridgeHarness({
+    currentTransport: transport,
+    wakeError: new Error('Brain unavailable'),
+  });
+  assert.deepEqual(await dispatch(h.listener), {
+    ok: true,
+    event_type: 'chat.observed',
+    source_seq: 1,
+  });
+  assert.equal(h.wakeCalls, 0);
+  assert.equal(h.ingested.length, 1);
+  assert.equal(h.ingested[0].options.transport, transport);
+  assert.deepEqual(h.drops, []);
+});
+
+test('uninitialized account runtime still requires a Brain wake before capture', async () => {
+  const h = bridgeHarness({ wakeError: new Error('Brain unavailable') });
+  assert.deepEqual(await dispatch(h.listener), {
+    ok: false,
+    code: 'enqueue_failed',
+    retryable: true,
+  });
+  assert.equal(h.wakeCalls, 1);
+  assert.deepEqual(h.ingested, []);
+  assert.deepEqual(h.drops, [{ reason: 'enqueue_failed', eventType: 'chat.observed' }]);
 });
 
 test('account-bound bridge fails closed without an authorized platform identity', async () => {

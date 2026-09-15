@@ -313,7 +313,7 @@ def test_history_config_ack_is_reconciled_after_bind_and_on_heartbeat(
         values={
             "consent_policy_version": "history-consent-v1",
             "consent_revision": "consent-1",
-            "authorized_platform_creator_id": "platform-creator-1",
+            "authorized_platform_creator_id": settings.development_platform_creator_id,
             "desired_state": "running",
             "recent_window_days": 30,
             "page_size": 100,
@@ -371,7 +371,7 @@ def test_history_config_ack_is_reconciled_after_bind_and_on_heartbeat(
                 history_acquisition={
                     "enabled": False,
                     "consent_revision": "consent-1",
-                    "authorized_platform_creator_id": "platform-creator-1",
+                    "authorized_platform_creator_id": settings.development_platform_creator_id,
                     "recent_window_days": 30,
                     "page_size": 100,
                     "pages_per_wake": 2,

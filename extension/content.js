@@ -9,7 +9,11 @@ import {
   isPreviewEnvelope,
   isProvisioningIdentityEnvelope,
 } from './capture/envelopes.mjs';
-import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
+import {
+  CAPTURE_LIMITS,
+  CaptureDeliveryQueue,
+  utf8Bytes,
+} from './capture/delivery-queue.mjs';
 
 (function installCaptureBridge() {
   if (globalThis.__OFCA_CAPTURE_BRIDGE_ACTIVE__) return;
@@ -78,13 +82,77 @@ import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
   }
 
   let consentEpoch = null;
-  void sendRuntimeMessage({ type: 'ofca.capture.context.query' }).then((response) => {
-    if (active && response?.ok === true && typeof response.consent_epoch === 'string') {
-      consentEpoch = response.consent_epoch;
-    }
-  }, () => reportDeliveryFailure('capture_context_unavailable'));
+  const pendingContextCaptures = [];
+  let pendingContextBytes = 0;
   const deliveryQueue = new CaptureDeliveryQueue({
     send: (delivery, signal) => sendRuntimeMessage(delivery, signal),
+  });
+
+  function enqueueCaptureDelivery(delivery) {
+    try {
+      void deliveryQueue.enqueue(delivery).catch((error) => {
+        reportDeliveryFailure(error?.code ?? 'runtime_delivery_failed');
+      });
+    } catch (error) {
+      reportDeliveryFailure(error?.code ?? 'delivery_queue_full');
+    }
+  }
+
+  function makeCaptureDelivery(envelope, createdAtMs = Date.now(), deliveryId = crypto.randomUUID()) {
+    return {
+      type: CAPTURE_DELIVERY_TYPE,
+      version: CAPTURE_DELIVERY_VERSION,
+      delivery_id: deliveryId,
+      created_at_ms: createdAtMs,
+      consent_epoch: consentEpoch,
+      observation: envelope.observation,
+    };
+  }
+
+  function bufferUntilContext(envelope) {
+    const bytes = utf8Bytes(JSON.stringify(envelope));
+    if (
+      pendingContextCaptures.length >= CAPTURE_LIMITS.queueEntries
+      || pendingContextBytes + bytes > CAPTURE_LIMITS.queueBytes
+    ) {
+      reportDeliveryFailure('delivery_queue_full');
+      return;
+    }
+    pendingContextCaptures.push({
+      envelope: structuredClone(envelope),
+      bytes,
+      createdAtMs: Date.now(),
+      deliveryId: crypto.randomUUID(),
+    });
+    pendingContextBytes += bytes;
+  }
+
+  function settlePendingContextCaptures(available) {
+    const pending = pendingContextCaptures.splice(0);
+    pendingContextBytes = 0;
+    if (!available || consentEpoch === null) {
+      for (const _entry of pending) reportBridgeDrop('capture_context_unavailable');
+      return;
+    }
+    for (const entry of pending) {
+      enqueueCaptureDelivery(
+        makeCaptureDelivery(entry.envelope, entry.createdAtMs, entry.deliveryId),
+      );
+    }
+  }
+
+  void sendRuntimeMessage({ type: 'ofca.capture.context.query' }).then((response) => {
+    if (!active) return;
+    if (response?.ok === true && typeof response.consent_epoch === 'string') {
+      consentEpoch = response.consent_epoch;
+      settlePendingContextCaptures(true);
+      return;
+    }
+    settlePendingContextCaptures(false);
+  }, () => {
+    if (!active) return;
+    reportDeliveryFailure('capture_context_unavailable');
+    settlePendingContextCaptures(false);
   });
 
   function forwardRuntimeMessage(message, isDeliveryFailure) {
@@ -105,24 +173,10 @@ import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
         return;
       }
       if (consentEpoch === null) {
-        reportBridgeDrop('capture_context_unavailable');
+        bufferUntilContext(envelope);
         return;
       }
-      const delivery = {
-        type: CAPTURE_DELIVERY_TYPE,
-        version: CAPTURE_DELIVERY_VERSION,
-        delivery_id: crypto.randomUUID(),
-        created_at_ms: Date.now(),
-        consent_epoch: consentEpoch,
-        observation: envelope.observation,
-      };
-      try {
-        void deliveryQueue.enqueue(delivery).catch((error) => {
-          reportDeliveryFailure(error?.code ?? 'runtime_delivery_failed');
-        });
-      } catch (error) {
-        reportDeliveryFailure(error?.code ?? 'delivery_queue_full');
-      }
+      enqueueCaptureDelivery(makeCaptureDelivery(envelope));
       return;
     }
     if (envelope?.type === PREVIEW_MESSAGE_TYPE) {
@@ -145,6 +199,8 @@ import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
   function stop() {
     if (!active) return;
     active = false;
+    pendingContextCaptures.length = 0;
+    pendingContextBytes = 0;
     deliveryQueue.close('capture_stopped');
     window.removeEventListener('message', pageMessageListener);
     window.removeEventListener('pagehide', stop);

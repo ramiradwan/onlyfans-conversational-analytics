@@ -192,7 +192,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(snapshot.state.capturePhase).toBe('off');
       expect(snapshot.state.runtimeReady).toBe(false);
       expect(snapshot.scriptIds).toEqual([]);
-      expect(snapshot.local).toEqual({});
+      expectFreshLegalActivationFlow(snapshot, null);
       expectEmptyProvisioningIdentitySession(snapshot);
       expect(snapshot.databaseNames).toEqual([]);
       expectNoOptionalAccess(snapshot);

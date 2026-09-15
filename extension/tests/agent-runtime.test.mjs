@@ -109,7 +109,8 @@ test('a failed bootstrap is reported and the next wake retries initialization', 
   assert.deepEqual(failures, ['temporary storage failure']);
   assert.equal(runtime.transport, null);
 
-  await listeners[0]();
+  listeners[0]();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(attempts, 2);
   assert.equal(transport.starts, 1);
   assert.strictEqual(runtime.transport, transport);

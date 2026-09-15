@@ -4,6 +4,10 @@ import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
+import {
+  PROVISIONING_IDENTITY_STORAGE_KEY,
+  PROVISIONING_IDENTITY_STORAGE_SCHEMA,
+} from '../../../extension/transport/provisioning-identity.mjs';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
 import { BOOTSTRAP_CONFIG_REVISION, BRAIN_ORIGIN, BrainProcess } from '../lib/brain.mjs';
 import {
@@ -60,10 +64,32 @@ async function waitForExtensionState(
   { timeoutMs = 20_000 } = {},
 ) {
   let latest = null;
-  await expect.poll(async () => {
-    latest = await extensionState(worker);
-    return predicate(latest);
-  }, { message, timeout: timeoutMs }).toBe(true);
+  try {
+    await expect.poll(async () => {
+      latest = await extensionState(worker);
+      return predicate(latest);
+    }, { message, timeout: timeoutMs }).toBe(true);
+  } catch (error) {
+    let identityContext = null;
+    let identityReadError = null;
+    try {
+      identityContext = await worker.evaluate(async (storageKey) => {
+        const stored = await chrome.storage.session.get([storageKey]);
+        return stored[storageKey] ?? null;
+      }, PROVISIONING_IDENTITY_STORAGE_KEY);
+    } catch (identityError) {
+      identityReadError = identityError instanceof Error
+        ? identityError.message
+        : String(identityError);
+    }
+    const identityDiagnostic = identityReadError === null
+      ? `Provisioning identity context: ${JSON.stringify(identityContext)}`
+      : `Provisioning identity context read failed: ${identityReadError}`;
+    throw new Error(
+      `${message}\nLast extension state: ${JSON.stringify(latest)}\n${identityDiagnostic}`,
+      { cause: error },
+    );
+  }
   return latest;
 }
 
@@ -107,6 +133,52 @@ async function readPlatform(page, pathname) {
   await page.evaluate(async (pathValue) => globalThis.fixtureRead(pathValue), pathname);
 }
 
+async function waitForObservedCreatorIdentity(worker, documentToken, accountId) {
+  await expect.poll(async () => worker.evaluate(async ({
+    account,
+    storageKey,
+    storageSchema,
+    token,
+  }) => {
+    const tabs = await chrome.tabs.query({ url: ['https://onlyfans.com/*'] });
+    let tabId = null;
+    for (const tab of tabs) {
+      if (!Number.isInteger(tab.id)) continue;
+      try {
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          world: 'MAIN',
+          func: () => globalThis.fixtureDocumentToken ?? null,
+        });
+        if (result?.result === token) {
+          tabId = tab.id;
+          break;
+        }
+      } catch (_error) {
+        // Non-fixture OnlyFans tabs cannot satisfy this identity fence.
+      }
+    }
+    if (tabId === null) return false;
+    const stored = await chrome.storage.session.get([storageKey]);
+    const document = stored[storageKey];
+    return document?.schema === storageSchema
+      && Array.isArray(document.contexts)
+      && document.contexts.some((context) => (
+        context?.tab_id === tabId
+        && context?.observed_platform_id === account
+        && typeof context?.page_epoch === 'string'
+      ));
+  }, {
+    account: accountId,
+    storageKey: PROVISIONING_IDENTITY_STORAGE_KEY,
+    storageSchema: PROVISIONING_IDENTITY_STORAGE_SCHEMA,
+    token: documentToken,
+  }), {
+    message: 'The active capture document did not persist its observed creator identity.',
+    timeout: 10_000,
+  }).toBe(true);
+}
+
 function expectAlarmCreatedTarget(restart, scheduledTime) {
   expect(restart.createdAt).toBeGreaterThanOrEqual(scheduledTime - 1_500);
 }
@@ -146,10 +218,6 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       });
       await brain.start();
 
-      // A clean profile starts with consent off, which leaves the binding
-      // bridge unregistered and no optional origins granted. The popup
-      // transition is the only path that grants them, and it settles at the
-      // identity phase because no binding exists yet.
       const popup = await openPopup(context, actualExtensionId, pageErrors);
       await connectFullAnalytics(context, popup, worker);
       await expect.poll(async () => (await extensionState(worker)).capturePhase, {
@@ -169,8 +237,6 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         storageBootstrap: pairing.storageBootstrap,
       });
 
-      // Pairing reconciles identity to full through the bridge's onBound
-      // callback; without it the runtime wakes but the phase never advances.
       await expect.poll(async () => (await extensionState(worker)).capturePhase, {
         message: 'Pairing did not reconcile the capture phase to full.',
       }).toBe('full');
@@ -186,8 +252,6 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     );
 
     await test.step('prove both page worlds and Brain-owned capture policy are active', async () => {
-      // The MAIN-world hook publishes its controller last, so reading the mode
-      // off it proves both that it installed and which mode script preceded it.
       await expect.poll(
         () => platformPage.evaluate(
           () => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode ?? null,
@@ -218,6 +282,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
 
     await test.step('produce exactly one chat and four message observations as sequence 1-6', async () => {
       await readPlatform(platformPage, IDENTITY_PATH);
+      await waitForObservedCreatorIdentity(worker, platformDocumentToken, SYNTHETIC.creatorId);
       await readPlatform(platformPage, CHATS_PATH);
       await readPlatform(platformPage, MESSAGES_PATH);
 

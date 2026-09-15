@@ -95,7 +95,11 @@ export function createAccountBoundCaptureMessageBridge({
       return { ok: false, code: 'capture_disabled', retryable: false };
     }
     lease?.assertCurrent();
-    const transport = await runtime.wake();
+    // Once the account runtime is initialized, local encrypted acceptance must
+    // not depend on Brain reachability. DeliveryAcceptance persists first and
+    // flushes best-effort; a fresh wake is only required when no local runtime
+    // (and therefore no unsealed account storage) exists yet.
+    const transport = runtime.transport ?? await runtime.wake();
     lease?.assertCurrent();
     return ingestAuthorized(delivery, sender, transport, lease);
   };

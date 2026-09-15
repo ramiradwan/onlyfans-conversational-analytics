@@ -2,13 +2,14 @@ import { createReadOnlyAgentRuntime } from './transport/read-only-agent-runtime.
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
 import { ReadOnlyAgentWebSocketClient } from './transport/read-only-agent-websocket.mjs';
 import { createCompanionClient } from './runtime/companion-client.mjs';
+import { createProvisioningCompanionGuard } from './runtime/provisioning-companion-guard.mjs';
 import { accountDatabaseName } from './transport/read-only-indexeddb-ingestion-storage.mjs';
 import { CaptureDiagnostics } from './transport/read-only-capture-ingestion.mjs';
 import { DeliveryCaptureIngestionService } from './transport/read-only-delivery-capture-ingestion.mjs';
 import { createAccountBoundCaptureMessageBridge } from './transport/account-bound-capture-bridge.mjs';
 import { createProvisioningIdentityBridge } from './transport/provisioning-identity.mjs';
 import { LOCAL_SERVICE_ORIGIN } from './transport/local-service-endpoints.mjs';
-import { ConsentController } from './runtime/consent-controller.mjs';
+import { PartitionAwareConsentController } from './runtime/partition-aware-consent-controller.mjs';
 import { PreviewMetricsStore } from './runtime/preview-metrics.mjs';
 import { clearExtensionLocalData } from './runtime/local-data.mjs';
 import { OperationScope, SerialExecutor } from './runtime/operation-scope.mjs';
@@ -54,7 +55,14 @@ export const provisioningIdentityBridge = createProvisioningIdentityBridge({
     return !paired && consentController.state.mode === 'full' && consentController.phase === 'identity';
   },
 });
-provisioningIdentityBridge.onAccountChange(() => companionClient.invalidate());
+export const provisioningCompanionGuard = createProvisioningCompanionGuard({
+  chromeApi: chrome,
+  companionClient,
+  configuredPlatformIdentity: () => agentRuntime.configuration
+    ?.activeDocument
+    ?.history_acquisition
+    ?.authorized_platform_creator_id ?? null,
+});
 export const captureIngestion = new DeliveryCaptureIngestionService({
   runtime: agentRuntime,
   diagnostics: captureDiagnostics,
@@ -104,7 +112,7 @@ function runtimeSummary() {
   };
 }
 
-consentController = new ConsentController({
+consentController = new PartitionAwareConsentController({
   chromeApi: chrome,
   runtime: agentRuntime,
   adapter: chromeAdapter,
@@ -179,6 +187,7 @@ Object.defineProperty(globalThis, '__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__', {
   writable: false,
 });
 
+provisioningCompanionGuard.register();
 captureMessageBridge.register();
 legalActivationController.register();
 consentController.register();

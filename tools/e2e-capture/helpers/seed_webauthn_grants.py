@@ -44,7 +44,9 @@ ACCOUNT_ID = "dev-creator-account"
 INSTALLATION_ID = "e2e-temporary-installation"
 ORGANIZATION_ID = "e2e-organization"
 ASSOCIATION_REQUEST_ID = "e2e-association-request"
-PLATFORM_CREATOR_ID = "e2e-platform-creator"
+# Production finalization derives the local platform identity from the signed
+# creator account and deliberately ignores a client-reported platform value.
+PLATFORM_CREATOR_ID = ACCOUNT_ID
 
 SYNTHETIC_KEY_PROVIDER_NAME = "E2E Synthetic Installation Key Provider"
 SYNTHETIC_KEY_NAME = "e2e-temporary-installation-key"

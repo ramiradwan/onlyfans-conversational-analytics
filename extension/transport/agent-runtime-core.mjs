@@ -167,7 +167,9 @@ export class AgentRuntime {
     this.listenersRegistered = false;
     this.bindingFingerprint = null;
     this.drain = null;
-    this.wakeListener = () => this.wake().catch(() => undefined);
+    this.wakeListener = () => {
+      void this.wake().catch(() => undefined);
+    };
   }
 
   registerListeners() {
