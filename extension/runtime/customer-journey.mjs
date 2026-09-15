@@ -8,6 +8,8 @@ export const CUSTOMER_STATES = Object.freeze({
   PAIRING_REQUIRED: 'pairing_required',
   PAIRING_IN_PROGRESS: 'pairing_in_progress',
   PAIRING_FAILED: 'pairing_failed',
+  ACTIVATION_REQUIRED: 'activation_required',
+  ACTIVATION_UNAVAILABLE: 'activation_unavailable',
   FULL_READY: 'full_ready',
   FULL_UNAVAILABLE: 'full_unavailable',
 });
@@ -25,6 +27,7 @@ export function deriveCustomerJourney({
   pairing,
   desktopRuntimeReachable,
   desktopDownloadAvailable = false,
+  analysisReadiness = { commercial_authority: 'unknown', analysis_admission: 'blocked' },
 } = {}) {
   if (!fullConsent(status)) {
     return Object.freeze({
@@ -96,7 +99,7 @@ export function deriveCustomerJourney({
     });
   }
 
-  if (pairing?.state === 'setup_incomplete') {
+  if (pairing?.state === 'setup_incomplete' || pairing?.state === 'unavailable') {
     return Object.freeze({
       id: CUSTOMER_STATES.SETUP_INCOMPLETE,
       tone: 'warning',
@@ -122,14 +125,54 @@ export function deriveCustomerJourney({
     });
   }
 
-  const fullReady = status?.phase === 'full'
-    && status?.delivery?.transport_state === 'authenticated';
-  if (fullReady) {
+  if (status?.delivery?.transport_state !== 'authenticated') {
+    return Object.freeze({
+      id: CUSTOMER_STATES.FULL_UNAVAILABLE,
+      tone: 'progress',
+      title: 'Finishing the desktop connection',
+      body: 'The devices are paired. Full analysis is waiting for the authenticated local delivery connection to finish.',
+      primaryAction: 'retry_full',
+      primaryLabel: 'Retry connection',
+      secondaryAction: 'open_dashboard',
+      secondaryLabel: 'Open desktop app',
+    });
+  }
+
+  if (analysisReadiness.commercial_authority === 'required') {
+    return Object.freeze({
+      id: CUSTOMER_STATES.ACTIVATION_REQUIRED,
+      tone: 'warning',
+      title: 'Activate Full analysis',
+      body: 'The desktop connection is ready, but paid Full analysis is not activated yet. Open the desktop app to continue account setup.',
+      primaryAction: 'open_dashboard',
+      primaryLabel: 'Open desktop app',
+      secondaryAction: null,
+      secondaryLabel: null,
+    });
+  }
+
+  if (analysisReadiness.commercial_authority === 'unavailable') {
+    return Object.freeze({
+      id: CUSTOMER_STATES.ACTIVATION_UNAVAILABLE,
+      tone: 'error',
+      title: 'Full activation needs attention',
+      body: 'The desktop connection is ready, but Full analysis cannot confirm current commercial authorization. Retry or open the desktop app for recovery.',
+      primaryAction: 'retry_readiness',
+      primaryLabel: 'Check again',
+      secondaryAction: 'open_dashboard',
+      secondaryLabel: 'Open desktop app',
+    });
+  }
+
+  if (
+    analysisReadiness.commercial_authority === 'active'
+    && analysisReadiness.analysis_admission === 'admitted'
+  ) {
     return Object.freeze({
       id: CUSTOMER_STATES.FULL_READY,
       tone: 'success',
       title: 'Full mode is ready',
-      body: 'The extension is connected to the desktop app and Full analysis can receive new activity.',
+      body: 'The desktop app is securely connected, Full activation is active, and licensed analysis is ready.',
       primaryAction: 'open_dashboard',
       primaryLabel: 'Open analysis',
       secondaryAction: null,
@@ -141,9 +184,9 @@ export function deriveCustomerJourney({
     id: CUSTOMER_STATES.FULL_UNAVAILABLE,
     tone: 'warning',
     title: 'Full mode is temporarily unavailable',
-    body: 'The saved connection is present, but Full analysis is not ready right now. Retry after the desktop app is fully started.',
-    primaryAction: 'retry_full',
-    primaryLabel: 'Retry connection',
+    body: 'The desktop connection and activation are present, but licensed analysis is not admitted right now. Check again or open the desktop app.',
+    primaryAction: 'retry_readiness',
+    primaryLabel: 'Check again',
     secondaryAction: 'open_dashboard',
     secondaryLabel: 'Open desktop app',
   });

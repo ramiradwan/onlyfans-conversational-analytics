@@ -10,6 +10,7 @@ export const PAIRING_PORT_NAME = 'ofca.companion.pairing';
 const INSTALLATION_KEY = 'agent_installation_id';
 const ACTIVE_PARTITION_KEY = 'active_account_partition_v5';
 const RECONCILE_ALARM = 'ofca-agent-reconcile';
+const ANALYSIS_READINESS_SCHEMA = 'ofca-analysis-readiness/v1';
 const failure = () => new CompanionChannelError();
 const exact = (value, fields) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === fields.length && fields.every((field) => Object.hasOwn(value, field));
@@ -21,6 +22,17 @@ function abortable(operation, signal) {
     signal.addEventListener('abort', abort, { once: true });
     Promise.resolve(operation).then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
     if (signal.aborted) abort();
+  });
+}
+function validatedAnalysisReadiness(value) {
+  if (!exact(value, ['schema', 'commercial_authority', 'analysis_admission'])
+    || value.schema !== ANALYSIS_READINESS_SCHEMA
+    || !['required', 'active', 'unavailable'].includes(value.commercial_authority)
+    || !['blocked', 'admitted'].includes(value.analysis_admission)
+    || (value.analysis_admission === 'admitted' && value.commercial_authority !== 'active')) throw failure();
+  return Object.freeze({
+    commercial_authority: value.commercial_authority,
+    analysis_admission: value.analysis_admission,
   });
 }
 
@@ -145,6 +157,11 @@ export function createCompanionClient({
       return { state: 'setup_incomplete', comparison_code: null };
     }
     return { ...state };
+  }
+  async function analysisReadiness(controls = {}) {
+    const connected = await connect(controls);
+    controls.signal?.throwIfAborted(); controls.assertCurrent?.();
+    return validatedAnalysisReadiness(await connected.channel.rpc('agent.analysis.readiness', {}, controls));
   }
   async function pair({ signal } = {}) {
     if (pairingAbort !== null) throw failure();
@@ -284,10 +301,12 @@ export function createCompanionClient({
         || (!pairingWindow && port.sender.url !== chromeApi.runtime.getURL('popup.html'))) return;
       const controller = new AbortController();
       const notify = (value) => { try { port.postMessage(value); } catch {} };
+      const notifyReadiness = (value) => notify({ type: 'analysis_readiness', ...value });
       subscribers.add(notify);
       port.onDisconnect.addListener(() => { subscribers.delete(notify); controller.abort(); });
       port.onMessage.addListener((message) => {
-        if (!message || Object.keys(message).length !== 1 || !['pair', 'status', 'forget', 'cancel'].includes(message.type)) return;
+        if (!message || Object.keys(message).length !== 1
+          || !['pair', 'status', 'forget', 'cancel', 'readiness'].includes(message.type)) return;
         void (async () => {
           if (message.type === 'pair') {
             if (!pairingWindow) throw failure();
@@ -297,12 +316,22 @@ export function createCompanionClient({
           }
           else if (message.type === 'forget') { await forget(); await onForget(); }
           else if (message.type === 'cancel') pairingAbort?.abort();
+          else if (message.type === 'readiness') {
+            notifyReadiness(await analysisReadiness({ signal: controller.signal }));
+            return;
+          }
           notify(await status());
-        })().catch(() => notify({ state: 'pairing_failed', comparison_code: null }));
+        })().catch(() => {
+          if (message.type === 'readiness') {
+            notifyReadiness({ commercial_authority: 'unavailable', analysis_admission: 'blocked' });
+          } else {
+            notify({ state: 'pairing_failed', comparison_code: null });
+          }
+        });
       });
       void status().then(notify).catch(() => notify({ state: 'unavailable', comparison_code: null }));
     });
   }
-  return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, status, registerPopup,
+  return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, status, analysisReadiness, registerPopup,
     get connected() { return active !== null && !active.channel.closed; } });
 }

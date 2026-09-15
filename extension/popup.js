@@ -19,7 +19,8 @@ import { LOCAL_SERVICE_ORIGIN, assertLocalServiceUrl } from './transport/local-s
 
 const ids = [
   'mode-label', 'messages-count', 'chats-count', 'inbound-count', 'outbound-count',
-  'brain-status', 'delivery-status', 'pending-count', 'capture-health', 'history-health',
+  'brain-status', 'delivery-status', 'activation-status', 'analysis-status', 'pending-count',
+  'capture-health', 'history-health',
   'feedback', 'legal-unavailable', 'pre-mode', 'terms-accepted', 'risk-acknowledged',
   'terms-link', 'risk-link', 'activate-software', 'mode-choice', 'preview-disclosure',
   'full-disclosure', 'enable-preview', 'enable-full', 'not-now-preview', 'full-secondary',
@@ -42,6 +43,8 @@ let fullReviewRequested = false;
 let initialModeChoiceDismissed = false;
 let busy = false;
 let desktopRuntimeReachable = false;
+let readinessRequestInFlight = false;
+let analysisReadiness = { commercial_authority: 'unknown', analysis_admission: 'blocked' };
 let pairingStatus = { state: 'unpaired', comparison_code: null };
 const isPairingWindow = window.location.hash === '#pairing';
 const pairingPort = chrome.runtime.connect({ name: 'ofca.companion.pairing' });
@@ -77,7 +80,7 @@ function phaseLabel(status) {
     off: 'Analytics off — no OnlyFans access',
     preview: 'Activity preview enabled',
     identity: 'Full setup in progress',
-    full: status.delivery?.transport_state === 'authenticated' ? 'Full mode ready' : 'Full mode connecting',
+    full: status.delivery?.transport_state === 'authenticated' ? 'Desktop connected' : 'Full setup in progress',
     paused: 'Analytics paused',
     revoked: 'Site access revoked',
     permission_required: 'Site access needs approval',
@@ -95,9 +98,38 @@ function journeyBadge(state) {
     pairing_required: 'Next step',
     pairing_in_progress: 'Connecting',
     pairing_failed: 'Try again',
+    activation_required: 'Activation required',
+    activation_unavailable: 'Needs attention',
     full_ready: 'Ready',
     full_unavailable: 'Needs attention',
   })[state] ?? 'Status';
+}
+
+function resetAnalysisReadiness() {
+  readinessRequestInFlight = false;
+  analysisReadiness = { commercial_authority: 'unknown', analysis_admission: 'blocked' };
+}
+
+function renderReadinessStatus() {
+  const full = currentStatus?.consent?.mode === 'full';
+  if (!full) {
+    elements['activation-status'].textContent = 'Not needed for Preview';
+    elements['analysis-status'].textContent = 'Preview only';
+    return;
+  }
+  elements['activation-status'].textContent = ({
+    required: 'Required',
+    active: 'Active',
+    unavailable: 'Needs attention',
+    unknown: 'Checking…',
+  })[analysisReadiness.commercial_authority] ?? 'Checking…';
+  elements['analysis-status'].textContent = analysisReadiness.analysis_admission === 'admitted'
+    ? 'Ready'
+    : analysisReadiness.commercial_authority === 'required'
+      ? 'Waiting for activation'
+      : analysisReadiness.commercial_authority === 'unavailable'
+        ? 'Unavailable'
+        : 'Not ready';
 }
 
 function renderJourney() {
@@ -107,6 +139,7 @@ function renderJourney() {
     pairing: pairingStatus,
     desktopRuntimeReachable,
     desktopDownloadAvailable: secureExternalUrl(companionConfig.desktop_app_download_url) !== null,
+    analysisReadiness,
   });
   elements['journey-card'].dataset.tone = journey.tone;
   elements['journey-badge'].textContent = journeyBadge(journey.id);
@@ -122,34 +155,65 @@ function renderJourney() {
 
 function renderPairing(value = pairingStatus) {
   pairingStatus = value;
-  const fullSelected = currentStatus?.consent?.mode === 'full';
+  const pairingActionable = currentStatus?.consent?.mode === 'full'
+    && desktopRuntimeReachable
+    && !['setup_incomplete', 'unavailable'].includes(value.state);
+  show(elements['companion-pairing'], pairingActionable);
   const pending = ['pairing', 'compare'].includes(value.state);
   const paired = value.state === 'paired';
-  const failed = value.state === 'pairing_failed';
-  const pairingActionable = desktopRuntimeReachable
-    && !pending
-    && !paired
-    && !['setup_incomplete', 'unavailable'].includes(value.state);
-  show(elements['companion-pairing'], fullSelected && (desktopRuntimeReachable || paired || pending || failed));
-  show(elements['pair-companion'], pairingActionable);
+  show(elements['pair-companion'], pairingActionable && !pending && !paired);
   show(elements['cancel-pairing'], pending);
   show(elements['forget-companion'], paired);
   const code = typeof value.comparison_code === 'string' && /^\d{6}$/u.test(value.comparison_code) ? value.comparison_code : null;
   show(elements['pairing-code'], code !== null);
   elements['pairing-code'].textContent = code === null ? '' : `${code.slice(0, 3)} ${code.slice(3)}`;
   elements['pairing-status'].textContent = ({
-    paired: 'This extension is paired with the desktop app.',
+    paired: 'This extension is securely paired with the desktop app.',
     pairing: 'Connecting… Keep this window open.',
     compare: 'Compare this code with the desktop app. Confirm there only if both codes match.',
     pairing_failed: 'Connection did not complete. Open a new connection window in the desktop app and try again.',
     setup_incomplete: 'Open your creator account in OnlyFans, then return here to continue.',
-    unavailable: 'Full analysis is not enabled yet.',
+    unavailable: 'Open your creator account in OnlyFans, then return here to continue.',
   })[value.state] ?? 'Open a connection window in the desktop app, then pair this device.';
+  if (!paired && !pending) resetAnalysisReadiness();
+  renderReadinessStatus();
   renderJourney();
 }
 
-pairingPort.onMessage.addListener((value) => renderPairing(value));
-pairingPort.onDisconnect.addListener(() => renderPairing({ state: 'pairing_failed', comparison_code: null }));
+function requestAnalysisReadiness() {
+  if (
+    readinessRequestInFlight
+    || currentStatus?.consent?.mode !== 'full'
+    || !desktopRuntimeReachable
+    || pairingStatus.state !== 'paired'
+  ) return;
+  readinessRequestInFlight = true;
+  pairingPort.postMessage({ type: 'readiness' });
+}
+
+pairingPort.onMessage.addListener((value) => {
+  if (value?.type === 'analysis_readiness') {
+    readinessRequestInFlight = false;
+    const commercial = value.commercial_authority;
+    const admission = value.analysis_admission;
+    analysisReadiness = (
+      ['required', 'active', 'unavailable'].includes(commercial)
+      && ['blocked', 'admitted'].includes(admission)
+      && !(admission === 'admitted' && commercial !== 'active')
+    ) ? { commercial_authority: commercial, analysis_admission: admission }
+      : { commercial_authority: 'unavailable', analysis_admission: 'blocked' };
+    renderReadinessStatus();
+    renderJourney();
+    return;
+  }
+  renderPairing(value);
+  requestAnalysisReadiness();
+});
+pairingPort.onDisconnect.addListener(() => {
+  readinessRequestInFlight = false;
+  analysisReadiness = { commercial_authority: 'unavailable', analysis_admission: 'blocked' };
+  renderPairing({ state: 'pairing_failed', comparison_code: null });
+});
 
 async function send(message) {
   const response = await chrome.runtime.sendMessage(message);
@@ -224,6 +288,7 @@ function renderLegal(status) {
   }
   renderJourney();
 }
+
 function render(status) {
   currentStatus = status;
   elements['mode-label'].textContent = phaseLabel(status);
@@ -235,7 +300,7 @@ function render(status) {
     ? 'Running'
     : pairingStatus.state === 'paired' ? 'Not running' : 'Not connected';
   elements['delivery-status'].textContent = status.delivery.transport_state === 'authenticated'
-    ? 'Connected'
+    ? 'Authenticated'
     : status.delivery.runtime_ready ? 'Connecting' : 'Inactive';
   elements['pending-count'].textContent = String(status.delivery.pending_entries);
   const dropCount = Object.values(status.delivery.capture_drop_counts ?? {})
@@ -256,17 +321,22 @@ function render(status) {
   show(elements['open-dashboard'], desktopRuntimeReachable);
   show(elements.revoke, mode !== 'off' && mode !== 'revoked');
   renderPairing();
+  renderReadinessStatus();
   if (legalStatus !== null) renderLegal(legalStatus);
 }
 
 async function probeDesktop() {
   if (currentStatus?.consent?.mode !== 'full') {
     desktopRuntimeReachable = false;
+    resetAnalysisReadiness();
+    renderReadinessStatus();
     renderJourney();
     return false;
   }
   desktopRuntimeReachable = await probeDesktopRuntime();
+  if (!desktopRuntimeReachable) resetAnalysisReadiness();
   if (currentStatus !== null) render(currentStatus);
+  requestAnalysisReadiness();
   return desktopRuntimeReachable;
 }
 
@@ -301,6 +371,7 @@ async function chooseMode(mode) {
   try {
     await requestAnalyticsAccess(mode);
     const result = await sendLegal({ type: LEGAL_CHOOSE_MODE_MESSAGE_TYPE, mode });
+    resetAnalysisReadiness();
     render(result.status);
     legalStatus = await sendLegal({ type: LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE });
     fullReviewRequested = false;
@@ -323,6 +394,7 @@ async function transition(mode) {
   elements.feedback.textContent = '';
   try {
     if (mode === 'resume') await requestAnalyticsAccess(currentStatus?.consent?.resume_mode);
+    resetAnalysisReadiness();
     const status = await send({ type: UI_TRANSITION_MESSAGE_TYPE, mode });
     render(status);
     await probeDesktop();
@@ -379,6 +451,13 @@ async function runJourneyAction(action) {
     await chrome.tabs.create({ url: companionConfig.dashboard_url });
     return;
   }
+  if (action === 'retry_readiness') {
+    resetAnalysisReadiness();
+    renderReadinessStatus();
+    renderJourney();
+    requestAnalysisReadiness();
+    return;
+  }
   if (action === 'retry_full' && currentStatus?.consent?.mode === 'full') {
     await transition(currentStatus.consent.mode);
   }
@@ -402,6 +481,7 @@ elements['restore-access'].addEventListener('click', async () => {
   elements.feedback.textContent = '';
   try {
     await requestAnalyticsAccess(mode);
+    resetAnalysisReadiness();
     render(await send({ type: UI_TRANSITION_MESSAGE_TYPE, mode }));
     elements.feedback.textContent = 'Required site access was restored.';
   } catch (error) {
@@ -457,6 +537,7 @@ elements['delete-local-data'].addEventListener('click', async () => {
   )) return;
   setBusy(true);
   try {
+    resetAnalysisReadiness();
     render(await send({ type: UI_DELETE_LOCAL_DATA_MESSAGE_TYPE }));
     legalStatus = await sendLegal({ type: LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE });
     renderLegal(legalStatus);
@@ -474,6 +555,7 @@ elements['pair-companion'].addEventListener('click', openPairingWindow);
 elements['cancel-pairing'].addEventListener('click', () => pairingPort.postMessage({ type: 'cancel' }));
 elements['forget-companion'].addEventListener('click', () => {
   if (window.confirm('Forget the desktop app and stop this connection? You will need to pair again to use Full analysis.')) {
+    resetAnalysisReadiness();
     pairingPort.postMessage({ type: 'forget' });
   }
 });
