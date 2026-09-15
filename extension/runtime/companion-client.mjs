@@ -138,6 +138,12 @@ export function createCompanionClient({
     if (!allowsFull?.()) return { state: 'unavailable', comparison_code: null };
     const saved = await (await store()).status();
     if (saved.paired) return { state: 'paired', comparison_code: null };
+    if (['pairing', 'compare', 'pairing_failed'].includes(state.state)) return { ...state };
+    let account = null;
+    try { account = await detectedAccountId(); } catch {}
+    if (typeof account !== 'string' || account.length === 0) {
+      return { state: 'setup_incomplete', comparison_code: null };
+    }
     return { ...state };
   }
   async function pair({ signal } = {}) {
