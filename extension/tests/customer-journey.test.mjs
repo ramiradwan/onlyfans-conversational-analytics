@@ -52,7 +52,7 @@ test('returning paired user gets a stopped-app recovery state', () => {
 test('running desktop app with no usable creator context explains setup is incomplete', () => {
   const result = deriveCustomerJourney({
     status: status(),
-    pairing: pairing('unavailable'),
+    pairing: pairing('setup_incomplete'),
     desktopRuntimeReachable: true,
   });
   assert.equal(result.id, CUSTOMER_STATES.SETUP_INCOMPLETE);
