@@ -8,7 +8,9 @@ export const CUSTOMER_STATES = Object.freeze({
   PAIRING_REQUIRED: 'pairing_required',
   PAIRING_IN_PROGRESS: 'pairing_in_progress',
   PAIRING_FAILED: 'pairing_failed',
+  ACTIVATION_CHECKING: 'activation_checking',
   ACTIVATION_REQUIRED: 'activation_required',
+  ACTIVATION_ACTIVE: 'activation_active',
   ACTIVATION_UNAVAILABLE: 'activation_unavailable',
   FULL_READY: 'full_ready',
   FULL_UNAVAILABLE: 'full_unavailable',
@@ -138,14 +140,27 @@ export function deriveCustomerJourney({
     });
   }
 
+  if (analysisReadiness.commercial_authority === 'unknown') {
+    return Object.freeze({
+      id: CUSTOMER_STATES.ACTIVATION_CHECKING,
+      tone: 'progress',
+      title: 'Checking activation',
+      body: 'Checking the desktop app for current Full activation and licensed-analysis readiness.',
+      primaryAction: null,
+      primaryLabel: null,
+      secondaryAction: null,
+      secondaryLabel: null,
+    });
+  }
+
   if (analysisReadiness.commercial_authority === 'required') {
     return Object.freeze({
       id: CUSTOMER_STATES.ACTIVATION_REQUIRED,
       tone: 'warning',
-      title: 'Activate Full analysis',
-      body: 'The desktop connection is ready, but paid Full analysis is not activated yet. Open the desktop app to continue account setup.',
-      primaryAction: 'open_dashboard',
-      primaryLabel: 'Open desktop app',
+      title: 'Full activation required',
+      body: 'Full activation has not been completed on this computer. Secure activation cannot be started from this release yet. Preview and existing desktop data remain available.',
+      primaryAction: 'retry_readiness',
+      primaryLabel: 'Check activation',
       secondaryAction: null,
       secondaryLabel: null,
     });
@@ -156,7 +171,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.ACTIVATION_UNAVAILABLE,
       tone: 'error',
       title: 'Full activation needs attention',
-      body: 'The desktop connection is ready, but Full analysis cannot confirm current commercial authorization. Retry or open the desktop app for recovery.',
+      body: 'The desktop connection is ready, but current activation authority could not be confirmed. Check again; existing desktop data remains available.',
       primaryAction: 'retry_readiness',
       primaryLabel: 'Check again',
       secondaryAction: 'open_dashboard',
@@ -180,11 +195,27 @@ export function deriveCustomerJourney({
     });
   }
 
+  if (
+    analysisReadiness.commercial_authority === 'active'
+    && analysisReadiness.analysis_admission === 'blocked'
+  ) {
+    return Object.freeze({
+      id: CUSTOMER_STATES.ACTIVATION_ACTIVE,
+      tone: 'warning',
+      title: 'Full activation active',
+      body: 'Full activation is active, but licensed analysis is not available right now. Existing desktop data remains available.',
+      primaryAction: 'retry_readiness',
+      primaryLabel: 'Check again',
+      secondaryAction: 'open_dashboard',
+      secondaryLabel: 'Open desktop app',
+    });
+  }
+
   return Object.freeze({
     id: CUSTOMER_STATES.FULL_UNAVAILABLE,
     tone: 'warning',
     title: 'Full mode is temporarily unavailable',
-    body: 'The desktop connection and activation are present, but licensed analysis is not admitted right now. Check again or open the desktop app.',
+    body: 'Full readiness could not be confirmed. Check again or open the desktop app.',
     primaryAction: 'retry_readiness',
     primaryLabel: 'Check again',
     secondaryAction: 'open_dashboard',
