@@ -14,6 +14,7 @@ import {
   LEGAL_CHOOSE_MODE_MESSAGE_TYPE,
 } from './runtime/legal-activation-controller.mjs';
 import { requiredOriginsForMode } from './runtime/permission-recovery.mjs';
+import { deriveCustomerJourney, probeDesktopRuntime } from './runtime/customer-journey.mjs';
 import { LOCAL_SERVICE_ORIGIN, assertLocalServiceUrl } from './transport/local-service-endpoints.mjs';
 
 const ids = [
@@ -25,6 +26,7 @@ const ids = [
   'restore-access', 'reload-tabs', 'review-full', 'resume', 'pause', 'history', 'open-dashboard', 'revoke',
   'clear-preview', 'delete-local-data', 'privacy-link',
   'companion-pairing', 'pairing-status', 'pairing-code', 'pair-companion', 'cancel-pairing', 'forget-companion',
+  'journey-card', 'journey-badge', 'journey-title', 'journey-body', 'journey-primary', 'journey-secondary',
 ];
 const elements = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 
@@ -32,36 +34,17 @@ let companionConfig = {
   dashboard_url: `${LOCAL_SERVICE_ORIGIN}/`,
   history_settings_url: `${LOCAL_SERVICE_ORIGIN}/settings`,
   privacy_policy_url: '',
+  desktop_app_download_url: '',
 };
 let currentStatus = null;
 let legalStatus = null;
 let fullReviewRequested = false;
 let initialModeChoiceDismissed = false;
 let busy = false;
+let desktopRuntimeReachable = false;
 let pairingStatus = { state: 'unpaired', comparison_code: null };
 const isPairingWindow = window.location.hash === '#pairing';
 const pairingPort = chrome.runtime.connect({ name: 'ofca.companion.pairing' });
-function renderPairing(value = pairingStatus) {
-  pairingStatus = value;
-  show(elements['companion-pairing'], currentStatus?.consent?.mode === 'full');
-  const pending = ['pairing', 'compare'].includes(value.state);
-  const paired = value.state === 'paired';
-  show(elements['pair-companion'], !pending && !paired);
-  show(elements['cancel-pairing'], pending);
-  show(elements['forget-companion'], paired);
-  const code = typeof value.comparison_code === 'string' && /^\d{6}$/u.test(value.comparison_code) ? value.comparison_code : null;
-  show(elements['pairing-code'], code !== null);
-  elements['pairing-code'].textContent = code === null ? '' : `${code.slice(0, 3)} ${code.slice(3)}`;
-  elements['pairing-status'].textContent = ({
-    paired: 'Desktop app identity is verified and saved.',
-    pairing: 'Connecting… Keep this window open.',
-    compare: 'Check that this code matches the desktop app. Confirm there only if both codes match. Keep this window open.',
-    pairing_failed: 'Connection was not approved. Open a new connection window in the desktop app and retry.',
-    unavailable: 'Enable Full analytics and open your creator account before connecting.',
-  })[value.state] ?? 'Open a connection window in the desktop app, then connect here.';
-}
-pairingPort.onMessage.addListener((value) => renderPairing(value));
-pairingPort.onDisconnect.addListener(() => renderPairing({ state: 'pairing_failed', comparison_code: null }));
 
 function show(element, visible) {
   element.classList.toggle('hidden', !visible);
@@ -79,19 +62,86 @@ function setBusy(value) {
   });
 }
 
+function secureExternalUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.hostname.endsWith('.invalid')) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
 function phaseLabel(status) {
   return ({
-    off: 'Analytics off — no OnlyFans access',
-    preview: 'Activity preview enabled',
-    identity: 'Full authorization saved — finish connecting the local service',
-    full: 'Full local analytics enabled',
+    off: 'Analytics off',
+    preview: 'Preview ready',
+    identity: 'Full setup in progress',
+    full: status.delivery?.transport_state === 'authenticated' ? 'Full mode ready' : 'Full mode connecting',
     paused: 'Analytics paused',
     revoked: 'Site access revoked',
     permission_required: 'Site access needs approval',
     transitioning: 'Applying your choice…',
-    unavailable: 'Capture unavailable — reopen Chrome and retry',
+    unavailable: 'Analytics temporarily unavailable',
   })[status.phase] ?? 'Analytics inactive';
 }
+
+function journeyBadge(state) {
+  return ({
+    preview_available: 'Preview',
+    desktop_app_needed: 'Next step',
+    desktop_app_unavailable: 'Needs attention',
+    pairing_required: 'Next step',
+    pairing_in_progress: 'Connecting',
+    pairing_failed: 'Try again',
+    full_ready: 'Ready',
+    full_unavailable: 'Needs attention',
+  })[state] ?? 'Status';
+}
+
+function renderJourney() {
+  if (currentStatus === null) return;
+  const journey = deriveCustomerJourney({
+    status: currentStatus,
+    pairing: pairingStatus,
+    desktopRuntimeReachable,
+    desktopDownloadAvailable: secureExternalUrl(companionConfig.desktop_app_download_url) !== null,
+  });
+  elements['journey-card'].dataset.tone = journey.tone;
+  elements['journey-badge'].textContent = journeyBadge(journey.id);
+  elements['journey-title'].textContent = journey.title;
+  elements['journey-body'].textContent = journey.body;
+  elements['journey-primary'].dataset.action = journey.primaryAction ?? '';
+  elements['journey-primary'].textContent = journey.primaryLabel ?? '';
+  show(elements['journey-primary'], journey.primaryAction !== null);
+  elements['journey-secondary'].dataset.action = journey.secondaryAction ?? '';
+  elements['journey-secondary'].textContent = journey.secondaryLabel ?? '';
+  show(elements['journey-secondary'], journey.secondaryAction !== null);
+}
+
+function renderPairing(value = pairingStatus) {
+  pairingStatus = value;
+  show(elements['companion-pairing'], currentStatus?.consent?.mode === 'full');
+  const pending = ['pairing', 'compare'].includes(value.state);
+  const paired = value.state === 'paired';
+  show(elements['pair-companion'], !pending && !paired);
+  show(elements['cancel-pairing'], pending);
+  show(elements['forget-companion'], paired);
+  const code = typeof value.comparison_code === 'string' && /^\d{6}$/u.test(value.comparison_code) ? value.comparison_code : null;
+  show(elements['pairing-code'], code !== null);
+  elements['pairing-code'].textContent = code === null ? '' : `${code.slice(0, 3)} ${code.slice(3)}`;
+  elements['pairing-status'].textContent = ({
+    paired: 'This extension is paired with the desktop app.',
+    pairing: 'Connecting… Keep this window open.',
+    compare: 'Compare this code with the desktop app. Confirm there only if both codes match.',
+    pairing_failed: 'Connection did not complete. Open a new connection window in the desktop app and try again.',
+    unavailable: 'Set up Full analysis and open your creator account before connecting.',
+  })[value.state] ?? 'Open a connection window in the desktop app, then pair this device.';
+  renderJourney();
+}
+
+pairingPort.onMessage.addListener((value) => renderPairing(value));
+pairingPort.onDisconnect.addListener(() => renderPairing({ state: 'pairing_failed', comparison_code: null }));
 
 async function send(message) {
   const response = await chrome.runtime.sendMessage(message);
@@ -164,29 +214,31 @@ function renderLegal(status) {
   if (status.requires_reauthorization === true) {
     elements.feedback.textContent = 'Data-handling information changed. Review it before restarting analytics.';
   }
+  renderJourney();
 }
 
 function render(status) {
   currentStatus = status;
-  renderPairing();
   elements['mode-label'].textContent = phaseLabel(status);
   elements['messages-count'].textContent = String(status.preview.message_observations);
   elements['chats-count'].textContent = String(status.preview.chat_observations);
   elements['inbound-count'].textContent = String(status.preview.inbound_observations);
   elements['outbound-count'].textContent = String(status.preview.outbound_observations);
-  elements['brain-status'].textContent = status.brain_reachable ? 'Available locally' : 'Not detected';
+  elements['brain-status'].textContent = desktopRuntimeReachable
+    ? 'Running'
+    : pairingStatus.state === 'paired' ? 'Not running' : 'Not connected';
   elements['delivery-status'].textContent = status.delivery.transport_state === 'authenticated'
-    ? 'Connected locally'
-    : status.delivery.runtime_ready ? 'Waiting locally' : 'Inactive';
+    ? 'Connected'
+    : status.delivery.runtime_ready ? 'Connecting' : 'Inactive';
   elements['pending-count'].textContent = String(status.delivery.pending_entries);
   const dropCount = Object.values(status.delivery.capture_drop_counts ?? {})
     .reduce((total, value) => total + (Number.isSafeInteger(value) ? value : 0), 0);
   elements['capture-health'].textContent = status.delivery.startup_error_code === 'startup_failed'
-    ? 'Capture runtime could not start; a later authorized wake will retry.'
+    ? 'Full analysis could not start. Start the desktop app and retry.'
     : dropCount > 0 ? `${dropCount} capture observation${dropCount === 1 ? '' : 's'} dropped.` : '';
   elements['history-health'].textContent = !status.delivery.history_error_code
     ? ''
-    : 'History synchronization needs attention.';
+    : 'History sync needs attention in the desktop app.';
   const mode = status.consent.mode;
   const active = ['preview', 'full'].includes(mode);
   const permissionRequired = status.phase === 'permission_required';
@@ -194,8 +246,16 @@ function render(status) {
   show(elements['reload-tabs'], status.reload_required === true);
   show(elements.pause, active && !permissionRequired);
   show(elements.history, status.phase === 'full');
+  show(elements['open-dashboard'], desktopRuntimeReachable);
   show(elements.revoke, mode !== 'off' && mode !== 'revoked');
+  renderPairing();
   if (legalStatus !== null) renderLegal(legalStatus);
+}
+
+async function probeDesktop() {
+  desktopRuntimeReachable = await probeDesktopRuntime();
+  if (currentStatus !== null) render(currentStatus);
+  return desktopRuntimeReachable;
 }
 
 async function refresh() {
@@ -205,6 +265,7 @@ async function refresh() {
   ]);
   render(status);
   renderLegal(legal);
+  await probeDesktop();
 }
 
 async function legalAction(type, checkbox = null) {
@@ -234,8 +295,9 @@ async function chooseMode(mode) {
     initialModeChoiceDismissed = false;
     renderLegal(legalStatus);
     if (mode === 'full' && result.status.phase === 'identity') {
-      elements.feedback.textContent = 'Open the local dashboard and finish connecting, then return here.';
-      await chrome.tabs.create({ url: companionConfig.dashboard_url });
+      await probeDesktop();
+      elements.feedback.textContent = 'Full setup started. Follow the next step above.';
+      elements['journey-card'].scrollIntoView({ block: 'nearest' });
     }
   } catch (error) {
     elements.feedback.textContent = error.message ?? 'The change could not be applied.';
@@ -251,6 +313,7 @@ async function transition(mode) {
     if (mode === 'resume') await requestAnalyticsAccess(currentStatus?.consent?.resume_mode);
     const status = await send({ type: UI_TRANSITION_MESSAGE_TYPE, mode });
     render(status);
+    await probeDesktop();
   } catch (error) {
     elements.feedback.textContent = error.message ?? 'The change could not be applied.';
   } finally {
@@ -258,6 +321,55 @@ async function transition(mode) {
   }
 }
 
+function openPairingWindow() {
+  if (isPairingWindow) {
+    pairingPort.postMessage({ type: 'pair' });
+    return;
+  }
+  void chrome.windows.create({
+    url: chrome.runtime.getURL('popup.html#pairing'),
+    type: 'popup',
+    width: 440,
+    height: 640,
+  }).catch(() => { elements.feedback.textContent = 'The connection window could not be opened.'; });
+}
+
+async function runJourneyAction(action) {
+  if (!action) return;
+  if (action === 'review_full') {
+    fullReviewRequested = true;
+    renderLegal(legalStatus);
+    elements['mode-choice'].scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  if (action === 'install_desktop') {
+    const download = secureExternalUrl(companionConfig.desktop_app_download_url);
+    if (download === null) {
+      elements.feedback.textContent = 'The desktop app download is not configured in this build.';
+      return;
+    }
+    await chrome.tabs.create({ url: download });
+    return;
+  }
+  if (action === 'pair') {
+    openPairingWindow();
+    return;
+  }
+  if (action === 'cancel_pairing') {
+    pairingPort.postMessage({ type: 'cancel' });
+    return;
+  }
+  if (action === 'open_dashboard') {
+    await chrome.tabs.create({ url: companionConfig.dashboard_url });
+    return;
+  }
+  if (action === 'retry_full') {
+    await transition('full');
+  }
+}
+
+elements['journey-primary'].addEventListener('click', () => { void runJourneyAction(elements['journey-primary'].dataset.action); });
+elements['journey-secondary'].addEventListener('click', () => { void runJourneyAction(elements['journey-secondary'].dataset.action); });
 elements['terms-accepted'].addEventListener('change', () => {
   if (elements['terms-accepted'].checked) void legalAction(LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, elements['terms-accepted']);
 });
@@ -308,7 +420,7 @@ elements['full-secondary'].addEventListener('click', () => {
 elements.resume.addEventListener('click', () => { void transition('resume'); });
 elements.pause.addEventListener('click', () => { void transition('pause'); });
 elements.revoke.addEventListener('click', () => {
-  if (window.confirm('Revoke site access and stop all new observations? Existing local service data is retained.')) {
+  if (window.confirm('Revoke site access and stop all new observations? Existing desktop-app data is retained.')) {
     void transition('revoked');
   }
 });
@@ -325,7 +437,7 @@ elements['clear-preview'].addEventListener('click', async () => {
 });
 elements['delete-local-data'].addEventListener('click', async () => {
   if (!window.confirm(
-    'Delete all data stored by this extension, including activation evidence, disconnect the local service, revoke site access, and stop analytics?',
+    'Delete all data stored by this extension, including activation evidence, disconnect the desktop app, revoke site access, and stop analytics?',
   )) return;
   setBusy(true);
   try {
@@ -342,14 +454,10 @@ elements['delete-local-data'].addEventListener('click', async () => {
 elements['open-dashboard'].addEventListener('click', () => {
   void chrome.tabs.create({ url: companionConfig.dashboard_url });
 });
-elements['pair-companion'].addEventListener('click', () => {
-  if (isPairingWindow) pairingPort.postMessage({ type: 'pair' });
-  else void chrome.windows.create({ url: chrome.runtime.getURL('popup.html#pairing'), type: 'popup', width: 440, height: 760 })
-    .catch(() => { elements.feedback.textContent = 'The connection window could not be opened.'; });
-});
+elements['pair-companion'].addEventListener('click', openPairingWindow);
 elements['cancel-pairing'].addEventListener('click', () => pairingPort.postMessage({ type: 'cancel' }));
 elements['forget-companion'].addEventListener('click', () => {
-  if (window.confirm('Forget the desktop app and stop this connection? A new approval will be required to reconnect.')) {
+  if (window.confirm('Forget the desktop app and stop this connection? You will need to pair again to use Full analysis.')) {
     pairingPort.postMessage({ type: 'forget' });
   }
 });
@@ -378,18 +486,15 @@ async function loadCompanionConfig() {
     privacy_policy_url: candidate.privacy_policy_url,
     dashboard_url: assertLocalServiceUrl(candidate.dashboard_url).href,
     history_settings_url: assertLocalServiceUrl(candidate.history_settings_url).href,
+    desktop_app_download_url: secureExternalUrl(candidate.desktop_app_download_url) ?? '',
   };
-  try {
-    const privacy = new URL(companionConfig.privacy_policy_url);
-    if (privacy.protocol === 'https:' && !privacy.hostname.endsWith('.invalid')) {
-      elements['privacy-link'].href = privacy.href;
-      elements['privacy-link'].textContent = 'Privacy policy';
-      elements['privacy-link'].removeAttribute('aria-disabled');
-      elements['privacy-link'].target = '_blank';
-      elements['privacy-link'].rel = 'noreferrer';
-    }
-  } catch (_error) {
-    // Invalid or absent URLs keep the link disabled.
+  const privacyUrl = secureExternalUrl(companionConfig.privacy_policy_url);
+  if (privacyUrl !== null) {
+    elements['privacy-link'].href = privacyUrl;
+    elements['privacy-link'].textContent = 'Privacy policy';
+    elements['privacy-link'].removeAttribute('aria-disabled');
+    elements['privacy-link'].target = '_blank';
+    elements['privacy-link'].rel = 'noreferrer';
   }
 }
 
@@ -407,7 +512,7 @@ async function initialize() {
       elements['companion-pairing'].scrollIntoView({ block: 'center' });
     }
   } catch (_error) {
-    elements.feedback.textContent = 'Local extension status is temporarily unavailable.';
+    elements.feedback.textContent = 'Extension status is temporarily unavailable. Close this popup and try again.';
   } finally {
     setBusy(false);
   }
