@@ -48,7 +48,7 @@ function PairingAttemptControls({ api, creatorAccountId }: {
       next.pairing_id !== previous.pairing_id || next.generation !== previous.generation
       || next.version < previous.version
     ))) {
-      throw new Error('Pairing state changed.');
+      throw new Error('Connection state changed.');
     }
     if (!previous || previous.version !== next.version || previous.state !== next.state
       || previous.comparison_code !== next.comparison_code
@@ -136,40 +136,39 @@ function PairingAttemptControls({ api, creatorAccountId }: {
   return (
     <Stack spacing={2}>
       <AdmittedPairings api={api} creatorAccountId={creatorAccountId} refresh={status?.version ?? -1} />
-      <Typography variant="body2">Creator account: {creatorAccountId}</Typography>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-        Open a pairing window, then start pairing from the extension.
-        Keep both views open and compare their codes. Preview works without pairing.
+        Connect the browser extension to this desktop app for the signed-in creator account.
+        In the extension, choose Pair device. Keep both views open until the connection is confirmed.
       </Typography>
       {failed && (
         <Alert severity="error" role="alert">
-          Pairing status could not be verified. Check its status before continuing.
+          Connection status could not be checked. Keep both views open and try Check connection.
         </Alert>
       )}
       {approved && (
         <Alert severity="success" role="status">
-          Local approval is complete. Full mode becomes available only after the extension
-          establishes its encrypted companion session.
+          Extension connected. Return to the extension; Full mode will become ready after the secure local connection finishes.
         </Alert>
       )}
       {status && terminal(status) && !approved && (
         <Alert severity="info" role="status">
-          {status.state === 'expired' ? 'The pairing window expired.'
-            : status.state === 'revoked' ? 'This pairing was revoked.'
-              : status.state === 'declined' ? 'Pairing was declined.' : 'Pairing was cancelled.'}
+          {status.state === 'expired' ? 'The connection window expired. Open a new one and try again.'
+            : status.state === 'revoked' ? 'This extension connection was removed.'
+              : status.state === 'declined' ? 'The codes did not match, so nothing was connected. Open a new connection window and try again.'
+                : 'Connection cancelled. Open a new connection window when you are ready.'}
         </Alert>
       )}
       {active && !awaiting && !failed && (
-        <Typography role="status">Waiting for the extension to verify this companion.</Typography>
+        <Typography role="status">Waiting for the browser extension…</Typography>
       )}
       {awaiting && (
         <Stack spacing={1.5}>
-          <Typography component="h3" variant="subtitle1">Compare the pairing codes</Typography>
-          <Typography aria-label="Pairing comparison code" variant="h4" sx={{ fontFamily: 'monospace' }}>
+          <Typography component="h3" variant="subtitle1">Compare the six-digit code</Typography>
+          <Typography aria-label="Connection comparison code" variant="h4" sx={{ fontFamily: 'monospace' }}>
             {status.comparison_code!.slice(0, 3)} {status.comparison_code!.slice(3)}
           </Typography>
-          <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-            Extension identity: {status.agent_identity_thumbprint}
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Check that this same code is shown in the extension. If it is different, do not connect.
           </Typography>
           <FormControlLabel
             control={(
@@ -179,7 +178,7 @@ function PairingAttemptControls({ api, creatorAccountId }: {
                 onChange={(event) => setCodesMatch(event.target.checked)}
               />
             )}
-            label="Both views show the same code and creator account."
+            label="The six-digit code matches in both the extension and desktop app."
           />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
             <Button
@@ -187,10 +186,10 @@ function PairingAttemptControls({ api, creatorAccountId }: {
               onClick={() => void run('confirm')}
               variant="contained"
             >
-              Confirm pairing
+              Confirm connection
             </Button>
             <Button color="error" disabled={busy} onClick={() => void run('decline')}>
-              Codes do not match
+              Codes don&apos;t match
             </Button>
           </Stack>
         </Stack>
@@ -198,17 +197,17 @@ function PairingAttemptControls({ api, creatorAccountId }: {
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
         {!active && (
           <Button disabled={busy} onClick={() => void run('open')} variant="outlined">
-            Open pairing window
+            Open connection window
           </Button>
         )}
         {active && failed && (
           <Button disabled={busy} onClick={() => void run('get')} variant="outlined">
-            Check pairing status
+            Check connection
           </Button>
         )}
         {active && (
           <Button disabled={busy} onClick={() => void run('cancel')}>
-            Cancel pairing
+            Cancel
           </Button>
         )}
       </Stack>
@@ -231,7 +230,7 @@ function AdmittedPairings({ api, creatorAccountId, refresh }: {
     void api.pins(controller.signal).then((values) => {
       if (controller.signal.aborted) return;
       if (values.some((pin) => pin.creator_account_id !== creatorAccountId || pin.state !== 'admitted')) {
-        throw new Error('Pairing scope changed.');
+        throw new Error('Connection scope changed.');
       }
       setPins(values);
       setFailed(false);
@@ -254,15 +253,15 @@ function AdmittedPairings({ api, creatorAccountId, refresh }: {
   };
   return (
     <Stack spacing={1}>
-      {pins.map((pin) => (
+      {pins.map((pin, index) => (
         <Stack key={pin.pairing_id} direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-          <Typography>Paired extension {pin.generation}</Typography>
+          <Typography>Connected browser extension {index + 1}</Typography>
           <Button color="error" disabled={busy} onClick={() => void revoke(pin)}
-            aria-label={`Revoke extension ${pin.generation}`}>Revoke</Button>
+            aria-label={`Disconnect browser extension ${index + 1}`}>Disconnect</Button>
         </Stack>
       ))}
-      {failed && <Alert severity="error">Paired extensions could not be verified.</Alert>}
-      <Button disabled={busy} onClick={() => setRevision((value) => value + 1)}>Refresh paired extensions</Button>
+      {failed && <Alert severity="error">Connected extensions could not be checked.</Alert>}
+      <Button disabled={busy} onClick={() => setRevision((value) => value + 1)}>Refresh connections</Button>
     </Stack>
   );
 }
@@ -276,11 +275,11 @@ export function CompanionPairingControls({ api = companionPairingApi }: { api?: 
   );
   return (
     <Panel>
-      <Typography component="h2" variant="h6">Pair extension</Typography>
+      <Typography component="h2" variant="h6">Connect browser extension</Typography>
       {canViewSettings && creatorAccountId ? (
         <PairingAttemptControls key={creatorAccountId} api={api} creatorAccountId={creatorAccountId} />
       ) : (
-        <Alert severity="info">Sign in to an approved creator account to pair the extension.</Alert>
+        <Alert severity="info">Sign in to an approved creator account before connecting the extension.</Alert>
       )}
     </Panel>
   );
