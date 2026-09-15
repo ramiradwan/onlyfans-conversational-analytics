@@ -27,7 +27,7 @@
       "id": "full.requested",
       "customer_surface": "extension.popup",
       "customer_distinction": "distinct",
-      "next": ["desktop.required", "pairing.required"]
+      "next": ["desktop.required", "desktop.setup_incomplete", "pairing.required"]
     },
     {
       "id": "desktop.required",
@@ -39,9 +39,16 @@
     {
       "id": "desktop.stopped",
       "customer_surface": "extension.popup",
-      "customer_distinction": "distinct_after_prior_pairing",
+      "customer_distinction": "distinct_after_prior_connection",
       "recovery": "Start the desktop app and retry the saved connection.",
       "blocked_by": ["contract.desktop_install_presence_for_first_run"]
+    },
+    {
+      "id": "desktop.setup_incomplete",
+      "customer_surface": "extension.popup",
+      "customer_distinction": "distinct",
+      "recovery": "Open the creator account and sign in before attempting the desktop connection.",
+      "next": ["pairing.required"]
     },
     {
       "id": "desktop.provisioning_required",
@@ -79,13 +86,14 @@
     },
     {
       "id": "pairing.required",
-      "customer_surface": "extension.popup",
+      "customer_surface": "extension.popup+brain.settings",
       "customer_distinction": "distinct",
+      "customer_language": "Connect browser extension",
       "next": ["pairing.in_progress"]
     },
     {
       "id": "pairing.in_progress",
-      "customer_surface": "extension.popup",
+      "customer_surface": "extension.popup+brain.settings",
       "customer_distinction": "distinct",
       "next": ["pairing.compare", "pairing.failed"]
     },
@@ -94,11 +102,13 @@
       "customer_surface": "extension.popup+brain.settings",
       "customer_distinction": "distinct",
       "comparison": "six_digit_code",
+      "technical_thumbprint_visible": false,
+      "raw_account_identifier_visible": false,
       "next": ["full.local_delivery_ready", "pairing.failed"]
     },
     {
       "id": "pairing.failed",
-      "customer_surface": "extension.popup",
+      "customer_surface": "extension.popup+brain.settings",
       "customer_distinction": "distinct",
       "recovery": "Open a new desktop connection window and retry."
     },
@@ -134,7 +144,7 @@
       "id": "contract.desktop_install_presence_for_first_run",
       "priority": "P1",
       "owner": "product-contract",
-      "description": "Expose a nonsecret trustworthy first-run signal if installed-but-stopped must differ from not-installed before pairing."
+      "description": "Expose a nonsecret trustworthy first-run signal if installed-but-stopped must differ from not-installed before prior connection."
     },
     {
       "id": "hosted.onboarding_entry",
@@ -174,9 +184,13 @@
     }
   ],
   "evidence": {
-    "extension_unit": ["extension/tests/customer-journey.test.mjs"],
+    "extension_unit": [
+      "extension/tests/customer-journey.test.mjs",
+      "extension/tests/companion-customer-status.test.mjs"
+    ],
     "extension_visual": ["extension/qualification/customer-journey-visual.spec.mjs"],
-    "brain_unit": ["app/provisioning/provisioning.test.mjs"],
+    "brain_first_run_unit": ["app/provisioning/provisioning.test.mjs"],
+    "brain_connection_unit": ["frontend/tests/CompanionPairingControls.test.tsx"],
     "acceptance_review": ["docs/acceptance-ux-onboarding.md"]
   }
 }
