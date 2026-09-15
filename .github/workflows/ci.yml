@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop, extension/production-readiness ]
+    branches: [ main, develop ]
     types: [opened, synchronize, reopened, edited]
 
 jobs:
@@ -290,6 +290,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
 
+      # Install this run's pinned Windows wheel before resolving requirements.
       - name: Retrieve fixed SQLCipher wheel
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -335,9 +336,14 @@ jobs:
       - name: Build extension
         run: npm run build --prefix extension
 
+      # Production persistence derives its keys from Windows DPAPI, so these
+      # tests are selected positively here rather than skipped elsewhere. The
+      # invocation exits 5 if the marker ever stops matching them.
       - name: Test Windows production boot
         run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
 
+      # File-backed qualification stays on the required Windows path because
+      # local evidence cannot qualify the packaged runtime or hosted runner.
       - name: Test Windows persistent SQLCipher general profile
         env:
           HYPOTHESIS_PROFILE: tier_b_general
