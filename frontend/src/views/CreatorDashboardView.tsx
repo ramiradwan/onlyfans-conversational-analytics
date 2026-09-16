@@ -385,7 +385,7 @@ export default function CreatorDashboardView({
 
         {!hasSnapshot && (
           <Typography role="status" variant="body2" sx={{ color: 'text.secondary', px: 0.5 }}>
-            Loading your numbers…
+            Processing your data…
           </Typography>
         )}
       </Stack>

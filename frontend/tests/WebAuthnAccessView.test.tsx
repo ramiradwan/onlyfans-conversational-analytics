@@ -58,21 +58,21 @@ describe('WebAuthn access view', () => {
     expect(api.login).toHaveBeenCalledTimes(1);
   });
 
-  it('does not report a session when the ceremony fails', async () => {
+  it('does not report a session when the ceremony fails and keeps technical detail out', async () => {
     const api: WebAuthnApi = {
       enroll: vi.fn(),
-      login: vi.fn(async () => { throw new Error('No passkey was selected.'); }),
+      login: vi.fn(async () => { throw new Error('WebAuthn request failed (500)'); }),
     };
     const view = renderView(api);
 
     fireEvent.click(view.signIn());
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('No passkey was selected.');
+    expect(alert.textContent).toBe("Sign-in didn't finish. Try again.");
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
-  it('reports a ceremony that rejects without an Error', async () => {
+  it('tells the person a closed or timed-out prompt was cancelled', async () => {
     const rejection = { name: 'NotAllowedError' };
     const api: WebAuthnApi = {
       enroll: vi.fn(),
@@ -83,7 +83,22 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.signIn());
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain("Sign-in didn't finish. Try again.");
+    expect(alert.textContent).toBe('Sign-in was cancelled or timed out. Try again.');
+    expect(view.onAuthenticated).not.toHaveBeenCalled();
+  });
+
+  it('describes a failed passkey setup as setup, not sign-in', async () => {
+    const api: WebAuthnApi = {
+      enroll: vi.fn(async () => { throw new Error('No passkey was created.'); }),
+      login: vi.fn(),
+    };
+    const view = renderView(api);
+
+    fireEvent.click(view.enroll());
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe("Couldn't set up a passkey. Try again.");
+    expect(api.login).not.toHaveBeenCalled();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 

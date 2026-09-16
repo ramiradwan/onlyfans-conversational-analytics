@@ -8,12 +8,12 @@ import {
   formatRatioPercent,
   formatSentimentScore,
   type AnalyticsReadState,
+  type AnalyticsWindowSource,
   type AnalyticsWindowSources,
 } from '../src/analytics';
 import {
   AnalyticsFilterRow,
   AnalyticsPresentation,
-  CreatorDashboardPresentation,
   SentimentEngagementTrend,
 } from '../src/components/analytics';
 import {
@@ -25,7 +25,7 @@ import {
 } from '../src/story-only/analyticsFixtures';
 import { theme } from '../src/theme';
 
-const effectiveWindowLabel = analyticsWindowLabel(storyWindowSources.creatorMetrics);
+const PANELS = ['Message tone over time', 'Your replies', 'Topics'] as const;
 
 function withTheme(content: React.ReactNode) {
   return render(
@@ -35,12 +35,12 @@ function withTheme(content: React.ReactNode) {
   );
 }
 
-function dashboard(
+function analytics(
   state: AnalyticsReadState,
   windowSources: AnalyticsWindowSources = storyWindowSources,
 ) {
   return withTheme(
-    <CreatorDashboardPresentation
+    <AnalyticsPresentation
       state={state}
       dateRange={storyDateRange}
       onDateRangeChange={() => undefined}
@@ -49,11 +49,25 @@ function dashboard(
   );
 }
 
+function withEffectiveWindow(
+  source: AnalyticsWindowSource,
+  start: string | null,
+  end: string | null,
+): AnalyticsWindowSource {
+  return {
+    ...source,
+    provenance: {
+      ...source.provenance,
+      effective_window: { scope: 'effective', start, end },
+    },
+  };
+}
+
 afterEach(() => cleanup());
 
 describe('analytics presentation states', () => {
   it('renders loading', () => {
-    dashboard({
+    analytics({
       status: 'loading',
       data: null,
       isRefreshing: false,
@@ -63,7 +77,7 @@ describe('analytics presentation states', () => {
   });
 
   it('renders unavailable', () => {
-    dashboard({
+    analytics({
       status: 'unavailable',
       data: null,
       isRefreshing: false,
@@ -73,26 +87,26 @@ describe('analytics presentation states', () => {
   });
 
   it('labels baseline output explicitly', () => {
-    dashboard(storyBaselineState);
+    analytics(storyBaselineState);
     expect(screen.getByText('Early estimates')).toBeTruthy();
     expect(screen.getByText(/early estimates\./)).toBeTruthy();
   });
 
   it('renders available output without a baseline label', () => {
-    dashboard(storyAvailableState);
+    analytics(storyAvailableState);
     expect(screen.queryByText('Early estimates')).toBeNull();
     expect(screen.getAllByText('12').length).toBeGreaterThan(0);
   });
 
   it('keeps the prior frame visible while a filtered refetch is in progress', () => {
-    const { container } = dashboard({ ...storyAvailableState, isRefreshing: true });
+    const { container } = analytics({ ...storyAvailableState, isRefreshing: true });
     expect(container.querySelector('[aria-busy="true"]')).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: 'Refreshing analytics' })).toBeTruthy();
     expect(screen.getAllByText('12').length).toBeGreaterThan(0);
   });
 
   it('renders error and preserves a prior complete frame when supplied', () => {
-    dashboard({
+    analytics({
       status: 'error',
       data: storyAnalyticsModel,
       isRefreshing: false,
@@ -104,7 +118,7 @@ describe('analytics presentation states', () => {
   });
 
   it('keeps the baseline disclosure when a failed refresh retains baseline data', () => {
-    dashboard({
+    analytics({
       status: 'error',
       data: storyAnalyticsModel,
       isRefreshing: false,
@@ -116,7 +130,7 @@ describe('analytics presentation states', () => {
   });
 });
 
-describe('analytics units and accessible trend detail', () => {
+describe('analytics dates, units and accessible trend detail', () => {
   it('keeps date fields as native editable date controls', () => {
     withTheme(
       <AnalyticsFilterRow
@@ -131,26 +145,52 @@ describe('analytics units and accessible trend detail', () => {
     }
   });
 
-  it('labels confirmed effective windows without inferring scope from request success', () => {
-    dashboard(storyAvailableState, storyWindowSources);
-
-    const expected = `Data window: ${effectiveWindowLabel}`;
+  it('describes message dates in plain words', () => {
+    const source = storyWindowSources.topics;
+    expect(analyticsWindowLabel(source)).toMatch(/^Messages from .+ to .+$/);
     expect(
-      within(screen.getByRole('group', { name: 'Conversations metric' })).getByText(expected),
-    ).toBeTruthy();
+      analyticsWindowLabel(withEffectiveWindow(source, '2026-06-02T08:00:00Z', '2026-06-02T20:00:00Z')),
+    ).toMatch(/^Messages from [^–]+$/);
+    expect(analyticsWindowLabel(withEffectiveWindow(source, null, null))).toBe('No messages in these dates');
     expect(
-      within(screen.getByRole('group', { name: 'Average handling time metric' })).getByText(expected),
-    ).toBeTruthy();
-    expect(
-      within(screen.getByRole('region', { name: 'Message tone over time' })).getByText(expected),
-    ).toBeTruthy();
-    expect(
-      within(screen.getByRole('region', { name: 'Top topics' })).getByText(expected),
-    ).toBeTruthy();
-    expect(screen.queryByText(/selected account and date range/i)).toBeNull();
+      analyticsWindowLabel(withEffectiveWindow(storyWindowSources.graph, null, null)),
+    ).toBe('No messages yet');
   });
 
-  it('keeps zero values visible while unknown windows remain explicitly unavailable', () => {
+  it('shows a shared date label once when every panel covers the same messages', () => {
+    analytics(storyAvailableState);
+
+    const label = analyticsWindowLabel(storyWindowSources.topics);
+    expect(screen.getAllByText(label)).toHaveLength(1);
+    for (const name of PANELS) {
+      expect(within(screen.getByRole('region', { name })).queryByText(label)).toBeNull();
+    }
+    expect(screen.queryByText(/Data window/)).toBeNull();
+  });
+
+  it('labels each panel when the panels cover different messages', () => {
+    const topics = withEffectiveWindow(
+      storyWindowSources.topics,
+      '2026-06-10T00:00:00.000Z',
+      '2026-06-20T00:00:00.000Z',
+    );
+    analytics(storyAvailableState, { ...storyWindowSources, topics });
+
+    const sharedLabel = analyticsWindowLabel(storyWindowSources.sentimentTrend);
+    const topicsLabel = analyticsWindowLabel(topics);
+    expect(topicsLabel).not.toBe(sharedLabel);
+    const regions = {
+      'Message tone over time': sharedLabel,
+      'Your replies': sharedLabel,
+      Topics: topicsLabel,
+    };
+    for (const [name, label] of Object.entries(regions)) {
+      expect(within(screen.getByRole('region', { name })).getByText(label)).toBeTruthy();
+    }
+    expect(screen.getAllByText(sharedLabel)).toHaveLength(2);
+  });
+
+  it('keeps zero values visible and uses plain empty states', () => {
     const zeroModel = {
       ...storyAnalyticsModel,
       topics: [],
@@ -164,38 +204,37 @@ describe('analytics units and accessible trend detail', () => {
         responseOpportunityCount: 0,
         respondedCount: 0,
       },
-      creator: {
-        ...storyAnalyticsModel.creator,
-        conversationCount: 0,
-        participantCount: 0,
-        messageCount: 0,
-        inboundMessageCount: 0,
-        outboundMessageCount: 0,
-        averageMessagesPerConversation: 0,
-        averageResponseSeconds: null,
-        averageSentimentScore: 0,
-        responseCoverage: 0,
-      },
     };
-    dashboard({ ...storyAvailableState, data: zeroModel });
+    analytics({ ...storyAvailableState, data: zeroModel });
 
-    expect(
-      within(screen.getByRole('group', { name: 'Conversations metric' })).getByText('0'),
-    ).toBeTruthy();
-    expect(
-      screen.getAllByText(`Data window: ${effectiveWindowLabel}`).length,
-    ).toBe(7);
+    const repliesPanel = screen.getByRole('region', { name: 'Your replies' });
+    expect(repliesPanel.textContent).toContain(`${formatRatioPercent(0)} (0 of 0)`);
+    expect(within(repliesPanel).getByText('0', { exact: true })).toBeTruthy();
+    expect(screen.getByText('Nothing to show for these dates.')).toBeTruthy();
+    expect(screen.getByText('No topics found for these dates.')).toBeTruthy();
+  });
+
+  it('shows a dash for reply numbers that have no data', () => {
+    analytics({
+      ...storyAvailableState,
+      data: {
+        ...storyAnalyticsModel,
+        response: {
+          ...storyAnalyticsModel.response,
+          averageHandlingMinutes: null,
+          responseCoverage: null,
+          turns: null,
+        },
+      },
+    });
+
+    const replies = within(screen.getByRole('region', { name: 'Your replies' }));
+    expect(replies.getAllByText('—', { exact: true })).toHaveLength(3);
+    expect(replies.queryByText(/Unavailable/)).toBeNull();
   });
 
   it('preserves percent units and displays sentiment on its signed range', () => {
-    withTheme(
-      <AnalyticsPresentation
-        state={storyAvailableState}
-        dateRange={storyDateRange}
-        onDateRangeChange={() => undefined}
-        windowSources={storyWindowSources}
-      />,
-    );
+    analytics(storyAvailableState);
 
     const topicTable = screen.getByRole('table', { name: 'Topics and trend' });
     const responsePanel = screen.getByRole('region', { name: 'Your replies' });
@@ -204,10 +243,12 @@ describe('analytics units and accessible trend detail', () => {
     });
     expect(topicTable.textContent).toContain(formatPercentValue(37.5));
     expect(topicTable.textContent).toContain(formatPercentValue(12.5));
-    expect(screen.getByText(formatPercentValue(22.5))).toBeTruthy();
-    expect(responsePanel.textContent).toContain(formatRatioPercent(0.75));
+    expect(responsePanel.textContent).toContain(`${formatRatioPercent(0.75)} (15 of 20)`);
+    expect(responsePanel.textContent).not.toContain('Silence');
     expect(sentimentPanel.textContent).toContain(formatSentimentScore(0.35));
     expect(screen.queryByText('3,750.0%')).toBeNull();
+    expect(topicTable.textContent).not.toContain('Unavailable');
+    expect(screen.queryByText(/bounded projection/)).toBeNull();
   });
 
   it('shows chart values on hover and keyboard focus and exposes a table view', () => {
@@ -223,15 +264,15 @@ describe('analytics units and accessible trend detail', () => {
     );
 
     expect(screen.getByLabelText('Chart legend')).toBeTruthy();
-    const negativeMark = screen.getByRole('button', { name: /Negative sentiment/ });
+    const negativeMark = screen.getByRole('button', { name: /Negative tone/ });
     expect(negativeMark.getAttribute('data-hit-target')).toBe('24');
     fireEvent.focus(negativeMark);
-    expect(screen.getByRole('tooltip').textContent).toContain('Negative sentiment');
+    expect(screen.getByRole('tooltip').textContent).toContain('Negative tone');
     fireEvent.blur(negativeMark);
 
-    const positiveMarks = screen.getAllByRole('button', { name: /Positive sentiment/ });
+    const positiveMarks = screen.getAllByRole('button', { name: /Positive tone/ });
     fireEvent.mouseEnter(positiveMarks[0]);
-    expect(screen.getByRole('tooltip').textContent).toContain('Positive sentiment');
+    expect(screen.getByRole('tooltip').textContent).toContain('Positive tone');
     fireEvent.mouseLeave(positiveMarks[0]);
 
     fireEvent.click(screen.getByText('View data table'));

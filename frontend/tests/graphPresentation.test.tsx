@@ -27,7 +27,7 @@ describe('relationship graph presentation', () => {
     expect(screen.getByText('84')).toBeTruthy();
     expect(screen.getByText('126')).toBeTruthy();
     expect(
-      screen.getAllByText(`Data window: ${analyticsWindowLabel(storyWindowSources.graph)}`).length,
+      screen.getAllByText(analyticsWindowLabel(storyWindowSources.graph)).length,
     ).toBe(4);
     expect(screen.getByText('Bounded query API is not integrated.')).toBeTruthy();
     expect((screen.getByLabelText('Relationship question') as HTMLInputElement).disabled).toBe(true);

@@ -3,6 +3,19 @@ import { useState } from 'react';
 
 import { webauthnApi, type WebAuthnApi } from '../services/webauthnApi';
 
+/** Browser ceremony outcomes where the person closed the prompt or let it time out. */
+const CANCELLED_CEREMONIES = new Set(['NotAllowedError', 'AbortError']);
+
+function failureMessage(cause: unknown, enroll: boolean): string {
+  const name = typeof cause === 'object' && cause !== null && 'name' in cause ? cause.name : null;
+  if (typeof name === 'string' && CANCELLED_CEREMONIES.has(name)) {
+    return enroll
+      ? 'Passkey setup was cancelled or timed out. Try again.'
+      : 'Sign-in was cancelled or timed out. Try again.';
+  }
+  return enroll ? "Couldn't set up a passkey. Try again." : "Sign-in didn't finish. Try again.";
+}
+
 interface WebAuthnAccessViewProps {
   api?: WebAuthnApi;
   onAuthenticated?: () => void;
@@ -23,7 +36,7 @@ export function WebAuthnAccessView({
       await api.login();
       onAuthenticated();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sign-in didn't finish. Try again.");
+      setError(failureMessage(cause, enroll));
     } finally {
       setBusy(false);
     }

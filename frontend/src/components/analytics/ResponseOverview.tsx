@@ -3,10 +3,11 @@ import { Box, Typography, styled } from '@mui/material';
 import {
   formatCount,
   formatDecimal,
-  formatPercentValue,
   formatRatioPercent,
   type AnalyticsResponseMetrics,
 } from '../../analytics';
+
+const UNAVAILABLE = '—';
 
 const List = styled('dl')(({ theme }) => ({
   display: 'grid',
@@ -33,38 +34,33 @@ export interface ResponseOverviewProps {
 }
 
 export function ResponseOverview({ metrics }: ResponseOverviewProps) {
+  const replyTime = metrics.averageHandlingMinutes === null
+    ? UNAVAILABLE
+    : `${formatDecimal(metrics.averageHandlingMinutes)} min`;
+  const repliedTo = metrics.responseCoverage === null
+    ? UNAVAILABLE
+    : `${formatRatioPercent(metrics.responseCoverage)} (${formatCount(metrics.respondedCount)} of ${formatCount(metrics.responseOpportunityCount)})`;
+  const turns = metrics.turns === null ? UNAVAILABLE : formatDecimal(metrics.turns, 0);
   return (
     <Box>
       <List>
         <Typography component="dt" variant="body2">
-          Average handling time
+          Average reply time
         </Typography>
         <Typography component="dd" variant="body2">
-          {formatDecimal(metrics.averageHandlingMinutes)} min
+          {replyTime}
         </Typography>
         <Typography component="dt" variant="body2">
-          Reply coverage
+          Messages you replied to
         </Typography>
         <Typography component="dd" variant="body2">
-          {formatRatioPercent(metrics.responseCoverage)}
+          {repliedTo}
         </Typography>
         <Typography component="dt" variant="body2">
-          Silence rate
+          Turns per conversation
         </Typography>
         <Typography component="dd" variant="body2">
-          {formatPercentValue(metrics.silencePercent)}
-        </Typography>
-        <Typography component="dt" variant="body2">
-          Responded opportunities
-        </Typography>
-        <Typography component="dd" variant="body2">
-          {formatCount(metrics.respondedCount)} / {formatCount(metrics.responseOpportunityCount)}
-        </Typography>
-        <Typography component="dt" variant="body2">
-          Conversation turns
-        </Typography>
-        <Typography component="dd" variant="body2">
-          {formatDecimal(metrics.turns, 0)}
+          {turns}
         </Typography>
       </List>
     </Box>

@@ -2,14 +2,17 @@ import { Box, Stack, Typography, styled } from '@mui/material';
 
 import { AnalyticsFilterRow } from './AnalyticsFilterRow';
 import { AnalyticsStateFrame } from './AnalyticsStateFrame';
+import { AnalyticsWindowLabel } from './AnalyticsWindowLabel';
 import { ChartPanel } from './ChartPanel';
 import { ResponseOverview } from './ResponseOverview';
 import { SentimentEngagementTrend } from './SentimentEngagementTrend';
 import { TopicsTable } from './TopicsTable';
-import type {
-  AnalyticsDateRange,
-  AnalyticsReadState,
-  AnalyticsWindowSources,
+import {
+  analyticsWindowLabel,
+  type AnalyticsDateRange,
+  type AnalyticsReadState,
+  type AnalyticsWindowSource,
+  type AnalyticsWindowSources,
 } from '../../analytics';
 
 const Root = styled(Box)(({ theme }) => ({
@@ -39,6 +42,12 @@ const FullWidth = styled(Box)(({ theme }) => ({
   },
 }));
 
+/** Returns the source shared by every panel, or null when panel windows differ. */
+function sharedWindowSource(sources: AnalyticsWindowSource[]): AnalyticsWindowSource | null {
+  const labels = new Set(sources.map(analyticsWindowLabel));
+  return labels.size === 1 ? sources[0] : null;
+}
+
 export interface AnalyticsPresentationProps {
   state: AnalyticsReadState;
   dateRange: AnalyticsDateRange;
@@ -53,6 +62,13 @@ export function AnalyticsPresentation({
 }: AnalyticsPresentationProps) {
   const model = state.data;
   const resolvedWindowSources = windowSources ?? model?.windowSources;
+  const panelSources = resolvedWindowSources && {
+    sentimentTrend: resolvedWindowSources.sentimentTrend,
+    responseMetrics: resolvedWindowSources.responseMetrics,
+    topics: resolvedWindowSources.topics,
+  };
+  const sharedSource = panelSources ? sharedWindowSource(Object.values(panelSources)) : null;
+  const perPanel = sharedSource ? undefined : panelSources;
   return (
     <Root>
       <Stack spacing={2.5}>
@@ -73,31 +89,34 @@ export function AnalyticsPresentation({
         />
         <AnalyticsStateFrame state={state}>
           {model && (
-            <AnalyticsGrid>
-              <ChartPanel
-                title="Message tone over time"
-                description="Average tone of messages each day, from −1 (negative) to +1 (positive)."
-                windowSource={resolvedWindowSources!.sentimentTrend}
-              >
-                <SentimentEngagementTrend sentiment={model.sentimentTrend} />
-              </ChartPanel>
-              <ChartPanel
-                title="Your replies"
-                description="How often and how quickly you reply."
-                windowSource={resolvedWindowSources!.responseMetrics}
-              >
-                <ResponseOverview metrics={model.response} />
-              </ChartPanel>
-              <FullWidth>
+            <Stack spacing={1.5}>
+              {sharedSource && <AnalyticsWindowLabel source={sharedSource} />}
+              <AnalyticsGrid>
                 <ChartPanel
-                  title="Topics"
-                  description="What conversations are about."
-                  windowSource={resolvedWindowSources!.topics}
+                  title="Message tone over time"
+                  description="Average tone of messages each day, from −1 (negative) to +1 (positive)."
+                  windowSource={perPanel?.sentimentTrend}
                 >
-                  <TopicsTable topics={model.topics} />
+                  <SentimentEngagementTrend sentiment={model.sentimentTrend} />
                 </ChartPanel>
-              </FullWidth>
-            </AnalyticsGrid>
+                <ChartPanel
+                  title="Your replies"
+                  description="How often and how quickly you reply."
+                  windowSource={perPanel?.responseMetrics}
+                >
+                  <ResponseOverview metrics={model.response} />
+                </ChartPanel>
+                <FullWidth>
+                  <ChartPanel
+                    title="Topics"
+                    description="What conversations are about."
+                    windowSource={perPanel?.topics}
+                  >
+                    <TopicsTable topics={model.topics} />
+                  </ChartPanel>
+                </FullWidth>
+              </AnalyticsGrid>
+            </Stack>
           )}
         </AnalyticsStateFrame>
       </Stack>

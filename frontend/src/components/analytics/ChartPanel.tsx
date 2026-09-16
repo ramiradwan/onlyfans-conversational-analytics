@@ -28,7 +28,7 @@ export interface ChartPanelProps {
   action?: ReactNode;
   children: ReactNode;
   labelledBy?: string;
-  windowSource: AnalyticsWindowSource;
+  windowSource?: AnalyticsWindowSource;
 }
 
 export function ChartPanel({
@@ -57,7 +57,7 @@ export function ChartPanel({
               {description}
             </Typography>
           )}
-          <AnalyticsWindowLabel source={windowSource} />
+          {windowSource && <AnalyticsWindowLabel source={windowSource} />}
         </Box>
         {action}
       </Header>

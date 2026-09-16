@@ -26,9 +26,10 @@ export function analyticsWindowLabel(source: AnalyticsWindowSource): string {
       year: 'numeric',
       timeZone: 'UTC',
     });
-    return `${formatter.format(new Date(window.start))} – ${formatter.format(new Date(window.end))} UTC`;
+    const start = formatter.format(new Date(window.start));
+    const end = formatter.format(new Date(window.end));
+    return start === end ? `Messages from ${start}` : `Messages from ${start} to ${end}`;
   }
-  if (source.window.scope === 'all_time') return 'All-time';
-  if (source.window.scope === 'requested') return 'Requested range · no eligible samples';
-  return 'No eligible samples';
+  if (source.window.scope === 'requested') return 'No messages in these dates';
+  return 'No messages yet';
 }

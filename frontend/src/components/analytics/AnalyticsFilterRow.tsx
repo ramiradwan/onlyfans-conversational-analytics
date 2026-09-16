@@ -62,7 +62,7 @@ export function AnalyticsFilterRow({
   return (
     <FilterForm onSubmit={submit} aria-label="Analytics filters">
       <DateGroup aria-label="Date range">
-        <Typography component="p" variant="subtitle2">Requested date range</Typography>
+        <Typography component="p" variant="subtitle2">Dates</Typography>
         <DateField
           type="date"
           size="small"

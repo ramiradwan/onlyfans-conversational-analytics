@@ -262,7 +262,7 @@ export function SentimentEngagementTrend({
       <Typography sx={{
         color: 'text.secondary'
       }}>
-        No sentiment observations are available for the stated data window.
+        Nothing to show for these dates.
       </Typography>
     );
   }
@@ -277,7 +277,7 @@ export function SentimentEngagementTrend({
         <LegendItem>
           <LegendLine $color={theme.vars.palette.chart.positive} aria-hidden="true" />
           <Typography variant="caption">
-            Sentiment {formatSentimentScore(latestSentiment.value)} (−1 to +1)
+            Latest tone {formatSentimentScore(latestSentiment.value)}
           </Typography>
         </LegendItem>
         {latestEngagement && (
@@ -295,7 +295,7 @@ export function SentimentEngagementTrend({
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           preserveAspectRatio="none"
           role="img"
-          aria-label="Sentiment trend from negative one to positive one"
+          aria-label="Message tone over time, from negative one to positive one"
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -375,7 +375,7 @@ export function SentimentEngagementTrend({
           const x = xFor(index, sentiment.length);
           const y = yForSentiment(point.value);
           const polarity = pointPolarity(point.value);
-          const label = `${formatDateLabel(point.at)}: ${sentimentLabel(point.value)} sentiment, ${formatSentimentScore(point.value)}, ${point.sampleCount} messages`;
+          const label = `${formatDateLabel(point.at)}: ${sentimentLabel(point.value)} tone, ${formatSentimentScore(point.value)}, ${point.sampleCount} messages`;
           return (
             <MarkButton
               key={'sentiment-' + point.at}
@@ -448,14 +448,6 @@ export function SentimentEngagementTrend({
         </Typography>
       </DateExtent>
 
-      {!engagement?.length && (
-        <Typography variant="caption" sx={{
-          color: 'text.secondary'
-        }}>
-          Engagement trend is unavailable from the current bounded projection.
-        </Typography>
-      )}
-
       <Details>
         <summary>View data table</summary>
         <TableScroller>
@@ -463,7 +455,7 @@ export function SentimentEngagementTrend({
             <thead>
               <tr>
                 <th scope="col">Date</th>
-                <th scope="col">Sentiment (−1 to +1)</th>
+                <th scope="col">Tone (−1 to +1)</th>
                 <th scope="col">Messages</th>
                 {engagement?.length ? <th scope="col">Engagement</th> : null}
               </tr>
@@ -480,7 +472,7 @@ export function SentimentEngagementTrend({
                     <td>
                       {engagementByDate.has(point.at)
                         ? formatRatioPercent(engagementByDate.get(point.at)?.value ?? 0)
-                        : 'Unavailable'}
+                        : '—'}
                     </td>
                   ) : null}
                 </tr>

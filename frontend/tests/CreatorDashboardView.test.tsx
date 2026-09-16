@@ -185,7 +185,7 @@ describe('CreatorDashboardView', () => {
     renderDashboard(store);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toBe('Loading your numbers…');
+    expect(screen.getByRole('status').textContent).toBe('Processing your data…');
     expect(screen.getByRole('region', { name: 'Overview' }).getAttribute('aria-busy')).toBe('true');
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Recent conversations' })).toBeNull();

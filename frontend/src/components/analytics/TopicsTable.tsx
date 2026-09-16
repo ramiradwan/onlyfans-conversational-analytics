@@ -68,7 +68,7 @@ export function TopicsTable({ topics }: TopicsTableProps) {
       <Typography sx={{
         color: 'text.secondary'
       }}>
-        No topic observations are available for the stated data window.
+        No topics found for these dates.
       </Typography>
     );
   }
@@ -79,9 +79,9 @@ export function TopicsTable({ topics }: TopicsTableProps) {
         <thead>
           <tr>
             <th scope="col">Topic</th>
-            <th scope="col">Message volume</th>
+            <th scope="col">Messages</th>
             <th scope="col">Share</th>
-            <th scope="col">Change vs. prior window</th>
+            <th scope="col">Change from previous period</th>
           </tr>
         </thead>
         <tbody>
@@ -99,7 +99,7 @@ export function TopicsTable({ topics }: TopicsTableProps) {
               <td>{formatPercentValue(topic.sharePercent)}</td>
               <td>
                 {topic.trendPercent === null
-                  ? 'Unavailable'
+                  ? '—'
                   : formatPercentValue(topic.trendPercent)}
               </td>
             </tr>
