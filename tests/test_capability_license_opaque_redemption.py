@@ -254,6 +254,25 @@ def test_invalid_reference_never_reaches_hosted() -> None:
     assert transport.requests == []
 
 
+def test_exact_transport_retry_reuses_idempotency_key_before_reproof() -> None:
+    key = _key()
+    proof = ProofAuthority(key)
+    transport = QueueTransport(
+        [_challenge(), OSError("response lost after hosted commit"), _delivery()]
+    )
+    result = CapabilityLicenseRedemptionClient(transport, proof).redeem(
+        CONTINUATION,
+        organization_id=ORGANIZATION_ID,
+        installation_id=INSTALLATION_ID,
+        key=key,
+    )
+    assert result.hosted_result == "accepted"
+    assert len(proof.signed) == 1
+    assert len(transport.requests) == 3
+    assert transport.headers[1] == transport.headers[2]
+    assert transport.headers[1] is not None
+
+
 def test_ambiguous_commit_reproofs_same_continuation_and_recovers_completed() -> None:
     key = _key()
     proof = ProofAuthority(key)
@@ -261,6 +280,7 @@ def test_ambiguous_commit_reproofs_same_continuation_and_recovers_completed() ->
         [
             _challenge(),
             OSError("response lost after hosted commit"),
+            OSError("exact retry result also lost"),
             _challenge(),
             _delivery(result="already_completed", status=200),
         ]
@@ -277,7 +297,9 @@ def test_ambiguous_commit_reproofs_same_continuation_and_recovers_completed() ->
     assert len(challenge_requests) == 2
     assert {body["continuation"] for body in challenge_requests} == {CONTINUATION}
     redemption_requests = [body for path, body in transport.requests if path.endswith("redemptions")]
-    assert len(redemption_requests) == 2
+    assert len(redemption_requests) == 3
+    assert transport.headers[1] == transport.headers[2]
+    assert transport.headers[4] != transport.headers[1]
     assert {
         body["request"]["redemption_id"]
         for body in redemption_requests
@@ -413,3 +435,11 @@ def test_continuation_possession_without_local_key_proof_cannot_redeem(
     )
     assert action.redeem(continuation=CONTINUATION) == "installation_key_unavailable"
     assert delivery.activations == [] and delivery.reissues == []
+
+
+def test_normal_runtime_registers_opaque_redemption_route() -> None:
+    from app.main import app
+
+    assert str(app.url_path_for("redeem_capability_license_continuation")) == (
+        "/api/v1/capability-license/redeem"
+    )

@@ -217,11 +217,20 @@ class CapabilityLicenseRedemptionClient:
                 key=key,
             ),
         }
-        response = self._request(
-            _REDEMPTION_PATH,
-            body,
-            headers={"Idempotency-Key": str(uuid4())},
-        )
+        idempotency_headers = {"Idempotency-Key": str(uuid4())}
+        response: TransportResponse | None = None
+        for attempt in range(2):
+            try:
+                response = self._request(
+                    _REDEMPTION_PATH,
+                    body,
+                    headers=idempotency_headers,
+                )
+                break
+            except CapabilityLicenseRedemptionUnavailable:
+                if attempt == 1:
+                    raise
+        assert response is not None
         if _retryable(response.status_code):
             raise CapabilityLicenseRedemptionUnavailable("redemption result unavailable")
         if response.status_code not in {200, 201}:
@@ -416,7 +425,9 @@ def durable_capability_license_opaque_redemption(
                 )
             except CapabilityLicenseRedemptionRefused as refusal:
                 return refusal.result
-            except (CapabilityLicenseRedemptionUnavailable, InstallationKeyError):
+            except InstallationKeyError:
+                return "installation_key_unavailable"
+            except CapabilityLicenseRedemptionUnavailable:
                 return "hosted_unavailable"
             finally:
                 close = getattr(transport, "close", None)
