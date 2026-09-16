@@ -69,7 +69,7 @@ test('runtime Legal flow proves Preview activation then distinct Full upgrade ev
 
     await test.step('Preview → accepted Full disclosure → Enable Full analytics', async () => {
       await upgradePreviewToFull(context, popup, worker);
-      await expect(popup.locator('#mode-label')).toContainText('Full authorization saved');
+      await expect(popup.locator('#mode-label')).toHaveText('Full setup in progress');
     });
 
     const auditAfterUpgrade = await legalAudit(worker);

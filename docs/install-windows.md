@@ -2,7 +2,7 @@
 
 # Install on Windows
 
-OnlyFans Conversational Analytics installs per user. You do not need administrator rights, Python, Node.js, or a repository checkout.
+OnlyFans Conversational Analytics installs per user. You do not need administrator rights, Python, Node.js, a repository checkout, or a provisioning environment variable.
 
 ## Requirements
 
@@ -10,7 +10,8 @@ OnlyFans Conversational Analytics installs per user. You do not need administrat
 - A Chromium-based browser version 116 or later for the Agent extension.
 - TCP port `17871` available on the local machine.
 - A usable hardware-backed Microsoft Platform Crypto Provider for the installation signing key. Provisioning refuses software-only or unavailable installation-key providers.
-- `LOCAL_PROVISIONING_HOSTED_ORIGIN` set to the HTTPS origin of the hosted provisioning service before first run. The installer does not create this setting.
+
+Production packages carry the customer-facing secure-setup URL and hosted API origin as release-owned configuration. A customer does not set `LOCAL_PROVISIONING_HOSTED_ORIGIN`. Development and test runs may still use that variable when the checked-in development release configuration is intentionally blank.
 
 ## Download
 
@@ -42,9 +43,9 @@ Open **OnlyFans Conversational Analytics** from the Start Menu. The launcher sta
 
 Complete the four provisioning steps:
 
-1. Paste and submit the installation package to register the installation.
+1. Choose **Open secure setup**, sign in there, and obtain the setup code for this computer. Return to the desktop setup page, paste the complete code, and continue. The production handoff uses the `installation-claim-package:v2` / `installation-claim:v2` contract.
 2. Confirm the creator account detected by the Agent.
-3. Acquire the creator-account association approval.
+3. Complete creator approval in secure setup, then return and choose **Check approval**.
 4. Finish configuration.
 
 After successful finalization, Brain exits provisioning mode, the launcher restarts it in runtime mode, and Bridge opens at `http://bridge.localhost:17871`.

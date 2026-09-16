@@ -72,7 +72,7 @@ function currentSteps(elements) {
     .filter((step) => step.getAttribute('aria-current') === 'step').length;
 }
 
-test('identity detection is read-only and confirmation requires registration', async () => {
+test('identity detection is read-only and confirmation requires computer setup', async () => {
   const fetchCalls = [];
   const { controller, elements, extensionCalls } = harness({
     extensionResponse: signedInIdentity(),
@@ -85,9 +85,9 @@ test('identity detection is read-only and confirmation requires registration', a
   await controller.refreshIdentity();
 
   assert.deepEqual(extensionCalls, [[EXTENSION_ID, { type: 'provisioning.identity.query', version: 1 }]]);
-  assert.equal(elements.detectedIdentity.textContent, 'creator-42');
+  assert.equal(elements.detectedIdentity.textContent, 'Signed-in creator account detected');
   assert.equal(elements.confirmIdentity.disabled, true, 'identity_confirmation_requires_registration');
-  assert.match(elements.identityConfirmHelp.textContent, /Register this installation/);
+  assert.match(elements.identityConfirmHelp.textContent, /Connect this computer/);
   assert.equal(fetchCalls.length, 0, 'identity_query_never_starts_association');
   assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
 });
@@ -96,7 +96,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
   await context.test('missing extension answer', async () => {
     const { controller, elements } = harness({ extensionResponse: new Error('no receiver') });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /Install or enable/);
+    assert.match(elements.identityStatus.textContent, /installed and enabled/i);
     assert.equal(elements.confirmIdentity.disabled, true);
   });
 
@@ -104,7 +104,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
     for (const extensionId of ['', 'wrong', 'q'.repeat(32)]) {
       const { controller, elements, extensionCalls } = harness({ extensionId });
       await controller.refreshIdentity();
-      assert.match(elements.identityStatus.textContent, /Install or enable/);
+      assert.match(elements.identityStatus.textContent, /installed and enabled/i);
       assert.equal(elements.confirmIdentity.disabled, true);
       assert.equal(extensionCalls.length, 0, 'invalid_extension_id_never_messages_extension');
     }
@@ -117,7 +117,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
       },
     });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /Sign in, in a tab/);
+    assert.match(elements.identityStatus.textContent, /Open OnlyFans.*sign in/i);
     assert.equal(elements.confirmIdentity.disabled, true);
   });
 
@@ -129,7 +129,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
       },
     });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /unexpected account response/);
+    assert.match(elements.identityStatus.textContent, /could not identify/i);
     assert.equal(elements.confirmIdentity.disabled, true);
     assert.equal(parseIdentityResponse({
       type: 'provisioning.identity.result', version: 1, authenticated_profile: {},
@@ -137,7 +137,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
   });
 });
 
-test('invalid package input is rejected immediately and never fetched', async () => {
+test('invalid setup-code input is rejected immediately and never fetched', async () => {
   const fetchCalls = [];
   const { controller, elements } = harness({
     extensionResponse: signedInIdentity(),
@@ -150,7 +150,7 @@ test('invalid package input is rejected immediately and never fetched', async ()
   assert.equal(fetchCalls.length, 1, 'only_initial_status_was_fetched');
 
   const cases = [
-    ['', /Paste the installation package/],
+    ['', /Paste the setup code/],
     ['abcd efgh', /only letters, numbers, hyphens, and underscores/],
     ['a', /appears incomplete/],
     ['a'.repeat(1401), /1,400 characters or fewer/],
@@ -166,7 +166,7 @@ test('invalid package input is rejected immediately and never fetched', async ()
   assert.equal(elements.claimPackageCount.textContent, '1,400+ / 1,400 characters');
 });
 
-test('surrounding package whitespace is accepted and the exact trimmed value is submitted', async () => {
+test('surrounding setup-code whitespace is accepted and the exact trimmed value is submitted', async () => {
   const fetchCalls = [];
   const { controller, elements } = harness({
     fetch: async (...arguments_) => {
@@ -185,12 +185,12 @@ test('surrounding package whitespace is accepted and the exact trimmed value is 
 
 test('all decoder refusal reasons have dedicated actionable public copy', async () => {
   const expectedMessages = {
-    size: 'This installation package is too large. Return to setup, create a new package, and paste it here.',
-    encoding: 'This installation package is incomplete or was changed. Copy it again and paste it without changes.',
-    profile: 'This installation package is for a different setup. Return to setup and create a new package.',
-    schema: 'This installation package is incomplete or out of date. Return to setup and create a new package.',
-    device: 'This installation package cannot be used on this device. Run setup on a supported device or contact your administrator.',
-    consumed: 'This installation package has already been used. Return to setup and create a new package.',
+    size: 'This setup code is too large. Return to secure setup, create a new code, and paste it here.',
+    encoding: 'This setup code is incomplete or was changed. Copy it again and paste it without changes.',
+    profile: 'This setup code is for a different setup. Return to secure setup and create a new code.',
+    schema: 'This setup code is incomplete or out of date. Return to secure setup and create a new code.',
+    device: 'This setup code cannot be used on this computer. Run setup on a supported computer or contact support.',
+    consumed: 'This setup code has already been used. Return to secure setup and create a new code.',
   };
 
   for (const [reason, expected] of Object.entries(expectedMessages)) {
@@ -199,28 +199,36 @@ test('all decoder refusal reasons have dedicated actionable public copy', async 
     });
     elements.claimPackage.value = VALID_PACKAGE;
     await controller.submitClaim({ preventDefault() {} });
-    assert.equal(
-      elements.status.textContent,
-      expected,
-      reason === 'encoding' ? 'encoding_reason_has_dedicated_public_copy' : `${reason}_reason_has_dedicated_public_copy`,
-    );
+    assert.equal(elements.status.textContent, expected);
     assert.notEqual(elements.status.textContent, reason, `${reason}_reason_is_not_echoed_raw`);
   }
 });
 
-test('unknown and non-string 409 reasons use a non-echoing refusal', async () => {
+test('approval pending and hosted outage have distinct recovery copy', async () => {
+  const pending = harness({ fetch: async () => response(409, {
+    state: 'provisioning_ready', reason: 'binding_acquisition_unavailable',
+  }) });
+  pending.elements.claimPackage.value = VALID_PACKAGE;
+  await pending.controller.submitClaim({ preventDefault() {} });
+  assert.match(pending.elements.status.textContent, /approval is still pending/i);
+
+  const offline = harness({ fetch: async () => response(503, {
+    state: 'provisioning_ready', reason: 'hosted_unavailable',
+  }) });
+  offline.elements.claimPackage.value = VALID_PACKAGE;
+  await offline.controller.submitClaim({ preventDefault() {} });
+  assert.match(offline.elements.status.textContent, /internet connection/i);
+});
+
+test('unknown and non-string refusal reasons use a non-echoing refusal', async () => {
   for (const reason of ['private_backend_value_947', { internal: 'value' }, 17, null]) {
     const { controller, elements } = harness({
       fetch: async () => response(409, { state: 'provisioning_ready', reason }),
     });
     elements.claimPackage.value = VALID_PACKAGE;
     await controller.submitClaim({ preventDefault() {} });
-    assert.doesNotMatch(
-      elements.status.textContent,
-      /private_backend_value_947/,
-      'unknown_reason_is_not_echoed',
-    );
-    assert.match(elements.status.textContent, /could not accept this request/);
+    assert.doesNotMatch(elements.status.textContent, /private_backend_value_947/);
+    assert.match(elements.status.textContent, /This step could not be completed/);
   }
 });
 
@@ -262,6 +270,7 @@ test('registration and each successful action advance exactly one accessible ste
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(elements.acquireAssociation.disabled, false);
   assert.equal(elements.finalizeProvisioning.disabled, true);
+  assert.match(elements.status.textContent, /Complete creator approval.*check approval/i);
 
   await controller.acquireAssociation();
   assert.deepEqual(stepStates(elements), ['completed', 'completed', 'completed', 'current']);
@@ -276,7 +285,7 @@ test('registration and each successful action advance exactly one accessible ste
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(elements.acquireAssociation.disabled, true);
   assert.equal(elements.finalizeProvisioning.disabled, true);
-  assert.match(elements.status.textContent, /Restart Bridge/);
+  assert.match(elements.status.textContent, /desktop app will restart/i);
 
   for (const [, options] of fetchCalls) {
     assert.equal(options.credentials, 'same-origin');
@@ -310,7 +319,7 @@ test('configured restart on arrival completes every step and skips extension det
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(elements.acquireAssociation.disabled, true);
   assert.equal(elements.finalizeProvisioning.disabled, true);
-  assert.match(elements.finalizeActionHelp.textContent, /Restart Bridge/);
+  assert.match(elements.finalizeActionHelp.textContent, /desktop app will restart/i);
 });
 
 test('confirm is single-flight and completed actions cannot be repeated', async () => {
@@ -361,26 +370,26 @@ test('gated handlers issue no request before their prerequisite succeeds', async
 
 test('session, host, and interrupted requests retain actionable guidance', async (context) => {
   for (const status of [401, 403]) {
-    await context.test(`${status} restarts provisioning`, async () => {
+    await context.test(`${status} restarts setup`, async () => {
       const { controller, elements } = harness({ fetch: async () => response(status, {}) });
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
-      assert.match(elements.status.textContent, /session is no longer valid.*launcher/i);
+      assert.match(elements.status.textContent, /setup page has expired.*reopen the desktop app/i);
     });
   }
 
-  await context.test('wrong host names the correct local address', async () => {
+  await context.test('wrong host directs the user back to desktop setup', async () => {
     const { controller, elements } = harness({ fetch: async () => response(421, {}) });
     elements.claimPackage.value = VALID_PACKAGE;
     await controller.submitClaim({ preventDefault() {} });
-    assert.match(elements.status.textContent, /bridge\.localhost:17871/);
+    assert.match(elements.status.textContent, /desktop app setup page/i);
   });
 
   await context.test('request interruption suggests recovery', async () => {
     const { controller, elements } = harness({ fetch: async () => { throw new Error('offline'); } });
     elements.claimPackage.value = VALID_PACKAGE;
     await controller.submitClaim({ preventDefault() {} });
-    assert.match(elements.status.textContent, /Bridge is still running.*try again/i);
+    assert.match(elements.status.textContent, /desktop app.*internet connection.*try again/i);
   });
 });
 
@@ -408,53 +417,42 @@ test('initial status accepts only its exact closed success shape', async (contex
 
   for (const [name, body] of cases) {
     await context.test(name, async () => {
-      const { controller, elements } = harness({
-        fetch: async () => response(200, body),
-      });
-
+      const { controller, elements } = harness({ fetch: async () => response(200, body) });
       await controller.start();
-
       assert.equal(
         elements.status.textContent,
-        'Bridge returned an unexpected status. Restart provisioning from the launcher.',
-        'unexpected_status_guidance_is_visible',
+        'Desktop setup returned an unexpected state. Close this page and reopen the desktop app.',
       );
       assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
-      assert.equal(elements.confirmIdentity.disabled, true, 'identity_confirmation_remains_locked');
-      assert.equal(elements.acquireAssociation.disabled, true, 'approval_remains_locked');
-      assert.equal(elements.finalizeProvisioning.disabled, true, 'finalization_remains_locked');
+      assert.equal(elements.confirmIdentity.disabled, true);
+      assert.equal(elements.acquireAssociation.disabled, true);
+      assert.equal(elements.finalizeProvisioning.disabled, true);
     });
   }
 });
 
 test('claim rejects every malformed successful body without advancing', async (context) => {
   const cases = [
-    ['missing', {}],
-    ['null', null],
+    ['missing', {}], ['null', null],
     ['extra', { state: 'installation_registered', extra: true }],
-    ['wrong-status', { state: 'configured_restart' }],
-    ['wrong-type', { state: 17 }],
+    ['wrong-status', { state: 'configured_restart' }], ['wrong-type', { state: 17 }],
   ];
-
   for (const [name, body] of cases) {
     await context.test(name, async () => {
       const { controller, elements } = harness({
         extensionResponse: signedInIdentity(),
         fetch: async (path) => path === '/api/v1/provisioning/status'
-          ? response(200, { state: 'provisioning_ready' })
-          : response(200, body),
+          ? response(200, { state: 'provisioning_ready' }) : response(200, body),
       });
-
       await controller.start();
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
-
-      assert.match(elements.status.textContent, /unexpected result\. Try registering the installation again/);
+      assert.match(elements.status.textContent, /unexpected result\. Try the setup code again/);
       assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
-      assert.equal(elements.claimSubmit.disabled, false, 'claim_remains_available');
-      assert.equal(elements.confirmIdentity.disabled, true, 'identity_confirmation_remains_locked');
-      assert.equal(elements.acquireAssociation.disabled, true, 'approval_remains_locked');
-      assert.equal(elements.finalizeProvisioning.disabled, true, 'finalization_remains_locked');
+      assert.equal(elements.claimSubmit.disabled, false);
+      assert.equal(elements.confirmIdentity.disabled, true);
+      assert.equal(elements.acquireAssociation.disabled, true);
+      assert.equal(elements.finalizeProvisioning.disabled, true);
     });
   }
 });
@@ -463,20 +461,11 @@ test('association creation rejects every malformed successful body without advan
   const cases = [
     ['missing', { association_request_id: 'request-1', status: 'pending' }],
     ['null', null],
-    ['extra', {
-      association_request_id: 'request-1', status: 'pending', updated_at: 'now', extra: true,
-    }],
-    ['wrong-status', {
-      association_request_id: 'request-1', status: 'approved', updated_at: 'now',
-    }],
-    ['wrong-ID', {
-      association_request_id: 'x'.repeat(201), status: 'pending', updated_at: 'now',
-    }],
-    ['wrong-type', {
-      association_request_id: 'request-1', status: 'pending', updated_at: 17,
-    }],
+    ['extra', { association_request_id: 'request-1', status: 'pending', updated_at: 'now', extra: true }],
+    ['wrong-status', { association_request_id: 'request-1', status: 'approved', updated_at: 'now' }],
+    ['wrong-ID', { association_request_id: 'x'.repeat(201), status: 'pending', updated_at: 'now' }],
+    ['wrong-type', { association_request_id: 'request-1', status: 'pending', updated_at: 17 }],
   ];
-
   for (const [name, body] of cases) {
     await context.test(name, async () => {
       const { controller, elements } = harness({
@@ -487,34 +476,26 @@ test('association creation rejects every malformed successful body without advan
           return response(200, body);
         },
       });
-
       await controller.start();
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
       await controller.confirmIdentity();
-
-      assert.match(
-        elements.status.textContent,
-        /unexpected result\. Check the account and try again/,
-        'malformed_association_does_not_advance',
-      );
+      assert.match(elements.status.textContent, /unexpected result\. Check the signed-in account and try again/);
       assert.deepEqual(stepStates(elements), ['completed', 'current', 'locked', 'locked']);
-      assert.equal(elements.acquireAssociation.disabled, true, 'approval_remains_locked');
-      assert.equal(elements.finalizeProvisioning.disabled, true, 'finalization_remains_locked');
+      assert.equal(elements.acquireAssociation.disabled, true);
+      assert.equal(elements.finalizeProvisioning.disabled, true);
     });
   }
 });
 
 test('approval rejects every malformed successful body without advancing', async (context) => {
   const cases = [
-    ['missing', {}],
-    ['null', null],
+    ['missing', {}], ['null', null],
     ['extra', { association_request_id: 'request-1', status: 'approved', extra: true }],
     ['wrong-status', { association_request_id: 'request-1', status: 'pending' }],
     ['wrong-ID', { association_request_id: 'other-request', status: 'approved' }],
     ['wrong-type', { association_request_id: 17, status: 'approved' }],
   ];
-
   for (const [name, body] of cases) {
     await context.test(name, async () => {
       const { controller, elements } = harness({
@@ -528,30 +509,25 @@ test('approval rejects every malformed successful body without advancing', async
           return response(200, body);
         },
       });
-
       await controller.start();
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
       await controller.confirmIdentity();
       await controller.acquireAssociation();
-
-      assert.match(elements.status.textContent, /unexpected result\. Try acquiring approval again/);
+      assert.match(elements.status.textContent, /unexpected approval result\. Check approval again/);
       assert.deepEqual(stepStates(elements), ['completed', 'completed', 'current', 'locked']);
-      assert.equal(elements.finalizeProvisioning.disabled, true, 'finalization_remains_locked');
+      assert.equal(elements.finalizeProvisioning.disabled, true);
     });
   }
 });
 
 test('finalization rejects every malformed successful body without advancing', async (context) => {
   const cases = [
-    ['missing', {}],
-    ['null', null],
+    ['missing', {}], ['null', null],
     ['extra', { state: 'configured_restart', extra: true }],
     ['wrong-ID', { state: 'configured_restart', association_request_id: 'other-request' }],
-    ['wrong-status', { state: 'installation_registered' }],
-    ['wrong-type', { state: 17 }],
+    ['wrong-status', { state: 'installation_registered' }], ['wrong-type', { state: 17 }],
   ];
-
   for (const [name, body] of cases) {
     await context.test(name, async () => {
       const { controller, elements } = harness({
@@ -568,17 +544,15 @@ test('finalization rejects every malformed successful body without advancing', a
           return response(200, body);
         },
       });
-
       await controller.start();
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
       await controller.confirmIdentity();
       await controller.acquireAssociation();
       await controller.finalizeProvisioning();
-
-      assert.match(elements.status.textContent, /unexpected result\. Try finishing configuration again/);
+      assert.match(elements.status.textContent, /unexpected result\. Try finishing setup again/);
       assert.deepEqual(stepStates(elements), ['completed', 'completed', 'completed', 'current']);
-      assert.equal(elements.finalizeProvisioning.disabled, false, 'finalization_remains_available');
+      assert.equal(elements.finalizeProvisioning.disabled, false);
     });
   }
 });
@@ -596,5 +570,5 @@ test('reload after intermediate success returns to the server-reported ready ste
 
   assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
   assert.equal(elements.confirmIdentity.disabled, true);
-  assert.match(elements.identityStatus.textContent, /Register this installation/);
+  assert.match(elements.identityStatus.textContent, /Connect this computer/);
 });

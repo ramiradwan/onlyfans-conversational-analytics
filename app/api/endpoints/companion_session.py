@@ -14,6 +14,7 @@ from app.api.endpoints.companion_pairing import _socket_origin
 from app.bootstrap import transport_manager
 from app.core.config import settings
 from app.persistence.auth import SQLiteAuthenticationStore
+from app.security.analysis_authorization import current_analysis_readiness
 from app.security.companion_noise import create_noise_responder
 from app.security.extension_storage import (
     UNLOCK_SCHEMA,
@@ -134,7 +135,7 @@ class SessionRPC:
         )
 
     def call(self, method, params):
-        self.authority.current_policy()
+        policy = self.authority.current_policy()
         if method == "agent.challenge":
             _exact(params, ())
             return self.authority.challenge()
@@ -150,6 +151,24 @@ class SessionRPC:
             }
         if self.auth_ticket is None:
             raise CompanionRecordError()
+        if method == "agent.analysis.readiness":
+            _exact(params, ())
+            identity = policy.identity
+            if (
+                identity is None
+                or identity.role != "agent"
+                or identity.creator_account_id != self.pin.creator_account_id
+            ):
+                raise CompanionRecordError()
+            readiness = current_analysis_readiness(
+                self.authority.authentication,
+                identity,
+            )
+            return {
+                "schema": "ofca-analysis-readiness/v1",
+                "commercial_authority": readiness.commercial_authority,
+                "analysis_admission": readiness.analysis_admission,
+            }
         if method == "agent.config.get":
             from app.protocol import AgentConfigGetRequest
 
