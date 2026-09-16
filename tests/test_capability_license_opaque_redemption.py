@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Mapping
 
 import pytest
 from pydantic import ValidationError
@@ -18,7 +18,7 @@ from app.security.capability_license_redemption import (
     durable_capability_license_opaque_redemption,
 )
 from app.security.hosted_grants import TransportResponse
-from app.security.installation_key import InstallationProof, InstallationKeyError
+from app.security.installation_key import InstallationKeyError, InstallationProof
 
 CONTINUATION = "clr1." + "A" * 43
 REDEMPTION_ID = "0199a1b2-c3d4-7300-8000-000000000021"

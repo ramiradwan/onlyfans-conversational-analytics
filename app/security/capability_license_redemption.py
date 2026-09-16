@@ -8,12 +8,17 @@ import hashlib
 import json
 import re
 import struct
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable, Literal, Mapping, Protocol
+from typing import Literal, Protocol
 from uuid import uuid4
 
-from app.persistence.auth import AuthenticationStore, InstallationKeyReference, SQLiteAuthenticationStore
+from app.persistence.auth import (
+    AuthenticationStore,
+    InstallationKeyReference,
+    SQLiteAuthenticationStore,
+)
 from app.security.capability_license_composition import (
     CapabilityLicenseDeliveryReceipt,
     CapabilityLicenseDeliveryResult,
@@ -21,7 +26,9 @@ from app.security.capability_license_composition import (
     durable_capability_license_delivery,
 )
 from app.security.capability_license_delivery import CapabilityLicenseTransport
-from app.security.capability_license_delivery_journal import SQLiteCapabilityLicenseDeliveryJournal
+from app.security.capability_license_delivery_journal import (
+    SQLiteCapabilityLicenseDeliveryJournal,
+)
 from app.security.capability_license_transport import CapabilityLicenseHTTPTransport
 from app.security.grant_types import ACTIVATION_GRANT_TYPES
 from app.security.hosted_grants import InstallationProofAuthority, TransportResponse

@@ -22,7 +22,6 @@ from app.security.capability_license_composition import (
 from app.security.capability_license_redemption import CapabilityLicenseOpaqueRedemption
 from app.security.runtime_policy import RuntimePolicy
 
-
 router = APIRouter(
     prefix="/api/v1/capability-license",
     tags=["CapabilityLicense"],
