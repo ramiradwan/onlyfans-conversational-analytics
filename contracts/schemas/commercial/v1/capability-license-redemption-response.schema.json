@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-redemption-response.schema.json",
+  "title": "CapabilityLicense opaque redemption response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "redemption_id",
+    "result",
+    "authorization_state",
+    "delivery"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-redemption:v1"
+    },
+    "redemption_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "result": {
+      "enum": [
+        "accepted",
+        "already_completed"
+      ]
+    },
+    "authorization_state": {
+      "const": "delivery_available"
+    },
+    "delivery": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "package",
+            "seat_id"
+          ],
+          "properties": {
+            "operation": {
+              "const": "activation"
+            },
+            "package": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1400,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "seat_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "package",
+            "seat_id"
+          ],
+          "properties": {
+            "operation": {
+              "const": "reissue"
+            },
+            "package": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1400,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "seat_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
