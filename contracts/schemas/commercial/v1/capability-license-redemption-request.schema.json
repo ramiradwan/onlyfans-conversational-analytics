@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-redemption-request.schema.json",
+  "title": "CapabilityLicense opaque redemption request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "continuation",
+        "redemption_id",
+        "organization_id",
+        "installation_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-license-redemption:v1"
+        },
+        "continuation": {
+          "type": "string",
+          "minLength": 48,
+          "maxLength": 48,
+          "pattern": "^clr1\\.[A-Za-z0-9_-]{43}$"
+        },
+        "redemption_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        }
+      }
+    },
+    "proof": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/proof"
+    }
+  }
+}

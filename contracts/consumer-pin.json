@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "3c4b0a774e2fe6f3bf878c6e8434bc0e2c712630e7c89951933788d70cf1ed6c",
+  "aggregate_bundle_sha256": "5ced81122666923d82eb212ffd0d4643e56952fe6027a1308c12cc06c50315a1",
   "conformance_manifests": [
     {
       "export": "capability-license-v1",
@@ -24,7 +24,7 @@
   ],
   "consumer_pin_version": 3,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "6ba604cfa5b85cd75354fe6dd0ab55c89a0adfa005d6d161c659485cbd1d0878",
+  "contract_manifest_sha256": "827eda31ec62e156fcc16cf7b7dbf09ddddb1019ed920e322be28d21c5bf30f4",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -59,11 +59,11 @@
       "version": "1.0.0"
     }
   ],
-  "source_commit": "50c08ee8b3f3dbb1364b875e876a32ab7c641f9a",
+  "source_commit": "de2e514e4ef59f5789d2806002c5eb439709d261",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "d50e961dd421bdb8be4fd8860653c5bd1a8f7759b2fd60ed263b3245aff0fd07",
+  "source_contract_manifest_sha256": "6a4a2e2c1050b7e729695dbc1877bb8f60abfea460c37d74e5c275d3e9c86963",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "15b821c361f4bc1077a0e1ef5689f5916ff75f51",
+  "source_tree": "ffc0702716cef54e02fbd888cd259087e6623a20",
   "supported_profiles": [
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -72,6 +72,9 @@
     "urn:bridge-clean:capability-license-activation:v1",
     "urn:bridge-clean:capability-license-exchange-quote:v1",
     "urn:bridge-clean:capability-license-exchange:v1",
+    "urn:bridge-clean:capability-license-redemption-continuation:v1",
+    "urn:bridge-clean:capability-license-redemption-proof:v1",
+    "urn:bridge-clean:capability-license-redemption:v1",
     "urn:bridge-clean:capability-license-reissue-authorization:v1",
     "urn:bridge-clean:capability-license-reissue-package:v1",
     "urn:bridge-clean:capability-license-reissue:v1",

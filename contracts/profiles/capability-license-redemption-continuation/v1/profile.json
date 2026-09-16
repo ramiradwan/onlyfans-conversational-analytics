@@ -1,0 +1,32 @@
+{
+  "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1",
+  "governing_adr": "docs/adr/0021-add-opaque-capability-license-redemption.md",
+  "messages": {
+    "handoff": "schemas/commercial/v1/capability-license-redemption-continuation.schema.json"
+  },
+  "reference": {
+    "prefix": "clr1.",
+    "entropy_bits": 256,
+    "rendering": "base64url-unpadded",
+    "max_ttl_seconds": 600,
+    "server_state_required": true,
+    "bearer_sufficient_for_delivery": false
+  },
+  "customer_transport": {
+    "allowed_fields": [
+      "profile",
+      "continuation",
+      "expires_at"
+    ],
+    "forbidden_fields": [
+      "organization_id",
+      "installation_id",
+      "seat_id",
+      "exchange_id",
+      "reissue_authorization_id",
+      "package",
+      "capability_license",
+      "signing_key_id"
+    ]
+  }
+}

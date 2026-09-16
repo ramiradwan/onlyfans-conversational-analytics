@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-redemption-continuation.schema.json",
+  "title": "CapabilityLicense opaque redemption continuation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "continuation",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+    },
+    "continuation": {
+      "type": "string",
+      "minLength": 48,
+      "maxLength": 48,
+      "pattern": "^clr1\\.[A-Za-z0-9_-]{43}$",
+      "description": "Opaque 256-bit server lookup reference. Its value carries no customer-readable authority coordinates."
+    },
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

@@ -2,13 +2,18 @@
   "files": [
     {
       "path": "catalog/contracts.yaml",
-      "sha256": "cf190180c1a0e40de83ab53d26d5705bee2e1f2980cc97604bed2a9f0467947e",
-      "size": 16529
+      "sha256": "cf26f68d63e07a7bf9019524b443ec7332fb8b7b82ccbe4c242e8bed1162afff",
+      "size": 18931
     },
     {
       "path": "openapi/bootstrap-recovery-v2.openapi.yaml",
       "sha256": "2a05638975b6656bfe48dae7585c188783312cbdd08c9e0315db511cdd5b3afd",
       "size": 2887
+    },
+    {
+      "path": "openapi/capability-license-redemption-v1.openapi.yaml",
+      "sha256": "c311726c96064021acd8371d1d8e89f63d3637b9ef68dee160d93f859d8465ae",
+      "size": 4708
     },
     {
       "path": "openapi/commercial-v1.openapi.yaml",
@@ -34,6 +39,21 @@
       "path": "profiles/capability-license-activation-proof/v1/profile.json",
       "sha256": "8126281da24fbda41eb215ef269963a80a4b9fcf231ad43fd47ebd557048dfda",
       "size": 2714
+    },
+    {
+      "path": "profiles/capability-license-redemption-continuation/v1/profile.json",
+      "sha256": "c973b3208a3d8d0112c9f559b3bc90e73ccf38e99570345020b445b204f2243b",
+      "size": 835
+    },
+    {
+      "path": "profiles/capability-license-redemption-proof/v1/profile.json",
+      "sha256": "b671138c9c09d9b1eea2af778f6991c8c1aeee270f372e5867d6123020d54b5e",
+      "size": 2215
+    },
+    {
+      "path": "profiles/capability-license-redemption/v1/profile.json",
+      "sha256": "fcb1da770a6038e2746e443a8ab846fa872192c7fce646f999b2c409e89809d9",
+      "size": 1551
     },
     {
       "path": "profiles/capability-license-reissue-authorization/v1/profile.json",
@@ -99,6 +119,31 @@
       "path": "schemas/commercial/v1/capability-license-proof-challenge-response.schema.json",
       "sha256": "1d69a46f05381434ec5a67f4ba64af477ad951e82ef01ab4aaab5b58ed6b4ae3",
       "size": 1625
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-redemption-continuation.schema.json",
+      "sha256": "c59babc00cc55a2bf382813daccc9251e67a1d26eb2cf3746eb88e58706df671",
+      "size": 881
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-redemption-proof-challenge-request.schema.json",
+      "sha256": "f8e41f8efab6c28f16e4b7e8d0d98c692cb70e5a585b7bc50b29f03f71df58c2",
+      "size": 914
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-redemption-proof-challenge-response.schema.json",
+      "sha256": "d7c84f46cf2dd2c51058a18857592334dddde1159a9ac3e5cf02c9885b5ecca7",
+      "size": 1732
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-redemption-request.schema.json",
+      "sha256": "a17b0e470f98e19dbacad618820a91602049fc118baf6f8c9ed76b7e138735ac",
+      "size": 1350
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-redemption-response.schema.json",
+      "sha256": "bce6f3a7e5fb02bdf2d2f0a2ef76f39ccae5dfd94986ef3aecad79181ce12d71",
+      "size": 2072
     },
     {
       "path": "schemas/commercial/v1/capability-license-reissue-authorization-request.schema.json",
@@ -285,6 +330,9 @@
     "urn:bridge-clean:capability-license-activation:v1",
     "urn:bridge-clean:capability-license-exchange-quote:v1",
     "urn:bridge-clean:capability-license-exchange:v1",
+    "urn:bridge-clean:capability-license-redemption-continuation:v1",
+    "urn:bridge-clean:capability-license-redemption-proof:v1",
+    "urn:bridge-clean:capability-license-redemption:v1",
     "urn:bridge-clean:capability-license-reissue-authorization:v1",
     "urn:bridge-clean:capability-license-reissue-package:v1",
     "urn:bridge-clean:capability-license-reissue:v1",

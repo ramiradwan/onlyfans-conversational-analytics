@@ -5,8 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -17,9 +16,9 @@ class ContractsIntegrityError(RuntimeError):
 _MANIFEST = "manifest.json"
 _PIN = "consumer-pin.json"
 _APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-_APPROVED_SOURCE_COMMIT = "50c08ee8b3f3dbb1364b875e876a32ab7c641f9a"
-_APPROVED_SOURCE_TREE = "15b821c361f4bc1077a0e1ef5689f5916ff75f51"
-_APPROVED_SOURCE_MANIFEST_SHA256 = "d50e961dd421bdb8be4fd8860653c5bd1a8f7759b2fd60ed263b3245aff0fd07"
+_APPROVED_SOURCE_COMMIT = "de2e514e4ef59f5789d2806002c5eb439709d261"
+_APPROVED_SOURCE_TREE = "ffc0702716cef54e02fbd888cd259087e6623a20"
+_APPROVED_SOURCE_MANIFEST_SHA256 = "6a4a2e2c1050b7e729695dbc1877bb8f60abfea460c37d74e5c275d3e9c86963"
 _MANIFEST_KEYS = {
     "content_digest",
     "export_set",
@@ -304,7 +303,7 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
 def load_trust_set(path: str | os.PathLike[str], *, environment: str = "production") -> dict[str, Any]:
     """Load a pinned trust set, refusing non-production material in production."""
 
-    manifest = verify_snapshot_integrity()
+    verify_snapshot_integrity()
     candidate = (manifest_root := _contracts_root()) / Path(path)
     try:
         candidate.relative_to(manifest_root)

@@ -1,0 +1,108 @@
+openapi: 3.1.0
+info:
+  title: Bridge Clean CapabilityLicense opaque redemption API
+  version: 1.0.0
+  description: >-
+    Proof-bound redemption of one short-lived opaque Hosted customer authorization. The
+    continuation is not a CapabilityLicense and is not sufficient for delivery without the
+    exact enrolled installation key. Protected activation/reissue package and seat coordinates
+    are returned only to the local Product for delegation into ADR 0020 delivery authority.
+servers:
+  - url: https://control-plane.example.invalid
+paths:
+  /v1/capability-license-redemption-proof-challenges:
+    post:
+      operationId: issueCapabilityLicenseRedemptionProofChallenge
+      summary: Issue a short-lived challenge only after the opaque continuation matches local authority coordinates.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-redemption-proof-challenge-request.schema.json
+      responses:
+        "201":
+          description: >-
+            A 60-second single-use challenge bound to the server-held redemption identity,
+            organization, exact target installation, fixed capability-license-redeem purpose,
+            and redemption-specific proof audience. Issuing a challenge does not consume the
+            commercial authorization.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-redemption-proof-challenge-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/TemporarilyUnavailable" }
+  /v1/capability-license-redemptions:
+    post:
+      operationId: redeemCapabilityLicenseContinuation
+      summary: Redeem one server-bound commercial authorization with exact installation-key proof.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-redemption-request.schema.json
+      responses:
+        "200":
+          description: >-
+            The same hosted redemption was already completed and is being recovered
+            idempotently. The protected delivery coordinates are the same committed values;
+            no second seat, exchange, reissue authorization, licence, or issuance is created.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-redemption-response.schema.json
+        "201":
+          description: >-
+            Hosted commercial redemption was accepted and protected ADR 0020 delivery inputs
+            are available to Brain. This response is not evidence that Product verified or
+            durably installed a CapabilityLicense.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-redemption-response.schema.json
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/TemporarilyUnavailable" }
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$"
+  responses:
+    Error:
+      description: Closed cross-plane error.
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/common/v1/error.schema.json
+    TemporarilyUnavailable:
+      description: >-
+        Required Hosted redemption, commercial-authority, persistence, or signing dependency
+        is temporarily unavailable. The failure does not create fresh authorization and does
+        not imply local CapabilityLicense installation or revocation.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../schemas/common/v1/error.schema.json
+              - type: object
+                properties:
+                  code:
+                    const: temporarily_unavailable

@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.analytics import runtime as analytics_runtime
 from app.api.endpoints import (
     capability_license,
     companion_pairing,
@@ -18,10 +19,9 @@ from app.api.endpoints import (
     transport_ws,
     webauthn,
 )
-from app.analytics import runtime as analytics_runtime
 from app.bootstrap import history_source, transport_manager
-from app.core.config import settings
 from app.core.broadcast import broadcast
+from app.core.config import settings
 from app.core.resource_paths import resource_path
 from app.persistence.auth import InstallationKeyReference, SQLiteAuthenticationStore
 from app.security.activation_gate import (
@@ -31,15 +31,20 @@ from app.security.activation_gate import (
 from app.security.capability_license_composition import (
     durable_capability_license_delivery,
 )
+from app.security.capability_license_redemption import (
+    durable_capability_license_opaque_redemption,
+)
+from app.security.grant_refresh import (
+    HOSTED_ORIGIN_ENVIRONMENT_VARIABLE,
+    GrantRefreshLifecycle,
+    configured_grant_refresh,
+)
 from app.security.installation_key import (
     InstallationKeyAuthority,
     InstallationKeyUnavailable,
     WindowsCNGInstallationKeyProvider,
 )
 from app.transport.companion_origin import CompanionOriginBoundary
-from app.security.grant_refresh import (
-    GrantRefreshLifecycle, HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, configured_grant_refresh,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +59,19 @@ def _capability_license_store() -> SQLiteAuthenticationStore:
 
 
 def configure_capability_license_delivery() -> None:
-    """Wire the shipping local CapabilityLicense activation/reissue action."""
+    """Wire shipping CapabilityLicense delivery and opaque redemption actions."""
 
+    hosted_origin = os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, "")
     capability_license.configure_capability_license_delivery(
         durable_capability_license_delivery(
             _capability_license_store,
-            hosted_origin=os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""),
+            hosted_origin=hosted_origin,
+        )
+    )
+    capability_license.configure_capability_license_redemption(
+        durable_capability_license_opaque_redemption(
+            _capability_license_store,
+            hosted_origin=hosted_origin,
         )
     )
 
@@ -70,7 +82,10 @@ def start_grant_refresh() -> None:
     if (_grant_refresh is not None or settings.identity_binding_source != "verified_grants"
             or settings.websocket_auth_mode != "local_session"):
         return
-    from app.provisioning.claim_submission import hosted_transport, installation_proof_authority
+    from app.provisioning.claim_submission import (
+        hosted_transport,
+        installation_proof_authority,
+    )
 
     @lru_cache(maxsize=1)
     def open_store():
