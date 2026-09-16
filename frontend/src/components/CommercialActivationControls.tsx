@@ -101,35 +101,35 @@ export function CommercialActivationControls({
 
         {checking && (
           <Alert severity="info" role="status">
-            <Typography component="div" fontWeight={600}>Checking activation</Typography>
+            <Typography component="div" sx={{ fontWeight: 600 }}>Checking activation</Typography>
             Checking current Full activation and licensed-analysis readiness on this computer.
           </Alert>
         )}
 
         {!checking && fullReady && (
           <Alert severity="success" role="status">
-            <Typography component="div" fontWeight={600}>Full mode is ready</Typography>
+            <Typography component="div" sx={{ fontWeight: 600 }}>Full mode is ready</Typography>
             Full activation is active and licensed analysis is ready.
           </Alert>
         )}
 
         {!checking && activeButBlocked && (
           <Alert severity="warning" role="status">
-            <Typography component="div" fontWeight={600}>Full activation active</Typography>
+            <Typography component="div" sx={{ fontWeight: 600 }}>Full activation active</Typography>
             Activation is active, but licensed analysis is not available right now. Existing desktop data remains available.
           </Alert>
         )}
 
         {!checking && activationUnavailable && (
           <Alert severity="warning" role="status">
-            <Typography component="div" fontWeight={600}>Full activation needs attention</Typography>
+            <Typography component="div" sx={{ fontWeight: 600 }}>Full activation needs attention</Typography>
             Current activation could not be confirmed. Existing verified activation is left unchanged.
           </Alert>
         )}
 
         {!checking && readiness === null && (
           <Alert severity="warning" role="status">
-            <Typography component="div" fontWeight={600}>Full activation needs attention</Typography>
+            <Typography component="div" sx={{ fontWeight: 600 }}>Full activation needs attention</Typography>
             Activation status could not be checked. Existing verified activation is left unchanged.
           </Alert>
         )}
