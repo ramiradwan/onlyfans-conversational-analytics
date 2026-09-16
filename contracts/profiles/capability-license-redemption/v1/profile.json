@@ -1,0 +1,51 @@
+{
+  "profile": "urn:bridge-clean:capability-license-redemption:v1",
+  "governing_adr": "docs/adr/0021-add-opaque-capability-license-redemption.md",
+  "messages": {
+    "request": "schemas/commercial/v1/capability-license-redemption-request.schema.json",
+    "response": "schemas/commercial/v1/capability-license-redemption-response.schema.json"
+  },
+  "transport": {
+    "method": "POST",
+    "path": "/v1/capability-license-redemptions",
+    "idempotency_key_required": true,
+    "query_forbidden": true,
+    "cache_control": "no-store"
+  },
+  "server_bindings": [
+    "customer_transaction_id",
+    "organization_id",
+    "installation_id",
+    "commercial_disposition",
+    "underlying_authority_reference",
+    "redemption_id",
+    "seat_id",
+    "issued_at",
+    "expires_at",
+    "redemption_state"
+  ],
+  "success_results": [
+    "accepted",
+    "already_completed"
+  ],
+  "delivery_operations": {
+    "activation": {
+      "package_profile": "urn:bridge-clean:capability-license-activation-package:v1",
+      "underlying_authority": "committed_exchange"
+    },
+    "reissue": {
+      "package_profile": "urn:bridge-clean:capability-license-reissue-package:v1",
+      "underlying_authority": "committed_pending_reissue_authorization",
+      "replacement_key_self_authorizes": false
+    }
+  },
+  "local_installation_fact": {
+    "hosted_success_means_installed": false,
+    "required_product_completion": [
+      "capability_license_verify",
+      "durable_persist",
+      "delivery_journal_commit",
+      "readiness_reconstruction"
+    ]
+  }
+}
