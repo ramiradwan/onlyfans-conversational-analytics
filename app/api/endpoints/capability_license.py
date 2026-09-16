@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -15,12 +15,15 @@ from app.api.security import (
     verify_csrf_token,
     verify_same_origin,
 )
+from app.core.config import settings
+from app.persistence.auth import SQLiteAuthenticationStore
+from app.security.analysis_authorization import current_analysis_readiness
 from app.security.capability_license_composition import (
     CapabilityLicenseDeliveryReceipt,
     CapabilityLicenseLocalDelivery,
 )
 from app.security.capability_license_redemption import CapabilityLicenseOpaqueRedemption
-from app.security.runtime_policy import RuntimePolicy
+from app.security.runtime_policy import AuthContext, RuntimePolicy
 
 router = APIRouter(
     prefix="/api/v1/capability-license",
@@ -60,6 +63,24 @@ class CapabilityLicenseDeliveryResponse(BaseModel):
     reference_id: str
     license_id: str
     issuance_id: str
+
+
+class CapabilityLicenseRedemptionResponse(BaseModel):
+    """Customer-safe submission result; canonical readiness must be read separately."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["checking"] = "checking"
+
+
+class CapabilityLicenseReadinessResponse(BaseModel):
+    """Closed customer view reconstructed from current durable local authority."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema: Literal["ofca-analysis-readiness/v1"] = "ofca-analysis-readiness/v1"
+    commercial_authority: Literal["required", "active", "unavailable"]
+    analysis_admission: Literal["blocked", "admitted"]
 
 
 def configure_capability_license_delivery(
@@ -116,6 +137,15 @@ def _result_response(
     )
 
 
+def _redemption_response(
+    result: CapabilityLicenseDeliveryReceipt | str,
+) -> CapabilityLicenseRedemptionResponse:
+    if not isinstance(result, CapabilityLicenseDeliveryReceipt):
+        _result_response(result)
+        raise AssertionError("unreachable")
+    return CapabilityLicenseRedemptionResponse()
+
+
 async def _deliver(
     body: CapabilityLicensePackageRequest,
     *,
@@ -138,14 +168,46 @@ def _authorize_local_caller(
     verify_same_origin(request)
 
 
-@router.post("/redeem", response_model=CapabilityLicenseDeliveryResponse)
+def _customer_analysis_readiness(policy: RuntimePolicy):
+    identity = policy.identity
+    if identity is None:
+        raise RuntimeError("authenticated customer identity is required")
+    # The canonical readiness evaluator is defined for the local analysis agent.
+    # This read-only projection scopes that evaluation to the authenticated creator's
+    # account; it does not mint agent credentials, cache admission, or mutate authority.
+    analysis_identity = AuthContext(
+        identity.principal_id,
+        identity.creator_account_id,
+        "agent",
+    )
+    store = SQLiteAuthenticationStore(settings.auth_database_path)
+    return current_analysis_readiness(store, analysis_identity)
+
+
+@router.get("/readiness", response_model=CapabilityLicenseReadinessResponse)
+async def capability_license_readiness(
+    response: Response,
+    policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
+) -> CapabilityLicenseReadinessResponse:
+    """Return the canonical closed readiness document for the signed-in customer."""
+
+    require_creator(policy)
+    readiness = await run_in_threadpool(_customer_analysis_readiness, policy)
+    response.headers["Cache-Control"] = "no-store"
+    return CapabilityLicenseReadinessResponse(
+        commercial_authority=readiness.commercial_authority,
+        analysis_admission=readiness.analysis_admission,
+    )
+
+
+@router.post("/redeem", response_model=CapabilityLicenseRedemptionResponse)
 async def redeem_capability_license_continuation(
     request: Request,
     body: CapabilityLicenseContinuationRequest,
     policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
     csrf: str | None = Header(None, alias="X-CSRF-Token"),
-) -> CapabilityLicenseDeliveryResponse:
-    """Redeem one opaque Hosted authorization and return only local install success."""
+) -> CapabilityLicenseRedemptionResponse:
+    """Redeem one opaque Hosted authorization, then require a readiness re-read."""
 
     _authorize_local_caller(request, policy)
     verify_csrf_token(policy, csrf)
@@ -153,7 +215,7 @@ async def redeem_capability_license_continuation(
         _configured_redemption().redeem,
         continuation=body.continuation,
     )
-    return _result_response(result)
+    return _redemption_response(result)
 
 
 @router.post("/activate", response_model=CapabilityLicenseDeliveryResponse)
