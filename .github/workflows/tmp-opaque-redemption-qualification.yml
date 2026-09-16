@@ -33,8 +33,8 @@ jobs:
           path = Path("app/security/capability_license_redemption.py")
           source = path.read_text(encoding="utf-8")
           source = source.replace(
-              "from typing import Callable, Literal, Mapping, Protocol",
-              "from typing import Callable, Literal, Mapping, Protocol, TypeAlias",
+              "from typing import Literal, Protocol",
+              "from typing import Literal, Protocol, TypeAlias",
               1,
           )
           source = source.replace(
