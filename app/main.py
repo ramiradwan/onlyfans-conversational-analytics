@@ -31,6 +31,9 @@ from app.security.activation_gate import (
 from app.security.capability_license_composition import (
     durable_capability_license_delivery,
 )
+from app.security.capability_license_redemption import (
+    durable_capability_license_opaque_redemption,
+)
 from app.security.installation_key import (
     InstallationKeyAuthority,
     InstallationKeyUnavailable,
@@ -54,12 +57,19 @@ def _capability_license_store() -> SQLiteAuthenticationStore:
 
 
 def configure_capability_license_delivery() -> None:
-    """Wire the shipping local CapabilityLicense activation/reissue action."""
+    """Wire shipping CapabilityLicense delivery and opaque redemption actions."""
 
+    hosted_origin = os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, "")
     capability_license.configure_capability_license_delivery(
         durable_capability_license_delivery(
             _capability_license_store,
-            hosted_origin=os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""),
+            hosted_origin=hosted_origin,
+        )
+    )
+    capability_license.configure_capability_license_redemption(
+        durable_capability_license_opaque_redemption(
+            _capability_license_store,
+            hosted_origin=hosted_origin,
         )
     )
 
