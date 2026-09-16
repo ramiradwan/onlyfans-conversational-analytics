@@ -35,9 +35,7 @@ from app.persistence.auth import (
     InstallationKeyReservation,
 )
 from app.provisioning.app import create_provisioning_app
-from app.provisioning.binding_acquisition import (
-    durable_creator_account_binding_acquisition,
-)
+from app.provisioning.binding_acquisition import durable_creator_account_binding_acquisition
 from app.provisioning.claim_package import CLAIM_PACKAGE_PROFILE_V2
 from app.provisioning.claim_submission import durable_claim_submission
 from app.provisioning.completion import (
@@ -45,9 +43,8 @@ from app.provisioning.completion import (
     durable_completion_reader,
     durable_finalize_action,
 )
-from app.provisioning.creator_association import (
-    durable_creator_association_initiation,
-)
+from app.provisioning.creator_association import durable_creator_association_initiation
+from app.provisioning.progress import durable_provisioning_progress
 from app.security.hosted_grants import (
     CLAIM_PROFILE_V2,
     HostedGrantClient,
@@ -64,9 +61,11 @@ from tests.test_hosted_grants import (
 )
 
 
-# No request leaves this process: every hosted path is answered in memory. The
-# origin is still required to be a bare origin by the actions that carry it.
+# No request leaves this process: every hosted API path is answered in memory.
+# The customer continuation URL below is intercepted by Playwright and is
+# deliberately an invalid test-only host, never a release/customer default.
 HOSTED_ORIGIN = "https://control.invalid"
+HOSTED_ONBOARDING_URL = "https://secure-setup.e2e.invalid/start"
 
 BIND_HOST = "127.0.0.1"
 BIND_PORT = 17871
@@ -153,12 +152,7 @@ class V2StoredClaimTransport(StoredClaimTransport):
 def activate_minted_installation_key(
     store: AuthenticationStore, reference: InstallationKeyReference
 ) -> InstallationKeyReference:
-    """Drive the minted key through the store's reserve and activate steps.
-
-    The provisioning stage never opens a platform key provider, so the key the
-    grants are bound to is installed through the same durable transitions a
-    provider-backed key uses rather than by writing the reference row.
-    """
+    """Drive the minted key through the store's reserve and activate steps."""
 
     reserved = store.reserve_installation_key(
         InstallationKeyReservation(
@@ -225,12 +219,14 @@ def build_application(
         completion_ready=durable_completion_reader(
             open_store, data_directory=data_directory
         ),
+        provisioning_progress=durable_provisioning_progress(open_store),
         finalize_action=durable_finalize_action(
             open_store,
             extension_id=extension_id,
             data_directory=data_directory,
         ),
         extension_id=extension_id,
+        hosted_onboarding_url=HOSTED_ONBOARDING_URL,
         launcher_handoff_token=handoff_token,
     )
 
@@ -260,6 +256,7 @@ def main() -> int:
             {
                 "claim_package": claim_package(claim),
                 "creator_account_id": creator_account_id,
+                "hosted_onboarding_url": HOSTED_ONBOARDING_URL,
                 "installation_id": claim.installation_id,
                 "installation_key_id": bundle.installation_key.installation_key_id,
                 "organization_id": claim.organization_id,

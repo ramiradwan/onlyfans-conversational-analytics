@@ -185,7 +185,10 @@ export async function assertFullProminentDisclosure(popup) {
 }
 
 export async function upgradePreviewToFull(context, popup, worker) {
-  await popup.getByRole('button', { name: 'Review Full analytics' }).click();
+  const review = popup.locator('#journey-primary');
+  await expect(review).toHaveAttribute('data-action', 'review_full');
+  await expect(review).toHaveText('Activate Full analysis');
+  await review.click();
   await assertFullProminentDisclosure(popup);
   await acceptPermissionFor(
     context,

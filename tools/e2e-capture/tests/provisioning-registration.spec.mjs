@@ -103,25 +103,25 @@ test('a clean installation registers, authenticates, and reaches its configured 
       await page.locator('#claim-package').fill(descriptor.claim_package);
       await page.locator('#claim-submit').click();
       await expect(page.locator('#provisioning-status'))
-        .toHaveText('Installation registered. Confirm the detected creator account.');
+        .toHaveText('This computer is connected to secure setup. Confirm your signed-in creator account.');
       await expect(page.locator('#claim-step')).toHaveAttribute('data-state', 'completed');
     });
 
     await test.step('the detected creator account is confirmed and approved', async () => {
-      await expect(page.locator('#detected-identity')).toHaveText(descriptor.creator_account_id);
+      await expect(page.locator('#detected-identity')).toHaveText('Signed-in creator account detected');
       await page.locator('#confirm-identity').click();
       await expect(page.locator('#provisioning-status'))
-        .toHaveText('Creator account confirmed. Acquire approval to continue.');
+        .toContainText('Approval is still waiting for completion');
       await page.locator('#acquire-association').click();
       await expect(page.locator('#provisioning-status'))
-        .toHaveText('Approval acquired. Finish configuration to complete setup.');
+        .toHaveText('Creator account approved. Finish desktop setup.');
     });
 
     let configuration = null;
     await test.step('finalization writes runtime configuration', async () => {
       await page.locator('#finalize-provisioning').click();
       await expect(page.locator('#provisioning-status'))
-        .toHaveText('Configuration is complete. Restart Bridge to continue.');
+        .toHaveText('Desktop setup is complete. The desktop app will restart; then return to the extension.');
       configuration = await readRuntimeConfiguration(
         path.join(dataDirectory, RUNTIME_CONFIGURATION_FILENAME),
       );
