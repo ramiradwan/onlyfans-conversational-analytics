@@ -2,8 +2,6 @@ export { ThemeProvider } from '@mui/material/styles';
 export { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 export { GlobalLoader } from '../src/common/GlobalLoader';
-export { KpiCard } from '../src/components/KpiCard';
-export { KpiCardSkeleton } from '../src/components/KpiCardSkeleton';
 export {
   QueryInput,
   QueryResponseBubble,

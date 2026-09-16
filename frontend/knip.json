@@ -16,6 +16,7 @@
     "src/types/backend.ts"
   ],
   "ignoreDependencies": [
+    "@fontsource-variable/inter",
     "@swc/plugin-emotion",
     "lint-staged"
   ],

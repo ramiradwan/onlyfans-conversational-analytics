@@ -9,7 +9,7 @@
   "tsconfig": ".design-sync/tsconfig.json",
   "cssEntry": ".design-sync/styles.css",
   "extraFonts": [
-    "src/assets/fonts/fonts.css"
+    "node_modules/@fontsource-variable/inter/opsz.css"
   ],
   "readmeHeader": ".design-sync/conventions.md",
   "componentSrcMap": {
@@ -20,8 +20,6 @@
     "App": null,
     "LegacyMessageBubble": null,
     "GlobalLoader": "src/common/GlobalLoader.tsx",
-    "KpiCard": "src/components/KpiCard.tsx",
-    "KpiCardSkeleton": "src/components/KpiCardSkeleton.tsx",
     "QueryInput": "src/components/experimental/QueryInput.tsx",
     "QueryResponseBubble": "src/components/experimental/QueryResponseBubble.tsx",
     "QueryResponseBubbleSkeleton": "src/components/experimental/QueryResponseBubble.tsx",
@@ -52,7 +50,7 @@
   },
   "dtsPropsFor": {
     "AnalyticsView": "  // No props.",
-    "AppAppBar": "  drawerWidth: number;\n  headerHeight?: number;\n  onDrawerToggle: () => void;",
+    "AppAppBar": "  headerHeight?: number;\n  onDrawerToggle: () => void;",
     "AppDrawer": "  drawerWidth: number;\n  mobileDrawerWidth?: number;\n  mobileOpen: boolean;\n  onDrawerClose?: () => void;\n  onDrawerToggle?: () => void;",
     "AppShell": "  // No props.",
     "AsyncContent": "  isLoading: boolean;\n  data: any[] | null | undefined;\n  placeholder: React.ReactNode;\n  emptyMessage: React.ReactNode;\n  render: (data: any[]) => React.ReactNode;",
@@ -64,8 +62,6 @@
     "CreatorVaultControls": "  api?: unknown;\n  onDownload?: (document: unknown) => void;",
     "GlobalLoader": "  // No props.",
     "GraphExplorerView": "  // No props.",
-    "KpiCard": "  title: string;\n  value: string | number;\n  detail?: string;\n  isLoading?: boolean;\n  grow?: boolean;",
-    "KpiCardSkeleton": "  grow?: boolean;",
     "KpiPlaceholder": "  // No props.",
     "MessageBubble": "  message: {\n    message_id: string;\n    text: string;\n    sent_at: string;\n    direction: 'inbound' | 'outbound';\n    sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n  };",
     "MessageFlagIcon": "  sentiment: 'positive' | 'neutral' | 'negative' | 'unknown';\n  context?: 'latest' | 'message';",
@@ -122,12 +118,6 @@
     "GraphExplorerView": {
       "cardMode": "single",
       "viewport": "900x560"
-    },
-    "KpiCard": {
-      "cardMode": "column"
-    },
-    "KpiCardSkeleton": {
-      "cardMode": "column"
     },
     "KpiPlaceholder": {
       "cardMode": "column"

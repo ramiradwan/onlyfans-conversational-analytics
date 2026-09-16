@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { storyAvailableState } from '../src/story-only/analyticsFixtures';
 import {
   StoryAnalyticsView,
-  StoryDashboardView,
   StoryGraphView,
   StoryInboxView,
 } from '../src/story-only/StoryViews';
@@ -14,7 +13,6 @@ import { theme } from '../src/theme';
 afterEach(() => cleanup());
 
 const stories = [
-  ['dashboard', <StoryDashboardView state={storyAvailableState} />],
   ['analytics', <StoryAnalyticsView state={storyAvailableState} />],
   ['inbox', <StoryInboxView state={storyAvailableState} />],
   ['graph', <StoryGraphView state={storyAvailableState} />],

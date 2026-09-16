@@ -7,17 +7,14 @@ import {
   storyWindowSources,
 } from './analyticsFixtures';
 import type { AnalyticsReadState } from '../analytics';
-import {
-  AnalyticsPresentation,
-  CreatorDashboardPresentation,
-} from '../components/analytics';
+import { AnalyticsPresentation } from '../components/analytics';
 import type { StateSnapshotPayload } from '../protocol';
 import { setAnalyticsStoryState } from '../store/analyticsStore';
 import { createBridgeTransportStore } from '../store/transportStore';
 import { GraphExplorerPresentation } from '../views/GraphExplorerView';
 import OperatorInboxView from '../views/OperatorInboxView';
 
-export type StoryViewName = 'dashboard' | 'analytics' | 'inbox' | 'graph';
+export type StoryViewName = 'analytics' | 'inbox' | 'graph';
 
 const InboxStage = styled('div')({
   display: 'flex',
@@ -105,17 +102,6 @@ export function createStoryInboxStore() {
   return store;
 }
 
-export function StoryDashboardView({ state }: { state: AnalyticsReadState }) {
-  return (
-    <CreatorDashboardPresentation
-      state={state}
-      dateRange={storyDateRange}
-      onDateRangeChange={() => undefined}
-      windowSources={storyWindowSources}
-    />
-  );
-}
-
 export function StoryAnalyticsView({ state }: { state: AnalyticsReadState }) {
   return (
     <AnalyticsPresentation
@@ -162,8 +148,7 @@ export function StoryView({
   state: AnalyticsReadState;
   view: StoryViewName;
 }) {
-  if (view === 'analytics') return <StoryAnalyticsView state={state} />;
   if (view === 'inbox') return <StoryInboxView state={state} />;
   if (view === 'graph') return <StoryGraphView state={state} />;
-  return <StoryDashboardView state={state} />;
+  return <StoryAnalyticsView state={state} />;
 }

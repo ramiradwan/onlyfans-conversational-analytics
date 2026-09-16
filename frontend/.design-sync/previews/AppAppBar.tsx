@@ -11,7 +11,7 @@ export function LiveDesktopHeader() {
   return (
     <MemoryRouter initialEntries={['/']}>
       <Box sx={{ height: 88, position: 'relative', width: '100%' }}>
-        <AppAppBar drawerWidth={0} headerHeight={72} onDrawerToggle={() => {}} />
+        <AppAppBar headerHeight={72} onDrawerToggle={() => {}} />
       </Box>
     </MemoryRouter>
   );
