@@ -193,6 +193,7 @@ class CapabilityLicenseRedemptionClient:
             or challenge.get("audience") != _PROOF_AUDIENCE
             or not _uuid(challenge.get("redemption_id"))
             or not _uuid(challenge.get("proof_challenge_id"))
+            or not isinstance(challenge_bytes, str)
             or not _b64u32(challenge_bytes)
             or not _timestamp(challenge.get("issued_at"))
             or not _timestamp(challenge.get("expires_at"))
@@ -459,6 +460,8 @@ def _current_local_coordinates(
             or grant.installation_key_id != key.installation_key_id
             or grant.installation_key_jkt != key.installation_key_jkt
         ):
+            continue
+        if not isinstance(grant.organization_id, str) or not grant.organization_id:
             continue
         coordinate = (
             grant.organization_id,
