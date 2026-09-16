@@ -1,11 +1,9 @@
-import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
-import { Alert, AlertTitle, Box, Chip, Stack, Typography } from '@mui/material';
+import { Alert, AlertTitle, Box, Stack, Typography } from '@mui/material';
 import { useSyncExternalStore } from 'react';
 
 import type { AnalyticsReadState, AnalyticsWindowSource } from '../analytics';
 import { AnalyticsStateFrame } from '../components/analytics';
 import { GraphSummaryPanel, type GraphQueryGate } from '../components/graph';
-import { Panel } from '../components/ui';
 import { bridgeTransportStore } from '../store/transportStore';
 import { humanizeProjectionReason } from '../utils/dataReadiness';
 
@@ -22,60 +20,22 @@ export default function GraphExplorerView() {
   return (
     <Box sx={{ maxWidth: 960, mx: 'auto', width: '100%' }}>
       <Stack spacing={3}>
-        <Box>
-          <Typography component="h1" variant="h4">Graph explorer</Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              color: 'text.secondary',
-              mt: 0.5
-            }}>
-            Brain-owned labeled-property-graph projection status
-          </Typography>
-        </Box>
+        <Typography component="h1" variant="h4">Graph explorer</Typography>
 
-        <Panel>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{
-            justifyContent: 'space-between'
-          }}>
-            <Stack direction="row" spacing={1.5} sx={{
-              alignItems: 'center'
-            }}>
-              <AccountTreeOutlinedIcon color={projectionCurrent ? 'success' : 'disabled'} />
-              <Box>
-                <Typography component="h2" variant="h6">Local graph projection</Typography>
-                <Typography variant="body2" sx={{
-                  color: 'text.secondary'
-                }}>
-                  Canonical revision {state.projection.canonical_revision}; projected revision{' '}
-                  {state.projection.projected_revision}
-                </Typography>
-              </Box>
-            </Stack>
-            <Chip
-              label={state.projection.status}
-              color={projectionCurrent ? 'success' : 'warning'}
-              variant="outlined"
-            />
-          </Stack>
-
-          {projectionCurrent ? (
-            <Alert severity="info">
-              <AlertTitle>Interactive graph queries are not enabled in this Beta</AlertTitle>
-              The local projection is ready, but Brain does not expose an authenticated graph-query
-              API yet. No generated queries or sample results are shown.
-            </Alert>
-          ) : (
-            <Alert severity={state.projection.status === 'unavailable' ? 'error' : 'warning'}>
-              <AlertTitle>Graph data is not ready</AlertTitle>
-              {humanizeProjectionReason(
-                state.projection.reason,
-                'Brain is still building the local graph projection from canonical messages.',
-                { projection_degraded: 'The local graph projection needs attention.' },
-              )}
-            </Alert>
-          )}
-        </Panel>
+        {projectionCurrent ? (
+          <Alert severity="info">
+            <AlertTitle>Not available yet</AlertTitle>
+            Exploring how your fans and conversations connect isn&apos;t available in this version.
+          </Alert>
+        ) : (
+          <Alert severity={state.projection.status === 'unavailable' ? 'error' : 'info'}>
+            <AlertTitle>Not ready yet</AlertTitle>
+            {humanizeProjectionReason(
+              state.projection.reason,
+              'Your conversations are still being prepared.',
+            )}
+          </Alert>
+        )}
       </Stack>
     </Box>
   );
@@ -104,14 +64,6 @@ export function GraphExplorerPresentation({
       <Stack spacing={3}>
         <Box>
           <Typography component="h1" variant="h4">Graph explorer</Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              color: 'text.secondary',
-              mt: 0.5
-            }}>
-            Canonical relationship graph projection
-          </Typography>
         </Box>
         <AnalyticsStateFrame state={state}>
           {state.data && (

@@ -247,7 +247,7 @@ export function AppDrawer({
           {
             to: '/graph-explorer',
             icon: <TravelExploreIcon />,
-            label: 'Graph Explorer',
+            label: 'Graph explorer',
           },
         ]
       : []),

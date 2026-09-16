@@ -228,7 +228,7 @@ export const storyBaselineState: AnalyticsReadState = {
   status: 'baseline',
   data: storyAnalyticsModel,
   isRefreshing: false,
-  message: 'Directional baseline — not calibrated production analysis.',
+  message: 'These results are early estimates.',
 };
 export const storyLoadingState: AnalyticsReadState = {
   status: 'loading',

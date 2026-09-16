@@ -1,12 +1,7 @@
-import CloudDoneIcon from '@mui/icons-material/CloudDone';
-import CloudOffIcon from '@mui/icons-material/CloudOff';
-import SyncIcon from '@mui/icons-material/Sync';
 import {
   Alert,
   AlertTitle,
   Box,
-  Chip,
-  Stack,
   styled,
   Typography,
 } from '@mui/material';
@@ -28,6 +23,7 @@ import { ChatListPane } from '../components/inbox/ChatListPane';
 import { ConversationInsightsPanel } from '../components/inbox/ConversationInsightsPanel';
 import { getConversationTitle, sortConversations } from '../components/inbox/inboxModel';
 import { MessageStreamPane } from '../components/inbox/MessageStreamPane';
+import { SetupPrompt } from '../components/SetupPrompt';
 import {
   messageApi as defaultMessageApi,
   MessageApiError,
@@ -40,6 +36,13 @@ import {
   type BridgeTransportState,
 } from '../store/transportStore';
 import { coverageProgressLabel, humanizeProjectionReason } from '../utils/dataReadiness';
+import {
+  extensionConnection,
+  extensionIssue,
+  protocolErrorText,
+  setupIncomplete,
+  type StatusMessage,
+} from '../utils/statusCopy';
 
 const InboxRoot = styled(Box)(({ theme }) => ({
   backgroundColor: theme.vars.palette.background.default,
@@ -47,13 +50,6 @@ const InboxRoot = styled(Box)(({ theme }) => ({
   flex: 1,
   flexDirection: 'column',
   minHeight: 0,
-}));
-
-const InboxHeader = styled(Stack)(({ theme }) => ({
-  alignItems: 'center',
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  marginBottom: theme.spacing(2),
 }));
 
 const InboxGrid = styled(Box, {
@@ -78,111 +74,83 @@ const StatusAlert = styled(Alert)(({ theme }) => ({
   marginBottom: theme.spacing(2),
 }));
 
-type IssuePresentation = {
-  detail: string;
-  severity: 'error' | 'info' | 'warning';
-  title: string;
-};
-
-function getIssue(state: ReturnType<OperatorInboxStore['getState']>): IssuePresentation | null {
+function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMessage | null {
   if (state.protocolError !== null) {
     return {
-      detail: state.protocolError.detail,
+      detail: protocolErrorText(state.protocolError),
       severity: state.protocolError.fatal ? 'error' : 'warning',
-      title: 'Bridge communication error',
+      title: 'Connection problem',
     };
   }
   if (state.readModelState === 'resyncing') {
     return {
       detail:
         state.viewRevision === null
-          ? 'Refreshing snapshot. Waiting for a complete conversation snapshot.'
-          : 'Refreshing snapshot. Showing the latest complete snapshot while a fresh snapshot is requested.',
-      severity: 'warning',
+          ? 'Your conversations will appear in a moment.'
+          : 'Showing your last conversations until the refresh finishes.',
+      severity: 'info',
       title: 'Refreshing conversations',
     };
   }
   if (state.readModelState === 'degraded') {
-    return {
-      detail:
-        state.viewRevision === null
-          ? state.system?.detail ?? 'Conversation data is unavailable until the Bridge reconnects.'
-          : state.system?.detail ?? 'Showing cached data until the Bridge reconnects.',
-      severity: 'warning',
-      title: state.viewRevision === null ? 'Conversation data unavailable' : 'Realtime updates paused',
-    };
+    return state.viewRevision === null
+      ? {
+          detail: 'Your conversations will appear once the connection is back.',
+          severity: 'warning',
+          title: 'Conversations unavailable',
+        }
+      : {
+          detail: 'Showing your last conversations while reconnecting.',
+          severity: 'warning',
+          title: 'Updates paused',
+        };
   }
   if (
     state.viewRevision === null &&
     (state.connection === 'disconnected' || state.connection === 'error')
   ) {
     return {
-      detail: 'Conversation data is unavailable until the Bridge reconnects.',
+      detail: 'Your conversations will appear once the connection is back.',
       severity: 'error',
-      title: 'Conversation data unavailable',
+      title: 'Conversations unavailable',
     };
   }
-  if (state.system?.readiness === 'unavailable') {
-    return {
-      detail: state.system.detail ?? 'The processing service is currently unavailable.',
-      severity: 'error',
-      title: 'Conversation data unavailable',
-    };
-  }
-  if (state.projection.status === 'unavailable') {
+  if (state.system?.readiness === 'unavailable' || state.projection.status === 'unavailable') {
     return {
       detail: humanizeProjectionReason(
         state.projection.reason,
-        'The message projection is unavailable.',
+        "Your conversations can't be shown right now.",
       ),
       severity: 'error',
-      title: 'Conversation data unavailable',
+      title: 'Conversations unavailable',
     };
   }
-  if (state.system?.readiness === 'degraded') {
-    return {
-      detail: state.system.detail ?? 'Conversation processing is operating in a degraded state.',
-      severity: 'warning',
-      title: 'Conversation processing degraded',
-    };
-  }
-  if (state.agent?.degraded_reason) {
-    return {
-      detail: state.agent.degraded_reason,
-      severity: 'warning',
-      title: 'Agent needs attention',
-    };
-  }
-  if (state.agent?.status === 'stale' || state.agent?.status === 'disconnected') {
-    return {
-      detail: 'New platform activity may be delayed until the Agent reconnects.',
-      severity: 'warning',
-      title: state.agent.status === 'stale' ? 'Agent connection is stale' : 'Agent disconnected',
-    };
+  if (state.viewRevision === null || setupIncomplete(state.coverage)) return null;
+  const connection = extensionConnection(state.agent);
+  if (connection !== 'applying_settings') {
+    const issue = extensionIssue(connection);
+    if (issue !== null) return issue;
   }
   if (state.liveFreshness.status !== 'current') {
     return {
-      detail: 'Stored conversations remain available, but newer platform activity may be delayed.',
+      detail: 'Your saved conversations are shown, but new messages may take longer to appear.',
       severity: 'warning',
       title: 'Updates delayed',
     };
   }
-  if (
-    state.viewRevision !== null &&
-    (state.connection === 'disconnected' || state.connection === 'error')
-  ) {
+  if (state.connection === 'disconnected' || state.connection === 'error') {
     return {
-      detail: 'Showing the latest complete snapshot while the Bridge reconnects.',
+      detail: 'Showing your last conversations while reconnecting.',
       severity: 'warning',
-      title: 'Realtime updates paused',
+      title: 'Updates paused',
     };
   }
   if (state.coverage.status !== 'complete') {
     return {
       detail:
         state.coverage.phase === 'paused'
-          ? 'Historical acquisition is paused. The Inbox shows only locally stored messages.'
-          : `${coverageProgressLabel(state.coverage)}. Earlier messages may not be stored yet.`,
+          ? 'Only messages synced so far are shown. You can resume history sync in Settings.'
+          : `${coverageProgressLabel(state.coverage)}. Older messages may not be here yet.`,
       severity: 'info',
       title: state.coverage.phase === 'paused' ? 'History paused' : 'History still syncing',
     };
@@ -192,8 +160,8 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): IssuePrese
     state.projection.projected_revision < state.projection.canonical_revision
   ) {
     return {
-      detail: 'Historical acquisition is complete while Brain updates the message projection.',
-      severity: 'warning',
+      detail: 'Your latest messages are being added.',
+      severity: 'info',
       title: 'Updating conversations',
     };
   }
@@ -221,14 +189,20 @@ type OperatorInboxState = Omit<
 > & {
   agent: Pick<
     NonNullable<BridgeTransportState['agent']>,
-    'connection_id' | 'degraded_reason' | 'status'
+    | 'applied_config_revision'
+    | 'applied_history_settings_revision'
+    | 'connection_id'
+    | 'degraded_reason'
+    | 'required_config_revision'
+    | 'required_history_settings_revision'
+    | 'status'
   > | null;
   presence: Pick<
     NonNullable<BridgeTransportState['presence']>,
     'freshness' | 'online_platform_user_ids'
   > | null;
-  protocolError: Pick<NonNullable<BridgeTransportState['protocolError']>, 'detail' | 'fatal'> | null;
-  system: Pick<NonNullable<BridgeTransportState['system']>, 'detail' | 'readiness'> | null;
+  protocolError: Pick<NonNullable<BridgeTransportState['protocolError']>, 'code' | 'fatal'> | null;
+  system: Pick<NonNullable<BridgeTransportState['system']>, 'readiness'> | null;
 };
 
 interface OperatorInboxStore {
@@ -280,27 +254,7 @@ export default function OperatorInboxView({
     activeConversationId === null ? null : state.messagePages[activeConversationId] ?? null;
   const hasSnapshot = state.viewRevision !== null;
   const issue = getIssue(state);
-  const isResyncing = state.readModelState === 'resyncing';
-  const statusLabel = issue
-    ? isResyncing
-      ? 'Resyncing'
-      : hasSnapshot
-        ? 'Degraded'
-        : 'Unavailable'
-    : hasSnapshot && state.readModelState === 'realtime'
-      ? 'Live'
-      : 'Connecting';
-  const statusIcon = issue ? (
-    isResyncing ? (
-      <SyncIcon />
-    ) : (
-      <CloudOffIcon />
-    )
-  ) : hasSnapshot ? (
-    <CloudDoneIcon />
-  ) : (
-    <SyncIcon />
-  );
+  const showSetup = hasSnapshot && setupIncomplete(state.coverage) && conversations.length === 0;
   const isOnline =
     selectedConversation !== null &&
     selectedConversation.platform_user_id !== null &&
@@ -428,33 +382,9 @@ export default function OperatorInboxView({
 
   return (
     <InboxRoot>
-      <InboxHeader>
-        <Box>
-          <Typography component="h1" variant="h5">
-            Inbox
-          </Typography>
-          <Typography variant="body2" sx={{
-            color: 'text.secondary'
-          }}>
-            Conversation read model
-          </Typography>
-        </Box>
-        <Chip
-          icon={statusIcon}
-          label={statusLabel}
-            color={
-              issue
-                ? issue.severity === 'error'
-                  ? 'error'
-                  : issue.severity === 'info'
-                    ? 'info'
-                    : 'warning'
-                : 'success'
-            }
-          variant="outlined"
-          aria-live="polite"
-        />
-      </InboxHeader>
+      <Typography component="h1" variant="h5" sx={{ mb: 2 }}>
+        Inbox
+      </Typography>
 
       {issue !== null && (
         <StatusAlert severity={issue.severity} role="alert">
@@ -463,6 +393,9 @@ export default function OperatorInboxView({
         </StatusAlert>
       )}
 
+      {showSetup ? (
+        <SetupPrompt title="Finish setup to see your conversations" />
+      ) : (
       <InboxGrid aria-busy={!hasSnapshot} $withInsights={analyticsState !== undefined}>
         <ChatListPane
           conversations={conversations}
@@ -487,6 +420,7 @@ export default function OperatorInboxView({
           />
         )}
       </InboxGrid>
+      )}
     </InboxRoot>
   );
 }

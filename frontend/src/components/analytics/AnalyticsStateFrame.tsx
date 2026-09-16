@@ -115,23 +115,23 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
     <Stack spacing={2} aria-busy={state.isRefreshing}>
       {state.status === 'building' && (
         <Alert severity="info">
-          <AlertTitle>Fresh analytics are building</AlertTitle>
-          {state.message} The last complete frame remains below.
+          <AlertTitle>Updating your analytics</AlertTitle>
+          {state.message} Your last results are shown below.
         </Alert>
       )}
       {isBaselineFrame && (
         <Alert severity="warning">
-          <AlertTitle>Directional baseline</AlertTitle>
+          <AlertTitle>Early estimates</AlertTitle>
           {state.status === 'baseline'
             ? state.message
-            : 'The retained frame is a directional baseline — not calibrated production analysis.'}{' '}
-          Use these signals for exploration, not calibrated decisions.
+            : 'The results below are early estimates.'}{' '}
+          Use them to spot trends, not for exact numbers.
         </Alert>
       )}
       {state.status === 'error' && (
         <Alert severity="error" role="alert">
-          <AlertTitle>Refresh failed</AlertTitle>
-          {state.message} The last complete frame remains below.
+          <AlertTitle>Couldn&apos;t refresh</AlertTitle>
+          {state.message} Your last results are shown below.
         </Alert>
       )}
       {state.isRefreshing && <LinearProgress aria-label="Refreshing analytics" />}

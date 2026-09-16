@@ -56,7 +56,7 @@ describe('capability license customer API', () => {
       getCsrfToken: () => 'csrf-token',
     });
 
-    await expect(api.redeem(CONTINUATION)).rejects.toThrow('invalid activation response');
+    await expect(api.redeem(CONTINUATION)).rejects.toThrow("couldn't be checked");
   });
 
   it('accepts only the closed canonical readiness document', async () => {
@@ -87,7 +87,7 @@ describe('capability license customer API', () => {
         analysis_admission: 'admitted',
       })) as unknown as typeof fetch,
     });
-    await expect(admittedWithoutAuthority.readiness()).rejects.toThrow('invalid activation response');
+    await expect(admittedWithoutAuthority.readiness()).rejects.toThrow("couldn't be checked");
 
     const extended = createCapabilityLicenseApi({
       fetch: vi.fn(async () => jsonResponse({
@@ -97,15 +97,15 @@ describe('capability license customer API', () => {
         license_id: 'must-not-reach-browser',
       })) as unknown as typeof fetch,
     });
-    await expect(extended.readiness()).rejects.toThrow('invalid activation response');
+    await expect(extended.readiness()).rejects.toThrow("couldn't be checked");
   });
 
   it.each([
     [410, 'expired'],
-    [404, 'not valid'],
+    [404, "isn't valid"],
     [403, 'authorized'],
     [409, 'no longer matches'],
-    [503, 'existing activation remains unchanged'],
+    [503, 'Nothing has changed'],
   ])('keeps redemption failure %i customer-safe and actionable', async (status, message) => {
     const api = createCapabilityLicenseApi({
       fetch: vi.fn(async () => jsonResponse({ detail: 'internal-provider-detail' }, status)) as unknown as typeof fetch,

@@ -4,18 +4,24 @@ import {
   Box,
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Divider,
   FormControl,
   InputLabel,
   MenuItem,
   Select,
+  Skeleton,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 
-import { Panel } from './ui';
+import { Disclosure, Panel } from './ui';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   creatorVaultApi as defaultCreatorVaultApi,
@@ -23,7 +29,6 @@ import {
   type CreatorVaultCommand,
   type CreatorVaultExportDocument,
   type CreatorVaultStatus,
-  type UnlinkArchiveTreatment,
 } from '../services/creatorVaultApi';
 
 export type CreatorVaultDownload = (document: CreatorVaultExportDocument) => void;
@@ -35,9 +40,22 @@ interface CreatorVaultControlsProps {
 
 type SelectiveScope = 'message' | 'conversation' | 'participant';
 
-function sentenceCase(value: string): string {
-  return value.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase());
-}
+const SCOPE_LABELS: Record<SelectiveScope, string> = {
+  message: 'Message',
+  conversation: 'Conversation',
+  participant: 'Person',
+};
+
+const SCOPE_TITLES: Record<SelectiveScope, string> = {
+  message: 'Delete this message?',
+  conversation: 'Delete this conversation?',
+  participant: "Delete this person's messages?",
+};
+
+type PendingConfirmation =
+  | { kind: 'delete_all' }
+  | { kind: 'delete_scope'; scope: SelectiveScope; targetId: string }
+  | { kind: 'disable' };
 
 function defaultDownload(document: CreatorVaultExportDocument): void {
   const blob = new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' });
@@ -49,6 +67,15 @@ function defaultDownload(document: CreatorVaultExportDocument): void {
   URL.revokeObjectURL(url);
 }
 
+function archiveLabel(policy: CreatorVaultStatus['policy']): string {
+  if (!policy.enabled) return 'Off';
+  if (policy.policy_type === 'finite' && policy.finite_horizon_days !== null) {
+    return `${policy.finite_horizon_days} days`;
+  }
+  return policy.policy_type === 'indefinite_until_delete' ? 'Until you delete' : 'On';
+}
+
+/** Stored messages section of Settings: archive length, download, and deletion. */
 export function CreatorVaultControls({
   api = defaultCreatorVaultApi,
   onDownload = defaultDownload,
@@ -62,7 +89,8 @@ export function CreatorVaultControls({
   const [finiteDays, setFiniteDays] = useState('365');
   const [scope, setScope] = useState<SelectiveScope>('message');
   const [targetId, setTargetId] = useState('');
-  const [unlinkTreatment, setUnlinkTreatment] = useState<UnlinkArchiveTreatment>('preserve');
+  const [pending, setPending] = useState<PendingConfirmation | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!isCreator) {
@@ -77,9 +105,9 @@ export function CreatorVaultControls({
         setError(null);
         setLoading(false);
       },
-      (cause: unknown) => {
+      () => {
         if (controller.signal.aborted) return;
-        setError(cause instanceof Error ? cause.message : 'Creator Vault status is unavailable.');
+        setError("Stored message settings couldn't be loaded. Reload the page to try again.");
         setLoading(false);
       },
     );
@@ -93,21 +121,17 @@ export function CreatorVaultControls({
     try {
       const result = await api.command(command);
       setStatus(result.status);
-      if (result.deletion_operation?.status === 'incomplete') {
-        setNotice('Vault source data was deleted, but dependent cleanup is still incomplete.');
-      } else if (result.deletion_operation?.status === 'complete') {
-        setNotice('The managed Vault deletion completed.');
-      } else if (command.action.startsWith('delete_')) {
-        setNotice('The managed Vault deletion was recorded.');
-      } else if (command.action === 'unlink') {
-        setNotice(
-          command.unlink_archive_treatment === 'preserve'
-            ? 'Vault preservation was selected before unlink or uninstall.'
-            : 'Vault deletion was selected before unlink or uninstall.',
-        );
+      if (command.action.startsWith('delete_') && result.deletion_operation?.status !== 'incomplete') {
+        setNotice('Messages deleted.');
       }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The Creator Vault change failed.');
+      if (command.action === 'delete_message' || command.action === 'delete_conversation'
+        || command.action === 'delete_participant') {
+        setTargetId('');
+      }
+    } catch {
+      setError(command.action.startsWith('delete_')
+        ? "Messages couldn't be deleted. Try again."
+        : "Your change couldn't be saved. Try again.");
     } finally {
       setBusy(false);
     }
@@ -125,13 +149,9 @@ export function CreatorVaultControls({
         ...current,
         deletion_operation: result.status === 'complete' ? null : result,
       });
-      setNotice(
-        result.status === 'complete'
-          ? 'The managed Vault deletion completed.'
-          : 'Dependent cleanup is still incomplete.',
-      );
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Creator Vault deletion retry failed.');
+      setNotice(result.status === 'complete' ? 'Messages deleted.' : null);
+    } catch {
+      setError("Deleting couldn't be finished. Try again.");
     } finally {
       setBusy(false);
     }
@@ -147,231 +167,231 @@ export function CreatorVaultControls({
       const recovery = document.manifest.copy_domains.managed_recovery;
       setNotice(
         recovery.copies_may_remain
-          ? 'Export created. Product-managed recovery copies may still remain; the export itself is outside managed Vault deletion after delivery.'
-          : 'Export created. The export itself is outside managed Vault deletion after delivery.',
+          ? 'Download started. Some backup copies may stay on this computer for a while after you delete messages.'
+          : 'Download started.',
       );
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Creator Vault export failed.');
+    } catch {
+      setError("Your messages couldn't be downloaded. Try again.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const confirm = () => {
+    const current = pending;
+    setConfirmOpen(false);
+    if (current?.kind === 'delete_all') void run({ action: 'delete_all' });
+    if (current?.kind === 'disable') void run({ action: 'disable' });
+    if (current?.kind === 'delete_scope') {
+      void run({
+        action: `delete_${current.scope}` as CreatorVaultCommand['action'],
+        target_id: current.targetId,
+      });
     }
   };
 
   if (!isCreator) {
     return (
       <Panel>
-        <Alert severity="info">
-          Creator Vault controls are available only to the creator account owner.
-        </Alert>
+        <Typography component="h2" variant="h6">Stored messages</Typography>
+        <Alert severity="info">Only the account owner can manage stored messages.</Alert>
       </Panel>
     );
   }
 
   const days = Number.parseInt(finiteDays, 10);
   const finiteValid = Number.isInteger(days) && days > 0;
-  const selectiveAction = `delete_${scope}` as CreatorVaultCommand['action'];
 
   return (
     <Panel>
       <Stack spacing={2}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{ justifyContent: 'space-between' }}
-        >
-          <Box>
-            <Typography component="h2" variant="h6">Creator Vault</Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 680 }}>
-              Keep an explicit local archive separately from analytics. Vault is disabled by
-              default, and its lifecycle controls operate on the same canonical retention authority
-              used by ingestion, deletion barriers, restore, and export.
-            </Typography>
-          </Box>
-          <Chip
-            label={loading ? 'Loading' : status?.policy.enabled ? 'Enabled' : 'Disabled'}
-            color={status?.policy.enabled ? 'success' : 'default'}
-            variant="outlined"
-          />
-        </Stack>
+        <Box>
+          <Typography component="h2" variant="h6">Stored messages</Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Your messages are saved only on this computer.
+          </Typography>
+        </Box>
 
-        {error && (
-          <Alert severity="error" role="alert">
-            <AlertTitle>Creator Vault needs attention</AlertTitle>
-            {error}
-          </Alert>
-        )}
-        {notice && <Alert severity="info" role="status">{notice}</Alert>}
+        {error && <Alert severity="error" role="alert">{error}</Alert>}
+        {notice && <Alert severity="success" role="status">{notice}</Alert>}
         {status?.deletion_operation && (
-          <Alert severity="warning">
-            <AlertTitle>Vault cleanup is incomplete</AlertTitle>
-            The deletion barrier is active, so ordinary stale data cannot return, but dependent
-            analytics cleanup has not completed yet.
-            {api.retryDeletion && (
-              <Button disabled={busy} onClick={() => void retryDeletion()} size="small">
-                Retry cleanup
+          <Alert
+            action={api.retryDeletion && (
+              <Button color="inherit" disabled={busy} onClick={() => void retryDeletion()} size="small">
+                Finish deleting
               </Button>
             )}
+            severity="warning"
+          >
+            <AlertTitle>Deleting isn&apos;t finished</AlertTitle>
+            The messages are gone, but some of your numbers still include them.
           </Alert>
+        )}
+
+        {loading && (
+          <Stack spacing={1} role="status" aria-label="Loading stored message settings">
+            <Skeleton width="50%" />
+            <Skeleton height={40} width={220} variant="rounded" />
+          </Stack>
         )}
 
         {!loading && status !== null && (
           <>
             <Divider />
             <Stack spacing={1.5}>
-              <Typography variant="subtitle2">Archive lifecycle</Typography>
+              <Stack direction="row" spacing={2} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography component="h3" variant="subtitle2">Keep a longer archive</Typography>
+                <Chip
+                  color={status.policy.enabled ? 'success' : 'default'}
+                  label={archiveLabel(status.policy)}
+                  size="small"
+                  variant="outlined"
+                />
+              </Stack>
               {status.policy.enabled ? (
-                <>
-                  <Typography variant="body2">
-                    Policy: {sentenceCase(status.policy.policy_type)}
-                    {status.policy.finite_horizon_days !== null
-                      ? ` · ${status.policy.finite_horizon_days} days`
-                      : ''}
-                  </Typography>
+                <Box>
                   <Button
                     disabled={busy}
-                    onClick={() => void run({ action: 'disable' })}
+                    onClick={() => { setPending({ kind: 'disable' }); setConfirmOpen(true); }}
                     variant="outlined"
                   >
-                    Disable Vault
+                    Turn off archive
                   </Button>
-                </>
+                </Box>
               ) : (
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                  <TextField
-                    label="Retention days"
-                    onChange={(event) => setFiniteDays(event.target.value)}
-                    size="small"
-                    type="number"
-                    value={finiteDays}
-                  />
-                  <Button
-                    disabled={busy || !finiteValid}
-                    onClick={() => void run({
-                      action: 'enable_finite',
-                      finite_horizon_days: days,
-                    })}
-                    variant="contained"
-                  >
-                    Enable finite Vault
-                  </Button>
-                  {status.capabilities.indefinite_retention && (
+                <>
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    Older messages are removed automatically. Keep them longer to build your own archive.
+                  </Typography>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ alignItems: { sm: 'center' } }}>
+                    <TextField
+                      label="Days to keep"
+                      onChange={(event) => setFiniteDays(event.target.value)}
+                      size="small"
+                      type="number"
+                      value={finiteDays}
+                    />
                     <Button
-                      disabled={busy}
-                      onClick={() => void run({ action: 'enable_indefinite' })}
-                      variant="outlined"
+                      disabled={busy || !finiteValid}
+                      onClick={() => void run({ action: 'enable_finite', finite_horizon_days: days })}
+                      variant="contained"
                     >
-                      Keep until I delete
+                      Keep messages
                     </Button>
-                  )}
-                </Stack>
+                    {status.capabilities.indefinite_retention && (
+                      <Button
+                        disabled={busy}
+                        onClick={() => void run({ action: 'enable_indefinite' })}
+                        variant="outlined"
+                      >
+                        Keep until I delete
+                      </Button>
+                    )}
+                  </Stack>
+                </>
               )}
             </Stack>
 
             <Divider />
 
             <Stack spacing={1.5}>
-              <Typography variant="subtitle2">Delete managed Vault data</Typography>
+              <Typography component="h3" variant="subtitle2">Download a copy</Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                Deletion writes the existing durable barrier so ordinary replay, reconnect, restore,
-                and rebuild paths cannot silently recreate the deleted scope.
+                Save your stored messages to a file. Deleting messages here doesn&apos;t delete the file.
               </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <FormControl size="small" sx={{ minWidth: 160 }}>
-                  <InputLabel id="vault-delete-scope-label">Scope</InputLabel>
-                  <Select
-                    label="Scope"
-                    labelId="vault-delete-scope-label"
-                    onChange={(event) => setScope(event.target.value as SelectiveScope)}
-                    value={scope}
-                  >
-                    <MenuItem value="message">Message</MenuItem>
-                    <MenuItem value="conversation">Conversation</MenuItem>
-                    <MenuItem value="participant">Participant</MenuItem>
-                  </Select>
-                </FormControl>
-                <TextField
-                  label={`${sentenceCase(scope)} ID`}
-                  onChange={(event) => setTargetId(event.target.value)}
-                  size="small"
-                  value={targetId}
-                />
+              <Box>
                 <Button
-                  color="error"
-                  disabled={busy || !targetId.trim()}
-                  onClick={() => void run({ action: selectiveAction, target_id: targetId.trim() })}
+                  disabled={busy || !status.capabilities.export}
+                  onClick={() => void exportVault()}
                   variant="outlined"
                 >
-                  Delete selected scope
+                  Download messages
                 </Button>
-                <Button
-                  color="error"
-                  disabled={busy}
-                  onClick={() => void run({ action: 'delete_all' })}
-                  variant="contained"
-                >
-                  Delete all Vault data
-                </Button>
-              </Stack>
+              </Box>
             </Stack>
 
             <Divider />
 
-            <Stack spacing={1.5}>
-              <Typography variant="subtitle2">Before unlink or uninstall</Typography>
-              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                A normal uninstall removes the program but leaves the product data directory in
-                place. Preserve the Vault to keep using it after reinstall, export a separate copy,
-                or delete the managed Vault before uninstalling. Account connectivity and the
-                uninstaller are managed separately from this lifecycle choice.
-              </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <FormControl size="small" sx={{ minWidth: 190 }}>
-                  <InputLabel id="vault-unlink-treatment-label">Archive treatment</InputLabel>
-                  <Select
-                    label="Archive treatment"
-                    labelId="vault-unlink-treatment-label"
-                    onChange={(event) => setUnlinkTreatment(
-                      event.target.value as UnlinkArchiveTreatment,
-                    )}
-                    value={unlinkTreatment}
+            <Disclosure label="Delete messages">
+              <Stack spacing={2}>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Deleted messages are removed from this computer and your numbers are updated without
+                  them. Uninstalling the app doesn&apos;t delete them, so delete them here first if you
+                  want them gone.
+                </Typography>
+                <Box>
+                  <Button
+                    color="error"
+                    disabled={busy}
+                    onClick={() => { setPending({ kind: 'delete_all' }); setConfirmOpen(true); }}
+                    variant="outlined"
                   >
-                    <MenuItem value="preserve">Preserve Vault</MenuItem>
-                    <MenuItem value="delete">Delete Vault</MenuItem>
-                  </Select>
-                </FormControl>
-                <Button
-                  color={unlinkTreatment === 'delete' ? 'error' : 'primary'}
-                  disabled={busy}
-                  onClick={() => void run({
-                    action: 'unlink',
-                    unlink_archive_treatment: unlinkTreatment,
-                  })}
-                  variant="outlined"
-                >
-                  Apply unlink treatment
-                </Button>
+                    Delete all messages
+                  </Button>
+                </Box>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Or delete one message, conversation, or person by ID.
+                </Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel id="vault-delete-scope-label">What to delete</InputLabel>
+                    <Select
+                      label="What to delete"
+                      labelId="vault-delete-scope-label"
+                      onChange={(event) => setScope(event.target.value as SelectiveScope)}
+                      value={scope}
+                    >
+                      {(Object.keys(SCOPE_LABELS) as SelectiveScope[]).map((value) => (
+                        <MenuItem key={value} value={value}>{SCOPE_LABELS[value]}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <TextField
+                    label={`${SCOPE_LABELS[scope]} ID`}
+                    onChange={(event) => setTargetId(event.target.value)}
+                    size="small"
+                    value={targetId}
+                  />
+                  <Button
+                    color="error"
+                    disabled={busy || !targetId.trim()}
+                    onClick={() => {
+                      setPending({ kind: 'delete_scope', scope, targetId: targetId.trim() });
+                      setConfirmOpen(true);
+                    }}
+                    variant="outlined"
+                  >
+                    Delete
+                  </Button>
+                </Stack>
               </Stack>
-            </Stack>
-
-            <Divider />
-
-            <Stack spacing={1}>
-              <Typography variant="subtitle2">Export</Typography>
-              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                Export the current managed Vault plus its state-derived manifest. Once delivered,
-                that file is outside Product-managed Vault deletion.
-              </Typography>
-              <Button
-                disabled={busy || !status.capabilities.export}
-                onClick={() => void exportVault()}
-                variant="outlined"
-              >
-                Export Creator Vault
-              </Button>
-            </Stack>
+            </Disclosure>
           </>
         )}
       </Stack>
+
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+        <DialogTitle>
+          {pending?.kind === 'delete_all' ? 'Delete all messages?'
+            : pending?.kind === 'delete_scope' ? SCOPE_TITLES[pending.scope]
+              : 'Turn off the archive?'}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {pending?.kind === 'disable'
+              ? 'Older messages kept only by the archive will be removed from this computer.'
+              : pending?.kind === 'delete_all'
+                ? 'Every stored message for this account is removed from this computer, and your numbers are updated without them. This can’t be undone.'
+                : 'It’s removed from this computer, and your numbers are updated without it. This can’t be undone.'}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
+          <Button color="error" onClick={confirm} variant="contained">
+            {pending?.kind === 'delete_all' ? 'Delete all' : pending?.kind === 'disable' ? 'Turn off' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Panel>
   );
 }

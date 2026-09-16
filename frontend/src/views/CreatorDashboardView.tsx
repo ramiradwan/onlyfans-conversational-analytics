@@ -1,14 +1,11 @@
-import CloudDoneIcon from '@mui/icons-material/CloudDone';
-import CloudOffIcon from '@mui/icons-material/CloudOff';
 import DataObjectIcon from '@mui/icons-material/DataObject';
-import SyncIcon from '@mui/icons-material/Sync';
 import {
   Alert,
   AlertTitle,
   Box,
-  Chip,
+  Button,
   CircularProgress,
-  Divider,
+  Collapse,
   Grid,
   Skeleton,
   Stack,
@@ -22,7 +19,7 @@ import {
 } from '@mui/material';
 import { LineChart, lineClasses } from '@mui/x-charts/LineChart';
 import { PieChart } from '@mui/x-charts/PieChart';
-import { useMemo, useSyncExternalStore } from 'react';
+import { useId, useMemo, useState, useSyncExternalStore } from 'react';
 
 import {
   buildCreatorDashboardModel,
@@ -30,21 +27,29 @@ import {
   type Sentiment,
 } from './creatorDashboardModel';
 import { KpiCard } from '../components/KpiCard';
+import { SetupPrompt } from '../components/SetupPrompt';
 import { Panel } from '../components/ui';
+import type { ProjectionState } from '../protocol';
 import {
   bridgeTransportStore,
   type BridgeTransportState,
 } from '../store/transportStore';
 import { componentTokens } from '../theme/generated/tokens';
 import {
-  canShowCompleteAnalytics,
-  coverageProgressLabel,
   formatAdditiveMetric,
   humanizeCoverageReason,
+  humanizeProjectionReason,
   isConfigurationAligned,
-  isFullyCurrent,
-  metricEvidenceLabel,
+  summarizeMetricEvidence,
+  type MetricEvidence,
 } from '../utils/dataReadiness';
+import {
+  extensionConnection,
+  extensionIssue,
+  protocolErrorText,
+  setupIncomplete,
+  type StatusMessage,
+} from '../utils/statusCopy';
 
 const CHART_HEIGHT = 284;
 const NUMBER_FORMAT = new Intl.NumberFormat('en-US');
@@ -89,8 +94,8 @@ type CreatorDashboardState = Omit<
     | 'required_history_settings_revision'
     | 'status'
   > | null;
-  protocolError: Pick<NonNullable<BridgeTransportState['protocolError']>, 'detail' | 'fatal'> | null;
-  system: Pick<NonNullable<BridgeTransportState['system']>, 'detail' | 'readiness'> | null;
+  protocolError: Pick<NonNullable<BridgeTransportState['protocolError']>, 'code' | 'fatal'> | null;
+  system: Pick<NonNullable<BridgeTransportState['system']>, 'readiness'> | null;
 };
 
 interface CreatorDashboardStore {
@@ -102,108 +107,90 @@ interface CreatorDashboardViewProps {
   store?: CreatorDashboardStore;
 }
 
-interface IssuePresentation {
-  detail: string;
-  severity: 'error' | 'warning';
-  title: string;
-}
-
-function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): IssuePresentation | null {
+function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): StatusMessage | null {
   if (state.protocolError !== null) {
     return {
-      detail: state.protocolError.detail,
+      detail: protocolErrorText(state.protocolError),
       severity: state.protocolError.fatal ? 'error' : 'warning',
-      title: 'Bridge communication error',
+      title: 'Connection problem',
     };
   }
   if (state.readModelState === 'resyncing') {
     return {
       detail:
         state.viewRevision === null
-          ? 'Refreshing snapshot. Waiting for a complete analytics snapshot.'
-          : 'Refreshing snapshot. Showing the latest complete snapshot while a fresh snapshot is requested.',
-      severity: 'warning',
-      title: 'Refreshing analytics',
+          ? 'Your numbers will appear in a moment.'
+          : 'Showing your last numbers until the refresh finishes.',
+      severity: 'info',
+      title: 'Refreshing your numbers',
     };
   }
   if (state.readModelState === 'degraded') {
-    return {
-      detail:
-        state.viewRevision === null
-          ? state.system?.detail ?? 'Updates paused. Analytics are unavailable until the Bridge reconnects.'
-          : state.system?.detail ?? 'Updates paused. Showing cached analytics until the Bridge reconnects.',
-      severity: 'warning',
-      title: state.viewRevision === null ? 'Analytics unavailable' : 'Realtime updates paused',
-    };
+    return state.viewRevision === null
+      ? {
+          detail: 'Your numbers will appear once the connection is back.',
+          severity: 'warning',
+          title: 'Numbers unavailable',
+        }
+      : {
+          detail: 'Showing your last numbers while reconnecting.',
+          severity: 'warning',
+          title: 'Updates paused',
+        };
   }
   if (
     state.viewRevision === null &&
     (state.connection === 'disconnected' || state.connection === 'error')
   ) {
     return {
-      detail: 'Analytics are unavailable until the Bridge reconnects.',
+      detail: 'Your numbers will appear once the connection is back.',
       severity: 'error',
-      title: 'Analytics unavailable',
+      title: 'Numbers unavailable',
     };
   }
   if (state.system?.readiness === 'unavailable') {
     return {
-      detail: state.system.detail ?? 'The processing service is currently unavailable.',
+      detail: humanizeProjectionReason(
+        state.projection.reason,
+        "Your numbers can't be shown right now.",
+      ),
       severity: 'error',
-      title: 'Analytics unavailable',
+      title: 'Numbers unavailable',
     };
   }
   if (state.viewRevision === null) return null;
   if (state.projection.status === 'unavailable') {
     return {
-      detail: 'The analytics projection is unavailable. Conversation capture can continue while it recovers.',
+      detail: "Your numbers can't be shown right now. Messages keep syncing in the meantime.",
       severity: 'error',
-      title: 'Analytics unavailable',
+      title: 'Numbers unavailable',
     };
   }
-  if (state.viewRevision !== null && state.projection.status === 'pending') {
+  if (state.projection.status === 'pending') {
     return {
-      detail: 'Brain is building a consistent projection. Counts remain unavailable until it activates.',
-      severity: 'warning',
-      title: 'Analytics processing',
+      detail: 'Counts appear as soon as they are ready.',
+      severity: 'info',
+      title: 'Preparing your numbers',
     };
   }
+  if (setupIncomplete(state.coverage)) return null;
   if (state.coverage.phase === 'blocked') {
     return {
-      detail: humanizeCoverageReason(state.coverage.reason, 'Historical sync is blocked.'),
+      detail: humanizeCoverageReason(state.coverage.reason, 'Message history sync stopped.'),
       severity: 'warning',
-      title: 'Historical coverage needs attention',
+      title: 'Message history needs attention',
     };
   }
-  if (state.system?.readiness === 'degraded') {
-    return {
-      detail: state.system.detail ?? 'Analytics processing is operating in a degraded state.',
-      severity: 'warning',
-      title: 'Analytics processing degraded',
-    };
+  const connection = extensionConnection(state.agent);
+  if (connection !== 'applying_settings') {
+    const issue = extensionIssue(connection);
+    if (issue !== null) return issue;
   }
-  if (state.agent?.degraded_reason) {
+  if (state.connection === 'disconnected' || state.connection === 'error') {
     return {
-      detail: state.agent.degraded_reason,
+      detail: 'Showing your last numbers while reconnecting.',
       severity: 'warning',
-      title: 'Agent needs attention',
-    };
-  }
-  if (state.agent?.status === 'stale' || state.agent?.status === 'disconnected') {
-    return {
-      detail: 'New platform activity may be delayed until the Agent reconnects.',
-      severity: 'warning',
-      title: state.agent.status === 'stale' ? 'Agent connection is stale' : 'Agent disconnected',
-    };
-  }
-  if (
-    state.viewRevision !== null &&
-    (state.connection === 'disconnected' || state.connection === 'error')
-  ) {
-    return {
-      detail: 'Updates paused. Showing the latest complete snapshot while the Bridge reconnects.',
-      severity: 'warning',
-      title: 'Realtime updates paused',
+      title: 'Updates paused',
     };
   }
   return null;
@@ -283,6 +270,103 @@ function ActivityTable({ activity }: { activity: readonly MessageActivityPoint[]
   );
 }
 
+const LOCAL_DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+const LOCAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+
+function formatLocal(date: string | null, format: Intl.DateTimeFormat): string | null {
+  if (date === null) return null;
+  const timestamp = Date.parse(date);
+  return Number.isFinite(timestamp) ? format.format(timestamp) : null;
+}
+
+function NumbersBasis({
+  evidence,
+  messagesCounted,
+  projection,
+}: {
+  evidence: MetricEvidence;
+  messagesCounted: number | null;
+  projection: Pick<ProjectionState, 'canonical_revision'>;
+}) {
+  const [open, setOpen] = useState(false);
+  const detailsId = useId();
+  const updated = formatLocal(evidence.asOf, LOCAL_DATE_TIME_FORMAT);
+  const start = formatLocal(evidence.observedStart, LOCAL_DATE_FORMAT);
+  const end = formatLocal(evidence.observedEnd, LOCAL_DATE_FORMAT);
+  const rows = [
+    {
+      label: 'Counts include',
+      value: evidence.partial ? 'Messages synced so far' : 'Your full message history',
+    },
+    {
+      label: 'Messages counted',
+      value: messagesCounted === null ? 'Not available' : NUMBER_FORMAT.format(messagesCounted),
+    },
+    {
+      label: 'Message dates',
+      value: start && end ? `${start} – ${end}` : 'No messages yet',
+    },
+    {
+      label: 'Data version',
+      value:
+        projection.canonical_revision > evidence.revision
+          ? `${evidence.revision} (updating to ${projection.canonical_revision})`
+          : String(evidence.revision),
+    },
+  ];
+
+  return (
+    <Stack spacing={1}>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', rowGap: 0.5 }}
+      >
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          {evidence.partial
+            ? 'History is still syncing, so these numbers will grow.'
+            : 'Based on your full message history.'}
+          {updated ? ` Updated ${updated}.` : ''}
+        </Typography>
+        <Button
+          aria-controls={detailsId}
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          size="small"
+        >
+          {open ? 'Hide details' : 'Details'}
+        </Button>
+      </Stack>
+      <Collapse in={open} id={detailsId}>
+        <Box
+          component="dl"
+          sx={{
+            columnGap: 3,
+            display: 'grid',
+            gridTemplateColumns: 'auto 1fr',
+            m: 0,
+            rowGap: 0.5,
+          }}
+        >
+          {rows.map((row) => (
+            <Box key={row.label} sx={{ display: 'contents' }}>
+              <Typography component="dt" variant="body2" sx={{ color: 'text.secondary' }}>
+                {row.label}
+              </Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0 }}>
+                {row.value}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      </Collapse>
+    </Stack>
+  );
+}
+
 export default function CreatorDashboardView({
   store = bridgeTransportStore,
 }: CreatorDashboardViewProps) {
@@ -300,34 +384,8 @@ export default function CreatorDashboardView({
       state.agent as BridgeTransportState['agent'],
     ),
   };
-  const completeAnalytics = canShowCompleteAnalytics(readiness);
   const detailedAnalyticsAvailable = false;
   const issue = getIssue(state);
-  const isResyncing = state.readModelState === 'resyncing';
-  const statusLabel = issue
-    ? isResyncing
-      ? 'Resyncing'
-      : hasSnapshot
-        ? 'Cached'
-        : 'Unavailable'
-    : hasSnapshot && isFullyCurrent(readiness)
-      ? 'Up to date'
-      : hasSnapshot
-        ? coverageProgressLabel(state.coverage)
-      : 'Connecting';
-  const statusIcon = issue ? (
-    isResyncing ? (
-      <SyncIcon />
-    ) : (
-      <CloudOffIcon />
-    )
-  ) : hasSnapshot && isFullyCurrent(readiness) ? (
-    <CloudDoneIcon />
-  ) : hasSnapshot ? (
-    <SyncIcon />
-  ) : (
-    <SyncIcon />
-  );
   const kpis = [
     { title: 'Total conversations', value: model.analytics?.total_conversations },
     { title: 'Total messages', value: model.analytics?.total_messages },
@@ -335,6 +393,10 @@ export default function CreatorDashboardView({
     { title: 'Outbound messages', value: model.analytics?.outbound_messages },
   ];
   const sentimentTotal = model.sentimentCounts.reduce((total, item) => total + item.count, 0);
+  const showSetup = hasSnapshot && setupIncomplete(state.coverage);
+  const hasCounts = kpis.some((kpi) => (kpi.value?.value ?? 0) > 0);
+  const showNumbers = !showSetup || hasCounts;
+  const evidence = summarizeMetricEvidence(kpis.map((kpi) => kpi.value));
 
   return (
     <Box
@@ -350,54 +412,9 @@ export default function CreatorDashboardView({
         spacing={3}
         sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}
       >
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{
-            alignItems: { sm: 'flex-end' },
-            justifyContent: 'space-between'
-          }}>
-          <Box>
-            <Typography component="h1" variant="h4">
-              Creator dashboard
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: 'text.secondary',
-                mt: 0.5
-              }}>
-              Bounded conversation analytics with explicit coverage and freshness.
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: 'text.secondary',
-                display: 'block',
-                mt: 0.5
-              }}>
-              Coverage: {state.coverage.status} · As of{' '}
-              {state.coverage.as_of ? formatUtcDateTime(state.coverage.as_of) : 'not established'} ·
-              Projection revision {state.projection.projected_revision}/
-              {state.projection.canonical_revision}
-            </Typography>
-          </Box>
-          <Chip
-            aria-live="polite"
-            color={
-              issue
-                ? issue.severity === 'error'
-                  ? 'error'
-                  : 'warning'
-                : isFullyCurrent(readiness)
-                  ? 'success'
-                  : 'warning'
-            }
-            icon={statusIcon}
-            label={statusLabel}
-            variant="outlined"
-          />
-        </Stack>
+        <Typography component="h1" variant="h4">
+          Dashboard
+        </Typography>
 
         {issue !== null && (
           <Alert severity={issue.severity} role="alert">
@@ -406,6 +423,9 @@ export default function CreatorDashboardView({
           </Alert>
         )}
 
+        {showSetup && <SetupPrompt title="Finish setup to see your numbers" />}
+
+        {showNumbers && (
         <Grid container spacing={{ xs: 2, md: 3 }} aria-busy={!hasSnapshot}>
           {kpis.map((kpi) => (
             <Grid key={kpi.title} size={{ xs: 12, sm: 6, lg: 3 }}>
@@ -413,7 +433,6 @@ export default function CreatorDashboardView({
                 grow
                 isLoading={!hasSnapshot}
                 title={kpi.title}
-                detail={metricEvidenceLabel(kpi.value)}
                 value={formatAdditiveMetric(kpi.value, readiness, (value) =>
                   NUMBER_FORMAT.format(value),
                 )}
@@ -421,6 +440,18 @@ export default function CreatorDashboardView({
             </Grid>
           ))}
 
+          {hasSnapshot && evidence !== null && (
+            <Grid size={12}>
+              <NumbersBasis
+                evidence={evidence}
+                messagesCounted={model.analytics?.total_messages?.sample_size ?? null}
+                projection={state.projection}
+              />
+            </Grid>
+          )}
+
+          {detailedAnalyticsAvailable && (
+          <>
           <Grid size={{ xs: 12, lg: 8 }} sx={{ display: 'flex' }}>
             <Panel sx={{ flex: 1, minWidth: 0 }}>
               <Box>
@@ -436,12 +467,6 @@ export default function CreatorDashboardView({
 
               {!hasSnapshot ? (
                 <ChartSkeleton />
-              ) : !detailedAnalyticsAvailable ? (
-                <EmptyChart>
-                  {completeAnalytics
-                    ? 'Daily series are not included in the bounded Bridge snapshot.'
-                    : 'Trends become available only after historical coverage and projection are complete.'}
-                </EmptyChart>
               ) : model.messageActivity.length === 0 ? (
                 <EmptyChart>No message activity is available for the complete range.</EmptyChart>
               ) : (
@@ -522,10 +547,6 @@ export default function CreatorDashboardView({
 
               {!hasSnapshot ? (
                 <ChartSkeleton />
-              ) : !detailedAnalyticsAvailable ? (
-                <EmptyChart>
-                  Sentiment requires complete historical coverage and a projected sentiment series.
-                </EmptyChart>
               ) : sentimentTotal === 0 ? (
                 <EmptyChart>No sentiment classifications are available for the complete range.</EmptyChart>
               ) : (
@@ -621,10 +642,6 @@ export default function CreatorDashboardView({
                     <Skeleton height={48} key={row} variant="rounded" />
                   ))}
                 </Stack>
-              ) : !detailedAnalyticsAvailable ? (
-                <EmptyChart>
-                  Conversation ranking requires complete per-conversation message aggregates.
-                </EmptyChart>
               ) : model.mostActiveConversations.length === 0 ? (
                 <EmptyChart>No conversations are available for the complete range.</EmptyChart>
               ) : (
@@ -682,53 +699,10 @@ export default function CreatorDashboardView({
             </Panel>
           </Grid>
 
-          <Grid size={{ xs: 12, lg: 5 }} sx={{ display: 'flex' }}>
-            <Panel sx={{ flex: 1 }}>
-              <Stack
-                direction="row"
-                sx={{
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}>
-                <Box>
-                  <Typography component="h2" variant="h6">
-                    Ask your data
-                  </Typography>
-                  <Typography variant="body2" sx={{
-                    color: 'text.secondary'
-                  }}>
-                    Natural-language analytics
-                  </Typography>
-                </Box>
-                <Chip label="Not available yet" size="small" variant="outlined" />
-              </Stack>
-              <Divider />
-              <Stack
-                spacing={1.5}
-                sx={{
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flex: 1,
-                  minHeight: 220,
-                  textAlign: 'center'
-                }}>
-                <DataObjectIcon aria-hidden="true" color="disabled" sx={{ fontSize: 40 }} />
-                <Typography sx={{
-                  fontWeight: 700
-                }}>Ask is not connected</Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'text.secondary',
-                    maxWidth: 360
-                  }}>
-                  The canonical Bridge protocol does not expose a query service, so this dashboard
-                  does not generate answers or accept prompts.
-                </Typography>
-              </Stack>
-            </Panel>
-          </Grid>
+          </>
+          )}
         </Grid>
+        )}
 
         {!hasSnapshot && (
           <Stack
@@ -741,7 +715,7 @@ export default function CreatorDashboardView({
             }}>
             <CircularProgress aria-hidden="true" size={16} />
             <Typography variant="body2">
-              Loading dashboard. Waiting for the first analytics snapshot…
+              Loading your numbers…
             </Typography>
           </Stack>
         )}

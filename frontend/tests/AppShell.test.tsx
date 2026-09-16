@@ -101,13 +101,13 @@ describe('application shell routing and navigation', () => {
     ).toBe('/analytics');
     expect(
       within(desktopNavigation)
-        .getByRole('link', { name: 'Graph Explorer', hidden: true })
+        .getByRole('link', { name: 'Graph explorer', hidden: true })
         .getAttribute('href'),
     ).toBe('/graph-explorer');
     expect(within(mobileNavigation).getByRole('link', { name: 'Dashboard' })).toBeTruthy();
     expect(within(mobileNavigation).getByRole('link', { name: 'Inbox' })).toBeTruthy();
     expect(within(mobileNavigation).getByRole('link', { name: 'Analytics' })).toBeTruthy();
-    expect(within(mobileNavigation).getByRole('link', { name: 'Graph Explorer' })).toBeTruthy();
+    expect(within(mobileNavigation).getByRole('link', { name: 'Graph explorer' })).toBeTruthy();
 
     fireEvent.click(within(mobileNavigation).getByRole('link', { name: 'Inbox' }));
     expect(screen.getByLabelText('Current route').textContent).toBe('/inbox');
@@ -130,7 +130,7 @@ describe('application shell routing and navigation', () => {
         within(navigation).queryByRole('link', { name: 'Analytics', hidden: true }),
       ).toBeNull();
       expect(
-        within(navigation).queryByRole('link', { name: 'Graph Explorer', hidden: true }),
+        within(navigation).queryByRole('link', { name: 'Graph explorer', hidden: true }),
       ).toBeNull();
     }
   });

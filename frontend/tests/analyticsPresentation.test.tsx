@@ -57,9 +57,9 @@ describe('analytics presentation states', () => {
       status: 'loading',
       data: null,
       isRefreshing: false,
-      message: 'Loading canonical analytics…',
+      message: 'Loading your analytics…',
     });
-    expect(screen.getByRole('status').textContent).toContain('Loading canonical analytics');
+    expect(screen.getByRole('status').textContent).toContain('Loading your analytics');
   });
 
   it('renders unavailable', () => {
@@ -67,20 +67,20 @@ describe('analytics presentation states', () => {
       status: 'unavailable',
       data: null,
       isRefreshing: false,
-      message: 'Canonical analytics are not available yet.',
+      message: "Analytics aren't available for this account yet.",
     });
     expect(screen.getByText('Analytics are unavailable')).toBeTruthy();
   });
 
   it('labels baseline output explicitly', () => {
     dashboard(storyBaselineState);
-    expect(screen.getByText('Directional baseline')).toBeTruthy();
-    expect(screen.getByText(/not calibrated production analysis/)).toBeTruthy();
+    expect(screen.getByText('Early estimates')).toBeTruthy();
+    expect(screen.getByText(/early estimates\./)).toBeTruthy();
   });
 
   it('renders available output without a baseline label', () => {
     dashboard(storyAvailableState);
-    expect(screen.queryByText('Directional baseline')).toBeNull();
+    expect(screen.queryByText('Early estimates')).toBeNull();
     expect(screen.getAllByText('12').length).toBeGreaterThan(0);
   });
 
@@ -96,10 +96,10 @@ describe('analytics presentation states', () => {
       status: 'error',
       data: storyAnalyticsModel,
       isRefreshing: false,
-      message: 'Canonical analytics could not be loaded.',
+      message: "Your analytics couldn't be loaded.",
       previousStatus: 'model',
     });
-    expect(screen.getByRole('alert').textContent).toContain('Refresh failed');
+    expect(screen.getByRole('alert').textContent).toContain("Couldn't refresh");
     expect(screen.getAllByText('12').length).toBeGreaterThan(0);
   });
 
@@ -108,11 +108,11 @@ describe('analytics presentation states', () => {
       status: 'error',
       data: storyAnalyticsModel,
       isRefreshing: false,
-      message: 'Canonical analytics could not be loaded.',
+      message: "Your analytics couldn't be loaded.",
       previousStatus: 'baseline',
     });
-    expect(screen.getByText('Directional baseline')).toBeTruthy();
-    expect(screen.getByText(/retained frame is a directional baseline/)).toBeTruthy();
+    expect(screen.getByText('Early estimates')).toBeTruthy();
+    expect(screen.getByText(/results below are early estimates/)).toBeTruthy();
   });
 });
 
@@ -142,10 +142,10 @@ describe('analytics units and accessible trend detail', () => {
       within(screen.getByRole('group', { name: 'Average handling time metric' })).getByText(expected),
     ).toBeTruthy();
     expect(
-      within(screen.getByRole('region', { name: 'Sentiment over time' })).getByText(expected),
+      within(screen.getByRole('region', { name: 'Mood over time' })).getByText(expected),
     ).toBeTruthy();
     expect(
-      within(screen.getByRole('region', { name: 'Leading topics' })).getByText(expected),
+      within(screen.getByRole('region', { name: 'Top topics' })).getByText(expected),
     ).toBeTruthy();
     expect(screen.queryByText(/selected account and date range/i)).toBeNull();
   });
@@ -197,10 +197,10 @@ describe('analytics units and accessible trend detail', () => {
       />,
     );
 
-    const topicTable = screen.getByRole('table', { name: 'Topic magnitude and trend' });
-    const responsePanel = screen.getByRole('region', { name: 'Response metrics' });
+    const topicTable = screen.getByRole('table', { name: 'Topics and trend' });
+    const responsePanel = screen.getByRole('region', { name: 'Your replies' });
     const sentimentPanel = screen.getByRole('region', {
-      name: 'Sentiment and engagement trend',
+      name: 'Mood over time',
     });
     expect(topicTable.textContent).toContain(formatPercentValue(37.5));
     expect(topicTable.textContent).toContain(formatPercentValue(12.5));
@@ -236,7 +236,7 @@ describe('analytics units and accessible trend detail', () => {
 
     fireEvent.click(screen.getByText('View data table'));
     expect(
-      screen.getByRole('table', { name: 'Sentiment and engagement trend data' }),
+      screen.getByRole('table', { name: 'Mood over time data' }),
     ).toBeTruthy();
   });
 });

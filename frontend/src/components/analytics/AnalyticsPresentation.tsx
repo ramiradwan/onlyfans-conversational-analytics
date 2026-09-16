@@ -63,7 +63,7 @@ export function AnalyticsPresentation({
           <Typography component="p" variant="body1" sx={{
             color: 'text.secondary'
           }}>
-            Inspect sentiment, response behavior, and topic magnitude without inferred outcomes.
+            How your fans feel, how you reply, and what conversations are about.
           </Typography>
         </Box>
         <AnalyticsFilterRow
@@ -75,23 +75,23 @@ export function AnalyticsPresentation({
           {model && (
             <AnalyticsGrid>
               <ChartPanel
-                title="Sentiment and engagement trend"
-                description="Sentiment uses a −1 to +1 diverging scale. Engagement remains unavailable until a bounded trend is projected."
+                title="Mood over time"
+                description="Average mood of messages each day, from −1 (negative) to +1 (positive)."
                 windowSource={resolvedWindowSources!.sentimentTrend}
               >
                 <SentimentEngagementTrend sentiment={model.sentimentTrend} />
               </ChartPanel>
               <ChartPanel
-                title="Response metrics"
-                description="Percent fields retain their canonical units."
+                title="Your replies"
+                description="How often and how quickly you reply."
                 windowSource={resolvedWindowSources!.responseMetrics}
               >
                 <ResponseOverview metrics={model.response} />
               </ChartPanel>
               <FullWidth>
                 <ChartPanel
-                  title="Topic magnitude"
-                  description="All meaningful topic classes remain in a compact table rather than a color wheel."
+                  title="Topics"
+                  description="What conversations are about."
                   windowSource={resolvedWindowSources!.topics}
                 >
                   <TopicsTable topics={model.topics} />

@@ -75,7 +75,7 @@ export function TopicsTable({ topics }: TopicsTableProps) {
 
   return (
     <Scroller>
-      <table aria-label="Topic magnitude and trend">
+      <table aria-label="Topics and trend">
         <thead>
           <tr>
             <th scope="col">Topic</th>

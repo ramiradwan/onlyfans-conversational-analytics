@@ -1,4 +1,4 @@
-import { Alert, Button, Stack, TextField, Typography } from '@mui/material';
+import { Alert, AlertTitle, Box, Button, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 
 import { Panel } from './ui';
@@ -10,16 +10,17 @@ import {
 } from '../services/capabilityLicenseApi';
 
 function safeMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Activation could not be checked. Try again.';
+  return error instanceof Error ? error.message : "Activation couldn't be checked. Try again.";
 }
 
+/** Full activation section of Settings: activation status and activation code entry. */
 export function CommercialActivationControls({
   api = capabilityLicenseApi,
 }: {
   api?: CapabilityLicenseApi;
 }) {
   const [readiness, setReadiness] = useState<CapabilityLicenseReadiness | null>(null);
-  const [continuation, setContinuation] = useState('');
+  const [code, setCode] = useState('');
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const operation = useRef<AbortController | null>(null);
@@ -46,9 +47,9 @@ export function CommercialActivationControls({
   }, [api]);
 
   const submit = async () => {
-    const value = continuation.trim();
+    const value = code.trim();
     if (!CAPABILITY_LICENSE_CONTINUATION_PATTERN.test(value)) {
-      setError('Enter the complete activation continuation and try again.');
+      setError('Enter the full activation code and try again.');
       return;
     }
 
@@ -62,7 +63,7 @@ export function CommercialActivationControls({
     try {
       await api.redeem(value, controller.signal);
       if (controller.signal.aborted) return;
-      setContinuation('');
+      setCode('');
     } catch (cause) {
       if (controller.signal.aborted) return;
       redemptionFailure = cause;
@@ -73,7 +74,7 @@ export function CommercialActivationControls({
       if (controller.signal.aborted) return;
       setReadiness(next);
       if (next.commercial_authority === 'active') {
-        setContinuation('');
+        setCode('');
         setError(null);
       } else if (redemptionFailure !== null) {
         setError(safeMessage(redemptionFailure));
@@ -100,37 +101,26 @@ export function CommercialActivationControls({
         <Typography component="h2" variant="h6">Full activation</Typography>
 
         {checking && (
-          <Alert severity="info" role="status">
-            <Typography component="div" sx={{ fontWeight: 600 }}>Checking activation</Typography>
-            Checking current Full activation and licensed-analysis readiness on this computer.
-          </Alert>
+          <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>
+            Checking activation…
+          </Typography>
         )}
 
         {!checking && fullReady && (
-          <Alert severity="success" role="status">
-            <Typography component="div" sx={{ fontWeight: 600 }}>Full mode is ready</Typography>
-            Full activation is active and licensed analysis is ready.
-          </Alert>
+          <Alert severity="success" role="status">Full analytics is on.</Alert>
         )}
 
         {!checking && activeButBlocked && (
           <Alert severity="warning" role="status">
-            <Typography component="div" sx={{ fontWeight: 600 }}>Full activation active</Typography>
-            Activation is active, but licensed analysis is not available right now. Existing desktop data remains available.
+            <AlertTitle>New messages aren&apos;t being analyzed</AlertTitle>
+            Your activation is fine, but analysis can&apos;t run right now. Your existing numbers are
+            still available.
           </Alert>
         )}
 
-        {!checking && activationUnavailable && (
+        {!checking && (activationUnavailable || readiness === null) && (
           <Alert severity="warning" role="status">
-            <Typography component="div" sx={{ fontWeight: 600 }}>Full activation needs attention</Typography>
-            Current activation could not be confirmed. Existing verified activation is left unchanged.
-          </Alert>
-        )}
-
-        {!checking && readiness === null && (
-          <Alert severity="warning" role="status">
-            <Typography component="div" sx={{ fontWeight: 600 }}>Full activation needs attention</Typography>
-            Activation status could not be checked. Existing verified activation is left unchanged.
+            Your activation couldn&apos;t be checked. Nothing has changed.
           </Alert>
         )}
 
@@ -138,27 +128,32 @@ export function CommercialActivationControls({
 
         {!checking && activationRequired && (
           <Stack spacing={1.5}>
-            <Typography component="h3" variant="subtitle1">Full activation required</Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              Paste the activation continuation from secure setup. This computer will verify it before Full readiness changes.
+              Activate to see mood, reply, and topic insights for your conversations. To get a code,
+              open secure setup and choose Activate Full. Codes expire after a few minutes, so paste
+              yours right away.
             </Typography>
             <TextField
               autoComplete="off"
-              label="Activation continuation"
+              label="Activation code"
               onChange={(event) => {
-                setContinuation(event.target.value);
+                setCode(event.target.value);
                 if (error) setError(null);
               }}
-              value={continuation}
+              value={code}
             />
-            <Button onClick={() => void submit()} variant="contained">
-              Continue activation
-            </Button>
+            <Box>
+              <Button onClick={() => void submit()} variant="contained">
+                Activate
+              </Button>
+            </Box>
           </Stack>
         )}
 
-        {!checking && (activationUnavailable || readiness === null) && (
-          <Button onClick={checkReadiness} variant="outlined">Check again</Button>
+        {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
+          <Box>
+            <Button onClick={checkReadiness} variant="outlined">Check again</Button>
+          </Box>
         )}
       </Stack>
     </Panel>

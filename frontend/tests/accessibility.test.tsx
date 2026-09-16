@@ -61,7 +61,7 @@ afterEach(() => {
       status: 'loading',
       data: null,
       isRefreshing: false,
-      message: 'Loading canonical analytics…',
+      message: 'Loading your analytics…',
     },
     dateRange: { startDate: '', endDate: '' },
   });

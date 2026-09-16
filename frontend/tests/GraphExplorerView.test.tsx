@@ -20,7 +20,7 @@ describe('GraphExplorerView projection truthfulness', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Graph explorer' })).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toContain('Graph data is not ready');
+    expect(screen.getByRole('alert').textContent).toContain('Not ready yet');
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.queryByText(/AliceFan|BobSubscriber|engagement score/i)).toBeNull();
   });
@@ -81,9 +81,7 @@ describe('GraphExplorerView projection truthfulness', () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole('alert').textContent).toContain(
-      'Interactive graph queries are not enabled in this Beta',
-    );
+    expect(screen.getByRole('alert').textContent).toContain('Not available yet');
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
@@ -144,7 +142,7 @@ describe('GraphExplorerView projection truthfulness', () => {
     );
 
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('The local graph projection needs attention');
+    expect(alert.textContent).toContain("Your conversations couldn't be prepared right now.");
     expect(alert.textContent).not.toContain('projection_degraded');
   });
 });

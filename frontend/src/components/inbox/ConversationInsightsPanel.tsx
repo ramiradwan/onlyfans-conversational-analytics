@@ -119,7 +119,7 @@ export function ConversationInsightsPanel({
       )}
 
       {analyticsState.status === 'unavailable' && (
-        <Alert severity="info">Canonical conversation insights are unavailable.</Alert>
+        <Alert severity="info">Insights aren&apos;t available yet.</Alert>
       )}
 
       {analyticsState.status === 'error' && (
@@ -128,7 +128,7 @@ export function ConversationInsightsPanel({
 
       {isBaselineFrame && (
         <Alert severity="warning" icon={false}>
-          Directional baseline · not calibrated
+          Early estimates
         </Alert>
       )}
 
@@ -136,7 +136,7 @@ export function ConversationInsightsPanel({
         <Typography sx={{
           color: 'text.secondary'
         }}>
-          Choose a conversation to inspect its projected signals.
+          Choose a conversation to see its insights.
         </Typography>
       )}
 
@@ -197,7 +197,7 @@ export function ConversationInsightsPanel({
             ) : (
               <Typography variant="body2" sx={{
                 color: 'text.secondary'
-              }}>No projected topics.</Typography>
+              }}>No topics yet.</Typography>
             )}
           </Section>
 
@@ -217,7 +217,7 @@ export function ConversationInsightsPanel({
             ) : (
               <Typography variant="body2" sx={{
                 color: 'text.secondary'
-              }}>No projected engagement states.</Typography>
+              }}>No engagement data yet.</Typography>
             )}
           </Section>
 

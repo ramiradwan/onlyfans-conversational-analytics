@@ -135,23 +135,23 @@ export function CreatorDashboardPresentation({
               <MetricRow items={metricItems(model, resolvedWindowSources!)} />
               <Bento>
                 <ChartPanel
-                  title="Sentiment over time"
-                  description="Daily baseline score; polarity is encoded by label, symbol, and color."
+                  title="Mood over time"
+                  description="Average mood of messages each day."
                   windowSource={resolvedWindowSources!.sentimentTrend}
                 >
                   <SentimentEngagementTrend sentiment={model.sentimentTrend} />
                 </ChartPanel>
                 <ChartPanel
-                  title="Response health"
-                  description="Counts and units are preserved from the canonical projection."
+                  title="Your replies"
+                  description="How often and how quickly you reply."
                   windowSource={resolvedWindowSources!.responseMetrics}
                 >
                   <ResponseOverview metrics={model.response} />
                 </ChartPanel>
                 <TopicsCell>
                   <ChartPanel
-                    title="Leading topics"
-                    description="Compact magnitude table; percentages are already expressed on a 0–100 scale."
+                    title="Top topics"
+                    description="What conversations are about most often."
                     windowSource={resolvedWindowSources!.topics}
                   >
                     <TopicsTable topics={model.topics.slice(0, 7)} />
