@@ -459,7 +459,7 @@ export function SentimentEngagementTrend({
       <Details>
         <summary>View data table</summary>
         <TableScroller>
-          <table aria-label="Mood over time data">
+          <table aria-label="Message tone over time data">
             <thead>
               <tr>
                 <th scope="col">Date</th>

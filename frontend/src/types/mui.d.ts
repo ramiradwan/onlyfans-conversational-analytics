@@ -1,8 +1,10 @@
 import '@mui/material/Button';
 import '@mui/material/Chip';
 import '@mui/material/styles';
+import '@mui/material/Typography';
 import type { PaletteColor, PaletteColorOptions, Theme as MuiTheme } from '@mui/material/styles';
 import type { CSSProperties } from '@mui/system';
+import type { CSSProperties as ReactCSSProperties } from 'react';
 
 import type { brandPalette, brandTypography } from '../theme/generated/tokens';
 
@@ -19,10 +21,12 @@ declare module '@mui/material/styles' {
     brandPalette: typeof brandPalette;
     brandTypography: typeof brandTypography;
     effects: {
+      ambientGlow(theme: MuiTheme): BridgeEffectStyles;
       cardBorder(theme: MuiTheme): BridgeEffectStyles;
       chartFrame(theme: MuiTheme): BridgeEffectStyles;
       glassmorphism(theme: MuiTheme): BridgeEffectStyles;
       headerBorder(theme: MuiTheme): BridgeEffectStyles;
+      overlay(theme: MuiTheme): BridgeEffectStyles;
       sideBorder(theme: MuiTheme): BridgeEffectStyles;
     };
   }
@@ -31,12 +35,24 @@ declare module '@mui/material/styles' {
     brandPalette?: typeof brandPalette;
     brandTypography?: typeof brandTypography;
     effects?: {
+      ambientGlow?(theme: MuiTheme): BridgeEffectStyles;
       cardBorder?(theme: MuiTheme): BridgeEffectStyles;
       chartFrame?(theme: MuiTheme): BridgeEffectStyles;
       glassmorphism?(theme: MuiTheme): BridgeEffectStyles;
       headerBorder?(theme: MuiTheme): BridgeEffectStyles;
+      overlay?(theme: MuiTheme): BridgeEffectStyles;
       sideBorder?(theme: MuiTheme): BridgeEffectStyles;
     };
+  }
+
+  interface TypographyVariants {
+    kpi: ReactCSSProperties;
+    metric: ReactCSSProperties;
+  }
+
+  interface TypographyVariantsOptions {
+    kpi?: ReactCSSProperties;
+    metric?: ReactCSSProperties;
   }
 
   interface Palette {
@@ -47,7 +63,9 @@ declare module '@mui/material/styles' {
       subtle: string;
       glass: string;
       elevation: string;
+      overlay: string;
       rim: string;
+      glow: string;
     };
     communication: {
       incomingSurface: string;
@@ -89,6 +107,13 @@ declare module '@mui/material/Button' {
   interface ButtonPropsColorOverrides {
     accent: true;
     calm: true;
+  }
+}
+
+declare module '@mui/material/Typography' {
+  interface TypographyPropsVariantOverrides {
+    kpi: true;
+    metric: true;
   }
 }
 

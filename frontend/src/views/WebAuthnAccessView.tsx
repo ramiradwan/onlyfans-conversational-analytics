@@ -23,7 +23,7 @@ export function WebAuthnAccessView({
       await api.login();
       onAuthenticated();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Passkey authentication could not be completed.');
+      setError(cause instanceof Error ? cause.message : "Sign-in didn't finish. Try again.");
     } finally {
       setBusy(false);
     }
@@ -32,19 +32,23 @@ export function WebAuthnAccessView({
   return (
     <Box component="main" sx={{ display: 'grid', minHeight: '100%', placeItems: 'center', p: 3 }}>
       <Stack spacing={2} sx={{ maxWidth: 480, width: '100%' }}>
-        <Typography component="h1" variant="h4">Secure your Bridge</Typography>
-        <Typography color="text.secondary">
-          Use a passkey on this device to enroll or sign in to your verified Bridge account.
+        <Typography component="h1" variant="h4">Sign in to Conversation Analytics</Typography>
+        <Typography sx={{ color: 'text.secondary' }}>
+          Your conversation data stays locked until you confirm it&apos;s you with a passkey, such as
+          your fingerprint, face, or device PIN.
         </Typography>
         {error && <Alert severity="error">{error}</Alert>}
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-          <Button disabled={busy} onClick={() => void authenticate(true)} variant="contained">
-            Enroll this device
-          </Button>
-          <Button disabled={busy} onClick={() => void authenticate(false)} variant="outlined">
+        <Box>
+          <Button disabled={busy} onClick={() => void authenticate(false)} size="large" variant="contained">
             Sign in with passkey
           </Button>
-        </Stack>
+        </Box>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          First time on this computer?{' '}
+          <Button disabled={busy} onClick={() => void authenticate(true)} size="small" variant="text">
+            Set up a passkey
+          </Button>
+        </Typography>
       </Stack>
     </Box>
   );

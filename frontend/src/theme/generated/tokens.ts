@@ -70,8 +70,9 @@ export const brandPalette = {
 } as const;
 
 export const brandTypography = {
-  "fontFamily": "\"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+  "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
   "fontFamilyMono": "ui-monospace, SFMono-Regular, Menlo, monospace",
+  "numeric": "tabular-nums",
   "scale": {
     "body1": "1rem",
     "body2": "0.875rem",
@@ -79,14 +80,15 @@ export const brandTypography = {
     "h1": "2.5rem",
     "h2": "2rem",
     "h3": "1.75rem",
-    "h4": "1.6rem",
+    "h4": "1.5rem",
     "h5": "1.25rem",
-    "h6": "1rem"
+    "h6": "1rem",
+    "kpi": "3rem",
+    "metric": "1.5rem"
   },
   "weights": {
     "bold": 700,
-    "extrabold": 700,
-    "medium": 600,
+    "medium": 500,
     "regular": 400,
     "semibold": 600
   }
@@ -101,15 +103,15 @@ export const layoutTokens = {
     "xs": 0
   },
   "radius": {
-    "large": 18,
-    "medium": 14,
+    "compact": 8,
+    "control": 12,
     "message": 16,
     "pill": 999,
-    "small": 10
+    "surface": 20
   },
   "shell": {
     "dashboardMaxWidth": 1320,
-    "desktopRailWidth": 76,
+    "desktopRailWidth": 64,
     "headerHeight": 72,
     "mobileDrawerWidth": 264
   },
@@ -128,8 +130,14 @@ export const effectTokens = {
     "thin": "1px"
   },
   "elevation": {
-    "dark": "0 2px 4px rgba(0, 0, 0, 0.50), 0 20px 48px -24px rgba(0, 0, 0, 0.85)",
-    "light": "0 1px 2px rgba(17, 17, 26, 0.04), 0 12px 32px -14px rgba(17, 17, 26, 0.16)"
+    "dark": {
+      "overlay": "0 2px 6px rgba(0, 0, 0, 0.50), 0 24px 56px -20px rgba(0, 0, 0, 0.90)",
+      "raised": "0 1px 2px rgba(0, 0, 0, 0.40)"
+    },
+    "light": {
+      "overlay": "0 2px 6px rgba(17, 17, 26, 0.06), 0 18px 40px -16px rgba(17, 17, 26, 0.22)",
+      "raised": "0 1px 2px rgba(17, 17, 26, 0.04), 0 4px 16px -8px rgba(17, 17, 26, 0.08)"
+    }
   },
   "focus": {
     "offset": "2px",
@@ -138,13 +146,26 @@ export const effectTokens = {
   "glassmorphism": {
     "backdropFilter": "blur(16px) saturate(160%)"
   },
+  "glow": {
+    "dark": "radial-gradient(120% 90% at 0% 0%, rgba(139, 135, 255, 0.16), rgba(167, 139, 250, 0.05) 45%, rgba(139, 135, 255, 0) 75%)",
+    "light": "radial-gradient(120% 90% at 0% 0%, rgba(91, 87, 242, 0.10), rgba(139, 92, 246, 0.04) 45%, rgba(91, 87, 242, 0) 75%)"
+  },
   "motion": {
-    "duration": "200ms",
-    "easing": "cubic-bezier(0.4, 0, 0.2, 1)"
+    "duration": {
+      "fast": "120ms",
+      "spatial": "320ms",
+      "standard": "200ms"
+    },
+    "easing": {
+      "enter": "cubic-bezier(0, 0, 0, 1)",
+      "exit": "cubic-bezier(0.3, 0, 1, 1)",
+      "standard": "cubic-bezier(0.2, 0, 0, 1)"
+    },
+    "pressScale": 0.97
   },
   "rim": {
-    "dark": "linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0))",
-    "light": "linear-gradient(180deg, rgba(17, 17, 26, 0.10), rgba(17, 17, 26, 0.02) 42%, rgba(17, 17, 26, 0))"
+    "dark": "linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02) 48%, rgba(255, 255, 255, 0))",
+    "light": "linear-gradient(180deg, rgba(17, 17, 26, 0.07), rgba(17, 17, 26, 0.03))"
   }
 } as const;
 
@@ -209,9 +230,11 @@ export const semanticColorSchemes = {
       "main": "#4CAF50"
     },
     "surface": {
-      "elevation": "0 2px 4px rgba(0, 0, 0, 0.50), 0 20px 48px -24px rgba(0, 0, 0, 0.85)",
-      "glass": "rgba(9, 9, 14, 0.78)",
-      "rim": "linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0))",
+      "elevation": "0 1px 2px rgba(0, 0, 0, 0.40)",
+      "glass": "rgba(20, 20, 28, 0.72)",
+      "glow": "radial-gradient(120% 90% at 0% 0%, rgba(139, 135, 255, 0.16), rgba(167, 139, 250, 0.05) 45%, rgba(139, 135, 255, 0) 75%)",
+      "overlay": "0 2px 6px rgba(0, 0, 0, 0.50), 0 24px 56px -20px rgba(0, 0, 0, 0.90)",
+      "rim": "linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02) 48%, rgba(255, 255, 255, 0))",
       "subtle": "#1E1E28"
     },
     "text": {
@@ -284,9 +307,11 @@ export const semanticColorSchemes = {
       "main": "#008300"
     },
     "surface": {
-      "elevation": "0 1px 2px rgba(17, 17, 26, 0.04), 0 12px 32px -14px rgba(17, 17, 26, 0.16)",
-      "glass": "rgba(255, 255, 255, 0.76)",
-      "rim": "linear-gradient(180deg, rgba(17, 17, 26, 0.10), rgba(17, 17, 26, 0.02) 42%, rgba(17, 17, 26, 0))",
+      "elevation": "0 1px 2px rgba(17, 17, 26, 0.04), 0 4px 16px -8px rgba(17, 17, 26, 0.08)",
+      "glass": "rgba(255, 255, 255, 0.72)",
+      "glow": "radial-gradient(120% 90% at 0% 0%, rgba(91, 87, 242, 0.10), rgba(139, 92, 246, 0.04) 45%, rgba(91, 87, 242, 0) 75%)",
+      "overlay": "0 2px 6px rgba(17, 17, 26, 0.06), 0 18px 40px -16px rgba(17, 17, 26, 0.22)",
+      "rim": "linear-gradient(180deg, rgba(17, 17, 26, 0.07), rgba(17, 17, 26, 0.03))",
       "subtle": "#EEEEF5"
     },
     "text": {
@@ -315,6 +340,7 @@ export const typography = {
   "button": {
     "fontSize": "0.875rem",
     "fontWeight": 600,
+    "letterSpacing": "0",
     "textTransform": "none"
   },
   "caption": {
@@ -322,7 +348,7 @@ export const typography = {
     "fontWeight": 400,
     "lineHeight": 1.66
   },
-  "fontFamily": "\"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+  "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
   "h1": {
     "fontSize": "2.5rem",
     "fontWeight": 700,
@@ -332,32 +358,46 @@ export const typography = {
   "h2": {
     "fontSize": "2rem",
     "fontWeight": 700,
-    "letterSpacing": "-0.03em",
+    "letterSpacing": "-0.025em",
     "lineHeight": 1.2
   },
   "h3": {
     "fontSize": "1.75rem",
-    "fontWeight": 700,
-    "letterSpacing": "-0.025em",
+    "fontWeight": 600,
+    "letterSpacing": "-0.02em",
     "lineHeight": 1.25
   },
   "h4": {
-    "fontSize": "1.6rem",
-    "fontWeight": 700,
-    "letterSpacing": "-0.03em",
+    "fontSize": "1.5rem",
+    "fontWeight": 600,
+    "letterSpacing": "-0.02em",
     "lineHeight": 1.3
   },
   "h5": {
     "fontSize": "1.25rem",
-    "fontWeight": 700,
-    "letterSpacing": "-0.02em",
+    "fontWeight": 600,
+    "letterSpacing": "-0.015em",
     "lineHeight": 1.35
   },
   "h6": {
     "fontSize": "1rem",
-    "fontWeight": 700,
+    "fontWeight": 600,
     "letterSpacing": "-0.01em",
     "lineHeight": 1.4
+  },
+  "kpi": {
+    "fontSize": "3rem",
+    "fontVariantNumeric": "tabular-nums",
+    "fontWeight": 600,
+    "letterSpacing": "-0.035em",
+    "lineHeight": 1.05
+  },
+  "metric": {
+    "fontSize": "1.5rem",
+    "fontVariantNumeric": "tabular-nums",
+    "fontWeight": 600,
+    "letterSpacing": "-0.02em",
+    "lineHeight": 1.2
   },
   "subtitle1": {
     "fontSize": "1rem",
@@ -372,19 +412,26 @@ export const typography = {
 } as const;
 
 export const shape = {
-  "borderRadius": 10
+  "borderRadius": 12
 } as const;
 
 export const componentTokens = {
   "MuiButton": {
     "activeScale": 0.97,
-    "borderRadius": 14
+    "borderRadius": 12
   },
   "MuiListItemButton": {
-    "activeScale": 0.97
+    "activeScale": 0.97,
+    "borderRadius": 12
+  },
+  "MuiMenu": {
+    "borderRadius": 12
   },
   "MuiPaper": {
-    "borderRadius": 18
+    "borderRadius": 20
+  },
+  "MuiTooltip": {
+    "borderRadius": 8
   },
   "analytics": {
     "barGap": 2,
@@ -405,9 +452,10 @@ export const componentTokens = {
   },
   "shell": {
     "dashboardMaxWidth": 1320,
-    "desktopRailWidth": 76,
+    "desktopRailWidth": 64,
     "headerHeight": 72,
-    "mobileDrawerWidth": 264
+    "mobileDrawerWidth": 264,
+    "railInset": 12
   },
   "skeleton": {
     "avatar": {

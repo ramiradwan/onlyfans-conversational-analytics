@@ -16,6 +16,19 @@ type SchemeTokens =
   | typeof semanticColorSchemes.light
   | typeof semanticColorSchemes.dark;
 
+const { duration, easing, pressScale } = effectTokens.motion;
+
+function milliseconds(value: string): number {
+  return Number.parseInt(value, 10);
+}
+
+/** Transition shorthand for the given properties on one motion step. */
+function transition(properties: readonly string[], step: keyof typeof duration = 'fast'): string {
+  return properties
+    .map((property) => `${property} ${duration[step]} ${easing.standard}`)
+    .join(', ');
+}
+
 function buildPalette(scheme: SchemeTokens): PaletteOptions {
   const seed = createTheme({
     palette: {
@@ -48,12 +61,8 @@ function buildPalette(scheme: SchemeTokens): PaletteOptions {
   };
 }
 
-function surfaceEffect(theme: Theme) {
+function rim(theme: Theme) {
   return {
-    border: 'none',
-    borderRadius: `${componentTokens.MuiPaper.borderRadius}px`,
-    boxShadow: theme.vars.palette.surface.elevation,
-    position: 'relative' as const,
     '&::before': {
       background: theme.vars.palette.surface.rim,
       borderRadius: 'inherit',
@@ -65,6 +74,25 @@ function surfaceEffect(theme: Theme) {
       pointerEvents: 'none',
       position: 'absolute' as const,
     },
+  };
+}
+
+/** Opaque content surface: tonal separation from the canvas with a hairline rim. */
+function surfaceEffect(theme: Theme) {
+  return {
+    border: 'none',
+    borderRadius: `${componentTokens.MuiPaper.borderRadius}px`,
+    boxShadow: theme.vars.palette.surface.elevation,
+    position: 'relative' as const,
+    ...rim(theme),
+  };
+}
+
+/** Floating layer above content: menus, popovers, dialogs and navigation chrome. */
+function overlayEffect(theme: Theme) {
+  return {
+    boxShadow: theme.vars.palette.surface.overlay,
+    ...rim(theme),
   };
 }
 
@@ -89,7 +117,27 @@ export const theme = createTheme({
   zIndex: layoutTokens.zIndex,
   shape,
   typography,
+  transitions: {
+    duration: {
+      shortest: milliseconds(duration.fast),
+      shorter: milliseconds(duration.fast),
+      short: milliseconds(duration.standard),
+      standard: milliseconds(duration.standard),
+      complex: milliseconds(duration.spatial),
+      enteringScreen: milliseconds(duration.standard),
+      leavingScreen: milliseconds(duration.fast),
+    },
+    easing: {
+      easeInOut: easing.standard,
+      easeOut: easing.enter,
+      easeIn: easing.exit,
+      sharp: easing.standard,
+    },
+  },
   effects: {
+    ambientGlow: (theme: Theme) => ({
+      backgroundImage: theme.vars.palette.surface.glow,
+    }),
     cardBorder: surfaceEffect,
     chartFrame: surfaceEffect,
     glassmorphism: (theme: Theme) => ({
@@ -97,8 +145,11 @@ export const theme = createTheme({
       backgroundColor: theme.vars.palette.surface.glass,
       WebkitBackdropFilter: effectTokens.glassmorphism.backdropFilter,
     }),
-    headerBorder: () => ({}),
-    sideBorder: () => ({}),
+    headerBorder: (theme: Theme) => ({
+      boxShadow: `inset 0 -${effectTokens.borders.thin} 0 ${theme.vars.palette.divider}`,
+    }),
+    overlay: overlayEffect,
+    sideBorder: overlayEffect,
   },
   components: {
     MuiButton: {
@@ -106,13 +157,13 @@ export const theme = createTheme({
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
           borderRadius: `${componentTokens.MuiButton.borderRadius}px`,
-          transition:
-            'transform ' + effectTokens.motion.duration + ' ' + effectTokens.motion.easing,
+          transition: transition(['background-color', 'border-color', 'color', 'transform']),
           '&:active': {
-            transform: 'scale(' + componentTokens.MuiButton.activeScale + ')',
+            transform: `scale(${componentTokens.MuiButton.activeScale})`,
           },
           '&:focus-visible': focusRing(theme),
         }),
+        sizeLarge: { minHeight: 48, paddingInline: 22 },
       },
     },
     MuiCard: {
@@ -126,7 +177,16 @@ export const theme = createTheme({
     MuiChip: {
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
+          fontWeight: brandTypography.weights.medium,
           '&:focus-visible': focusRing(theme),
+        }),
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: ({ theme }: { theme: Theme }) => ({
+          borderRadius: `${componentTokens.MuiPaper.borderRadius}px`,
+          ...overlayEffect(theme),
         }),
       },
     },
@@ -134,19 +194,32 @@ export const theme = createTheme({
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
           borderRadius: `${componentTokens.MuiButton.borderRadius}px`,
-          transition:
-            'background-color ' +
-            effectTokens.motion.duration +
-            ' ' +
-            effectTokens.motion.easing +
-            ', transform ' +
-            effectTokens.motion.duration +
-            ' ' +
-            effectTokens.motion.easing,
+          transition: transition(['background-color', 'color', 'transform']),
           '&:active': {
-            transform: 'scale(' + componentTokens.MuiButton.activeScale + ')',
+            transform: `scale(${pressScale})`,
           },
           '&:focus-visible': focusRing(theme),
+        }),
+      },
+    },
+    MuiLinearProgress: {
+      styleOverrides: {
+        root: { borderRadius: layoutTokens.radius.pill, height: 6 },
+        bar: { borderRadius: layoutTokens.radius.pill },
+      },
+    },
+    MuiListItemButton: {
+      styleOverrides: {
+        root: ({ theme }: { theme: Theme }) => ({
+          borderRadius: `${componentTokens.MuiListItemButton.borderRadius}px`,
+          transition: transition(['background-color', 'color', 'transform']),
+          '&:active': {
+            transform: `scale(${componentTokens.MuiListItemButton.activeScale})`,
+          },
+          '&:focus-visible': {
+            ...focusRing(theme),
+            outlineOffset: '-' + effectTokens.focus.offset,
+          },
         }),
       },
     },
@@ -160,25 +233,11 @@ export const theme = createTheme({
         }),
       },
     },
-    MuiListItemButton: {
+    MuiPopover: {
       styleOverrides: {
-        root: ({ theme }: { theme: Theme }) => ({
-          transition:
-            'background-color ' +
-            effectTokens.motion.duration +
-            ' ' +
-            effectTokens.motion.easing +
-            ', transform ' +
-            effectTokens.motion.duration +
-            ' ' +
-            effectTokens.motion.easing,
-          '&:active': {
-            transform: 'scale(' + componentTokens.MuiListItemButton.activeScale + ')',
-          },
-          '&:focus-visible': {
-            ...focusRing(theme),
-            outlineOffset: '-' + effectTokens.focus.offset,
-          },
+        paper: ({ theme }: { theme: Theme }) => ({
+          borderRadius: `${componentTokens.MuiMenu.borderRadius}px`,
+          ...overlayEffect(theme),
         }),
       },
     },
@@ -187,6 +246,24 @@ export const theme = createTheme({
         root: ({ theme }: { theme: Theme }) => ({
           backgroundColor: theme.vars.palette.placeholder,
         }),
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        root: { fontVariantNumeric: brandTypography.numeric },
+      },
+    },
+    MuiTooltip: {
+      styleOverrides: {
+        tooltip: {
+          borderRadius: `${componentTokens.MuiTooltip.borderRadius}px`,
+          fontWeight: brandTypography.weights.medium,
+        },
+      },
+    },
+    MuiTypography: {
+      defaultProps: {
+        variantMapping: { kpi: 'p', metric: 'p' },
       },
     },
     MuiCssBaseline: {

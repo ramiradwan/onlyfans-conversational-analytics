@@ -35,36 +35,47 @@ function makeApi(overrides: Partial<CapabilityLicenseApi> = {}): CapabilityLicen
   };
 }
 
-function mount(api: CapabilityLicenseApi) {
+function mount(api: CapabilityLicenseApi, secureSetupUrl = '') {
   return render(
     <ThemeProvider theme={theme}>
-      <CommercialActivationControls api={api} />
+      <CommercialActivationControls api={api} secureSetupUrl={secureSetupUrl} />
     </ThemeProvider>,
   );
 }
 
-async function showRequired(api: CapabilityLicenseApi) {
-  mount(api);
-  expect(await screen.findByText('Full activation required')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Continue activation' })).toBeTruthy();
+async function showRequired(api: CapabilityLicenseApi, secureSetupUrl = '') {
+  mount(api, secureSetupUrl);
+  const start = await screen.findByRole('button', { name: 'Turn on full analytics' });
+  expect(screen.queryByLabelText('Activation code')).toBeNull();
+  fireEvent.click(start);
+  expect(screen.getByLabelText('Activation code')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
 }
 
 afterEach(cleanup);
 
 describe('commercial activation controls', () => {
   it('exposes the customer action when canonical readiness requires activation', async () => {
+    await showRequired(makeApi(), 'https://setup.example/onboarding');
+    expect(screen.getByText('Open secure setup and choose Activate Full.')).toBeTruthy();
+    expect(screen.getByText(/Paste the code here/)).toBeTruthy();
+    const link = screen.getByRole('link', { name: 'Open secure setup' });
+    expect(link.getAttribute('href')).toBe('https://setup.example/onboarding');
+    expect(link.getAttribute('target')).toBe('_blank');
+  });
+
+  it('omits the secure setup link when the release has no setup URL', async () => {
     await showRequired(makeApi());
-    expect(screen.getByLabelText('Activation continuation')).toBeTruthy();
-    expect(screen.getByText(/verify it before Full readiness changes/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Open secure setup' })).toBeNull();
   });
 
   it('rejects malformed input before redemption', async () => {
     const api = makeApi();
     await showRequired(api);
-    fireEvent.change(screen.getByLabelText('Activation continuation'), { target: { value: 'clr1.short' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue activation' }));
+    fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: 'clr1.short' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
     expect(api.redeem).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert').textContent).toContain('complete activation continuation');
+    expect(screen.getByRole('alert').textContent).toContain('Enter the full activation code');
   });
 
   it('submits the opaque continuation, stays checking after POST, then follows canonical Full readiness', async () => {
@@ -78,23 +89,24 @@ describe('commercial activation controls', () => {
     const api = makeApi({ readiness, redeem });
     await showRequired(api);
 
-    fireEvent.change(screen.getByLabelText('Activation continuation'), { target: { value: CONTINUATION } });
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Continue activation' })));
+    fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: CONTINUATION } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Activate' })));
 
     expect(redeem).toHaveBeenCalledWith(CONTINUATION, expect.any(AbortSignal));
-    expect(screen.getByText('Checking activation')).toBeTruthy();
-    expect(screen.queryByText('Full mode is ready')).toBeNull();
+    expect(screen.getByText('Checking activation…')).toBeTruthy();
+    expect(screen.queryByText('On')).toBeNull();
 
     await act(async () => finishReadiness(activeAdmitted));
-    expect(await screen.findByText('Full mode is ready')).toBeTruthy();
-    expect(screen.queryByLabelText('Activation continuation')).toBeNull();
+    expect(await screen.findByText('On')).toBeTruthy();
+    expect(screen.queryByLabelText('Activation code')).toBeNull();
   });
 
   it('never treats active commercial authority with blocked analysis as Full-ready', async () => {
     const api = makeApi({ readiness: vi.fn(async () => activeBlocked) });
     mount(api);
-    expect(await screen.findByText('Full activation active')).toBeTruthy();
-    expect(screen.queryByText('Full mode is ready')).toBeNull();
+    expect(await screen.findByText("New messages aren't being analyzed")).toBeTruthy();
+    expect(screen.getByText('Needs attention')).toBeTruthy();
+    expect(screen.queryByText('On')).toBeNull();
   });
 
   it('keeps a failed redemption recoverable and re-reads canonical readiness', async () => {
@@ -103,20 +115,20 @@ describe('commercial activation controls', () => {
       .mockResolvedValueOnce(required);
     const redeem = vi.fn(async () => {
       throw new CapabilityLicenseApiError(
-        'Activation could not be confirmed. Try again; existing activation remains unchanged.',
+        "Activation couldn't be confirmed right now. Nothing has changed. Try again in a moment.",
         503,
       );
     });
     const api = makeApi({ readiness, redeem });
     await showRequired(api);
 
-    fireEvent.change(screen.getByLabelText('Activation continuation'), { target: { value: CONTINUATION } });
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Continue activation' })));
+    fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: CONTINUATION } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Activate' })));
 
     expect(readiness).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText(/existing activation remains unchanged/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Continue activation' })).toBeTruthy();
-    expect((screen.getByLabelText('Activation continuation') as HTMLInputElement).value).toBe(CONTINUATION);
+    expect(await screen.findByText(/Nothing has changed. Try again in a moment/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
+    expect((screen.getByLabelText('Activation code') as HTMLInputElement).value).toBe(CONTINUATION);
   });
 
   it('resolves an ambiguous submit only from the subsequent canonical readiness read', async () => {
@@ -124,16 +136,16 @@ describe('commercial activation controls', () => {
       .mockResolvedValueOnce(required)
       .mockResolvedValueOnce(activeAdmitted);
     const redeem = vi.fn(async () => {
-      throw new CapabilityLicenseApiError('Activation could not be checked. Try again.');
+      throw new CapabilityLicenseApiError("Activation couldn't be checked. Try again.");
     });
     const api = makeApi({ readiness, redeem });
     await showRequired(api);
 
-    fireEvent.change(screen.getByLabelText('Activation continuation'), { target: { value: CONTINUATION } });
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Continue activation' })));
+    fireEvent.change(screen.getByLabelText('Activation code'), { target: { value: CONTINUATION } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Activate' })));
 
-    expect(await screen.findByText('Full mode is ready')).toBeTruthy();
-    expect(screen.queryByRole('alert', { name: /could not be checked/i })).toBeNull();
+    expect(await screen.findByText('On')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('does not render protected commercial identifiers', async () => {

@@ -104,6 +104,9 @@ export function MessageStreamPane({
   const pendingAnchor = useRef<PendingAnchor | null>(null);
   const nearBottom = useRef(true);
   const previousLastMessageId = useRef<string | null>(null);
+  const loadOlderButton = useRef<HTMLButtonElement>(null);
+  const historyBoundary = useRef<HTMLElement>(null);
+  const restoreBoundaryFocus = useRef(false);
   const [windowStart, setWindowStart] = useState(0);
   const conversationId = conversation?.conversation_id ?? null;
   const messages = useMemo(
@@ -174,6 +177,8 @@ export function MessageStreamPane({
   }, [renderedMessages]);
 
   const loadOlder = () => {
+    if (messageState?.status === 'loading') return;
+    restoreBoundaryFocus.current = document.activeElement === loadOlderButton.current;
     captureAnchor();
     if (windowStart > 0) {
       setWindowStart(Math.max(0, windowStart - WINDOW_SHIFT));
@@ -207,6 +212,14 @@ export function MessageStreamPane({
   const canLoadOlder =
     windowStart > 0 ||
     (messageState?.hasOlderStoredItems === true && messageState.olderCursor !== null);
+  const showLoadOlder = canLoadOlder || messageState?.status === 'loading';
+
+  // Keyboard focus moves to the history boundary when the button it was on goes away.
+  useEffect(() => {
+    if (showLoadOlder || !restoreBoundaryFocus.current) return;
+    restoreBoundaryFocus.current = false;
+    historyBoundary.current?.focus();
+  }, [showLoadOlder]);
 
   return (
     <Pane variant="outlined" role="region" aria-labelledby="message-stream-title">
@@ -215,13 +228,6 @@ export function MessageStreamPane({
           <Typography id="message-stream-title" component="h2" variant="subtitle1">
             {isLoading ? 'Messages' : title}
           </Typography>
-          {conversation !== null && !loadingMessages && (
-            <Typography variant="caption" sx={{
-              color: 'text.secondary'
-            }}>
-              {messages.length === 1 ? '1 message loaded' : `${messages.length} messages loaded`}
-            </Typography>
-          )}
         </Box>
         <Stack direction="row" spacing={1} sx={{
           alignItems: 'center'
@@ -270,7 +276,7 @@ export function MessageStreamPane({
         ) : messageState?.status === 'error' && messages.length === 0 ? (
           <CenteredState>
             <Alert severity="warning">
-              {messageState.error ?? 'Message history is temporarily unavailable.'}
+              {messageState.error ?? "Messages couldn't load. Try again."}
             </Alert>
             <Button onClick={onReloadLatest}>Try again</Button>
           </CenteredState>
@@ -279,7 +285,7 @@ export function MessageStreamPane({
             <Typography component="p" variant="body1">
               {messageState?.conversationCoverage?.status === 'complete'
                 ? 'No messages in this conversation'
-                : 'No stored messages yet'}
+                : 'No messages saved yet'}
             </Typography>
           </CenteredState>
         ) : (
@@ -291,20 +297,28 @@ export function MessageStreamPane({
                     alignItems: 'center',
                     pb: 1
                   }}>
-                  <Button
-                    disabled={!canLoadOlder || messageState?.status === 'loading'}
-                    onClick={loadOlder}
-                    size="small"
-                    variant="outlined"
-                  >
-                    {messageState?.status === 'loading'
-                      ? 'Loading earlier…'
-                      : canLoadOlder
-                        ? 'Load earlier messages'
-                        : messageState?.conversationCoverage.boundary === 'history_start'
-                          ? 'Start of available history'
-                          : 'No earlier stored messages'}
-                  </Button>
+                  {showLoadOlder ? (
+                    <Button
+                      aria-disabled={messageState?.status === 'loading'}
+                      onClick={loadOlder}
+                      ref={loadOlderButton}
+                      size="small"
+                      variant="outlined"
+                    >
+                      {messageState?.status === 'loading' ? 'Loading earlier…' : 'Load earlier messages'}
+                    </Button>
+                  ) : (
+                    <Typography
+                      ref={historyBoundary}
+                      tabIndex={-1}
+                      variant="caption"
+                      sx={{ color: 'text.secondary', '&:focus': { outline: 'none' } }}
+                    >
+                      {messageState?.conversationCoverage.boundary === 'history_start'
+                        ? 'Start of conversation'
+                        : 'No earlier messages on this computer'}
+                    </Typography>
+                  )}
                   {messageState?.error && (
                     <Typography color="error" variant="caption">{messageState.error}</Typography>
                   )}

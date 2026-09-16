@@ -1,10 +1,10 @@
 import {
-  Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogContentText,
+  Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText,
   DialogTitle, FormControlLabel, Stack, Typography,
 } from '@mui/material';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { Panel } from './ui';
+import { Panel, SectionHeader, type SectionStatus } from './ui';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   companionPairingApi,
@@ -142,9 +142,25 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
   const active = status !== null && !terminal(status);
   const awaiting = active && !failed && status.state === 'awaiting_confirmation';
   const connected = connectedCount !== null && connectedCount > 0;
+  const issue = extensionIssue(connection);
+  const sectionStatus: SectionStatus | null = connectedCount === null
+    ? null
+    : connectedCount === 0
+      ? { label: 'Not connected', tone: 'default' }
+      : {
+          label: extensionLabel(connection),
+          tone: connection === 'connected' ? 'success' : issue?.severity === 'info' ? 'default' : 'warning',
+        };
 
   return (
     <Stack spacing={2}>
+      <SectionHeader
+        status={sectionStatus}
+        summary={connectedCount === 0 && status === null
+          ? 'Connect the browser extension so your messages reach this app.'
+          : undefined}
+        title="Browser extension"
+      />
       <AdmittedPairings
         api={api}
         connection={connection}
@@ -152,11 +168,6 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
         onCount={setConnectedCount}
         refresh={status?.version ?? -1}
       />
-      {connectedCount === 0 && status === null && (
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Connect the browser extension so your messages reach this app.
-        </Typography>
-      )}
       {failed && (
         <Alert severity="error" role="alert">
           The connection couldn&apos;t be checked. Keep this page open and try again.
@@ -213,11 +224,13 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
           </Stack>
         </Stack>
       )}
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: 'flex-start' }} useFlexGap>
         {!active && (
           <Button
             disabled={busy}
             onClick={() => void run('open')}
+            size={connected ? 'small' : 'medium'}
+            sx={connected ? { ml: -1 } : undefined}
             variant={connected ? 'text' : 'contained'}
           >
             {connected ? 'Connect another extension' : 'Connect extension'}
@@ -287,23 +300,15 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
     finally { if (!controller.signal.aborted) setBusy(false); }
   };
   const issue = extensionIssue(connection);
+  if (pins.length === 0 && !failed && confirming === null) return null;
   return (
     <Stack spacing={1.5}>
       {pins.length > 0 && (
         <>
-          <Box>
-            <Chip
-              color={connection === 'connected' ? 'success' : issue?.severity === 'info' ? 'default' : 'warning'}
-              label={extensionLabel(connection)}
-              size="small"
-              variant="outlined"
-            />
-            {issue && (
-              <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1 }}>
-                {issue.detail}
-              </Typography>
-            )}
-          </Box>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            {issue ? `${issue.detail} ` : ''}
+            To pause, allow message history, or remove site access, open the browser extension.
+          </Typography>
           {pins.map((pin, index) => (
             <Stack
               key={pin.pairing_id}
@@ -311,22 +316,20 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
               spacing={2}
               sx={{ alignItems: 'center', justifyContent: 'space-between' }}
             >
-              <Typography>
-                {pins.length === 1 ? 'Browser extension' : `Browser extension ${index + 1}`}
+              <Typography variant="body2">
+                {pins.length === 1 ? 'Connected to this app' : `Browser extension ${index + 1}`}
               </Typography>
               <Button
                 aria-label={`Disconnect browser extension ${index + 1}`}
-                color="error"
                 disabled={busy}
                 onClick={() => setConfirming(pin)}
+                size="small"
+                sx={{ color: 'text.secondary' }}
               >
                 Disconnect
               </Button>
             </Stack>
           ))}
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            To pause, allow message history, or remove site access, open the browser extension.
-          </Typography>
         </>
       )}
       {failed && (
@@ -373,7 +376,6 @@ export function CompanionPairingControls({ api = companionPairingApi }: { api?: 
   );
   return (
     <Panel>
-      <Typography component="h2" variant="h6">Browser extension</Typography>
       {canViewSettings && creatorAccountId ? (
         <PairingAttemptControls
           key={creatorAccountId}
@@ -382,7 +384,10 @@ export function CompanionPairingControls({ api = companionPairingApi }: { api?: 
           creatorAccountId={creatorAccountId}
         />
       ) : (
-        <Alert severity="info">Finish setting up the desktop app before connecting the browser extension.</Alert>
+        <>
+          <SectionHeader title="Browser extension" />
+          <Alert severity="info">Finish setting up the desktop app before connecting the browser extension.</Alert>
+        </>
       )}
     </Panel>
   );

@@ -1,7 +1,18 @@
-import { Alert, AlertTitle, Box, Button, Stack, TextField, Typography } from '@mui/material';
-import { useEffect, useRef, useState } from 'react';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import {
+  Alert,
+  AlertTitle,
+  Box,
+  Button,
+  Collapse,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
-import { Panel } from './ui';
+import { Panel, SectionHeader, type SectionStatus } from './ui';
+import { getConfig } from '../config/fastapiConfig';
 import {
   CAPABILITY_LICENSE_CONTINUATION_PATTERN,
   capabilityLicenseApi,
@@ -13,17 +24,38 @@ function safeMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Activation couldn't be checked. Try again.";
 }
 
-/** Full activation section of Settings: activation status and activation code entry. */
+function StepLabel({ index, children }: { index: number; children: ReactNode }) {
+  return (
+    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'baseline' }}>
+      <Typography
+        aria-hidden="true"
+        variant="caption"
+        sx={{ color: 'text.secondary', fontWeight: 600, minWidth: 12 }}
+      >
+        {index}
+      </Typography>
+      <Typography variant="body2">{children}</Typography>
+    </Stack>
+  );
+}
+
+/** Full analytics section of Settings: activation status and activation code entry. */
 export function CommercialActivationControls({
   api = capabilityLicenseApi,
+  secureSetupUrl,
 }: {
   api?: CapabilityLicenseApi;
+  /** Hosted secure setup page; read from the served config when omitted. */
+  secureSetupUrl?: string;
 }) {
+  const [setupUrl] = useState(() => secureSetupUrl ?? getConfig().SECURE_SETUP_URL);
   const [readiness, setReadiness] = useState<CapabilityLicenseReadiness | null>(null);
   const [code, setCode] = useState('');
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const operation = useRef<AbortController | null>(null);
+  const stepsId = useId();
 
   const checkReadiness = () => {
     operation.current?.abort();
@@ -94,68 +126,113 @@ export function CommercialActivationControls({
     && readiness.analysis_admission === 'blocked';
   const activationRequired = readiness?.commercial_authority === 'required';
   const activationUnavailable = readiness?.commercial_authority === 'unavailable';
+  const status: SectionStatus | null = checking && readiness === null
+    ? null
+    : fullReady
+      ? { label: 'On', tone: 'success' }
+      : activeButBlocked
+        ? { label: 'Needs attention', tone: 'warning' }
+        : activationRequired
+          ? { label: 'Off', tone: 'default' }
+          : null;
 
   return (
     <Panel>
-      <Stack spacing={2}>
-        <Typography component="h2" variant="h6">Full activation</Typography>
+      <SectionHeader
+        status={status}
+        summary="Adds tone, reply, and topic insights to your conversations."
+        title="Full analytics"
+      />
 
-        {checking && (
-          <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>
-            Checking activation…
-          </Typography>
-        )}
+      {checking && (
+        <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>
+          Checking activation…
+        </Typography>
+      )}
 
-        {!checking && fullReady && (
-          <Alert severity="success" role="status">Full analytics is on.</Alert>
-        )}
+      {!checking && activeButBlocked && (
+        <Alert severity="warning" role="status">
+          <AlertTitle>New messages aren&apos;t being analyzed</AlertTitle>
+          Your activation is fine, but analysis can&apos;t run right now. Your existing numbers are
+          still available.
+        </Alert>
+      )}
 
-        {!checking && activeButBlocked && (
-          <Alert severity="warning" role="status">
-            <AlertTitle>New messages aren&apos;t being analyzed</AlertTitle>
-            Your activation is fine, but analysis can&apos;t run right now. Your existing numbers are
-            still available.
-          </Alert>
-        )}
+      {!checking && (activationUnavailable || readiness === null) && (
+        <Alert severity="warning" role="status">
+          Your activation couldn&apos;t be checked. Nothing has changed.
+        </Alert>
+      )}
 
-        {!checking && (activationUnavailable || readiness === null) && (
-          <Alert severity="warning" role="status">
-            Your activation couldn&apos;t be checked. Nothing has changed.
-          </Alert>
-        )}
+      {error && <Alert severity="error" role="alert">{error}</Alert>}
 
-        {error && <Alert severity="error" role="alert">{error}</Alert>}
-
-        {!checking && activationRequired && (
-          <Stack spacing={1.5}>
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              Activate to see mood, reply, and topic insights for your conversations. To get a code,
-              open secure setup and choose Activate Full. Codes expire after a few minutes, so paste
-              yours right away.
-            </Typography>
-            <TextField
-              autoComplete="off"
-              label="Activation code"
-              onChange={(event) => {
-                setCode(event.target.value);
-                if (error) setError(null);
-              }}
-              value={code}
-            />
+      {!checking && activationRequired && (
+        <>
+          {!expanded && (
             <Box>
-              <Button onClick={() => void submit()} variant="contained">
-                Activate
+              <Button
+                aria-controls={stepsId}
+                aria-expanded={false}
+                onClick={() => setExpanded(true)}
+                variant="outlined"
+              >
+                Turn on full analytics
               </Button>
             </Box>
-          </Stack>
-        )}
+          )}
+          <Collapse id={stepsId} in={expanded} unmountOnExit>
+            <Stack spacing={2}>
+              <Stack spacing={1}>
+                <StepLabel index={1}>Open secure setup and choose Activate Full.</StepLabel>
+                {setupUrl && (
+                  <Box sx={{ pl: 3.5 }}>
+                    <Button
+                      component="a"
+                      endIcon={<OpenInNewIcon />}
+                      href={setupUrl}
+                      rel="noopener noreferrer"
+                      size="small"
+                      target="_blank"
+                      variant="outlined"
+                    >
+                      Open secure setup
+                    </Button>
+                  </Box>
+                )}
+              </Stack>
+              <Stack spacing={1}>
+                <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  spacing={1.5}
+                  sx={{ alignItems: { sm: 'flex-start' }, pl: 3.5 }}
+                >
+                  <TextField
+                    autoComplete="off"
+                    label="Activation code"
+                    onChange={(event) => {
+                      setCode(event.target.value);
+                      if (error) setError(null);
+                    }}
+                    size="small"
+                    sx={{ flex: 1, maxWidth: { sm: 420 } }}
+                    value={code}
+                  />
+                  <Button onClick={() => void submit()} variant="contained">
+                    Activate
+                  </Button>
+                </Stack>
+              </Stack>
+            </Stack>
+          </Collapse>
+        </>
+      )}
 
-        {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
-          <Box>
-            <Button onClick={checkReadiness} variant="outlined">Check again</Button>
-          </Box>
-        )}
-      </Stack>
+      {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
+        <Box>
+          <Button onClick={checkReadiness} variant="outlined">Check again</Button>
+        </Box>
+      )}
     </Panel>
   );
 }

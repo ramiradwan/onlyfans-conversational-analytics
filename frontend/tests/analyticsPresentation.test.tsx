@@ -142,7 +142,7 @@ describe('analytics units and accessible trend detail', () => {
       within(screen.getByRole('group', { name: 'Average handling time metric' })).getByText(expected),
     ).toBeTruthy();
     expect(
-      within(screen.getByRole('region', { name: 'Mood over time' })).getByText(expected),
+      within(screen.getByRole('region', { name: 'Message tone over time' })).getByText(expected),
     ).toBeTruthy();
     expect(
       within(screen.getByRole('region', { name: 'Top topics' })).getByText(expected),
@@ -200,7 +200,7 @@ describe('analytics units and accessible trend detail', () => {
     const topicTable = screen.getByRole('table', { name: 'Topics and trend' });
     const responsePanel = screen.getByRole('region', { name: 'Your replies' });
     const sentimentPanel = screen.getByRole('region', {
-      name: 'Mood over time',
+      name: 'Message tone over time',
     });
     expect(topicTable.textContent).toContain(formatPercentValue(37.5));
     expect(topicTable.textContent).toContain(formatPercentValue(12.5));
@@ -236,7 +236,7 @@ describe('analytics units and accessible trend detail', () => {
 
     fireEvent.click(screen.getByText('View data table'));
     expect(
-      screen.getByRole('table', { name: 'Mood over time data' }),
+      screen.getByRole('table', { name: 'Message tone over time data' }),
     ).toBeTruthy();
   });
 });

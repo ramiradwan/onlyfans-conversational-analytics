@@ -1,6 +1,5 @@
 import MoodIcon from '@mui/icons-material/Mood';
 import MoodBadIcon from '@mui/icons-material/MoodBad';
-import RemoveCircleOutlinedIcon from '@mui/icons-material/RemoveCircleOutlined';
 import { styled, Tooltip } from '@mui/material';
 
 import type { MessageView } from '../../protocol';
@@ -12,9 +11,7 @@ const Flag = styled('span', {
   color:
     sentiment === 'positive'
       ? theme.vars.palette.success.main
-      : sentiment === 'negative'
-        ? theme.vars.palette.error.main
-        : theme.vars.palette.text.secondary,
+      : theme.vars.palette.error.main,
   display: 'inline-flex',
   flexShrink: 0,
   fontSize: theme.typography.body2.fontSize,
@@ -29,18 +26,12 @@ export function MessageFlagIcon({
   sentiment,
   context = 'message',
 }: MessageFlagIconProps) {
-  if (sentiment === 'unknown') return null;
+  if (sentiment === 'unknown' || sentiment === 'neutral') return null;
 
   const label =
     (context === 'latest' ? 'Latest message sentiment: ' : 'Message sentiment: ') + sentiment;
   const icon =
-    sentiment === 'positive' ? (
-      <MoodIcon fontSize="inherit" />
-    ) : sentiment === 'negative' ? (
-      <MoodBadIcon fontSize="inherit" />
-    ) : (
-      <RemoveCircleOutlinedIcon fontSize="inherit" />
-    );
+    sentiment === 'positive' ? <MoodIcon fontSize="inherit" /> : <MoodBadIcon fontSize="inherit" />;
 
   return (
     <Tooltip title={label}>

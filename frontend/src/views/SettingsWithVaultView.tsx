@@ -24,14 +24,9 @@ export default function SettingsWithVaultView({
   vaultApi,
 }: SettingsWithVaultViewProps = {}) {
   return (
-    <Box sx={{ maxWidth: 960, mx: 'auto', width: '100%' }}>
-      <Stack spacing={3}>
-        <Box>
-          <Typography component="h1" variant="h4">Settings</Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
-            Manage the browser extension, message history, and messages saved on this computer.
-          </Typography>
-        </Box>
+    <Box sx={{ maxWidth: 880, pb: 3, width: '100%' }}>
+      <Stack spacing={2.5}>
+        <Typography component="h1" variant="h4">Settings</Typography>
         <CompanionPairingControls api={pairingApi} />
         <SettingsView api={historyApi} />
         <CommercialActivationControls api={activationApi} />

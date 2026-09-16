@@ -322,14 +322,11 @@ export default function OperatorInboxView({
           }
           store.failMessagePage(
             activeConversationId,
-            'The message window changed repeatedly. Try loading it again.',
+            'Messages changed while loading. Try again.',
           );
           return;
         }
-        store.failMessagePage(
-          activeConversationId,
-          error instanceof Error ? error.message : 'Message history is temporarily unavailable.',
-        );
+        store.failMessagePage(activeConversationId, "Messages couldn't load. Try again.");
       }
     },
     [activeConversationId, messageApi, pageRecoveryKey, store],
@@ -382,7 +379,7 @@ export default function OperatorInboxView({
 
   return (
     <InboxRoot>
-      <Typography component="h1" variant="h5" sx={{ mb: 2 }}>
+      <Typography component="h1" variant="h4" sx={{ mb: 2 }}>
         Inbox
       </Typography>
 
@@ -394,7 +391,10 @@ export default function OperatorInboxView({
       )}
 
       {showSetup ? (
-        <SetupPrompt title="Finish setup to see your conversations" />
+        <SetupPrompt
+          extensionConnected={extensionConnection(state.agent) === 'connected'}
+          title="Finish setup to see your conversations"
+        />
       ) : (
       <InboxGrid aria-busy={!hasSnapshot} $withInsights={analyticsState !== undefined}>
         <ChatListPane

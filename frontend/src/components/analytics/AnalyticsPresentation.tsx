@@ -63,7 +63,7 @@ export function AnalyticsPresentation({
           <Typography component="p" variant="body1" sx={{
             color: 'text.secondary'
           }}>
-            How your fans feel, how you reply, and what conversations are about.
+            Message tone, your replies, and what conversations are about.
           </Typography>
         </Box>
         <AnalyticsFilterRow
@@ -75,8 +75,8 @@ export function AnalyticsPresentation({
           {model && (
             <AnalyticsGrid>
               <ChartPanel
-                title="Mood over time"
-                description="Average mood of messages each day, from −1 (negative) to +1 (positive)."
+                title="Message tone over time"
+                description="Average tone of messages each day, from −1 (negative) to +1 (positive)."
                 windowSource={resolvedWindowSources!.sentimentTrend}
               >
                 <SentimentEngagementTrend sentiment={model.sentimentTrend} />

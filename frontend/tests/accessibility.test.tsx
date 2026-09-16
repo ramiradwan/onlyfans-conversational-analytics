@@ -113,7 +113,7 @@ describe('critical accessibility gates', () => {
       </ThemeProvider>,
     );
 
-    await screen.findByRole('heading', { name: 'Historical message sync' });
+    await screen.findByRole('heading', { name: 'Message history' });
     await expectNoCriticalOrSeriousViolations(document.body);
   });
 
@@ -227,11 +227,14 @@ describe('critical accessibility gates', () => {
 
     render(
       <ThemeProvider theme={theme} defaultMode="light">
-        <CreatorDashboardView />
+        <MemoryRouter>
+          <CreatorDashboardView />
+        </MemoryRouter>
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole('heading', { name: 'Creator dashboard' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Recent conversations' })).toBeTruthy();
     await expectNoCriticalOrSeriousViolations(document.body);
   });
 
@@ -552,11 +555,12 @@ describe('critical accessibility gates', () => {
       </ThemeProvider>,
     );
 
-    await screen.findByRole('heading', { name: 'Historical message sync' });
-    await screen.findByRole('heading', { name: 'Connect browser extension' });
-    await screen.findByRole('button', { name: 'Open connection window' });
-    await screen.findByRole('heading', { name: 'Full activation required' });
-    await screen.findByRole('heading', { name: 'Creator Vault' });
+    await screen.findByRole('heading', { name: 'Message history' });
+    await screen.findByRole('heading', { name: 'Browser extension' });
+    await screen.findByRole('button', { name: 'Connect extension' });
+    await screen.findByRole('heading', { name: 'Full analytics' });
+    await screen.findByRole('button', { name: 'Turn on full analytics' });
+    await screen.findByRole('heading', { name: 'Stored messages' });
     await expectNoCriticalOrSeriousViolations(document.body);
   });
 
@@ -567,7 +571,7 @@ describe('critical accessibility gates', () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole('heading', { name: 'Secure your Bridge' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Sign in to Conversation Analytics' })).toBeTruthy();
     await expectNoCriticalOrSeriousViolations(document.body);
   });
 });

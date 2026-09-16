@@ -5,7 +5,6 @@ import {
   Box,
   Button,
   Checkbox,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -19,7 +18,7 @@ import {
 } from '@mui/material';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
-import { Disclosure, Panel } from '../components/ui';
+import { Panel, SectionHeader, type SectionStatus } from '../components/ui';
 import { usePermissions } from '../hooks/usePermissions';
 import type { HistorySettings } from '../protocol';
 import {
@@ -29,6 +28,9 @@ import {
 } from '../services/historySettingsApi';
 import { bridgeTransportStore } from '../store/transportStore';
 import { coverageProgressLabel } from '../utils/dataReadiness';
+import { extensionConnection } from '../utils/statusCopy';
+
+const NUMBER_FORMAT = new Intl.NumberFormat('en-US');
 
 interface SettingsViewProps {
   api?: HistorySettingsApi;
@@ -129,20 +131,29 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
   const paused = hasConsent && settings.desired_state === 'paused';
   const progress = transport.snapshotProgress.percentage;
   const { completeConversations, discoveredConversations } = transport.snapshotProgress;
+  const historyComplete = transport.coverage.status === 'complete';
+  // Consent is asked for only once the extension that performs the sync is connected.
+  const waitingForExtension =
+    settings !== null && !hasConsent && extensionConnection(transport.agent) === 'offline';
+  const status: SectionStatus | null = settings === null
+    ? null
+    : !hasConsent
+      ? { label: 'Off', tone: 'default' }
+      : paused
+        ? { label: 'Paused', tone: 'warning' }
+        : { label: 'On', tone: 'success' };
 
   return (
     <Panel>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-        <Typography component="h2" variant="h6">Message history</Typography>
-        {settings && (
-          <Chip
-            color={!hasConsent ? 'default' : paused ? 'warning' : 'success'}
-            label={!hasConsent ? 'Off' : paused ? 'Paused' : 'On'}
-            size="small"
-            variant="outlined"
-          />
-        )}
-      </Stack>
+      <SectionHeader
+        status={status}
+        summary={
+          settings !== null && !hasConsent
+            ? 'Add your older conversations so your numbers cover your whole history.'
+            : undefined
+        }
+        title="Message history"
+      />
 
       {error && <Alert severity="error" role="alert">{error}</Alert>}
 
@@ -154,18 +165,22 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
         </Stack>
       ) : settings !== null ? (
         <Stack spacing={2}>
-          {!hasConsent ? (
-            <Stack spacing={1}>
-              <Typography variant="body2">
-                Add your older conversations so your numbers cover your whole message history, not
-                just new messages.
-              </Typography>
-              <Box component="ul" sx={{ color: 'text.secondary', m: 0, pl: 2.5, typography: 'body2' }}>
-                <li>Read-only: it never sends messages or changes your account.</li>
-                <li>Everything stays on this computer.</li>
-                <li>Pause or turn it off at any time.</li>
-              </Box>
-            </Stack>
+          {waitingForExtension ? (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Available once the browser extension is connected.
+            </Typography>
+          ) : !hasConsent ? (
+            <Box component="ul" sx={{ color: 'text.secondary', m: 0, pl: 2.5, typography: 'body2' }}>
+              <li>Read-only: it never sends messages or changes your account.</li>
+              <li>Everything stays on this computer.</li>
+              <li>Pause or turn it off at any time.</li>
+            </Box>
+          ) : historyComplete ? (
+            <Typography variant="body2">
+              {discoveredConversations === null
+                ? 'History synced.'
+                : `All ${NUMBER_FORMAT.format(discoveredConversations)} conversations synced.`}
+            </Typography>
           ) : (
             <Stack spacing={0.75}>
               <Typography variant="body2">{coverageProgressLabel(transport.coverage)}</Typography>
@@ -178,8 +193,8 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
                   />
                   <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                     {discoveredConversations === null
-                      ? `${completeConversations} conversations synced so far`
-                      : `${completeConversations} of ${discoveredConversations} conversations synced`}
+                      ? `${NUMBER_FORMAT.format(completeConversations)} conversations synced so far`
+                      : `${NUMBER_FORMAT.format(completeConversations)} of ${NUMBER_FORMAT.format(discoveredConversations)} conversations`}
                   </Typography>
                 </>
               )}
@@ -194,7 +209,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
             <Alert severity="info">Only the account owner can change message history.</Alert>
           )}
 
-          {!hasConsent && canManageHistorySync && (
+          {!hasConsent && !waitingForExtension && canManageHistorySync && (
             <FormControlLabel
               control={(
                 <Checkbox
@@ -206,7 +221,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
             />
           )}
 
-          {canManageHistorySync && (
+          {canManageHistorySync && !waitingForExtension && (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
               {!hasConsent ? (
                 <Button
@@ -237,34 +252,16 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
                 </Button>
               )}
               {hasConsent && (
-                <Button color="error" disabled={busy} onClick={() => setConfirmRevoke(true)}>
+                <Button
+                  disabled={busy}
+                  onClick={() => setConfirmRevoke(true)}
+                  sx={{ color: 'text.secondary' }}
+                >
                   Turn off
                 </Button>
               )}
             </Stack>
           )}
-
-          <Disclosure label="Details">
-            <Box
-              component="dl"
-              sx={{ columnGap: 3, display: 'grid', gridTemplateColumns: 'auto 1fr', m: 0, rowGap: 0.5 }}
-            >
-              {[
-                ['Sync order', `Newest ${settings.recent_window_days} days first, then older messages`],
-                ['Creator account', settings.authorized_platform_creator_id ?? 'Set when you turn this on'],
-                ['Consent version', settings.consent_policy_version],
-              ].map(([label, value]) => (
-                <Box key={label} sx={{ display: 'contents' }}>
-                  <Typography component="dt" variant="body2" sx={{ color: 'text.secondary' }}>
-                    {label}
-                  </Typography>
-                  <Typography component="dd" variant="body2" sx={{ m: 0, overflowWrap: 'anywhere' }}>
-                    {value}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-          </Disclosure>
         </Stack>
       ) : null}
 

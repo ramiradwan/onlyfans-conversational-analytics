@@ -107,7 +107,8 @@ describe('AppBar locked readiness priority', () => {
     );
 
     expect(presentation.label).toBe('Action needed');
-    expect(presentation.detail).toContain('Bound account does not match');
+    expect(presentation.detail).toContain('Reload the page');
+    expect(presentation.detail).not.toContain('Bound account');
   });
 
   it('requires both config and history-settings revisions to be applied exactly', () => {
@@ -130,9 +131,9 @@ describe('AppBar locked readiness priority', () => {
       },
     });
 
-    expect(getStatusPresentation(configMismatch).label).toBe('Action needed');
-    expect(getStatusPresentation(settingsMismatch).label).toBe('Action needed');
-    expect(getStatusPresentation(missingAppliedRevision).label).toBe('Action needed');
+    expect(getStatusPresentation(configMismatch).label).toBe('Applying settings');
+    expect(getStatusPresentation(settingsMismatch).label).toBe('Applying settings');
+    expect(getStatusPresentation(missingAppliedRevision).label).toBe('Applying settings');
     expect(getStatusPresentation(state()).label).toBe('Up to date');
   });
 
@@ -174,7 +175,7 @@ describe('AppBar locked readiness priority', () => {
     expect(getStatusPresentation(partialState('paused')).label).toBe('History paused');
     const running = getStatusPresentation(partialState('backfilling'));
     expect(running.label).toBe('Syncing history');
-    expect(running.detail).toContain('Historical coverage 50%');
+    expect(running.detail).toContain('History 50% synced');
   });
 
   it('shows Updating insights after complete acquisition until projection catches up', () => {

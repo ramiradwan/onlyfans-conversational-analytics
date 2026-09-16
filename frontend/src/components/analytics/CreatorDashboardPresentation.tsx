@@ -135,8 +135,8 @@ export function CreatorDashboardPresentation({
               <MetricRow items={metricItems(model, resolvedWindowSources!)} />
               <Bento>
                 <ChartPanel
-                  title="Mood over time"
-                  description="Average mood of messages each day."
+                  title="Message tone over time"
+                  description="Average tone of messages each day."
                   windowSource={resolvedWindowSources!.sentimentTrend}
                 >
                   <SentimentEngagementTrend sentiment={model.sentimentTrend} />

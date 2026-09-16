@@ -1,25 +1,20 @@
-import CloudDoneOutlinedIcon from '@mui/icons-material/CloudDoneOutlined';
-import CloudOffOutlinedIcon from '@mui/icons-material/CloudOffOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
-import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
-import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
-import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import {
   AppBar,
   Box,
   Button,
-  Chip,
   IconButton,
   Popover,
   Stack,
   Toolbar,
   Typography,
-  useTheme,
 } from '@mui/material';
 import { useId, useState, useSyncExternalStore } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { StatusChip } from '@/components/ui';
+import { componentTokens } from '@/theme';
 import {
   coverageProgressLabel,
   humanizeProjectionReason,
@@ -37,8 +32,9 @@ import {
 } from '@/utils/statusCopy';
 import { bridgeTransportStore, type BridgeTransportState } from '@store/transportStore';
 
+import { BRAND_MARK_SIZE, BrandMark } from './BrandMark';
+
 interface AppAppBarProps {
-  drawerWidth: number;
   headerHeight?: number;
   onDrawerToggle: () => void;
 }
@@ -46,9 +42,12 @@ interface AppAppBarProps {
 type StatusPresentation = {
   color: 'success' | 'warning' | 'error' | 'default';
   detail: string;
-  icon: React.ReactElement;
   label: string;
 };
+
+const { desktopRailWidth, railInset } = componentTokens.shell;
+/** Centers the brand mark over the desktop navigation rail. */
+const BRAND_INSET = railInset + (desktopRailWidth - BRAND_MARK_SIZE) / 2;
 
 export function getStatusPresentation(
   state: Readonly<BridgeTransportState>,
@@ -69,7 +68,6 @@ export function getStatusPresentation(
     return {
       color: 'error',
       detail: protocolErrorText(state.protocolError),
-      icon: <WarningAmberOutlinedIcon />,
       label: 'Action needed',
     };
   }
@@ -83,7 +81,6 @@ export function getStatusPresentation(
     return {
       color: 'default',
       detail: 'Loading your latest data.',
-      icon: <SyncOutlinedIcon />,
       label: 'Connecting',
     };
   }
@@ -92,7 +89,6 @@ export function getStatusPresentation(
     return {
       color: 'warning',
       detail: 'Connect the browser extension and start syncing your message history.',
-      icon: <SensorsOutlinedIcon />,
       label: 'Finish setup',
     };
   }
@@ -102,13 +98,11 @@ export function getStatusPresentation(
       ? {
           color: 'warning',
           detail: extensionProblem.detail,
-          icon: <SyncOutlinedIcon />,
           label: 'Applying settings',
         }
       : {
           color: 'error',
           detail: extensionProblem.detail,
-          icon: <WarningAmberOutlinedIcon />,
           label: 'Action needed',
         };
   }
@@ -120,7 +114,6 @@ export function getStatusPresentation(
         state.projection.reason,
         "Your conversations can't be shown right now.",
       ),
-      icon: <CloudOffOutlinedIcon />,
       label: 'Data unavailable',
     };
   }
@@ -135,7 +128,6 @@ export function getStatusPresentation(
     return {
       color: 'warning',
       detail: 'Your data is shown, but new messages may take longer to appear.',
-      icon: <CloudOffOutlinedIcon />,
       label: 'Updates delayed',
     };
   }
@@ -144,7 +136,6 @@ export function getStatusPresentation(
     return {
       color: 'warning',
       detail: 'Message history sync is paused. You can resume it in Settings.',
-      icon: <CloudOffOutlinedIcon />,
       label: 'History paused',
     };
   }
@@ -153,7 +144,6 @@ export function getStatusPresentation(
     return {
       color: 'warning',
       detail: `${coverageProgressLabel(state.coverage)}. Numbers grow as older messages arrive.`,
-      icon: <SyncOutlinedIcon />,
       label: 'Syncing history',
     };
   }
@@ -166,7 +156,6 @@ export function getStatusPresentation(
     return {
       color: 'success',
       detail: 'Your message history is synced and your insights are current.',
-      icon: <CloudDoneOutlinedIcon />,
       label: 'Up to date',
     };
   }
@@ -174,7 +163,6 @@ export function getStatusPresentation(
   return {
     color: 'warning',
     detail: 'Your latest messages are being added to your insights.',
-    icon: <SyncOutlinedIcon />,
     label: 'Updating insights',
   };
 }
@@ -192,11 +180,9 @@ export function getStatusRows(
 }
 
 export function AppAppBar({
-  drawerWidth,
-  headerHeight = 72,
+  headerHeight = componentTokens.shell.headerHeight,
   onDrawerToggle,
 }: AppAppBarProps) {
-  const theme = useTheme();
   const transportState = useSyncExternalStore(
     bridgeTransportStore.subscribe,
     bridgeTransportStore.getState,
@@ -211,15 +197,13 @@ export function AppAppBar({
     <AppBar
       component="header"
       position="fixed"
+      color="inherit"
       elevation={0}
       sx={{
+        bgcolor: 'background.default',
         color: 'text.primary',
         height: headerHeight,
         justifyContent: 'center',
-        ml: { sm: `${drawerWidth}px` },
-        width: { sm: `calc(100% - ${drawerWidth}px)` },
-        ...theme.effects.glassmorphism(theme),
-        ...theme.effects.headerBorder(theme),
       }}
     >
       <Toolbar
@@ -227,7 +211,8 @@ export function AppAppBar({
         sx={{
           gap: 1.5,
           minHeight: `${headerHeight}px !important`,
-          px: { xs: 2, sm: 2.5, lg: 3 },
+          pl: { xs: 1, sm: `${BRAND_INSET}px` },
+          pr: { xs: 2, sm: 3, lg: 4 },
         }}
       >
         <IconButton
@@ -241,34 +226,19 @@ export function AppAppBar({
           <MenuIcon />
         </IconButton>
 
-        <Stack sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-            Bridge
-          </Typography>
-          <Typography variant="caption" noWrap sx={{
-            color: 'text.muted'
-          }}>
-            Conversational analytics
-          </Typography>
-        </Stack>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <BrandMark />
+        </Box>
 
-        <Chip
+        <StatusChip
           aria-controls={statusOpen ? statusDetailsId : undefined}
           aria-expanded={statusOpen}
           aria-haspopup="dialog"
           aria-label={`Status: ${status.label}. Show details`}
           aria-live="polite"
-          color={status.color}
-          icon={status.icon}
           label={status.label}
           onClick={(event) => setStatusAnchor(event.currentTarget)}
-          size="small"
-          variant="outlined"
-          sx={{
-            bgcolor: 'background.paper',
-            flexShrink: 0,
-            fontWeight: 700,
-          }}
+          tone={status.color}
         />
         <Popover
           id={statusDetailsId}

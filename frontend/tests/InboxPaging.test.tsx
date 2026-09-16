@@ -141,7 +141,7 @@ describe('Inbox REST paging', () => {
       await Promise.resolve();
     });
     expect(requestSignal?.aborted).toBe(false);
-    expect(screen.getByText('No stored messages yet')).toBeTruthy();
+    expect(screen.getByText('No messages saved yet')).toBeTruthy();
   });
 
   it('retries one errored page after the readiness key changes without looping', async () => {
@@ -277,6 +277,8 @@ describe('Inbox REST paging', () => {
     await waitFor(() => expect(getPage).toHaveBeenCalledTimes(2));
     expect(getPage.mock.calls[1][0].before).toBe('cursor-older');
     expect(scrollContainer?.scrollTop).toBe(60);
-    expect(document.activeElement).toBe(loadEarlier);
+    const boundary = within(stream).getByText('No earlier messages on this computer');
+    expect(screen.queryByRole('button', { name: 'Load earlier messages' })).toBeNull();
+    expect(document.activeElement).toBe(boundary);
   });
 });

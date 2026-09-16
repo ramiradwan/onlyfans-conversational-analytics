@@ -136,9 +136,7 @@ describe('protocol-v2 transport store', () => {
     expect(state.liveFreshness.status).toBe('current');
     expect(isFullyCurrent(readiness)).toBe(false);
     expect(formatAdditiveMetric(state.analytics?.total_conversations, readiness)).toBe('1+');
-    expect(formatAdditiveMetric(state.analytics?.total_messages, readiness)).toBe(
-      '0 in synced messages',
-    );
+    expect(formatAdditiveMetric(state.analytics?.total_messages, readiness)).toBe('None yet');
   });
 
   it('keeps 20 active pages, trims inactive conversations to two pages, and rejects stale cursors', () => {

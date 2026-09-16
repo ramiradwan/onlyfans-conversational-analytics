@@ -25,7 +25,7 @@ function renderView(api: WebAuthnApi, onAuthenticated = vi.fn()) {
     screen.getByRole('button', { name }) as HTMLButtonElement;
   return {
     onAuthenticated,
-    enroll: () => button('Enroll this device'),
+    enroll: () => button('Set up a passkey'),
     signIn: () => button('Sign in with passkey'),
   };
 }
@@ -83,7 +83,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.signIn());
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Passkey authentication could not be completed.');
+    expect(alert.textContent).toContain("Sign-in didn't finish. Try again.");
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
