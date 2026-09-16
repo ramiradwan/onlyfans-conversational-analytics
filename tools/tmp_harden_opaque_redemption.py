@@ -15,6 +15,9 @@ replacements = {
     '_APPROVED_SOURCE_MANIFEST_SHA256 = "d50e961dd421bdb8be4fd8860653c5bd1a8f7759b2fd60ed263b3245aff0fd07"': (
         '_APPROVED_SOURCE_MANIFEST_SHA256 = "6a4a2e2c1050b7e729695dbc1877bb8f60abfea460c37d74e5c275d3e9c86963"'
     ),
+    "    manifest = verify_snapshot_integrity()\n    candidate = (manifest_root := _contracts_root()) / Path(path)": (
+        "    verify_snapshot_integrity()\n    candidate = (manifest_root := _contracts_root()) / Path(path)"
+    ),
 }
 for old, new in replacements.items():
     if old not in source and new not in source:
