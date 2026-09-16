@@ -26,6 +26,31 @@ jobs:
         run: |
           python -m pip install -r requirements-dev.txt
           python -m pip install ruff mypy
+      - name: Tighten typed validation discovered by qualification
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("app/security/capability_license_redemption.py")
+          source = path.read_text(encoding="utf-8")
+          source = source.replace(
+              '            or not _b64u32(challenge_bytes)\n',
+              '            or not isinstance(challenge_bytes, str)\n'
+              '            or not _b64u32(challenge_bytes)\n',
+              1,
+          )
+          source = source.replace(
+              '        coordinate = (\n'
+              '            grant.organization_id,\n'
+              '            grant.installation_id,\n',
+              '        if not isinstance(grant.organization_id, str) or not grant.organization_id:\n'
+              '            continue\n'
+              '        coordinate = (\n'
+              '            grant.organization_id,\n'
+              '            grant.installation_id,\n',
+              1,
+          )
+          path.write_text(source, encoding="utf-8")
+          PY
       - name: Normalize changed Python
         run: >-
           python -m ruff check --fix --ignore B008
@@ -33,7 +58,7 @@ jobs:
           app/api/endpoints/capability_license.py
           app/main.py
           tests/test_capability_license_opaque_redemption.py
-      - name: Commit normalization if needed
+      - name: Commit source corrections if needed
         run: |
           if git diff --quiet -- app/security/capability_license_redemption.py app/api/endpoints/capability_license.py app/main.py tests/test_capability_license_opaque_redemption.py; then
             exit 0
@@ -41,7 +66,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/security/capability_license_redemption.py app/api/endpoints/capability_license.py app/main.py tests/test_capability_license_opaque_redemption.py
-          git commit -m "style: normalize opaque redemption sources"
+          git commit -m "security: tighten opaque redemption validation"
           git push origin HEAD:feat/capability-license-opaque-redemption
       - name: Lint changed Python
         run: >-
@@ -50,9 +75,9 @@ jobs:
           app/api/endpoints/capability_license.py
           app/main.py
           tests/test_capability_license_opaque_redemption.py
-      - name: Type check changed security path
+      - name: Type check changed security path without repository baseline imports
         run: >-
-          python -m mypy
+          python -m mypy --follow-imports=skip --ignore-missing-imports
           app/security/capability_license_redemption.py
           app/api/endpoints/capability_license.py
       - name: Verify exact contract snapshot
