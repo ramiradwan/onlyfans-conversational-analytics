@@ -33,20 +33,18 @@ jobs:
           path = Path("app/security/capability_license_redemption.py")
           source = path.read_text(encoding="utf-8")
           source = source.replace(
-              '            or not _b64u32(challenge_bytes)\n',
-              '            or not isinstance(challenge_bytes, str)\n'
-              '            or not _b64u32(challenge_bytes)\n',
+              "from typing import Callable, Literal, Mapping, Protocol",
+              "from typing import Callable, Literal, Mapping, Protocol, TypeAlias",
               1,
           )
           source = source.replace(
-              '        coordinate = (\n'
-              '            grant.organization_id,\n'
-              '            grant.installation_id,\n',
-              '        if not isinstance(grant.organization_id, str) or not grant.organization_id:\n'
-              '            continue\n'
-              '        coordinate = (\n'
-              '            grant.organization_id,\n'
-              '            grant.installation_id,\n',
+              "CapabilityLicenseRedemptionRefusal = Literal[",
+              "CapabilityLicenseRedemptionRefusal: TypeAlias = Literal[",
+              1,
+          )
+          source = source.replace(
+              "CapabilityLicenseOpaqueRedemptionResult = (",
+              "CapabilityLicenseOpaqueRedemptionResult: TypeAlias = (",
               1,
           )
           path.write_text(source, encoding="utf-8")
@@ -66,7 +64,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/security/capability_license_redemption.py app/api/endpoints/capability_license.py app/main.py tests/test_capability_license_opaque_redemption.py
-          git commit -m "security: tighten opaque redemption validation"
+          git commit -m "typing: declare opaque redemption aliases"
           git push origin HEAD:feat/capability-license-opaque-redemption
       - name: Lint changed Python
         run: >-
