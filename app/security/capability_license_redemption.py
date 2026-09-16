@@ -11,7 +11,7 @@ import struct
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal, Protocol
+from typing import Literal, Protocol, TypeAlias
 from uuid import uuid4
 
 from app.persistence.auth import (
@@ -60,7 +60,7 @@ _TIMESTAMP = re.compile(
 _B64U = re.compile(r"^[A-Za-z0-9_-]+$")
 _MAX_AUTHORITY_REFERENCES = 128
 
-CapabilityLicenseRedemptionRefusal = Literal[
+CapabilityLicenseRedemptionRefusal: TypeAlias = Literal[
     "redemption_expired",
     "redemption_invalid",
     "redemption_unauthorized",
@@ -74,7 +74,7 @@ CapabilityLicenseRedemptionRefusal = Literal[
     "hosted_origin_unavailable",
     "hosted_unavailable",
 ]
-CapabilityLicenseOpaqueRedemptionResult = (
+CapabilityLicenseOpaqueRedemptionResult: TypeAlias = (
     CapabilityLicenseDeliveryReceipt
     | CapabilityLicenseRedemptionRefusal
     | CapabilityLicenseDeliveryResult
