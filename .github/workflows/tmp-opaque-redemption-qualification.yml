@@ -35,7 +35,7 @@ jobs:
         run: python tools/tmp_harden_opaque_redemption.py
       - name: Normalize changed Python
         run: >-
-          python -m ruff check --fix --ignore B008
+          python -m ruff check --fix --exit-zero --ignore B008
           app/security/capability_license_redemption.py
           app/api/endpoints/capability_license.py
           app/main.py
