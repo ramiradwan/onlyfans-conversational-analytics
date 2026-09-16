@@ -1,9 +1,9 @@
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
 import { cruise } from 'dependency-cruiser';
-import extractDepcruiseOptions from 'dependency-cruiser/config-utl/extract-depcruise-options';
+import { describe, expect, it } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,7 +11,13 @@ const FRONTEND_ROOT = path.resolve(__dirname, '..');
 const CONFIG_PATH = path.join(FRONTEND_ROOT, '.dependency-cruiser.cjs');
 const FIXTURES_ROOT = path.join(FRONTEND_ROOT, 'test-fixtures', 'architecture-invalid');
 
-const baseOptions = await extractDepcruiseOptions(CONFIG_PATH);
+const require = createRequire(import.meta.url);
+const config = require(CONFIG_PATH);
+const baseOptions = {
+  ...config.options,
+  ruleSet: { forbidden: config.forbidden },
+  validate: true,
+};
 
 describe('Bridge architecture boundaries and acyclic kernel enforcement', () => {
   it('production Bridge protected kernel graph parses and passes all architecture boundary rules', async () => {

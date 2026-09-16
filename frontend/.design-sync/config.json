@@ -22,22 +22,22 @@
     "GlobalLoader": "src/common/GlobalLoader.tsx",
     "KpiCard": "src/components/KpiCard.tsx",
     "KpiCardSkeleton": "src/components/KpiCardSkeleton.tsx",
-    "QueryInput": "src/components/QueryInput.tsx",
-    "QueryResponseBubble": "src/components/QueryResponseBubble.tsx",
-    "QueryResponseBubbleSkeleton": "src/components/QueryResponseBubble.tsx",
+    "QueryInput": "src/components/experimental/QueryInput.tsx",
+    "QueryResponseBubble": "src/components/experimental/QueryResponseBubble.tsx",
+    "QueryResponseBubbleSkeleton": "src/components/experimental/QueryResponseBubble.tsx",
     "ThemeToggle": "src/components/ThemeToggle.tsx",
-    "UserQueryBubble": "src/components/UserQueryBubble.tsx",
+    "UserQueryBubble": "src/components/experimental/UserQueryBubble.tsx",
+    "CreatorVaultControls": "src/components/CreatorVaultControls.tsx",
+    "TopicsTable": "src/components/analytics/TopicsTable.tsx",
     "ChatListPane": "src/components/inbox/ChatListPane.tsx",
+    "ConversationInsightsPanel": "src/components/inbox/ConversationInsightsPanel.tsx",
     "MessageBubble": "src/components/inbox/MessageBubble.tsx",
     "MessageFlagIcon": "src/components/inbox/MessageFlagIcons.tsx",
     "MessageStreamPane": "src/components/inbox/MessageStreamPane.tsx",
     "ChartPlaceholder": "src/components/placeholders/index.tsx",
     "KpiPlaceholder": "src/components/placeholders/index.tsx",
-    "HorizontalBarsPlaceholder": "src/components/placeholders/index.tsx",
-    "TablePlaceholder": "src/components/placeholders/index.tsx",
     "ChatListPlaceholder": "src/components/placeholders/index.tsx",
     "MessageStreamPlaceholder": "src/components/placeholders/index.tsx",
-    "Fan360Placeholder": "src/components/placeholders/index.tsx",
     "AsyncContent": "src/components/ui/AsyncContent.tsx",
     "Panel": "src/components/ui/Panel.tsx",
     "AppAppBar": "src/layouts/AppAppBar.tsx",
@@ -46,7 +46,9 @@
     "AnalyticsView": "src/views/AnalyticsView.tsx",
     "CreatorDashboardView": "src/views/CreatorDashboardView.tsx",
     "GraphExplorerView": "src/views/GraphExplorerView.tsx",
-    "OperatorInboxView": "src/views/OperatorInboxView.tsx"
+    "OperatorInboxView": "src/views/OperatorInboxView.tsx",
+    "SettingsWithVaultView": "src/views/SettingsWithVaultView.tsx",
+    "WebAuthnAccessView": "src/views/WebAuthnAccessView.tsx"
   },
   "dtsPropsFor": {
     "AnalyticsView": "  // No props.",
@@ -57,11 +59,11 @@
     "ChartPlaceholder": "  height?: number;",
     "ChatListPane": "  conversations: ReadonlyArray<{ conversation_id: string; platform_user_id: string | null; display_name: string | null; unread_count: number; last_message_at: string | null; latest_message: { message_id: string; text: string; sent_at: string; direction: 'inbound' | 'outbound'; sentiment: 'positive' | 'neutral' | 'negative' | 'unknown'; } | null; coverage: { status: 'unknown' | 'partial' | 'complete'; boundary: 'history_start' | null; earliest_available_at: string | null; latest_acquired_at: string | null; data_as_of: string | null; reason_code: string | null; }; }>;\n  isLoading: boolean;\n  onSelectConversation: (conversationId: string) => void;\n  selectedConversationId: string | null;",
     "ChatListPlaceholder": "  rows?: number;",
+    "ConversationInsightsPanel": "  fanName: string | null;\n  insight: unknown;\n  analyticsState: unknown;\n  windowSource?: unknown;",
     "CreatorDashboardView": "  store?: {\n    getState(): Readonly<{ connection: 'idle' | 'connecting' | 'handshaking' | 'connected' | 'reconnecting' | 'disconnected' | 'error'; readModelState: 'empty' | 'loading' | 'realtime' | 'resyncing' | 'degraded'; viewRevision: number | null; protocolError: { detail: string; fatal: boolean } | null; system: { readiness: 'ready' | 'degraded' | 'unavailable'; detail: string | null; } | null; agent: { status: 'connected' | 'stale' | 'disconnected'; degraded_reason: string | null; required_config_revision: string; applied_config_revision: string | null; required_history_settings_revision: number; applied_history_settings_revision: number | null; } | null; analytics: { total_conversations: { value: number | null; basis: 'complete' | 'synced_subset'; observed_range: { start: string | null; end: string | null; }; complete_range: { start: string | null; end: string | null; } | null; sample_size: number; as_of: string; projection_revision: number; }; total_messages: { value: number | null; basis: 'complete' | 'synced_subset'; observed_range: { start: string | null; end: string | null; }; complete_range: { start: string | null; end: string | null; } | null; sample_size: number; as_of: string; projection_revision: number; }; inbound_messages: { value: number | null; basis: 'complete' | 'synced_subset'; observed_range: { start: string | null; end: string | null; }; complete_range: { start: string | null; end: string | null; } | null; sample_size: number; as_of: string; projection_revision: number; }; outbound_messages: { value: number | null; basis: 'complete' | 'synced_subset'; observed_range: { start: string | null; end: string | null; }; complete_range: { start: string | null; end: string | null; } | null; sample_size: number; as_of: string; projection_revision: number; }; } | null; conversations: Array<{ conversation_id: string; platform_user_id: string | null; display_name: string | null; unread_count: number; last_message_at: string | null; latest_message: { message_id: string; text: string; sent_at: string; direction: 'inbound' | 'outbound'; sentiment: 'positive' | 'neutral' | 'negative' | 'unknown'; } | null; coverage: { status: 'unknown' | 'partial' | 'complete'; boundary: 'history_start' | null; earliest_available_at: string | null; latest_acquired_at: string | null; data_as_of: string | null; reason_code: string | null; }; }>; coverage: { status: 'unknown' | 'partial' | 'complete'; phase: 'not_started' | 'discovering' | 'backfilling' | 'paused' | 'repairing' | 'blocked' | 'complete'; generation_id: string | null; as_of: string | null; discovered_conversations: number | null; complete_conversations: number; complete_as_of: string | null; reason: string | null; }; projection: { status: 'pending' | 'current' | 'degraded' | 'unavailable'; canonical_revision: number; projected_revision: number; projected_at: string | null; reason: string | null; }; liveFreshness: { status: 'current' | 'delayed' | 'unknown'; last_observed_at: string | null; last_committed_at: string | null; expires_at: string | null; pending_count: number | null; reason: string | null; }; }>;\n    subscribe(listener: () => void): () => void;\n  };",
-    "Fan360Placeholder": "  // No props.",
+    "CreatorVaultControls": "  api?: unknown;\n  onDownload?: (document: unknown) => void;",
     "GlobalLoader": "  // No props.",
     "GraphExplorerView": "  // No props.",
-    "HorizontalBarsPlaceholder": "  bars?: number;",
     "KpiCard": "  title: string;\n  value: string | number;\n  detail?: string;\n  isLoading?: boolean;\n  grow?: boolean;",
     "KpiCardSkeleton": "  grow?: boolean;",
     "KpiPlaceholder": "  // No props.",
@@ -74,9 +76,11 @@
     "QueryInput": "  onSend: (text: string) => void;\n  disabled?: boolean;",
     "QueryResponseBubble": "  response: {\n    id: string;\n    question: string;\n    answer?: string;\n    gremlinQuery?: string;\n    result?: Record<string, unknown> | unknown[];\n  };",
     "QueryResponseBubbleSkeleton": "  // No props.",
-    "TablePlaceholder": "  rows?: number;",
+    "SettingsWithVaultView": "  historyApi?: unknown;\n  pairingApi?: unknown;\n  activationApi?: unknown;\n  vaultApi?: unknown;",
     "ThemeToggle": "  // No props.",
-    "UserQueryBubble": "  text: string;"
+    "TopicsTable": "  topics: ReadonlyArray<unknown>;",
+    "UserQueryBubble": "  text: string;",
+    "WebAuthnAccessView": "  api?: unknown;\n  onAuthenticated?: () => void;"
   },
   "provider": {
     "component": "ThemeProvider",
@@ -131,6 +135,14 @@
     "OperatorInboxView": {
       "cardMode": "single",
       "viewport": "1100x720"
+    },
+    "SettingsWithVaultView": {
+      "cardMode": "single",
+      "viewport": "1100x760"
+    },
+    "WebAuthnAccessView": {
+      "cardMode": "single",
+      "viewport": "640x520"
     }
   }
 }

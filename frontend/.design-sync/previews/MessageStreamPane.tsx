@@ -1,9 +1,9 @@
 import { Box } from '@mui/material';
-import type { ConversationMessageState } from '../../src/store/transportStore';
 import {
   MessageStreamPane,
   previewConversations,
 } from 'onlyfans-analytics-frontend';
+import type { ConversationMessageState } from '../../src/store/transportStore';
 
 const noOp = () => {};
 const messageState: ConversationMessageState = {

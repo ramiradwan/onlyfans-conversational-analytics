@@ -163,6 +163,13 @@ jobs:
         working-directory: frontend
         run: npm run check:architecture
 
+      - name: Typecheck frontend design sync
+        run: npm run typecheck:design-sync --prefix frontend
+
+      - name: Check unused frontend files and dependencies
+        working-directory: frontend
+        run: npm run check:unused
+
       - name: Install extension dependencies
         run: npm ci --prefix extension
 

@@ -1,6 +1,5 @@
 import { createTheme, type PaletteOptions, type Theme } from '@mui/material/styles';
 import type {} from '@mui/material/themeCssVarsAugmentation';
-import type {} from '@mui/x-data-grid/themeAugmentation';
 
 import {
   brandPalette,
@@ -187,17 +186,6 @@ export const theme = createTheme({
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
           backgroundColor: theme.vars.palette.placeholder,
-        }),
-      },
-    },
-    MuiDataGrid: {
-      defaultProps: { density: 'compact' },
-      styleOverrides: {
-        root: ({ theme }: { theme: Theme }) => ({
-          border: 'none',
-          '& .MuiDataGrid-columnHeaders': {
-            backgroundColor: theme.vars.palette.action.hover,
-          },
         }),
       },
     },

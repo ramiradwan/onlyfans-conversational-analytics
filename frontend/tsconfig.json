@@ -19,7 +19,6 @@
     "isolatedModules": true,
     "noEmit": true,
     "types": [
-      "chrome",
       "vite/client"
     ],
     "paths": {

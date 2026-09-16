@@ -1,4 +1,10 @@
-/** @type {import(\'dependency-cruiser\').IConfiguration} */
+/**
+ * Frontend module-graph rules. `rule-bridge-no-canonical-writes` is documented in
+ * docs/architecture-boundaries.md and is not checked here: Bridge reaches Brain over HTTP
+ * and WebSocket, so the module graph has no backend imports to inspect.
+ *
+ * @type {import('dependency-cruiser').IConfiguration}
+ */
 module.exports = {
   forbidden: [
     {

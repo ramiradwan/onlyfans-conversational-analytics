@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/knip@6/overview/configuration",
+  "entry": [
+    "src/story-only/VisualHarness.tsx",
+    ".design-sync/entry.ts",
+    ".design-sync/previews/**/*.tsx",
+    "src/theme/generate-theme.ts",
+    "scripts/*.js",
+    "tests/**/*.test.{ts,tsx}"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    ".design-sync/**/*.{ts,tsx}"
+  ],
+  "ignore": [
+    "src/types/backend.ts"
+  ],
+  "ignoreDependencies": [
+    "@swc/plugin-emotion",
+    "lint-staged"
+  ],
+  "rules": {
+    "exports": "off",
+    "types": "off",
+    "duplicates": "off"
+  }
+}

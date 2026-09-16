@@ -691,7 +691,8 @@
         "frontend/vitest.config.ts",
         "frontend/tsconfig*.json",
         "frontend/package*.json",
-        "frontend/eslint.config.js"
+        "frontend/eslint.config.js",
+        "frontend/knip.json"
       ],
       "role": "Bridge client-side state management, WebSocket session synchronization, authenticated REST API integration, test suites, and build tooling.",
       "authority": "presentation",
