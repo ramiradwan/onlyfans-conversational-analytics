@@ -16,7 +16,9 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 describe('capability license customer API', () => {
   it('submits only the opaque continuation and accepts only checking', async () => {
-    const request = vi.fn(async () => jsonResponse({ state: 'checking' }));
+    const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => (
+      jsonResponse({ state: 'checking' })
+    ));
     const api = createCapabilityLicenseApi({
       fetch: request as unknown as typeof fetch,
       getCsrfToken: () => 'csrf-token',
