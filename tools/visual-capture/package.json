@@ -1,0 +1,16 @@
+{
+  "name": "ofca-visual-capture",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "capture": "node capture.mjs",
+    "install:browser": "playwright install chromium"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
+  }
+}

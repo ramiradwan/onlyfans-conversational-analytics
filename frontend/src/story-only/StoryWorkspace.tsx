@@ -1,6 +1,9 @@
 /** STORY ONLY: production shell and views composed with deterministic journey fixtures. */
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
+import { storyAnalyticsState, storyDateRange } from './analyticsFixtures';
+import type { AnalyticsReadState } from '../analytics';
+import { AnalyticsPresentation } from '../components/analytics';
 import { AppShell } from '../layouts/AppShell';
 import type {
   AgentStatePayload,
@@ -18,19 +21,23 @@ import type {
 import type { CreatorVaultApi, CreatorVaultStatus } from '../services/creatorVaultApi';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
 import type { MessageApi } from '../services/messageApi';
+import type { WebAuthnApi } from '../services/webauthnApi';
 import { bridgeTransportStore } from '../store/transportStore';
 import { useUserStore } from '../store/userStore';
 import CreatorDashboardView from '../views/CreatorDashboardView';
 import OperatorInboxView from '../views/OperatorInboxView';
 import SettingsWithVaultView from '../views/SettingsWithVaultView';
+import { WebAuthnAccessView } from '../views/WebAuthnAccessView';
 
-export type StoryWorkspaceName = 'home' | 'inbox' | 'settings';
+export type StoryWorkspaceName = 'home' | 'analytics' | 'inbox' | 'settings' | 'passkey';
 export type StoryJourneyName = 'loading' | 'fresh' | 'syncing' | 'populated';
 
 export const storyWorkspaceOptions: readonly { key: StoryWorkspaceName; label: string }[] = [
   { key: 'home', label: 'Dashboard' },
+  { key: 'analytics', label: 'Analytics' },
   { key: 'inbox', label: 'Inbox' },
   { key: 'settings', label: 'Settings' },
+  { key: 'passkey', label: 'Passkey sign-in' },
 ];
 
 export const storyJourneyOptions: readonly { key: StoryJourneyName; label: string }[] = [
@@ -295,25 +302,51 @@ const storyMessageApi: MessageApi = {
   },
 };
 
-const WORKSPACE_PATHS: Record<StoryWorkspaceName, string> = {
+/** Rejects like a closed browser passkey prompt, so the failure state is reachable. */
+const storyPasskeyApi: WebAuthnApi = {
+  enroll: async () => {
+    throw Object.assign(new Error('Story passkey prompt closed.'), { name: 'NotAllowedError' });
+  },
+  login: async () => {
+    throw Object.assign(new Error('Story passkey prompt closed.'), { name: 'NotAllowedError' });
+  },
+};
+
+const WORKSPACE_PATHS: Record<Exclude<StoryWorkspaceName, 'passkey'>, string> = {
   home: '/',
+  analytics: '/analytics',
   inbox: '/inbox',
   settings: '/settings',
 };
 
 export function StoryWorkspace({
+  analyticsState = storyAnalyticsState('model'),
   journey,
   workspace,
 }: {
+  analyticsState?: AnalyticsReadState;
   journey: StoryJourneyName;
   workspace: StoryWorkspaceName;
 }) {
-  seedStores(journey);
+  if (workspace === 'passkey') {
+    return <WebAuthnAccessView api={storyPasskeyApi} onAuthenticated={() => undefined} />;
+  }
+  seedStores(workspace === 'analytics' ? 'populated' : journey);
   return (
     <MemoryRouter initialEntries={[WORKSPACE_PATHS[workspace]]}>
       <Routes>
         <Route element={<AppShell />}>
           <Route index element={<CreatorDashboardView />} />
+          <Route
+            path="analytics"
+            element={(
+              <AnalyticsPresentation
+                state={analyticsState}
+                dateRange={storyDateRange}
+                onDateRangeChange={() => undefined}
+              />
+            )}
+          />
           <Route path="inbox" element={<OperatorInboxView messageApi={storyMessageApi} />} />
           <Route
             path="settings"

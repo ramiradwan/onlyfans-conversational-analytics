@@ -71,7 +71,6 @@ const Content = styled(Box)({
 });
 
 const viewOptions: readonly { key: StoryViewName; label: string }[] = [
-  { key: 'dashboard', label: 'Dashboard' },
   { key: 'analytics', label: 'Analytics' },
   { key: 'inbox', label: 'Inbox' },
   { key: 'graph', label: 'Graph' },
@@ -80,7 +79,7 @@ const viewOptions: readonly { key: StoryViewName; label: string }[] = [
 function parseView(value: string | null): StoryViewName {
   return viewOptions.some((option) => option.key === value)
     ? (value as StoryViewName)
-    : 'dashboard';
+    : 'analytics';
 }
 
 function parseState(value: string | null): StoryAnalyticsStateKey {
@@ -169,7 +168,11 @@ export function VisualHarness() {
     return (
       <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange>
         <CssBaseline />
-        <StoryWorkspace journey={journey} workspace={workspace} />
+        <StoryWorkspace
+          analyticsState={storyAnalyticsState(stateKey)}
+          journey={journey}
+          workspace={workspace}
+        />
       </ThemeProvider>
     );
   }

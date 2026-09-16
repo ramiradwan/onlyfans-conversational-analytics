@@ -271,6 +271,50 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  visual-capture:
+    # Screenshots of production views in fixed story states, themes and widths
+    # for visual review. A screen that never reaches its ready state fails the job.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout proposed Product revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            tools/visual-capture/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Install visual capture dependencies
+        run: npm ci --prefix tools/visual-capture
+
+      - name: Install Playwright Chromium
+        working-directory: tools/visual-capture
+        run: npx playwright install --with-deps chromium
+
+      - name: Capture visual states
+        env:
+          VISUAL_CAPTURE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node tools/visual-capture/capture.mjs artifacts/visual-capture
+
+      - name: Upload visual states
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: visual-states-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/visual-capture/
+          retention-days: 30
+          if-no-files-found: error
+
   windows-tests:
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
