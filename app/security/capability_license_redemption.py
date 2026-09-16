@@ -186,8 +186,7 @@ class CapabilityLicenseRedemptionClient:
             or challenge.get("audience") != _PROOF_AUDIENCE
             or not _uuid(challenge.get("redemption_id"))
             or not _uuid(challenge.get("proof_challenge_id"))
-            or not isinstance(challenge_bytes, str)
-            or len(_b64u_decode(challenge_bytes)) != 32
+            or not _b64u32(challenge_bytes)
             or not _timestamp(challenge.get("issued_at"))
             or not _timestamp(challenge.get("expires_at"))
         ):
@@ -335,7 +334,9 @@ class CapabilityLicenseRedemptionClient:
             raise CapabilityLicenseRedemptionRefused("reissue_authorization_required")
         if detail == "reissue_authorization_unavailable":
             raise CapabilityLicenseRedemptionRefused("reissue_authorization_unavailable")
-        if response.status_code in {400, 409}:
+        if response.status_code == 400:
+            raise CapabilityLicenseRedemptionRefused("redemption_invalid")
+        if response.status_code == 409:
             raise CapabilityLicenseRedemptionRefused("redemption_conflict")
         raise CapabilityLicenseRedemptionUnavailable("redemption refusal response invalid")
 
@@ -502,6 +503,15 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
             raise ValueError("duplicate JSON member")
         result[key] = value
     return result
+
+
+def _b64u32(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return len(_b64u_decode(value)) == 32
+    except ValueError:
+        return False
 
 
 def _b64u_decode(value: str) -> bytes:
