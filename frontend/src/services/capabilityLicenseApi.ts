@@ -119,15 +119,21 @@ export function createCapabilityLicenseApi(
 
   return {
     async readiness(signal) {
-      const response = await request(`${endpoint}/readiness`, {
-        cache: 'no-store',
-        credentials: 'same-origin',
-        headers: { Accept: 'application/json' },
-        method: 'GET',
-        signal,
-      });
+      let response: Response;
+      try {
+        response = await request(`${endpoint}/readiness`, {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+          method: 'GET',
+          signal,
+        });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        throw new CapabilityLicenseApiError('Activation status could not be checked. Try again.');
+      }
       if (!response.ok) {
-        throw new CapabilityLicenseApiError('Activation status could not be checked.', response.status);
+        throw new CapabilityLicenseApiError('Activation status could not be checked. Try again.', response.status);
       }
       try {
         return parseReadiness(await response.json());
@@ -145,18 +151,26 @@ export function createCapabilityLicenseApi(
       if (!csrf) {
         throw new CapabilityLicenseApiError('Activation is unavailable in this browser session.');
       }
-      const response = await request(`${endpoint}/redeem`, {
-        body: JSON.stringify({ continuation }),
-        cache: 'no-store',
-        credentials: 'same-origin',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          [csrfHeaderName]: csrf,
-        },
-        method: 'POST',
-        signal,
-      });
+      let response: Response;
+      try {
+        response = await request(`${endpoint}/redeem`, {
+          body: JSON.stringify({ continuation }),
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            [csrfHeaderName]: csrf,
+          },
+          method: 'POST',
+          signal,
+        });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        throw new CapabilityLicenseApiError(
+          'Activation could not be confirmed. Try again; existing activation remains unchanged.',
+        );
+      }
       if (!response.ok) throw redemptionFailure(response.status);
       try {
         return parseRedemption(await response.json());
