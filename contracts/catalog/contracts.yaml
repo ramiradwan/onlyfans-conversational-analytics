@@ -344,3 +344,49 @@ contracts:
     openapi_operations:
       - finalizeCapabilityLicenseReissue
     governing_adr: docs/adr/0020-adopt-installation-claim-v2-and-capability-license-delivery.md
+  - id: capability-license-redemption-continuation-v1
+    owner: commercial-ledger
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Transfer only an opaque short-lived customer-authorized commercial redemption reference without exposing delivery coordinates.
+    profile: urn:bridge-clean:capability-license-redemption-continuation:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 0
+    max_response_bytes: 1024
+    schema_paths:
+      - schemas/commercial/v1/capability-license-redemption-continuation.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0021-add-opaque-capability-license-redemption.md
+  - id: capability-license-redemption-proof-v1
+    owner: commercial-ledger
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Issue a redemption-specific challenge only after opaque continuation coordinates match current local identity authority.
+    profile: urn:bridge-clean:capability-license-redemption-proof:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 4096
+    max_response_bytes: 4096
+    schema_paths:
+      - schemas/commercial/v1/capability-license-redemption-proof-challenge-request.schema.json
+      - schemas/commercial/v1/capability-license-redemption-proof-challenge-response.schema.json
+    openapi_operations:
+      - issueCapabilityLicenseRedemptionProofChallenge
+    governing_adr: docs/adr/0021-add-opaque-capability-license-redemption.md
+  - id: capability-license-redemption-v1
+    owner: commercial-ledger
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Redeem one server-bound opaque commercial authorization using exact local installation-key proof and return protected ADR 0020 delivery inputs to Brain only.
+    profile: urn:bridge-clean:capability-license-redemption:v1
+    classification: commercial-confidential
+    retention_class: payment-tax-legal-review-required
+    max_request_bytes: 8192
+    max_response_bytes: 8192
+    schema_paths:
+      - schemas/commercial/v1/capability-license-redemption-request.schema.json
+      - schemas/commercial/v1/capability-license-redemption-response.schema.json
+    openapi_operations:
+      - redeemCapabilityLicenseContinuation
+    governing_adr: docs/adr/0021-add-opaque-capability-license-redemption.md

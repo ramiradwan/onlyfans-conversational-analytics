@@ -158,11 +158,11 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.ACTIVATION_REQUIRED,
       tone: 'warning',
       title: 'Full activation required',
-      body: 'Full activation has not been completed on this computer. Secure activation cannot be started from this release yet. Preview and existing desktop data remain available.',
-      primaryAction: 'retry_readiness',
-      primaryLabel: 'Check activation',
-      secondaryAction: null,
-      secondaryLabel: null,
+      body: 'Continue activation in Settings in the desktop app. Preview and existing desktop data remain available until readiness is confirmed.',
+      primaryAction: 'open_dashboard',
+      primaryLabel: 'Open desktop app',
+      secondaryAction: 'retry_readiness',
+      secondaryLabel: 'Check activation',
     });
   }
 

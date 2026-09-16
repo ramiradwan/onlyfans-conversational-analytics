@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "50c08ee8b3f3dbb1364b875e876a32ab7c641f9a"
-APPROVED_SOURCE_TREE = "15b821c361f4bc1077a0e1ef5689f5916ff75f51"
-APPROVED_SOURCE_MANIFEST_SHA256 = "d50e961dd421bdb8be4fd8860653c5bd1a8f7759b2fd60ed263b3245aff0fd07"
+APPROVED_SOURCE_COMMIT = "de2e514e4ef59f5789d2806002c5eb439709d261"
+APPROVED_SOURCE_TREE = "ffc0702716cef54e02fbd888cd259087e6623a20"
+APPROVED_SOURCE_MANIFEST_SHA256 = "6a4a2e2c1050b7e729695dbc1877bb8f60abfea460c37d74e5c275d3e9c86963"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -97,8 +97,8 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 774
-EXPECTED_PUBLISHED_FILE_COUNT = 55
+EXPECTED_FILE_COUNT = 783
+EXPECTED_PUBLISHED_FILE_COUNT = 64
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -107,6 +107,9 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:capability-license-activation:v1",
     "urn:bridge-clean:capability-license-exchange-quote:v1",
     "urn:bridge-clean:capability-license-exchange:v1",
+    "urn:bridge-clean:capability-license-redemption-continuation:v1",
+    "urn:bridge-clean:capability-license-redemption-proof:v1",
+    "urn:bridge-clean:capability-license-redemption:v1",
     "urn:bridge-clean:capability-license-reissue-authorization:v1",
     "urn:bridge-clean:capability-license-reissue-package:v1",
     "urn:bridge-clean:capability-license-reissue:v1",

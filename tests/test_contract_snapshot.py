@@ -90,8 +90,8 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "3c4b0a774e2fe6f3bf878c6e8434bc0e2c712630e7c89951933788d70cf1ed6c"
-    assert pin["contract_manifest_sha256"] == "6ba604cfa5b85cd75354fe6dd0ab55c89a0adfa005d6d161c659485cbd1d0878"
+    assert pin["aggregate_bundle_sha256"] == "5ced81122666923d82eb212ffd0d4643e56952fe6027a1308c12cc06c50315a1"
+    assert pin["contract_manifest_sha256"] == "827eda31ec62e156fcc16cf7b7dbf09ddddb1019ed920e322be28d21c5bf30f4"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
         "capability-license-v1": "c87d4ea9e70a856ab21888ddc048ebada5837713f97e30599af4c66536a2d5d1",
         "installation-claim-package-v1": "5bb58f5f2f3938a69d6381efeb38b0e4d6417aece0482ff337dafb8edb08483d",

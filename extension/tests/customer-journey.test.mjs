@@ -106,7 +106,7 @@ test('authenticated local transport alone enters activation checking, never Full
   assert.equal(result.title, 'Checking activation');
 });
 
-test('commercial activation required is customer-safe and has no protocol handoff', () => {
+test('commercial activation required routes the customer to desktop activation without protocol fields', () => {
   const result = deriveCustomerJourney({
     status: status({ phase: 'full', transport: 'authenticated' }),
     pairing: pairing('paired'),
@@ -115,10 +115,13 @@ test('commercial activation required is customer-safe and has no protocol handof
   });
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_REQUIRED);
   assert.equal(result.title, 'Full activation required');
-  assert.equal(result.primaryLabel, 'Check activation');
-  assert.match(result.body, /cannot be started from this release yet/);
+  assert.equal(result.primaryAction, 'open_dashboard');
+  assert.equal(result.primaryLabel, 'Open desktop app');
+  assert.equal(result.secondaryAction, 'retry_readiness');
+  assert.equal(result.secondaryLabel, 'Check activation');
+  assert.match(result.body, /Settings in the desktop app/);
   assert.doesNotMatch(
-    `${result.title} ${result.body} ${result.primaryLabel}`,
+    `${result.title} ${result.body} ${result.primaryLabel} ${result.secondaryLabel}`,
     /CapabilityLicense|package|seat[_ ]?id|license[_ ]?id|issuance[_ ]?id|JWS|proof challenge|installation key JKT|commercial exchange/i,
   );
 });
