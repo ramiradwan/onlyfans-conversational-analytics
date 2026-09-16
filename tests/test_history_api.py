@@ -13,6 +13,7 @@ from pydantic import SecretStr
 from app.api.security import AuthContext, csrf_token, get_runtime_policy
 from app.bootstrap import transport_manager
 from app.core.config import settings
+from app.core.customer_release import CustomerReleaseConfig, CustomerReleaseConfigurationError
 from app.main import app
 from inner_protocol_harness import inner_protocol_app
 from app.persistence.history import StreamKey
@@ -192,6 +193,33 @@ def test_runtime_exposes_only_bridge_ticket() -> None:
         assert "local-v2." in root.text
         assert "AGENT_AUTH_TICKET" not in root.text
         assert DEV_AGENT_AUTH_TICKET not in root.text
+
+
+def test_runtime_exposes_release_secure_setup_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    frontend = importlib.import_module("app.api.endpoints.frontend")
+    onboarding_url = "https://setup.example.test/activate"
+
+    def configured() -> CustomerReleaseConfig:
+        return CustomerReleaseConfig(
+            hosted_onboarding_url=onboarding_url,
+            hosted_api_origin="https://api.example.test",
+        )
+
+    def unavailable() -> CustomerReleaseConfig:
+        raise CustomerReleaseConfigurationError("customer release configuration is unavailable")
+
+    frontend._secure_setup_url.cache_clear()
+    monkeypatch.setattr(frontend, "load_customer_release_config", configured)
+    try:
+        with TestClient(app) as client:
+            assert f'"SECURE_SETUP_URL": "{onboarding_url}"' in client.get("/").text
+
+        frontend._secure_setup_url.cache_clear()
+        monkeypatch.setattr(frontend, "load_customer_release_config", unavailable)
+        with TestClient(app) as client:
+            assert '"SECURE_SETUP_URL": ""' in client.get("/").text
+    finally:
+        frontend._secure_setup_url.cache_clear()
 
 
 def test_settings_are_csrf_cas_and_matching_config_revision_bound() -> None:

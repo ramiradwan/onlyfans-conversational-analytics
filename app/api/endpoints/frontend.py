@@ -8,6 +8,7 @@ import hmac
 import json
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Dict, Any
 from urllib.parse import urlsplit
 
@@ -17,6 +18,10 @@ from fastapi.templating import Jinja2Templates
 
 from app.utils.logger import logger
 from app.core.config import settings
+from app.core.customer_release import (
+    CustomerReleaseConfigurationError,
+    load_customer_release_config,
+)
 from app.core.resource_paths import ResourcePathError, resource_path
 from app.api.security import (
     csrf_token,
@@ -32,6 +37,15 @@ TEMPLATES_DIR = resource_path("app/templates")
 DIST_DIR = resource_path("app/static/dist")
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+@lru_cache(maxsize=1)
+def _secure_setup_url() -> str:
+    """Release-owned hosted onboarding URL, or "" when the release has none."""
+    try:
+        return load_customer_release_config().hosted_onboarding_url
+    except CustomerReleaseConfigurationError:
+        return ""
 
 
 @dataclass(frozen=True)
@@ -247,6 +261,7 @@ async def serve_frontend(
         "FASTAPI_WS_URL": ws_url,
         "API_BASE_URL": api_base_url,
         "VERSION": settings.version,
+        "SECURE_SETUP_URL": _secure_setup_url(),
         "CREATOR_ID": None if identity is None else identity.creator_account_id,
         "BRIDGE_ROLE": None if identity is None else identity.role,
         "BRIDGE_AUTH_TICKET": (
