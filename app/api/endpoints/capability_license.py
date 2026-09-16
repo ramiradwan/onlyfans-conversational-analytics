@@ -133,11 +133,9 @@ async def _deliver(
 def _authorize_local_caller(
     request: Request,
     policy: RuntimePolicy,
-    csrf: str | None,
 ) -> None:
     require_creator(policy)
     verify_same_origin(request)
-    verify_csrf_token(policy, csrf)
 
 
 @router.post("/redeem", response_model=CapabilityLicenseDeliveryResponse)
@@ -149,7 +147,8 @@ async def redeem_capability_license_continuation(
 ) -> CapabilityLicenseDeliveryResponse:
     """Redeem one opaque Hosted authorization and return only local install success."""
 
-    _authorize_local_caller(request, policy, csrf)
+    _authorize_local_caller(request, policy)
+    verify_csrf_token(policy, csrf)
     result = await run_in_threadpool(
         _configured_redemption().redeem,
         continuation=body.continuation,
@@ -164,7 +163,8 @@ async def activate_capability_license(
     policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
     csrf: str | None = Header(None, alias="X-CSRF-Token"),
 ) -> CapabilityLicenseDeliveryResponse:
-    _authorize_local_caller(request, policy, csrf)
+    _authorize_local_caller(request, policy)
+    verify_csrf_token(policy, csrf)
     return await _deliver(
         body,
         operation="activate",
@@ -178,7 +178,8 @@ async def finalize_capability_license_reissue(
     policy: RuntimePolicy = Depends(get_authenticated_runtime_policy),
     csrf: str | None = Header(None, alias="X-CSRF-Token"),
 ) -> CapabilityLicenseDeliveryResponse:
-    _authorize_local_caller(request, policy, csrf)
+    _authorize_local_caller(request, policy)
+    verify_csrf_token(policy, csrf)
     return await _deliver(
         body,
         operation="finalize",
