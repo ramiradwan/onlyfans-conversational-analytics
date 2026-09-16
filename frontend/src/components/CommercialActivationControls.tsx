@@ -43,8 +43,6 @@ export function CommercialActivationControls({
   useEffect(() => {
     checkReadiness();
     return () => operation.current?.abort();
-    // The API object is dependency-injected and stable for the lifetime of this surface.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
 
   const submit = async () => {
