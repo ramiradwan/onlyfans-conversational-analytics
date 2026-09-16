@@ -303,7 +303,7 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
 def load_trust_set(path: str | os.PathLike[str], *, environment: str = "production") -> dict[str, Any]:
     """Load a pinned trust set, refusing non-production material in production."""
 
-    manifest = verify_snapshot_integrity()
+    verify_snapshot_integrity()
     candidate = (manifest_root := _contracts_root()) / Path(path)
     try:
         candidate.relative_to(manifest_root)
