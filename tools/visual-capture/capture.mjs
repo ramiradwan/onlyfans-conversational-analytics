@@ -85,7 +85,7 @@ const SCREENS = [
       await assertCentered(frame, page.getByRole('main'));
     },
   })),
-  { workspace: 'passkey', state: 'resting', ready: heading('Sign in to Conversation Analytics') },
+  { workspace: 'passkey', state: 'resting', ready: heading('Protect access to your messages') },
   {
     workspace: 'passkey', state: 'cancelled',
     act: (page) => page.getByRole('button', { name: 'Sign in with passkey' }).click(),
@@ -126,6 +126,14 @@ const SCREENS = [
     ready: (page) => page.getByRole('link', { name: 'Open secure setup' }),
   },
   {
+    workspace: 'settings', state: 'fresh', variant: 'activation-return', viewports: ['narrow'], modes: ['light'],
+    act: async (page) => {
+      await page.getByRole('button', { name: 'Turn on full analytics' }).click();
+      await page.getByRole('link', { name: 'Open secure setup' }).dispatchEvent('click');
+    },
+    ready: (page) => page.getByRole('status').filter({ hasText: 'Secure setup opened.' }),
+  },
+  {
     workspace: 'settings', state: 'fresh', variant: 'activation-error', viewports: ['narrow'], modes: ['light'],
     act: async (page) => {
       await page.getByRole('button', { name: 'Turn on full analytics' }).click();
@@ -140,18 +148,35 @@ const SCREENS = [
     ready: (page) => page.getByText('Check the code', { exact: true }),
   },
   {
+    workspace: 'settings', state: 'fresh', variant: 'history-consent', viewports: ['narrow'], modes: ['light'],
+    act: async (page) => {
+      await page.getByRole('button', { name: 'Connect extension' }).click();
+      await page.getByText('Check the code', { exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('checkbox', { name: 'The codes match' }).check();
+      await page.getByRole('button', { name: 'Confirm connection' }).click();
+    },
+    ready: (page) => page.getByRole('checkbox', { name: /I allow read-only syncing/ }),
+  },
+  {
     workspace: 'settings', state: 'fresh', variant: 'archive-editing', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Turn on archive' }).click(),
+    act: async (page) => {
+      await page.getByRole('button', { name: 'Manage stored messages' }).click();
+      await page.getByRole('button', { name: 'Turn on archive' }).click();
+    },
     ready: (page) => page.getByRole('spinbutton', { name: 'Days to keep' }),
   },
   {
     workspace: 'settings', state: 'populated', variant: 'delete-disclosure', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Delete messages' }).click(),
+    act: async (page) => {
+      await page.getByRole('button', { name: 'Manage stored messages' }).click();
+      await page.getByRole('button', { name: 'Delete messages' }).click();
+    },
     ready: (page) => page.getByRole('button', { name: 'Delete all messages' }),
   },
   {
     workspace: 'settings', state: 'populated', variant: 'delete-confirmation', viewports: ['narrow'], modes: ['light'],
     act: async (page) => {
+      await page.getByRole('button', { name: 'Manage stored messages' }).click();
       await page.getByRole('button', { name: 'Delete messages' }).click();
       await page.getByRole('button', { name: 'Delete all messages' }).click();
     },

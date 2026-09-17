@@ -89,7 +89,7 @@ describe('signed Bridge role bootstrap', () => {
     render(<App />);
 
     await waitFor(() => expect(useUserStore.getState().role).toBeNull());
-    expect(document.querySelector('h1')?.textContent).toBe('Sign in to Conversation Analytics');
+    expect(document.querySelector('h1')?.textContent).toBe('Protect access to your messages');
     expect(document.body.textContent).not.toContain('Application routes');
     expect(transport.connect).not.toHaveBeenCalled();
   });

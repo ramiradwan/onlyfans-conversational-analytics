@@ -237,9 +237,12 @@ function pairingApi(journey: StoryJourneyName): CompanionPairingApi {
     pins: async () => pins,
     open: async () => open,
     get: async () => awaiting,
-    change: async (_pairingId, action) => action === 'confirm'
-      ? { ...awaiting, state: 'confirmed' as const, version: 2 }
-      : { ...open, state: 'cancelled' as const, version: 2 },
+    change: async (_pairingId, action) => {
+      if (action === 'confirm') bridgeTransportStore.setAgent(connectedAgent);
+      return action === 'confirm'
+        ? { ...awaiting, state: 'confirmed' as const, version: 2 }
+        : { ...open, state: 'cancelled' as const, version: 2 };
+    },
     revoke: async () => ({ ...pin(), state: 'revoked' as const }),
   };
 }
@@ -351,7 +354,7 @@ export function StoryWorkspace({
     <MemoryRouter initialEntries={[WORKSPACE_PATHS[workspace]]}>
       <Routes>
         <Route element={<AppShell />}>
-          <Route index element={<CreatorDashboardView />} />
+          <Route index element={<CreatorDashboardView activationApi={activationApi(journey)} />} />
           <Route
             path="analytics"
             element={(

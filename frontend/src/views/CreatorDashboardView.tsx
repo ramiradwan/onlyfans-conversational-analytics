@@ -7,13 +7,17 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { useId, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useState, useSyncExternalStore } from 'react';
 
 import { DashboardOverview, type OverviewProgress } from '../components/dashboard/DashboardOverview';
 import { RecentConversations } from '../components/dashboard/RecentConversations';
 import { SetupPrompt } from '../components/SetupPrompt';
 import { usePermissions } from '../hooks/usePermissions';
 import type { AnalyticsMetric, HistoricalCoverage, ProjectionState } from '../protocol';
+import {
+  capabilityLicenseApi,
+  type CapabilityLicenseApi,
+} from '../services/capabilityLicenseApi';
 import {
   bridgeTransportStore,
   type BridgeTransportState,
@@ -81,6 +85,7 @@ interface CreatorDashboardStore {
 
 interface CreatorDashboardViewProps {
   store?: CreatorDashboardStore;
+  activationApi?: CapabilityLicenseApi;
 }
 
 function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): StatusMessage | null {
@@ -296,10 +301,30 @@ function NumbersBasis({
 
 export default function CreatorDashboardView({
   store = bridgeTransportStore,
+  activationApi = capabilityLicenseApi,
 }: CreatorDashboardViewProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const { canViewInbox } = usePermissions();
   const hasSnapshot = state.viewRevision !== null;
+  const [fullAnalyticsReady, setFullAnalyticsReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!hasSnapshot) {
+      setFullAnalyticsReady(null);
+      return;
+    }
+    const controller = new AbortController();
+    void activationApi.readiness(controller.signal).then((next) => {
+      if (controller.signal.aborted) return;
+      setFullAnalyticsReady(
+        next.commercial_authority === 'active' && next.analysis_admission === 'admitted',
+      );
+    }).catch(() => {
+      if (!controller.signal.aborted) setFullAnalyticsReady(null);
+    });
+    return () => controller.abort();
+  }, [activationApi, hasSnapshot]);
+
   const readiness: DataReadiness = {
     coverage: state.coverage,
     projection: state.projection,
@@ -318,9 +343,11 @@ export default function CreatorDashboardView({
   ];
   const format = (metric: AnalyticsMetric | null | undefined) =>
     formatAdditiveMetric(metric, readiness, (value) => NUMBER_FORMAT.format(value));
-  const showSetup = hasSnapshot && setupIncomplete(state.coverage);
+  const conversationSetupIncomplete = hasSnapshot && setupIncomplete(state.coverage);
+  const fullSetupIncomplete = hasSnapshot && !conversationSetupIncomplete && fullAnalyticsReady === false;
+  const showSetup = conversationSetupIncomplete || fullSetupIncomplete;
   const hasCounts = metrics.some((metric) => (metric?.value ?? 0) > 0);
-  const showNumbers = !showSetup || hasCounts;
+  const showNumbers = !conversationSetupIncomplete || hasCounts;
   const evidence = summarizeMetricEvidence(metrics);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
 
@@ -351,7 +378,9 @@ export default function CreatorDashboardView({
         {showSetup && (
           <SetupPrompt
             extensionConnected={extensionConnection(state.agent) === 'connected'}
-            title="Finish setup to see your numbers"
+            fullAnalyticsReady={fullAnalyticsReady === true}
+            historyEnabled={!conversationSetupIncomplete}
+            title="Finish setup"
           />
         )}
 
@@ -376,7 +405,7 @@ export default function CreatorDashboardView({
           />
         )}
 
-        {hasSnapshot && !showSetup && (
+        {hasSnapshot && !conversationSetupIncomplete && (
           <RecentConversations
             conversations={state.conversations}
             showInboxLink={canViewInbox}

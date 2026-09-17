@@ -57,24 +57,31 @@ export function WebAuthnAccessView({
         <Stack spacing={3}>
           <BrandMark />
           <Box>
-            <Typography component="h1" variant="h4">Sign in to Conversation Analytics</Typography>
+            <Typography component="h1" variant="h4">Protect access to your messages</Typography>
             <Typography sx={{ color: 'text.secondary', mt: 1 }}>
-              Your conversation data stays locked until you confirm it&apos;s you with a passkey, such as
-              your fingerprint, face, or device PIN.
+              Use a passkey to unlock synced message history in this app. You can use your fingerprint,
+              face, or device PIN.
             </Typography>
           </Box>
           {error && <Alert severity="error">{error}</Alert>}
-          <Box>
-            <Button disabled={busy} onClick={() => void authenticate(false)} size="large" variant="contained">
-              Sign in with passkey
-            </Button>
-          </Box>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            First time on this computer?{' '}
-            <Button disabled={busy} onClick={() => void authenticate(true)} size="small" variant="text">
-              Set up a passkey
-            </Button>
-          </Typography>
+          <Stack spacing={1.25}>
+            <Typography variant="subtitle2">First time on this computer?</Typography>
+            <Box>
+              <Button disabled={busy} onClick={() => void authenticate(true)} size="large" variant="contained">
+                Set up a passkey
+              </Button>
+            </Box>
+          </Stack>
+          <Stack spacing={1.25}>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Already set up on this computer?
+            </Typography>
+            <Box>
+              <Button disabled={busy} onClick={() => void authenticate(false)} size="large" variant="outlined">
+                Sign in with passkey
+              </Button>
+            </Box>
+          </Stack>
         </Stack>
       </Paper>
     </Box>

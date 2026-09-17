@@ -10,6 +10,10 @@ import { VisuallyHidden } from './ui';
 interface SetupPromptProps {
   /** Whether the browser extension is already connected, which completes the first step. */
   extensionConnected?: boolean;
+  /** Whether message-history consent has been given and syncing has started. */
+  historyEnabled?: boolean;
+  /** Whether Full analytics can actually admit licensed analysis. */
+  fullAnalyticsReady?: boolean;
   title: string;
 }
 
@@ -46,8 +50,14 @@ function Step({ done, index, label }: { done: boolean; index: number; label: str
   );
 }
 
-export function SetupPrompt({ extensionConnected = false, title }: SetupPromptProps) {
+export function SetupPrompt({
+  extensionConnected = false,
+  historyEnabled = false,
+  fullAnalyticsReady = false,
+  title,
+}: SetupPromptProps) {
   const headingId = useId();
+  const completed = [extensionConnected, historyEnabled, fullAnalyticsReady].filter(Boolean).length;
   return (
     <Paper
       data-visual="setup-prompt"
@@ -84,12 +94,17 @@ export function SetupPrompt({ extensionConnected = false, title }: SetupPromptPr
             {title}
           </Typography>
           <Typography variant="body1" sx={{ color: 'text.secondary', mt: 1 }}>
-            Two quick steps and your conversations show up here. Your conversation data stays on this computer.
+            Your conversations start syncing after the first two steps. Full analytics is ready after all three.
+            Synced message history stays on this computer.
           </Typography>
         </Box>
+        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+          {completed} of 3 steps complete
+        </Typography>
         <Stack component="ol" spacing={1.25} sx={{ listStyle: 'none', m: 0, p: 0 }}>
           <Step done={extensionConnected} index={1} label="Connect the browser extension" />
-          <Step done={false} index={2} label="Turn on message history" />
+          <Step done={historyEnabled} index={2} label="Turn on message history" />
+          <Step done={fullAnalyticsReady} index={3} label="Turn on Full analytics" />
         </Stack>
         <Button
           component={RouterLink}

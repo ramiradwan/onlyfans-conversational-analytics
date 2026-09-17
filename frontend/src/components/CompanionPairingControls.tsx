@@ -26,6 +26,12 @@ const terminal = (status: CompanionPairingStatus) => (
   ['confirmed', 'admitted', 'declined', 'cancelled', 'expired', 'revoked'].includes(status.state)
 );
 
+function remainingLabel(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = String(seconds % 60).padStart(2, '0');
+  return `${minutes}:${remainder}`;
+}
+
 function PairingAttemptControls({ api, connection, creatorAccountId }: {
   api: CompanionPairingApi;
   connection: ExtensionConnection;
@@ -36,6 +42,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
   const [failed, setFailed] = useState(false);
   const [codesMatch, setCodesMatch] = useState(false);
   const [connectedCount, setConnectedCount] = useState<number | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const current = useRef<CompanionPairingStatus | null>(null);
   const deadline = useRef(0);
   const operation = useRef<AbortController | null>(null);
@@ -141,19 +148,33 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
   const approved = status?.state === 'confirmed' || status?.state === 'admitted';
   const active = status !== null && !terminal(status);
   const awaiting = active && !failed && status.state === 'awaiting_confirmation';
-  const connected = connectedCount !== null && connectedCount > 0;
+  const connected = approved || (connectedCount !== null && connectedCount > 0);
+
+  useEffect(() => {
+    if (!active) {
+      setRemainingSeconds(null);
+      return;
+    }
+    const update = () => {
+      setRemainingSeconds(Math.max(0, Math.ceil((deadline.current - Date.now()) / 1000)));
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [active, status?.pairing_id]);
+
   const issue = extensionIssue(connection);
-  const sectionStatus: SectionStatus | null = connectedCount === null
-    ? null
-    : connectedCount === 0
-      ? { label: 'Not connected', tone: 'default' }
-      : {
-          label: extensionLabel(connection),
-          tone: connection === 'connected' ? 'success' : issue?.severity === 'info' ? 'default' : 'warning',
-        };
+  const sectionStatus: SectionStatus | null = connected
+    ? {
+        label: extensionLabel(connection),
+        tone: connection === 'connected' ? 'success' : issue?.severity === 'info' ? 'default' : 'warning',
+      }
+    : connectedCount === null
+      ? null
+      : { label: 'Not connected', tone: 'default' };
 
   return (
-    <Stack spacing={2}>
+    <Stack data-pairing-active={active ? 'true' : undefined} spacing={2}>
       <SectionHeader
         status={sectionStatus}
         summary={connectedCount === 0 && status === null
@@ -175,7 +196,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
       )}
       {approved && (
         <Alert severity="success" role="status">
-          Extension connected. Go back to the browser extension to continue.
+          Extension connected. Continue with Message history below.
         </Alert>
       )}
       {status && terminal(status) && !approved && (
@@ -187,9 +208,16 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
         </Alert>
       )}
       {active && !awaiting && !failed && (
-        <Typography role="status">
-          Open the browser extension and choose Pair device. Keep this page open.
-        </Typography>
+        <Stack spacing={0.5}>
+          <Typography role="status">
+            Open the browser extension and choose Pair device. Keep this page open.
+          </Typography>
+          {remainingSeconds !== null && (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Connection window expires in {remainingLabel(remainingSeconds)}.
+            </Typography>
+          )}
+        </Stack>
       )}
       {awaiting && (
         <Stack spacing={1.5}>
@@ -208,6 +236,11 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
           >
             {status.comparison_code!.slice(0, 3)} {status.comparison_code!.slice(3)}
           </Typography>
+          {remainingSeconds !== null && (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Code expires in {remainingLabel(remainingSeconds)}.
+            </Typography>
+          )}
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             The browser extension should show the same code. If it doesn&apos;t, don&apos;t connect.
           </Typography>
@@ -318,7 +351,7 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
         <>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             {issue ? `${issue.detail} ` : ''}
-            To pause, allow message history, or remove site access, open the browser extension.
+            Browser site access is managed in the extension. Message history syncing is managed below.
           </Typography>
           {pins.map((pin, index) => (
             <Stack

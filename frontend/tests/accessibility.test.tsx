@@ -571,8 +571,7 @@ describe('critical accessibility gates', () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole('heading', { name: 'Sign in to Conversation Analytics' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Protect access to your messages' })).toBeTruthy();
     await expectNoCriticalOrSeriousViolations(document.body);
   });
 });
-

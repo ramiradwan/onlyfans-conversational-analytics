@@ -1,10 +1,11 @@
-import { Box, Paper, Stack, Typography, styled } from '@mui/material';
-import type { ComponentProps } from 'react';
+import { Box, Button, Paper, Stack, Typography, styled } from '@mui/material';
+import { useState, type ComponentProps } from 'react';
 
 import SettingsView from './SettingsView';
 import { CommercialActivationControls } from '../components/CommercialActivationControls';
 import { CompanionPairingControls } from '../components/CompanionPairingControls';
 import { CreatorVaultControls } from '../components/CreatorVaultControls';
+import { Panel, SectionHeader } from '../components/ui';
 import type { CompanionPairingApi } from '../services/companionPairingApi';
 import type { CreatorVaultApi } from '../services/creatorVaultApi';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
@@ -29,6 +30,9 @@ const SettingsSurface = styled(Paper)(({ theme }) => ({
   '& .MuiStack-root > .MuiButton-root:not(.MuiButton-contained)': {
     alignSelf: 'flex-start',
   },
+  '&:has([data-pairing-active="true"]) > .MuiPaper-root:not(:has([data-pairing-active="true"]))': {
+    display: 'none',
+  },
 }));
 
 export interface SettingsWithVaultViewProps {
@@ -45,6 +49,7 @@ export default function SettingsWithVaultView({
   activationApi,
   vaultApi,
 }: SettingsWithVaultViewProps = {}) {
+  const [showStoredMessages, setShowStoredMessages] = useState(false);
   return (
     <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pb: 3 }}>
       <Stack data-visual="settings-frame" spacing={3} sx={{ maxWidth: 880, mx: 'auto', width: '100%' }}>
@@ -53,7 +58,23 @@ export default function SettingsWithVaultView({
           <CompanionPairingControls api={pairingApi} />
           <SettingsView api={historyApi} />
           <CommercialActivationControls api={activationApi} />
-          <CreatorVaultControls api={vaultApi} />
+          {showStoredMessages ? (
+            <CreatorVaultControls api={vaultApi} />
+          ) : (
+            <Panel>
+              <Stack spacing={2}>
+                <SectionHeader
+                  summary="Archive, download, or delete messages when you need to."
+                  title="Stored messages"
+                />
+                <Box>
+                  <Button onClick={() => setShowStoredMessages(true)} variant="outlined">
+                    Manage stored messages
+                  </Button>
+                </Box>
+              </Stack>
+            </Panel>
+          )}
         </SettingsSurface>
       </Stack>
     </Box>

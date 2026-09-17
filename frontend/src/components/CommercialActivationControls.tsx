@@ -26,13 +26,9 @@ function safeMessage(error: unknown): string {
 
 function StepLabel({ index, children }: { index: number; children: ReactNode }) {
   return (
-    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'baseline' }}>
-      <Typography
-        aria-hidden="true"
-        variant="caption"
-        sx={{ color: 'text.secondary', fontWeight: 600, minWidth: 12 }}
-      >
-        {index}
+    <Stack spacing={0.25}>
+      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+        Step {index} of 2
       </Typography>
       <Typography variant="body2">{children}</Typography>
     </Stack>
@@ -54,6 +50,7 @@ export function CommercialActivationControls({
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [setupOpened, setSetupOpened] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const stepsId = useId();
 
@@ -182,14 +179,18 @@ export function CommercialActivationControls({
           )}
           <Collapse id={stepsId} in={expanded} unmountOnExit>
             <Stack spacing={2}>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                Secure setup opens in a new tab. Keep this page open—you&apos;ll come back here to finish.
+              </Typography>
               <Stack spacing={1}>
                 <StepLabel index={1}>Open secure setup and choose Activate Full.</StepLabel>
                 {setupUrl && (
-                  <Box sx={{ pl: 3.5 }}>
+                  <Box>
                     <Button
                       component="a"
                       endIcon={<OpenInNewIcon />}
                       href={setupUrl}
+                      onClick={() => setSetupOpened(true)}
                       rel="noopener noreferrer"
                       size="small"
                       target="_blank"
@@ -199,13 +200,18 @@ export function CommercialActivationControls({
                     </Button>
                   </Box>
                 )}
+                {setupOpened && (
+                  <Alert severity="info" role="status">
+                    Secure setup opened. When it gives you an activation code, return here and paste it below.
+                  </Alert>
+                )}
               </Stack>
               <Stack spacing={1}>
                 <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
                 <Stack
                   direction={{ xs: 'column', sm: 'row' }}
                   spacing={1.5}
-                  sx={{ alignItems: { sm: 'flex-start' }, pl: 3.5 }}
+                  sx={{ alignItems: { sm: 'flex-start' } }}
                 >
                   <TextField
                     autoComplete="off"

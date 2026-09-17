@@ -80,8 +80,10 @@ describe('companion pairing controls', () => {
     await click('Connect extension');
     expect(api.open).toHaveBeenCalledWith('creator-1', expect.any(AbortSignal));
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
+    expect(screen.getByText(/Connection window expires in 5:00/)).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(screen.getByLabelText('Connection comparison code').textContent).toBe('012 345');
+    expect(screen.getByText(/Code expires in 4:59/)).toBeTruthy();
     expect(screen.queryByText(awaiting.agent_identity_thumbprint!)).toBeNull();
     expect(screen.queryByText(/Extension identity:/)).toBeNull();
     expect((screen.getByRole('button', { name: 'Confirm connection' }) as HTMLButtonElement).disabled).toBe(true);
@@ -89,7 +91,7 @@ describe('companion pairing controls', () => {
     await click('Confirm connection');
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'confirm', 3, expect.any(AbortSignal));
     expect(screen.getByText(/Extension connected/)).toBeTruthy();
-    expect(screen.getByText(/Go back to the browser extension to continue/)).toBeTruthy();
+    expect(screen.getByText(/Continue with Message history below/)).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(300_000));
     expect(api.get).toHaveBeenCalledTimes(1);
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();

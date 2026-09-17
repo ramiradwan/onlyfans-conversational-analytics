@@ -86,10 +86,13 @@ export function getStatusPresentation(
   }
 
   if (state.viewRevision !== null && setupIncomplete(state.coverage)) {
+    const extensionReady = extension === 'connected';
     return {
       color: 'warning',
-      detail: 'Connect the browser extension and start syncing your message history.',
-      label: 'Finish setup',
+      detail: extensionReady
+        ? 'Turn on message history to continue setup.'
+        : 'Connect the browser extension to continue setup.',
+      label: extensionReady ? 'Setup 2 of 3' : 'Setup 1 of 3',
     };
   }
 
