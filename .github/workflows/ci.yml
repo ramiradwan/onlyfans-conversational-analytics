@@ -460,6 +460,17 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Keep browser test caches on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-e2e"
+          $npmCache = Join-Path $env:RUNNER_TEMP "npm-cache"
+          $playwrightCache = Join-Path $env:RUNNER_TEMP "ms-playwright"
+          New-Item -ItemType Directory -Force $testTemp, $npmCache, $playwrightCache | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp", `
+            "NPM_CONFIG_CACHE=$npmCache", "PLAYWRIGHT_BROWSERS_PATH=$playwrightCache" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -490,6 +501,13 @@ jobs:
             frontend/package-lock.json
             extension/package-lock.json
             tools/e2e-capture/package-lock.json
+
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}\ms-playwright
+          key: ofca-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/e2e-capture/package-lock.json') }}
 
       - name: Install pinned native Noise toolchain
         run: rustup toolchain install 1.98.1 --profile minimal
@@ -530,6 +548,7 @@ jobs:
         run: npm ci --prefix tools/e2e-capture
 
       - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: tools/e2e-capture
         run: npx playwright install chromium
 
