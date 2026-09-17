@@ -125,8 +125,10 @@ describe('analytics presentation states', () => {
       message: "Your analytics couldn't be loaded.",
       previousStatus: 'baseline',
     });
-    expect(screen.getByText('Early estimates')).toBeTruthy();
-    expect(screen.getByText(/results below are early estimates/)).toBeTruthy();
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain("Couldn't refresh");
+    expect(alert.textContent).toContain('The early estimates below are still available.');
+    expect(screen.queryByText('Early estimates')).toBeNull();
   });
 });
 
@@ -139,9 +141,13 @@ describe('analytics dates, units and accessible trend detail', () => {
       />,
     );
 
-    for (const field of [screen.getByLabelText('Start date'), screen.getByLabelText('End date')]) {
-      expect(field.getAttribute('type')).toBe('date');
-      expect(field.closest('.MuiTextField-root')).toBeTruthy();
+    for (const label of ['Start date', 'End date']) {
+      const fields = screen.getAllByLabelText(label);
+      expect(fields.length).toBeGreaterThan(0);
+      for (const field of fields) {
+        expect(field.getAttribute('type')).toBe('date');
+        expect(field.closest('.MuiTextField-root')).toBeTruthy();
+      }
     }
   });
 
@@ -236,18 +242,18 @@ describe('analytics dates, units and accessible trend detail', () => {
   it('preserves percent units and displays sentiment on its signed range', () => {
     analytics(storyAvailableState);
 
-    const topicTable = screen.getByRole('table', { name: 'Topics and trend' });
+    const topicView = screen.getByRole('list', { name: 'Topics and trend' });
     const responsePanel = screen.getByRole('region', { name: 'Your replies' });
     const sentimentPanel = screen.getByRole('region', {
       name: 'Message tone over time',
     });
-    expect(topicTable.textContent).toContain(formatPercentValue(37.5));
-    expect(topicTable.textContent).toContain(formatPercentValue(12.5));
+    expect(topicView.textContent).toContain(formatPercentValue(37.5));
+    expect(topicView.textContent).toContain(formatPercentValue(12.5));
     expect(responsePanel.textContent).toContain(`${formatRatioPercent(0.75)} (15 of 20)`);
     expect(responsePanel.textContent).not.toContain('Silence');
     expect(sentimentPanel.textContent).toContain(formatSentimentScore(0.35));
     expect(screen.queryByText('3,750.0%')).toBeNull();
-    expect(topicTable.textContent).not.toContain('Unavailable');
+    expect(topicView.textContent).not.toContain('Unavailable');
     expect(screen.queryByText(/bounded projection/)).toBeNull();
   });
 

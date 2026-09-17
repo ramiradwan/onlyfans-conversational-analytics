@@ -65,9 +65,11 @@ const MarkButton = styled('button', {
       ? theme.vars.palette.chart.positive
       : $polarity === 'negative'
         ? theme.vars.palette.chart.negative
-        : $polarity === 'engagement'
-          ? theme.vars.palette.chart.categorical2
-          : theme.vars.palette.chart.neutral;
+        : theme.vars.palette.chart.neutral;
+  // Markers stay hidden except on the latest point, hover, and keyboard focus.
+  const reveal = {
+    opacity: 1,
+  };
   return {
     alignItems: 'center',
     appearance: 'none',
@@ -90,9 +92,17 @@ const MarkButton = styled('button', {
       borderRadius: $polarity === 'neutral' ? Number(theme.shape.borderRadius) / 2 : '50%',
       content: '""',
       height: componentTokens.analytics.markSize,
+      opacity: 0,
       position: 'absolute',
+      transition: theme.transitions.create('opacity', { duration: theme.transitions.duration.shorter }),
       width: componentTokens.analytics.markSize,
     },
+    '& .chart-marker-symbol': {
+      opacity: 0,
+      transition: theme.transitions.create('opacity', { duration: theme.transitions.duration.shorter }),
+    },
+    '&[data-emphasized="true"]::before, &:hover::before, &:focus-visible::before': reveal,
+    '&[data-emphasized="true"] .chart-marker-symbol, &:hover .chart-marker-symbol, &:focus-visible .chart-marker-symbol': reveal,
     '&:focus-visible': {
       borderRadius: '50%',
       outline: `2px solid ${theme.vars.palette.primary.main}`,
@@ -156,12 +166,15 @@ const DateExtent = styled(Stack)(({ theme }) => ({
 const Details = styled('details')(({ theme }) => ({
   '& > summary': {
     borderRadius: theme.shape.borderRadius,
-    color: theme.vars.palette.primary.main,
+    color: theme.vars.palette.text.secondary,
     cursor: 'pointer',
     fontSize: theme.typography.body2.fontSize,
     fontWeight: theme.typography.fontWeightMedium,
     padding: theme.spacing(0.75),
     width: 'fit-content',
+  },
+  '& > summary:hover': {
+    color: theme.vars.palette.text.primary,
   },
   '& > summary:focus-visible': {
     outline: `2px solid ${theme.vars.palette.primary.main}`,
@@ -234,9 +247,9 @@ function markerSymbol(polarity: Polarity): string {
   return '×';
 }
 
-/** A translucent wash of `color` suitable for an SVG gradient stop, via color-mix. */
+/** A translucent wash of `color` for the area under the line, via color-mix. */
 function wash(color: string): string {
-  return `color-mix(in srgb, ${color} 10%, transparent)`;
+  return `color-mix(in srgb, ${color} 9%, transparent)`;
 }
 
 export interface SentimentEngagementTrendProps {
@@ -249,8 +262,7 @@ export function SentimentEngagementTrend({
   engagement,
 }: SentimentEngagementTrendProps) {
   const theme = useTheme();
-  const gradientId = useId().replace(/:/g, '');
-  const washId = useId().replace(/:/g, '');
+  const tooltipId = useId().replace(/:/g, '') + '-tooltip';
   const [active, setActive] = useState<ActivePoint | null>(null);
   const engagementByDate = useMemo(
     () => new Map((engagement ?? []).map((point) => [point.at, point])),
@@ -258,31 +270,24 @@ export function SentimentEngagementTrend({
   );
 
   if (sentiment.length === 0) {
-    return (
-      <Typography sx={{
-        color: 'text.secondary'
-      }}>
-        Nothing to show for these dates.
-      </Typography>
-    );
+    return <Typography sx={{ color: 'text.secondary' }}>Nothing to show for these dates.</Typography>;
   }
 
   const latestSentiment = sentiment[sentiment.length - 1];
   const latestEngagement = engagement?.[engagement.length - 1];
-  const tooltipId = gradientId + '-tooltip';
 
   return (
     <Stack spacing={1.5}>
       <Legend aria-label={engagement?.length ? 'Chart legend' : 'Series label'}>
         <LegendItem>
-          <LegendLine $color={theme.vars.palette.chart.positive} aria-hidden="true" />
+          <LegendLine $color={theme.vars.palette.chart.sentiment} aria-hidden="true" />
           <Typography variant="caption">
             Latest tone {formatSentimentScore(latestSentiment.value)}
           </Typography>
         </LegendItem>
         {latestEngagement && (
           <LegendItem>
-            <LegendLine $color={theme.vars.palette.chart.categorical2} aria-hidden="true" />
+            <LegendLine $color={theme.vars.palette.chart.neutral} aria-hidden="true" />
             <Typography variant="caption">
               Engagement {formatRatioPercent(latestEngagement.value)}
             </Typography>
@@ -297,34 +302,30 @@ export function SentimentEngagementTrend({
           role="img"
           aria-label="Message tone over time, from negative one to positive one"
         >
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={theme.vars.palette.chart.positive} />
-              <stop offset="50%" stopColor={theme.vars.palette.chart.neutral} />
-              <stop offset="100%" stopColor={theme.vars.palette.chart.negative} />
-            </linearGradient>
-            <linearGradient id={washId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={wash(theme.vars.palette.chart.positive)} />
-              <stop offset="50%" stopColor={wash(theme.vars.palette.chart.neutral)} />
-              <stop offset="100%" stopColor={wash(theme.vars.palette.chart.negative)} />
-            </linearGradient>
-          </defs>
-          {[1, 0, -1].map((tick) => {
+          {[1, -1].map((tick) => {
             const y = yForSentiment(tick);
             return (
-              <g key={tick}>
-                <line
-                  x1={LEFT}
-                  x2={WIDTH - RIGHT}
-                  y1={y}
-                  y2={y}
-                  stroke={theme.vars.palette.chart.grid}
-                  strokeWidth="1"
-                  vectorEffect="non-scaling-stroke"
-                />
-              </g>
+              <line
+                key={tick}
+                x1={LEFT}
+                x2={WIDTH - RIGHT}
+                y1={y}
+                y2={y}
+                stroke={theme.vars.palette.chart.grid}
+                strokeWidth="1"
+                vectorEffect="non-scaling-stroke"
+              />
             );
           })}
+          <line
+            x1={LEFT}
+            x2={WIDTH - RIGHT}
+            y1={ZERO_Y}
+            y2={ZERO_Y}
+            stroke={theme.vars.palette.text.disabled}
+            strokeWidth="1.5"
+            vectorEffect="non-scaling-stroke"
+          />
           <line
             x1={LEFT}
             x2={LEFT}
@@ -334,28 +335,28 @@ export function SentimentEngagementTrend({
             strokeWidth="1"
             vectorEffect="non-scaling-stroke"
           />
-          <path d={areaPath(sentiment)} fill={`url(#${washId})`} />
+          <path d={areaPath(sentiment)} fill={wash(theme.vars.palette.chart.sentiment)} />
           <path
             d={linePath(sentiment)}
             fill="none"
-            stroke={`url(#${gradientId})`}
+            stroke={theme.vars.palette.chart.sentiment}
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeWidth="2"
+            strokeWidth="2.5"
             vectorEffect="non-scaling-stroke"
           />
-          {engagement?.length && (
+          {engagement?.length ? (
             <path
               d={linePath(engagement, true)}
               fill="none"
-              stroke={theme.vars.palette.chart.categorical2}
+              stroke={theme.vars.palette.chart.neutral}
               strokeDasharray="6 4"
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeWidth="2"
+              strokeWidth="1.5"
               vectorEffect="non-scaling-stroke"
             />
-          )}
+          ) : null}
         </ChartSvg>
 
         {[1, 0, -1].map((tick) => (
@@ -383,6 +384,7 @@ export function SentimentEngagementTrend({
               $polarity={polarity}
               aria-label={label}
               aria-describedby={active?.series === 'sentiment' && active.index === index ? tooltipId : undefined}
+              data-emphasized={index === sentiment.length - 1 ? 'true' : undefined}
               data-hit-target={componentTokens.analytics.markHitTarget}
               style={{ left: `${(x / WIDTH) * 100}%`, top: `${(y / HEIGHT) * 100}%` }}
               onMouseEnter={() => setActive({ series: 'sentiment', index, left: x, top: y, label })}
@@ -393,7 +395,7 @@ export function SentimentEngagementTrend({
                 if (event.key === 'Escape') setActive(null);
               }}
             >
-              <MarkerSymbol aria-hidden="true">{markerSymbol(polarity)}</MarkerSymbol>
+              <MarkerSymbol className="chart-marker-symbol" aria-hidden="true">{markerSymbol(polarity)}</MarkerSymbol>
             </MarkButton>
           );
         })}
@@ -409,6 +411,7 @@ export function SentimentEngagementTrend({
               $polarity="engagement"
               aria-label={label}
               aria-describedby={active?.series === 'engagement' && active.index === index ? tooltipId : undefined}
+              data-emphasized={index === engagement.length - 1 ? 'true' : undefined}
               data-hit-target={componentTokens.analytics.markHitTarget}
               style={{ left: `${(x / WIDTH) * 100}%`, top: `${(y / HEIGHT) * 100}%` }}
               onMouseEnter={() => setActive({ series: 'engagement', index, left: x, top: y, label })}
@@ -416,7 +419,7 @@ export function SentimentEngagementTrend({
               onFocus={() => setActive({ series: 'engagement', index, left: x, top: y, label })}
               onBlur={() => setActive(null)}
             >
-              <MarkerSymbol aria-hidden="true">{markerSymbol('engagement')}</MarkerSymbol>
+              <MarkerSymbol className="chart-marker-symbol" aria-hidden="true">{markerSymbol('engagement')}</MarkerSymbol>
             </MarkButton>
           );
         })}
@@ -436,14 +439,10 @@ export function SentimentEngagementTrend({
       </Plot>
 
       <DateExtent aria-hidden="true">
-        <Typography variant="caption" sx={{
-          color: 'text.secondary'
-        }}>
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
           {formatDateLabel(sentiment[0].at)}
         </Typography>
-        <Typography variant="caption" sx={{
-          color: 'text.secondary'
-        }}>
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
           {formatDateLabel(latestSentiment.at)}
         </Typography>
       </DateExtent>
@@ -464,9 +463,7 @@ export function SentimentEngagementTrend({
               {sentiment.map((point) => (
                 <tr key={point.at}>
                   <td>{formatDateLabel(point.at)}</td>
-                  <td>
-                    {sentimentLabel(point.value)} · {formatSentimentScore(point.value)}
-                  </td>
+                  <td>{sentimentLabel(point.value)} · {formatSentimentScore(point.value)}</td>
                   <td>{point.sampleCount}</td>
                   {engagement?.length ? (
                     <td>

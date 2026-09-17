@@ -1,4 +1,3 @@
-import BuildCircleOutlinedIcon from '@mui/icons-material/BuildCircleOutlined';
 import {
   Alert,
   AlertTitle,
@@ -16,14 +15,11 @@ import type { AnalyticsReadState } from '../../analytics';
 import { componentTokens } from '../../theme';
 
 const StateCard = styled(Paper)(({ theme }) => ({
-  alignItems: 'center',
-  display: 'flex',
-  flexDirection: 'column',
+  display: 'grid',
   gap: theme.spacing(1),
-  justifyContent: 'center',
-  minHeight: theme.spacing(30),
-  padding: theme.spacing(4),
-  textAlign: 'center',
+  minHeight: theme.spacing(22),
+  padding: theme.spacing(3),
+  alignContent: 'center',
   ...theme.effects.cardBorder(theme),
 }));
 
@@ -56,9 +52,7 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
   if (state.status === 'loading') {
     return (
       <Stack spacing={2} role="status" aria-live="polite">
-        <Typography sx={{
-          color: 'text.secondary'
-        }}>{state.message}</Typography>
+        <Typography sx={{ color: 'text.secondary' }}>{state.message}</Typography>
         <LoadingGrid>
           {Array.from({ length: 4 }, (_, index) => (
             <Skeleton key={index} variant="rounded" height={112} animation={false} />
@@ -72,13 +66,10 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
   if (state.status === 'building' && state.data === null) {
     return (
       <StateCard role="status">
-        <BuildCircleOutlinedIcon color="disabled" fontSize="large" />
         <Typography component="h2" variant="h6">
-          Analytics are building
+          Updating your analytics
         </Typography>
-        <Typography sx={{
-          color: 'text.secondary'
-        }}>{state.message}</Typography>
+        <Typography sx={{ color: 'text.secondary' }}>{state.message}</Typography>
       </StateCard>
     );
   }
@@ -86,13 +77,10 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
   if (state.status === 'unavailable') {
     return (
       <StateCard role="status">
-        <BuildCircleOutlinedIcon color="disabled" fontSize="large" />
         <Typography component="h2" variant="h6">
           Analytics are unavailable
         </Typography>
-        <Typography sx={{
-          color: 'text.secondary'
-        }}>{state.message}</Typography>
+        <Typography sx={{ color: 'text.secondary' }}>{state.message}</Typography>
       </StateCard>
     );
   }
@@ -111,27 +99,38 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
     ((state.status === 'error' || state.status === 'building') &&
       state.previousStatus === 'baseline');
 
+  // One notice per frame: a refresh or its failure takes the place of the early-estimate warning.
+  const notice =
+    state.status === 'building'
+      ? {
+          severity: 'info' as const,
+          title: 'Updating your analytics',
+          detail: `${state.message} ${
+            isBaselineFrame ? 'The results below are early estimates.' : 'Your last results are shown below.'
+          }`,
+        }
+      : state.status === 'error'
+        ? {
+            severity: 'error' as const,
+            title: "Couldn't refresh",
+            detail: `${state.message} ${
+              isBaselineFrame ? 'The early estimates below are still available.' : 'Your last results are shown below.'
+            }`,
+          }
+        : isBaselineFrame
+          ? {
+              severity: 'warning' as const,
+              title: 'Early estimates',
+              detail: `${state.message} Use them to spot trends, not for exact numbers.`,
+            }
+          : null;
+
   return (
     <Stack spacing={2} aria-busy={state.isRefreshing}>
-      {state.status === 'building' && (
-        <Alert severity="info">
-          <AlertTitle>Updating your analytics</AlertTitle>
-          {state.message} Your last results are shown below.
-        </Alert>
-      )}
-      {isBaselineFrame && (
-        <Alert severity="warning">
-          <AlertTitle>Early estimates</AlertTitle>
-          {state.status === 'baseline'
-            ? state.message
-            : 'The results below are early estimates.'}{' '}
-          Use them to spot trends, not for exact numbers.
-        </Alert>
-      )}
-      {state.status === 'error' && (
-        <Alert severity="error" role="alert">
-          <AlertTitle>Couldn&apos;t refresh</AlertTitle>
-          {state.message} Your last results are shown below.
+      {notice && (
+        <Alert severity={notice.severity} role={notice.severity === 'error' ? 'alert' : undefined}>
+          <AlertTitle>{notice.title}</AlertTitle>
+          {notice.detail}
         </Alert>
       )}
       {state.isRefreshing && <LinearProgress aria-label="Refreshing analytics" />}
