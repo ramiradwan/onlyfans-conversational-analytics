@@ -173,7 +173,7 @@ export function CreatorVaultControls({
 
   return (
     <Panel>
-      <Stack spacing={2}>
+      <Stack data-journey-state="desktop.stored_messages" spacing={2}>
         <SectionHeader summary="Saved only on this computer." title="Stored messages" />
 
         {error && <Alert severity="error" role="alert">{error}</Alert>}

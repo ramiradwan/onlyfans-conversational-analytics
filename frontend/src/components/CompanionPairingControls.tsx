@@ -174,7 +174,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
       : { label: 'Not connected', tone: 'default' };
 
   return (
-    <Stack data-pairing-active={active ? 'true' : undefined} spacing={2}>
+    <Stack data-journey-state="desktop.extension_pairing" data-pairing-active={active ? 'true' : undefined} spacing={2}>
       <SectionHeader
         status={sectionStatus}
         summary={connectedCount === 0 && status === null

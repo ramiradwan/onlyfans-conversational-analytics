@@ -44,7 +44,11 @@ export function WebAuthnAccessView({
   };
 
   return (
-    <Box component="main" sx={{ display: 'grid', minHeight: '100%', placeItems: 'center', p: { xs: 2, sm: 4 } }}>
+    <Box
+      component="main"
+      data-journey-state="desktop.passkey_sign_in"
+      sx={{ display: 'grid', minHeight: '100%', placeItems: 'center', p: { xs: 2, sm: 4 } }}
+    >
       <Paper
         sx={(theme) => ({
           maxWidth: 520,

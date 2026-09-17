@@ -74,6 +74,7 @@ export function DashboardOverview({
       component="section"
       aria-busy={isLoading}
       aria-label="Overview"
+      data-journey-state="desktop.numbers_ready"
       sx={(theme) => ({
         display: 'grid',
         gap: { xs: 3, md: 5 },
@@ -89,7 +90,7 @@ export function DashboardOverview({
           <Typography variant="kpi">{conversations}</Typography>
         )}
         {progress && (
-          <Stack spacing={1} sx={{ maxWidth: 280, mt: 2.5 }}>
+          <Stack data-journey-state="desktop.history_syncing" spacing={1} sx={{ maxWidth: 280, mt: 2.5 }}>
             <LinearProgress
               aria-label={progress.label}
               variant={progress.percent === null ? 'indeterminate' : 'determinate'}

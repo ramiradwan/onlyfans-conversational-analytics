@@ -164,7 +164,7 @@ export function CommercialActivationControls({
       {error && <Alert severity="error" role="alert">{error}</Alert>}
 
       {!checking && activationRequired && (
-        <>
+        <Box data-journey-state="desktop.full_analytics_activation" sx={{ display: 'contents' }}>
           {!expanded && (
             <Box>
               <Button
@@ -231,7 +231,7 @@ export function CommercialActivationControls({
               </Stack>
             </Stack>
           </Collapse>
-        </>
+        </Box>
       )}
 
       {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (

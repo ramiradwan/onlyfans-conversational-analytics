@@ -60,6 +60,7 @@ export function SetupPrompt({
   const completed = [extensionConnected, historyEnabled, fullAnalyticsReady].filter(Boolean).length;
   return (
     <Paper
+      data-journey-state="desktop.setup_prompt"
       data-visual="setup-prompt"
       component="section"
       aria-labelledby={headingId}

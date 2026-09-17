@@ -164,7 +164,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
           <Skeleton height={40} width={200} variant="rounded" />
         </Stack>
       ) : settings !== null ? (
-        <Stack spacing={2}>
+        <Stack data-journey-state="desktop.message_history" spacing={2}>
           {waitingForExtension ? (
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               Available once the browser extension is connected.
