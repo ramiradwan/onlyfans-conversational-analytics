@@ -38,11 +38,31 @@ const STATES = Object.freeze({
     pairing: 'compare', pairingCode: '483 217', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
+  pairing_not_ready: Object.freeze({
+    tone: 'warning', mode: 'Full setup in progress', badge: 'Next step', title: 'Continue in the desktop app',
+    body: 'Open Settings in the desktop app and choose Connect extension. Then choose Pair device here.',
+    primary: 'Open desktop app settings', secondary: 'Pair device', desktop: 'Running', delivery: 'Off',
+    activation: 'Not checked', analysis: 'Not ready',
+  }),
   pairing_failed: Object.freeze({
     tone: 'error', mode: 'Full setup in progress', badge: 'Try again', title: 'Connection was not completed',
-    body: 'Open a new connection window in the desktop app, then try again. Nothing is shared until the connection works.',
+    body: 'In the desktop app, choose Connect extension again. Then try again here. Nothing is shared until the connection works.',
     primary: 'Try connection again', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
+  }),
+  pairing_window_not_ready: Object.freeze({
+    view: 'pairing', tone: 'warning', badge: 'Next step', title: 'Continue in the desktop app',
+    body: 'Open Settings in the desktop app and choose Connect extension. Then choose Pair device here.',
+    primary: 'Open desktop app settings', secondary: 'Pair device',
+  }),
+  pairing_window_compare: Object.freeze({
+    view: 'pairing', tone: 'progress', badge: 'Connecting', title: 'Confirm the connection',
+    body: 'Compare the six-digit code here with the code in the desktop app. Confirm only when both codes match.',
+    pairing: 'compare', pairingCode: '483 217',
+  }),
+  pairing_window_connected: Object.freeze({
+    view: 'pairing', tone: 'success', badge: 'Connected', title: 'Connected to the desktop app',
+    body: 'This window closes automatically.',
   }),
   desktop_stopped: Object.freeze({
     tone: 'warning', mode: 'Full setup in progress', badge: 'Needs attention', title: 'Desktop app is not running',
@@ -92,17 +112,19 @@ async function popupDocument() {
 }
 
 async function renderState(page, state) {
-  await page.setViewportSize({ width: 390, height: 600 });
+  // The pairing window opens at 400 by 520 outer pixels.
+  await page.setViewportSize(state.view === 'pairing' ? { width: 400, height: 488 } : { width: 390, height: 600 });
   await page.setContent(await popupDocument());
   await page.evaluate((value) => {
     const byId = (id) => document.getElementById(id);
-    byId('mode-label').textContent = value.mode;
+    if (value.view) document.querySelector('main').dataset.view = value.view;
+    byId('mode-label').textContent = value.mode ?? 'Full setup in progress';
     byId('journey-card').dataset.tone = value.tone;
     byId('journey-badge').textContent = value.badge;
     byId('journey-title').textContent = value.title;
     byId('journey-body').textContent = value.body;
     byId('preview-metrics').classList.toggle('hidden', value.preview !== true);
-    byId('connection-details').classList.toggle('hidden', value.desktop === undefined);
+    byId('open-connection').classList.toggle('hidden', value.desktop === undefined);
     if (value.desktop !== undefined) {
       byId('brain-status').textContent = value.desktop;
       byId('delivery-status').textContent = value.delivery;

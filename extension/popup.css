@@ -146,6 +146,7 @@ section::before, .panel::before {
 
 .warning { background: color-mix(in srgb, var(--dipsy-color-warning) 8%, var(--dipsy-color-paper)); }
 .fine-print { margin: 8px 0 0; color: var(--dipsy-color-text-muted); font-size: 11px; }
+.fine-print:empty { display: none; }
 .section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .section-heading h2 { margin-bottom: 0; }
 .section-heading p { margin-bottom: 0; color: var(--dipsy-color-text-muted); font-size: 11px; }
@@ -191,32 +192,68 @@ section::before, .panel::before {
 }
 .metrics span { display: block; color: var(--dipsy-color-text-muted); font-size: 11px; }
 
-details.panel { padding: 0; }
-details.panel > summary {
+/* Secondary screens replace the home content; the header and footer stay in place. */
+main[data-view="home"] > .subview,
+main[data-view="connection"] > :not(header, footer, #connection-view),
+main[data-view="manage"] > :not(header, footer, #manage-view) { display: none; }
+
+/* The pairing window shows only the pairing card and fills its own window. */
+main[data-view="pairing"] > :not(header, footer, #journey-card, #feedback),
+main[data-view="pairing"] .status-line { display: none; }
+body:has(> main[data-view="pairing"]) { width: auto; max-width: none; max-height: none; }
+main[data-view="pairing"] .journey-card { padding: 20px; }
+main[data-view="pairing"] .pairing-code { margin: 16px 0; font-size: 34px; }
+
+.menu { display: grid; gap: 2px; padding: 4px; }
+.menu-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 14px;
-  border-radius: inherit;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--dipsy-radius-compact);
   color: var(--dipsy-color-text);
+  background: transparent;
   font-weight: var(--dipsy-font-weight-medium);
-  list-style: none;
+  text-align: left;
 }
-details.panel > summary::-webkit-details-marker { display: none; }
-details.panel > summary::after {
+.menu-row::after {
   width: 7px;
   height: 7px;
-  margin: 0 4px 3px 0;
+  margin-right: 4px;
+  border-top: 1.5px solid var(--dipsy-color-text-muted);
   border-right: 1.5px solid var(--dipsy-color-text-muted);
-  border-bottom: 1.5px solid var(--dipsy-color-text-muted);
   content: "";
   transform: rotate(45deg);
-  transition: transform var(--dipsy-motion-fast) var(--dipsy-easing-standard);
 }
-details.panel[open] > summary::after { margin-bottom: -3px; transform: rotate(-135deg); }
-details.panel > summary:hover { background: var(--dipsy-color-hover); }
-details.panel > :not(summary) { margin-inline: 14px; }
-details.panel[open] > :last-child { margin-bottom: 14px; }
+.menu-row:hover:not(:disabled) { background: var(--dipsy-color-hover); }
+.menu-row:active:not(:disabled) { background: var(--dipsy-color-selected); transform: none; }
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-height: 32px;
+  margin: 0 0 6px -8px;
+  padding: 4px 10px 4px 12px;
+  border-radius: var(--dipsy-radius-compact);
+  color: var(--dipsy-color-primary);
+  background: transparent;
+}
+.back-button::before {
+  width: 7px;
+  height: 7px;
+  border-bottom: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+  content: "";
+  transform: rotate(45deg);
+}
+.back-button:hover:not(:disabled) { background: var(--dipsy-color-selected); }
+.subview > h2 { margin: 0 2px 12px; font-size: 16px; }
+.actions:not(:has(> :not(.hidden))) { display: none; }
+[tabindex="-1"]:focus { outline: none; }
 
 .connection-grid { margin: 0; }
 .connection-grid div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }

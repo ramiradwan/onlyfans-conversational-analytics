@@ -116,6 +116,23 @@ test('pairing failure has a concrete retry path', () => {
   assert.equal(result.primaryLabel, 'Try connection again');
 });
 
+test('pairing before the desktop app is ready names the desktop step first', () => {
+  const result = deriveCustomerJourney({
+    status: status(), pairing: pairing('desktop_not_ready'), desktopRuntimeReachable: true,
+  });
+  assert.equal(result.id, CUSTOMER_STATES.PAIRING_NOT_READY);
+  assert.equal(result.tone, 'warning');
+  assert.equal(result.primaryAction, 'open_desktop_settings');
+  assert.equal(result.secondaryAction, 'pair');
+  assert.match(result.body, /Connect extension/);
+  assert.doesNotMatch(`${result.title} ${result.body}`, /fail|error|window/i);
+
+  const stopped = deriveCustomerJourney({
+    status: status(), pairing: pairing('desktop_not_ready'), desktopRuntimeReachable: false,
+  });
+  assert.equal(stopped.id, CUSTOMER_STATES.DESKTOP_APP_NEEDED);
+});
+
 test('authenticated local transport alone enters activation checking, never Full-ready', () => {
   const result = deriveCustomerJourney({
     status: status({ phase: 'full', transport: 'authenticated' }),

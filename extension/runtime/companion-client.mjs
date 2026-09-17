@@ -150,7 +150,7 @@ export function createCompanionClient({
     if (!allowsFull?.()) return { state: 'unavailable', comparison_code: null };
     const saved = await (await store()).status();
     if (saved.paired) return { state: 'paired', comparison_code: null };
-    if (['pairing', 'compare', 'pairing_failed'].includes(state.state)) return { ...state };
+    if (['pairing', 'compare', 'pairing_failed', 'desktop_not_ready'].includes(state.state)) return { ...state };
     let account = null;
     try { account = await detectedAccountId(); } catch {}
     if (typeof account !== 'string' || account.length === 0) {
@@ -168,15 +168,17 @@ export function createCompanionClient({
     const controller = new AbortController();
     pairingAbort = controller;
     const combined = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
-    const timer = setTimeout(() => controller.abort(), 300_000);
+    let expired = false;
+    const timer = setTimeout(() => { expired = true; controller.abort(); }, 300_000);
     const wait = (operation) => abortable(operation, combined);
     const version = generation;
-    let wire, pending, committed = false;
+    let wire, pending, committed = false, offered = false;
     const check = async (account) => {
       combined.throwIfAborted();
       if (generation !== version) throw failure();
       await permitted(account);
     };
+    announce({ state: 'pairing', comparison_code: null });
     try {
       const account = await wait(permitted());
       const pairingStore = await wait(store());
@@ -187,8 +189,9 @@ export function createCompanionClient({
         deadline: Math.floor(Date.now() / 1000) + 300, signal: combined }));
       wire = await wait(wireFactory(LOCAL_PAIRING_WS, { text: true, signal: combined }));
       await wire.send(JSON.stringify(pending.request));
-      announce({ state: 'pairing', comparison_code: null });
-      const accepted = await wait(pairingStore.acceptOffer(pending.requestId, await wire.receive(), {
+      const offer = await wire.receive();
+      offered = true;
+      const accepted = await wait(pairingStore.acceptOffer(pending.requestId, offer, {
         trust: await wait(trust()), detectedAccountId: account, signal: combined,
       }));
       await check(account);
@@ -203,7 +206,10 @@ export function createCompanionClient({
       announce({ state: 'paired', comparison_code: null });
       return { ...state };
     } catch {
-      announce({ state: 'pairing_failed', comparison_code: null });
+      // A state refusal before any offer means Brain has no open pairing window.
+      const notReady = !offered && !combined.aborted && wire?.closeReason === 'pairing_state_refused';
+      const cancelled = combined.aborted && !expired;
+      announce({ state: notReady ? 'desktop_not_ready' : cancelled ? 'unpaired' : 'pairing_failed', comparison_code: null });
       throw failure();
     } finally {
       clearTimeout(timer);
@@ -324,6 +330,8 @@ export function createCompanionClient({
         })().catch(() => {
           if (message.type === 'readiness') {
             notifyReadiness({ commercial_authority: 'unavailable', analysis_admission: 'blocked' });
+          } else if (message.type === 'pair') {
+            void status().then(notify, () => notify({ state: 'pairing_failed', comparison_code: null }));
           } else {
             notify({ state: 'pairing_failed', comparison_code: null });
           }

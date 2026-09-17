@@ -9,6 +9,7 @@ export const CUSTOMER_STATES = Object.freeze({
   PAIRING_REQUIRED: 'pairing_required',
   PAIRING_IN_PROGRESS: 'pairing_in_progress',
   PAIRING_FAILED: 'pairing_failed',
+  PAIRING_NOT_READY: 'pairing_not_ready',
   ACTIVATION_CHECKING: 'activation_checking',
   ACTIVATION_REQUIRED: 'activation_required',
   ACTIVATION_ACTIVE: 'activation_active',
@@ -84,7 +85,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.PAIRING_FAILED,
       tone: 'error',
       title: 'Connection was not completed',
-      body: 'Open a new connection window in the desktop app, then try again. Nothing is shared until the connection works.',
+      body: 'In the desktop app, choose Connect extension again. Then try again here. Nothing is shared until the connection works.',
       primaryAction: 'pair',
       primaryLabel: 'Try connection again',
       secondaryAction: null,
@@ -116,6 +117,19 @@ export function deriveCustomerJourney({
       primaryLabel: desktopDownloadAvailable ? 'Install desktop app' : null,
       secondaryAction: null,
       secondaryLabel: null,
+    });
+  }
+
+  if (pairing?.state === 'desktop_not_ready') {
+    return Object.freeze({
+      id: CUSTOMER_STATES.PAIRING_NOT_READY,
+      tone: 'warning',
+      title: 'Continue in the desktop app',
+      body: 'Open Settings in the desktop app and choose Connect extension. Then choose Pair device here.',
+      primaryAction: 'open_desktop_settings',
+      primaryLabel: 'Open desktop app settings',
+      secondaryAction: 'pair',
+      secondaryLabel: 'Pair device',
     });
   }
 

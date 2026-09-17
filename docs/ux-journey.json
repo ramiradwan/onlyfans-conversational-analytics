@@ -69,7 +69,9 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/activation-evidence.test.mjs", "name": "AE-07 pre-mode and mode-choice retries preserve event IDs and timestamps" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/legal-activation.spec.mjs", "name": "runtime Legal flow proves Preview activation then distinct Full upgrade evidence" }
+        { "kind": "unit", "file": "extension/tests/popup-context.test.mjs", "name": "a saved view and review position restore within the resume window" },
+        { "kind": "browser", "file": "tools/e2e-capture/tests/legal-activation.spec.mjs", "name": "runtime Legal flow proves Preview activation then distinct Full upgrade evidence" },
+        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "the Full analysis review is restored after the privacy notice closes the popup" }
       ]
     },
     {
@@ -140,13 +142,36 @@
       "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "PAIRING_IN_PROGRESS: 'pairing_in_progress'" },
       "transitions": [
         { "to": "extension.pairing_required", "by": "user", "action": "cancel_pairing" },
+        { "to": "extension.pairing_required", "by": "user", "action": "close-pairing-window" },
+        { "to": "extension.pairing_not_ready", "by": "system" },
         { "to": "extension.pairing_failed", "by": "system" },
         { "to": "extension.full_unavailable", "by": "system" }
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "pairing progress explains comparison and never claims success early" },
+        { "kind": "unit", "file": "extension/tests/companion-client.test.mjs", "name": "cancelling a comparison returns to unpaired and expiry reports a failure" },
         { "kind": "unit", "file": "frontend/tests/CompanionPairingControls.test.tsx", "name": "requires explicit code comparison before versioned confirmation without exposing the identity thumbprint" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_compare" }
+        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "closing the pairing window cancels pairing" },
+        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "a confirmed pairing closes its window and the popup shows the connected state" },
+        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_compare" },
+        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_window_compare" },
+        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_window_connected" }
+      ]
+    },
+    {
+      "id": "extension.pairing_not_ready",
+      "surface": "extension.popup",
+      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "PAIRING_NOT_READY: 'pairing_not_ready'" },
+      "transitions": [
+        { "to": "desktop.extension_pairing", "by": "user", "action": "open_desktop_settings" },
+        { "to": "extension.pairing_in_progress", "by": "user", "action": "pair" }
+      ],
+      "evidence": [
+        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "pairing before the desktop app is ready names the desktop step first" },
+        { "kind": "unit", "file": "extension/tests/companion-client.test.mjs", "name": "a refusal before any offer reports that the desktop app is not ready for pairing" },
+        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "pairing before the desktop app is ready shows the desktop step and then the code" },
+        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_not_ready" },
+        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_window_not_ready" }
       ]
     },
     {
@@ -158,6 +183,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "pairing failure has a concrete retry path" },
+        { "kind": "unit", "file": "extension/tests/companion-client.test.mjs", "name": "a refusal before any offer reports that the desktop app is not ready for pairing" },
         { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_failed" }
       ]
     },
@@ -247,6 +273,8 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "Full is ready only after secure delivery, commercial authority, and analysis admission" },
+        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "connection details are restored after opening the desktop app closes the popup" },
+        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "a confirmed pairing closes its window and the popup shows the connected state" },
         { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "full_ready" }
       ]
     },

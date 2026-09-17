@@ -11,7 +11,7 @@ const MAX_BUFFERED = 128 * 1024;
 export async function openLoopbackSocket(url, { webSocketFactory = (value) => new WebSocket(value), signal, text = false } = {}) {
   const socket = webSocketFactory(url);
   socket.binaryType = 'arraybuffer';
-  let pending = null, stopped = false;
+  let pending = null, stopped = false, closeReason = null;
   const queue = [];
   const listeners = new Set();
   let openedResolve, openedReject;
@@ -31,7 +31,11 @@ export async function openLoopbackSocket(url, { webSocketFactory = (value) => ne
   const openTimer = setTimeout(close, 10_000);
   socket.onopen = () => { clearTimeout(openTimer); openedResolve(); };
   socket.onerror = close;
-  socket.onclose = close;
+  // Keeps the peer's refusal code when the peer ends the connection first.
+  socket.onclose = (event) => {
+    if (!stopped && typeof event?.reason === 'string' && /^[a-z_]{1,64}$/u.test(event.reason)) closeReason = event.reason;
+    close();
+  };
   socket.onmessage = ({ data }) => {
     if (stopped) return;
     let value;
@@ -51,6 +55,7 @@ export async function openLoopbackSocket(url, { webSocketFactory = (value) => ne
   await opened;
   return Object.freeze({
     get closed() { return stopped; },
+    get closeReason() { return closeReason; },
     close,
     onClose(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     async send(value, deadline = performance.now() + 10_000) {

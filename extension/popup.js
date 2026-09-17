@@ -16,6 +16,7 @@ import {
 import { customerReleaseConfig } from './runtime/customer-release-config.mjs';
 import { requiredOriginsForMode } from './runtime/permission-recovery.mjs';
 import { deriveCustomerJourney, probeDesktopRuntime } from './runtime/customer-journey.mjs';
+import { loadPopupContext, savePopupContext } from './runtime/popup-context.mjs';
 import { LOCAL_SERVICE_ORIGIN, assertLocalServiceUrl } from './transport/local-service-endpoints.mjs';
 
 const ids = [
@@ -26,11 +27,13 @@ const ids = [
   'terms-link', 'risk-link', 'activate-software', 'mode-choice', 'preview-disclosure',
   'full-disclosure', 'enable-preview', 'enable-full', 'not-now-preview', 'full-secondary',
   'restore-access', 'reload-tabs', 'pause', 'history', 'history-prompt', 'open-dashboard', 'revoke',
-  'clear-preview', 'delete-local-data', 'privacy-link', 'preview-metrics', 'connection-details',
+  'clear-preview', 'delete-local-data', 'privacy-link', 'preview-metrics',
+  'open-connection', 'open-manage', 'connection-back', 'manage-back', 'connection-title', 'manage-title',
   'companion-pairing', 'pairing-status', 'pairing-code', 'pair-companion', 'cancel-pairing', 'forget-companion',
   'journey-card', 'journey-badge', 'journey-title', 'journey-body', 'journey-primary', 'journey-secondary',
 ];
 const elements = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
+const main = document.querySelector('main');
 
 let companionConfig = {
   dashboard_url: `${LOCAL_SERVICE_ORIGIN}/`,
@@ -49,6 +52,25 @@ let analysisReadiness = { commercial_authority: 'unknown', analysis_admission: '
 let pairingStatus = { state: 'unpaired', comparison_code: null };
 const isPairingWindow = window.location.hash === '#pairing';
 const pairingPort = chrome.runtime.connect({ name: 'ofca.companion.pairing' });
+let contextRestored = false;
+let pairRequested = false;
+let pairingWindowClosing = false;
+
+// The pairing window is a single-task surface: it shows only the pairing card.
+const PAIRING_WINDOW_CONNECTED = Object.freeze({
+  id: 'pairing_window_connected',
+  tone: 'success',
+  title: 'Connected to the desktop app',
+  body: 'This window closes automatically.',
+  primaryAction: null,
+  primaryLabel: null,
+  secondaryAction: null,
+  secondaryLabel: null,
+});
+if (isPairingWindow) {
+  main.dataset.view = 'pairing';
+  document.title = 'Pair with the desktop app';
+}
 
 function show(element, visible) {
   element.classList.toggle('hidden', !visible);
@@ -56,6 +78,39 @@ function show(element, visible) {
 
 function isShown(element) {
   return !element.classList.contains('hidden');
+}
+
+// Stores only where the customer was in the popup; product state is read fresh on every open.
+function persistPopupContext() {
+  if (isPairingWindow || !contextRestored) return;
+  void savePopupContext(chrome.storage.session, {
+    view: main.dataset.view,
+    full_review_requested: fullReviewRequested,
+    initial_choice_dismissed: initialModeChoiceDismissed,
+  });
+}
+
+function showView(view) {
+  if (isPairingWindow) return;
+  main.dataset.view = view;
+  window.scrollTo(0, 0);
+  persistPopupContext();
+}
+
+function openView(view) {
+  showView(view);
+  elements[`${view}-title`].focus();
+}
+
+function closeView(view) {
+  showView('home');
+  elements[`open-${view}`].focus();
+}
+
+// Focuses the journey card, which shows the outcome of an action.
+function returnHome() {
+  showView('home');
+  elements['journey-title'].focus();
 }
 
 function setLocked(element, locked) {
@@ -104,6 +159,8 @@ function journeyBadge(state) {
     pairing_required: 'Next step',
     pairing_in_progress: 'Connecting',
     pairing_failed: 'Try again',
+    pairing_not_ready: 'Next step',
+    pairing_window_connected: 'Connected',
     activation_checking: 'Checking',
     activation_required: 'Activation required',
     activation_active: 'Needs attention',
@@ -142,7 +199,7 @@ function renderReadinessStatus() {
 
 function renderJourney() {
   if (currentStatus === null) return;
-  const journey = deriveCustomerJourney({
+  const journey = isPairingWindow && pairingStatus.state === 'paired' ? PAIRING_WINDOW_CONNECTED : deriveCustomerJourney({
     status: currentStatus,
     pairing: pairingStatus,
     desktopRuntimeReachable,
@@ -165,10 +222,7 @@ function renderJourney() {
   elements['journey-secondary'].dataset.action = journey.secondaryAction ?? '';
   elements['journey-secondary'].textContent = journey.secondaryLabel ?? '';
   show(elements['journey-secondary'], journey.secondaryAction !== null && !cancelOwned);
-  show(
-    elements['open-dashboard'],
-    desktopRuntimeReachable && ![journey.primaryAction, journey.secondaryAction].includes('open_dashboard'),
-  );
+  show(elements['open-dashboard'], desktopRuntimeReachable);
 }
 
 function renderPairing(value = pairingStatus) {
@@ -179,7 +233,7 @@ function renderPairing(value = pairingStatus) {
   show(elements['companion-pairing'], pairingActionable);
   const pending = ['pairing', 'compare'].includes(value.state);
   const paired = value.state === 'paired';
-  show(elements['pair-companion'], pairingActionable && !pending && !paired);
+  show(elements['pair-companion'], pairingActionable && !pending && !paired && value.state !== 'desktop_not_ready');
   show(elements['cancel-pairing'], pending);
   show(elements['forget-companion'], paired);
   const code = typeof value.comparison_code === 'string' && /^\d{6}$/u.test(value.comparison_code) ? value.comparison_code : null;
@@ -189,13 +243,30 @@ function renderPairing(value = pairingStatus) {
     paired: 'This extension is securely paired with the desktop app.',
     pairing: 'Connecting… Keep this window open.',
     compare: 'Compare this code with the desktop app. Confirm there only if both codes match.',
-    pairing_failed: 'Connection did not complete. Open a new connection window in the desktop app and try again.',
+    pairing_failed: 'Connection did not complete. In the desktop app, choose Connect extension again, then try again.',
+    desktop_not_ready: 'Open Settings in the desktop app and choose Connect extension. Then choose Pair device here.',
     setup_incomplete: 'Open your creator account in OnlyFans, then return here to continue.',
     unavailable: 'Open your creator account in OnlyFans, then return here to continue.',
-  })[value.state] ?? 'Open a connection window in the desktop app, then pair this device.';
+  })[value.state] ?? 'Connect this extension to the desktop app to continue Full setup.';
   if (!paired && !pending) resetAnalysisReadiness();
   renderReadinessStatus();
   renderJourney();
+  if (isPairingWindow && paired) closePairingWindow(1500);
+}
+
+function closePairingWindow(delayMs = 0) {
+  if (!isPairingWindow || pairingWindowClosing) return;
+  pairingWindowClosing = true;
+  setTimeout(() => {
+    void chrome.tabs.getCurrent()
+      .then((tab) => chrome.tabs.remove(tab.id))
+      .catch(() => window.close());
+  }, delayMs);
+}
+
+function cancelPairing() {
+  pairingPort.postMessage({ type: 'cancel' });
+  closePairingWindow();
 }
 
 function requestAnalysisReadiness() {
@@ -224,7 +295,9 @@ pairingPort.onMessage.addListener((value) => {
     renderJourney();
     return;
   }
-  renderPairing(value);
+  // A result left by an earlier attempt is not this window's outcome.
+  const stale = isPairingWindow && !pairRequested && ['desktop_not_ready', 'pairing_failed'].includes(value?.state);
+  renderPairing(stale ? { state: 'unpaired', comparison_code: null } : value);
   requestAnalysisReadiness();
 });
 pairingPort.onDisconnect.addListener(() => {
@@ -303,6 +376,7 @@ function renderLegal(status) {
     elements.feedback.textContent = 'Data-handling information changed. Review it before restarting analytics.';
   }
   renderJourney();
+  persistPopupContext();
 }
 
 function render(status) {
@@ -334,7 +408,8 @@ function render(status) {
   show(elements['restore-access'], permissionRequired && active);
   show(elements['reload-tabs'], status.reload_required === true);
   show(elements['preview-metrics'], mode === 'preview' || pausedFrom === 'preview');
-  show(elements['connection-details'], mode === 'full' || pausedFrom === 'full');
+  show(elements['open-connection'], mode === 'full' || pausedFrom === 'full');
+  if (main.dataset.view === 'connection' && !isShown(elements['open-connection'])) returnHome();
   show(elements['history-prompt'], status.phase === 'full' && status.history_permission === false);
   show(elements.pause, active && !permissionRequired);
   show(elements.revoke, mode !== 'off' && mode !== 'revoked');
@@ -358,14 +433,15 @@ async function probeDesktop() {
   return desktopRuntimeReachable;
 }
 
-async function refresh() {
-  const [status, legal] = await Promise.all([
-    send({ type: UI_STATUS_MESSAGE_TYPE }),
-    sendLegal({ type: LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE }),
-  ]);
-  render(status);
-  renderLegal(legal);
-  await probeDesktop();
+function restorePopupContext(context) {
+  initialModeChoiceDismissed = context.initial_choice_dismissed;
+  fullReviewRequested = context.full_review_requested && currentStatus?.consent?.mode === 'preview';
+  if (context.view === 'manage' || (context.view === 'connection' && isShown(elements['open-connection']))) {
+    openView(context.view);
+  }
+  contextRestored = true;
+  renderLegal(legalStatus);
+  if (fullReviewRequested && main.dataset.view === 'home') elements['mode-choice'].scrollIntoView({ block: 'nearest' });
 }
 
 async function legalAction(type, checkbox = null) {
@@ -423,17 +499,26 @@ async function transition(mode) {
   }
 }
 
-function openPairingWindow() {
+// The toolbar popup closes when focus moves, so pairing runs in its own small window.
+async function openPairingWindow() {
   if (isPairingWindow) {
+    pairRequested = true;
     pairingPort.postMessage({ type: 'pair' });
     return;
   }
-  void chrome.windows.create({
-    url: chrome.runtime.getURL('popup.html#pairing'),
-    type: 'popup',
-    width: 440,
-    height: 640,
-  }).catch(() => { elements.feedback.textContent = 'The connection window could not be opened.'; });
+  const url = chrome.runtime.getURL('popup.html#pairing');
+  try {
+    const existing = (await chrome.runtime.getContexts({ contextTypes: ['TAB'] }))
+      .find((context) => context.documentUrl === url);
+    if (existing) {
+      await chrome.tabs.reload(existing.tabId);
+      await chrome.windows.update(existing.windowId, { focused: true });
+      return;
+    }
+    await chrome.windows.create({ url, type: 'popup', width: 400, height: 520, focused: true });
+  } catch {
+    elements.feedback.textContent = 'The pairing window could not be opened.';
+  }
 }
 
 async function runJourneyAction(action) {
@@ -458,15 +543,19 @@ async function runJourneyAction(action) {
     return;
   }
   if (action === 'pair') {
-    openPairingWindow();
+    await openPairingWindow();
     return;
   }
   if (action === 'cancel_pairing') {
-    pairingPort.postMessage({ type: 'cancel' });
+    cancelPairing();
     return;
   }
   if (action === 'open_dashboard') {
     await chrome.tabs.create({ url: companionConfig.dashboard_url });
+    return;
+  }
+  if (action === 'open_desktop_settings') {
+    await chrome.tabs.create({ url: companionConfig.history_settings_url });
     return;
   }
   if (action === 'retry_readiness') {
@@ -531,9 +620,17 @@ elements['full-secondary'].addEventListener('click', () => {
   else initialModeChoiceDismissed = true;
   renderLegal(legalStatus);
 });
-elements.pause.addEventListener('click', () => { void transition('pause'); });
+elements['open-connection'].addEventListener('click', () => openView('connection'));
+elements['open-manage'].addEventListener('click', () => openView('manage'));
+elements['connection-back'].addEventListener('click', () => closeView('connection'));
+elements['manage-back'].addEventListener('click', () => closeView('manage'));
+elements.pause.addEventListener('click', () => {
+  returnHome();
+  void transition('pause');
+});
 elements.revoke.addEventListener('click', () => {
   if (window.confirm('Revoke site access and stop all new observations? Existing desktop-app data is retained.')) {
+    returnHome();
     void transition('revoked');
   }
 });
@@ -552,6 +649,7 @@ elements['delete-local-data'].addEventListener('click', async () => {
   if (!window.confirm(
     'Delete all data stored by this extension, including activation evidence, disconnect the desktop app, revoke site access, and stop analytics?',
   )) return;
+  returnHome();
   setBusy(true);
   try {
     resetAnalysisReadiness();
@@ -568,10 +666,11 @@ elements['delete-local-data'].addEventListener('click', async () => {
 elements['open-dashboard'].addEventListener('click', () => {
   void chrome.tabs.create({ url: companionConfig.dashboard_url });
 });
-elements['pair-companion'].addEventListener('click', openPairingWindow);
-elements['cancel-pairing'].addEventListener('click', () => pairingPort.postMessage({ type: 'cancel' }));
+elements['pair-companion'].addEventListener('click', () => { void openPairingWindow(); });
+elements['cancel-pairing'].addEventListener('click', cancelPairing);
 elements['forget-companion'].addEventListener('click', () => {
   if (window.confirm('Forget the desktop app and stop this connection? You will need to pair again to use Full analysis.')) {
+    returnHome();
     resetAnalysisReadiness();
     pairingPort.postMessage({ type: 'forget' });
   }
@@ -618,13 +717,19 @@ elements['privacy-link'].addEventListener('click', (event) => {
 
 async function initialize() {
   setBusy(true);
+  const savedContext = isPairingWindow ? null : loadPopupContext(chrome.storage.session);
   try {
     await loadCompanionConfig();
-    await refresh();
-    if (isPairingWindow && currentStatus?.consent?.mode === 'full') {
-      pairingPort.postMessage({ type: 'pair' });
-      elements['companion-pairing'].scrollIntoView({ block: 'center' });
-    }
+    const [status, legal, context] = await Promise.all([
+      send({ type: UI_STATUS_MESSAGE_TYPE }),
+      sendLegal({ type: LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE }),
+      savedContext,
+    ]);
+    render(status);
+    renderLegal(legal);
+    if (context !== null) restorePopupContext(context);
+    await probeDesktop();
+    if (isPairingWindow && currentStatus?.consent?.mode === 'full') await openPairingWindow();
   } catch (_error) {
     elements.feedback.textContent = 'Extension status is temporarily unavailable. Close this popup and try again.';
   } finally {

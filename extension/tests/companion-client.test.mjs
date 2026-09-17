@@ -13,7 +13,7 @@ const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null } = {}) {
+function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait;
@@ -29,9 +29,11 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
     loadTrust: async () => ({}),
     wireFactory: async (url, options) => {
       assert.equal(url, 'ws://127.0.0.1:17871/ws/agent/pairing');
-      let receives = 0;
-      return { send: async () => {}, close() {}, receive: async () => {
-        if (++receives === 1) return JSON.stringify(vector.offer);
+      if (refusal === 'unreachable') throw new Error('companion_session_refused');
+      let receives = 0, closeReason = null;
+      return { send: async () => {}, close() {}, get closeReason() { return closeReason; }, receive: async () => {
+        if (++receives === (refusal === 'before' ? 1 : 2) && refusal) { closeReason = 'pairing_state_refused'; throw new Error('companion_session_refused'); }
+        if (receives === 1) return JSON.stringify(vector.offer);
         pairingWait = deferred();
         options.signal.addEventListener('abort', () => pairingWait.resolve('cancelled'), { once: true });
         return pairingWait.promise;
@@ -171,6 +173,30 @@ test('the transient toolbar popup can inspect status but cannot start a comparis
   h.chrome.runtime.onConnect.listeners[0](port); await tick();
   port.onMessage.listeners[0]({ type: 'pair' }); await tick();
   assert.equal(h.stats.snow, 0); assert.equal(h.stats.networks, 0);
+});
+
+test('a refusal before any offer reports that the desktop app is not ready for pairing', async () => {
+  for (const [refusal, expected] of [['before', 'desktop_not_ready'], ['after', 'pairing_failed'], ['unreachable', 'pairing_failed']]) {
+    const h = harness({ refusal }); h.unpair();
+    await assert.rejects(h.client.pair(), { message: 'companion_session_refused' });
+    assert.deepEqual(await h.client.status(), { state: expected, comparison_code: null }, refusal);
+    assert.equal(h.stats.cancel, 1); assert.equal(h.stats.networks, 0);
+  }
+});
+
+test('cancelling a comparison returns to unpaired and expiry reports a failure', async (t) => {
+  const cancelled = harness(); cancelled.unpair();
+  const controller = new AbortController(), operation = cancelled.client.pair({ signal: controller.signal });
+  const rejected = assert.rejects(operation);
+  for (let i = 0; i < 20 && (await cancelled.client.status()).state !== 'compare'; i++) await tick();
+  controller.abort(); await rejected;
+  assert.deepEqual(await cancelled.client.status(), { state: 'unpaired', comparison_code: null });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const expiring = harness(); expiring.unpair();
+  const expiry = assert.rejects(expiring.client.pair());
+  for (let i = 0; i < 20 && (await expiring.client.status()).state !== 'compare'; i++) await tick();
+  t.mock.timers.tick(300_000); await expiry;
+  assert.deepEqual(await expiring.client.status(), { state: 'pairing_failed', comparison_code: null });
 });
 
 test('forget closes the current session before deleting its pin', async () => {

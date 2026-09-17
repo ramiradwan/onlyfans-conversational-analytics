@@ -25,9 +25,9 @@ export async function openPopup(context, targetExtensionId, pageErrors) {
 }
 
 export async function openManageExtension(popup) {
-  const manage = popup.locator('#manage-extension');
-  if (!(await manage.evaluate((element) => element.open))) await manage.locator('summary').click();
-  await expect(manage).toHaveAttribute('open', '');
+  const manage = popup.locator('#manage-view');
+  if (!(await manage.isVisible())) await popup.getByRole('button', { name: 'Manage extension' }).click();
+  await expect(manage).toBeVisible();
 }
 
 export async function browserProcessId(context) {
