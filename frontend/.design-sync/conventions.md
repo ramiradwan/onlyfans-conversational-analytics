@@ -54,7 +54,7 @@ This is a MUI v9 theme/prop system, not a utility-class library. Compose the bun
 - Cards: the theme already styles MUI cards; use `Panel` or `theme.effects.cardBorder(theme)` for custom panels and `theme.effects.chartFrame(theme)` for chart frames.
 - Radius shows hierarchy: surface radius for page-level surfaces, control radius for buttons, inputs, and menus, compact radius for small inline objects, and pill shapes only for status.
 - Text: use `text.primary`, `text.secondary`, and `text.disabled`. Keep normal-size text in `text.*` roles unless contrast is verified; accent and info are emphasis and data roles.
-- Brand roles: `primary`, `secondary`, `accent`, `calm`, `success`, `warning`, `error`, and `info`. Prefer semantic roles over raw hex values.
+- Brand roles: `primary`, `secondary`, `accent`, `calm`, `success`, `warning`, `error`, and `info`. Prefer semantic roles over raw color values.
 - Status: use `StatusChip` with a `tone`; the colored dot carries the tone so the label stays short. Success is deliberately quiet.
 - Settings: build each card from `SectionHeader` (title, one-line summary, status chip) and `SettingRow` (label, short description, action at the end), separated by dividers.
 - Numbers: use the `kpi` typography variant for the single headline number and `metric` for secondary numbers, with tabular numerals. `DashboardOverview` shows one dominant total, the message volume, and its received/sent split.
