@@ -15,6 +15,7 @@ import { getConversationTitle, sortMessages } from './inboxModel';
 import { MessageBubble } from './MessageBubble';
 import type { ConversationRecord } from '../../protocol';
 import type { ConversationMessageState } from '../../store/transportStore';
+import { componentTokens } from '../../theme';
 
 export const MAX_RENDERED_MESSAGES = 160;
 const WINDOW_SHIFT = 80;
@@ -50,9 +51,11 @@ const MessagesList = styled('ol')(({ theme }) => ({
   display: 'grid',
   gap: theme.spacing(1.5),
   listStyle: 'none',
-  margin: 0,
+  margin: '0 auto',
+  maxWidth: `calc(${componentTokens.inbox.bubbleMaxWidth} + ${theme.spacing(12)})`,
   minHeight: '100%',
   padding: 0,
+  width: '100%',
 }));
 
 const CenteredState = styled(Box)(({ theme }) => ({
@@ -229,9 +232,7 @@ export function MessageStreamPane({
             {isLoading ? 'Messages' : title}
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1} sx={{
-          alignItems: 'center'
-        }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           {messageState?.hasNewerUncachedItems && (
             <Button
               size="small"
@@ -258,9 +259,7 @@ export function MessageStreamPane({
         {loadingMessages ? (
           <CenteredState role="status">
             <Typography variant="body2">Loading messages…</Typography>
-            <Stack spacing={2} sx={{
-              width: '100%'
-            }}>
+            <Stack spacing={2} sx={{ width: '100%' }}>
               <Skeleton variant="rounded" width="58%" height={72} />
               <Skeleton variant="rounded" width="62%" height={88} sx={{ alignSelf: 'flex-end' }} />
               <Skeleton variant="rounded" width="48%" height={72} />
@@ -291,39 +290,34 @@ export function MessageStreamPane({
         ) : (
           <MessagesList aria-label={'Messages with ' + title}>
             <li>
-                <Stack
-                  spacing={1}
-                  sx={{
-                    alignItems: 'center',
-                    pb: 1
-                  }}>
-                  {showLoadOlder ? (
-                    <Button
-                      aria-disabled={messageState?.status === 'loading'}
-                      onClick={loadOlder}
-                      ref={loadOlderButton}
-                      size="small"
-                      variant="outlined"
-                    >
-                      {messageState?.status === 'loading' ? 'Loading earlier…' : 'Load earlier messages'}
-                    </Button>
-                  ) : (
-                    <Typography
-                      ref={historyBoundary}
-                      tabIndex={-1}
-                      variant="caption"
-                      sx={{ color: 'text.secondary', '&:focus': { outline: 'none' } }}
-                    >
-                      {messageState?.conversationCoverage.boundary === 'history_start'
-                        ? 'Start of conversation'
-                        : 'No earlier messages on this computer'}
-                    </Typography>
-                  )}
-                  {messageState?.error && (
-                    <Typography color="error" variant="caption">{messageState.error}</Typography>
-                  )}
-                </Stack>
-              </li>
+              <Stack spacing={1} sx={{ alignItems: 'center', pb: 1 }}>
+                {showLoadOlder ? (
+                  <Button
+                    aria-disabled={messageState?.status === 'loading'}
+                    onClick={loadOlder}
+                    ref={loadOlderButton}
+                    size="small"
+                    variant="outlined"
+                  >
+                    {messageState?.status === 'loading' ? 'Loading earlier…' : 'Load earlier messages'}
+                  </Button>
+                ) : (
+                  <Typography
+                    ref={historyBoundary}
+                    tabIndex={-1}
+                    variant="caption"
+                    sx={{ color: 'text.secondary', '&:focus': { outline: 'none' } }}
+                  >
+                    {messageState?.conversationCoverage.boundary === 'history_start'
+                      ? 'Start of conversation'
+                      : 'No earlier messages on this computer'}
+                  </Typography>
+                )}
+                {messageState?.error && (
+                  <Typography color="error" variant="caption">{messageState.error}</Typography>
+                )}
+              </Stack>
+            </li>
             {renderedMessages.map((message) => (
               <MessageBubble key={message.message_id} message={message} />
             ))}

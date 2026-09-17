@@ -28,6 +28,7 @@ const BubbleSurface = styled(Paper, {
       ? theme.vars.palette.communication.outgoingBorder
       : theme.vars.palette.communication.incomingBorder),
   borderRadius: componentTokens.inbox.bubbleRadius,
+  boxShadow: 'none',
   color: theme.vars.palette.text.primary,
   maxWidth:
     'min(' +
@@ -41,7 +42,7 @@ const BubbleSurface = styled(Paper, {
 
 const BubbleMetadata = styled(Stack)(({ theme }) => ({
   alignItems: 'center',
-  color: theme.vars.palette.text.secondary,
+  color: theme.vars.palette.text.muted,
   flexDirection: 'row',
   gap: theme.spacing(1),
   justifyContent: 'flex-end',
@@ -87,9 +88,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             component="time"
             dateTime={message.sent_at}
             variant="caption"
-            sx={{
-              color: 'inherit'
-            }}
+            sx={{ color: 'inherit' }}
           >
             {formatTimestamp(message.sent_at)}
           </Typography>

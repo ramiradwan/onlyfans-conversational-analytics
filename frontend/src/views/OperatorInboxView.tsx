@@ -1,10 +1,14 @@
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import {
   Alert,
   AlertTitle,
   Box,
+  Button,
   styled,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import {
   useCallback,
   useEffect,
@@ -23,6 +27,7 @@ import { ChatListPane } from '../components/inbox/ChatListPane';
 import { ConversationInsightsPanel } from '../components/inbox/ConversationInsightsPanel';
 import { getConversationTitle, sortConversations } from '../components/inbox/inboxModel';
 import { MessageStreamPane } from '../components/inbox/MessageStreamPane';
+import { useNarrowMasterDetail } from '../components/inbox/useNarrowMasterDetail';
 import { SetupPrompt } from '../components/SetupPrompt';
 import {
   messageApi as defaultMessageApi,
@@ -59,7 +64,7 @@ const InboxGrid = styled(Box, {
   flex: 1,
   gap: theme.spacing(2),
   gridTemplateColumns: 'minmax(0, 1fr)',
-  gridTemplateRows: 'minmax(14rem, 36%) minmax(0, 1fr)',
+  gridTemplateRows: 'minmax(0, 1fr)',
   minHeight: 0,
   overflow: 'hidden',
   [theme.breakpoints.up('md')]: {
@@ -68,6 +73,13 @@ const InboxGrid = styled(Box, {
       : 'minmax(18rem, 0.85fr) minmax(0, 2fr)',
     gridTemplateRows: 'minmax(0, 1fr)',
   },
+}));
+
+const NarrowDetail = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: theme.spacing(1),
+  minHeight: 0,
 }));
 
 const StatusAlert = styled(Alert)(({ theme }) => ({
@@ -125,7 +137,16 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMess
       title: 'Conversations unavailable',
     };
   }
-  if (state.viewRevision === null || setupIncomplete(state.coverage)) return null;
+  if (state.viewRevision === null) return null;
+  if (setupIncomplete(state.coverage)) {
+    return state.conversations.length === 0
+      ? null
+      : {
+          detail: 'Recent conversations are shown. Turn on message history in Settings to include older messages.',
+          severity: 'info',
+          title: 'Message history is off',
+        };
+  }
   const connection = extensionConnection(state.agent);
   if (connection !== 'applying_settings') {
     const issue = extensionIssue(connection);
@@ -237,6 +258,9 @@ export default function OperatorInboxView({
   conversationInsight = null,
   analyticsWindowSource,
 }: OperatorInboxViewProps) {
+  const theme = useTheme();
+  const isNarrow = useMediaQuery(theme.breakpoints.down('md'));
+  const narrow = useNarrowMasterDetail(isNarrow);
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const conversations = useMemo(
@@ -267,6 +291,9 @@ export default function OperatorInboxView({
     controller: AbortController;
   } | null>(null);
   const lastReplacementAttemptKey = useRef<string | null>(null);
+  const inboxGridRef = useRef<HTMLDivElement | null>(null);
+  const backButtonRef = useRef<HTMLButtonElement | null>(null);
+  const restoreListFocus = useRef(false);
   const pageRecoveryKey =
     activeConversationId !== null &&
     state.viewRevision !== null &&
@@ -377,6 +404,50 @@ export default function OperatorInboxView({
     });
   }, [activeConversationId, loadPage, messageState?.status, pageRecoveryKey]);
 
+  // Narrow screens show the list or one conversation. Focus follows the switch in both directions.
+  useEffect(() => {
+    if (!isNarrow) return;
+    if (narrow.detailOpen) {
+      backButtonRef.current?.focus();
+      return;
+    }
+    if (restoreListFocus.current) {
+      restoreListFocus.current = false;
+      inboxGridRef.current?.querySelector<HTMLElement>('[aria-current="true"]')?.focus();
+    }
+  }, [isNarrow, narrow.detailOpen]);
+
+  const selectConversation = (conversationId: string) => {
+    restoreListFocus.current = false;
+    setSelectedConversationId(conversationId);
+    narrow.openDetail();
+  };
+
+  const closeNarrowDetail = () => {
+    restoreListFocus.current = true;
+    narrow.closeDetail();
+  };
+
+  const stream = (
+    <MessageStreamPane
+      conversation={selectedConversation}
+      isLoading={!hasSnapshot}
+      isOnline={isOnline}
+      messageState={messageState}
+      onLoadOlder={() => void loadPage('prepend')}
+      onReloadLatest={() => void loadPage('replace')}
+    />
+  );
+
+  const insights = analyticsState !== undefined && (
+    <ConversationInsightsPanel
+      analyticsState={analyticsState}
+      fanName={selectedConversation ? getConversationTitle(selectedConversation) : null}
+      insight={conversationInsight}
+      windowSource={analyticsWindowSource}
+    />
+  );
+
   return (
     <InboxRoot>
       <Typography component="h1" variant="h4" sx={{ mb: 2 }}>
@@ -396,30 +467,35 @@ export default function OperatorInboxView({
           title="Finish setup to see your conversations"
         />
       ) : (
-      <InboxGrid aria-busy={!hasSnapshot} $withInsights={analyticsState !== undefined}>
-        <ChatListPane
-          conversations={conversations}
-          isLoading={!hasSnapshot}
-          onSelectConversation={setSelectedConversationId}
-          selectedConversationId={activeConversationId}
-        />
-        <MessageStreamPane
-          conversation={selectedConversation}
-          isLoading={!hasSnapshot}
-          isOnline={isOnline}
-          messageState={messageState}
-          onLoadOlder={() => void loadPage('prepend')}
-          onReloadLatest={() => void loadPage('replace')}
-        />
-        {analyticsState !== undefined && (
-          <ConversationInsightsPanel
-            analyticsState={analyticsState}
-            fanName={selectedConversation ? getConversationTitle(selectedConversation) : null}
-            insight={conversationInsight}
-            windowSource={analyticsWindowSource}
-          />
-        )}
-      </InboxGrid>
+        <InboxGrid ref={inboxGridRef} aria-busy={!hasSnapshot} $withInsights={analyticsState !== undefined}>
+          {(!isNarrow || !narrow.detailOpen) && (
+            <ChatListPane
+              conversations={conversations}
+              isLoading={!hasSnapshot}
+              onSelectConversation={selectConversation}
+              selectedConversationId={activeConversationId}
+            />
+          )}
+          {isNarrow && narrow.detailOpen ? (
+            <NarrowDetail>
+              <Button
+                ref={backButtonRef}
+                startIcon={<ArrowBackRoundedIcon />}
+                onClick={closeNarrowDetail}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                Back to conversations
+              </Button>
+              {stream}
+              {insights}
+            </NarrowDetail>
+          ) : !isNarrow ? (
+            <>
+              {stream}
+              {insights}
+            </>
+          ) : null}
+        </InboxGrid>
       )}
     </InboxRoot>
   );
