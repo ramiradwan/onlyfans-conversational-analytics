@@ -8,7 +8,7 @@ import {
   Typography,
   useMediaQuery,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { keyframes, useTheme } from '@mui/material/styles';
 import {
   useCallback,
   useEffect,
@@ -40,6 +40,7 @@ import {
   type BridgeTransportStore,
   type BridgeTransportState,
 } from '../store/transportStore';
+import { effectTokens } from '../theme';
 import { coverageProgressLabel, humanizeProjectionReason } from '../utils/dataReadiness';
 import {
   extensionConnection,
@@ -75,11 +76,26 @@ const InboxGrid = styled(Box, {
   },
 }));
 
+const detailEnter = keyframes`
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+`;
+
 const NarrowDetail = styled(Box)(({ theme }) => ({
+  animation: `${detailEnter} ${effectTokens.motion.duration.spatial} ${effectTokens.motion.easing.enter} both`,
   display: 'flex',
   flexDirection: 'column',
   gap: theme.spacing(1),
   minHeight: 0,
+  '@media (prefers-reduced-motion: reduce)': {
+    animation: 'none',
+  },
 }));
 
 const StatusAlert = styled(Alert)(({ theme }) => ({
