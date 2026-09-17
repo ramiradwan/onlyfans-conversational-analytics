@@ -29,23 +29,18 @@ function transition(properties: readonly string[], step: keyof typeof duration =
     .join(', ');
 }
 
-// Tonal variants resolve in the browser as oklch color-mix() expressions.
-const nativeColorSeed = createTheme({ cssVariables: { nativeColor: true } });
-
+// Bridge owns light/main/dark intent tones; nativeColor remains enabled for runtime CSS color operations.
 function buildPalette(scheme: SchemeTokens): PaletteOptions {
-  const augment = (name: string, color: { main: string; contrastText: string }) =>
-    nativeColorSeed.palette.augmentColor({ color: { ...color }, name });
-
   return {
     contrastThreshold: scheme.contrastThreshold,
-    primary: augment('primary', scheme.primary),
-    secondary: augment('secondary', scheme.secondary),
-    accent: augment('accent', scheme.accent),
-    calm: augment('calm', scheme.calm),
-    success: augment('success', scheme.success),
-    warning: augment('warning', scheme.warning),
-    error: augment('error', scheme.error),
-    info: augment('info', scheme.info),
+    primary: scheme.primary,
+    secondary: scheme.secondary,
+    accent: scheme.accent,
+    calm: scheme.calm,
+    success: scheme.success,
+    warning: scheme.warning,
+    error: scheme.error,
+    info: scheme.info,
     background: scheme.background,
     text: scheme.text,
     divider: scheme.divider,
