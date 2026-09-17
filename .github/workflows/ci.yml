@@ -180,6 +180,9 @@ jobs:
       - name: Build frontend
         run: npm run build --prefix frontend
 
+      - name: Check committed theme artifacts against the generator
+        run: git diff --exit-code -- frontend/src/theme/generated
+
       - name: Test backend
         run: >
           python -m pytest
