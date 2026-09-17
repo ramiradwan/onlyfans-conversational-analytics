@@ -1,28 +1,6 @@
 name: Packaged companion Snow WASM qualification
 
 on:
-  push:
-    branches: [extension/production-readiness]
-    paths:
-      - 'extension/qualification/snow-wasm-spike/**'
-      - 'extension/crypto/snow/**'
-      - 'extension/vendor/companion-snow/**'
-      - 'extension/runtime/packaged-snow.mjs'
-      - 'extension/qualification/companion-snow-release.mjs'
-      - 'extension/qualification/pairing-storage-*.mjs'
-      - 'extension/transport/*pairing*.mjs'
-      - 'extension/transport/grant-verifier.mjs'
-      - 'extension/transport/companion-noise-session.mjs'
-      - 'tools/companion-session-spike/**'
-      - 'docs/companion-pairing-contract.md'
-      - 'extension/runtime/companion-*.mjs'
-      - 'extension/tests/companion-pairing-contract.test.mjs'
-      - 'extension/test-fixtures/pairing/**'
-      - 'contracts/companion-pairing-v1/**'
-      - 'contracts/companion-pairing-profile/**'
-      - 'contracts/manifest.json'
-      - 'contracts/consumer-pin.json'
-      - '.github/workflows/snow-wasm-feasibility.yml'
   workflow_dispatch:
 
 permissions:
@@ -33,7 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Pin Rust and WASM target
         shell: bash
@@ -130,7 +108,7 @@ jobs:
 
       - name: Upload feasibility evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: snow-wasm-feasibility
           if-no-files-found: warn

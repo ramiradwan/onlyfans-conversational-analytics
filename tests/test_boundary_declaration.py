@@ -425,8 +425,13 @@ def test_malformed_existing_base_manifest_is_not_treated_as_an_initial_manifest(
 def test_required_build_and_test_job_runs_the_pull_request_gate_with_local_inputs() -> None:
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
     job = workflow["jobs"]["build-and-test"]
-    checkout = next(step for step in job["steps"] if step.get("name") == "Checkout")
+    checkout = next(
+        step
+        for step in job["steps"]
+        if str(step.get("uses") or "").startswith("actions/checkout@")
+    )
     assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["ref"] == "${{ env.PRODUCT_SHA }}"
 
     step = next(
         step

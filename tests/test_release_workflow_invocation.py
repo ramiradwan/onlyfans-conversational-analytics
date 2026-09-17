@@ -305,8 +305,9 @@ def _assert_the_package_build_retains_sqlcipher_provenance(
     ]
     assert len(retained) == 1, "release package build must retain SQLCipher provenance"
     step = retained[0]
-    assert step.get("uses") == (
-        "actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4"
+    uses = str(step.get("uses") or "")
+    assert re.fullmatch(r"actions/upload-artifact@[0-9a-f]{40}", uses), (
+        "SQLCipher provenance upload must use an immutable actions/upload-artifact commit"
     )
     settings = step.get("with")
     assert isinstance(settings, dict), "SQLCipher provenance upload has no settings"

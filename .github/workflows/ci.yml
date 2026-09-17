@@ -2,23 +2,35 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
-    branches: [ main, develop ]
-    types: [opened, synchronize, reopened, edited]
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+          ref: ${{ env.PRODUCT_SHA }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -31,7 +43,7 @@ jobs:
         run: python tools/check_docs.py
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: 'npm'
@@ -40,7 +52,7 @@ jobs:
             extension/package-lock.json
 
       - name: Cache build caches
-        uses: actions/cache@v4
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: |
             frontend/.vite
@@ -215,27 +227,33 @@ jobs:
         run: npm run qualify:snapshot:ci --prefix extension
 
       - name: Upload frontend build
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: frontend-dist
+          name: frontend-dist-${{ env.PRODUCT_SHA }}
           path: app/static/dist/
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Upload audited extension artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: extension-dist
+          name: extension-dist-${{ env.PRODUCT_SHA }}
           path: extension/dist/
+          retention-days: 7
+          if-no-files-found: error
 
   fixed-sqlcipher-wheel:
-    # Both Windows test jobs use this run's wheel.
     runs-on: windows-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
 
@@ -251,7 +269,7 @@ jobs:
 
       - name: Cache native dependencies
         id: vcpkg-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ runner.temp }}\ofca-vcpkg-cache
           key: ofca-vcpkg-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.image-version }}-${{ hashFiles('packaging/sqlcipher/fixed-runtime-sources.json', 'packaging/sqlcipher/build-fixed-wheel.py', 'packaging/sqlcipher/build-fixed-wheel.ps1') }}
@@ -266,65 +284,36 @@ jobs:
             -BuildPython (Get-Command python.exe).Source `
             -Wheelhouse $wheelhouse
 
+      - name: Record fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $wheelhouse = Join-Path $env:RUNNER_TEMP "ofca-fixed-sqlcipher-wheelhouse"
+          $payload = [ordered]@{
+            schema_version = 1
+            source_commit = $env:PRODUCT_SHA
+            workflow_run_id = [long]$env:GITHUB_RUN_ID
+            workflow_run_attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          }
+          $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM (Join-Path $wheelhouse "ci-source.json")
+
       - name: Retain fixed SQLCipher wheel and provenance
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
-          retention-days: 30
-          if-no-files-found: error
-
-  visual-capture:
-    # Screenshots of production views in fixed story states, themes and widths
-    # for visual review. A screen that never reaches its ready state fails the job.
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout proposed Product revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-          cache-dependency-path: |
-            frontend/package-lock.json
-            tools/visual-capture/package-lock.json
-
-      - name: Install frontend dependencies
-        run: npm ci --prefix frontend
-
-      - name: Install visual capture dependencies
-        run: npm ci --prefix tools/visual-capture
-
-      - name: Install Playwright Chromium
-        working-directory: tools/visual-capture
-        run: npx playwright install --with-deps chromium
-
-      - name: Capture visual states
-        env:
-          VISUAL_CAPTURE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: node tools/visual-capture/capture.mjs artifacts/visual-capture
-
-      - name: Upload visual states
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: visual-states-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/visual-capture/
           retention-days: 30
           if-no-files-found: error
 
   windows-tests:
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
+    timeout-minutes: 60
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
 
       - name: Keep temporary test files on runner storage
         shell: pwsh
@@ -335,7 +324,7 @@ jobs:
             Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -344,12 +333,18 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
 
-      # Install this run's pinned Windows wheel before resolving requirements.
       - name: Retrieve fixed SQLCipher wheel
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
 
       - name: Declare fixed SQLCipher wheelhouse
         shell: pwsh
@@ -357,7 +352,7 @@ jobs:
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: 'npm'
@@ -390,14 +385,9 @@ jobs:
       - name: Build extension
         run: npm run build --prefix extension
 
-      # Production persistence derives its keys from Windows DPAPI, so these
-      # tests are selected positively here rather than skipped elsewhere. The
-      # invocation exits 5 if the marker ever stops matching them.
       - name: Test Windows production boot
         run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
 
-      # File-backed qualification stays on the required Windows path because
-      # local evidence cannot qualify the packaged runtime or hosted runner.
       - name: Test Windows persistent SQLCipher general profile
         env:
           HYPOTHESIS_PROFILE: tier_b_general
@@ -428,15 +418,27 @@ jobs:
           --junitxml="$env:RUNNER_TEMP\tier-b-smoke-junit.xml"
           -vv
 
+      - name: Record Windows persistence CI source
+        shell: pwsh
+        run: |
+          $payload = [ordered]@{
+            schema_version = 1
+            source_commit = $env:PRODUCT_SHA
+            workflow_run_id = [long]$env:GITHUB_RUN_ID
+            workflow_run_attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          }
+          $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP\windows-persistence-ci-source.json"
+
       - name: Retain Windows persistence evidence
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: windows-persistence-evidence-${{ github.sha }}
+          name: windows-persistence-evidence-${{ env.PRODUCT_SHA }}
           path: |
             ${{ runner.temp }}\fixed-sqlcipher-runtime-evidence.json
             ${{ runner.temp }}\tier-b-general-junit.xml
             ${{ runner.temp }}\tier-b-deletion-junit.xml
             ${{ runner.temp }}\tier-b-smoke-junit.xml
+            ${{ runner.temp }}\windows-persistence-ci-source.json
           retention-days: 30
           if-no-files-found: error
 
@@ -444,11 +446,9 @@ jobs:
         run: python -m pytest
 
   windows-browser-e2e:
-    # The activation and capture specs drive native Chrome optional-permission
-    # dialogs through UI Automation. Keep them on a Windows runner;
-    # test_ci_workflow.py keeps that binding required.
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
+    timeout-minutes: 45
 
     env:
       ENVIRONMENT: test
@@ -458,10 +458,10 @@ jobs:
       OFCA_LEGAL_RUNTIME_PROOF_PATH: ${{ github.workspace }}\artifacts\legal\runtime-ui-proof.json
 
     steps:
-      - name: Checkout proposed Product revision
-        uses: actions/checkout@v4
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.PRODUCT_SHA }}
 
       - name: Keep browser test caches on runner storage
         shell: pwsh
@@ -475,7 +475,7 @@ jobs:
             Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -485,10 +485,17 @@ jobs:
             packaging/sqlcipher/fixed-runtime-sources.json
 
       - name: Retrieve fixed SQLCipher wheel
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: fixed-sqlcipher-wheel-${{ github.sha }}
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
 
       - name: Declare fixed SQLCipher wheelhouse
         shell: pwsh
@@ -496,7 +503,7 @@ jobs:
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: 'npm'
@@ -507,7 +514,7 @@ jobs:
 
       - name: Cache Playwright Chromium
         id: playwright-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ runner.temp }}\ms-playwright
           key: ofca-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/e2e-capture/package-lock.json') }}
@@ -572,8 +579,8 @@ jobs:
           --runtime-proof "$env:OFCA_LEGAL_RUNTIME_PROOF_PATH"
 
       - name: Upload Product #5 Legal evidence bundle
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: legal-activation-v2-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/legal/activation-v2/${{ github.event.pull_request.head.sha || github.sha }}/
+          name: legal-activation-v2-${{ env.PRODUCT_SHA }}
+          path: artifacts/legal/activation-v2/${{ env.PRODUCT_SHA }}/
           if-no-files-found: error

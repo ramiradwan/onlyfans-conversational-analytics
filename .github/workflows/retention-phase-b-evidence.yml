@@ -1,29 +1,117 @@
 name: Retention Phase-B Evidence
 
 on:
-  pull_request:
-    branches: [main, develop]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
   workflow_dispatch:
+    inputs:
+      product_sha:
+        description: Exact Product source commit already qualified by CI
+        required: true
+        type: string
+      ci_run_id:
+        description: Successful CI workflow run ID for the exact Product source
+        required: true
+        type: string
 
 permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: retention-phase-b-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch || inputs.product_sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' }}
+
 jobs:
   lifecycle-evidence:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.event == 'pull_request')
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     env:
       EVIDENCE_DIR: artifacts/retention/phase-b
-      PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PRODUCT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.product_sha }}
+      CI_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.ci_run_id }}
 
     steps:
+      - name: Resolve exact successful upstream CI
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          product_sha = os.environ["PRODUCT_SHA"]
+          run_id = int(os.environ["CI_RUN_ID"])
+          repository = os.environ["REPOSITORY"]
+
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_run":
+              run = event["workflow_run"]
+              head_repository = run.get("head_repository") or {}
+              if head_repository.get("full_name") != repository:
+                  raise SystemExit("retention evidence refuses CI from another repository")
+          else:
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{repository}/actions/runs/{run_id}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  run = json.load(response)
+
+          checks = {
+              "workflow": run.get("name") == "CI",
+              "run_id": int(run.get("id") or 0) == run_id,
+              "source_commit": run.get("head_sha") == product_sha,
+              "status": run.get("status") == "completed",
+              "conclusion": run.get("conclusion") == "success",
+              "event": run.get("event") in {"pull_request", "push"},
+          }
+          failed = sorted(name for name, passed in checks.items() if not passed)
+          if failed:
+              raise SystemExit(f"upstream CI provenance mismatch: {failed}")
+
+          payload = {
+              "schema_version": 1,
+              "source_commit": product_sha,
+              "workflow": run["name"],
+              "run_id": run_id,
+              "run_number": int(run["run_number"]),
+              "run_attempt": int(run.get("run_attempt") or 1),
+              "event": run["event"],
+              "status": run["status"],
+              "conclusion": run["conclusion"],
+              "html_url": run["html_url"],
+          }
+          upstream = Path(os.environ["RUNNER_TEMP"]) / "ordinary-ci.json"
+          upstream.write_text(
+              json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: Checkout exact Product revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.PRODUCT_SHA }}
+          persist-credentials: false
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
           cache: pip
@@ -32,7 +120,7 @@ jobs:
             requirements-dev.txt
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
@@ -40,14 +128,20 @@ jobs:
             frontend/package-lock.json
             extension/package-lock.json
 
+      - name: Retrieve exact-run frontend build
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: frontend-dist-${{ env.PRODUCT_SHA }}
+          path: app/static/dist
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CI_RUN_ID }}
+          github-token: ${{ github.token }}
+
       - name: Install backend dependencies
         run: python -m pip install -r requirements-dev.txt
 
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
-
-      - name: Build frontend
-        run: npm run build --prefix frontend
 
       - name: Install extension dependencies
         run: npm ci --prefix extension
@@ -58,6 +152,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$EVIDENCE_DIR"
           test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+          cp "$RUNNER_TEMP/ordinary-ci.json" "$EVIDENCE_DIR/ordinary-ci.json"
           python - <<'PY'
           import json
           import os
@@ -138,99 +233,11 @@ jobs:
           )
           PY
           test -s "$EVIDENCE_DIR/source.json"
+          test -s "$EVIDENCE_DIR/ordinary-ci.json"
           test -s "$EVIDENCE_DIR/backend-junit.xml"
           test -s "$EVIDENCE_DIR/frontend-junit.xml"
           test -s "$EVIDENCE_DIR/extension.tap"
           test -s "$EVIDENCE_DIR/scenario-results.json"
-
-      - name: Verify ordinary CI for exact Product SHA
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import time
-          import urllib.parse
-          import urllib.request
-          from pathlib import Path
-
-          sha = os.environ["PRODUCT_SHA"]
-          repository = os.environ["REPOSITORY"]
-          token = os.environ["GITHUB_TOKEN"]
-          root = Path(os.environ["EVIDENCE_DIR"])
-          deadline = time.monotonic() + 3600
-          last = []
-
-          while time.monotonic() < deadline:
-              query = urllib.parse.urlencode({
-                  "head_sha": sha,
-                  "event": "pull_request",
-                  "per_page": 100,
-              })
-              request = urllib.request.Request(
-                  f"https://api.github.com/repos/{repository}/actions/runs?{query}",
-                  headers={
-                      "Accept": "application/vnd.github+json",
-                      "Authorization": f"Bearer {token}",
-                      "X-GitHub-Api-Version": "2022-11-28",
-                  },
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  runs = json.load(response)["workflow_runs"]
-              matches = [
-                  run for run in runs
-                  if run.get("name") == "CI" and run.get("head_sha") == sha
-              ]
-              if matches:
-                  run = max(
-                      matches,
-                      key=lambda item: (
-                          int(item.get("run_number") or 0),
-                          int(item.get("run_attempt") or 0),
-                          int(item.get("id") or 0),
-                      ),
-                  )
-                  last = [{
-                      "id": run.get("id"),
-                      "status": run.get("status"),
-                      "conclusion": run.get("conclusion"),
-                      "run_number": run.get("run_number"),
-                      "run_attempt": run.get("run_attempt"),
-                  }]
-                  if run.get("status") == "completed":
-                      if run.get("conclusion") != "success":
-                          raise SystemExit(
-                              "ordinary CI completed unsuccessfully for exact source commit: "
-                              + json.dumps(last, sort_keys=True)
-                          )
-                      payload = {
-                          "schema_version": 1,
-                          "source_commit": sha,
-                          "workflow": run["name"],
-                          "run_id": int(run["id"]),
-                          "run_number": int(run["run_number"]),
-                          "run_attempt": int(run.get("run_attempt") or 1),
-                          "event": run["event"],
-                          "status": run["status"],
-                          "conclusion": run["conclusion"],
-                          "html_url": run["html_url"],
-                      }
-                      (root / "ordinary-ci.json").write_text(
-                          json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
-                          encoding="utf-8",
-                      )
-                      break
-              time.sleep(15)
-          else:
-              raise SystemExit(
-                  "ordinary CI did not complete for exact source commit before timeout: "
-                  + json.dumps(last, sort_keys=True)
-              )
-          PY
 
       - name: Emit retention evidence manifest
         shell: bash
@@ -366,6 +373,7 @@ jobs:
           closure_ready = (
               source["source_commit"] == os.environ["PRODUCT_SHA"]
               and ordinary["source_commit"] == os.environ["PRODUCT_SHA"]
+              and ordinary["run_id"] == int(os.environ["CI_RUN_ID"])
               and ordinary["conclusion"] == "success"
               and suites_pass
               and criteria_complete
@@ -422,7 +430,7 @@ jobs:
 
       - name: Upload exact-head lifecycle evidence
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: retention-phase-b-${{ env.PRODUCT_SHA }}
           path: artifacts/retention/phase-b/

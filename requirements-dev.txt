@@ -1,10 +1,10 @@
 -r requirements.txt
 
-pytest
-pytest-asyncio
+pytest==9.1.1
+pytest-asyncio==1.4.0
 
 # Release-workflow policy tests parse .github/workflows into a structure.
-PyYAML
+PyYAML==6.0.3
 
 # Python architecture boundary linter
 import-linter==2.15
