@@ -287,12 +287,35 @@ function emitTokens(resolved: JsonObject): string {
   );
 }
 
+const INTENTS = ['primary', 'secondary', 'accent', 'calm', 'success', 'warning', 'error', 'info'];
+
+// Mirrors MUI getContrastText for the scheme's contrastThreshold.
+function contrastTextFor(background: string, threshold: number): string {
+  return contrastRatio('#FFFFFF', background) >= threshold ? '#FFFFFF' : 'rgba(0, 0, 0, 0.87)';
+}
+
+// Native CSS color derives tonal variants but decides text colour by lightness alone,
+// so each intent carries its WCAG-derived text colour.
+function addContrastText(colorSchemes: JsonObject): void {
+  for (const schemeName of ['light', 'dark']) {
+    const scheme = getObject(colorSchemes, schemeName);
+    const threshold = scheme.contrastThreshold;
+    if (typeof threshold !== 'number') throw new Error('Expected numeric contrastThreshold');
+    for (const intent of INTENTS) {
+      const color = getObject(scheme, intent);
+      if (!('contrastText' in color)) color.contrastText = contrastTextFor(getString(color, 'main'), threshold);
+    }
+  }
+}
+
 function resolveTokens(tokensJsonSource: string): JsonObject {
   const raw = JSON.parse(tokensJsonSource) as JsonValue;
   if (!isObject(raw)) throw new Error('tokens.json must contain a JSON object');
   const resolved = resolveValue(raw, raw);
   if (!isObject(resolved)) throw new Error('Resolved token source must be an object');
-  validateContrast(getObject(getObject(resolved, 'tier2'), 'colorSchemes'));
+  const colorSchemes = getObject(getObject(resolved, 'tier2'), 'colorSchemes');
+  validateContrast(colorSchemes);
+  addContrastText(colorSchemes);
   return resolved;
 }
 
@@ -305,19 +328,12 @@ export function generateThemeSource(tokensJsonSource: string): string {
   return emitTokens(resolveTokens(tokensJsonSource)).replace(/\r\n/g, '\n');
 }
 
-// Mirrors MUI getContrastText for the scheme's contrastThreshold.
-function contrastTextFor(background: string, threshold: number): string {
-  return contrastRatio('#FFFFFF', background) >= threshold ? '#FFFFFF' : 'rgba(0, 0, 0, 0.87)';
-}
-
 function colorDeclarations(scheme: JsonObject): Array<[string, string]> {
   const text = getObject(scheme, 'text');
   const background = getObject(scheme, 'background');
   const surface = getObject(scheme, 'surface');
   const action = getObject(scheme, 'action');
-  const primary = getString(getObject(scheme, 'primary'), 'main');
-  const threshold = scheme.contrastThreshold;
-  if (typeof threshold !== 'number') throw new Error('Expected numeric contrastThreshold');
+  const primary = getObject(scheme, 'primary');
   return [
     ['color-background', getString(background, 'default')],
     ['color-paper', getString(background, 'paper')],
@@ -326,8 +342,8 @@ function colorDeclarations(scheme: JsonObject): Array<[string, string]> {
     ['color-text-secondary', getString(text, 'secondary')],
     ['color-text-muted', getString(text, 'muted')],
     ['color-text-disabled', getString(text, 'disabled')],
-    ['color-primary', primary],
-    ['color-on-primary', contrastTextFor(primary, threshold)],
+    ['color-primary', getString(primary, 'main')],
+    ['color-on-primary', getString(primary, 'contrastText')],
     ['color-secondary', getString(getObject(scheme, 'secondary'), 'main')],
     ['color-success', getString(getObject(scheme, 'success'), 'main')],
     ['color-warning', getString(getObject(scheme, 'warning'), 'main')],

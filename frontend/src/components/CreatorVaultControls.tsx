@@ -8,6 +8,9 @@ import {
   DialogContentText,
   DialogTitle,
   Divider,
+  FormControlLabel,
+  Radio,
+  RadioGroup,
   Skeleton,
   Stack,
   TextField,
@@ -32,6 +35,7 @@ interface CreatorVaultControlsProps {
 }
 
 type PendingConfirmation = { kind: 'delete_all' } | { kind: 'disable' };
+type ArchiveChoice = 'finite' | 'indefinite';
 
 function defaultDownload(document: CreatorVaultExportDocument): void {
   const blob = new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' });
@@ -66,7 +70,9 @@ export function CreatorVaultControls({
   const [pending, setPending] = useState<PendingConfirmation | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [editingArchive, setEditingArchive] = useState(false);
+  const [archiveChoice, setArchiveChoice] = useState<ArchiveChoice>('finite');
   const archiveTitleId = useId();
+  const archiveChoiceId = useId();
 
   useEffect(() => {
     if (!isCreator) {
@@ -173,6 +179,18 @@ export function CreatorVaultControls({
 
   const days = Number.parseInt(finiteDays, 10);
   const finiteValid = Number.isInteger(days) && days > 0;
+  const indefiniteAvailable = status?.capabilities.indefinite_retention === true;
+  const keepChoice: ArchiveChoice = indefiniteAvailable ? archiveChoice : 'finite';
+  const daysField = (
+    <TextField
+      label="Days to keep"
+      onChange={(event) => setFiniteDays(event.target.value)}
+      size="small"
+      sx={{ maxWidth: 160, ml: indefiniteAvailable ? 4 : 0, my: indefiniteAvailable ? 1 : 0 }}
+      type="number"
+      value={finiteDays}
+    />
+  );
 
   return (
     <Panel>
@@ -278,38 +296,36 @@ export function CreatorVaultControls({
       >
         <DialogTitle id={archiveTitleId}>Turn on archive</DialogTitle>
         <DialogContent>
-          <Stack spacing={2.5}>
-            <DialogContentText variant="body2">
+          <Stack spacing={2}>
+            <DialogContentText id={archiveChoiceId} variant="body2">
               Choose how long this computer keeps your messages.
             </DialogContentText>
-            <TextField
-              label="Days to keep"
-              onChange={(event) => setFiniteDays(event.target.value)}
-              size="small"
-              sx={{ maxWidth: 200 }}
-              type="number"
-              value={finiteDays}
-            />
+            {indefiniteAvailable ? (
+              <RadioGroup
+                aria-labelledby={archiveChoiceId}
+                onChange={(event) => setArchiveChoice(event.target.value as ArchiveChoice)}
+                value={keepChoice}
+              >
+                <FormControlLabel control={<Radio />} label="Keep for a set number of days" value="finite" />
+                {keepChoice === 'finite' && daysField}
+                <FormControlLabel control={<Radio />} label="Keep until I delete them" value="indefinite" />
+              </RadioGroup>
+            ) : (
+              daysField
+            )}
             {error && <Alert severity="error" role="alert">{error}</Alert>}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button disabled={busy} onClick={closeArchive}>Cancel</Button>
-          {status?.capabilities.indefinite_retention && (
-            <Button
-              disabled={busy}
-              onClick={() => void run({ action: 'enable_indefinite' })}
-              variant="outlined"
-            >
-              Keep until I delete
-            </Button>
-          )}
           <Button
-            disabled={busy || !finiteValid}
-            onClick={() => void run({ action: 'enable_finite', finite_horizon_days: days })}
+            disabled={busy || (keepChoice === 'finite' && !finiteValid)}
+            onClick={() => void run(keepChoice === 'finite'
+              ? { action: 'enable_finite', finite_horizon_days: days }
+              : { action: 'enable_indefinite' })}
             variant="contained"
           >
-            Keep messages
+            Turn on archive
           </Button>
         </DialogActions>
       </Dialog>

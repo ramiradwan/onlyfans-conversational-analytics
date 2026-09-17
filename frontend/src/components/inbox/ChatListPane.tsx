@@ -15,7 +15,6 @@ import {
 } from '@mui/material';
 
 import { formatTimestamp, getConversationTitle } from './inboxModel';
-import { MessageFlagIcon } from './MessageFlagIcons';
 import type { ConversationRecord } from '../../protocol';
 import { conversationLatestMessage } from '../../store/transportStore';
 import { componentTokens } from '../../theme';
@@ -210,9 +209,6 @@ export function ChatListPane({
                         <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
                           {lastMessage?.text.trim() || 'No messages yet'}
                         </Typography>
-                        {lastMessage !== null && (
-                          <MessageFlagIcon sentiment={lastMessage.sentiment} context="latest" />
-                        )}
                       </PreviewRow>
                     }
                   />

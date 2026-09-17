@@ -2,7 +2,7 @@ import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined
 import { Box, Button, Chip, Popover, Stack, TextField, Typography, styled } from '@mui/material';
 import { type FormEvent, useEffect, useId, useState } from 'react';
 
-import type { AnalyticsDateRange } from '../../analytics';
+import { type AnalyticsDateRange, formatCalendarDate, formatCalendarRange } from '../../analytics';
 
 const DateFields = styled(Box)(({ theme }) => ({
   display: 'grid',
@@ -22,8 +22,10 @@ export interface AnalyticsFilterRowProps {
 
 function rangeLabel(range: AnalyticsDateRange): string {
   if (!range.startDate && !range.endDate) return 'All time';
-  if (range.startDate && range.endDate) return `${range.startDate} – ${range.endDate}`;
-  return range.startDate ? `From ${range.startDate}` : `Through ${range.endDate}`;
+  if (range.startDate && range.endDate) return formatCalendarRange(range.startDate, range.endDate);
+  return range.startDate
+    ? `From ${formatCalendarDate(range.startDate)}`
+    : `Through ${formatCalendarDate(range.endDate)}`;
 }
 
 function inputDate(date: Date): string {
@@ -79,7 +81,7 @@ export function AnalyticsFilterRow({ value, onApply, isRefreshing = false }: Ana
   return (
     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
       <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>Dates</Typography>
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>Date range</Typography>
         <Typography variant="body2" noWrap>{rangeLabel(value)}</Typography>
       </Stack>
       <Button

@@ -35,7 +35,7 @@ export { TopicsTable } from '../src/components/analytics/TopicsTable';
 export { ChatListPane } from '../src/components/inbox/ChatListPane';
 export { ConversationInsightsPanel } from '../src/components/inbox/ConversationInsightsPanel';
 export { MessageBubble } from '../src/components/inbox/MessageBubble';
-export { MessageFlagIcon } from '../src/components/inbox/MessageFlagIcons';
+export { MessageTone } from '../src/components/inbox/MessageTone';
 export { MessageStreamPane } from '../src/components/inbox/MessageStreamPane';
 export {
   ChartPlaceholder,

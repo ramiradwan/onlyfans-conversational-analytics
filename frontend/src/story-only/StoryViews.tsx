@@ -108,6 +108,7 @@ export function StoryAnalyticsView({ state }: { state: AnalyticsReadState }) {
       state={state}
       dateRange={storyDateRange}
       onDateRangeChange={() => undefined}
+      onRetry={() => undefined}
       windowSources={storyWindowSources}
     />
   );

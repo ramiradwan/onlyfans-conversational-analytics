@@ -172,6 +172,7 @@ export const effectTokens = {
 export const semanticColorSchemes = {
   "dark": {
     "accent": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#A78BFA"
     },
     "action": {
@@ -184,6 +185,7 @@ export const semanticColorSchemes = {
       "paper": "#17171F"
     },
     "calm": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#8B87FF"
     },
     "chart": {
@@ -213,20 +215,25 @@ export const semanticColorSchemes = {
     "contrastThreshold": 4.5,
     "divider": "rgba(255, 255, 255, 0.07)",
     "error": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#E66767"
     },
     "info": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#00ABC1"
     },
     "mode": "dark",
     "placeholder": "#24242F",
     "primary": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#8B87FF"
     },
     "secondary": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#A78BFA"
     },
     "success": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#4CAF50"
     },
     "surface": {
@@ -244,11 +251,13 @@ export const semanticColorSchemes = {
       "secondary": "#B6B4C4"
     },
     "warning": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#F5B547"
     }
   },
   "light": {
     "accent": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#8B5CF6"
     },
     "action": {
@@ -261,6 +270,7 @@ export const semanticColorSchemes = {
       "paper": "#FFFFFF"
     },
     "calm": {
+      "contrastText": "#FFFFFF",
       "main": "#5B57F2"
     },
     "chart": {
@@ -290,20 +300,25 @@ export const semanticColorSchemes = {
     "contrastThreshold": 4.5,
     "divider": "rgba(20, 18, 33, 0.06)",
     "error": {
+      "contrastText": "#FFFFFF",
       "main": "#C9363E"
     },
     "info": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#0094A8"
     },
     "mode": "light",
     "placeholder": "#E8E8F0",
     "primary": {
+      "contrastText": "#FFFFFF",
       "main": "#5B57F2"
     },
     "secondary": {
+      "contrastText": "rgba(0, 0, 0, 0.87)",
       "main": "#8B5CF6"
     },
     "success": {
+      "contrastText": "#FFFFFF",
       "main": "#008300"
     },
     "surface": {
@@ -321,6 +336,7 @@ export const semanticColorSchemes = {
       "secondary": "#5C5A69"
     },
     "warning": {
+      "contrastText": "#FFFFFF",
       "main": "#A85C00"
     }
   }

@@ -253,7 +253,7 @@ export const storyErrorState: AnalyticsReadState = {
   status: 'error',
   data: null,
   isRefreshing: false,
-  message: "Your analytics couldn't be loaded.",
+  message: 'Check your connection and try again.',
   previousStatus: null,
 };
 

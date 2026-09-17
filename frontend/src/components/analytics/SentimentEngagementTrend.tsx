@@ -229,7 +229,7 @@ function markerSymbol(polarity: Polarity): string {
 
 /** A translucent wash of `color` for the area under the line, via color-mix. */
 function wash(color: string): string {
-  return `color-mix(in srgb, ${color} 9%, transparent)`;
+  return `color-mix(in oklch, ${color} 9%, transparent)`;
 }
 
 export interface SentimentEngagementTrendProps {
@@ -269,14 +269,14 @@ export function SentimentEngagementTrend({
           <LegendItem>
             <LegendLine $color={theme.vars.palette.chart.sentiment} aria-hidden="true" />
             <Typography variant="caption">
-              Latest tone {formatSentimentScore(latestSentiment.value)}
+              Latest tone: {sentimentLabel(latestSentiment.value)} {formatSentimentScore(latestSentiment.value)}
             </Typography>
           </LegendItem>
           {latestEngagement && (
             <LegendItem>
               <LegendLine $color={theme.vars.palette.chart.neutral} aria-hidden="true" />
               <Typography variant="caption">
-                Engagement {formatRatioPercent(latestEngagement.value)}
+                Engagement: {formatRatioPercent(latestEngagement.value)}
               </Typography>
             </LegendItem>
           )}

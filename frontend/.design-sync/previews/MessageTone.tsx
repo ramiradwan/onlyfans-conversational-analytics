@@ -1,22 +1,22 @@
 import {
   Box,
-  MessageFlagIcon,
+  MessageTone,
   Stack,
   Typography,
 } from 'onlyfans-analytics-frontend';
 
-export function SentimentStates() {
+export function ToneStates() {
   const states = [
     ['Positive', 'positive'],
-    ['Neutral (no icon)', 'neutral'],
+    ['Neutral (no label)', 'neutral'],
     ['Negative', 'negative'],
-    ['Unknown (no icon)', 'unknown'],
+    ['Unknown (no label)', 'unknown'],
   ] as const;
 
   return (
     <Box sx={{ bgcolor: 'background.paper', maxWidth: 360, p: 2 }}>
       <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
-        Message sentiment
+        Message tone
       </Typography>
       <Stack spacing={1.25}>
         {states.map(([label, sentiment]) => (
@@ -32,27 +32,12 @@ export function SentimentStates() {
             }}>
               {label}
             </Typography>
-            <Box sx={{ minWidth: 24, textAlign: 'center' }}>
-              <MessageFlagIcon sentiment={sentiment} />
+            <Box sx={{ color: 'text.muted', minHeight: 20 }}>
+              <MessageTone sentiment={sentiment} />
             </Box>
           </Stack>
         ))}
       </Stack>
     </Box>
-  );
-}
-
-export function LatestMessageContext() {
-  return (
-    <Stack
-      direction="row"
-      spacing={1}
-      sx={{
-        alignItems: 'center',
-        p: 2
-      }}>
-      <Typography variant="body2">Latest message</Typography>
-      <MessageFlagIcon sentiment="positive" context="latest" />
-    </Stack>
   );
 }

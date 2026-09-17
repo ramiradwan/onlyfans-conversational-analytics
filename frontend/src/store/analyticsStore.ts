@@ -87,7 +87,7 @@ export function createAnalyticsStore(
       const message =
         error instanceof AnalyticsClientError || error instanceof AnalyticsContractError
           ? error.message
-          : "Your analytics couldn't be loaded.";
+          : 'Check your connection and try again.';
       if (error instanceof AnalyticsClientError) {
         if (error.status === 401 || error.status === 403) {
           set({ state: { status: 'error', data: null, isRefreshing: false, message, previousStatus: null } });

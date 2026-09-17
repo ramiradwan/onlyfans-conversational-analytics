@@ -92,7 +92,7 @@ export function getStatusPresentation(
       detail: extensionReady
         ? 'Turn on message history to continue setup.'
         : 'Connect the browser extension to continue setup.',
-      label: extensionReady ? 'Setup 2 of 3' : 'Setup 1 of 3',
+      label: 'Needs setup',
     };
   }
 

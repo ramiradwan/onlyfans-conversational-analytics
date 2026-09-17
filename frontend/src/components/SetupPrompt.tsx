@@ -2,9 +2,11 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import { Box, Button, Paper, Stack, Typography } from '@mui/material';
-import { useId } from 'react';
+import { keyframes, type Theme } from '@mui/material/styles';
+import { useId, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
+import { effectTokens } from '../theme';
 import { VisuallyHidden } from './ui';
 
 interface SetupPromptProps {
@@ -17,37 +19,95 @@ interface SetupPromptProps {
   title: string;
 }
 
-function Step({ done, index, label }: { done: boolean; index: number; label: string }) {
+type StepState = 'done' | 'current' | 'upcoming';
+
+const checkEnter = keyframes`
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+`;
+
+/** Plays the check animation only when a step completes while the prompt is shown. */
+function useJustCompleted(done: boolean): boolean {
+  const [previous, setPrevious] = useState(done);
+  const [justCompleted, setJustCompleted] = useState(false);
+  if (done !== previous) {
+    setPrevious(done);
+    setJustCompleted(done);
+  }
+  return justCompleted;
+}
+
+function Step({ index, label, state }: { index: number; label: string; state: StepState }) {
+  const done = state === 'done';
+  const current = state === 'current';
+  const justCompleted = useJustCompleted(done);
   return (
-    <Stack component="li" direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+    <Stack
+      aria-current={current ? 'step' : undefined}
+      component="li"
+      data-step-state={state}
+      direction="row"
+      spacing={1.5}
+      sx={{ alignItems: 'center' }}
+    >
       <Box
         aria-hidden="true"
         sx={(theme) => ({
           alignItems: 'center',
-          bgcolor: done ? theme.vars.palette.success.main : 'transparent',
-          border: done ? 'none' : `1.5px solid ${theme.vars.palette.divider}`,
+          bgcolor: done
+            ? theme.vars.palette.success.main
+            : current
+              ? theme.vars.palette.action.selected
+              : 'transparent',
+          border: done ? 'none' : `1.5px solid ${current ? theme.vars.palette.primary.main : theme.vars.palette.divider}`,
           borderRadius: '50%',
-          color: done ? theme.vars.palette.success.contrastText : theme.vars.palette.text.secondary,
+          color: done
+            ? theme.vars.palette.success.contrastText
+            : current
+              ? theme.vars.palette.primary.main
+              : theme.vars.palette.text.secondary,
           display: 'flex',
           flexShrink: 0,
           fontSize: '0.75rem',
           fontWeight: 600,
           height: 24,
           justifyContent: 'center',
+          transition: transitionFor(theme, ['background-color', 'border-color', 'color']),
           width: 24,
         })}
       >
-        {done ? <CheckRoundedIcon sx={{ fontSize: 16 }} /> : index}
+        {done ? (
+          <CheckRoundedIcon
+            sx={{
+              animation: justCompleted
+                ? `${checkEnter} ${effectTokens.motion.duration.standard} ${effectTokens.motion.easing.enter} both`
+                : 'none',
+              fontSize: 16,
+            }}
+          />
+        ) : (
+          index
+        )}
       </Box>
       <Typography
         variant="body2"
-        sx={{ color: done ? 'text.secondary' : 'text.primary', fontWeight: done ? 400 : 500 }}
+        sx={{ color: current ? 'text.primary' : 'text.secondary', fontWeight: current ? 500 : 400 }}
       >
         {label}
         {done && <VisuallyHidden> (done)</VisuallyHidden>}
       </Typography>
     </Stack>
   );
+}
+
+function transitionFor(theme: Theme, properties: string[]): string {
+  return theme.transitions.create(properties, { duration: theme.transitions.duration.standard });
 }
 
 export function SetupPrompt({
@@ -57,7 +117,13 @@ export function SetupPrompt({
   title,
 }: SetupPromptProps) {
   const headingId = useId();
-  const completed = [extensionConnected, historyEnabled, fullAnalyticsReady].filter(Boolean).length;
+  const steps = [
+    { done: extensionConnected, label: 'Connect the browser extension' },
+    { done: historyEnabled, label: 'Turn on message history' },
+    { done: fullAnalyticsReady, label: 'Turn on Full analytics' },
+  ];
+  const completed = steps.filter((step) => step.done).length;
+  const currentIndex = steps.findIndex((step) => !step.done);
   return (
     <Paper
       data-journey-state="desktop.setup_prompt"
@@ -100,12 +166,17 @@ export function SetupPrompt({
           </Typography>
         </Box>
         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-          {completed} of 3 steps complete
+          {completed} of {steps.length} complete
         </Typography>
         <Stack component="ol" spacing={1.25} sx={{ listStyle: 'none', m: 0, p: 0 }}>
-          <Step done={extensionConnected} index={1} label="Connect the browser extension" />
-          <Step done={historyEnabled} index={2} label="Turn on message history" />
-          <Step done={fullAnalyticsReady} index={3} label="Turn on Full analytics" />
+          {steps.map((step, index) => (
+            <Step
+              key={step.label}
+              index={index + 1}
+              label={step.label}
+              state={step.done ? 'done' : index === currentIndex ? 'current' : 'upcoming'}
+            />
+          ))}
         </Stack>
         <Button
           component={RouterLink}

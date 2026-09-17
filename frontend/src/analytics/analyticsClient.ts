@@ -75,7 +75,7 @@ async function parseError(response: Response): Promise<AnalyticsClientError> {
     503: { code: 'analytics_unavailable', message: 'Your analytics are still being prepared.' },
   };
   const fallback = status === null
-    ? { code: 'analytics_http_error', message: "Your analytics couldn't be loaded." }
+    ? { code: 'analytics_http_error', message: 'Check your connection and try again.' }
     : defaults[status];
   return new AnalyticsClientError({
     status: status ?? undefined,

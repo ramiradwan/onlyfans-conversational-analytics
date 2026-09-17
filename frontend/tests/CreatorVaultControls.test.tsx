@@ -108,14 +108,18 @@ describe('CreatorVaultControls', () => {
     expect(await screen.findByText('Off')).toBeTruthy();
     expect(screen.queryByLabelText('Days to keep')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Turn on archive' }));
-    expect(screen.queryByRole('button', { name: 'Keep until I delete' })).toBeNull();
+    const archiveDialog = within(screen.getByRole('dialog'));
+    expect(archiveDialog.queryByRole('radio')).toBeNull();
     expect(screen.queryByText(/removed automatically/)).toBeNull();
     expect(screen.queryByLabelText(/ ID$/)).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Days to keep'), {
+    const submit = archiveDialog.getByRole('button', { name: 'Turn on archive' });
+    fireEvent.change(archiveDialog.getByLabelText('Days to keep'), { target: { value: '0' } });
+    expect(submit.hasAttribute('disabled')).toBe(true);
+    fireEvent.change(archiveDialog.getByLabelText('Days to keep'), {
       target: { value: '365' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Keep messages' }));
+    fireEvent.click(submit);
     await waitFor(() => expect(command).toHaveBeenCalledWith({
       action: 'enable_finite',
       finite_horizon_days: 365,
@@ -214,8 +218,11 @@ describe('CreatorVaultControls', () => {
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Turn on archive' }));
-    const indefinite = screen.getByRole('button', { name: 'Keep until I delete' });
-    fireEvent.click(indefinite);
+    const archiveDialog = within(screen.getByRole('dialog'));
+    expect(archiveDialog.getByLabelText('Days to keep')).toBeTruthy();
+    fireEvent.click(archiveDialog.getByRole('radio', { name: 'Keep until I delete them' }));
+    expect(archiveDialog.queryByLabelText('Days to keep')).toBeNull();
+    fireEvent.click(archiveDialog.getByRole('button', { name: 'Turn on archive' }));
     await waitFor(() => expect(api.command).toHaveBeenCalledWith({
       action: 'enable_indefinite',
     }));
@@ -237,6 +244,6 @@ describe('CreatorVaultControls', () => {
 
     expect(screen.getByText('Only the account owner can manage stored messages.')).toBeTruthy();
     expect(api.get).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: 'Keep messages' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Turn on archive' })).toBeNull();
   });
 });

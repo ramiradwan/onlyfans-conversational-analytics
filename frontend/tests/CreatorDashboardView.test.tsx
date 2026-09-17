@@ -295,10 +295,12 @@ describe('CreatorDashboardView', () => {
     renderDashboard(store);
 
     const prompt = within(screen.getByRole('region', { name: 'Finish setup' }));
-    expect(prompt.getByText('1 of 3 steps complete')).toBeTruthy();
+    expect(prompt.getByText('1 of 3 complete')).toBeTruthy();
     expect(prompt.getByText('Connect the browser extension').textContent).toContain('(done)');
     expect(prompt.getByText('Turn on message history').textContent).not.toContain('(done)');
     expect(prompt.getByText('Turn on Full analytics').textContent).not.toContain('(done)');
+    const current = prompt.getAllByRole('listitem').filter((item) => item.getAttribute('aria-current') === 'step');
+    expect(current.map((item) => item.textContent)).toEqual(['2Turn on message history']);
     expect(prompt.getByRole('link', { name: 'Continue setup' }).getAttribute('href')).toBe(
       '/settings',
     );

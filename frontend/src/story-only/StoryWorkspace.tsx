@@ -362,6 +362,7 @@ export function StoryWorkspace({
                 state={analyticsState}
                 dateRange={storyDateRange}
                 onDateRangeChange={() => undefined}
+                onRetry={() => undefined}
               />
             )}
           />

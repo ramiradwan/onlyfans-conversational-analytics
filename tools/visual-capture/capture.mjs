@@ -66,7 +66,7 @@ const SCREENS = [
   {
     workspace: 'analytics',
     state: 'error',
-    ready: (page) => page.getByRole('main').getByRole('alert'),
+    ready: (page) => page.getByRole('main').getByRole('alert').getByRole('button', { name: 'Try again' }),
     assert: async (page, viewport) => {
       const state = page.locator('[data-visual="analytics-empty-state"]');
       await assertMaxWidth(state, 640);

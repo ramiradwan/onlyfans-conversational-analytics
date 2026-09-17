@@ -1,7 +1,7 @@
 import { Paper, Stack, styled, Typography } from '@mui/material';
 
 import { formatTimestamp } from './inboxModel';
-import { MessageFlagIcon } from './MessageFlagIcons';
+import { MessageTone } from './MessageTone';
 import type { MessageView } from '../../protocol';
 import { componentTokens } from '../../theme';
 import { sanitizeMessageHtml } from '../../utils/sanitizeMessageHtml';
@@ -83,7 +83,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           dangerouslySetInnerHTML={{ __html: sanitizeMessageHtml(message.text) }}
         />
         <BubbleMetadata>
-          <MessageFlagIcon sentiment={message.sentiment} />
+          <MessageTone sentiment={message.sentiment} />
           <Typography
             component="time"
             dateTime={message.sent_at}

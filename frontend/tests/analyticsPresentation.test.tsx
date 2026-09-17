@@ -7,6 +7,7 @@ import {
   formatPercentValue,
   formatRatioPercent,
   formatSentimentScore,
+  sentimentLabel,
   type AnalyticsReadState,
   type AnalyticsWindowSource,
   type AnalyticsWindowSources,
@@ -110,7 +111,7 @@ describe('analytics presentation states', () => {
       status: 'error',
       data: storyAnalyticsModel,
       isRefreshing: false,
-      message: "Your analytics couldn't be loaded.",
+      message: 'Check your connection and try again.',
       previousStatus: 'model',
     });
     expect(screen.getByRole('alert').textContent).toContain("Couldn't refresh");
@@ -122,7 +123,7 @@ describe('analytics presentation states', () => {
       status: 'error',
       data: storyAnalyticsModel,
       isRefreshing: false,
-      message: "Your analytics couldn't be loaded.",
+      message: 'Check your connection and try again.',
       previousStatus: 'baseline',
     });
     const alert = screen.getByRole('alert');
@@ -141,6 +142,11 @@ describe('analytics dates, units and accessible trend detail', () => {
       />,
     );
 
+    expect(screen.getByText('Date range')).toBeTruthy();
+    const summary = screen.getByText('Date range').nextElementSibling?.textContent ?? '';
+    expect(summary).not.toContain(storyDateRange.startDate);
+    expect(summary.match(/2026/g)).toHaveLength(1);
+
     fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
     for (const label of ['Start date', 'End date']) {
       const fields = screen.getAllByLabelText(label);
@@ -154,10 +160,19 @@ describe('analytics dates, units and accessible trend detail', () => {
 
   it('describes message dates in plain words', () => {
     const source = storyWindowSources.topics;
-    expect(analyticsWindowLabel(source)).toMatch(/^Messages from .+ to .+$/);
-    expect(
-      analyticsWindowLabel(withEffectiveWindow(source, '2026-06-02T08:00:00Z', '2026-06-02T20:00:00Z')),
-    ).toMatch(/^Messages from [^–]+$/);
+    const sameMonth = analyticsWindowLabel(
+      withEffectiveWindow(source, '2026-06-02T08:00:00Z', '2026-06-28T20:00:00Z'),
+    );
+    expect(sameMonth).toMatch(/^Messages available: /);
+    expect(sameMonth.match(/2026/g)).toHaveLength(1);
+    const sameDay = analyticsWindowLabel(
+      withEffectiveWindow(source, '2026-06-02T08:00:00Z', '2026-06-02T20:00:00Z'),
+    );
+    expect(sameDay).toBe(
+      `Messages available: ${new Intl.DateTimeFormat(undefined, {
+        day: 'numeric', month: 'short', timeZone: 'UTC', year: 'numeric',
+      }).format(new Date('2026-06-02T00:00:00Z'))}`,
+    );
     expect(analyticsWindowLabel(withEffectiveWindow(source, null, null))).toBe('No messages in these dates');
     expect(
       analyticsWindowLabel(withEffectiveWindow(storyWindowSources.graph, null, null)),
@@ -272,7 +287,10 @@ describe('analytics dates, units and accessible trend detail', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Chart legend')).toBeTruthy();
+    const latest = storyAnalyticsModel.sentimentTrend.at(-1)?.value ?? 0;
+    expect(screen.getByLabelText('Chart legend').textContent).toContain(
+      `Latest tone: ${sentimentLabel(latest)} ${formatSentimentScore(latest)}`,
+    );
     const negativeMark = screen.getByRole('button', { name: /Negative tone/ });
     expect(negativeMark.getAttribute('data-hit-target')).toBe('24');
     fireEvent.focus(negativeMark);

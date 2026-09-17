@@ -29,27 +29,23 @@ function transition(properties: readonly string[], step: keyof typeof duration =
     .join(', ');
 }
 
+// Tonal variants resolve in the browser as oklch color-mix() expressions.
+const nativeColorSeed = createTheme({ cssVariables: { nativeColor: true } });
+
 function buildPalette(scheme: SchemeTokens): PaletteOptions {
-  const seed = createTheme({
-    palette: {
-      mode: scheme.mode,
-      contrastThreshold: scheme.contrastThreshold,
-      tonalOffset: 0.2,
-    },
-  });
-  const augment = (name: string, main: string) =>
-    seed.palette.augmentColor({ color: { main }, name });
+  const augment = (name: string, color: { main: string; contrastText: string }) =>
+    nativeColorSeed.palette.augmentColor({ color: { ...color }, name });
 
   return {
     contrastThreshold: scheme.contrastThreshold,
-    primary: augment('primary', scheme.primary.main),
-    secondary: augment('secondary', scheme.secondary.main),
-    accent: augment('accent', scheme.accent.main),
-    calm: augment('calm', scheme.calm.main),
-    success: augment('success', scheme.success.main),
-    warning: augment('warning', scheme.warning.main),
-    error: augment('error', scheme.error.main),
-    info: augment('info', scheme.info.main),
+    primary: augment('primary', scheme.primary),
+    secondary: augment('secondary', scheme.secondary),
+    accent: augment('accent', scheme.accent),
+    calm: augment('calm', scheme.calm),
+    success: augment('success', scheme.success),
+    warning: augment('warning', scheme.warning),
+    error: augment('error', scheme.error),
+    info: augment('info', scheme.info),
     background: scheme.background,
     text: scheme.text,
     divider: scheme.divider,
@@ -105,6 +101,7 @@ export const theme = createTheme({
   cssVariables: {
     cssVarPrefix: 'bridge',
     colorSchemeSelector: 'data-mui-color-scheme',
+    nativeColor: true,
   },
   brandPalette,
   brandTypography,

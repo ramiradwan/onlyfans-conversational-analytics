@@ -35,8 +35,8 @@ const IconTile = styled(Box, {
           : theme.vars.palette.primary.main;
   return {
     alignItems: 'center',
-    backgroundColor: `color-mix(in srgb, ${color} 10%, ${theme.vars.palette.background.paper})`,
-    border: `1px solid color-mix(in srgb, ${color} 20%, ${theme.vars.palette.background.paper})`,
+    backgroundColor: `color-mix(in oklch, ${color} 10%, ${theme.vars.palette.background.paper})`,
+    border: `1px solid color-mix(in oklch, ${color} 20%, ${theme.vars.palette.background.paper})`,
     borderRadius: Number(theme.shape.borderRadius) * 2,
     color,
     display: 'flex',

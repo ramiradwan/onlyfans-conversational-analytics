@@ -31,7 +31,7 @@ const StateCard = styled(Paper)(({ theme }) => ({
 
 const StateIcon = styled(Box)(({ theme }) => ({
   alignItems: 'center',
-  backgroundColor: `color-mix(in srgb, ${theme.vars.palette.error.main} 10%, ${theme.vars.palette.background.paper})`,
+  backgroundColor: `color-mix(in oklch, ${theme.vars.palette.error.main} 10%, ${theme.vars.palette.background.paper})`,
   borderRadius: `${theme.shape.borderRadius}px`,
   color: theme.vars.palette.error.main,
   display: 'flex',
@@ -127,7 +127,7 @@ export function AnalyticsStateFrame({ state, children, onRetry }: AnalyticsState
           <ErrorOutlineRoundedIcon fontSize="small" />
         </StateIcon>
         <Typography component="h2" variant="h6">
-          Analytics could not be loaded
+          Analytics couldn&apos;t load
         </Typography>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           {state.message}

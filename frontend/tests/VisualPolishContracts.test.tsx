@@ -61,6 +61,7 @@ describe('frontend visual polish contracts', () => {
     const { container } = renderWithTheme(<AnalyticsStateFrame state={state} onRetry={onRetry} />);
 
     expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: "Analytics couldn't load" })).toBeTruthy();
     expect(container.querySelector('[data-visual="analytics-empty-state"]')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
