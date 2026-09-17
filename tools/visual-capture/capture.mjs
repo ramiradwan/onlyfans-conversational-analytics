@@ -19,6 +19,7 @@ const MODES = ['light', 'dark'];
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'narrow', width: 390, height: 844 },
+  { name: 'tablet', width: 820, height: 900, targetedOnly: true },
 ];
 
 const heading = (name) => (page) => page.getByRole('heading', { level: 1, name });
@@ -36,22 +37,78 @@ const SCREENS = [
   { workspace: 'analytics', state: 'baseline', ready: text('Early estimates') },
   { workspace: 'analytics', state: 'model', ready: (page) => page.getByRole('region', { name: 'Your replies' }) },
   { workspace: 'analytics', state: 'error', ready: (page) => page.getByRole('main').getByRole('alert') },
-  ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({
-    workspace: 'inbox',
-    state,
-    ready: heading('Inbox'),
-  })),
-  ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({
-    workspace: 'settings',
-    state,
-    ready: heading('Settings'),
-  })),
+  ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({ workspace: 'inbox', state, ready: heading('Inbox') })),
+  ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({ workspace: 'settings', state, ready: heading('Settings') })),
   { workspace: 'passkey', state: 'resting', ready: heading('Sign in to Conversation Analytics') },
   {
-    workspace: 'passkey',
-    state: 'cancelled',
+    workspace: 'passkey', state: 'cancelled',
     act: (page) => page.getByRole('button', { name: 'Sign in with passkey' }).click(),
     ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in was cancelled or timed out.' }),
+  },
+  {
+    workspace: 'inbox', state: 'populated', variant: 'selected-conversation', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.getByRole('list', { name: 'Conversation list' }).getByRole('button').first().click(),
+    ready: (page) => page.getByRole('button', { name: 'Back to conversations' }),
+  },
+  {
+    workspace: 'inbox', state: 'populated', variant: 'tablet-list', viewports: ['tablet'], modes: ['light'],
+    ready: (page) => page.getByRole('list', { name: 'Conversation list' }),
+  },
+  {
+    workspace: 'inbox', state: 'populated', variant: 'tablet-selected-conversation', viewports: ['tablet'], modes: ['light'],
+    act: (page) => page.getByRole('list', { name: 'Conversation list' }).getByRole('button').first().click(),
+    ready: (page) => page.getByRole('button', { name: 'Back to conversations' }),
+  },
+  {
+    workspace: 'home', state: 'populated', variant: 'mobile-navigation-open', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.getByRole('button', { name: 'Open navigation' }).click(),
+    ready: (page) => page.locator('#mobile-navigation'),
+  },
+  {
+    workspace: 'home', state: 'populated', variant: 'status-open', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.getByRole('button', { name: /Status: .*Show details/ }).click(),
+    ready: (page) => page.getByRole('dialog', { name: 'Status details' }),
+  },
+  {
+    workspace: 'settings', state: 'fresh', variant: 'activation-expanded', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.getByRole('button', { name: 'Turn on full analytics' }).click(),
+    ready: (page) => page.getByRole('link', { name: 'Open secure setup' }),
+  },
+  {
+    workspace: 'settings', state: 'fresh', variant: 'activation-error', viewports: ['narrow'], modes: ['light'],
+    act: async (page) => {
+      await page.getByRole('button', { name: 'Turn on full analytics' }).click();
+      await page.getByRole('textbox', { name: 'Activation code' }).fill('invalid');
+      await page.getByRole('button', { name: 'Activate', exact: true }).click();
+    },
+    ready: (page) => page.getByRole('alert').filter({ hasText: 'Enter the full activation code and try again.' }),
+  },
+  {
+    workspace: 'settings', state: 'fresh', variant: 'pairing-comparison', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.getByRole('button', { name: 'Connect extension' }).click(),
+    ready: (page) => page.getByText('Check the code', { exact: true }),
+  },
+  {
+    workspace: 'settings', state: 'fresh', variant: 'archive-editing', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.getByRole('button', { name: 'Turn on archive' }).click(),
+    ready: (page) => page.getByRole('spinbutton', { name: 'Days to keep' }),
+  },
+  {
+    workspace: 'settings', state: 'populated', variant: 'delete-disclosure', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.getByRole('button', { name: 'Delete messages' }).click(),
+    ready: (page) => page.getByRole('button', { name: 'Delete all messages' }),
+  },
+  {
+    workspace: 'settings', state: 'populated', variant: 'delete-confirmation', viewports: ['narrow'], modes: ['light'],
+    act: async (page) => {
+      await page.getByRole('button', { name: 'Delete messages' }).click();
+      await page.getByRole('button', { name: 'Delete all messages' }).click();
+    },
+    ready: (page) => page.getByRole('dialog').filter({ hasText: 'Delete all messages?' }),
+  },
+  {
+    workspace: 'settings', state: 'loading', variant: 'linked-reconnecting', viewports: ['narrow'], modes: ['light'],
+    ready: (page) => page.getByText('Extension linked to this app', { exact: true }),
   },
 ];
 
@@ -103,6 +160,15 @@ function shellClipping(page) {
   });
 }
 
+/** Width by which the page scrolls sideways; layouts are expected to fit the viewport width. */
+function horizontalOverflow(page) {
+  return page.evaluate(() => Math.max(
+    0,
+    document.documentElement.scrollWidth - document.documentElement.clientWidth - 1,
+    document.body.scrollWidth - document.body.clientWidth - 1,
+  ));
+}
+
 /** Grows the viewport so content inside the app's scroll containers is fully visible. */
 async function fitContent(page, viewport) {
   const hidden = await page.evaluate(() => {
@@ -118,6 +184,11 @@ async function fitContent(page, viewport) {
     await page.setViewportSize({ width: viewport.width, height });
   }
   return height;
+}
+
+async function screenshot(page, file, fullPage) {
+  await mkdir(dirname(file), { recursive: true });
+  await page.screenshot({ path: file, animations: 'disabled', caret: 'hide', fullPage });
 }
 
 async function capture() {
@@ -139,36 +210,60 @@ async function capture() {
           viewport: { width: viewport.width, height: viewport.height },
         });
         for (const screen of selectedScreens) {
+          if (viewport.targetedOnly && !screen.viewports?.includes(viewport.name)) continue;
+          if (screen.viewports && !screen.viewports.includes(viewport.name)) continue;
+          if (screen.modes && !screen.modes.includes(mode)) continue;
           const page = await context.newPage();
           const errors = [];
           page.on('pageerror', (error) => errors.push(String(error)));
           await page.clock.setFixedTime(FIXED_NOW);
           const url = `${base}?workspace=${screen.workspace}&state=${screen.state}&mode=${mode}`;
-          const name = `${screen.workspace}-${screen.state}-${mode}-${viewport.name}`;
+          const variant = screen.variant ? `-${screen.variant}` : '';
+          const name = `${screen.workspace}-${screen.state}${variant}-${mode}-${viewport.name}`;
           try {
             await page.goto(url, { waitUntil: 'networkidle' });
             await page.evaluate(() => document.fonts.ready);
             if (screen.act) await screen.act(page);
             await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
             await page.waitForLoadState('networkidle');
+
+            const overflow = await horizontalOverflow(page);
+            if (overflow > 0) errors.push(`${overflow}px of unintended horizontal page overflow`);
+
+            const foldFile = join(outDir, screen.workspace, `${name}-fold.png`);
+            await screenshot(page, foldFile, false);
+            entries.push({
+              file: relative(outDir, foldFile).replaceAll('\\', '/'),
+              capture: 'fold',
+              workspace: screen.workspace,
+              state: screen.state,
+              variant: screen.variant ?? null,
+              mode,
+              viewport: viewport.name,
+              width: viewport.width,
+              height: viewport.height,
+            });
+
             const height = await fitContent(page, viewport);
             const clipped = await shellClipping(page);
             if (clipped > 0) errors.push(`${clipped}px of content is clipped and cannot be scrolled to`);
-            const file = join(outDir, screen.workspace, `${name}.png`);
-            await mkdir(dirname(file), { recursive: true });
-            await page.screenshot({ path: file, animations: 'disabled', caret: 'hide', fullPage: true });
-            if (errors.length) throw new Error(errors.join('\n'));
+            const fullFile = join(outDir, screen.workspace, `${name}-full.png`);
+            await screenshot(page, fullFile, true);
             entries.push({
-              file: relative(outDir, file).replaceAll('\\', '/'),
+              file: relative(outDir, fullFile).replaceAll('\\', '/'),
+              capture: 'full',
               workspace: screen.workspace,
               state: screen.state,
+              variant: screen.variant ?? null,
               mode,
               viewport: viewport.name,
               width: viewport.width,
               foldHeight: viewport.height,
               capturedHeight: height,
             });
-            console.log(`captured ${name}`);
+
+            if (errors.length) throw new Error(errors.join('\n'));
+            console.log(`captured ${name} fold + full`);
           } catch (error) {
             failures.push(`${name}: ${error.message.split('\n')[0]}`);
             console.error(`failed ${name}: ${error.message}`);

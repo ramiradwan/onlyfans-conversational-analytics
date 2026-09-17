@@ -211,7 +211,7 @@ function pin(): CompanionPairingStatus {
     generation: 1,
     version: 3,
     state: 'admitted',
-    expires_at: '2026-06-30T12:05:00.000Z',
+    expires_at: '2026-06-30T12:10:00.000Z',
     comparison_code: null,
     agent_identity_thumbprint: 'T'.repeat(43),
   };
@@ -219,12 +219,27 @@ function pin(): CompanionPairingStatus {
 
 function pairingApi(journey: StoryJourneyName): CompanionPairingApi {
   const pins = journey === 'fresh' ? [] : [pin()];
-  const open = { ...pin(), state: 'open' as const, version: 0, agent_identity_thumbprint: null };
+  const open = {
+    ...pin(),
+    state: 'open' as const,
+    version: 0,
+    comparison_code: null,
+    agent_identity_thumbprint: null,
+  };
+  const awaiting = {
+    ...open,
+    state: 'awaiting_confirmation' as const,
+    version: 1,
+    comparison_code: '482731',
+    agent_identity_thumbprint: 'T'.repeat(43),
+  };
   return {
     pins: async () => pins,
     open: async () => open,
-    get: async () => open,
-    change: async () => ({ ...open, state: 'cancelled' as const }),
+    get: async () => awaiting,
+    change: async (_pairingId, action) => action === 'confirm'
+      ? { ...awaiting, state: 'confirmed' as const, version: 2 }
+      : { ...open, state: 'cancelled' as const, version: 2 },
     revoke: async () => ({ ...pin(), state: 'revoked' as const }),
   };
 }
