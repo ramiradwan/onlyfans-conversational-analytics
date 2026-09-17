@@ -436,7 +436,10 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         await expect(legend.getByText(value, { exact: true })).toBeVisible();
       }
       await dashboard.getByRole('button', { name: 'Details' }).click();
-      await expect(dashboard.getByText('Messages synced so far', { exact: true })).toBeVisible();
+      const details = page.getByRole('dialog', { name: 'How these numbers are counted' });
+      await expect(details.getByText('Messages synced so far', { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(details).toBeHidden();
       await expect(dashboard.getByRole('textbox')).toHaveCount(0);
       await expect(dashboard.getByRole('button', { name: /export/i })).toHaveCount(0);
       await expect(dashboard.getByText(/revenue/i)).toHaveCount(0);
