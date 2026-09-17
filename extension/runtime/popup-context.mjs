@@ -32,12 +32,16 @@ export async function loadPopupContext(area, now = Date.now()) {
   }
 }
 
+// The default popup leaves nothing in storage.
 export async function savePopupContext(area, context, now = Date.now()) {
   const value = {
     view: VIEWS.includes(context.view) ? context.view : 'home',
     full_review_requested: context.full_review_requested === true,
     initial_choice_dismissed: context.initial_choice_dismissed === true,
-    saved_at: now,
   };
-  try { await area.set({ [POPUP_CONTEXT_KEY]: value }); } catch {}
+  const isDefault = Object.keys(EMPTY).every((key) => value[key] === EMPTY[key]);
+  try {
+    if (isDefault) await area.remove(POPUP_CONTEXT_KEY);
+    else await area.set({ [POPUP_CONTEXT_KEY]: { ...value, saved_at: now } });
+  } catch {}
 }

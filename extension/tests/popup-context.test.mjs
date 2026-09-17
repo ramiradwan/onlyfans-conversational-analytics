@@ -16,6 +16,7 @@ function area() {
     values,
     async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, structuredClone(values[key])])); },
     async set(update) { Object.assign(values, structuredClone(update)); },
+    async remove(key) { delete values[key]; },
   };
 }
 
@@ -26,6 +27,16 @@ test('a saved view and review position restore within the resume window', async 
   assert.deepEqual(await loadPopupContext(storage, NOW + 60_000), {
     view: 'connection', full_review_requested: true, initial_choice_dismissed: true,
   });
+});
+
+test('returning to the default popup clears the saved context', async () => {
+  const storage = area();
+  await savePopupContext(storage, { view: 'home', full_review_requested: false, initial_choice_dismissed: false }, NOW);
+  assert.deepEqual(storage.values, {});
+  await savePopupContext(storage, { view: 'manage', full_review_requested: false, initial_choice_dismissed: false }, NOW);
+  assert.equal(storage.values[POPUP_CONTEXT_KEY].view, 'manage');
+  await savePopupContext(storage, { view: 'home', full_review_requested: false, initial_choice_dismissed: false }, NOW);
+  assert.deepEqual(storage.values, {});
 });
 
 test('an expired context returns home but keeps the session dismissal', () => {
@@ -51,7 +62,9 @@ test('only the exact presentation shape is accepted', () => {
 });
 
 test('storage failures fall back to the default popup', async () => {
-  const broken = { async get() { throw new Error('unavailable'); }, async set() { throw new Error('unavailable'); } };
+  const unavailable = async () => { throw new Error('unavailable'); };
+  const broken = { get: unavailable, set: unavailable, remove: unavailable };
   assert.equal((await loadPopupContext(broken, NOW)).view, 'home');
   await savePopupContext(broken, { view: 'manage' }, NOW);
+  await savePopupContext(broken, { view: 'home' }, NOW);
 });

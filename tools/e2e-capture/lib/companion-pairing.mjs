@@ -270,9 +270,8 @@ async function waitForBoundFullSession(worker, timeoutMs = 20_000) {
   );
 }
 
-async function reloadOnlyFansForFull(pairingPage, identityPage, worker, accountId) {
-  await pairingPage.reload({ waitUntil: 'domcontentloaded' });
-  const reload = pairingPage.getByRole('button', { name: 'Reload OnlyFans tabs to apply access' });
+async function reloadOnlyFansForFull(popupPage, identityPage, worker, accountId) {
+  const reload = popupPage.getByRole('button', { name: 'Reload OnlyFans tabs to apply access' });
   await reload.waitFor({ state: 'visible', timeout: 10_000 });
   const reloaded = identityPage.waitForEvent('domcontentloaded', { timeout: 10_000 });
   await reload.click();
@@ -337,6 +336,7 @@ export async function requestAgentPairingTicket(context) {
   const identity = await establishPairingIdentity(context, worker, config.CREATOR_ID);
   const opened = await openCompanionPairing(bridge, config.CREATOR_ID);
   const pairingPage = await context.newPage();
+  let popupPage = null;
   let routeRemoved = false;
   try {
     await pairingPage.goto(`chrome-extension://${config.EXTENSION_ID}/popup.html#pairing`, {
@@ -356,7 +356,13 @@ export async function requestAgentPairingTicket(context) {
       throw new Error(`Brain did not admit the companion pairing (${admitted.state ?? 'unknown'}).`);
     }
     await waitForBoundFullSession(worker);
-    await reloadOnlyFansForFull(pairingPage, identity.page, worker, config.CREATOR_ID);
+    // The pairing window closes itself once pairing succeeds; the reload control lives in the popup.
+    if (!pairingPage.isClosed()) await pairingPage.waitForEvent('close', { timeout: 10_000 });
+    popupPage = await context.newPage();
+    await popupPage.goto(`chrome-extension://${config.EXTENSION_ID}/popup.html`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await reloadOnlyFansForFull(popupPage, identity.page, worker, config.CREATOR_ID);
     await identity.removeRoute();
     routeRemoved = true;
     await installLegacyBindNoop(worker, config.CREATOR_ID);
@@ -366,6 +372,7 @@ export async function requestAgentPairingTicket(context) {
     throw error;
   } finally {
     await pairingPage.close().catch(() => undefined);
+    await popupPage?.close().catch(() => undefined);
   }
 
   return {
