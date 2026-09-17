@@ -14,16 +14,14 @@ import {
   type AnalyticsWindowSource,
   type AnalyticsWindowSources,
 } from '../../analytics';
+import { componentTokens } from '../../theme';
 
 const Root = styled(Box)(({ theme }) => ({
   backgroundColor: theme.vars.palette.background.default,
   flex: 1,
   minHeight: 0,
   overflowY: 'auto',
-  padding: theme.spacing(2),
-  [theme.breakpoints.up('md')]: {
-    padding: theme.spacing(3),
-  },
+  paddingBottom: theme.spacing(3),
 }));
 
 const AnalyticsGrid = styled(Box)(({ theme }) => ({
@@ -52,12 +50,14 @@ export interface AnalyticsPresentationProps {
   state: AnalyticsReadState;
   dateRange: AnalyticsDateRange;
   onDateRangeChange(range: AnalyticsDateRange): void;
+  onRetry?: () => void;
   windowSources?: AnalyticsWindowSources;
 }
 export function AnalyticsPresentation({
   state,
   dateRange,
   onDateRangeChange,
+  onRetry,
   windowSources,
 }: AnalyticsPresentationProps) {
   const model = state.data;
@@ -71,7 +71,11 @@ export function AnalyticsPresentation({
   const perPanel = sharedSource ? undefined : panelSources;
   return (
     <Root>
-      <Stack spacing={2.5}>
+      <Stack
+        data-visual="analytics-frame"
+        spacing={2.5}
+        sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}
+      >
         <Box>
           <Typography component="h1" variant="h4">
             Analytics
@@ -87,7 +91,7 @@ export function AnalyticsPresentation({
           onApply={onDateRangeChange}
           isRefreshing={state.isRefreshing}
         />
-        <AnalyticsStateFrame state={state}>
+        <AnalyticsStateFrame state={state} onRetry={onRetry}>
           {model && (
             <Stack spacing={1.5}>
               {sharedSource && <AnalyticsWindowLabel source={sharedSource} />}

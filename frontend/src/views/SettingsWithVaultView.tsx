@@ -47,7 +47,7 @@ export default function SettingsWithVaultView({
 }: SettingsWithVaultViewProps = {}) {
   return (
     <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pb: 3 }}>
-      <Stack spacing={3} sx={{ maxWidth: 880, width: '100%' }}>
+      <Stack data-visual="settings-frame" spacing={3} sx={{ maxWidth: 880, mx: 'auto', width: '100%' }}>
         <Typography component="h1" variant="h4">Settings</Typography>
         <SettingsSurface elevation={0}>
           <CompanionPairingControls api={pairingApi} />

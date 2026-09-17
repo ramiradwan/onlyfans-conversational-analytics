@@ -28,17 +28,63 @@ const text = (value) => (page) => page.getByText(value, { exact: true }).first()
 /** Each screen names the locator that proves its state rendered before capture. */
 const SCREENS = [
   { workspace: 'home', state: 'loading', ready: text('Processing your data…') },
-  { workspace: 'home', state: 'fresh', ready: (page) => page.getByRole('link', { name: 'Continue setup' }) },
+  {
+    workspace: 'home',
+    state: 'fresh',
+    ready: (page) => page.getByRole('link', { name: 'Continue setup' }),
+    assert: async (page, viewport) => {
+      if (viewport.name !== 'desktop') return;
+      const prompt = page.locator('[data-visual="setup-prompt"]');
+      await assertMaxWidth(prompt, 560);
+      await assertCentered(prompt, page.getByRole('main'));
+    },
+  },
   { workspace: 'home', state: 'syncing', ready: (page) => page.getByRole('progressbar', { name: /History \d+% synced/ }) },
   { workspace: 'home', state: 'populated', ready: (page) => page.getByRole('region', { name: 'Overview' }) },
-  { workspace: 'analytics', state: 'loading', ready: (page) => page.getByRole('main').getByRole('status').first() },
+  {
+    workspace: 'analytics',
+    state: 'loading',
+    ready: (page) => page.getByRole('main').getByRole('status').first(),
+    assert: assertLoadingGeometry,
+  },
   { workspace: 'analytics', state: 'building', ready: text('Updating your analytics') },
   { workspace: 'analytics', state: 'unavailable', ready: text('Analytics are unavailable') },
   { workspace: 'analytics', state: 'baseline', ready: text('Early estimates') },
-  { workspace: 'analytics', state: 'model', ready: (page) => page.getByRole('region', { name: 'Your replies' }) },
-  { workspace: 'analytics', state: 'error', ready: (page) => page.getByRole('main').getByRole('alert') },
+  {
+    workspace: 'analytics',
+    state: 'model',
+    ready: (page) => page.getByRole('region', { name: 'Your replies' }),
+    assert: async (page, viewport) => {
+      await assertMetricHierarchy(page);
+      if (viewport.name === 'desktop') {
+        const replies = page.getByRole('region', { name: 'Your replies' });
+        const box = await replies.boundingBox();
+        if (!box || box.width < 280) throw new Error('Your replies panel became too narrow');
+      }
+    },
+  },
+  {
+    workspace: 'analytics',
+    state: 'error',
+    ready: (page) => page.getByRole('main').getByRole('alert'),
+    assert: async (page, viewport) => {
+      const state = page.locator('[data-visual="analytics-empty-state"]');
+      await assertMaxWidth(state, 640);
+      if (viewport.name === 'desktop') await assertCentered(state, page.getByRole('main'));
+    },
+  },
   ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({ workspace: 'inbox', state, ready: heading('Inbox') })),
-  ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({ workspace: 'settings', state, ready: heading('Settings') })),
+  ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({
+    workspace: 'settings',
+    state,
+    ready: heading('Settings'),
+    assert: async (page, viewport) => {
+      if (viewport.name !== 'desktop') return;
+      const frame = page.locator('[data-visual="settings-frame"]');
+      await assertMaxWidth(frame, 880);
+      await assertCentered(frame, page.getByRole('main'));
+    },
+  })),
   { workspace: 'passkey', state: 'resting', ready: heading('Sign in to Conversation Analytics') },
   {
     workspace: 'passkey', state: 'cancelled',
@@ -46,7 +92,12 @@ const SCREENS = [
     ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in was cancelled or timed out.' }),
   },
   {
-    workspace: 'inbox', state: 'populated', variant: 'selected-conversation', viewports: ['narrow'], modes: ['light'],
+    workspace: 'analytics', state: 'model', variant: 'date-expanded', viewports: ['desktop', 'narrow'],
+    act: (page) => page.getByRole('button', { name: 'Change dates' }).click(),
+    ready: (page) => page.getByLabel('Start date'),
+  },
+  {
+    workspace: 'inbox', state: 'populated', variant: 'selected-conversation', viewports: ['narrow'],
     act: (page) => page.getByRole('list', { name: 'Conversation list' }).getByRole('button').first().click(),
     ready: (page) => page.getByRole('button', { name: 'Back to conversations' }),
   },
@@ -152,6 +203,59 @@ async function startHarness() {
   throw new Error(`Vite did not start within 60 s:\n${log}`);
 }
 
+async function assertCentered(subject, container, tolerance = 16) {
+  const [subjectBox, containerBox] = await Promise.all([subject.boundingBox(), container.boundingBox()]);
+  if (!subjectBox || !containerBox) throw new Error('visual assertion target was not measurable');
+  const subjectCenter = subjectBox.x + subjectBox.width / 2;
+  const containerCenter = containerBox.x + containerBox.width / 2;
+  const delta = Math.abs(subjectCenter - containerCenter);
+  if (delta > tolerance) throw new Error(`visual centering drifted by ${delta.toFixed(1)}px`);
+}
+
+async function assertMaxWidth(locator, maximum, tolerance = 1) {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('visual assertion target was not measurable');
+  if (box.width > maximum + tolerance) {
+    throw new Error(`visual width ${box.width.toFixed(1)}px exceeds ${maximum}px`);
+  }
+}
+
+async function assertMetricHierarchy(page) {
+  const values = page.locator('[data-visual="reply-metric-value"]');
+  if (await values.count() !== 3) throw new Error('Your replies must expose exactly three metric values');
+  const sizes = await values.evaluateAll((nodes) =>
+    nodes.map((node) => Number.parseFloat(getComputedStyle(node).fontSize)),
+  );
+  if (sizes.some((size) => size < 27.5)) {
+    throw new Error(`reply metric typography regressed: ${sizes.join(', ')}px`);
+  }
+}
+
+async function assertBrandMarkIfPresent(page) {
+  const tile = page.locator('[data-visual="brand-tile"]').first();
+  if (await tile.count() === 0) return;
+  const box = await tile.boundingBox();
+  if (!box || Math.abs(box.width - 32) > 1 || Math.abs(box.height - 32) > 1) {
+    throw new Error('brand tile must remain 32×32px');
+  }
+  if (await tile.locator('svg[data-brand-mark="conversation-analytics"]').count() !== 1) {
+    throw new Error('approved Conversation Analytics mark is missing');
+  }
+}
+
+async function assertLoadingGeometry(page, viewport) {
+  const primary = await page.locator('[data-visual="analytics-loading-primary"]').boundingBox();
+  const replies = await page.locator('[data-visual="analytics-loading-replies"]').boundingBox();
+  const topics = await page.locator('[data-visual="analytics-loading-topics"]').boundingBox();
+  if (!primary || !replies || !topics) throw new Error('analytics loading geometry was not measurable');
+  if (viewport.name === 'desktop') {
+    if (Math.abs(primary.y - replies.y) > 2) throw new Error('analytics loading panels no longer share a row');
+    if (topics.width <= primary.width) throw new Error('analytics topics loading panel must remain full width');
+  } else if (viewport.name === 'narrow' && replies.y <= primary.y) {
+    throw new Error('analytics loading panels must stack on narrow screens');
+  }
+}
+
 /** Height of content the app shell clips without offering a scroll container. */
 function shellClipping(page) {
   return page.evaluate(() => {
@@ -226,6 +330,8 @@ async function capture() {
             if (screen.act) await screen.act(page);
             await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
             await page.waitForLoadState('networkidle');
+            await assertBrandMarkIfPresent(page);
+            if (screen.assert) await screen.assert(page, viewport);
 
             const overflow = await horizontalOverflow(page);
             if (overflow > 0) errors.push(`${overflow}px of unintended horizontal page overflow`);

@@ -214,7 +214,8 @@ describe('analytics dates, units and accessible trend detail', () => {
     analytics({ ...storyAvailableState, data: zeroModel });
 
     const repliesPanel = screen.getByRole('region', { name: 'Your replies' });
-    expect(repliesPanel.textContent).toContain(`${formatRatioPercent(0)} (0 of 0)`);
+    expect(within(repliesPanel).getByText(formatRatioPercent(0), { exact: true })).toBeTruthy();
+    expect(within(repliesPanel).getByText('0 of 0 messages', { exact: true })).toBeTruthy();
     expect(within(repliesPanel).getByText('0', { exact: true })).toBeTruthy();
     expect(screen.getByText('Nothing to show for these dates.')).toBeTruthy();
     expect(screen.getByText('No topics found for these dates.')).toBeTruthy();
@@ -249,7 +250,8 @@ describe('analytics dates, units and accessible trend detail', () => {
     });
     expect(topicView.textContent).toContain(formatPercentValue(37.5));
     expect(topicView.textContent).toContain(formatPercentValue(12.5));
-    expect(responsePanel.textContent).toContain(`${formatRatioPercent(0.75)} (15 of 20)`);
+    expect(within(responsePanel).getByText(formatRatioPercent(0.75), { exact: true })).toBeTruthy();
+    expect(within(responsePanel).getByText('15 of 20 messages', { exact: true })).toBeTruthy();
     expect(responsePanel.textContent).not.toContain('Silence');
     expect(sentimentPanel.textContent).toContain(formatSentimentScore(0.35));
     expect(screen.queryByText('3,750.0%')).toBeNull();

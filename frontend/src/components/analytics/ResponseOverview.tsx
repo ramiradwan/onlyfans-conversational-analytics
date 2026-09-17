@@ -9,24 +9,39 @@ import {
 
 const UNAVAILABLE = '—';
 
-const List = styled('dl')(({ theme }) => ({
+const Metrics = styled('dl')(({ theme }) => ({
   display: 'grid',
-  gridTemplateColumns: 'minmax(0, 1fr) auto',
+  flex: 1,
   margin: 0,
-  '& dt, & dd': {
-    borderBottom: `1px solid ${theme.vars.palette.divider}`,
-    margin: 0,
-    padding: theme.spacing(1.25, 0),
+  minWidth: 0,
+  [theme.breakpoints.up('md')]: {
+    gridTemplateRows: 'repeat(3, minmax(0, 1fr))',
   },
-  '& dt': {
-    color: theme.vars.palette.text.secondary,
+}));
+
+const Metric = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+  margin: 0,
+  minHeight: 72,
+  paddingBlock: theme.spacing(1.5),
+  '& + &': {
+    borderTop: `1px solid ${theme.vars.palette.divider}`,
   },
-  '& dd': {
-    fontVariantNumeric: 'tabular-nums',
-    fontWeight: theme.typography.fontWeightMedium,
-    paddingInlineStart: theme.spacing(2),
-    textAlign: 'end',
-  },
+}));
+
+const MetricValue = styled('dd')(({ theme }) => ({
+  ...theme.typography.metric,
+  color: theme.vars.palette.text.primary,
+  margin: 0,
+  marginTop: theme.spacing(0.25),
+}));
+
+const MetricSupport = styled('span')(({ theme }) => ({
+  ...theme.typography.caption,
+  color: theme.vars.palette.text.secondary,
+  marginTop: theme.spacing(0.25),
 }));
 
 export interface ResponseOverviewProps {
@@ -37,32 +52,43 @@ export function ResponseOverview({ metrics }: ResponseOverviewProps) {
   const replyTime = metrics.averageHandlingMinutes === null
     ? UNAVAILABLE
     : `${formatDecimal(metrics.averageHandlingMinutes)} min`;
-  const repliedTo = metrics.responseCoverage === null
+  const coveragePercent = metrics.responseCoverage === null
     ? UNAVAILABLE
-    : `${formatRatioPercent(metrics.responseCoverage)} (${formatCount(metrics.respondedCount)} of ${formatCount(metrics.responseOpportunityCount)})`;
+    : formatRatioPercent(metrics.responseCoverage);
+  const coverageSupport = metrics.responseCoverage === null
+    ? null
+    : `${formatCount(metrics.respondedCount)} of ${formatCount(metrics.responseOpportunityCount)} messages`;
   const turns = metrics.turns === null ? UNAVAILABLE : formatDecimal(metrics.turns, 0);
+
   return (
-    <Box>
-      <List>
-        <Typography component="dt" variant="body2">
-          Average reply time
-        </Typography>
-        <Typography component="dd" variant="body2">
-          {replyTime}
-        </Typography>
-        <Typography component="dt" variant="body2">
-          Messages you replied to
-        </Typography>
-        <Typography component="dd" variant="body2">
-          {repliedTo}
-        </Typography>
-        <Typography component="dt" variant="body2">
-          Turns per conversation
-        </Typography>
-        <Typography component="dd" variant="body2">
-          {turns}
-        </Typography>
-      </List>
+    <Box data-visual="reply-metrics" sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <Metrics>
+        <Metric>
+          <Typography component="dt" variant="body2" sx={{ color: 'text.secondary' }}>
+            Average reply time
+          </Typography>
+          <MetricValue data-visual="reply-metric-value">
+            {replyTime}
+          </MetricValue>
+        </Metric>
+        <Metric>
+          <Typography component="dt" variant="body2" sx={{ color: 'text.secondary' }}>
+            Messages you replied to
+          </Typography>
+          <MetricValue data-visual="reply-metric-value">
+            {coveragePercent}
+          </MetricValue>
+          {coverageSupport && <MetricSupport>{coverageSupport}</MetricSupport>}
+        </Metric>
+        <Metric>
+          <Typography component="dt" variant="body2" sx={{ color: 'text.secondary' }}>
+            Turns per conversation
+          </Typography>
+          <MetricValue data-visual="reply-metric-value">
+            {turns}
+          </MetricValue>
+        </Metric>
+      </Metrics>
     </Box>
   );
 }

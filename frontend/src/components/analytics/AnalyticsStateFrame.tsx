@@ -1,7 +1,9 @@
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import {
   Alert,
   AlertTitle,
   Box,
+  Button,
   LinearProgress,
   Paper,
   Skeleton,
@@ -15,12 +17,28 @@ import type { AnalyticsReadState } from '../../analytics';
 import { componentTokens } from '../../theme';
 
 const StateCard = styled(Paper)(({ theme }) => ({
+  alignContent: 'center',
+  alignSelf: 'center',
   display: 'grid',
   gap: theme.spacing(1),
+  marginInline: 'auto',
+  maxWidth: 640,
   minHeight: theme.spacing(22),
   padding: theme.spacing(3),
-  alignContent: 'center',
+  width: '100%',
   ...theme.effects.cardBorder(theme),
+}));
+
+const StateIcon = styled(Box)(({ theme }) => ({
+  alignItems: 'center',
+  backgroundColor: `color-mix(in srgb, ${theme.vars.palette.error.main} 10%, ${theme.vars.palette.background.paper})`,
+  borderRadius: `${theme.shape.borderRadius}px`,
+  color: theme.vars.palette.error.main,
+  display: 'flex',
+  height: 40,
+  justifyContent: 'center',
+  marginBottom: theme.spacing(0.5),
+  width: 40,
 }));
 
 const Content = styled(Box, {
@@ -34,38 +52,55 @@ const Content = styled(Box, {
   },
 }));
 
-const LoadingGrid = styled(Box)(({ theme }) => ({
+const LoadingPanels = styled(Box)(({ theme }) => ({
   display: 'grid',
   gap: theme.spacing(2),
-  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  gridTemplateColumns: 'minmax(0, 1fr)',
   [theme.breakpoints.up('md')]: {
-    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gridTemplateColumns: 'minmax(0, 2fr) minmax(17rem, 1fr)',
   },
 }));
+
+const primaryPanelHeight = componentTokens.analytics.chartHeight + 96;
 
 export interface AnalyticsStateFrameProps {
   state: AnalyticsReadState;
   children?: ReactNode;
+  onRetry?: () => void;
 }
 
-export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProps) {
+export function AnalyticsStateFrame({ state, children, onRetry }: AnalyticsStateFrameProps) {
   if (state.status === 'loading') {
     return (
       <Stack spacing={2} role="status" aria-live="polite">
         <Typography sx={{ color: 'text.secondary' }}>{state.message}</Typography>
-        <LoadingGrid>
-          {Array.from({ length: 4 }, (_, index) => (
-            <Skeleton key={index} variant="rounded" height={112} animation={false} />
-          ))}
-        </LoadingGrid>
-        <Skeleton variant="rounded" height={300} animation={false} />
+        <LoadingPanels>
+          <Skeleton
+            data-visual="analytics-loading-primary"
+            animation={false}
+            height={primaryPanelHeight}
+            variant="rounded"
+          />
+          <Skeleton
+            data-visual="analytics-loading-replies"
+            animation={false}
+            height={primaryPanelHeight}
+            variant="rounded"
+          />
+        </LoadingPanels>
+        <Skeleton
+          data-visual="analytics-loading-topics"
+          animation={false}
+          height={220}
+          variant="rounded"
+        />
       </Stack>
     );
   }
 
   if (state.status === 'building' && state.data === null) {
     return (
-      <StateCard role="status">
+      <StateCard data-visual="analytics-empty-state" role="status">
         <Typography component="h2" variant="h6">
           Updating your analytics
         </Typography>
@@ -76,7 +111,7 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
 
   if (state.status === 'unavailable') {
     return (
-      <StateCard role="status">
+      <StateCard data-visual="analytics-empty-state" role="status">
         <Typography component="h2" variant="h6">
           Analytics are unavailable
         </Typography>
@@ -87,10 +122,22 @@ export function AnalyticsStateFrame({ state, children }: AnalyticsStateFrameProp
 
   if (state.status === 'error' && state.data === null) {
     return (
-      <Alert severity="error" role="alert">
-        <AlertTitle>Analytics could not be loaded</AlertTitle>
-        {state.message}
-      </Alert>
+      <StateCard data-visual="analytics-empty-state" role="alert">
+        <StateIcon aria-hidden="true">
+          <ErrorOutlineRoundedIcon fontSize="small" />
+        </StateIcon>
+        <Typography component="h2" variant="h6">
+          Analytics could not be loaded
+        </Typography>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          {state.message}
+        </Typography>
+        {onRetry && (
+          <Button onClick={onRetry} size="small" sx={{ justifySelf: 'start', mt: 1 }} variant="contained">
+            Try again
+          </Button>
+        )}
+      </StateCard>
     );
   }
 

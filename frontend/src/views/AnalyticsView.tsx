@@ -10,6 +10,7 @@ export default function AnalyticsView() {
       state={state}
       dateRange={dateRange}
       onDateRangeChange={(range) => void analyticsStoreActions.setDateRange(range)}
+      onRetry={() => void analyticsStoreActions.refresh()}
     />
   );
 }

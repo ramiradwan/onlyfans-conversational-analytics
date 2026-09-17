@@ -50,9 +50,11 @@ export function SetupPrompt({ extensionConnected = false, title }: SetupPromptPr
   const headingId = useId();
   return (
     <Paper
+      data-visual="setup-prompt"
       component="section"
       aria-labelledby={headingId}
       sx={(theme) => ({
+        alignSelf: 'center',
         maxWidth: 560,
         mx: 'auto',
         p: { xs: 3, sm: 4 },

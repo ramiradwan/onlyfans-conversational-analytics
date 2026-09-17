@@ -152,6 +152,18 @@ export const theme = createTheme({
     sideBorder: overlayEffect,
   },
   components: {
+    MuiCollapse: {
+      defaultProps: {
+        timeout: {
+          enter: milliseconds(duration.standard),
+          exit: milliseconds(duration.fast),
+        },
+        easing: {
+          enter: easing.enter,
+          exit: easing.exit,
+        },
+      },
+    },
     MuiButton: {
       defaultProps: { disableElevation: true },
       styleOverrides: {
