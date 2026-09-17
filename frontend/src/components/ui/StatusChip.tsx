@@ -8,9 +8,12 @@ export type StatusChipProps = Omit<ChipProps, 'color' | 'icon' | 'variant'> & {
 
 /** Outlined chip whose colored dot carries the tone, so the label stays short. */
 export function StatusChip({ sx, tone = 'default', ...props }: StatusChipProps) {
+  const size = props.size ?? 'small';
+  const quiet = tone === 'success';
   return (
     <Chip
       {...props}
+      size={size}
       icon={(
         <Box
           component="span"
@@ -19,18 +22,19 @@ export function StatusChip({ sx, tone = 'default', ...props }: StatusChipProps) 
               tone === 'default' ? theme.vars.palette.text.disabled : theme.vars.palette[tone].main,
             borderRadius: '50%',
             flexShrink: 0,
-            height: 8,
-            width: 8,
+            height: quiet ? 6 : 8,
+            width: quiet ? 6 : 8,
           })}
         />
       )}
       variant="outlined"
       sx={[
         {
-          bgcolor: 'background.paper',
-          borderColor: 'divider',
+          bgcolor: quiet ? 'transparent' : 'background.paper',
+          borderColor: quiet ? 'transparent' : 'divider',
+          color: quiet ? 'text.secondary' : 'text.primary',
           flexShrink: 0,
-          '& .MuiChip-icon': { ml: props.size === 'small' ? 1 : 1.25, mr: 0.25 },
+          '& .MuiChip-icon': { ml: size === 'small' ? 1 : 1.25, mr: 0.25 },
         },
         ...(Array.isArray(sx) ? sx : [sx]),
       ]}

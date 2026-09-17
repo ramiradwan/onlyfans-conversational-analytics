@@ -35,8 +35,8 @@ const IconTile = styled(Box, {
           : theme.vars.palette.primary.main;
   return {
     alignItems: 'center',
-    backgroundColor: `color-mix(in srgb, ${color} 12%, ${theme.vars.palette.background.paper})`,
-    border: `1px solid color-mix(in srgb, ${color} 28%, ${theme.vars.palette.background.paper})`,
+    backgroundColor: `color-mix(in srgb, ${color} 10%, ${theme.vars.palette.background.paper})`,
+    border: `1px solid color-mix(in srgb, ${color} 20%, ${theme.vars.palette.background.paper})`,
     borderRadius: Number(theme.shape.borderRadius) * 2,
     color,
     display: 'flex',
@@ -48,10 +48,8 @@ const IconTile = styled(Box, {
 });
 
 const Value = styled('p')(({ theme }) => ({
-  ...theme.typography.h5,
+  ...theme.typography.metric,
   color: theme.vars.palette.text.primary,
-  fontVariantNumeric: 'tabular-nums',
-  letterSpacing: '-0.02em',
   margin: 0,
 }));
 
@@ -66,24 +64,16 @@ export function MetricCard({
 }: MetricCardProps) {
   return (
     <Root role="group" aria-label={`${label} metric`}>
-      <Stack direction="row" spacing={2} sx={{
-        alignItems: 'flex-start'
-      }}>
+      <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
         <IconTile $tone={tone} aria-hidden="true">
           {icon}
         </IconTile>
-        <Box sx={{
-          minWidth: 0
-        }}>
-          <Typography component={labelComponent} variant="body2" sx={{
-            color: 'text.secondary'
-          }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography component={labelComponent} variant="body2" sx={{ color: 'text.secondary' }}>
             {label}
           </Typography>
           <Value>{value}</Value>
-          <Typography component="p" variant="caption" sx={{
-            color: 'text.secondary'
-          }}>
+          <Typography component="p" variant="caption" sx={{ color: 'text.secondary' }}>
             {supportingText}
           </Typography>
           <AnalyticsWindowLabel source={windowSource} />

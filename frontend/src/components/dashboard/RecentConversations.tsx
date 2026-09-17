@@ -43,7 +43,7 @@ export function RecentConversations({
     <Paper
       component="section"
       aria-labelledby={headingId}
-      sx={(theme) => ({ py: 1, ...theme.effects.cardBorder(theme) })}
+      sx={(theme) => ({ maxWidth: 880, mx: 'auto', py: 1, width: '100%', ...theme.effects.cardBorder(theme) })}
     >
       <Stack
         direction="row"
@@ -70,7 +70,7 @@ export function RecentConversations({
                 <Avatar
                   aria-hidden="true"
                   sx={{
-                    bgcolor: 'action.selected',
+                    bgcolor: 'surface.subtle',
                     color: 'text.primary',
                     fontSize: '0.95rem',
                     fontWeight: 600,

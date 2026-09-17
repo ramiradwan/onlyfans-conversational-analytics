@@ -84,7 +84,7 @@ export const brandTypography = {
     "h5": "1.25rem",
     "h6": "1rem",
     "kpi": "3rem",
-    "metric": "1.5rem"
+    "metric": "1.75rem"
   },
   "weights": {
     "bold": 700,
@@ -195,7 +195,7 @@ export const semanticColorSchemes = {
       "categorical6": "#DD480D",
       "categorical7": "#7E7FF3",
       "categorical8": "#C83452",
-      "grid": "rgba(255, 255, 255, 0.16)",
+      "grid": "rgba(255, 255, 255, 0.10)",
       "negative": "#C83452",
       "neutral": "#33333F",
       "opportunity": "#EDCA19",
@@ -207,8 +207,8 @@ export const semanticColorSchemes = {
     "communication": {
       "incomingBorder": "#33333F",
       "incomingSurface": "#1E1E28",
-      "outgoingBorder": "#5952C7",
-      "outgoingSurface": "#25205C"
+      "outgoingBorder": "#403A78",
+      "outgoingSurface": "#211E47"
     },
     "contrastThreshold": 4.5,
     "divider": "rgba(255, 255, 255, 0.07)",
@@ -272,7 +272,7 @@ export const semanticColorSchemes = {
       "categorical6": "#DC5C2B",
       "categorical7": "#1B3BAA",
       "categorical8": "#8F0731",
-      "grid": "rgba(17, 24, 39, 0.14)",
+      "grid": "rgba(17, 24, 39, 0.08)",
       "negative": "#8F0731",
       "neutral": "#9B99A8",
       "opportunity": "#A98F00",
@@ -284,8 +284,8 @@ export const semanticColorSchemes = {
     "communication": {
       "incomingBorder": "#D8D7E2",
       "incomingSurface": "#FFFFFF",
-      "outgoingBorder": "#B8B5FF",
-      "outgoingSurface": "#E8E7FF"
+      "outgoingBorder": "#D8D6F8",
+      "outgoingSurface": "#EFEEFF"
     },
     "contrastThreshold": 4.5,
     "divider": "rgba(20, 18, 33, 0.06)",
@@ -393,7 +393,7 @@ export const typography = {
     "lineHeight": 1.05
   },
   "metric": {
-    "fontSize": "1.5rem",
+    "fontSize": "1.75rem",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 600,
     "letterSpacing": "-0.02em",
@@ -435,7 +435,7 @@ export const componentTokens = {
   },
   "analytics": {
     "barGap": 2,
-    "barThickness": 12,
+    "barThickness": 14,
     "chartHeight": 280,
     "dataEndRadius": 4,
     "markHitTarget": 24,
@@ -444,9 +444,9 @@ export const componentTokens = {
     "refreshOpacity": 0.56
   },
   "inbox": {
-    "bubbleMaxWidth": "44rem",
+    "bubbleMaxWidth": "36rem",
     "bubbleRadius": 16,
-    "bubbleWidth": "78%",
+    "bubbleWidth": "70%",
     "conversationPaneMinWidth": "18rem",
     "insightsPaneMinWidth": "17rem"
   },
