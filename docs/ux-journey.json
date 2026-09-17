@@ -395,7 +395,7 @@
         { "to": "desktop.stored_messages", "by": "user", "action": "open-settings" }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/CreatorDashboardView.test.tsx", "name": "renders complete counts with the basis details behind a disclosure" },
+        { "kind": "unit", "file": "frontend/tests/CreatorDashboardView.test.tsx", "name": "renders complete counts with the basis details in a popover" },
         { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "populated" }
       ]
     },
@@ -408,7 +408,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "frontend/tests/CommercialActivationControls.test.tsx", "name": "exposes the customer action when canonical readiness requires activation" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "activation-expanded" }
+        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "activation-dialog" }
       ]
     },
     {
@@ -418,7 +418,7 @@
       "transitions": [],
       "evidence": [
         { "kind": "unit", "file": "frontend/tests/CreatorVaultControls.test.tsx", "name": "exercises finite enable, confirmed deletion, export, and confirmed disable through the API" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "delete-disclosure" }
+        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "delete-confirmation" }
       ]
     }
   ]

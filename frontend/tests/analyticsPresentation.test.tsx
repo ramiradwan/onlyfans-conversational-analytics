@@ -141,6 +141,7 @@ describe('analytics dates, units and accessible trend detail', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
     for (const label of ['Start date', 'End date']) {
       const fields = screen.getAllByLabelText(label);
       expect(fields.length).toBeGreaterThan(0);
@@ -283,9 +284,18 @@ describe('analytics dates, units and accessible trend detail', () => {
     expect(screen.getByRole('tooltip').textContent).toContain('Positive tone');
     fireEvent.mouseLeave(positiveMarks[0]);
 
-    fireEvent.click(screen.getByText('View data table'));
+    expect(screen.queryByRole('table')).toBeNull();
+    const tableToggle = screen.getByRole('button', { name: 'Table' });
+    expect(tableToggle.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(tableToggle);
+    expect(tableToggle.getAttribute('aria-pressed')).toBe('true');
     expect(
       screen.getByRole('table', { name: 'Message tone over time data' }),
     ).toBeTruthy();
+    expect(screen.queryByRole('img', { name: /Message tone over time/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chart' }));
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.getByRole('img', { name: /Message tone over time/ })).toBeTruthy();
   });
 });

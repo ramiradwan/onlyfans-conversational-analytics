@@ -1,6 +1,6 @@
-import { Box } from '@mui/material';
 import {
   AnalyticsView,
+  Box,
   seedPreviewAnalytics,
 } from 'onlyfans-analytics-frontend';
 

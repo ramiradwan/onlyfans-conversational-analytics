@@ -1,5 +1,4 @@
-import { Box } from '@mui/material';
-import { GlobalLoader } from 'onlyfans-analytics-frontend';
+import { Box, GlobalLoader } from 'onlyfans-analytics-frontend';
 
 export function ProcessingOverlay() {
   return (

@@ -1,5 +1,4 @@
-import { Box } from '@mui/material';
-import { GraphExplorerView } from 'onlyfans-analytics-frontend';
+import { Box, GraphExplorerView } from 'onlyfans-analytics-frontend';
 
 export function EmptyWorkspace() {
   return (

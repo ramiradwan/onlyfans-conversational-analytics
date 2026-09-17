@@ -3,7 +3,7 @@ import {
   AlertTitle,
   Box,
   Button,
-  Collapse,
+  Popover,
   Stack,
   Typography,
 } from '@mui/material';
@@ -13,7 +13,7 @@ import { DashboardOverview, type OverviewProgress } from '../components/dashboar
 import { RecentConversations } from '../components/dashboard/RecentConversations';
 import { SetupPrompt } from '../components/SetupPrompt';
 import { usePermissions } from '../hooks/usePermissions';
-import type { AnalyticsMetric, HistoricalCoverage, ProjectionState } from '../protocol';
+import type { AnalyticsMetric, HistoricalCoverage } from '../protocol';
 import {
   capabilityLicenseApi,
   type CapabilityLicenseApi,
@@ -209,17 +209,17 @@ function directionSplit(
 function NumbersBasis({
   evidence,
   messagesCounted,
-  projection,
   syncing,
 }: {
   evidence: MetricEvidence;
   messagesCounted: number | null;
-  projection: Pick<ProjectionState, 'canonical_revision'>;
   /** Sync progress is already on screen, so the partial basis needs no sentence of its own. */
   syncing: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const open = anchor !== null;
   const detailsId = useId();
+  const titleId = useId();
   const updated = formatLocal(evidence.asOf, LOCAL_DATE_TIME_FORMAT);
   const start = formatLocal(evidence.observedStart, LOCAL_DATE_FORMAT);
   const end = formatLocal(evidence.observedEnd, LOCAL_DATE_FORMAT);
@@ -235,13 +235,6 @@ function NumbersBasis({
     {
       label: 'Message dates',
       value: start && end ? `${start} – ${end}` : 'No messages yet',
-    },
-    {
-      label: 'Data version',
-      value:
-        projection.canonical_revision > evidence.revision
-          ? `${evidence.revision} (updating to ${projection.canonical_revision})`
-          : String(evidence.revision),
     },
   ];
 
@@ -262,15 +255,33 @@ function NumbersBasis({
             .join(' ')}
         </Typography>
         <Button
-          aria-controls={detailsId}
+          aria-controls={open ? detailsId : undefined}
           aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
+          aria-haspopup="dialog"
+          onClick={(event) => setAnchor(event.currentTarget)}
           size="small"
         >
-          {open ? 'Hide details' : 'Details'}
+          Details
         </Button>
       </Stack>
-      <Collapse in={open} id={detailsId}>
+      <Popover
+        anchorEl={anchor}
+        anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }}
+        id={detailsId}
+        onClose={() => setAnchor(null)}
+        open={open}
+        slotProps={{
+          paper: {
+            'aria-labelledby': titleId,
+            role: 'dialog',
+            sx: { maxWidth: 360, p: 2 },
+          },
+        }}
+        transformOrigin={{ horizontal: 'left', vertical: 'top' }}
+      >
+        <Typography component="h2" id={titleId} variant="subtitle2" sx={{ mb: 1 }}>
+          How these numbers are counted
+        </Typography>
         <Box
           component="dl"
           sx={{
@@ -278,9 +289,7 @@ function NumbersBasis({
             display: 'grid',
             gridTemplateColumns: 'auto 1fr',
             m: 0,
-            pt: 1,
-            px: 0.5,
-            rowGap: 0.5,
+            rowGap: 0.75,
           }}
         >
           {rows.map((row) => (
@@ -294,7 +303,7 @@ function NumbersBasis({
             </Box>
           ))}
         </Box>
-      </Collapse>
+      </Popover>
     </Box>
   );
 }
@@ -400,7 +409,6 @@ export default function CreatorDashboardView({
           <NumbersBasis
             evidence={evidence}
             messagesCounted={analytics?.total_messages?.sample_size ?? null}
-            projection={state.projection}
             syncing={progress !== null}
           />
         )}

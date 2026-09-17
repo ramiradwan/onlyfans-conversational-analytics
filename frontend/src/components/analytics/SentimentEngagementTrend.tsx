@@ -1,4 +1,4 @@
-import { Box, Stack, Typography, styled, useTheme } from '@mui/material';
+import { Box, Stack, ToggleButton, ToggleButtonGroup, Typography, styled, useTheme } from '@mui/material';
 import { useId, useMemo, useState } from 'react';
 
 import {
@@ -163,27 +163,7 @@ const DateExtent = styled(Stack)(({ theme }) => ({
   paddingInline: theme.spacing(1),
 }));
 
-const Details = styled('details')(({ theme }) => ({
-  '& > summary': {
-    borderRadius: theme.shape.borderRadius,
-    color: theme.vars.palette.text.secondary,
-    cursor: 'pointer',
-    fontSize: theme.typography.body2.fontSize,
-    fontWeight: theme.typography.fontWeightMedium,
-    padding: theme.spacing(0.75),
-    width: 'fit-content',
-  },
-  '& > summary:hover': {
-    color: theme.vars.palette.text.primary,
-  },
-  '& > summary:focus-visible': {
-    outline: `2px solid ${theme.vars.palette.primary.main}`,
-    outlineOffset: 2,
-  },
-}));
-
 const TableScroller = styled(Box)(({ theme }) => ({
-  marginTop: theme.spacing(1),
   overflowX: 'auto',
   '& table': {
     borderCollapse: 'collapse',
@@ -264,6 +244,7 @@ export function SentimentEngagementTrend({
   const theme = useTheme();
   const tooltipId = useId().replace(/:/g, '') + '-tooltip';
   const [active, setActive] = useState<ActivePoint | null>(null);
+  const [view, setView] = useState<'chart' | 'table'>('chart');
   const engagementByDate = useMemo(
     () => new Map((engagement ?? []).map((point) => [point.at, point])),
     [engagement],
@@ -278,177 +259,200 @@ export function SentimentEngagementTrend({
 
   return (
     <Stack spacing={1.5}>
-      <Legend aria-label={engagement?.length ? 'Chart legend' : 'Series label'}>
-        <LegendItem>
-          <LegendLine $color={theme.vars.palette.chart.sentiment} aria-hidden="true" />
-          <Typography variant="caption">
-            Latest tone {formatSentimentScore(latestSentiment.value)}
-          </Typography>
-        </LegendItem>
-        {latestEngagement && (
+      <Stack
+        direction="row"
+        spacing={1.5}
+        useFlexGap
+        sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}
+      >
+        <Legend aria-label={engagement?.length ? 'Chart legend' : 'Series label'}>
           <LegendItem>
-            <LegendLine $color={theme.vars.palette.chart.neutral} aria-hidden="true" />
+            <LegendLine $color={theme.vars.palette.chart.sentiment} aria-hidden="true" />
             <Typography variant="caption">
-              Engagement {formatRatioPercent(latestEngagement.value)}
+              Latest tone {formatSentimentScore(latestSentiment.value)}
             </Typography>
           </LegendItem>
-        )}
-      </Legend>
-
-      <Plot>
-        <ChartSvg
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          preserveAspectRatio="none"
-          role="img"
-          aria-label="Message tone over time, from negative one to positive one"
+          {latestEngagement && (
+            <LegendItem>
+              <LegendLine $color={theme.vars.palette.chart.neutral} aria-hidden="true" />
+              <Typography variant="caption">
+                Engagement {formatRatioPercent(latestEngagement.value)}
+              </Typography>
+            </LegendItem>
+          )}
+        </Legend>
+        <ToggleButtonGroup
+          aria-label="View"
+          exclusive
+          onChange={(_event, next: 'chart' | 'table' | null) => {
+            if (next !== null) {
+              setActive(null);
+              setView(next);
+            }
+          }}
+          size="small"
+          value={view}
         >
-          {[1, -1].map((tick) => {
-            const y = yForSentiment(tick);
-            return (
+          <ToggleButton value="chart">Chart</ToggleButton>
+          <ToggleButton value="table">Table</ToggleButton>
+        </ToggleButtonGroup>
+      </Stack>
+
+      {view === 'chart' ? (
+        <>
+          <Plot>
+            <ChartSvg
+              viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+              preserveAspectRatio="none"
+              role="img"
+              aria-label="Message tone over time, from negative one to positive one"
+            >
+              {[1, -1].map((tick) => {
+                const y = yForSentiment(tick);
+                return (
+                  <line
+                    key={tick}
+                    x1={LEFT}
+                    x2={WIDTH - RIGHT}
+                    y1={y}
+                    y2={y}
+                    stroke={theme.vars.palette.chart.grid}
+                    strokeWidth="1"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                );
+              })}
               <line
-                key={tick}
                 x1={LEFT}
                 x2={WIDTH - RIGHT}
-                y1={y}
-                y2={y}
+                y1={ZERO_Y}
+                y2={ZERO_Y}
+                stroke={theme.vars.palette.text.disabled}
+                strokeWidth="1.5"
+                vectorEffect="non-scaling-stroke"
+              />
+              <line
+                x1={LEFT}
+                x2={LEFT}
+                y1={TOP}
+                y2={HEIGHT - BOTTOM}
                 stroke={theme.vars.palette.chart.grid}
                 strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
               />
-            );
-          })}
-          <line
-            x1={LEFT}
-            x2={WIDTH - RIGHT}
-            y1={ZERO_Y}
-            y2={ZERO_Y}
-            stroke={theme.vars.palette.text.disabled}
-            strokeWidth="1.5"
-            vectorEffect="non-scaling-stroke"
-          />
-          <line
-            x1={LEFT}
-            x2={LEFT}
-            y1={TOP}
-            y2={HEIGHT - BOTTOM}
-            stroke={theme.vars.palette.chart.grid}
-            strokeWidth="1"
-            vectorEffect="non-scaling-stroke"
-          />
-          <path d={areaPath(sentiment)} fill={wash(theme.vars.palette.chart.sentiment)} />
-          <path
-            d={linePath(sentiment)}
-            fill="none"
-            stroke={theme.vars.palette.chart.sentiment}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2.5"
-            vectorEffect="non-scaling-stroke"
-          />
-          {engagement?.length ? (
-            <path
-              d={linePath(engagement, true)}
-              fill="none"
-              stroke={theme.vars.palette.chart.neutral}
-              strokeDasharray="6 4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.5"
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : null}
-        </ChartSvg>
+              <path d={areaPath(sentiment)} fill={wash(theme.vars.palette.chart.sentiment)} />
+              <path
+                d={linePath(sentiment)}
+                fill="none"
+                stroke={theme.vars.palette.chart.sentiment}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2.5"
+                vectorEffect="non-scaling-stroke"
+              />
+              {engagement?.length ? (
+                <path
+                  d={linePath(engagement, true)}
+                  fill="none"
+                  stroke={theme.vars.palette.chart.neutral}
+                  strokeDasharray="6 4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.5"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
+            </ChartSvg>
 
-        {[1, 0, -1].map((tick) => (
-          <AxisLabel
-            key={'axis-' + tick}
-            aria-hidden="true"
-            style={{
-              left: `${((LEFT - 10) / WIDTH) * 100}%`,
-              top: `${(yForSentiment(tick) / HEIGHT) * 100}%`,
-            }}
-          >
-            {tick > 0 ? '+1' : String(tick)}
-          </AxisLabel>
-        ))}
+            {[1, 0, -1].map((tick) => (
+              <AxisLabel
+                key={'axis-' + tick}
+                aria-hidden="true"
+                style={{
+                  left: `${((LEFT - 10) / WIDTH) * 100}%`,
+                  top: `${(yForSentiment(tick) / HEIGHT) * 100}%`,
+                }}
+              >
+                {tick > 0 ? '+1' : String(tick)}
+              </AxisLabel>
+            ))}
 
-        {sentiment.map((point, index) => {
-          const x = xFor(index, sentiment.length);
-          const y = yForSentiment(point.value);
-          const polarity = pointPolarity(point.value);
-          const label = `${formatDateLabel(point.at)}: ${sentimentLabel(point.value)} tone, ${formatSentimentScore(point.value)}, ${point.sampleCount} messages`;
-          return (
-            <MarkButton
-              key={'sentiment-' + point.at}
-              type="button"
-              $polarity={polarity}
-              aria-label={label}
-              aria-describedby={active?.series === 'sentiment' && active.index === index ? tooltipId : undefined}
-              data-emphasized={index === sentiment.length - 1 ? 'true' : undefined}
-              data-hit-target={componentTokens.analytics.markHitTarget}
-              style={{ left: `${(x / WIDTH) * 100}%`, top: `${(y / HEIGHT) * 100}%` }}
-              onMouseEnter={() => setActive({ series: 'sentiment', index, left: x, top: y, label })}
-              onMouseLeave={() => setActive(null)}
-              onFocus={() => setActive({ series: 'sentiment', index, left: x, top: y, label })}
-              onBlur={() => setActive(null)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') setActive(null);
-              }}
-            >
-              <MarkerSymbol className="chart-marker-symbol" aria-hidden="true">{markerSymbol(polarity)}</MarkerSymbol>
-            </MarkButton>
-          );
-        })}
+            {sentiment.map((point, index) => {
+              const x = xFor(index, sentiment.length);
+              const y = yForSentiment(point.value);
+              const polarity = pointPolarity(point.value);
+              const label = `${formatDateLabel(point.at)}: ${sentimentLabel(point.value)} tone, ${formatSentimentScore(point.value)}, ${point.sampleCount} messages`;
+              return (
+                <MarkButton
+                  key={'sentiment-' + point.at}
+                  type="button"
+                  $polarity={polarity}
+                  aria-label={label}
+                  aria-describedby={active?.series === 'sentiment' && active.index === index ? tooltipId : undefined}
+                  data-emphasized={index === sentiment.length - 1 ? 'true' : undefined}
+                  data-hit-target={componentTokens.analytics.markHitTarget}
+                  style={{ left: `${(x / WIDTH) * 100}%`, top: `${(y / HEIGHT) * 100}%` }}
+                  onMouseEnter={() => setActive({ series: 'sentiment', index, left: x, top: y, label })}
+                  onMouseLeave={() => setActive(null)}
+                  onFocus={() => setActive({ series: 'sentiment', index, left: x, top: y, label })}
+                  onBlur={() => setActive(null)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') setActive(null);
+                  }}
+                >
+                  <MarkerSymbol className="chart-marker-symbol" aria-hidden="true">{markerSymbol(polarity)}</MarkerSymbol>
+                </MarkButton>
+              );
+            })}
 
-        {engagement?.map((point, index) => {
-          const x = xFor(index, engagement.length);
-          const y = yForRatio(point.value);
-          const label = `${formatDateLabel(point.at)}: engagement ${formatRatioPercent(point.value)}, ${point.sampleCount} observations`;
-          return (
-            <MarkButton
-              key={'engagement-' + point.at}
-              type="button"
-              $polarity="engagement"
-              aria-label={label}
-              aria-describedby={active?.series === 'engagement' && active.index === index ? tooltipId : undefined}
-              data-emphasized={index === engagement.length - 1 ? 'true' : undefined}
-              data-hit-target={componentTokens.analytics.markHitTarget}
-              style={{ left: `${(x / WIDTH) * 100}%`, top: `${(y / HEIGHT) * 100}%` }}
-              onMouseEnter={() => setActive({ series: 'engagement', index, left: x, top: y, label })}
-              onMouseLeave={() => setActive(null)}
-              onFocus={() => setActive({ series: 'engagement', index, left: x, top: y, label })}
-              onBlur={() => setActive(null)}
-            >
-              <MarkerSymbol className="chart-marker-symbol" aria-hidden="true">{markerSymbol('engagement')}</MarkerSymbol>
-            </MarkButton>
-          );
-        })}
+            {engagement?.map((point, index) => {
+              const x = xFor(index, engagement.length);
+              const y = yForRatio(point.value);
+              const label = `${formatDateLabel(point.at)}: engagement ${formatRatioPercent(point.value)}, ${point.sampleCount} observations`;
+              return (
+                <MarkButton
+                  key={'engagement-' + point.at}
+                  type="button"
+                  $polarity="engagement"
+                  aria-label={label}
+                  aria-describedby={active?.series === 'engagement' && active.index === index ? tooltipId : undefined}
+                  data-emphasized={index === engagement.length - 1 ? 'true' : undefined}
+                  data-hit-target={componentTokens.analytics.markHitTarget}
+                  style={{ left: `${(x / WIDTH) * 100}%`, top: `${(y / HEIGHT) * 100}%` }}
+                  onMouseEnter={() => setActive({ series: 'engagement', index, left: x, top: y, label })}
+                  onMouseLeave={() => setActive(null)}
+                  onFocus={() => setActive({ series: 'engagement', index, left: x, top: y, label })}
+                  onBlur={() => setActive(null)}
+                >
+                  <MarkerSymbol className="chart-marker-symbol" aria-hidden="true">{markerSymbol('engagement')}</MarkerSymbol>
+                </MarkButton>
+              );
+            })}
 
-        {active && (
-          <TooltipBox
-            id={tooltipId}
-            role="tooltip"
-            style={{
-              left: `${Math.min(90, Math.max(10, (active.left / WIDTH) * 100))}%`,
-              top: `${Math.max(18, (active.top / HEIGHT) * 100)}%`,
-            }}
-          >
-            <Typography variant="caption">{active.label}</Typography>
-          </TooltipBox>
-        )}
-      </Plot>
+            {active && (
+              <TooltipBox
+                id={tooltipId}
+                role="tooltip"
+                style={{
+                  left: `${Math.min(90, Math.max(10, (active.left / WIDTH) * 100))}%`,
+                  top: `${Math.max(18, (active.top / HEIGHT) * 100)}%`,
+                }}
+              >
+                <Typography variant="caption">{active.label}</Typography>
+              </TooltipBox>
+            )}
+          </Plot>
 
-      <DateExtent aria-hidden="true">
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-          {formatDateLabel(sentiment[0].at)}
-        </Typography>
-        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-          {formatDateLabel(latestSentiment.at)}
-        </Typography>
-      </DateExtent>
-
-      <Details>
-        <summary>View data table</summary>
+          <DateExtent aria-hidden="true">
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              {formatDateLabel(sentiment[0].at)}
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              {formatDateLabel(latestSentiment.at)}
+            </Typography>
+          </DateExtent>
+        </>
+      ) : (
         <TableScroller>
           <table aria-label="Message tone over time data">
             <thead>
@@ -477,7 +481,7 @@ export function SentimentEngagementTrend({
             </tbody>
           </table>
         </TableScroller>
-      </Details>
+      )}
     </Stack>
   );
 }

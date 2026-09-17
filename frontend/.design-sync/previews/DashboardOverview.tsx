@@ -1,5 +1,4 @@
-import { Box } from '@mui/material';
-import { DashboardOverview } from 'onlyfans-analytics-frontend';
+import { Box, DashboardOverview } from 'onlyfans-analytics-frontend';
 
 export function UpToDate() {
   return (

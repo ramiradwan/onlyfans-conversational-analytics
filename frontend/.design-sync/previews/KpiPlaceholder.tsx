@@ -1,5 +1,9 @@
-import { Box, Grid, Typography } from '@mui/material';
-import { KpiPlaceholder } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  Grid,
+  KpiPlaceholder,
+  Typography,
+} from 'onlyfans-analytics-frontend';
 
 export function DashboardMetricsLoading() {
   return (

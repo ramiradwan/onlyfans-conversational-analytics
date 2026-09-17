@@ -1,5 +1,8 @@
-import { Box } from '@mui/material';
-import { WebAuthnAccessView, previewNoop } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  WebAuthnAccessView,
+  previewNoop,
+} from 'onlyfans-analytics-frontend';
 
 import type { WebAuthnApi } from '../../src/services/webauthnApi';
 

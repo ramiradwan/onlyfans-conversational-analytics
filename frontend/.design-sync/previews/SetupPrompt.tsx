@@ -1,5 +1,4 @@
-import { Box } from '@mui/material';
-import { MemoryRouter, SetupPrompt } from 'onlyfans-analytics-frontend';
+import { Box, MemoryRouter, SetupPrompt } from 'onlyfans-analytics-frontend';
 
 export function FirstRun() {
   return (

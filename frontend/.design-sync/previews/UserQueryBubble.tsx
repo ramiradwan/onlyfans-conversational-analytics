@@ -1,5 +1,9 @@
-import { Box, Stack, Typography } from '@mui/material';
-import { UserQueryBubble } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  Stack,
+  Typography,
+  UserQueryBubble,
+} from 'onlyfans-analytics-frontend';
 
 export function AnalyticsQuestions() {
   return (

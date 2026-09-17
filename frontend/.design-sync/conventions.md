@@ -31,7 +31,8 @@ Write for a creator who knows nothing about how the product works.
 - Lead with the one thing the viewer needs now: a summary, a current status, or a single next step. Give each surface one primary action.
 - Before asking for an action (connect, activate, allow history, delete), state its benefit or consequence in one sentence, so the answer is obviously yes or obviously no.
 - Setup is a short numbered list with the current step emphasized and finished steps receding (`SetupPrompt`). Show only the current step's details.
-- Put secondary or rarely used controls behind `Disclosure` or a status popover. Destructive actions sit behind `Disclosure` and a confirmation dialog.
+- Reveal detail through state, not stacked expanders. Open a multi-step task (activation, turning on the archive) in a focused dialog; put small details and filters in a popover; offer an alternate view such as a data table through a Chart/Table toggle. Do not use accordions or expandable sections.
+- A destructive action is a plain settings row with a quiet error-colored button that opens a confirmation dialog.
 - Hide sections that have nothing to show (`RecentConversations` renders nothing without conversations) instead of filling the page with placeholders.
 - Keep a problem that blocks new data visible as an in-page `Alert`; show calm states with a `StatusChip` only.
 
@@ -46,6 +47,8 @@ The product has three surfaces. Each control has one owner; other surfaces point
 ## Styling idiom
 
 This is a MUI v9 theme/prop system, not a utility-class library. Compose the bundled React components, use MUI layout primitives for glue, and style through `sx` and theme-aware props. Do not invent CSS class names.
+
+- Primitives: take `Alert`, `Box`, `Button`, `Card`, `CardContent`, `Chip`, `Divider`, `Grid`, `IconButton`, `Link`, `Paper`, `Skeleton`, `Stack`, `TextField`, `Tooltip`, and `Typography` from `window.BridgeDesignSystem`. A separate MUI copy does not see the bundled theme and renders with stock MUI styles.
 
 - Surfaces: content and workspace backgrounds use `background.default`; cards, drawers, and panels use `background.paper`. Content surfaces stay opaque. `theme.effects.glassmorphism(theme)` is for navigation and app-bar chrome only. `theme.effects.ambientGlow(theme)` is for setup, empty, and success moments only.
 - Cards: the theme already styles MUI cards; use `Panel` or `theme.effects.cardBorder(theme)` for custom panels and `theme.effects.chartFrame(theme)` for chart frames.
@@ -63,7 +66,7 @@ This is a MUI v9 theme/prop system, not a utility-class library. Compose the bun
 
 ## Extension popup and setup page
 
-The browser extension popup and the desktop setup page are plain HTML and CSS, not React. They use the same design tokens as CSS custom properties with the `--dipsy-` prefix (for example `--dipsy-color-primary`, `--dipsy-color-paper`, `--dipsy-radius-control`, `--dipsy-space-unit`, `--dipsy-shadow-raised`), with dark values applied through `prefers-color-scheme`. Mock these surfaces with the same cards, pill status badges, and disclosure panels as the app, at the popup's 390 px width. Required legal and data-handling text on these surfaces keeps its wording and prominence.
+The browser extension popup and the desktop setup page are plain HTML and CSS, not React. They use the same design tokens as CSS custom properties with the `--dipsy-` prefix (for example `--dipsy-color-primary`, `--dipsy-color-paper`, `--dipsy-radius-control`, `--dipsy-space-unit`, `--dipsy-shadow-raised`), with dark values applied through `prefers-color-scheme`. Mock these surfaces with the same cards and pill status badges as the app, at the popup's 390 px width. Secondary popup screens (connection details, extension management) open as separate views with a Back button. Required legal and data-handling text on these surfaces keeps its wording and prominence.
 
 ## Sources of truth
 
@@ -72,7 +75,7 @@ Before styling, read `_ds/styles.css` and its imports, especially `_ds/_ds_bundl
 ## Idiomatic composition
 
 ```tsx
-const { DashboardOverview, Panel, SectionHeader, SettingRow } = window.BridgeDesignSystem;
+const { Box, Button, DashboardOverview, Panel, SectionHeader, SettingRow } = window.BridgeDesignSystem;
 
 <Box sx={{ bgcolor: 'background.default', p: 3 }}>
   <DashboardOverview

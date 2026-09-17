@@ -92,9 +92,14 @@ const SCREENS = [
     ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in was cancelled or timed out.' }),
   },
   {
-    workspace: 'analytics', state: 'model', variant: 'date-expanded', viewports: ['desktop', 'narrow'],
+    workspace: 'analytics', state: 'model', variant: 'date-popover', viewports: ['desktop', 'narrow'],
     act: (page) => page.getByRole('button', { name: 'Change dates' }).click(),
-    ready: (page) => page.getByLabel('Start date'),
+    ready: (page) => page.getByRole('dialog', { name: 'Show messages from' }).getByLabel('Start date'),
+  },
+  {
+    workspace: 'analytics', state: 'model', variant: 'tone-table', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.getByRole('button', { name: 'Table', exact: true }).click(),
+    ready: (page) => page.getByRole('table', { name: 'Message tone over time data' }),
   },
   {
     workspace: 'inbox', state: 'populated', variant: 'selected-conversation', viewports: ['narrow'],
@@ -121,9 +126,9 @@ const SCREENS = [
     ready: (page) => page.getByRole('dialog', { name: 'Status details' }),
   },
   {
-    workspace: 'settings', state: 'fresh', variant: 'activation-expanded', viewports: ['narrow'], modes: ['light'],
+    workspace: 'settings', state: 'fresh', variant: 'activation-dialog', viewports: ['narrow'], modes: ['light'],
     act: (page) => page.getByRole('button', { name: 'Turn on full analytics' }).click(),
-    ready: (page) => page.getByRole('link', { name: 'Open secure setup' }),
+    ready: (page) => page.getByRole('dialog', { name: 'Turn on full analytics' }).getByRole('link', { name: 'Open secure setup' }),
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'activation-return', viewports: ['narrow'], modes: ['light'],
@@ -158,28 +163,13 @@ const SCREENS = [
     ready: (page) => page.getByRole('checkbox', { name: /I allow read-only syncing/ }),
   },
   {
-    workspace: 'settings', state: 'fresh', variant: 'archive-editing', viewports: ['narrow'], modes: ['light'],
-    act: async (page) => {
-      await page.getByRole('button', { name: 'Manage stored messages' }).click();
-      await page.getByRole('button', { name: 'Turn on archive' }).click();
-    },
-    ready: (page) => page.getByRole('spinbutton', { name: 'Days to keep' }),
-  },
-  {
-    workspace: 'settings', state: 'populated', variant: 'delete-disclosure', viewports: ['narrow'], modes: ['light'],
-    act: async (page) => {
-      await page.getByRole('button', { name: 'Manage stored messages' }).click();
-      await page.getByRole('button', { name: 'Delete messages' }).click();
-    },
-    ready: (page) => page.getByRole('button', { name: 'Delete all messages' }),
+    workspace: 'settings', state: 'fresh', variant: 'archive-dialog', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.getByRole('button', { name: 'Turn on archive' }).click(),
+    ready: (page) => page.getByRole('dialog', { name: 'Turn on archive' }).getByRole('spinbutton', { name: 'Days to keep' }),
   },
   {
     workspace: 'settings', state: 'populated', variant: 'delete-confirmation', viewports: ['narrow'], modes: ['light'],
-    act: async (page) => {
-      await page.getByRole('button', { name: 'Manage stored messages' }).click();
-      await page.getByRole('button', { name: 'Delete messages' }).click();
-      await page.getByRole('button', { name: 'Delete all messages' }).click();
-    },
+    act: (page) => page.getByRole('button', { name: 'Delete all messages' }).click(),
     ready: (page) => page.getByRole('dialog').filter({ hasText: 'Delete all messages?' }),
   },
   {

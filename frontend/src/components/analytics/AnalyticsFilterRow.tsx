@@ -1,21 +1,13 @@
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
-import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import { Button, Collapse, Stack, TextField, Typography, styled } from '@mui/material';
-import { type FormEvent, useEffect, useState } from 'react';
+import { Box, Button, Chip, Popover, Stack, TextField, Typography, styled } from '@mui/material';
+import { type FormEvent, useEffect, useId, useState } from 'react';
 
 import type { AnalyticsDateRange } from '../../analytics';
 
-const FilterForm = styled('form')(({ theme }) => ({
+const DateFields = styled(Box)(({ theme }) => ({
   display: 'grid',
   gap: theme.spacing(1.5),
-}));
-
-const DateGroup = styled(Stack)(({ theme }) => ({
-  alignItems: 'flex-end',
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-  gap: theme.spacing(1),
+  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 }));
 
 const DateField = styled(TextField)({
@@ -48,16 +40,29 @@ function trailingDays(days: number): AnalyticsDateRange {
   return { startDate: inputDate(start), endDate: inputDate(end) };
 }
 
+function sameRange(left: AnalyticsDateRange, right: AnalyticsDateRange): boolean {
+  return left.startDate === right.startDate && left.endDate === right.endDate;
+}
+
+/** Current date range with a popover for quick ranges and custom dates. */
 export function AnalyticsFilterRow({ value, onApply, isRefreshing = false }: AnalyticsFilterRowProps) {
   const [draft, setDraft] = useState(value);
-  const [showDates, setShowDates] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const open = anchor !== null;
+  const popoverId = useId();
+  const titleId = useId();
 
   useEffect(() => setDraft(value), [value]);
+
+  const close = () => {
+    setDraft(value);
+    setAnchor(null);
+  };
 
   const apply = (range: AnalyticsDateRange) => {
     setDraft(range);
     onApply(range);
-    setShowDates(false);
+    setAnchor(null);
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -65,40 +70,69 @@ export function AnalyticsFilterRow({ value, onApply, isRefreshing = false }: Ana
     apply(draft);
   };
 
-  const clear = () => apply({ startDate: '', endDate: '' });
+  const presets = [
+    { label: 'Last 30 days', range: trailingDays(30) },
+    { label: 'Last 90 days', range: trailingDays(90) },
+    { label: 'All time', range: { startDate: '', endDate: '' } },
+  ];
 
   return (
-    <FilterForm onSubmit={submit} aria-label="Analytics filters">
-      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-        <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>Dates</Typography>
-          <Typography variant="body2" noWrap>{rangeLabel(value)}</Typography>
-        </Stack>
-        <Button
-          aria-expanded={showDates}
-          onClick={() => setShowDates((open) => !open)}
-          size="small"
-          startIcon={<CalendarMonthOutlinedIcon />}
-          type="button"
-          variant="outlined"
-        >
-          Change dates
-        </Button>
-        {isRefreshing && (
-          <Typography role="status" variant="caption" aria-live="polite" sx={{ color: 'text.secondary' }}>
-            Updating…
-          </Typography>
-        )}
+    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+      <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>Dates</Typography>
+        <Typography variant="body2" noWrap>{rangeLabel(value)}</Typography>
       </Stack>
+      <Button
+        aria-controls={open ? popoverId : undefined}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={(event) => setAnchor(event.currentTarget)}
+        size="small"
+        startIcon={<CalendarMonthOutlinedIcon />}
+        type="button"
+        variant="outlined"
+      >
+        Change dates
+      </Button>
+      {isRefreshing && (
+        <Typography role="status" variant="caption" aria-live="polite" sx={{ color: 'text.secondary' }}>
+          Updating…
+        </Typography>
+      )}
 
-      <Collapse in={showDates}>
-        <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-          <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-            <Button type="button" size="small" onClick={() => apply(trailingDays(30))}>Last 30 days</Button>
-            <Button type="button" size="small" onClick={() => apply(trailingDays(90))}>Last 90 days</Button>
-            <Button type="button" size="small" startIcon={<RestartAltIcon />} onClick={clear}>All time</Button>
+      <Popover
+        anchorEl={anchor}
+        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        id={popoverId}
+        onClose={close}
+        open={open}
+        slotProps={{
+          paper: {
+            'aria-labelledby': titleId,
+            role: 'dialog',
+            sx: { maxWidth: 'calc(100vw - 32px)', mt: 1, p: 2, width: 360 },
+          },
+        }}
+        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+      >
+        <Stack component="form" onSubmit={submit} aria-label="Analytics filters" spacing={2}>
+          <Typography component="h2" id={titleId} variant="subtitle2">Show messages from</Typography>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+            {presets.map((preset) => {
+              const selected = sameRange(value, preset.range);
+              return (
+                <Chip
+                  aria-pressed={selected}
+                  color={selected ? 'primary' : 'default'}
+                  key={preset.label}
+                  label={preset.label}
+                  onClick={() => apply(preset.range)}
+                  variant={selected ? 'filled' : 'outlined'}
+                />
+              );
+            })}
           </Stack>
-          <DateGroup aria-label="Date range">
+          <DateFields role="group" aria-label="Date range">
             <DateField
               type="date"
               size="small"
@@ -115,10 +149,13 @@ export function AnalyticsFilterRow({ value, onApply, isRefreshing = false }: Ana
               onChange={(event) => setDraft((current) => ({ ...current, endDate: event.target.value }))}
               slotProps={{ inputLabel: { shrink: true } }}
             />
-            <Button type="submit" variant="contained" startIcon={<FilterAltOutlinedIcon />}>Apply</Button>
-          </DateGroup>
+          </DateFields>
+          <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
+            <Button onClick={close} type="button">Cancel</Button>
+            <Button type="submit" variant="contained">Apply</Button>
+          </Stack>
         </Stack>
-      </Collapse>
-    </FilterForm>
+      </Popover>
+    </Stack>
   );
 }

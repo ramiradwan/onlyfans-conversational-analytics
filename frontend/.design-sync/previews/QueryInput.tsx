@@ -1,5 +1,4 @@
-import { Box, Typography } from '@mui/material';
-import { QueryInput } from 'onlyfans-analytics-frontend';
+import { Box, QueryInput, Typography } from 'onlyfans-analytics-frontend';
 
 export function Ready() {
   return (

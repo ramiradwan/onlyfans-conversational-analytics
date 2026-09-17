@@ -237,7 +237,7 @@ describe('CreatorDashboardView', () => {
     expect(screen.getByText(/Counts include messages synced so far/)).toBeTruthy();
   });
 
-  it('renders complete counts with the basis details behind a disclosure', () => {
+  it('renders complete counts with the basis details in a popover', () => {
     const store = readyStore();
 
     renderDashboard(store);
@@ -252,12 +252,13 @@ describe('CreatorDashboardView', () => {
 
     const details = screen.getByRole('button', { name: 'Details' });
     expect(details.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('Messages counted', { exact: true })).toBeNull();
     fireEvent.click(details);
-    expect(
-      screen.getByRole('button', { name: 'Hide details' }).getAttribute('aria-expanded'),
-    ).toBe('true');
-    const counted = screen.getByText('Messages counted', { exact: true }).nextElementSibling;
+    expect(details.getAttribute('aria-expanded')).toBe('true');
+    const popover = within(screen.getByRole('dialog', { name: 'How these numbers are counted' }));
+    const counted = popover.getByText('Messages counted', { exact: true }).nextElementSibling;
     expect(counted?.textContent).toBe('19');
+    expect(popover.queryByText('Data version')).toBeNull();
   });
 
   it('lists recent conversations and links to the inbox only for viewers who can open it', () => {

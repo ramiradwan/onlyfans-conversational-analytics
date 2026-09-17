@@ -1,5 +1,4 @@
-import { Box } from '@mui/material';
-import { ConversationInsightsPanel } from 'onlyfans-analytics-frontend';
+import { Box, ConversationInsightsPanel } from 'onlyfans-analytics-frontend';
 
 import type {
   AccountRef,

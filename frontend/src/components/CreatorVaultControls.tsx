@@ -1,9 +1,7 @@
 import {
   Alert,
   AlertTitle,
-  Box,
   Button,
-  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -13,11 +11,10 @@ import {
   Skeleton,
   Stack,
   TextField,
-  Typography,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
-import { Disclosure, Panel, SectionHeader, SettingRow } from './ui';
+import { Panel, SectionHeader, SettingRow } from './ui';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   creatorVaultApi as defaultCreatorVaultApi,
@@ -69,6 +66,7 @@ export function CreatorVaultControls({
   const [pending, setPending] = useState<PendingConfirmation | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [editingArchive, setEditingArchive] = useState(false);
+  const archiveTitleId = useId();
 
   useEffect(() => {
     if (!isCreator) {
@@ -152,6 +150,11 @@ export function CreatorVaultControls({
     }
   };
 
+  const closeArchive = () => {
+    setEditingArchive(false);
+    setError(null);
+  };
+
   const confirm = () => {
     const current = pending;
     setConfirmOpen(false);
@@ -176,7 +179,7 @@ export function CreatorVaultControls({
       <Stack data-journey-state="desktop.stored_messages" spacing={2}>
         <SectionHeader summary="Saved only on this computer." title="Stored messages" />
 
-        {error && <Alert severity="error" role="alert">{error}</Alert>}
+        {error && !editingArchive && <Alert severity="error" role="alert">{error}</Alert>}
         {notice && <Alert severity="success" role="status">{notice}</Alert>}
         {status?.deletion_operation && (
           <Alert
@@ -202,74 +205,31 @@ export function CreatorVaultControls({
         {!loading && status !== null && (
           <>
             <Divider />
-            <Stack spacing={1.5}>
-              <SettingRow
-                action={status.policy.enabled ? (
-                  <Button
-                    disabled={busy}
-                    onClick={() => { setPending({ kind: 'disable' }); setConfirmOpen(true); }}
-                    size="small"
-                    sx={{ color: 'text.secondary' }}
-                  >
-                    Turn off archive
-                  </Button>
-                ) : !editingArchive && (
-                  <Button
-                    aria-expanded={false}
-                    disabled={busy}
-                    onClick={() => setEditingArchive(true)}
-                    size="small"
-                    variant="outlined"
-                  >
-                    Turn on archive
-                  </Button>
-                )}
-                description={archiveLabel(status.policy)}
-                title="Archive"
-              />
-              {!status.policy.enabled && (
-                <Collapse in={editingArchive} unmountOnExit>
-                  <Stack spacing={1.5}>
-                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                      Choose how long this computer keeps your messages.
-                    </Typography>
-                    <Stack
-                      direction={{ xs: 'column', sm: 'row' }}
-                      spacing={1.5}
-                      sx={{ alignItems: { xs: 'flex-start', sm: 'center' } }}
-                    >
-                      <TextField
-                        label="Days to keep"
-                        onChange={(event) => setFiniteDays(event.target.value)}
-                        size="small"
-                        type="number"
-                        value={finiteDays}
-                      />
-                      <Button
-                        disabled={busy || !finiteValid}
-                        onClick={() => void run({ action: 'enable_finite', finite_horizon_days: days })}
-                        variant="contained"
-                      >
-                        Keep messages
-                      </Button>
-                      {status.capabilities.indefinite_retention && (
-                        <Button
-                          disabled={busy}
-                          onClick={() => void run({ action: 'enable_indefinite' })}
-                          size="small"
-                          variant="outlined"
-                        >
-                          Keep until I delete
-                        </Button>
-                      )}
-                      <Button disabled={busy} onClick={() => setEditingArchive(false)} size="small">
-                        Cancel
-                      </Button>
-                    </Stack>
-                  </Stack>
-                </Collapse>
+
+            <SettingRow
+              action={status.policy.enabled ? (
+                <Button
+                  disabled={busy}
+                  onClick={() => { setPending({ kind: 'disable' }); setConfirmOpen(true); }}
+                  size="small"
+                  sx={{ color: 'text.secondary' }}
+                >
+                  Turn off archive
+                </Button>
+              ) : (
+                <Button
+                  aria-haspopup="dialog"
+                  disabled={busy}
+                  onClick={() => setEditingArchive(true)}
+                  size="small"
+                  variant="outlined"
+                >
+                  Turn on archive
+                </Button>
               )}
-            </Stack>
+              description={archiveLabel(status.policy)}
+              title="Archive"
+            />
 
             <Divider />
 
@@ -290,28 +250,69 @@ export function CreatorVaultControls({
 
             <Divider />
 
-            <Disclosure label="Delete messages">
-              <Stack spacing={2}>
-                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                  Deleted messages are removed from this computer and your numbers are updated without
-                  them. Uninstalling the app doesn&apos;t delete them, so delete them here first if you
-                  want them gone.
-                </Typography>
-                <Box>
-                  <Button
-                    color="error"
-                    disabled={busy}
-                    onClick={() => { setPending({ kind: 'delete_all' }); setConfirmOpen(true); }}
-                    variant="outlined"
-                  >
-                    Delete all messages
-                  </Button>
-                </Box>
-              </Stack>
-            </Disclosure>
+            <SettingRow
+              action={(
+                <Button
+                  aria-haspopup="dialog"
+                  color="error"
+                  disabled={busy}
+                  onClick={() => { setPending({ kind: 'delete_all' }); setConfirmOpen(true); }}
+                  size="small"
+                >
+                  Delete all messages
+                </Button>
+              )}
+              description="Uninstalling the app doesn't delete them, so delete them here if you want them gone."
+              title="Delete messages"
+            />
           </>
         )}
       </Stack>
+
+      <Dialog
+        aria-labelledby={archiveTitleId}
+        fullWidth
+        maxWidth="xs"
+        onClose={closeArchive}
+        open={editingArchive && status !== null && !status.policy.enabled}
+      >
+        <DialogTitle id={archiveTitleId}>Turn on archive</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.5}>
+            <DialogContentText variant="body2">
+              Choose how long this computer keeps your messages.
+            </DialogContentText>
+            <TextField
+              label="Days to keep"
+              onChange={(event) => setFiniteDays(event.target.value)}
+              size="small"
+              sx={{ maxWidth: 200 }}
+              type="number"
+              value={finiteDays}
+            />
+            {error && <Alert severity="error" role="alert">{error}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={busy} onClick={closeArchive}>Cancel</Button>
+          {status?.capabilities.indefinite_retention && (
+            <Button
+              disabled={busy}
+              onClick={() => void run({ action: 'enable_indefinite' })}
+              variant="outlined"
+            >
+              Keep until I delete
+            </Button>
+          )}
+          <Button
+            disabled={busy || !finiteValid}
+            onClick={() => void run({ action: 'enable_finite', finite_horizon_days: days })}
+            variant="contained"
+          >
+            Keep messages
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>

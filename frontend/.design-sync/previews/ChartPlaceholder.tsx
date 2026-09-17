@@ -1,5 +1,4 @@
-import { Box, Typography } from '@mui/material';
-import { ChartPlaceholder } from 'onlyfans-analytics-frontend';
+import { Box, ChartPlaceholder, Typography } from 'onlyfans-analytics-frontend';
 
 export function DashboardChart() {
   return (

@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CommercialActivationControls } from '../src/components/CommercialActivationControls';
@@ -47,7 +47,9 @@ async function showRequired(api: CapabilityLicenseApi, secureSetupUrl = '') {
   mount(api, secureSetupUrl);
   const start = await screen.findByRole('button', { name: 'Turn on full analytics' });
   expect(screen.queryByLabelText('Activation code')).toBeNull();
+  expect(start.getAttribute('aria-haspopup')).toBe('dialog');
   fireEvent.click(start);
+  expect(screen.getByRole('dialog', { name: 'Turn on full analytics' })).toBeTruthy();
   expect(screen.getByLabelText('Activation code')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
 }
@@ -98,7 +100,7 @@ describe('commercial activation controls', () => {
 
     await act(async () => finishReadiness(activeAdmitted));
     expect(await screen.findByText('On')).toBeTruthy();
-    expect(screen.queryByLabelText('Activation code')).toBeNull();
+    await waitFor(() => expect(screen.queryByLabelText('Activation code')).toBeNull());
   });
 
   it('never treats active commercial authority with blocked analysis as Full-ready', async () => {

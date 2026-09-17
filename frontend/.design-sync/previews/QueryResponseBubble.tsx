@@ -1,5 +1,4 @@
-import { Box } from '@mui/material';
-import { QueryResponseBubble } from 'onlyfans-analytics-frontend';
+import { Box, QueryResponseBubble } from 'onlyfans-analytics-frontend';
 
 export function AnswerWithResults() {
   return (

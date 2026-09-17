@@ -1,5 +1,8 @@
-import { Box, Typography } from '@mui/material';
-import { MessageStreamPlaceholder } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  MessageStreamPlaceholder,
+  Typography,
+} from 'onlyfans-analytics-frontend';
 
 export function MessageHistoryLoading() {
   return (

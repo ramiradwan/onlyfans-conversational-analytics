@@ -1,4 +1,22 @@
 export { ThemeProvider } from '@mui/material/styles';
+export {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  Divider,
+  Grid,
+  IconButton,
+  Link,
+  Paper,
+  Skeleton,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 export { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 export { GlobalLoader } from '../src/common/GlobalLoader';
@@ -26,7 +44,6 @@ export {
   MessageStreamPlaceholder,
 } from '../src/components/placeholders';
 export { AsyncContent } from '../src/components/ui/AsyncContent';
-export { Disclosure } from '../src/components/ui/Disclosure';
 export { Panel } from '../src/components/ui/Panel';
 export { SectionHeader, SettingRow } from '../src/components/ui/SettingsSection';
 export { StatusChip } from '../src/components/ui/StatusChip';

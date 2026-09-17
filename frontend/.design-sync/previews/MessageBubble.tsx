@@ -1,6 +1,8 @@
-import { Box, Stack, Typography } from '@mui/material';
 import {
+  Box,
   MessageBubble,
+  Stack,
+  Typography,
   createPreviewMessage,
 } from 'onlyfans-analytics-frontend';
 

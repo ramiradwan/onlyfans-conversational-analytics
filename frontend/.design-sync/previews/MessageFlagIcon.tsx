@@ -1,12 +1,16 @@
-import { Box, Stack, Typography } from '@mui/material';
-import { MessageFlagIcon } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  MessageFlagIcon,
+  Stack,
+  Typography,
+} from 'onlyfans-analytics-frontend';
 
 export function SentimentStates() {
   const states = [
     ['Positive', 'positive'],
-    ['Neutral', 'neutral'],
+    ['Neutral (no icon)', 'neutral'],
     ['Negative', 'negative'],
-    ['Unknown', 'unknown'],
+    ['Unknown (no icon)', 'unknown'],
   ] as const;
 
   return (

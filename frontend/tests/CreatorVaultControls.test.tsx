@@ -122,9 +122,8 @@ describe('CreatorVaultControls', () => {
     }));
     expect(await screen.findByRole('button', { name: 'Turn off archive' })).toBeTruthy();
     expect(screen.getByText('Keeping messages for 365 days')).toBeTruthy();
-    expect(screen.queryByLabelText('Days to keep')).toBeNull();
+    await waitFor(() => expect(screen.queryByLabelText('Days to keep')).toBeNull());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete messages' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete all messages' }));
     expect(command).not.toHaveBeenCalledWith({ action: 'delete_all' });
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete all' }));
@@ -176,7 +175,6 @@ describe('CreatorVaultControls', () => {
     );
 
     expect(await screen.findByText('Keeping messages for 365 days')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete messages' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete all messages' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete all' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

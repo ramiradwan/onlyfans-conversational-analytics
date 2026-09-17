@@ -1,6 +1,6 @@
-import { Box } from '@mui/material';
 import {
   AppAppBar,
+  Box,
   MemoryRouter,
   seedPreviewShellStore,
 } from 'onlyfans-analytics-frontend';

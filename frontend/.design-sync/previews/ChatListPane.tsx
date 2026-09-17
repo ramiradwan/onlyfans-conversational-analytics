@@ -1,5 +1,5 @@
-import { Box } from '@mui/material';
 import {
+  Box,
   ChatListPane,
   previewConversations,
 } from 'onlyfans-analytics-frontend';

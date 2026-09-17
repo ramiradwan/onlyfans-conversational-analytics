@@ -1,5 +1,4 @@
-import { Stack } from '@mui/material';
-import { Panel, SectionHeader } from 'onlyfans-analytics-frontend';
+import { Panel, SectionHeader, Stack } from 'onlyfans-analytics-frontend';
 
 export function WithStatus() {
   return (

@@ -1,5 +1,12 @@
-import { Alert, Box, Chip, Skeleton, Stack, Typography } from '@mui/material';
-import { AsyncContent } from 'onlyfans-analytics-frontend';
+import {
+  Alert,
+  AsyncContent,
+  Box,
+  Chip,
+  Skeleton,
+  Stack,
+  Typography,
+} from 'onlyfans-analytics-frontend';
 
 const topics = ['Custom content', 'Behind the scenes', 'Fitness routines'];
 

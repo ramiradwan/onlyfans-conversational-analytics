@@ -1,5 +1,4 @@
-import { Box, Stack } from '@mui/material';
-import { StatusChip } from 'onlyfans-analytics-frontend';
+import { Box, Stack, StatusChip } from 'onlyfans-analytics-frontend';
 
 export function Tones() {
   return (

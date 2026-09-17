@@ -1,5 +1,4 @@
-import { Box, Typography } from '@mui/material';
-import { TopicsTable } from 'onlyfans-analytics-frontend';
+import { Box, TopicsTable, Typography } from 'onlyfans-analytics-frontend';
 
 import type { AnalyticsTopicMetric } from '../../src/analytics';
 

@@ -1,5 +1,4 @@
-import { Box } from '@mui/material';
-import { BrandMark } from 'onlyfans-analytics-frontend';
+import { Box, BrandMark } from 'onlyfans-analytics-frontend';
 
 export function HeaderLockup() {
   return (

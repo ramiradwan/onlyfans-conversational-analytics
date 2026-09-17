@@ -1,5 +1,9 @@
-import { Stack, Typography } from '@mui/material';
-import { Panel, StatusChip } from 'onlyfans-analytics-frontend';
+import {
+  Panel,
+  Stack,
+  StatusChip,
+  Typography,
+} from 'onlyfans-analytics-frontend';
 
 export function InsightSummary() {
   return (

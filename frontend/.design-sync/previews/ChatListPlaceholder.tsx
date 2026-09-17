@@ -1,5 +1,8 @@
-import { Box, Typography } from '@mui/material';
-import { ChatListPlaceholder } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  ChatListPlaceholder,
+  Typography,
+} from 'onlyfans-analytics-frontend';
 
 export function ConversationsLoading() {
   return (

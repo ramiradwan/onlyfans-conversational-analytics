@@ -1,5 +1,5 @@
-import { Box } from '@mui/material';
 import {
+  Box,
   CreatorDashboardView,
   createPreviewActivationApi,
   createPreviewBridgeStore,

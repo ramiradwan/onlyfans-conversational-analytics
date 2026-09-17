@@ -1,5 +1,8 @@
-import { Box, Typography } from '@mui/material';
-import { QueryResponseBubbleSkeleton } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  QueryResponseBubbleSkeleton,
+  Typography,
+} from 'onlyfans-analytics-frontend';
 
 export function GeneratingAnswer() {
   return (

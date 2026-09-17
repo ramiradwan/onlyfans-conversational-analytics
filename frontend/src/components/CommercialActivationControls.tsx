@@ -4,7 +4,11 @@ import {
   AlertTitle,
   Box,
   Button,
-  Collapse,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Stack,
   TextField,
   Typography,
@@ -49,10 +53,10 @@ export function CommercialActivationControls({
   const [code, setCode] = useState('');
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [setupOpened, setSetupOpened] = useState(false);
   const operation = useRef<AbortController | null>(null);
-  const stepsId = useId();
+  const titleId = useId();
 
   const checkReadiness = () => {
     operation.current?.abort();
@@ -105,6 +109,7 @@ export function CommercialActivationControls({
       if (next.commercial_authority === 'active') {
         setCode('');
         setError(null);
+        setDialogOpen(false);
       } else if (redemptionFailure !== null) {
         setError(safeMessage(redemptionFailure));
       }
@@ -161,78 +166,77 @@ export function CommercialActivationControls({
         </Alert>
       )}
 
-      {error && <Alert severity="error" role="alert">{error}</Alert>}
+      {error && !dialogOpen && <Alert severity="error" role="alert">{error}</Alert>}
 
       {!checking && activationRequired && (
-        <Box data-journey-state="desktop.full_analytics_activation" sx={{ display: 'contents' }}>
-          {!expanded && (
-            <Box>
-              <Button
-                aria-controls={stepsId}
-                aria-expanded={false}
-                onClick={() => setExpanded(true)}
-                variant="outlined"
-              >
-                Turn on full analytics
-              </Button>
-            </Box>
-          )}
-          <Collapse id={stepsId} in={expanded} unmountOnExit>
-            <Stack spacing={2}>
-              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                Secure setup opens in a new tab. Keep this page open—you&apos;ll come back here to finish.
-              </Typography>
-              <Stack spacing={1}>
-                <StepLabel index={1}>Open secure setup and choose Activate Full.</StepLabel>
-                {setupUrl && (
-                  <Box>
-                    <Button
-                      component="a"
-                      endIcon={<OpenInNewIcon />}
-                      href={setupUrl}
-                      onClick={() => setSetupOpened(true)}
-                      rel="noopener noreferrer"
-                      size="small"
-                      target="_blank"
-                      variant="outlined"
-                    >
-                      Open secure setup
-                    </Button>
-                  </Box>
-                )}
-                {setupOpened && (
-                  <Alert severity="info" role="status">
-                    Secure setup opened. When it gives you an activation code, return here and paste it below.
-                  </Alert>
-                )}
-              </Stack>
-              <Stack spacing={1}>
-                <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
-                <Stack
-                  direction={{ xs: 'column', sm: 'row' }}
-                  spacing={1.5}
-                  sx={{ alignItems: { sm: 'flex-start' } }}
-                >
-                  <TextField
-                    autoComplete="off"
-                    label="Activation code"
-                    onChange={(event) => {
-                      setCode(event.target.value);
-                      if (error) setError(null);
-                    }}
-                    size="small"
-                    sx={{ flex: 1, maxWidth: { sm: 420 } }}
-                    value={code}
-                  />
-                  <Button onClick={() => void submit()} variant="contained">
-                    Activate
-                  </Button>
-                </Stack>
-              </Stack>
-            </Stack>
-          </Collapse>
+        <Box data-journey-state="desktop.full_analytics_activation">
+          <Button aria-haspopup="dialog" onClick={() => setDialogOpen(true)} variant="outlined">
+            Turn on full analytics
+          </Button>
         </Box>
       )}
+
+      <Dialog
+        aria-labelledby={titleId}
+        fullWidth
+        maxWidth="xs"
+        onClose={() => setDialogOpen(false)}
+        open={dialogOpen}
+      >
+        <DialogTitle id={titleId}>Turn on full analytics</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.5}>
+            <DialogContentText variant="body2">
+              Secure setup opens in a new tab. Keep this page open—you&apos;ll come back here to finish.
+            </DialogContentText>
+            <Stack spacing={1}>
+              <StepLabel index={1}>Open secure setup and choose Activate Full.</StepLabel>
+              {setupUrl && (
+                <Box>
+                  <Button
+                    component="a"
+                    endIcon={<OpenInNewIcon />}
+                    href={setupUrl}
+                    onClick={() => setSetupOpened(true)}
+                    rel="noopener noreferrer"
+                    size="small"
+                    target="_blank"
+                    variant={setupOpened ? 'text' : 'outlined'}
+                  >
+                    Open secure setup
+                  </Button>
+                </Box>
+              )}
+              {setupOpened && (
+                <Alert severity="info" role="status">
+                  Secure setup opened. When it gives you an activation code, return here and paste it below.
+                </Alert>
+              )}
+            </Stack>
+            <Stack spacing={1.5}>
+              <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
+              <TextField
+                autoComplete="off"
+                fullWidth
+                label="Activation code"
+                onChange={(event) => {
+                  setCode(event.target.value);
+                  if (error) setError(null);
+                }}
+                size="small"
+                value={code}
+              />
+            </Stack>
+            {error && <Alert severity="error" role="alert">{error}</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button disabled={checking} onClick={() => void submit()} variant="contained">
+            Activate
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
         <Box>
