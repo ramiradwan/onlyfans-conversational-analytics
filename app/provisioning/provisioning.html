@@ -5,35 +5,85 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Set up desktop app</title>
     <style>
+      /* design-tokens:start */
+      /* Generated from frontend/src/theme/tokens.json; run npm run sync:static-tokens in frontend. */
+      :root {
+        --dipsy-font-family: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --dipsy-font-family-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+        --dipsy-font-weight-regular: 400;
+        --dipsy-font-weight-medium: 500;
+        --dipsy-font-weight-semibold: 600;
+        --dipsy-font-weight-bold: 700;
+        --dipsy-radius-compact: 8px;
+        --dipsy-radius-control: 12px;
+        --dipsy-radius-message: 16px;
+        --dipsy-radius-surface: 20px;
+        --dipsy-radius-pill: 999px;
+        --dipsy-space-unit: 8px;
+        --dipsy-border-thin: 1px;
+        --dipsy-focus-width: 2px;
+        --dipsy-focus-offset: 2px;
+        --dipsy-motion-fast: 120ms;
+        --dipsy-motion-standard: 200ms;
+        --dipsy-motion-spatial: 320ms;
+        --dipsy-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+        --dipsy-easing-enter: cubic-bezier(0, 0, 0, 1);
+        --dipsy-easing-exit: cubic-bezier(0.3, 0, 1, 1);
+        --dipsy-press-scale: 0.97;
+        --dipsy-color-background: #F4F4F9;
+        --dipsy-color-paper: #FFFFFF;
+        --dipsy-color-surface-subtle: #EEEEF5;
+        --dipsy-color-text: #17161F;
+        --dipsy-color-text-secondary: #5C5A69;
+        --dipsy-color-text-muted: #6B6979;
+        --dipsy-color-text-disabled: #9B99A8;
+        --dipsy-color-primary: #5B57F2;
+        --dipsy-color-on-primary: #FFFFFF;
+        --dipsy-color-secondary: #8B5CF6;
+        --dipsy-color-success: #008300;
+        --dipsy-color-warning: #A85C00;
+        --dipsy-color-error: #C9363E;
+        --dipsy-color-info: #0094A8;
+        --dipsy-color-divider: rgba(20, 18, 33, 0.06);
+        --dipsy-color-hover: rgba(20, 18, 33, 0.04);
+        --dipsy-color-selected: rgba(91, 87, 242, 0.10);
+        --dipsy-color-disabled: rgba(20, 18, 33, 0.30);
+        --dipsy-shadow-raised: 0 1px 2px rgba(17, 17, 26, 0.04), 0 4px 16px -8px rgba(17, 17, 26, 0.08);
+        --dipsy-shadow-overlay: 0 2px 6px rgba(17, 17, 26, 0.06), 0 18px 40px -16px rgba(17, 17, 26, 0.22);
+        --dipsy-rim: linear-gradient(180deg, rgba(17, 17, 26, 0.07), rgba(17, 17, 26, 0.03));
+        --dipsy-glow: radial-gradient(120% 90% at 0% 0%, rgba(91, 87, 242, 0.10), rgba(139, 92, 246, 0.04) 45%, rgba(91, 87, 242, 0) 75%);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --dipsy-color-background: #08080C;
+          --dipsy-color-paper: #17171F;
+          --dipsy-color-surface-subtle: #1E1E28;
+          --dipsy-color-text: #F4F3F9;
+          --dipsy-color-text-secondary: #B6B4C4;
+          --dipsy-color-text-muted: #9B99A8;
+          --dipsy-color-text-disabled: #6F6D7E;
+          --dipsy-color-primary: #8B87FF;
+          --dipsy-color-on-primary: rgba(0, 0, 0, 0.87);
+          --dipsy-color-secondary: #A78BFA;
+          --dipsy-color-success: #4CAF50;
+          --dipsy-color-warning: #F5B547;
+          --dipsy-color-error: #E66767;
+          --dipsy-color-info: #00ABC1;
+          --dipsy-color-divider: rgba(255, 255, 255, 0.07);
+          --dipsy-color-hover: rgba(255, 255, 255, 0.05);
+          --dipsy-color-selected: rgba(139, 135, 255, 0.16);
+          --dipsy-color-disabled: rgba(255, 255, 255, 0.30);
+          --dipsy-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.40);
+          --dipsy-shadow-overlay: 0 2px 6px rgba(0, 0, 0, 0.50), 0 24px 56px -20px rgba(0, 0, 0, 0.90);
+          --dipsy-rim: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02) 48%, rgba(255, 255, 255, 0));
+          --dipsy-glow: radial-gradient(120% 90% at 0% 0%, rgba(139, 135, 255, 0.16), rgba(167, 139, 250, 0.05) 45%, rgba(139, 135, 255, 0) 75%);
+        }
+      }
+      /* design-tokens:end */
+
       :root {
         color-scheme: light dark;
-        --color-primary: #5B57F2;
-        --color-primary-strong: #4340C9;
-        --color-on-primary: #FFFFFF;
-        --color-background: #F4F4F9;
-        --color-surface: #FFFFFF;
-        --color-surface-subtle: #EEEEF5;
-        --color-text: #17161F;
-        --color-text-secondary: #5C5A69;
-        --color-text-muted: #6B6979;
-        --color-text-disabled: #9B99A8;
-        --color-divider: rgba(20, 18, 33, 0.06);
-        --color-selected: rgba(91, 87, 242, 0.10);
-        --color-success: #008300;
-        --color-error: #C9363E;
-        --elevation-surface: 0 1px 2px rgba(17, 17, 26, 0.04), 0 12px 32px -14px rgba(17, 17, 26, 0.16);
-        --focus-width: 2px;
-        --focus-offset: 2px;
-        --space-1: 0.5rem;
-        --space-2: 1rem;
-        --space-3: 1.5rem;
-        --space-4: 2rem;
-        --radius-small: 10px;
-        --radius-medium: 14px;
-        --radius-large: 18px;
-        --motion-duration: 200ms;
-        --motion-easing: cubic-bezier(0.4, 0, 0.2, 1);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: var(--dipsy-font-family);
       }
 
       * {
@@ -44,21 +94,20 @@
         min-width: 15rem;
         min-height: 100vh;
         margin: 0;
-        background: var(--color-background);
-        color: var(--color-text);
+        background: var(--dipsy-color-background);
+        color: var(--dipsy-color-text);
         font-size: 1rem;
         line-height: 1.5;
       }
 
       main {
-        width: min(100% - 2rem, 56rem);
+        width: min(100% - 2rem, 42rem);
         margin-inline: auto;
         padding-block: clamp(2rem, 6vw, 4rem);
       }
 
       .page-header {
-        max-width: 44rem;
-        margin-block-end: var(--space-4);
+        margin-block-end: calc(var(--dipsy-space-unit) * 4);
       }
 
       h1,
@@ -68,62 +117,80 @@
       }
 
       h1 {
-        margin-block-end: var(--space-1);
-        font-size: clamp(2rem, 6vw, 2.5rem);
+        margin-block-end: var(--dipsy-space-unit);
+        font-size: clamp(1.75rem, 5vw, 2.25rem);
+        font-weight: var(--dipsy-font-weight-bold);
         line-height: 1.15;
-        letter-spacing: -0.03em;
+        letter-spacing: -0.02em;
       }
 
       .intro {
-        max-width: 65ch;
-        margin-block-end: var(--space-2);
-        color: var(--color-text-secondary);
+        max-width: 60ch;
+        margin-block-end: calc(var(--dipsy-space-unit) * 2);
+        color: var(--dipsy-color-text-secondary);
+      }
+
+      a {
+        color: var(--dipsy-color-primary);
       }
 
       .disclosure-link {
-        color: var(--color-primary-strong);
-        font-weight: 600;
+        font-weight: var(--dipsy-font-weight-semibold);
       }
 
       .page-status {
-        min-height: 3.5rem;
         margin: 0;
-        padding: var(--space-2);
-        border: 1px solid var(--color-divider);
-        border-radius: var(--radius-medium);
-        background: var(--color-surface-subtle);
+        padding: calc(var(--dipsy-space-unit) * 1.5) calc(var(--dipsy-space-unit) * 2);
+        border: var(--dipsy-border-thin) solid transparent;
+        border-radius: var(--dipsy-radius-control);
+        background: var(--dipsy-color-surface-subtle);
+        font-weight: var(--dipsy-font-weight-medium);
       }
 
       .page-status[data-tone="error"] {
-        border-color: var(--color-error);
+        border-color: var(--dipsy-color-error);
+        background: color-mix(in srgb, var(--dipsy-color-error) 8%, var(--dipsy-color-paper));
       }
 
       .steps {
         display: grid;
-        gap: var(--space-2);
+        gap: calc(var(--dipsy-space-unit) * 1.5);
         margin: 0;
         padding: 0;
         list-style: none;
       }
 
       .step {
-        padding: clamp(1rem, 4vw, 2rem);
-        border: 1px solid var(--color-divider);
-        border-radius: var(--radius-large);
-        background: var(--color-surface);
-        box-shadow: var(--elevation-surface);
+        padding: calc(var(--dipsy-space-unit) * 2) clamp(1rem, 4vw, 1.5rem);
+        border: var(--dipsy-border-thin) solid var(--dipsy-color-divider);
+        border-radius: var(--dipsy-radius-surface);
+        background: var(--dipsy-color-paper);
+        box-shadow: var(--dipsy-shadow-raised);
       }
 
       .step[data-state="current"] {
-        border-color: var(--color-primary);
-        box-shadow: inset 0.25rem 0 var(--color-primary), var(--elevation-surface);
+        padding-block: calc(var(--dipsy-space-unit) * 3);
+        border-color: var(--dipsy-color-primary);
+        box-shadow: 0 0 0 var(--dipsy-border-thin) var(--dipsy-color-primary), var(--dipsy-shadow-raised);
+      }
+
+      .step[data-state="locked"] {
+        background: transparent;
+        box-shadow: none;
+      }
+
+      .step:not([data-state="current"]) > :not(.step-heading) {
+        display: none;
       }
 
       .step-heading {
         display: flex;
-        align-items: flex-start;
-        gap: var(--space-2);
-        margin-block-end: var(--space-2);
+        align-items: center;
+        gap: calc(var(--dipsy-space-unit) * 1.5);
+      }
+
+      .step[data-state="current"] .step-heading {
+        margin-block-end: calc(var(--dipsy-space-unit) * 2);
       }
 
       .step-number {
@@ -131,82 +198,101 @@
         flex: 0 0 2rem;
         width: 2rem;
         height: 2rem;
-        border: 1px solid var(--color-divider);
-        border-radius: 50%;
+        border-radius: var(--dipsy-radius-pill);
         place-items: center;
-        background: var(--color-surface-subtle);
-        font-weight: 600;
+        background: var(--dipsy-color-surface-subtle);
+        color: var(--dipsy-color-text-secondary);
+        font-weight: var(--dipsy-font-weight-semibold);
       }
 
       .step[data-state="current"] .step-number {
-        border-color: var(--color-primary);
-        background: var(--color-selected);
+        background: var(--dipsy-color-primary);
+        color: var(--dipsy-color-on-primary);
       }
 
       .step[data-state="completed"] .step-number {
-        border-color: var(--color-success);
-        color: var(--color-success);
+        background: color-mix(in srgb, var(--dipsy-color-success) 14%, transparent);
+        color: var(--dipsy-color-success);
       }
 
       .step-title-group {
+        display: flex;
         min-width: 0;
         flex: 1;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0 var(--dipsy-space-unit);
       }
 
       h2 {
         margin-block-end: 0;
-        font-size: 1.25rem;
+        font-size: 1.125rem;
+        font-weight: var(--dipsy-font-weight-semibold);
         line-height: 1.35;
-        letter-spacing: -0.02em;
+      }
+
+      .step[data-state="locked"] h2 {
+        color: var(--dipsy-color-text-secondary);
+        font-weight: var(--dipsy-font-weight-medium);
       }
 
       .step-state {
         margin: 0;
-        color: var(--color-text-secondary);
+        color: var(--dipsy-color-text-muted);
         font-size: 0.875rem;
-        font-weight: 600;
+        font-weight: var(--dipsy-font-weight-medium);
       }
 
       .step[data-state="completed"] .step-state {
-        color: var(--color-success);
+        color: var(--dipsy-color-success);
       }
 
       .step-description,
       .help,
       .control-help {
-        max-width: 65ch;
-        color: var(--color-text-secondary);
+        max-width: 60ch;
+        color: var(--dipsy-color-text-secondary);
+      }
+
+      .help,
+      .control-help {
+        font-size: 0.875rem;
       }
 
       form,
       .step-body {
         display: grid;
-        gap: var(--space-1);
+        gap: var(--dipsy-space-unit);
+      }
+
+      form {
+        margin-block-start: calc(var(--dipsy-space-unit) * 2);
       }
 
       label {
-        font-weight: 600;
+        font-weight: var(--dipsy-font-weight-semibold);
       }
 
       textarea {
         width: 100%;
-        min-height: 8.5rem;
+        min-height: 7rem;
         resize: vertical;
-        padding: var(--space-2);
-        border: 1px solid var(--color-text-muted);
-        border-radius: var(--radius-small);
-        background: var(--color-surface);
-        color: var(--color-text);
-        font: 1rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        padding: calc(var(--dipsy-space-unit) * 1.5);
+        border: var(--dipsy-border-thin) solid var(--dipsy-color-text-muted);
+        border-radius: var(--dipsy-radius-control);
+        background: var(--dipsy-color-paper);
+        color: var(--dipsy-color-text);
+        font: 0.9375rem/1.5 var(--dipsy-font-family-mono);
         overflow-wrap: anywhere;
       }
 
       textarea[aria-invalid="true"] {
-        border-color: var(--color-error);
+        border-color: var(--dipsy-color-error);
       }
 
       textarea:disabled {
-        color: var(--color-text-disabled);
+        color: var(--dipsy-color-text-disabled);
         cursor: not-allowed;
       }
 
@@ -214,7 +300,7 @@
         display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
-        gap: var(--space-1) var(--space-2);
+        gap: 0 calc(var(--dipsy-space-unit) * 2);
       }
 
       .field-meta p,
@@ -225,25 +311,22 @@
       }
 
       .validation-message[data-valid="false"] {
-        color: var(--color-error);
-        font-weight: 600;
+        color: var(--dipsy-color-error);
+        font-weight: var(--dipsy-font-weight-semibold);
       }
 
       .actions {
         display: flex;
         flex-wrap: wrap;
-        gap: var(--space-1);
-        margin-block-start: var(--space-1);
+        gap: var(--dipsy-space-unit);
+        margin-block: var(--dipsy-space-unit);
       }
 
       .approval-continuation {
         display: grid;
-        gap: var(--space-1);
-        margin-block: var(--space-2) var(--space-1);
-      }
-
-      .step:not([data-state="current"]) .approval-continuation {
-        display: none;
+        justify-items: start;
+        gap: var(--dipsy-space-unit);
+        margin-block: calc(var(--dipsy-space-unit) * 2) var(--dipsy-space-unit);
       }
 
       #continue-creator-approval:not([hidden]) + .approval-unavailable {
@@ -253,20 +336,20 @@
       button,
       .primary-link {
         display: inline-flex;
-        min-height: 3rem;
+        min-height: 2.75rem;
         min-width: 3rem;
         align-items: center;
         justify-content: center;
-        padding: var(--space-1) var(--space-2);
-        border: 1px solid transparent;
-        border-radius: var(--radius-medium);
-        background: var(--color-primary);
-        color: var(--color-on-primary);
+        padding: var(--dipsy-space-unit) calc(var(--dipsy-space-unit) * 2.5);
+        border: var(--dipsy-border-thin) solid transparent;
+        border-radius: var(--dipsy-radius-control);
+        background: var(--dipsy-color-primary);
+        color: var(--dipsy-color-on-primary);
         font: inherit;
-        font-weight: 600;
+        font-weight: var(--dipsy-font-weight-semibold);
         text-decoration: none;
         cursor: pointer;
-        transition: transform var(--motion-duration) var(--motion-easing), opacity var(--motion-duration) var(--motion-easing);
+        transition: transform var(--dipsy-motion-fast) var(--dipsy-easing-standard), background-color var(--dipsy-motion-fast) var(--dipsy-easing-standard);
       }
 
       .primary-link[hidden] {
@@ -274,70 +357,37 @@
       }
 
       button.secondary {
-        border-color: var(--color-primary);
+        border-color: color-mix(in srgb, var(--dipsy-color-primary) 45%, transparent);
         background: transparent;
-        color: var(--color-primary-strong);
+        color: var(--dipsy-color-primary);
       }
 
       button:active:not(:disabled),
       .primary-link:active {
-        transform: scale(0.98);
+        transform: scale(var(--dipsy-press-scale));
       }
 
       button:disabled {
-        border-color: var(--color-divider);
-        background: var(--color-surface-subtle);
-        color: var(--color-text-disabled);
+        border-color: var(--dipsy-color-divider);
+        background: var(--dipsy-color-surface-subtle);
+        color: var(--dipsy-color-text-disabled);
         cursor: not-allowed;
       }
 
       :focus-visible {
-        outline: var(--focus-width) solid var(--color-primary);
-        outline-offset: var(--focus-offset);
+        outline: var(--dipsy-focus-width) solid var(--dipsy-color-primary);
+        outline-offset: var(--dipsy-focus-offset);
       }
 
       output {
         overflow-wrap: anywhere;
-        font-weight: 600;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --color-primary: #8B87FF;
-          --color-primary-strong: #A78BFA;
-          --color-on-primary: #08080C;
-          --color-background: #08080C;
-          --color-surface: #17171F;
-          --color-surface-subtle: #1E1E28;
-          --color-text: #F4F3F9;
-          --color-text-secondary: #B6B4C4;
-          --color-text-muted: #9B99A8;
-          --color-text-disabled: #6F6D7E;
-          --color-divider: rgba(255, 255, 255, 0.07);
-          --color-selected: rgba(139, 135, 255, 0.16);
-          --color-success: #4CAF50;
-          --color-error: #E66767;
-          --elevation-surface: 0 2px 4px rgba(0, 0, 0, 0.50), 0 20px 48px -24px rgba(0, 0, 0, 0.85);
-        }
-
-        button,
-        .primary-link {
-          color: var(--color-on-primary);
-        }
-
-        button.secondary {
-          color: var(--color-primary);
-        }
+        font-weight: var(--dipsy-font-weight-semibold);
       }
 
       @media (max-width: 37.5rem) {
         main {
-          width: min(100% - 1rem, 56rem);
-          padding-block: var(--space-2);
-        }
-
-        .page-header {
-          margin-block-end: var(--space-2);
+          width: min(100% - 2rem, 42rem);
+          padding-block: calc(var(--dipsy-space-unit) * 3);
         }
 
         .actions,
@@ -372,11 +422,10 @@
 
         .step[data-state="current"] {
           border: 2px solid Highlight;
-          box-shadow: inset 0.25rem 0 Highlight;
         }
 
-        .step[data-state="completed"] .step-number {
-          border: 2px solid CanvasText;
+        .step-number {
+          border: 1px solid CanvasText;
         }
 
         :focus-visible {
@@ -392,8 +441,8 @@
     >
       <header class="page-header">
         <h1>Set up desktop app</h1>
-        <p class="intro">Complete these steps to prepare Full analysis on this computer. Keep this page open until setup finishes.</p>
-        <p class="intro">Review the <a class="disclosure-link" href="/provisioning/creator-platform-data-risk-disclosure.html" target="_blank" rel="noopener noreferrer">Creator platform &amp; data risk disclosure</a> before continuing. It opens in a new tab.</p>
+        <p class="intro">Four short steps get Full analysis ready on this computer. Keep this page open until setup is done.</p>
+        <p class="intro">Read the <a class="disclosure-link" href="/provisioning/creator-platform-data-risk-disclosure.html" target="_blank" rel="noopener noreferrer">Creator platform &amp; data risk disclosure</a> before you continue. It opens in a new tab.</p>
         <p id="provisioning-status" class="page-status" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral">Start by connecting this computer.</p>
       </header>
 
@@ -406,7 +455,7 @@
               <p id="claim-step-state" class="step-state">Current step</p>
             </div>
           </div>
-          <p class="step-description">Start in secure setup to verify this computer and get its setup code. Then return here to continue.</p>
+          <p id="claim-step-description" class="step-description">Get a setup code from secure setup, then paste it below.</p>
           <div class="actions" {{HOSTED_ONBOARDING_VISIBILITY}}>
             <a
               id="open-secure-setup"
@@ -414,17 +463,18 @@
               href="{{HOSTED_ONBOARDING_URL}}"
               target="_blank"
               rel="noopener noreferrer"
+              aria-describedby="secure-setup-help"
               {{HOSTED_ONBOARDING_VISIBILITY}}
             >Open secure setup</a>
           </div>
-          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Secure setup opens in a new tab. Complete sign-in there, then copy the setup code back here.</p>
+          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Secure setup opens in a new tab. Sign in there, then copy the setup code.</p>
           <form id="claim-form" novalidate>
             <label for="claim-package">Setup code</label>
-            <p id="claim-package-help" class="help">Copy the complete code from secure setup and paste it here without editing it.</p>
+            <p id="claim-package-help" class="help">Paste the whole code without changing it.</p>
             <textarea
               id="claim-package"
               name="package"
-              rows="6"
+              rows="5"
               required
               autocomplete="off"
               autocapitalize="off"
@@ -434,7 +484,7 @@
               aria-invalid="false"
             ></textarea>
             <div class="field-meta">
-              <p id="claim-package-validation" class="validation-message" data-valid="true">Ready for a setup code.</p>
+              <p id="claim-package-validation" class="validation-message help" data-valid="true">Ready for a setup code.</p>
               <p id="claim-package-count" class="help">0 / 1,400 characters</p>
             </div>
             <div class="actions">
@@ -449,11 +499,11 @@
             <span class="step-number" aria-hidden="true">2</span>
             <div class="step-title-group">
               <h2 id="identity-heading">Confirm your creator account</h2>
-              <p id="identity-step-state" class="step-state">Complete the step above first</p>
+              <p id="identity-step-state" class="step-state">Not started</p>
             </div>
           </div>
           <div class="step-body">
-            <p class="step-description">Open OnlyFans in another tab and sign in to the creator account you want to analyze. The extension checks the signed-in account; it does not ask you to type an account ID.</p>
+            <p id="identity-step-description" class="step-description">In another tab, sign in to OnlyFans with the creator account you want to analyze. The extension detects the account for you.</p>
             <p id="identity-status" class="identity-status" role="status" aria-live="polite" aria-atomic="true">No creator account check has completed.</p>
             <p class="identity-line">Account: <output id="detected-identity">Not detected yet</output></p>
             <div class="actions">
@@ -469,10 +519,10 @@
             <span class="step-number" aria-hidden="true">3</span>
             <div class="step-title-group">
               <h2 id="binding-heading">Approve your creator account</h2>
-              <p id="binding-step-state" class="step-state">Complete the step above first</p>
+              <p id="binding-step-state" class="step-state">Not started</p>
             </div>
           </div>
-          <p class="step-description">Approval is required after your creator account is confirmed. Continue approval in secure setup, then return here. This page advances only after the desktop app confirms approval.</p>
+          <p id="binding-step-description" class="step-description">Approve the account in secure setup, then come back here and choose Check approval.</p>
           <div class="approval-continuation">
             <a
               id="continue-creator-approval"
@@ -480,13 +530,14 @@
               href="{{HOSTED_ONBOARDING_URL}}"
               target="_blank"
               rel="noopener noreferrer"
+              aria-describedby="creator-approval-return-help"
               {{HOSTED_ONBOARDING_VISIBILITY}}
             >Continue approval</a>
             <p id="creator-approval-unavailable" class="control-help approval-unavailable">Creator approval cannot be opened right now. If you already completed it in secure setup, choose Check approval. Otherwise contact support.</p>
-            <p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Secure setup opens in a new tab. Returning here does not complete approval; choose Check approval to confirm it.</p>
+            <p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Secure setup opens in a new tab.</p>
           </div>
           <div class="actions">
-            <button id="acquire-association" type="button" disabled aria-describedby="binding-action-help">Check approval</button>
+            <button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-action-help">Check approval</button>
           </div>
           <p id="binding-action-help" class="control-help">Confirm your creator account before checking approval.</p>
         </li>
@@ -496,10 +547,10 @@
             <span class="step-number" aria-hidden="true">4</span>
             <div class="step-title-group">
               <h2 id="finalize-heading">Finish desktop setup</h2>
-              <p id="finalize-step-state" class="step-state">Complete the step above first</p>
+              <p id="finalize-step-state" class="step-state">Not started</p>
             </div>
           </div>
-          <p class="step-description">Finish after creator approval. The desktop app will restart before normal use.</p>
+          <p id="finalize-step-description" class="step-description">The desktop app restarts when setup is finished.</p>
           <div class="actions">
             <button id="finalize-provisioning" type="button" disabled aria-describedby="finalize-action-help">Finish setup</button>
           </div>

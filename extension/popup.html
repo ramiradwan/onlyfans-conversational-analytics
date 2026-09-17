@@ -9,31 +9,42 @@
   <body>
     <main>
       <header>
-        <div class="brand-mark" aria-hidden="true">CA</div>
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 20 20" fill="none" focusable="false">
+            <path d="M5 3.75h10A2.25 2.25 0 0 1 17.25 6v6A2.25 2.25 0 0 1 15 14.25h-4.4L7 16.75v-2.5H5A2.25 2.25 0 0 1 2.75 12V6A2.25 2.25 0 0 1 5 3.75Z"/>
+            <path d="M6.25 10.75 8.7 8.45l2 1.45 2.8-3"/>
+            <circle cx="6.25" cy="10.75" r=".8"/>
+            <circle cx="8.7" cy="8.45" r=".8"/>
+            <circle cx="10.7" cy="9.9" r=".8"/>
+            <circle cx="13.5" cy="6.9" r=".8"/>
+          </svg>
+        </div>
         <div>
           <h1>Conversation Analytics</h1>
           <p id="mode-label" class="status-line">Checking status…</p>
         </div>
       </header>
 
-      <section class="notice" aria-labelledby="notice-title">
-        <h2 id="notice-title">Preview works on its own</h2>
-        <p>
-          Preview keeps limited seven-day activity counts in the extension. Full analysis uses the
-          desktop app on this computer and handles message and participant information.
-        </p>
-        <p class="independent">Independent software; not affiliated with or endorsed by OnlyFans.</p>
-      </section>
-
       <section id="journey-card" class="journey-card" data-tone="info" aria-labelledby="journey-title">
         <p id="journey-badge" class="state-badge">Checking</p>
         <h2 id="journey-title">Checking what you need next…</h2>
-        <p id="journey-body">The extension is checking the desktop connection and your current mode.</p>
+        <p id="journey-body">This takes a moment.</p>
+        <div id="companion-pairing" class="pairing hidden">
+          <p id="pairing-status" class="visually-hidden" role="status" aria-live="polite">Connect the extension to the desktop app to continue Full setup.</p>
+          <p id="pairing-code" class="pairing-code hidden" aria-label="Connection comparison code"></p>
+          <button id="pair-companion" class="primary" type="button">Pair device</button>
+          <button id="cancel-pairing" class="secondary hidden" type="button">Cancel</button>
+        </div>
         <div class="journey-actions">
           <button id="journey-primary" class="primary hidden" type="button"></button>
           <button id="journey-secondary" class="secondary hidden" type="button"></button>
         </div>
       </section>
+
+      <div class="access-actions">
+        <button id="reload-tabs" class="primary hidden" type="button">Reload OnlyFans tabs to apply access</button>
+        <button id="restore-access" class="primary hidden" type="button">Restore required site access</button>
+      </div>
 
       <section id="legal-unavailable" class="warning hidden">
         <h2>Activation is not configured for this build</h2>
@@ -136,58 +147,57 @@
         </div>
       </section>
 
-      <section aria-labelledby="preview-title">
+      <section id="preview-metrics" class="hidden" aria-labelledby="preview-title">
         <div class="section-heading">
           <div>
             <h2 id="preview-title">Observed in this browser</h2>
-            <p>Rolling seven-day operational preview; observations are not unique analytics.</p>
+            <p>Last seven days</p>
           </div>
           <button id="clear-preview" class="text-button" type="button">Clear</button>
         </div>
         <div class="metrics" aria-live="polite">
-          <div><strong id="messages-count">0</strong><span>Message observations</span></div>
-          <div><strong id="chats-count">0</strong><span>Chat observations</span></div>
-          <div><strong id="inbound-count">0</strong><span>Inbound</span></div>
-          <div><strong id="outbound-count">0</strong><span>Outbound</span></div>
+          <div><strong id="messages-count">0</strong><span>Messages</span></div>
+          <div><strong id="chats-count">0</strong><span>Chats</span></div>
+          <div><strong id="inbound-count">0</strong><span>Received</span></div>
+          <div><strong id="outbound-count">0</strong><span>Sent</span></div>
         </div>
       </section>
 
-      <section aria-labelledby="connection-title">
-        <h2 id="connection-title">Full analysis readiness</h2>
-        <dl class="connection-grid">
-          <div><dt>Desktop app</dt><dd id="brain-status">Checking…</dd></div>
-          <div><dt>Secure connection</dt><dd id="delivery-status">Inactive</dd></div>
-          <div><dt>Full activation</dt><dd id="activation-status">Not checked</dd></div>
-          <div><dt>Licensed analysis</dt><dd id="analysis-status">Not ready</dd></div>
-          <div><dt>Waiting locally</dt><dd id="pending-count">0</dd></div>
-        </dl>
-        <p id="capture-health" class="fine-print" role="status" aria-live="polite"></p>
-        <p id="history-health" class="fine-print" role="status" aria-live="polite"></p>
-        <div id="companion-pairing" class="hidden">
-          <p id="pairing-status" role="status" aria-live="polite">Connect the extension to the desktop app to continue Full setup.</p>
-          <p id="pairing-code" class="pairing-code hidden" aria-label="Connection comparison code"></p>
-          <button id="pair-companion" class="primary" type="button">Pair device</button>
-          <button id="cancel-pairing" class="secondary hidden" type="button">Cancel</button>
-          <button id="forget-companion" class="secondary hidden" type="button">Forget desktop app</button>
-        </div>
+      <section id="history-prompt" class="hidden" aria-labelledby="history-title">
+        <h2 id="history-title">Include earlier conversations</h2>
+        <p>Analysis starts with new messages. Allow message history to add the conversations you already have.</p>
+        <button id="history" class="secondary" type="button">Allow message history</button>
       </section>
 
       <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
 
-      <div class="actions">
-        <button id="reload-tabs" class="primary hidden" type="button">Reload OnlyFans tabs to apply access</button>
-        <button id="restore-access" class="primary hidden" type="button">Restore required site access</button>
-        <button id="review-full" class="secondary hidden" type="button">Activate Full analysis</button>
-        <button id="resume" class="primary hidden" type="button">Review and resume</button>
-        <button id="pause" class="secondary hidden" type="button">Pause analytics</button>
-        <button id="history" class="secondary hidden" type="button">Set up history sync</button>
+      <details id="connection-details" class="panel hidden">
+        <summary>Connection details</summary>
+        <dl class="connection-grid">
+          <div><dt>Desktop app</dt><dd id="brain-status">Checking…</dd></div>
+          <div><dt>Secure connection</dt><dd id="delivery-status">Off</dd></div>
+          <div><dt>Full activation</dt><dd id="activation-status">Not checked</dd></div>
+          <div><dt>Analysis</dt><dd id="analysis-status">Not ready</dd></div>
+          <div><dt>Waiting to send</dt><dd id="pending-count">0</dd></div>
+        </dl>
+        <p id="capture-health" class="fine-print" role="status" aria-live="polite"></p>
+        <p id="history-health" class="fine-print" role="status" aria-live="polite"></p>
         <button id="open-dashboard" class="secondary hidden" type="button">Open desktop app</button>
-        <button id="revoke" class="danger hidden" type="button">Revoke site access</button>
-        <button id="delete-local-data" class="danger" type="button">Delete all extension data</button>
-      </div>
+      </details>
+
+      <details id="manage-extension" class="panel">
+        <summary>Manage extension</summary>
+        <div class="actions">
+          <button id="pause" class="secondary hidden" type="button">Pause analytics</button>
+          <button id="forget-companion" class="secondary hidden" type="button">Forget desktop app</button>
+          <button id="revoke" class="danger hidden" type="button">Revoke site access</button>
+          <button id="delete-local-data" class="danger" type="button">Delete all extension data</button>
+        </div>
+      </details>
 
       <footer>
         <span>Use only with a creator account you are authorized to analyze.</span>
+        <span>Independent software; not affiliated with or endorsed by OnlyFans.</span>
         <a id="privacy-link" href="#" aria-disabled="true">Privacy information unavailable</a>
       </footer>
     </main>

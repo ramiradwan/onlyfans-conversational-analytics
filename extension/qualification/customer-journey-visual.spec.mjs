@@ -7,66 +7,76 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STATES = Object.freeze({
   preview: Object.freeze({
     tone: 'info', mode: 'Activity preview enabled', badge: 'Preview', title: 'Preview is ready',
-    body: 'You can keep using Preview without the desktop app. Activate Full analysis when you want message-level insights.',
-    primary: 'Activate Full analysis', desktop: 'Not connected', delivery: 'Inactive',
-    activation: 'Not needed for Preview', analysis: 'Preview only',
+    body: 'Your activity counts update as you use OnlyFans. For insights from your conversations, add Full analysis.',
+    primary: 'Activate Full analysis', preview: true,
+  }),
+  paused: Object.freeze({
+    tone: 'info', mode: 'Analytics paused', badge: 'Paused', title: 'Analytics are paused',
+    body: 'Nothing new is collected while paused. Resume whenever you are ready.',
+    primary: 'Resume analytics', preview: true,
   }),
   desktop_needed: Object.freeze({
     tone: 'warning', mode: 'Full setup in progress', badge: 'Next step', title: 'Desktop app needed for Full analysis',
-    body: 'The desktop app download is not available from this release yet. You can keep using Preview in the meantime.',
-    desktop: 'Not connected', delivery: 'Inactive', activation: 'Not checked', analysis: 'Not ready',
+    body: 'The desktop app download is not available yet. You can keep using Preview in the meantime.',
+    desktop: 'Not connected', delivery: 'Off', activation: 'Not checked', analysis: 'Not ready',
   }),
   setup_incomplete: Object.freeze({
     tone: 'warning', mode: 'Full setup in progress', badge: 'Setup needed', title: 'Open your creator account to continue',
     body: 'Open OnlyFans and sign in to the creator account you want to analyze. Then return here to connect the extension.',
-    primary: 'Open creator account', secondary: 'Open desktop app', desktop: 'Running', delivery: 'Inactive',
+    primary: 'Open creator account', secondary: 'Open desktop app', desktop: 'Running', delivery: 'Off',
+    activation: 'Not checked', analysis: 'Not ready',
+  }),
+  pairing_required: Object.freeze({
+    tone: 'info', mode: 'Full setup in progress', badge: 'Next step', title: 'Connect this extension to the desktop app',
+    body: 'The desktop app is running. Pair it with this extension to start Full analysis.',
+    secondary: 'Open desktop app', pairing: 'pair', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
   pairing_compare: Object.freeze({
     tone: 'progress', mode: 'Full setup in progress', badge: 'Connecting', title: 'Confirm the connection',
     body: 'Compare the six-digit code here with the code in the desktop app. Confirm only when both codes match.',
-    secondary: 'Cancel', desktop: 'Running', delivery: 'Inactive', pairingCode: '483 217',
+    pairing: 'compare', pairingCode: '483 217', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
   pairing_failed: Object.freeze({
     tone: 'error', mode: 'Full setup in progress', badge: 'Try again', title: 'Connection was not completed',
-    body: 'Open a new connection window in the desktop app, then try again. No Full data is sent until the connection succeeds.',
-    primary: 'Try connection again', desktop: 'Running', delivery: 'Inactive',
+    body: 'Open a new connection window in the desktop app, then try again. Nothing is shared until the connection works.',
+    primary: 'Try connection again', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
   desktop_stopped: Object.freeze({
     tone: 'warning', mode: 'Full setup in progress', badge: 'Needs attention', title: 'Desktop app is not running',
-    body: 'Your previous connection is saved. Start the desktop app, then retry. Preview remains available while Full analysis is offline.',
-    primary: 'Retry connection', desktop: 'Not running', delivery: 'Inactive',
+    body: 'Start the desktop app, then try again. Your connection is saved.',
+    primary: 'Retry connection', desktop: 'Not running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
   activation_checking: Object.freeze({
     tone: 'progress', mode: 'Desktop connected', badge: 'Checking', title: 'Checking activation',
-    body: 'Checking the desktop app for current Full activation and licensed-analysis readiness.',
-    desktop: 'Running', delivery: 'Authenticated', activation: 'Checking…', analysis: 'Not ready',
+    body: 'Checking whether Full analysis is active in the desktop app.',
+    desktop: 'Running', delivery: 'Connected', activation: 'Checking…', analysis: 'Not ready',
   }),
   activation_required: Object.freeze({
     tone: 'warning', mode: 'Desktop connected', badge: 'Activation required', title: 'Full activation required',
-    body: 'Full activation has not been completed on this computer. Secure activation cannot be started from this release yet. Preview and existing desktop data remain available.',
-    primary: 'Check activation', desktop: 'Running', delivery: 'Authenticated',
+    body: 'To see insights from your conversations, finish activation in Settings in the desktop app.',
+    primary: 'Open desktop app', secondary: 'Check activation', desktop: 'Running', delivery: 'Connected',
     activation: 'Required', analysis: 'Waiting for activation',
   }),
   activation_active_analysis_blocked: Object.freeze({
-    tone: 'warning', mode: 'Desktop connected', badge: 'Activation active', title: 'Full activation active',
-    body: 'Full activation is active, but licensed analysis is not available right now. Existing desktop data remains available.',
-    primary: 'Check again', secondary: 'Open desktop app', desktop: 'Running', delivery: 'Authenticated',
+    tone: 'warning', mode: 'Desktop connected', badge: 'Needs attention', title: 'Analysis is not available right now',
+    body: 'Full activation is active, but analysis cannot run at the moment. Check again shortly; your saved data is not affected.',
+    primary: 'Check again', secondary: 'Open desktop app', desktop: 'Running', delivery: 'Connected',
     activation: 'Active', analysis: 'Not ready',
   }),
   activation_unavailable: Object.freeze({
     tone: 'error', mode: 'Desktop connected', badge: 'Needs attention', title: 'Full activation needs attention',
-    body: 'The desktop connection is ready, but current activation authority could not be confirmed. Check again; existing desktop data remains available.',
-    primary: 'Check again', secondary: 'Open desktop app', desktop: 'Running', delivery: 'Authenticated',
+    body: 'Activation could not be confirmed right now. Check again in a moment; your saved data is not affected.',
+    primary: 'Check again', secondary: 'Open desktop app', desktop: 'Running', delivery: 'Connected',
     activation: 'Needs attention', analysis: 'Unavailable',
   }),
   full_ready: Object.freeze({
-    tone: 'success', mode: 'Desktop connected', badge: 'Ready', title: 'Full mode is ready',
-    body: 'The desktop app is securely connected, Full activation is active, and licensed analysis is ready.',
-    primary: 'Open analysis', desktop: 'Running', delivery: 'Authenticated',
+    tone: 'success', mode: 'Desktop connected', badge: 'Ready', title: 'Full analysis is ready',
+    body: 'Everything is connected. Your insights are in the desktop app.',
+    primary: 'Open analysis', desktop: 'Running', delivery: 'Connected',
     activation: 'Active', analysis: 'Ready',
   }),
 });
@@ -91,35 +101,54 @@ async function renderState(page, state) {
     byId('journey-badge').textContent = value.badge;
     byId('journey-title').textContent = value.title;
     byId('journey-body').textContent = value.body;
-    byId('brain-status').textContent = value.desktop;
-    byId('delivery-status').textContent = value.delivery;
-    byId('activation-status').textContent = value.activation;
-    byId('analysis-status').textContent = value.analysis;
-    byId('pending-count').textContent = '0';
+    byId('preview-metrics').classList.toggle('hidden', value.preview !== true);
+    byId('connection-details').classList.toggle('hidden', value.desktop === undefined);
+    if (value.desktop !== undefined) {
+      byId('brain-status').textContent = value.desktop;
+      byId('delivery-status').textContent = value.delivery;
+      byId('activation-status').textContent = value.activation;
+      byId('analysis-status').textContent = value.analysis;
+      byId('pending-count').textContent = '0';
+    }
     for (const [id, label] of [['journey-primary', value.primary], ['journey-secondary', value.secondary]]) {
       const button = byId(id);
       button.textContent = label ?? '';
       button.classList.toggle('hidden', !label);
     }
+    if (value.pairing) {
+      byId('companion-pairing').classList.remove('hidden');
+      byId('pair-companion').classList.toggle('hidden', value.pairing !== 'pair');
+      byId('cancel-pairing').classList.toggle('hidden', value.pairing !== 'compare');
+    }
     if (value.pairingCode) {
-      const block = byId('companion-pairing');
-      block.classList.remove('hidden');
       byId('pairing-code').classList.remove('hidden');
       byId('pairing-code').textContent = value.pairingCode;
-      byId('pairing-status').textContent = 'Compare this code with the desktop app. Confirm there only if both codes match.';
-      byId('pair-companion').classList.add('hidden');
-      byId('cancel-pairing').classList.remove('hidden');
     }
   }, state);
 }
+
+test('visual state copy matches the popup sources', async () => {
+  const sources = (await Promise.all(
+    ['popup.html', 'popup.js', 'runtime/customer-journey.mjs'].map((file) => readFile(path.join(ROOT, file), 'utf8')),
+  )).join('\n');
+  for (const state of Object.values(STATES)) {
+    for (const key of ['mode', 'badge', 'title', 'body', 'primary', 'secondary', 'activation', 'analysis']) {
+      if (state[key] === undefined) continue;
+      const literals = [`'${state[key]}'`, `>${state[key]}<`];
+      expect(literals.some((literal) => sources.includes(literal)), `${key}: ${state[key]}`).toBe(true);
+    }
+  }
+});
 
 for (const [name, state] of Object.entries(STATES)) {
   test(`visual state: ${name}`, async ({ page }, testInfo) => {
     await renderState(page, state);
     await expect(page.locator('#journey-title')).toHaveText(state.title);
     await expect(page.locator('#journey-card')).toHaveAttribute('data-tone', state.tone);
-    await expect(page.locator('#activation-status')).toHaveText(state.activation);
-    await expect(page.locator('#analysis-status')).toHaveText(state.analysis);
+    if (state.desktop !== undefined) {
+      await expect(page.locator('#activation-status')).toHaveText(state.activation);
+      await expect(page.locator('#analysis-status')).toHaveText(state.analysis);
+    }
     const output = process.env.OFCA_UX_SCREENSHOT_DIR
       ? path.join(process.env.OFCA_UX_SCREENSHOT_DIR, `extension-${name}.png`)
       : testInfo.outputPath(`extension-${name}.png`);

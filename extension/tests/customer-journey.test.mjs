@@ -31,6 +31,27 @@ test('Preview remains independent of the desktop app', () => {
   assert.equal(result.primaryLabel, 'Activate Full analysis');
 });
 
+test('paused analytics offer resume only when no review is pending', () => {
+  const resumable = deriveCustomerJourney({
+    status: status({ mode: 'paused', phase: 'paused' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+    resumeAvailable: true,
+  });
+  assert.equal(resumable.id, CUSTOMER_STATES.PAUSED);
+  assert.equal(resumable.primaryAction, 'resume');
+  assert.doesNotMatch(resumable.title, /Preview/);
+
+  const reviewFirst = deriveCustomerJourney({
+    status: status({ mode: 'paused', phase: 'paused' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+  });
+  assert.equal(reviewFirst.id, CUSTOMER_STATES.PAUSED);
+  assert.equal(reviewFirst.primaryAction, null);
+  assert.match(reviewFirst.body, /Review the updated information/);
+});
+
 test('first Full attempt explains that the desktop app is required', () => {
   const result = deriveCustomerJourney({
     status: status(),
@@ -146,9 +167,9 @@ test('commercial authority alone renders activation active but not Full-ready', 
     analysisReadiness: readiness('active', 'blocked'),
   });
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_ACTIVE);
-  assert.equal(result.title, 'Full activation active');
+  assert.equal(result.title, 'Analysis is not available right now');
   assert.notEqual(result.id, CUSTOMER_STATES.FULL_READY);
-  assert.match(result.body, /licensed analysis is not available/);
+  assert.match(result.body, /analysis cannot run/);
 });
 
 test('Full is ready only after secure delivery, commercial authority, and analysis admission', () => {
@@ -168,7 +189,7 @@ test('Full is ready only after secure delivery, commercial authority, and analys
   });
   assert.equal(ready.id, CUSTOMER_STATES.FULL_READY);
   assert.equal(ready.primaryLabel, 'Open analysis');
-  assert.match(ready.body, /licensed analysis is ready/);
+  assert.equal(ready.title, 'Full analysis is ready');
 });
 
 test('desktop runtime probe reports an opened loopback socket and closes it', async () => {

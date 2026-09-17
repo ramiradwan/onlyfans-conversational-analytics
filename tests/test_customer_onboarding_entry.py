@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.provisioning.app import create_provisioning_app
 from app.provisioning.session import PROVISIONING_ORIGIN, PROVISIONING_SESSION_COOKIE_NAME
+from provisioning_markup import PageMarkup
 
 
 HANDOFF_TOKEN = "t" * 32
@@ -68,12 +69,16 @@ def shell(application) -> str:
 
 def test_configured_first_run_has_one_authoritative_secure_setup_entry() -> None:
     page = shell(app(ONBOARDING_URL))
-    assert 'id="open-secure-setup"' in page
-    assert f'href="{ONBOARDING_URL}"' in page
-    assert 'target="_blank"' in page
-    assert 'rel="noopener noreferrer"' in page
-    assert ">Open secure setup</a>" in page
-    assert "Complete sign-in there, then copy the setup code back here." in page
+    markup = PageMarkup(page)
+    entry = markup.elements["open-secure-setup"]
+    assert entry.tag == "a"
+    assert entry.attributes["href"] == ONBOARDING_URL
+    assert entry.attributes["target"] == "_blank"
+    assert entry.attributes["rel"] == "noopener noreferrer"
+    assert entry.text
+    assert not entry.hidden
+    assert markup.has_visible_guidance("open-secure-setup")
+    assert markup.is_visible_step_text("claim-step-description", "claim-step")
     assert "LOCAL_PROVISIONING_HOSTED_ORIGIN" not in page
     assert "installation_id" not in page
     assert "organization_id" not in page

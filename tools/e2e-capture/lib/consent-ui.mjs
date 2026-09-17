@@ -20,8 +20,14 @@ export async function openPopup(context, targetExtensionId, pageErrors) {
   await popup.goto(`chrome-extension://${targetExtensionId}/popup.html`, {
     waitUntil: 'domcontentloaded',
   });
-  await expect(popup.locator('#mode-label')).not.toHaveText('Checking local status…');
+  await expect(popup.locator('#mode-label')).not.toHaveText('Checking status…');
   return popup;
+}
+
+export async function openManageExtension(popup) {
+  const manage = popup.locator('#manage-extension');
+  if (!(await manage.evaluate((element) => element.open))) await manage.locator('summary').click();
+  await expect(manage).toHaveAttribute('open', '');
 }
 
 export async function browserProcessId(context) {

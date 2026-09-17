@@ -8,6 +8,7 @@ from app.provisioning.app import create_provisioning_app
 from app.provisioning.binding_acquisition import acquire_creator_account_binding
 from app.provisioning.session import PROVISIONING_ORIGIN, PROVISIONING_SESSION_COOKIE_NAME
 from app.security.hosted_grants import GrantVerificationRefused
+from provisioning_markup import PageMarkup
 
 
 HANDOFF_TOKEN = "t" * 32
@@ -83,7 +84,9 @@ def test_creator_approval_continuation_uses_only_the_release_owned_hosted_entry(
     assert "installation_id" not in marker
     assert "organization_id" not in marker
     assert "token=" not in marker
-    assert "Returning here does not complete approval" in page
+    markup = PageMarkup(page)
+    assert markup.has_visible_guidance("continue-creator-approval")
+    assert markup.is_visible_step_text("binding-step-description", "binding-step")
 
 
 def test_creator_approval_continuation_fails_safe_when_hosted_entry_is_absent() -> None:
@@ -92,7 +95,9 @@ def test_creator_approval_continuation_fails_safe_when_hosted_entry_is_absent() 
 
     assert 'href=""' in marker
     assert "hidden" in marker
-    assert "Creator approval cannot be opened right now." in page
+    markup = PageMarkup(page)
+    assert markup.is_visible_step_text("creator-approval-unavailable", "binding-step")
+    assert markup.elements["creator-approval-return-help"].hidden
     assert "example.invalid" not in page
 
 

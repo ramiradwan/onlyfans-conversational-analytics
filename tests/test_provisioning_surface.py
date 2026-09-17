@@ -319,9 +319,9 @@ def test_served_shell_has_accessible_step_structure_and_inline_adaptive_theme() 
     assert all(
         feature in style
         for feature in (
-            "--color-primary:",
-            "--space-1:",
-            "--radius-small:",
+            "--dipsy-color-primary:",
+            "--dipsy-space-unit:",
+            "--dipsy-radius-control:",
             ":focus-visible",
             "prefers-color-scheme: dark",
             "prefers-reduced-motion: reduce",

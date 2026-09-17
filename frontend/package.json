@@ -8,6 +8,7 @@
   },
   "scripts": {
     "generate:theme": "ts-node --esm src/theme/generate-theme.ts",
+    "sync:static-tokens": "ts-node --esm src/theme/generate-theme.ts --static-surfaces",
     "watch:tokens": "chokidar 'src/theme/tokens.json' -c 'npm run generate:theme'",
     "dev": "npm run generate:theme && vite",
     "preview": "vite preview",

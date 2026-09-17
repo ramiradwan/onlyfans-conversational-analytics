@@ -25,8 +25,8 @@ const ids = [
   'feedback', 'legal-unavailable', 'pre-mode', 'terms-accepted', 'risk-acknowledged',
   'terms-link', 'risk-link', 'activate-software', 'mode-choice', 'preview-disclosure',
   'full-disclosure', 'enable-preview', 'enable-full', 'not-now-preview', 'full-secondary',
-  'restore-access', 'reload-tabs', 'review-full', 'resume', 'pause', 'history', 'open-dashboard', 'revoke',
-  'clear-preview', 'delete-local-data', 'privacy-link',
+  'restore-access', 'reload-tabs', 'pause', 'history', 'history-prompt', 'open-dashboard', 'revoke',
+  'clear-preview', 'delete-local-data', 'privacy-link', 'preview-metrics', 'connection-details',
   'companion-pairing', 'pairing-status', 'pairing-code', 'pair-companion', 'cancel-pairing', 'forget-companion',
   'journey-card', 'journey-badge', 'journey-title', 'journey-body', 'journey-primary', 'journey-secondary',
 ];
@@ -52,6 +52,10 @@ const pairingPort = chrome.runtime.connect({ name: 'ofca.companion.pairing' });
 
 function show(element, visible) {
   element.classList.toggle('hidden', !visible);
+}
+
+function isShown(element) {
+  return !element.classList.contains('hidden');
 }
 
 function setLocked(element, locked) {
@@ -93,13 +97,16 @@ function phaseLabel(status) {
 function journeyBadge(state) {
   return ({
     preview_available: 'Preview',
+    paused: 'Paused',
     desktop_app_needed: 'Next step',
     desktop_app_unavailable: 'Needs attention',
     setup_incomplete: 'Setup needed',
     pairing_required: 'Next step',
     pairing_in_progress: 'Connecting',
     pairing_failed: 'Try again',
+    activation_checking: 'Checking',
     activation_required: 'Activation required',
+    activation_active: 'Needs attention',
     activation_unavailable: 'Needs attention',
     full_ready: 'Ready',
     full_unavailable: 'Needs attention',
@@ -141,17 +148,27 @@ function renderJourney() {
     desktopRuntimeReachable,
     desktopDownloadAvailable: secureExternalUrl(companionConfig.desktop_app_download_url) !== null,
     analysisReadiness,
+    resumeAvailable: legalStatus !== null && legalStatus.requires_reauthorization !== true,
   });
   elements['journey-card'].dataset.tone = journey.tone;
   elements['journey-badge'].textContent = journeyBadge(journey.id);
   elements['journey-title'].textContent = journey.title;
   elements['journey-body'].textContent = journey.body;
+  // The pairing controls inside the card own pair and cancel, so the journey buttons do not repeat them.
+  const pairingShown = isShown(elements['companion-pairing']);
+  const pairOwned = journey.primaryAction === 'pair' && pairingShown && isShown(elements['pair-companion']);
+  const cancelOwned = journey.secondaryAction === 'cancel_pairing' && pairingShown && isShown(elements['cancel-pairing']);
+  if (pairOwned) elements['pair-companion'].textContent = journey.primaryLabel;
   elements['journey-primary'].dataset.action = journey.primaryAction ?? '';
   elements['journey-primary'].textContent = journey.primaryLabel ?? '';
-  show(elements['journey-primary'], journey.primaryAction !== null);
+  show(elements['journey-primary'], journey.primaryAction !== null && !pairOwned);
   elements['journey-secondary'].dataset.action = journey.secondaryAction ?? '';
   elements['journey-secondary'].textContent = journey.secondaryLabel ?? '';
-  show(elements['journey-secondary'], journey.secondaryAction !== null);
+  show(elements['journey-secondary'], journey.secondaryAction !== null && !cancelOwned);
+  show(
+    elements['open-dashboard'],
+    desktopRuntimeReachable && ![journey.primaryAction, journey.secondaryAction].includes('open_dashboard'),
+  );
 }
 
 function renderPairing(value = pairingStatus) {
@@ -282,8 +299,6 @@ function renderLegal(status) {
   show(elements['preview-disclosure'], chooseInitial);
   show(elements['full-disclosure'], chooseInitial || chooseUpgrade);
   elements['full-secondary'].textContent = mode === 'preview' ? 'Keep Preview' : 'Not now';
-  show(elements['review-full'], mode === 'preview' && !fullReviewRequested);
-  show(elements.resume, normalPaused);
   if (status.requires_reauthorization === true) {
     elements.feedback.textContent = 'Data-handling information changed. Review it before restarting analytics.';
   }
@@ -301,25 +316,27 @@ function render(status) {
     ? 'Running'
     : pairingStatus.state === 'paired' ? 'Not running' : 'Not connected';
   elements['delivery-status'].textContent = status.delivery.transport_state === 'authenticated'
-    ? 'Authenticated'
-    : status.delivery.runtime_ready ? 'Connecting' : 'Inactive';
+    ? 'Connected'
+    : status.delivery.runtime_ready ? 'Connecting' : 'Off';
   elements['pending-count'].textContent = String(status.delivery.pending_entries);
   const dropCount = Object.values(status.delivery.capture_drop_counts ?? {})
     .reduce((total, value) => total + (Number.isSafeInteger(value) ? value : 0), 0);
   elements['capture-health'].textContent = status.delivery.startup_error_code === 'startup_failed'
     ? 'Full analysis could not start. Start the desktop app and retry.'
-    : dropCount > 0 ? `${dropCount} capture observation${dropCount === 1 ? '' : 's'} dropped.` : '';
+    : dropCount > 0 ? `${dropCount} update${dropCount === 1 ? '' : 's'} could not be recorded.` : '';
   elements['history-health'].textContent = !status.delivery.history_error_code
     ? ''
-    : 'History sync needs attention in the desktop app.';
+    : 'Message history needs attention in the desktop app.';
   const mode = status.consent.mode;
   const active = ['preview', 'full'].includes(mode);
+  const pausedFrom = mode === 'paused' ? status.consent.resume_mode : null;
   const permissionRequired = status.phase === 'permission_required';
   show(elements['restore-access'], permissionRequired && active);
   show(elements['reload-tabs'], status.reload_required === true);
+  show(elements['preview-metrics'], mode === 'preview' || pausedFrom === 'preview');
+  show(elements['connection-details'], mode === 'full' || pausedFrom === 'full');
+  show(elements['history-prompt'], status.phase === 'full' && status.history_permission === false);
   show(elements.pause, active && !permissionRequired);
-  show(elements.history, status.phase === 'full');
-  show(elements['open-dashboard'], desktopRuntimeReachable);
   show(elements.revoke, mode !== 'off' && mode !== 'revoked');
   renderPairing();
   renderReadinessStatus();
@@ -459,6 +476,10 @@ async function runJourneyAction(action) {
     requestAnalysisReadiness();
     return;
   }
+  if (action === 'resume' && currentStatus?.consent?.mode === 'paused') {
+    await transition('resume');
+    return;
+  }
   if (action === 'retry_full' && currentStatus?.consent?.mode === 'full') {
     await transition(currentStatus.consent.mode);
   }
@@ -501,10 +522,6 @@ elements['reload-tabs'].addEventListener('click', async () => {
     setBusy(false);
   }
 });
-elements['review-full'].addEventListener('click', () => {
-  fullReviewRequested = true;
-  renderLegal(legalStatus);
-});
 elements['not-now-preview'].addEventListener('click', () => {
   initialModeChoiceDismissed = true;
   renderLegal(legalStatus);
@@ -514,7 +531,6 @@ elements['full-secondary'].addEventListener('click', () => {
   else initialModeChoiceDismissed = true;
   renderLegal(legalStatus);
 });
-elements.resume.addEventListener('click', () => { void transition('resume'); });
 elements.pause.addEventListener('click', () => { void transition('pause'); });
 elements.revoke.addEventListener('click', () => {
   if (window.confirm('Revoke site access and stop all new observations? Existing desktop-app data is retained.')) {

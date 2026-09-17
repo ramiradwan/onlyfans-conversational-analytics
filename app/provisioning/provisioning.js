@@ -179,7 +179,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
 
   function setStepState(step, stateOutput, state) {
     step.dataset.state = state;
-    stateOutput.textContent = state === 'current' ? 'Current step' : state === 'completed' ? 'Done' : 'Complete the step above first';
+    stateOutput.textContent = state === 'current' ? 'Current step' : state === 'completed' ? 'Done' : 'Not started';
     if (state === 'current') setAttribute(step, 'aria-current', 'step');
     else removeAttribute(step, 'aria-current');
   }
@@ -237,7 +237,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
       elements.bindingActionHelp.textContent = approvalAcquired
         ? 'Creator approval is complete. Continue to finish setup.'
         : associationRequestId === null ? 'Confirm your creator account before checking approval.'
-          : 'Creator approval is still pending and waiting for completion. Continue approval in secure setup, then check again here.';
+          : 'Check again after you approve in secure setup.';
       elements.finalizeActionHelp.textContent = approvalAcquired
         ? 'Everything required on this page is complete.'
         : 'Creator approval must complete before desktop setup can finish.';
@@ -292,7 +292,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
     const characterCount = result.value.length > MAX_PACKAGE_CHARACTERS ? '1,400+' : result.value.length.toLocaleString('en-US');
     elements.claimPackageCount.textContent = `${characterCount} / 1,400 characters`;
     elements.claimPackageValidation.textContent = result.message;
-    elements.claimPackageValidation.dataset.valid = result.valid ? 'true' : 'false';
+    elements.claimPackageValidation.dataset.valid = result.valid || !markInvalid ? 'true' : 'false';
     setAttribute(elements.claimPackage, 'aria-invalid', markInvalid && !result.valid ? 'true' : 'false');
     return result;
   }

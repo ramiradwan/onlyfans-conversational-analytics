@@ -18,6 +18,7 @@ import {
   completePreModeLegalActions,
   configureSyntheticLegalBindings,
   enablePreviewAnalytics,
+  openManageExtension,
   openPopup,
 } from '../lib/consent-ui.mjs';
 import {
@@ -251,6 +252,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
 
     let pausedMetrics = null;
     await test.step('pause unregisters capture and subsequent reads do not increase metrics', async () => {
+      await openManageExtension(popup);
       await popup.getByRole('button', { name: 'Pause analytics' }).click();
       await expect(popup.locator('#mode-label')).toHaveText('Analytics paused');
       await expect.poll(async () => (await extensionState(worker)).capturePhase).toBe('paused');
@@ -286,6 +288,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(typeof previousFlow?.completed_event_id).toBe('string');
       deletedLegalTransactionId = previousFlow.transaction_id;
 
+      await openManageExtension(popup);
       popup.once('dialog', (dialog) => dialog.accept());
       await popup.getByRole('button', { name: 'Delete all extension data' }).click();
       await expect(popup.locator('#feedback')).toHaveText('All local extension data was deleted.');

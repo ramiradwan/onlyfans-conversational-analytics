@@ -37,6 +37,8 @@ test('extracted release starts disabled, records UI choices and deletes without 
     await popup.locator('#not-now-preview').click();
     await expect(popup.locator('#mode-label')).toHaveText('Analytics off — no OnlyFans access');
     expect((await access()).origins ?? []).toEqual([]);
+    const manage = popup.locator('#manage-extension');
+    if (!(await manage.evaluate((element) => element.open))) await manage.locator('summary').click();
     popup.once('dialog', (dialog) => dialog.accept());
     await popup.locator('#delete-local-data').click();
     await expect(popup.locator('#feedback')).toHaveText('All local extension data was deleted.');
