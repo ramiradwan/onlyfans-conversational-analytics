@@ -3,10 +3,17 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AnalyticsReadState, AnalyticsResponseMetrics } from '../src/analytics';
+import {
+  formatCount,
+  formatDecimal,
+  formatRatioPercent,
+  type AnalyticsReadState,
+  type AnalyticsResponseMetrics,
+} from '../src/analytics';
 import { AnalyticsStateFrame, ResponseOverview } from '../src/components/analytics';
 import { BrandMark } from '../src/layouts/BrandMark';
 import { theme } from '../src/theme';
+import { renderedText } from './renderedText';
 
 afterEach(() => cleanup());
 
@@ -42,10 +49,10 @@ describe('frontend visual polish contracts', () => {
     const { container } = renderWithTheme(<ResponseOverview metrics={metrics} />);
 
     expect(container.querySelectorAll('[data-visual="reply-metric-value"]')).toHaveLength(3);
-    expect(screen.getByText('6.4 min')).toBeTruthy();
-    expect(screen.getByText('75%')).toBeTruthy();
-    expect(screen.getByText('15 of 20 messages')).toBeTruthy();
-    expect(screen.getByText('31')).toBeTruthy();
+    expect(screen.getByText(renderedText(`${formatDecimal(6.4)} min`))).toBeTruthy();
+    expect(screen.getByText(renderedText(formatRatioPercent(0.75)))).toBeTruthy();
+    expect(screen.getByText(`${formatCount(15)} of ${formatCount(20)} messages`)).toBeTruthy();
+    expect(screen.getByText(formatDecimal(31, 0))).toBeTruthy();
   });
 
   it('gives a terminal analytics error one direct recovery action', () => {

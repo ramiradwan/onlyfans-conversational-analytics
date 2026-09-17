@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   analyticsWindowLabel,
+  formatCount,
+  formatDecimal,
   formatPercentValue,
   formatRatioPercent,
   formatSentimentScore,
@@ -25,6 +27,7 @@ import {
   storyWindowSources,
 } from '../src/story-only/analyticsFixtures';
 import { theme } from '../src/theme';
+import { expectedCalendarDate, expectedCalendarRange, renderedText } from './renderedText';
 
 const PANELS = ['Message tone over time', 'Your replies', 'Topics'] as const;
 
@@ -96,14 +99,14 @@ describe('analytics presentation states', () => {
   it('renders available output without a baseline label', () => {
     analytics(storyAvailableState);
     expect(screen.queryByText('Early estimates')).toBeNull();
-    expect(screen.getAllByText('12').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(formatCount(12)).length).toBeGreaterThan(0);
   });
 
   it('keeps the prior frame visible while a filtered refetch is in progress', () => {
     const { container } = analytics({ ...storyAvailableState, isRefreshing: true });
     expect(container.querySelector('[aria-busy="true"]')).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: 'Refreshing analytics' })).toBeTruthy();
-    expect(screen.getAllByText('12').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(formatCount(12)).length).toBeGreaterThan(0);
   });
 
   it('renders error and preserves a prior complete frame when supplied', () => {
@@ -115,7 +118,7 @@ describe('analytics presentation states', () => {
       previousStatus: 'model',
     });
     expect(screen.getByRole('alert').textContent).toContain("Couldn't refresh");
-    expect(screen.getAllByText('12').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(formatCount(12)).length).toBeGreaterThan(0);
   });
 
   it('keeps the baseline disclosure when a failed refresh retains baseline data', () => {
@@ -145,7 +148,7 @@ describe('analytics dates, units and accessible trend detail', () => {
     expect(screen.getByText('Date range')).toBeTruthy();
     const summary = screen.getByText('Date range').nextElementSibling?.textContent ?? '';
     expect(summary).not.toContain(storyDateRange.startDate);
-    expect(summary.match(/2026/g)).toHaveLength(1);
+    expect(summary).toBe(expectedCalendarRange(storyDateRange.startDate, storyDateRange.endDate));
 
     fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
     for (const label of ['Start date', 'End date']) {
@@ -163,16 +166,11 @@ describe('analytics dates, units and accessible trend detail', () => {
     const sameMonth = analyticsWindowLabel(
       withEffectiveWindow(source, '2026-06-02T08:00:00Z', '2026-06-28T20:00:00Z'),
     );
-    expect(sameMonth).toMatch(/^Messages available: /);
-    expect(sameMonth.match(/2026/g)).toHaveLength(1);
+    expect(sameMonth).toBe(`Messages available: ${expectedCalendarRange('2026-06-02', '2026-06-28')}`);
     const sameDay = analyticsWindowLabel(
       withEffectiveWindow(source, '2026-06-02T08:00:00Z', '2026-06-02T20:00:00Z'),
     );
-    expect(sameDay).toBe(
-      `Messages available: ${new Intl.DateTimeFormat(undefined, {
-        day: 'numeric', month: 'short', timeZone: 'UTC', year: 'numeric',
-      }).format(new Date('2026-06-02T00:00:00Z'))}`,
-    );
+    expect(sameDay).toBe(`Messages available: ${expectedCalendarDate('2026-06-02')}`);
     expect(analyticsWindowLabel(withEffectiveWindow(source, null, null))).toBe('No messages in these dates');
     expect(
       analyticsWindowLabel(withEffectiveWindow(storyWindowSources.graph, null, null)),
@@ -182,7 +180,7 @@ describe('analytics dates, units and accessible trend detail', () => {
   it('shows a shared date label once when every panel covers the same messages', () => {
     analytics(storyAvailableState);
 
-    const label = analyticsWindowLabel(storyWindowSources.topics);
+    const label = renderedText(analyticsWindowLabel(storyWindowSources.topics));
     expect(screen.getAllByText(label)).toHaveLength(1);
     for (const name of PANELS) {
       expect(within(screen.getByRole('region', { name })).queryByText(label)).toBeNull();
@@ -198,8 +196,8 @@ describe('analytics dates, units and accessible trend detail', () => {
     );
     analytics(storyAvailableState, { ...storyWindowSources, topics });
 
-    const sharedLabel = analyticsWindowLabel(storyWindowSources.sentimentTrend);
-    const topicsLabel = analyticsWindowLabel(topics);
+    const sharedLabel = renderedText(analyticsWindowLabel(storyWindowSources.sentimentTrend));
+    const topicsLabel = renderedText(analyticsWindowLabel(topics));
     expect(topicsLabel).not.toBe(sharedLabel);
     const regions = {
       'Message tone over time': sharedLabel,
@@ -230,9 +228,10 @@ describe('analytics dates, units and accessible trend detail', () => {
     analytics({ ...storyAvailableState, data: zeroModel });
 
     const repliesPanel = screen.getByRole('region', { name: 'Your replies' });
-    expect(within(repliesPanel).getByText(formatRatioPercent(0), { exact: true })).toBeTruthy();
-    expect(within(repliesPanel).getByText('0 of 0 messages', { exact: true })).toBeTruthy();
-    expect(within(repliesPanel).getByText('0', { exact: true })).toBeTruthy();
+    const replies = within(repliesPanel);
+    expect(replies.getByText(renderedText(formatRatioPercent(0)), { exact: true })).toBeTruthy();
+    expect(replies.getByText(`${formatCount(0)} of ${formatCount(0)} messages`, { exact: true })).toBeTruthy();
+    expect(replies.getByText(formatDecimal(0, 0), { exact: true })).toBeTruthy();
     expect(screen.getByText('Nothing to show for these dates.')).toBeTruthy();
     expect(screen.getByText('No topics found for these dates.')).toBeTruthy();
   });
@@ -266,11 +265,12 @@ describe('analytics dates, units and accessible trend detail', () => {
     });
     expect(topicView.textContent).toContain(formatPercentValue(37.5));
     expect(topicView.textContent).toContain(formatPercentValue(12.5));
-    expect(within(responsePanel).getByText(formatRatioPercent(0.75), { exact: true })).toBeTruthy();
-    expect(within(responsePanel).getByText('15 of 20 messages', { exact: true })).toBeTruthy();
+    const response = within(responsePanel);
+    expect(response.getByText(renderedText(formatRatioPercent(0.75)), { exact: true })).toBeTruthy();
+    expect(response.getByText(`${formatCount(15)} of ${formatCount(20)} messages`, { exact: true })).toBeTruthy();
     expect(responsePanel.textContent).not.toContain('Silence');
     expect(sentimentPanel.textContent).toContain(formatSentimentScore(0.35));
-    expect(screen.queryByText('3,750.0%')).toBeNull();
+    expect(screen.queryByText(renderedText(formatPercentValue(3750)))).toBeNull();
     expect(topicView.textContent).not.toContain('Unavailable');
     expect(screen.queryByText(/bounded projection/)).toBeNull();
   });

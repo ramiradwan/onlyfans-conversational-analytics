@@ -135,7 +135,9 @@ describe('protocol-v2 transport store', () => {
     expect(state.projection.status).toBe('current');
     expect(state.liveFreshness.status).toBe('current');
     expect(isFullyCurrent(readiness)).toBe(false);
-    expect(formatAdditiveMetric(state.analytics?.total_conversations, readiness)).toBe('1+');
+    expect(formatAdditiveMetric(state.analytics?.total_conversations, readiness)).toBe(
+      `${new Intl.NumberFormat().format(1)}+`,
+    );
     expect(formatAdditiveMetric(state.analytics?.total_messages, readiness)).toBe('None yet');
   });
 

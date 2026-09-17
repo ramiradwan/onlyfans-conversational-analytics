@@ -2,6 +2,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { formatCount } from '../src/analytics';
 import type { StateSnapshotPayload } from '../src/protocol';
 import {
   storyAnalyticsModel,
@@ -94,7 +95,7 @@ describe('conversation insights composition', () => {
     const panel = screen.getByRole('complementary', { name: 'Conversation insights' });
     expect(panel).toBeTruthy();
     expect(within(panel).getByText('Story Participant')).toBeTruthy();
-    expect(within(panel).getByText('14')).toBeTruthy(); // fixture message count
+    expect(within(panel).getByText(formatCount(14))).toBeTruthy(); // fixture message count
 
     const ids = Array.from(document.querySelectorAll<HTMLElement>('[id]')).map(
       (element) => element.id,
