@@ -16,4 +16,22 @@ describe('theme token generation', () => {
     expect(first).toBe(second);
     expect(first).toBe(checkedIn);
   });
+
+  it('leads the brand font stack with the family the bundled stylesheet declares', () => {
+    const tokens = JSON.parse(
+      fs.readFileSync(path.resolve(process.cwd(), 'src/theme/tokens.json'), 'utf8'),
+    ) as { tier1: { brandTypography: { fontFamily: string } } };
+    const leading = tokens.tier1.brandTypography.fontFamily.split(',')[0].trim().replace(/^"|"$/g, '');
+    const entryCss = fs.readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf8');
+    const fontImport = /@import '([^']+)';/.exec(entryCss)?.[1];
+    expect(fontImport).toBeDefined();
+    const fontCss = fs.readFileSync(
+      path.resolve(process.cwd(), 'node_modules', fontImport as string),
+      'utf8',
+    );
+    const declared = new Set(
+      Array.from(fontCss.matchAll(/font-family:\s*'([^']+)'/g), (match) => match[1]),
+    );
+    expect([...declared]).toEqual([leading]);
+  });
 });
