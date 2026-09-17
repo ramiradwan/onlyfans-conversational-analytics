@@ -10,7 +10,7 @@ export function DashboardMetricsLoading() {
           color: 'text.secondary',
           mb: 1.5
         }}>
-        Loading key metrics
+        Processing your data…
       </Typography>
       <Grid container spacing={2}>
         {Array.from({ length: 4 }, (_, index) => (

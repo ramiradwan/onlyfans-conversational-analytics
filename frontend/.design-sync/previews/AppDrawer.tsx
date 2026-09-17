@@ -14,7 +14,7 @@ export function MobileNavigation() {
     <MemoryRouter initialEntries={['/analytics']}>
       <div style={{ height: 440, position: 'relative', width: 264 }}>
         <AppDrawer
-          drawerWidth={76}
+          drawerWidth={64}
           mobileDrawerWidth={264}
           mobileOpen
           onDrawerClose={() => {}}

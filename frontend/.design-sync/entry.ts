@@ -8,8 +8,11 @@ export {
   QueryResponseBubbleSkeleton,
   UserQueryBubble,
 } from '../src/components/experimental';
+export { SetupPrompt } from '../src/components/SetupPrompt';
 export { ThemeToggle } from '../src/components/ThemeToggle';
 export { CreatorVaultControls } from '../src/components/CreatorVaultControls';
+export { DashboardOverview } from '../src/components/dashboard/DashboardOverview';
+export { RecentConversations } from '../src/components/dashboard/RecentConversations';
 export { TopicsTable } from '../src/components/analytics/TopicsTable';
 export { ChatListPane } from '../src/components/inbox/ChatListPane';
 export { ConversationInsightsPanel } from '../src/components/inbox/ConversationInsightsPanel';
@@ -23,10 +26,14 @@ export {
   MessageStreamPlaceholder,
 } from '../src/components/placeholders';
 export { AsyncContent } from '../src/components/ui/AsyncContent';
+export { Disclosure } from '../src/components/ui/Disclosure';
 export { Panel } from '../src/components/ui/Panel';
+export { SectionHeader, SettingRow } from '../src/components/ui/SettingsSection';
+export { StatusChip } from '../src/components/ui/StatusChip';
 export { AppAppBar } from '../src/layouts/AppAppBar';
 export { AppDrawer } from '../src/layouts/AppDrawer';
 export { AppShell } from '../src/layouts/AppShell';
+export { BrandMark } from '../src/layouts/BrandMark';
 export { default as AnalyticsView } from '../src/views/AnalyticsView';
 export { default as CreatorDashboardView } from '../src/views/CreatorDashboardView';
 export { default as GraphExplorerView } from '../src/views/GraphExplorerView';
@@ -36,6 +43,7 @@ export { WebAuthnAccessView } from '../src/views/WebAuthnAccessView';
 
 export { createBridgeTransportStore } from '../src/store/transportStore';
 export {
+  createPreviewActivationApi,
   createPreviewBridgeStore,
   createPreviewInboxStore,
   conversation as createPreviewConversation,

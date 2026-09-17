@@ -54,7 +54,7 @@ export function Empty() {
         isLoading={false}
         data={[]}
         placeholder={<Skeleton variant="rounded" height={72} />}
-        emptyMessage={<Alert severity="info">Insights will appear after the first conversation sync.</Alert>}
+        emptyMessage={<Alert severity="info">Insights appear once your conversations are processed.</Alert>}
         render={() => null}
       />
     </Box>

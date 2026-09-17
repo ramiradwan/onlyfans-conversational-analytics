@@ -15,6 +15,11 @@
   - `AppDrawer` — the permanent desktop rail is `sm`-gated (`display` xs:none/sm:block) and cannot share a capture viewport with the open mobile drawer (which needs an `xs` width). One viewport per component, so only the expanded mobile drawer is captured standalone; the collapsed desktop rail is shown in context by the `AppShell` preview. A former `DesktopNavigation` story was dropped because it rendered blank at the narrow viewport.
   - `QueryInput` — the send `IconButton` is `disabled={disabled || !text.trim()}` and the component owns its text state with no seed prop, so the enabled (accent) send affordance cannot render statically; the `Ready` cell truthfully shows the empty ready-to-type resting state. To showcase the enabled send, the component would need an optional `defaultValue`/`initialText` prop (deferred — out of sync scope).
   - `MessageStreamPane.ActiveConversation` — container height is sized so the fixture's messages fit without overflow; too short a height triggers the component's auto-scroll-to-latest and clips the top "Start of available history" control.
+  - `BrandMark` — the wordmark is hidden below the `sm` breakpoint, so its capture viewport must be at least 600 px wide.
+- `KpiCard` and `KpiCardSkeleton` no longer exist in source; a re-sync must delete their remote component folders.
+- `CreatorDashboardView` reads Full analytics readiness through its optional `activationApi`; dashboard and shell previews pass `createPreviewActivationApi()` so they make no backend calls.
+- `SectionHeader` and `SettingRow` share `src/components/ui/SettingsSection.tsx`; `SetupPrompt` and `RecentConversations` render router links and need `MemoryRouter` in previews.
+- The extension popup and desktop setup page consume `src/theme/generated/static-tokens.css` (`--dipsy-*` custom properties) rather than the React bundle. The sync does not ship that file yet; the conventions describe the variables so designs for those surfaces stay on the same tokens.
 
 ## Re-sync risks
 
