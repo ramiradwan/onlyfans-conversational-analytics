@@ -233,7 +233,11 @@ export function CreatorVaultControls({
                     <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                       Choose how long this computer keeps your messages.
                     </Typography>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ alignItems: { sm: 'center' } }}>
+                    <Stack
+                      direction={{ xs: 'column', sm: 'row' }}
+                      spacing={1.5}
+                      sx={{ alignItems: { xs: 'flex-start', sm: 'center' } }}
+                    >
                       <TextField
                         label="Days to keep"
                         onChange={(event) => setFiniteDays(event.target.value)}
@@ -252,12 +256,13 @@ export function CreatorVaultControls({
                         <Button
                           disabled={busy}
                           onClick={() => void run({ action: 'enable_indefinite' })}
+                          size="small"
                           variant="outlined"
                         >
                           Keep until I delete
                         </Button>
                       )}
-                      <Button disabled={busy} onClick={() => setEditingArchive(false)}>
+                      <Button disabled={busy} onClick={() => setEditingArchive(false)} size="small">
                         Cancel
                       </Button>
                     </Stack>

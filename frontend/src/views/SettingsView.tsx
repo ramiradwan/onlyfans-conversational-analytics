@@ -172,7 +172,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
           ) : !hasConsent ? (
             <Box component="ul" sx={{ color: 'text.secondary', m: 0, pl: 2.5, typography: 'body2' }}>
               <li>Read-only: it never sends messages or changes your account.</li>
-              <li>Everything stays on this computer.</li>
+              <li>Synced message history stays on this computer.</li>
               <li>Pause or turn it off at any time.</li>
             </Box>
           ) : historyComplete ? (
@@ -222,7 +222,11 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
           )}
 
           {canManageHistorySync && !waitingForExtension && (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.5}
+              sx={{ alignItems: { xs: 'flex-start', sm: 'center' } }}
+            >
               {!hasConsent ? (
                 <Button
                   disabled={!consentAccepted || busy}
@@ -245,6 +249,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
                 <Button
                   disabled={busy}
                   onClick={() => void update('paused')}
+                  size="small"
                   startIcon={<PauseCircleOutlinedIcon />}
                   variant="outlined"
                 >
@@ -255,6 +260,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
                 <Button
                   disabled={busy}
                   onClick={() => setConfirmRevoke(true)}
+                  size="small"
                   sx={{ color: 'text.secondary' }}
                 >
                   Turn off

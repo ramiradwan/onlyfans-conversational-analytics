@@ -54,6 +54,7 @@ export function SetupPrompt({ extensionConnected = false, title }: SetupPromptPr
       aria-labelledby={headingId}
       sx={(theme) => ({
         maxWidth: 560,
+        mx: 'auto',
         p: { xs: 3, sm: 4 },
         width: '100%',
         ...theme.effects.cardBorder(theme),
@@ -81,7 +82,7 @@ export function SetupPrompt({ extensionConnected = false, title }: SetupPromptPr
             {title}
           </Typography>
           <Typography variant="body1" sx={{ color: 'text.secondary', mt: 1 }}>
-            Two quick steps and your conversations show up here. Everything stays on this computer.
+            Two quick steps and your conversations show up here. Your conversation data stays on this computer.
           </Typography>
         </Box>
         <Stack component="ol" spacing={1.25} sx={{ listStyle: 'none', m: 0, p: 0 }}>

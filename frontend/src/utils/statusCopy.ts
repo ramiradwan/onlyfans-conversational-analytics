@@ -44,8 +44,8 @@ export interface StatusMessage {
 
 const EXTENSION_ISSUES: Record<Exclude<ExtensionConnection, 'connected'>, StatusMessage> = {
   offline: {
-    title: 'Browser extension not connected',
-    detail: "New messages won't arrive until it connects. Check that Chrome is open and the extension is on.",
+    title: 'Connection interrupted',
+    detail: "New messages won't arrive until the browser extension reconnects. Check that Chrome is open and the extension is on.",
     severity: 'warning',
   },
   not_responding: {
@@ -74,7 +74,7 @@ export function extensionLabel(connection: ExtensionConnection): string {
     case 'connected':
       return 'Connected';
     case 'offline':
-      return 'Not connected';
+      return 'Connection interrupted';
     case 'not_responding':
       return 'Not responding';
     case 'applying_settings':

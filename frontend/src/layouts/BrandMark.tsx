@@ -24,7 +24,11 @@ export function BrandMark() {
       >
         <HubOutlinedIcon sx={{ fontSize: 18 }} />
       </Box>
-      <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600, lineHeight: 1.2, minWidth: 0 }}>
+      <Typography
+        variant="subtitle1"
+        noWrap
+        sx={{ display: { xs: 'none', sm: 'block' }, fontWeight: 600, lineHeight: 1.2, minWidth: 0 }}
+      >
         Conversation Analytics
       </Typography>
     </Stack>

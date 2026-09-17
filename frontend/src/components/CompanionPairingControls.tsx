@@ -194,7 +194,18 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
       {awaiting && (
         <Stack spacing={1.5}>
           <Typography component="h3" variant="subtitle1">Check the code</Typography>
-          <Typography aria-label="Connection comparison code" variant="h4" sx={{ fontFamily: 'monospace' }}>
+          <Typography
+            aria-label="Connection comparison code"
+            variant="h4"
+            sx={(theme) => ({
+              fontFamily: theme.brandTypography.fontFamilyMono,
+              fontSize: theme.typography.h2.fontSize,
+              fontWeight: theme.brandTypography.weights.semibold,
+              letterSpacing: '0.08em',
+              lineHeight: 1.2,
+              marginBlock: theme.spacing(0.5),
+            })}
+          >
             {status.comparison_code!.slice(0, 3)} {status.comparison_code!.slice(3)}
           </Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -317,7 +328,7 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
               sx={{ alignItems: 'center', justifyContent: 'space-between' }}
             >
               <Typography variant="body2">
-                {pins.length === 1 ? 'Connected to this app' : `Browser extension ${index + 1}`}
+                {pins.length === 1 ? 'Extension linked to this app' : `Linked extension ${index + 1}`}
               </Typography>
               <Button
                 aria-label={`Disconnect browser extension ${index + 1}`}
