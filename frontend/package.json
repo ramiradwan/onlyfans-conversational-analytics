@@ -60,6 +60,7 @@
     "@vitejs/plugin-react-swc": "^4.3.2",
     "axe-core": "4.12.1",
     "chokidar-cli": "^3.0.0",
+    "colorjs.io": "0.7.1",
     "dependency-cruiser": "18.2.0",
     "eslint": "^9.39.5",
     "eslint-import-resolver-typescript": "^4.4.5",
