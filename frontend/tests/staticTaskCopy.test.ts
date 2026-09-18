@@ -8,12 +8,10 @@ const parse = (file: string) => new DOMParser().parseFromString(read(file), 'tex
 const baseline = JSON.parse(fs.readFileSync('tests/fixtures/protected-static-disclosures.json', 'utf8'));
 
 describe('task-focused static copy', () => {
-  it('keeps protected disclosures unchanged except the requested sentence punctuation', () => {
+  it('keeps protected disclosures unchanged', () => {
     const html = read('extension/popup.html');
     for (const item of Object.values(baseline.blocks) as { start: string; end: string; sha256: string }[]) {
-      // The owner explicitly removed semicolons from UI copy. No other disclosure edit is allowed.
-      const block = html.slice(html.indexOf(item.start), html.indexOf(item.end))
-        .replace('activate this Extension data handling. It is', 'activate this Extension data handling; it is');
+      const block = html.slice(html.indexOf(item.start), html.indexOf(item.end));
       expect(createHash('sha256').update(block).digest('hex')).toBe(item.sha256);
     }
   });

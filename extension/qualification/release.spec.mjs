@@ -26,7 +26,7 @@ test('extracted release starts disabled, records UI choices and deletes without 
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(popup.locator('#legal-unavailable')).toBeHidden();
-    await expect(popup.locator('#mode-label')).toHaveText('Analytics off — no OnlyFans access');
+    await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
     await expect(popup.locator('#pre-mode')).toBeVisible();
     const access = () => worker.evaluate(() => chrome.permissions.getAll());
     expect((await access()).origins ?? []).toEqual([]);
@@ -35,7 +35,7 @@ test('extracted release starts disabled, records UI choices and deletes without 
     await popup.locator('#activate-software').click();
     await expect(popup.locator('#mode-choice')).toBeVisible();
     await popup.locator('#not-now-preview').click();
-    await expect(popup.locator('#mode-label')).toHaveText('Analytics off — no OnlyFans access');
+    await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
     expect((await access()).origins ?? []).toEqual([]);
     await popup.locator('#open-manage').click();
     await expect(popup.locator('#manage-view')).toBeVisible();
@@ -50,7 +50,7 @@ test('extracted release starts disabled, records UI choices and deletes without 
     await expect(popup.locator('#mode-choice')).toBeVisible();
     await popup.reload();
     await expect(popup.locator('#mode-choice')).toBeVisible();
-    await expect(popup.locator('#mode-label')).toHaveText('Analytics off — no OnlyFans access');
+    await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
     expect(requests).toEqual([]);
     const report = {
       label: process.env.OFCA_BROWSER_LABEL ?? 'current',

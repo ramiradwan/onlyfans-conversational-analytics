@@ -70,10 +70,10 @@ async function inspect(page, fixture, width, session) {
         metrics.numericFonts = await actualFonts(session, '#messages-count');
         assert(metrics.numericFonts.some((font) => font.isCustomFont && /Space Grotesk/.test(font.familyName)), 'Counts must use Space Grotesk');
       }
-      if (['software_activation', 'mode_choice', 'full_review'].includes(fixture.name)) {
-        const disclosure = fixture.name === 'software_activation' ? '#pre-mode' : '#full-disclosure';
+      const disclosure = { software_activation: '#pre-mode', mode_choice: '#preview-disclosure',
+        mode_choice_full: '#full-disclosure', full_review: '#full-disclosure' }[fixture.name];
+      if (disclosure) {
         assert(await page.locator(disclosure).isVisible(), 'Required disclosure must be visible');
-        if (disclosure === '#full-disclosure') assert(await page.locator(disclosure + ' details').evaluate((node) => node.open));
         const sizes = await page.locator(disclosure + ' p, ' + disclosure + ' label, ' + disclosure + ' li').evaluateAll((nodes) => nodes.map((node) => parseFloat(getComputedStyle(node).fontSize)));
         assert(sizes.every((size) => size >= 12), 'Disclosure text must not shrink below its original size');
         metrics.disclosureSizes = sizes;

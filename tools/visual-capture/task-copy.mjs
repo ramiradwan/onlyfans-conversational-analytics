@@ -13,7 +13,7 @@ export async function inspectTaskCopy(page, fixture) {
       assert.equal(await page.locator('#journey-primary').textContent(), 'Open analysis');
       result.readyText = await page.locator('#journey-card').innerText();
     }
-    if (['software_activation', 'mode_choice', 'full_review'].includes(fixture.name)) {
+    if (['software_activation', 'mode_choice', 'mode_choice_full', 'full_review'].includes(fixture.name)) {
       assert(!await page.locator('#journey-card').isVisible(), 'an extra task competes with the required review');
       assert(!await page.locator('#preview-metrics').isVisible(), 'metrics compete with required review');
     }

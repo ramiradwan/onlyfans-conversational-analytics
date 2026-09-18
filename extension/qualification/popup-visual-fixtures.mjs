@@ -4,59 +4,65 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const POPUP_STATES = Object.freeze({
+  analytics_off: Object.freeze({
+    tone: 'info', mode: 'Analytics off', badge: '', title: 'Start with Preview',
+    body: 'See how many messages you send and receive each day.',
+    primary: 'Set up Preview',
+  }),
   preview: Object.freeze({
-    tone: 'info', mode: 'Activity preview enabled', badge: 'Preview', title: 'Preview is ready',
-    body: 'Add Full analysis for insights from your conversations.',
-    primary: 'Add Full analysis', preview: true,
+    tone: 'info', mode: 'Preview on', badge: '', title: 'Preview is ready',
+    body: 'Add Full analytics for insights from your conversations.',
+    primary: 'Review Full analytics', preview: true,
   }),
   paused: Object.freeze({
-    tone: 'info', mode: 'Analytics paused', badge: 'Paused', title: 'Analytics paused',
+    tone: 'info', mode: 'Analytics paused', badge: '', title: 'Analytics paused',
     body: 'No new activity is collected.',
     primary: 'Resume analytics', preview: true,
   }),
   desktop_needed: Object.freeze({
-    tone: 'warning', mode: 'Full setup in progress', badge: 'Next step', title: 'Desktop app needed for Full analysis',
-    body: 'The download is unavailable. You can still use Preview.',
+    tone: 'warning', mode: 'Full setup in progress', badge: 'Setup', title: 'Desktop app needed for Full analytics',
+    body: 'Full analytics runs in the desktop app on this computer. Start it, then check again.',
+    primary: 'Check again',
     desktop: 'Not connected', delivery: 'Off', activation: 'Not checked', analysis: 'Not ready',
   }),
   setup_incomplete: Object.freeze({
-    tone: 'warning', mode: 'Full setup in progress', badge: 'Setup needed', title: 'Sign in to your creator account',
+    tone: 'warning', mode: 'Full setup in progress', badge: 'Setup', title: 'Sign in to your creator account',
     body: 'Use OnlyFans in this browser, then return here.',
     primary: 'Open creator account', secondary: 'Open desktop app', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
   pairing_required: Object.freeze({
-    tone: 'info', mode: 'Full setup in progress', badge: 'Next step', title: 'Connect to the desktop app',
+    tone: 'info', mode: 'Full setup in progress', badge: 'Setup', title: 'Connect to the desktop app',
     body: 'Connect to view insights from your conversations.',
     secondary: 'Open desktop app', pairing: 'pair', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
   pairing_compare: Object.freeze({
     tone: 'progress', mode: 'Full setup in progress', badge: 'Connecting', title: 'Confirm the connection',
-    body: 'Compare the six-digit code here with the code in the desktop app. Confirm only when both codes match.',
+    body: 'Check that the desktop app shows the same code, then confirm there.',
     pairing: 'compare', pairingCode: '483 217', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
   pairing_not_ready: Object.freeze({
-    tone: 'warning', mode: 'Full setup in progress', badge: 'Next step', title: 'Continue in the desktop app',
+    tone: 'warning', mode: 'Full setup in progress', badge: 'Setup', title: 'Continue in the desktop app',
     body: 'In the desktop app, open Settings and choose Connect extension.',
     primary: 'Open desktop app settings', secondary: 'Pair device', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
   pairing_failed: Object.freeze({
-    tone: 'error', mode: 'Full setup in progress', badge: 'Try again', title: 'Connection was not completed',
+    tone: 'error', mode: 'Full setup in progress', badge: 'Needs attention', title: 'Connection was not completed',
     body: 'In the desktop app, choose Connect extension and try again.',
     primary: 'Try connection again', desktop: 'Running', delivery: 'Off',
     activation: 'Not checked', analysis: 'Not ready',
   }),
   pairing_window_not_ready: Object.freeze({
-    view: 'pairing', tone: 'warning', badge: 'Next step', title: 'Continue in the desktop app',
+    view: 'pairing', tone: 'warning', badge: 'Setup', title: 'Continue in the desktop app',
     body: 'In the desktop app, open Settings and choose Connect extension.',
     primary: 'Open desktop app settings', secondary: 'Pair device',
   }),
   pairing_window_compare: Object.freeze({
     view: 'pairing', tone: 'progress', badge: 'Connecting', title: 'Confirm the connection',
-    body: 'Compare the six-digit code here with the code in the desktop app. Confirm only when both codes match.',
+    body: 'Check that the desktop app shows the same code, then confirm there.',
     pairing: 'compare', pairingCode: '483 217',
   }),
   pairing_window_connected: Object.freeze({
@@ -75,14 +81,14 @@ export const POPUP_STATES = Object.freeze({
     desktop: 'Running', delivery: 'Connected', activation: 'Checking…', analysis: 'Not ready',
   }),
   activation_required: Object.freeze({
-    tone: 'warning', mode: 'Desktop connected', badge: 'Activation required', title: 'Finish activating Full analysis',
+    tone: 'warning', mode: 'Desktop connected', badge: 'Setup', title: 'Finish activating Full analytics',
     body: 'Continue in Settings in the desktop app.',
     primary: 'Open desktop app', secondary: 'Check activation', desktop: 'Running', delivery: 'Connected',
     activation: 'Required', analysis: 'Waiting for activation',
   }),
   activation_active_analysis_blocked: Object.freeze({
     tone: 'warning', mode: 'Desktop connected', badge: 'Needs attention', title: 'Analysis is not available right now',
-    body: 'Full analysis is activated. Your saved data is unchanged.',
+    body: 'Full analytics is activated. Your saved data is unchanged.',
     primary: 'Check again', secondary: 'Open desktop app', desktop: 'Running', delivery: 'Connected',
     activation: 'Active', analysis: 'Not ready',
   }),

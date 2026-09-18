@@ -1,6 +1,7 @@
 import { LOCAL_PAIRING_WS } from '../transport/local-service-endpoints.mjs';
 
 export const CUSTOMER_STATES = Object.freeze({
+  ANALYTICS_OFF: 'analytics_off',
   PREVIEW_AVAILABLE: 'preview_available',
   PAUSED: 'paused',
   DESKTOP_APP_NEEDED: 'desktop_app_needed',
@@ -33,8 +34,10 @@ export function deriveCustomerJourney({
   desktopDownloadAvailable = false,
   analysisReadiness = { commercial_authority: 'unknown', analysis_admission: 'blocked' },
   resumeAvailable = false,
+  modeChoiceAvailable = false,
 } = {}) {
   if (status?.consent?.mode === 'paused') {
+    const reviewAvailable = !resumeAvailable && modeChoiceAvailable;
     return Object.freeze({
       id: CUSTOMER_STATES.PAUSED,
       tone: 'info',
@@ -42,24 +45,34 @@ export function deriveCustomerJourney({
       body: resumeAvailable
         ? 'No new activity is collected.'
         : 'No new activity is collected. Review the updated information to resume.',
-      primaryAction: resumeAvailable ? 'resume' : null,
-      primaryLabel: resumeAvailable ? 'Resume analytics' : null,
+      primaryAction: resumeAvailable ? 'resume' : reviewAvailable ? 'choose_mode' : null,
+      primaryLabel: resumeAvailable ? 'Resume analytics' : reviewAvailable ? 'Review changes' : null,
+      secondaryAction: null,
+      secondaryLabel: null,
+    });
+  }
+
+  if (status?.consent?.mode === 'preview') {
+    return Object.freeze({
+      id: CUSTOMER_STATES.PREVIEW_AVAILABLE,
+      tone: 'info',
+      title: 'Preview is ready',
+      body: 'Add Full analytics for insights from your conversations.',
+      primaryAction: 'review_full',
+      primaryLabel: 'Review Full analytics',
       secondaryAction: null,
       secondaryLabel: null,
     });
   }
 
   if (!fullConsent(status)) {
-    const preview = status?.consent?.mode === 'preview';
     return Object.freeze({
-      id: CUSTOMER_STATES.PREVIEW_AVAILABLE,
+      id: CUSTOMER_STATES.ANALYTICS_OFF,
       tone: 'info',
-      title: preview ? 'Preview is ready' : 'Start with Preview',
-      body: preview
-        ? 'Add Full analysis for insights from your conversations.'
-        : 'Count activity in this browser without keeping message text.',
-      primaryAction: preview ? 'review_full' : null,
-      primaryLabel: preview ? 'Add Full analysis' : null,
+      title: 'Start with Preview',
+      body: 'See how many messages you send and receive each day.',
+      primaryAction: modeChoiceAvailable ? 'choose_mode' : null,
+      primaryLabel: modeChoiceAvailable ? 'Set up Preview' : null,
       secondaryAction: null,
       secondaryLabel: null,
     });
@@ -71,7 +84,7 @@ export function deriveCustomerJourney({
       tone: 'progress',
       title: pairing.state === 'compare' ? 'Confirm the connection' : 'Connecting to the desktop app',
       body: pairing.state === 'compare'
-        ? 'Compare the six-digit code here with the code in the desktop app. Confirm only when both codes match.'
+        ? 'Check that the desktop app shows the same code, then confirm there.'
         : 'Keep this window open.',
       primaryAction: null,
       primaryLabel: null,
@@ -109,14 +122,14 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.DESKTOP_APP_NEEDED,
       tone: 'warning',
-      title: 'Desktop app needed for Full analysis',
+      title: 'Desktop app needed for Full analytics',
       body: desktopDownloadAvailable
-        ? 'Full analysis runs on this computer. Preview works without the desktop app.'
-        : 'The download is unavailable. You can still use Preview.',
-      primaryAction: desktopDownloadAvailable ? 'install_desktop' : null,
-      primaryLabel: desktopDownloadAvailable ? 'Install desktop app' : null,
-      secondaryAction: null,
-      secondaryLabel: null,
+        ? 'Full analytics runs in the desktop app on this computer. Install or start it, then check again.'
+        : 'Full analytics runs in the desktop app on this computer. Start it, then check again.',
+      primaryAction: desktopDownloadAvailable ? 'install_desktop' : 'retry_full',
+      primaryLabel: desktopDownloadAvailable ? 'Install desktop app' : 'Check again',
+      secondaryAction: desktopDownloadAvailable ? 'retry_full' : null,
+      secondaryLabel: desktopDownloadAvailable ? 'Check again' : null,
     });
   }
 
@@ -189,7 +202,7 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.ACTIVATION_REQUIRED,
       tone: 'warning',
-      title: 'Finish activating Full analysis',
+      title: 'Finish activating Full analytics',
       body: 'Continue in Settings in the desktop app.',
       primaryAction: 'open_dashboard',
       primaryLabel: 'Open desktop app',
@@ -235,7 +248,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.ACTIVATION_ACTIVE,
       tone: 'warning',
       title: 'Analysis is not available right now',
-      body: 'Full analysis is activated. Your saved data is unchanged.',
+      body: 'Full analytics is activated. Your saved data is unchanged.',
       primaryAction: 'retry_readiness',
       primaryLabel: 'Check again',
       secondaryAction: 'open_dashboard',
@@ -246,7 +259,7 @@ export function deriveCustomerJourney({
   return Object.freeze({
     id: CUSTOMER_STATES.FULL_UNAVAILABLE,
     tone: 'warning',
-    title: 'Full analysis is temporarily unavailable',
+    title: 'Full analytics is temporarily unavailable',
     body: 'Open the desktop app to see what needs attention.',
     primaryAction: 'retry_readiness',
     primaryLabel: 'Check again',

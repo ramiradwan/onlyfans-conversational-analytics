@@ -6,16 +6,22 @@ import { staticFixtures } from './static-fixtures.mjs';
 const { JSDOM } = createRequire(new URL('../../frontend/package.json', import.meta.url))('jsdom');
 const fixtures = await staticFixtures();
 
-test('static capture covers the existing popup matrix, expanded disclosures, and all setup stages', () => {
-  assert.equal(fixtures.filter((item) => item.surface === 'popup').length, 25);
+test('static capture covers the existing popup matrix, both disclosure steps, and all setup stages', () => {
+  assert.equal(fixtures.filter((item) => item.surface === 'popup').length, 26);
   assert.equal(fixtures.filter((item) => item.surface === 'provisioning').length, 12);
+  const secondary = { mode_choice_full: 'Not now', full_review: 'Keep Preview' };
   for (const fixture of fixtures) {
     const dom = new JSDOM(fixture.html);
-    assert.equal(dom.window.document.querySelectorAll('script').length, 0);
-    if (fixture.name === 'full_review') {
-      assert(dom.window.document.querySelector('#full-disclosure details').open);
-      assert(dom.window.document.querySelector('#preview-disclosure').classList.contains('hidden'));
-      assert.equal(dom.window.document.querySelector('#full-secondary').textContent, 'Keep Preview');
+    const doc = dom.window.document;
+    assert.equal(doc.querySelectorAll('script').length, 0);
+    if (fixture.name === 'mode_choice') {
+      assert(!doc.querySelector('#preview-disclosure').classList.contains('hidden'));
+      assert(doc.querySelector('#full-disclosure').classList.contains('hidden'));
+    }
+    if (fixture.name in secondary) {
+      assert(doc.querySelector('#preview-disclosure').classList.contains('hidden'));
+      assert(!doc.querySelector('#full-disclosure').classList.contains('hidden'));
+      assert.equal(doc.querySelector('#full-secondary').textContent, secondary[fixture.name]);
     }
     dom.window.close();
   }

@@ -289,7 +289,7 @@ async function connectTarget(webSocketDebuggerUrl) {
         `(() => { const element = ${query(selector)}; return Boolean(element) && !element.disabled && element.getClientRects().length > 0; })()`,
       )).toBe(true);
       const { x, y } = await evaluate(
-        `(() => { const element = ${query(selector)}; element.scrollIntoView({ block: 'center' }); const box = element.getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.top + box.height / 2 }; })()`,
+        `(() => { const element = ${query(selector)}; element.scrollIntoView({ block: 'center' }); const box = element.getClientRects()[0]; return { x: box.left + box.width / 2, y: box.top + box.height / 2 }; })()`,
       );
       await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
       await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }).catch(() => {});
@@ -406,7 +406,7 @@ test('connection details are restored after opening the desktop app closes the p
   }
 });
 
-test('the Full analysis review is restored after the privacy notice closes the popup', async () => {
+test('the Full analytics review is restored after the privacy notice closes the popup', async () => {
   test.slow();
   const browser = await launchBrowser();
   try {

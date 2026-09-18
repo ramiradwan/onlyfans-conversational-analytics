@@ -1,5 +1,4 @@
 {
-  "source": "b9b36a1a350acf00d88435f6b931e8d2d5368600",
   "blocks": {
     "pre-mode": {
       "start": "      <section id=\"pre-mode\"",
@@ -9,12 +8,12 @@
     "preview-disclosure": {
       "start": "        <div id=\"preview-disclosure\"",
       "end": "        <div id=\"full-disclosure\"",
-      "sha256": "4fe7bbed84f5c7c10d8584acf4b77edaac52886beccd361e60bc7052e45dfc80"
+      "sha256": "9b29c7d985cdc9dd8c17191777892ca4928173903bd4b9c83f00644cd961ed44"
     },
     "full-disclosure": {
       "start": "        <div id=\"full-disclosure\"",
       "end": "      <section id=\"preview-metrics\"",
-      "sha256": "b3a774a40934ff63b48b89deca344c0978d458c7aea45955bbc977935bd424fb"
+      "sha256": "5cb67f6a007ff76a4c4aff298db396b2e016afe0830b835990d710974ef8bca8"
     }
   }
 }

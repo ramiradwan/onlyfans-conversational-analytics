@@ -51,10 +51,8 @@
       </div>
 
       <section id="legal-unavailable" class="warning hidden">
-        <h2>Activation is unavailable</h2>
-        <p>
-          This app is missing the required legal documents.
-        </p>
+        <h2>Setup is unavailable in this version</h2>
+        <p>Update the extension, then try again.</p>
       </section>
 
       <section id="pre-mode" class="hidden" aria-labelledby="activation-title">
@@ -79,74 +77,36 @@
         </p>
       </section>
 
-      <section id="mode-choice" class="hidden" aria-labelledby="mode-choice-title">
-        <h2 id="mode-choice-title">Choose how to start</h2>
-
-        <div id="preview-disclosure" class="disclosure">
-          <h3>Preview</h3>
-          <p>Preview watches supported chat and message activity to create limited daily counts.</p>
-          <p>
-            Preview retains limited counts, <strong>never message text</strong>, conversation
-            identifiers, participant identifiers, participant display names, or other message-level
-            identifiers.
-          </p>
-          <p>
-            Preview metrics are kept on a rolling seven-day basis and older records are
-            automatically removed.
-          </p>
-          <p>Preview needs access to the supported platform while it is enabled.</p>
-          <p><a class="extension-privacy-link" href="#">Extension Privacy Notice</a></p>
+      <section id="mode-choice" class="hidden">
+        <div id="preview-disclosure" class="choice" role="group" aria-labelledby="preview-choice-title">
+          <h2 id="preview-choice-title" tabindex="-1">Start with Preview</h2>
+          <p class="lead">See how many messages you send and receive each day.</p>
+          <ul class="points">
+            <li><strong>Transient inspection:</strong> generating Preview metrics can require the Extension to transiently inspect supported chat and message response information as the supported page handles it.</li>
+            <li><strong>Retained Preview data:</strong> Preview retains only identifier-free daily counts and message direction information.</li>
+            <li><strong>Seven-day retention:</strong> retained Preview metrics are automatically removed after seven days.</li>
+            <li><strong>No content or identifiers retained:</strong> Preview retains no message text or participant, message or chat identifiers.</li>
+          </ul>
+          <p class="fine-print">Read the <a class="extension-privacy-link" href="#">Extension Privacy Notice</a>.</p>
           <button id="enable-preview" class="primary" type="button">Enable Preview</button>
-          <button id="not-now-preview" class="secondary" type="button">Not now</button>
+          <button id="not-now-preview" class="text-button" type="button">Not now</button>
+          <button id="review-full" class="menu-row" type="button">Review Full analytics</button>
         </div>
 
-        <div id="full-disclosure" class="disclosure">
-          <h3>Full analytics</h3>
-          <p>Full analytics handles substantially more information than Preview.</p>
-          <details>
-            <summary>Review Full analytics data handling</summary>
-            <ul>
-              <li>
-                <strong>Message content:</strong> Full stores supported conversation and participant
-                information, including message text, message and conversation identifiers,
-                participant identifiers and display names, and message timestamps. It can also
-                retrieve supported conversation history when history access is enabled.
-              </li>
-              <li>
-                <strong>Same-computer transfer:</strong> the Extension sends conversation information,
-                including message text, to the companion analytics service running on this computer.
-                This information <strong>leaves the Extension but remains on the same computer</strong>.
-                The normal conversation dataset is not sent to Provider-hosted analytics or storage
-                infrastructure through the Extension’s normal workflow.
-              </li>
-              <li>
-                <strong>Local storage and retention:</strong> Full-mode information is stored locally
-                in Extension storage and in the companion analytics service. No general automatic
-                expiry period currently applies to the main Full-mode conversation data stored in
-                either location.
-              </li>
-              <li>
-                <strong>Deletion boundary:</strong>
-                <strong>
-                  Delete all Extension data does not delete conversation information already stored
-                  by the companion analytics service. The Extension does not currently provide a
-                  complete deletion process for that separately stored companion data.
-                </strong>
-              </li>
-              <li>
-                <strong>Other people’s information:</strong> messages can contain private or sensitive
-                information about people you communicate with. Enabling Full is your choice to
-                activate this Extension data handling. It is
-                <strong>not consent on behalf of those people</strong>.
-              </li>
-            </ul>
-          </details>
-          <p>
-            Read the <a class="extension-privacy-link" href="#"><strong>Extension Privacy Notice</strong></a>
-            for the complete description of Full-mode data handling.
-          </p>
+        <div id="full-disclosure" class="choice hidden" role="group" aria-labelledby="full-choice-title">
+          <h2 id="full-choice-title" tabindex="-1">Full analytics</h2>
+          <p class="lead">Get insights from your conversations in the desktop app.</p>
+          <p>Before choosing Full, review these points:</p>
+          <ol class="points">
+            <li><strong>Message content:</strong> Full handles and retains message text and related conversation, message and participant information.</li>
+            <li><strong>Same-computer transfer:</strong> Full information leaves the Extension but remains on the same computer. The Extension sends it to the companion analytics service running on that computer.</li>
+            <li><strong>Persistence:</strong> the Extension and companion analytics service can both retain Full information at the same time, and there is currently <strong>no general automatic age-based expiry for the main Full conversation dataset</strong>.</li>
+            <li><strong>Deletion boundary:</strong> deleting Extension data does <strong>not</strong> delete Full information already retained by the companion analytics service.</li>
+            <li><strong>Other people:</strong> Full contains subscriber and other-person information. Enabling Full is <strong>not consent on behalf of a subscriber or another person</strong>.</li>
+            <li><strong>Extension Privacy Notice:</strong> <a class="extension-privacy-link" href="#">read the complete data-handling description</a>.</li>
+          </ol>
           <button id="enable-full" class="primary" type="button">Enable Full analytics</button>
-          <button id="full-secondary" class="secondary" type="button">Not now</button>
+          <button id="full-secondary" class="text-button" type="button">Not now</button>
         </div>
       </section>
 

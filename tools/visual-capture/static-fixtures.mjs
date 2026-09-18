@@ -12,15 +12,15 @@ const withoutScripts = (html) => html.replace(/<script\b[^>]*>[\s\S]*?<\/script>
 export async function staticFixtures() {
   const popupHtml = withoutScripts(await read('extension/popup.html'));
   const journey = deriveCustomerJourney({ status: { consent: { mode: 'off' } } });
-  const inactive = { tone: journey.tone, mode: 'Analytics off — no OnlyFans access', badge: 'Preview', title: journey.title, body: journey.body };
+  const inactive = { tone: journey.tone, mode: 'Analytics off', badge: '', title: journey.title, body: journey.body };
   const popupStates = {
     ...POPUP_STATES,
     software_activation: { ...inactive, panel: 'pre-mode' },
     software_activation_ready: { ...inactive, panel: 'pre-mode', accepted: true },
     legal_unavailable: { ...inactive, panel: 'legal-unavailable' },
     mode_choice: { ...inactive, panel: 'mode-choice' },
-    mode_choice_collapsed: { ...inactive, panel: 'mode-choice', expand: false },
-    full_review: { ...POPUP_STATES.preview, panel: 'mode-choice', fullReview: true },
+    mode_choice_full: { ...inactive, panel: 'mode-choice', fullReview: true },
+    full_review: { ...POPUP_STATES.preview, panel: 'mode-choice', fullReview: true, upgrade: true },
     connection: { ...POPUP_STATES.full_ready, view: 'connection' },
     manage: { ...POPUP_STATES.full_ready, view: 'manage' },
   };
@@ -35,7 +35,8 @@ export async function staticFixtures() {
     }
     if (state.fullReview) {
       doc.getElementById('preview-disclosure').classList.add('hidden');
-      doc.getElementById('full-secondary').textContent = 'Keep Preview';
+      doc.getElementById('full-disclosure').classList.remove('hidden');
+      if (state.upgrade) doc.getElementById('full-secondary').textContent = 'Keep Preview';
     }
     if (state.accepted) {
       for (const id of ['terms-accepted', 'risk-acknowledged']) {
@@ -44,7 +45,6 @@ export async function staticFixtures() {
       }
       doc.getElementById('activate-software').disabled = false;
     }
-    if (state.panel === 'mode-choice' && state.expand !== false) doc.querySelector('#full-disclosure details').open = true;
     if (state.view === 'manage') {
       for (const id of ['pause', 'forget-companion', 'revoke']) doc.getElementById(id).classList.remove('hidden');
     }
