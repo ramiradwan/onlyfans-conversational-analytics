@@ -56,7 +56,7 @@ export function AppShell() {
             minWidth: 0,
             overflow: 'hidden',
             pb: { xs: 2, sm: 1.5 },
-            pt: { xs: 1, sm: 0 },
+            pt: { xs: 1, sm: `${railInset}px` },
             px: { xs: 2, sm: 3, lg: 4 },
           }}
         >

@@ -74,6 +74,12 @@ export async function captureReviewChecks(browser, base, outDir) {
           near(box.width, 48, 'rail item width'); near(box.height, 44, 'rail item height');
           near(box.x - paper.x, 8, 'left inset'); near(paper.x + paper.width - box.x - box.width, 8, 'right inset');
         }
+        const header = await appearance(page.getByRole('banner'));
+        const heading = await appearance(page.locator('main h1').first());
+        const railInset = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8')).tier3.shell.railInset;
+        near(paper.y - header.y - header.height, railInset, 'rail gap below header');
+        near(page.viewportSize().height - paper.y - paper.height, railInset, 'rail bottom inset');
+        near(heading.y - header.y - header.height, railInset, 'heading gap below header');
         near(boxes[0].y - paper.y, 8, 'top inset'); assert.equal(paper.filter, 'none'); assert.equal(paper.fill[3], 1);
         if (mode === 'dark') assert(paper.fill.slice(0, 3).every((channel, i) => channel > canvas.fill[i]), 'rail must be lighter than canvas');
         const inbox = rail.getByRole('link', { name: 'Inbox', exact: true }); const rest = await appearance(inbox);
@@ -89,7 +95,7 @@ export async function captureReviewChecks(browser, base, outDir) {
         assert(focus.focusVisible, 'keyboard focus is missing');
         assert.equal(focus.outlineWidth, '2px'); assert.equal(focus.outlineStyle, 'solid'); assert.equal(focus.outlineOffset, '-2px');
         await page.screenshot({ path: join(directory, `rail-focus-${mode}.png`), animations: 'disabled' });
-        return { paper, canvas, boxes, rest, hovered, selected, focus, tooltip };
+        return { paper, canvas, header, heading, railInset, boxes, rest, hovered, selected, focus, tooltip };
       });
       await record(`${mode}: popup and app brand pixels`, async () => {
         await open('home');

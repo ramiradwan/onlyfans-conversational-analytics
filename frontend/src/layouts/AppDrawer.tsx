@@ -206,7 +206,7 @@ export function AppDrawer({
             height: 'auto',
             left: railInset,
             overflowX: 'hidden',
-            top: headerHeight,
+            top: headerHeight + railInset,
             width: drawerWidth,
           },
         }}
