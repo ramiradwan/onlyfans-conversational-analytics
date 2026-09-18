@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright';
 
@@ -17,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const frontend = resolve(here, '../../frontend');
 const outDir = resolve(process.argv[2] ?? join(here, 'output'));
 
-const FIXED_NOW = '2026-06-30T12:05:00.000Z';
+export const FIXED_NOW = '2026-06-30T12:05:00.000Z';
 const MAX_HEIGHT = 6000;
 const MODES = ['light', 'dark'];
 const VIEWPORTS = [
@@ -30,7 +30,7 @@ const heading = (name) => (page) => page.getByRole('heading', { level: 1, name }
 const text = (value) => (page) => page.getByText(value, { exact: true }).first();
 
 /** Each screen names the locator that proves its state rendered before capture. */
-const SCREENS = [
+export const SCREENS = [
   { workspace: 'home', state: 'loading', ready: text('Processing your data…') },
   {
     workspace: 'home',
@@ -81,7 +81,7 @@ const SCREENS = [
   ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({
     workspace: 'settings',
     state,
-    ready: heading('Settings'),
+    ready: (page) => page.getByRole('heading', { name: 'Stored messages' }),
     assert: async (page, viewport) => {
       if (viewport.name !== 'desktop') return;
       const frame = page.locator('[data-visual="settings-frame"]');
@@ -197,7 +197,7 @@ function freePort() {
   });
 }
 
-async function startHarness() {
+export async function startHarness() {
   const port = await freePort();
   const vite = spawn(
     process.execPath,
@@ -422,4 +422,4 @@ async function capture() {
   }
 }
 
-await capture();
+if (import.meta.url === pathToFileURL(process.argv[1]).href) await capture();
