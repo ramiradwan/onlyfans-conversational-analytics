@@ -4,6 +4,8 @@ import {
   createPreviewInboxStore,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 const previewMessageApi = {
   getPage: async () => new Promise<never>(() => {}),
 };

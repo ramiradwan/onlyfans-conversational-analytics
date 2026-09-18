@@ -1,16 +1,15 @@
 import {
-  Box,
   MemoryRouter,
   RecentConversations,
   previewConversations,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function Latest() {
   return (
     <MemoryRouter>
-      <Box sx={{ bgcolor: 'background.default', p: 2 }}>
-        <RecentConversations conversations={previewConversations} />
-      </Box>
+      <RecentConversations conversations={previewConversations} />
     </MemoryRouter>
   );
 }

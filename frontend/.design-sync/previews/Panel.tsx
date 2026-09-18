@@ -5,6 +5,8 @@ import {
   Typography,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function InsightSummary() {
   return (
     <Panel sx={{ maxWidth: 560 }}>
@@ -31,7 +33,7 @@ export function InsightSummary() {
 
 export function Emphasis() {
   return (
-    <Stack spacing={2} sx={{ bgcolor: 'background.default', p: 2, maxWidth: 560 }}>
+    <Stack spacing={2} sx={{ maxWidth: 560 }}>
       <Panel emphasis="dominant">
         <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>Messages this week</Typography>
         <Typography variant="kpi">2,436</Typography>

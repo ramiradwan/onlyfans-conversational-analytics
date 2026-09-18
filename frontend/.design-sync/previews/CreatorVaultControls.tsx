@@ -10,6 +10,8 @@ import type {
   CreatorVaultStatus,
 } from '../../src/services/creatorVaultApi';
 
+import './card.module.css';
+
 const baseCapabilities: CreatorVaultStatus['capabilities'] = {
   finite_retention: true,
   indefinite_retention: true,
@@ -108,7 +110,7 @@ const incompleteDeletionApi = createMockVaultApi({
 export function FiniteRetention() {
   useUserStore.getState().actions.setUserRole('creator-ceo');
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 960, p: 2 }}>
+    <Box sx={{ maxWidth: 960 }}>
       <CreatorVaultControls api={finiteRetentionApi} onDownload={previewNoop} />
     </Box>
   );
@@ -117,7 +119,7 @@ export function FiniteRetention() {
 export function Disabled() {
   useUserStore.getState().actions.setUserRole('creator-ceo');
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 960, p: 2 }}>
+    <Box sx={{ maxWidth: 960 }}>
       <CreatorVaultControls api={disabledApi} onDownload={previewNoop} />
     </Box>
   );
@@ -126,7 +128,7 @@ export function Disabled() {
 export function IncompleteDeletion() {
   useUserStore.getState().actions.setUserRole('creator-ceo');
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 960, p: 2 }}>
+    <Box sx={{ maxWidth: 960 }}>
       <CreatorVaultControls api={incompleteDeletionApi} onDownload={previewNoop} />
     </Box>
   );

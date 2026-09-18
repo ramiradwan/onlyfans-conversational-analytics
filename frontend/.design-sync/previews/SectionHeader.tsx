@@ -1,8 +1,10 @@
 import { Panel, SectionHeader, Stack } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function WithStatus() {
   return (
-    <Stack spacing={2} sx={{ bgcolor: 'background.default', maxWidth: 640, p: 2 }}>
+    <Stack spacing={2} sx={{ maxWidth: 640 }}>
       <Panel>
         <SectionHeader
           status={{ label: 'Not connected', tone: 'default' }}

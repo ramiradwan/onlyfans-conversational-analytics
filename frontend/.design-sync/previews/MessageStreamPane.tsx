@@ -5,6 +5,8 @@ import {
 } from 'onlyfans-analytics-frontend';
 import type { ConversationMessageState } from '../../src/store/transportStore';
 
+import './card.module.css';
+
 const noOp = () => {};
 const messageState: ConversationMessageState = {
   items: previewConversations[0].messages,

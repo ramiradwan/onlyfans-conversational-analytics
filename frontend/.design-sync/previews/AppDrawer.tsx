@@ -4,6 +4,8 @@ import {
   seedPreviewShellStore,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 seedPreviewShellStore();
 
 // The permanent desktop rail is sm-gated (display xs:none / sm:block) and cannot

@@ -1,9 +1,12 @@
 import {
   Box,
   MessageTone,
+  Panel,
   Stack,
   Typography,
 } from 'onlyfans-analytics-frontend';
+
+import './card.module.css';
 
 export function ToneStates() {
   const states = [
@@ -14,10 +17,8 @@ export function ToneStates() {
   ] as const;
 
   return (
-    <Box sx={{ bgcolor: 'background.paper', maxWidth: 360, p: 2 }}>
-      <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
-        Message tone
-      </Typography>
+    <Panel sx={{ maxWidth: 360, p: 2, gap: 1.5 }}>
+      <Typography variant="subtitle2">Message tone</Typography>
       <Stack spacing={1.25}>
         {states.map(([label, sentiment]) => (
           <Stack
@@ -38,6 +39,6 @@ export function ToneStates() {
           </Stack>
         ))}
       </Stack>
-    </Box>
+    </Panel>
   );
 }

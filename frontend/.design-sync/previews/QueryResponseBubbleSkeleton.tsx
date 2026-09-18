@@ -4,9 +4,11 @@ import {
   Typography,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function GeneratingAnswer() {
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 640, p: 2 }}>
+    <Box sx={{ maxWidth: 640 }}>
       <Typography
         variant="caption"
         sx={{

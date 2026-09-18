@@ -1,8 +1,10 @@
 import { Box, BrandMark } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function HeaderLockup() {
   return (
-    <Box sx={{ bgcolor: 'background.paper', p: 2, width: 320 }}>
+    <Box sx={{ width: 320 }}>
       <BrandMark />
     </Box>
   );

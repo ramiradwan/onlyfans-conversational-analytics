@@ -15,6 +15,8 @@ import type {
 } from '../../src/services/creatorVaultApi';
 import type { HistorySettingsApi } from '../../src/services/historySettingsApi';
 
+import './card.module.css';
+
 const mockHistoryApi: HistorySettingsApi = {
   get: async () => ({
     creator_account_id: 'creator-preview',
@@ -173,7 +175,7 @@ const mockActivationApi: CapabilityLicenseApi = {
 export function CompositeSettings() {
   seedPreviewShellStore();
   return (
-    <Box sx={{ bgcolor: 'background.default', minHeight: 760, p: 3 }}>
+    <Box sx={{ minHeight: 760 }}>
       <SettingsWithVaultView
         historyApi={mockHistoryApi}
         pairingApi={mockPairingApi}
