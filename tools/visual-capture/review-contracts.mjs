@@ -43,6 +43,15 @@ async function centerPixel(page, locator) {
     return [...ctx.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data];
   }, png.toString('base64'));
 }
+async function pixelAt(page, locator, x, y) {
+  const png = await locator.screenshot({ animations: 'disabled', scale: 'css' });
+  return page.evaluate(async ([encoded, px, py]) => {
+    const image = new Image(); image.src = 'data:image/png;base64,' + encoded; await image.decode();
+    const c = document.createElement('canvas'); c.width = image.width; c.height = image.height;
+    const ctx = c.getContext('2d'); ctx.drawImage(image, 0, 0);
+    return [...ctx.getImageData(Math.floor(px), Math.floor(py), 1, 1).data];
+  }, [png.toString('base64'), x, y]);
+}
 
 /** Separate interaction probes; they never alter a standard capture's state. */
 export async function captureReviewChecks(browser, base, outDir) {
@@ -171,22 +180,26 @@ export async function captureReviewChecks(browser, base, outDir) {
           const homeBrand = await appearance(page.locator('[data-visual="brand-tile"]').first());
           await open('passkey', 'resting');
           const banner = page.getByRole('banner');
-          const header = await appearance(banner);
-          const brand = await appearance(banner.locator('[data-visual="brand-tile"]'));
           const cardLocator = page.locator('[data-visual="passkey-card"]');
           const card = await appearance(cardLocator);
-          assert.equal(await cardLocator.locator('[data-visual="brand-tile"]').count(), 0);
+          const visibleBrand = page.locator('[data-visual="brand-tile"]').filter({ visible: true });
+          assert.equal(await visibleBrand.count(), 1, 'passkey shows one brand');
+          const brand = await appearance(visibleBrand);
           assert.equal(await page.getByRole('main').getByRole('banner').count(), 0);
           assert.equal(await cardLocator.locator('.MuiButton-contained').count(), 1);
           assert(await cardLocator.getByRole('button', { name: 'Sign in with passkey', exact: true }).evaluate(n => n.classList.contains('MuiButton-contained')));
           near(brand.width, 32, 'passkey brand width'); near(brand.height, 32, 'passkey brand height');
-          near(brand.y, 20, 'passkey brand top');
+          near(card.y + card.height / 2, viewport.height / 2, 'passkey vertical center', 1);
+          let header = null;
           if (viewport.width === 1440) {
+            header = await appearance(banner);
+            assert.equal(await cardLocator.locator('[data-visual="brand-tile"]').filter({ visible: true }).count(), 0);
             near(brand.x, homeBrand.x, 'passkey/home brand left'); near(brand.y, homeBrand.y, 'passkey/home brand top');
-            near(card.y + card.height / 2, viewport.height / 2, 'passkey vertical center', 1);
           } else {
-            near(brand.x, 16, 'narrow passkey brand inset');
-            assert(card.y >= header.y + header.height, 'passkey overlaps its header');
+            assert.equal(await banner.count(), 0, 'narrow passkey keeps its brand in the card');
+            const footer = cardLocator.locator('[data-visual="passkey-brand"]');
+            assert(await footer.locator('[data-visual="brand-tile"]').isVisible(), 'narrow passkey footer brand');
+            assert(await footer.getByText('Conversation Analytics', { exact: true }).isVisible(), 'narrow passkey footer name');
           }
           const tile = await appearance(page.locator('[data-visual="passkey-lock"]'));
           near(tile.width, 56, 'lock tile'); near(tile.height, 56, 'lock tile'); assert.equal(tile.radius, '18px');
@@ -200,7 +213,26 @@ export async function captureReviewChecks(browser, base, outDir) {
           await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
           near(parseFloat((await appearance(setup)).outlineWidth), 2, 'setup keyboard focus ring');
           await page.screenshot({ path: join(directory, `passkey-layout-${mode}-${viewport.width}.png`), animations: 'disabled' });
-          passkeyLayouts.push({ viewport, header, brand, homeBrand, card, tile, heading });
+          const keyBoxes = () => Promise.all([cardLocator, page.locator('[data-visual="passkey-lock"]'), page.getByRole('heading', { level: 1 }),
+            cardLocator.getByRole('button', { name: 'Sign in with passkey', exact: true }), setup, visibleBrand].map(appearance));
+          const resting = await keyBoxes();
+          await cardLocator.getByRole('button', { name: 'Sign in with passkey', exact: true }).click();
+          const alertLocator = page.getByRole('alert');
+          await alertLocator.waitFor();
+          const failed = await keyBoxes();
+          resting.forEach((box, index) => { near(failed[index].x, box.x, `passkey error shift x ${index}`); near(failed[index].y, box.y, `passkey error shift y ${index}`); });
+          const alert = await appearance(alertLocator);
+          near(alert.width, card.width, 'passkey alert width');
+          assert(alert.y >= card.y + card.height && alert.y + alert.height <= viewport.height, 'passkey alert sits below the card, in view');
+          const alertFill = await pixelAt(page, alertLocator, alert.width / 2, 3);
+          assert(alertFill[0] > alertFill[1] + 8 && alertFill[0] > alertFill[2] + 8, `passkey alert tint is not red: ${alertFill}`);
+          if (mode === 'dark') {
+            const sum = (rgb) => rgb[0] + rgb[1] + rgb[2];
+            assert(sum(alertFill) >= sum(card.fill), `dark passkey alert is darker than the card: ${alertFill} vs ${card.fill}`);
+          }
+          assert(contrastAgainst(alert.ink, [...alertFill.slice(0, 3), 1]) >= 4.5, 'passkey alert text contrast');
+          await page.screenshot({ path: join(directory, `passkey-error-${mode}-${viewport.width}.png`), animations: 'disabled' });
+          passkeyLayouts.push({ viewport, header, brand, homeBrand, card, tile, heading, alert, alertFill });
         }
         return { avatar, timestamp, status, passkeyLayouts };
       });

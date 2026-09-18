@@ -47,10 +47,11 @@ describe('WebAuthn access view', () => {
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
-  it('has one primary sign-in action and a header outside the main landmark', () => {
+  it('has one primary sign-in action, a header outside the main landmark and a compact card brand', () => {
     const view = renderView({ enroll: vi.fn(), login: vi.fn() });
     const main = screen.getByRole('main');
-    expect(main.querySelector('[data-visual="brand-tile"]')).toBeNull();
+    expect(main.querySelectorAll('[data-visual="brand-tile"]')).toHaveLength(1);
+    expect(main.querySelector('[data-visual="passkey-card"] [data-visual="passkey-brand"] [data-visual="brand-tile"]')).not.toBeNull();
     expect(screen.getByRole('banner').querySelector('[data-visual="brand-tile"]')).not.toBeNull();
     expect(main.querySelectorAll('.MuiButton-contained')).toHaveLength(1);
     expect(view.signIn().classList.contains('MuiButton-contained')).toBe(true);
@@ -110,6 +111,7 @@ describe('WebAuthn access view', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toBe('Sign-in was cancelled or timed out. Try again.');
+    expect(alert.closest('[data-visual="passkey-card"]')).toBeNull();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 

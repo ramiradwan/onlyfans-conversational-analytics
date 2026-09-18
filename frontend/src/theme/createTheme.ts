@@ -1,3 +1,4 @@
+import type { AlertProps } from '@mui/material/Alert';
 import { createTheme, type PaletteOptions, type Theme } from '@mui/material/styles';
 import type {} from '@mui/material/themeCssVarsAugmentation';
 
@@ -106,6 +107,22 @@ const focusRing = (theme: Theme) => ({
   outlineOffset: effectTokens.focus.offset,
 });
 
+/** Standard alert: a paper surface tinted by the feedback tone, with body text at full contrast. */
+function feedbackSurface(theme: Theme, tone: NonNullable<AlertProps['severity']>) {
+  const main = theme.vars.palette[tone].main;
+  const paper = theme.vars.palette.background.paper;
+  const { toneBorder, toneFill } = componentTokens.MuiAlert;
+  // Mixing with transparent keeps the tone's hue; the paper beneath keeps the surface opaque.
+  const fill = `color-mix(in oklch, ${main} ${toneFill}, transparent)`;
+  return {
+    backgroundColor: paper,
+    backgroundImage: `linear-gradient(${fill}, ${fill})`,
+    border: `${effectTokens.borders.thin} solid color-mix(in oklch, ${main} ${toneBorder}, transparent)`,
+    color: theme.vars.palette.text.primary,
+    '& .MuiAlert-icon': { color: main },
+  };
+}
+
 export const theme = createTheme({
   cssVariables: {
     cssVarPrefix: 'bridge',
@@ -158,6 +175,12 @@ export const theme = createTheme({
     sideBorder: overlayEffect,
   },
   components: {
+    MuiAlert: {
+      styleOverrides: {
+        standard: ({ ownerState, theme }: { ownerState: AlertProps; theme: Theme }) =>
+          feedbackSurface(theme, ownerState.color ?? ownerState.severity ?? 'success'),
+      },
+    },
     MuiCollapse: {
       defaultProps: {
         timeout: {

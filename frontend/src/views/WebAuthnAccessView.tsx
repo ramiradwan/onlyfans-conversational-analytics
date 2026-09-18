@@ -10,6 +10,11 @@ import { surfaceArrival } from '../theme/presentationMotion';
 /** Browser ceremony outcomes where the person closed the prompt or let it time out. */
 const CANCELLED_CEREMONIES = new Set(['NotAllowedError', 'AbortError']);
 
+/** Brings a newly shown alert into view when the window is too short to show it below the card. */
+function revealAlert(alert: HTMLDivElement | null) {
+  alert?.scrollIntoView?.({ block: 'nearest' });
+}
+
 function failureMessage(cause: unknown, enroll: boolean): string {
   const name = typeof cause === 'object' && cause !== null && 'name' in cause ? cause.name : null;
   if (typeof name === 'string' && CANCELLED_CEREMONIES.has(name)) {
@@ -54,17 +59,18 @@ export function WebAuthnAccessView({
   return (
     <Box sx={{ color: 'text.primary', display: 'flex', flexDirection: 'column', minHeight: '100dvh', width: '100%' }}>
       <Box component="header" sx={{
-        alignItems: 'center', display: 'flex', flexShrink: 0,
+        alignItems: 'center', display: { xs: 'none', sm: 'flex' }, flexShrink: 0,
         height: componentTokens.shell.headerHeight,
-        pl: { xs: 2, sm: `${BRAND_INSET}px` }, pr: 2,
+        pl: `${BRAND_INSET}px`, pr: 2,
       }}>
         <BrandMark />
       </Box>
+      {/* Feedback renders in its own row beneath the card, so the card keeps its position. */}
       <Box
         component="main"
         data-journey-state="desktop.passkey_sign_in"
         sx={{
-          display: 'grid', flex: 1, placeItems: { xs: 'start center', sm: 'center' },
+          display: 'grid', flex: 1, gridTemplateRows: '1fr auto 1fr', justifyItems: 'center',
           px: { xs: 2, sm: 4 }, pt: { xs: 2, sm: 0 },
           pb: { xs: 2, sm: `${componentTokens.shell.headerHeight}px` },
         }}
@@ -72,6 +78,7 @@ export function WebAuthnAccessView({
         <Paper
           data-visual="passkey-card"
           sx={(theme) => ({
+            gridRow: 2,
             maxWidth: 520,
             p: { xs: 4, sm: 5 },
             width: '100%',
@@ -97,7 +104,6 @@ export function WebAuthnAccessView({
                 face, or device PIN.
               </Typography>
             </Box>
-            {error && <Alert severity="error">{error}</Alert>}
             <Button disabled={busy} onClick={() => void authenticate(false)} size="large" variant="contained" sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}>
               Sign in with passkey
             </Button>
@@ -116,8 +122,23 @@ export function WebAuthnAccessView({
                 Set up a passkey
               </Link>
             </Typography>
+            <Box
+              component="footer"
+              data-visual="passkey-brand"
+              sx={(theme) => ({
+                borderTop: `${effectTokens.borders.thin} solid ${theme.vars.palette.divider}`,
+                display: { sm: 'none' }, pt: 3,
+                '& [data-visual="brand-tile"] + *': { display: 'block' },
+              })}
+            >
+              <BrandMark />
+            </Box>
           </Stack>
         </Paper>
+        {/* Zero height keeps the alert out of row sizing; it overflows into the space below the card. */}
+        <Box sx={{ alignSelf: 'start', gridRow: 3, height: 0, maxWidth: 520, width: '100%' }}>
+          {error && <Alert ref={revealAlert} severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+        </Box>
       </Box>
     </Box>
   );

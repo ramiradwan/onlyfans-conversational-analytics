@@ -1017,6 +1017,10 @@ export const shape = {
 } as const;
 
 export const componentTokens = {
+  "MuiAlert": {
+    "toneBorder": "32%",
+    "toneFill": "12%"
+  },
   "MuiButton": {
     "activeScale": 0.97,
     "borderRadius": 12
