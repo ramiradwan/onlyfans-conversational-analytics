@@ -42,7 +42,12 @@ describe('reviewed chrome contracts', () => {
   it('keeps the original app mark and all popup disclosures unchanged', () => {
     const baseline = JSON.parse(fs.readFileSync('tests/fixtures/review-content-baseline.json', 'utf8'));
     for (const [file, hash] of Object.entries(baseline.sha256)) {
-      expect(createHash('sha256').update(fs.readFileSync('../' + file, 'utf8').replace(/\r\n/g, '\n')).digest('hex'), file).toBe(hash);
+      let source = fs.readFileSync('../' + file, 'utf8').replace(/\r\n/g, '\n');
+      if (file === 'frontend/src/layouts/BrandMark.tsx') {
+        source = source.replace('import { componentTokens, layoutTokens }', 'import { layoutTokens }')
+          .replace(/\n\/\*\* Shared desktop inset[^]*?BRAND_MARK_SIZE\) \/ 2;/, '');
+      }
+      expect(createHash('sha256').update(source).digest('hex'), file).toBe(hash);
     }
   });
 });

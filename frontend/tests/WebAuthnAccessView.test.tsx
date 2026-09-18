@@ -33,6 +33,32 @@ function renderView(api: WebAuthnApi, onAuthenticated = vi.fn()) {
 afterEach(cleanup);
 
 describe('WebAuthn access view', () => {
+
+  it.each([
+    [new Error('Login refused'), "Sign-in didn't finish. Try again, or set up a passkey if this is your first time on this computer."],
+    [{ name: 'NotAllowedError' }, 'Sign-in was cancelled or timed out. Try again.'],
+  ])('reports the login step after enrollment succeeds', async (failure, message) => {
+    const api = { enroll: vi.fn(async () => {}), login: vi.fn(() => Promise.reject(failure)) };
+    const view = renderView(api);
+    fireEvent.click(view.enroll());
+    expect((await screen.findByRole('alert')).textContent).toBe(message);
+    expect(api.enroll).toHaveBeenCalledTimes(1);
+    expect(api.login).toHaveBeenCalledTimes(1);
+    expect(view.onAuthenticated).not.toHaveBeenCalled();
+  });
+
+  it('has one primary sign-in action and a header outside the main landmark', () => {
+    const view = renderView({ enroll: vi.fn(), login: vi.fn() });
+    const main = screen.getByRole('main');
+    expect(main.querySelector('[data-visual="brand-tile"]')).toBeNull();
+    expect(screen.getByRole('banner').querySelector('[data-visual="brand-tile"]')).not.toBeNull();
+    expect(main.querySelectorAll('.MuiButton-contained')).toHaveLength(1);
+    expect(view.signIn().classList.contains('MuiButton-contained')).toBe(true);
+    expect(view.enroll().tagName).toBe('BUTTON');
+    expect(view.enroll().type).toBe('button');
+    expect(screen.queryByText('Already set up on this computer?')).toBeNull();
+  });
+
   it('enrolls before signing in and reports the authenticated session', async () => {
     const order: string[] = [];
     const api: WebAuthnApi = {
@@ -68,7 +94,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.signIn());
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toBe("Sign-in didn't finish. Try again.");
+    expect(alert.textContent).toBe("Sign-in didn't finish. Try again, or set up a passkey if this is your first time on this computer.");
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
@@ -97,7 +123,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.enroll());
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toBe("Couldn't set up a passkey. Try again.");
+    expect(alert.textContent).toBe("Couldn't set up a passkey. Try again, or sign in if you've already set one up on this computer.");
     expect(api.login).not.toHaveBeenCalled();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });

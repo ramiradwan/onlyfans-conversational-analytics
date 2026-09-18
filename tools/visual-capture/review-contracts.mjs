@@ -164,11 +164,45 @@ export async function captureReviewChecks(browser, base, outDir) {
         const timestamp = await appearance(page.locator('time').first()); assert(timestamp.font.includes('Space Grotesk')); near(timestamp.fontSize, 12, 'timestamp size');
         const status = await appearance(page.getByRole('button', { name: /^Status:/ })); assert.equal(status.border, '1px');
         assert.equal((await appearance(page.locator('[data-status-settled="true"]'))).animation, 'none');
-        await open('passkey', 'resting');
-        const tile = await appearance(page.locator('[data-visual="passkey-lock"]')); near(tile.width, 56, 'lock tile'); near(tile.height, 56, 'lock tile');
-        assert.equal(tile.radius, '18px');
-        const heading = await appearance(page.getByRole('heading', { level: 1 })); near(heading.fontSize, 26, 'passkey title'); assert(heading.font.includes('Space Grotesk'));
-        return { avatar, timestamp, status, tile, heading };
+        const passkeyLayouts = [];
+        for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+          await page.setViewportSize(viewport);
+          await open('home');
+          const homeBrand = await appearance(page.locator('[data-visual="brand-tile"]').first());
+          await open('passkey', 'resting');
+          const banner = page.getByRole('banner');
+          const header = await appearance(banner);
+          const brand = await appearance(banner.locator('[data-visual="brand-tile"]'));
+          const cardLocator = page.locator('[data-visual="passkey-card"]');
+          const card = await appearance(cardLocator);
+          assert.equal(await cardLocator.locator('[data-visual="brand-tile"]').count(), 0);
+          assert.equal(await page.getByRole('main').getByRole('banner').count(), 0);
+          assert.equal(await cardLocator.locator('.MuiButton-contained').count(), 1);
+          assert(await cardLocator.getByRole('button', { name: 'Sign in with passkey', exact: true }).evaluate(n => n.classList.contains('MuiButton-contained')));
+          near(brand.width, 32, 'passkey brand width'); near(brand.height, 32, 'passkey brand height');
+          near(brand.y, 20, 'passkey brand top');
+          if (viewport.width === 1440) {
+            near(brand.x, homeBrand.x, 'passkey/home brand left'); near(brand.y, homeBrand.y, 'passkey/home brand top');
+            near(card.y + card.height / 2, viewport.height / 2, 'passkey vertical center', 1);
+          } else {
+            near(brand.x, 16, 'narrow passkey brand inset');
+            assert(card.y >= header.y + header.height, 'passkey overlaps its header');
+          }
+          const tile = await appearance(page.locator('[data-visual="passkey-lock"]'));
+          near(tile.width, 56, 'lock tile'); near(tile.height, 56, 'lock tile'); assert.equal(tile.radius, '18px');
+          const heading = await appearance(page.getByRole('heading', { level: 1 }));
+          near(heading.fontSize, 26, 'passkey title'); assert(heading.font.includes('Space Grotesk'));
+          const setup = cardLocator.getByRole('button', { name: 'Set up a passkey', exact: true });
+          for (let index = 0; index < 4 && !await setup.evaluate(n => document.activeElement === n); index++) {
+            await page.keyboard.press('Tab');
+          }
+          assert(await setup.evaluate(n => n.matches(':focus-visible')), 'setup is not keyboard focusable');
+          await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+          near(parseFloat((await appearance(setup)).outlineWidth), 2, 'setup keyboard focus ring');
+          await page.screenshot({ path: join(directory, `passkey-layout-${mode}-${viewport.width}.png`), animations: 'disabled' });
+          passkeyLayouts.push({ viewport, header, brand, homeBrand, card, tile, heading });
+        }
+        return { avatar, timestamp, status, passkeyLayouts };
       });
       await record(`${mode}: bounded motion and reduced-motion suppression`, async () => {
         await page.emulateMedia({ reducedMotion: 'no-preference' }); await open('analytics', 'model');

@@ -32,7 +32,7 @@ import {
 } from '@/utils/statusCopy';
 import { bridgeTransportStore, type BridgeTransportState } from '@store/transportStore';
 
-import { BRAND_MARK_SIZE, BrandMark } from './BrandMark';
+import { BRAND_INSET, BrandMark } from './BrandMark';
 
 interface AppAppBarProps {
   headerHeight?: number;
@@ -44,10 +44,6 @@ type StatusPresentation = {
   detail: string;
   label: string;
 };
-
-const { desktopRailWidth, railInset } = componentTokens.shell;
-/** Centers the brand mark over the desktop navigation rail. */
-const BRAND_INSET = railInset + (desktopRailWidth - BRAND_MARK_SIZE) / 2;
 
 export function getStatusPresentation(
   state: Readonly<BridgeTransportState>,
