@@ -17,6 +17,7 @@
   ],
   "ignoreDependencies": [
     "@fontsource-variable/inter",
+    "@fontsource-variable/space-grotesk",
     "@swc/plugin-emotion",
     "lint-staged"
   ],

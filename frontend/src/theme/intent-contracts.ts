@@ -36,7 +36,7 @@ const isFinancialPath = (path: string): boolean =>
   /^tier2\.intents\.(light|dark)\.financial(?:\.|$)/.test(path)
   || /^tier1\.colorFamily\.financial(?:\.|$)/.test(path);
 export const bridgeIntentRoles = {
-  measurement: 'palette', financial: 'palette',
+  measurement: 'palette', financial: 'palette', brand: 'palette',
   'action.primary': 'palette', 'action.secondary': 'palette', 'action.state': 'roles',
   'feedback.success': 'palette', 'feedback.warning': 'palette', 'feedback.error': 'palette', 'feedback.info': 'palette',
   sentiment: 'roles', communication: 'roles', surface: 'roles', text: 'roles', chart: 'roles',
@@ -44,7 +44,7 @@ export const bridgeIntentRoles = {
 } as const;
 // Existing MUI-shaped paths are compatibility adapters, not new meanings.
 const adapterRoles: Record<string, string> = {
-  primary: 'action.primary', secondary: 'action.secondary', accent: 'legacy.accent', calm: 'legacy.calm',
+  brand: 'brand', primary: 'action.primary', secondary: 'action.secondary', accent: 'legacy.accent', calm: 'legacy.calm',
   action: 'action.state', success: 'feedback.success', warning: 'feedback.warning', error: 'feedback.error', info: 'feedback.info',
   background: 'surface', divider: 'surface', placeholder: 'surface', surface: 'surface',
   text: 'text', communication: 'communication', chart: 'chart',

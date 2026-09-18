@@ -43,17 +43,13 @@ describe('theme token generation', () => {
   });
 
   it('rejects a primary cue that loses non-text contrast against the paper surface', () => {
-    const weakPrimary = tokensSource.replace(
-      'oklch(55.5912% 0.22480 277.32)',
-      'oklch(92% 0.01 277.32)',
-    );
-    type Tone = { contrastText: string };
-    const weak = JSON.parse(weakPrimary) as { tier2: { intents: { light: { measurement: Tone; action: { primary: Tone }; legacy: { calm: Tone } } } } };
-    const light = weak.tier2.intents.light;
-    // Keep the authored text pairs valid so this falsifier isolates the selection cue.
-    for (const tone of [light.measurement, light.action.primary, light.legacy.calm]) {
-      tone.contrastText = '{tier1.onColor.black87}';
-    }
+    type Tone = { main: string; contrastText: string };
+    const weak = JSON.parse(tokensSource) as {
+      tier2: { intents: { light: { action: { primary: Tone } } } };
+    };
+    // Keep the text pair valid to isolate insufficient selection-cue contrast.
+    weak.tier2.intents.light.action.primary.main = 'oklch(92% 0.01 186.65)';
+    weak.tier2.intents.light.action.primary.contrastText = '{tier1.onColor.black87}';
     expect(() => generateThemeSource(JSON.stringify(weak))).toThrow(/primary\.main \(selection cue\).*3:1/i);
   });
 
@@ -106,7 +102,7 @@ describe('static surface design tokens', () => {
     const consumer = ['a {}', '  /* design-tokens:start */', '  /* design-tokens:end */', ''].join('\n');
     const synced = replaceStaticTokenBlock(consumer, css);
     const edited = synced.replace(
-      '--dipsy-color-primary: oklch(55.5912% 0.22480 277.32);',
+      /--dipsy-color-primary: [^;]+;/,
       '--dipsy-color-primary: oklch(50% 0.10 277.32);',
     );
     expect(edited).not.toBe(synced);

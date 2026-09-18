@@ -57,6 +57,7 @@ declare module '@mui/material/styles' {
 
   interface Palette {
     measurement: PaletteColor;
+    brand: PaletteColor;
     sentiment: Record<'positive' | 'negative' | 'neutral' | 'unknown', string>;
     accent: PaletteColor;
     calm: PaletteColor;
@@ -68,6 +69,7 @@ declare module '@mui/material/styles' {
       overlay: string;
       rim: string;
       glow: string;
+      dominant: { border: string; elevation: string };
     };
     communication: {
       incomingSurface: string;
@@ -77,6 +79,7 @@ declare module '@mui/material/styles' {
     };
     chart: {
       sentiment: string;
+      area: string;
       volume: string;
       neutral: string;
       positive: string;
@@ -97,6 +100,7 @@ declare module '@mui/material/styles' {
 
   interface PaletteOptions {
     measurement?: PaletteColorOptions;
+    brand?: PaletteColorOptions;
     sentiment?: Palette['sentiment'];
     accent?: PaletteColorOptions;
     calm?: PaletteColorOptions;

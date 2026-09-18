@@ -8,6 +8,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { chromium } from 'playwright';
+import { assertNumericTypography } from './appearance-contracts.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const frontend = resolve(here, '../../frontend');
@@ -346,6 +347,7 @@ async function capture() {
             await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
             await page.waitForLoadState('networkidle');
             await assertBrandMarkIfPresent(page);
+            await assertNumericTypography(page, viewport);
             if (screen.assert) await screen.assert(page, viewport);
 
             const overflow = await horizontalOverflow(page);

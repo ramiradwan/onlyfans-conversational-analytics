@@ -97,6 +97,7 @@ export function AnalyticsPresentation({
               {sharedSource && <AnalyticsWindowLabel source={sharedSource} />}
               <AnalyticsGrid>
                 <ChartPanel
+                  emphasis="dominant"
                   title="Message tone over time"
                   description="Average tone of messages each day, from −1 (negative) to +1 (positive)."
                   windowSource={perPanel?.sentimentTrend}

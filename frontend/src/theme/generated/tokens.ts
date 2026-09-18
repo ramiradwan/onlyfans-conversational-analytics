@@ -74,6 +74,7 @@ export const brandPalette = {
 } as const;
 
 export const brandTypography = {
+  "displayNumeric": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
   "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
   "fontFamilyMono": "ui-monospace, SFMono-Regular, Menlo, monospace",
   "numeric": "tabular-nums",
@@ -87,8 +88,8 @@ export const brandTypography = {
     "h4": "1.5rem",
     "h5": "1.25rem",
     "h6": "1rem",
-    "kpi": "3rem",
-    "metric": "1.75rem"
+    "kpi": "clamp(3.25rem, 5vw, 4.5rem)",
+    "metric": "clamp(2rem, 3vw, 2.5rem)"
   },
   "weights": {
     "bold": 700,
@@ -135,12 +136,14 @@ export const effectTokens = {
   },
   "elevation": {
     "dark": {
+      "dominant": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40), 0 12px 32px -16px oklch(0.0000% 0.00000 0.00 / 0.65)",
       "overlay": "0 2px 6px oklch(0.0000% 0.00000 0.00 / 0.50), 0 24px 56px -20px oklch(0.0000% 0.00000 0.00 / 0.90)",
       "raised": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)"
     },
     "light": {
-      "overlay": "0 2px 6px oklch(18.2192% 0.01835 284.43 / 0.06), 0 18px 40px -16px oklch(18.2192% 0.01835 284.43 / 0.22)",
-      "raised": "0 1px 2px oklch(18.2192% 0.01835 284.43 / 0.04), 0 4px 16px -8px oklch(18.2192% 0.01835 284.43 / 0.08)"
+      "dominant": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 12px 32px -16px oklch(21.9569% 0.00360 164.71 / 0.16)",
+      "overlay": "0 2px 6px oklch(21.9569% 0.00360 164.71 / 0.06), 0 18px 40px -16px oklch(21.9569% 0.00360 164.71 / 0.22)",
+      "raised": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 4px 16px -8px oklch(21.9569% 0.00360 164.71 / 0.08)"
     }
   },
   "focus": {
@@ -151,8 +154,8 @@ export const effectTokens = {
     "backdropFilter": "blur(16px) saturate(160%)"
   },
   "glow": {
-    "dark": "radial-gradient(120% 90% at 0% 0%, oklch(68.2072% 0.17271 282.31 / 0.16), oklch(70.8969% 0.15917 293.54 / 0.05) 45%, oklch(68.2072% 0.17271 282.31 / 0.00) 75%)",
-    "light": "radial-gradient(120% 90% at 0% 0%, oklch(55.5912% 0.22480 277.32 / 0.10), oklch(60.5631% 0.21892 292.72 / 0.04) 45%, oklch(55.5912% 0.22480 277.32 / 0.00) 75%)"
+    "dark": "radial-gradient(120% 90% at 0% 0%, oklch(75.5245% 0.06228 181.42 / 0.12), oklch(75.5245% 0.06228 181.42 / 0.04) 45%, oklch(75.5245% 0.06228 181.42 / 0.00) 75%)",
+    "light": "radial-gradient(120% 90% at 0% 0%, oklch(52.3257% 0.08827 186.65 / 0.10), oklch(52.3257% 0.08827 186.65 / 0.04) 45%, oklch(52.3257% 0.08827 186.65 / 0.00) 75%)"
   },
   "motion": {
     "duration": {
@@ -169,7 +172,7 @@ export const effectTokens = {
   },
   "rim": {
     "dark": "linear-gradient(180deg, oklch(100.0000% 0.00000 0.00 / 0.09), oklch(100.0000% 0.00000 0.00 / 0.02) 48%, oklch(100.0000% 0.00000 0.00 / 0.00))",
-    "light": "linear-gradient(180deg, oklch(18.2192% 0.01835 284.43 / 0.07), oklch(18.2192% 0.01835 284.43 / 0.03))"
+    "light": "linear-gradient(180deg, oklch(21.9569% 0.00360 164.71 / 0.07), oklch(21.9569% 0.00360 164.71 / 0.03))"
   }
 } as const;
 
@@ -178,9 +181,9 @@ export const semanticIntents = {
     "action": {
       "primary": {
         "contrastText": "oklch(0% 0 0 / 0.87)",
-        "dark": "oklch(55.5912% 0.22480 277.32)",
-        "light": "oklch(74.5658% 0.13200 282.31)",
-        "main": "oklch(68.2072% 0.17271 282.31)"
+        "dark": "oklch(65.4100% 0.06620 180.22)",
+        "light": "oklch(84.5666% 0.04732 182.84)",
+        "main": "oklch(75.5245% 0.06228 181.42)"
       },
       "secondary": {
         "contrastText": "oklch(0% 0 0 / 0.87)",
@@ -190,11 +193,18 @@ export const semanticIntents = {
       },
       "state": {
         "disabled": "oklch(100.0000% 0.00000 0.00 / 0.30)",
-        "hover": "oklch(100.0000% 0.00000 0.00 / 0.05)",
-        "selected": "oklch(68.2072% 0.17271 282.31 / 0.16)"
+        "hover": "oklch(31.1696% 0.01409 158.06)",
+        "selected": "oklch(30.4536% 0.03004 181.98)"
       }
     },
+    "brand": {
+      "contrastText": "oklch(0% 0 0 / 0.87)",
+      "dark": "oklch(55.5912% 0.22480 277.32)",
+      "light": "oklch(74.5658% 0.13200 282.31)",
+      "main": "oklch(68.2072% 0.17271 282.31)"
+    },
     "chart": {
+      "area": "oklch(30.4536% 0.03004 181.98)",
       "categorical1": "oklch(67.9613% 0.11788 210.83)",
       "categorical2": "oklch(52.8516% 0.17984 142.50)",
       "categorical3": "oklch(75.7281% 0.12276 333.48)",
@@ -203,20 +213,20 @@ export const semanticIntents = {
       "categorical6": "oklch(60.6460% 0.19455 37.69)",
       "categorical7": "oklch(65.0568% 0.16930 280.23)",
       "categorical8": "oklch(55.8644% 0.18371 14.17)",
-      "grid": "oklch(100.0000% 0.00000 0.00 / 0.10)",
+      "grid": "oklch(100.0000% 0.00000 0.00 / 0.08)",
       "negative": "oklch(55.8644% 0.18371 14.17)",
       "neutral": "oklch(32.6039% 0.02112 285.17)",
       "opportunity": "oklch(84.4069% 0.16972 96.01)",
       "positive": "oklch(52.8516% 0.17984 142.50)",
-      "sentiment": "oklch(68.2072% 0.17271 282.31)",
+      "sentiment": "oklch(75.5245% 0.06228 181.42)",
       "unknown": "oklch(65.0568% 0.16930 280.23)",
-      "volume": "oklch(70.8969% 0.15917 293.54)"
+      "volume": "oklch(75.5245% 0.06228 181.42)"
     },
     "communication": {
-      "incomingBorder": "oklch(32.6039% 0.02112 285.17)",
-      "incomingSurface": "oklch(23.9593% 0.01903 284.87)",
-      "outgoingBorder": "oklch(38.7617% 0.10215 284.98)",
-      "outgoingSurface": "oklch(26.3231% 0.07416 283.36)"
+      "incomingBorder": "oklch(47.9449% 0.02524 157.88)",
+      "incomingSurface": "oklch(24.1875% 0.00825 169.61)",
+      "outgoingBorder": "oklch(49.6372% 0.04569 177.76)",
+      "outgoingSurface": "oklch(30.4536% 0.03004 181.98)"
     },
     "feedback": {
       "error": {
@@ -260,9 +270,9 @@ export const semanticIntents = {
     },
     "measurement": {
       "contrastText": "oklch(0% 0 0 / 0.87)",
-      "dark": "oklch(55.5912% 0.22480 277.32)",
-      "light": "oklch(74.5658% 0.13200 282.31)",
-      "main": "oklch(68.2072% 0.17271 282.31)"
+      "dark": "oklch(65.4100% 0.06620 180.22)",
+      "light": "oklch(84.5666% 0.04732 182.84)",
+      "main": "oklch(75.5245% 0.06228 181.42)"
     },
     "sentiment": {
       "negative": "oklch(55.8644% 0.18371 14.17)",
@@ -271,31 +281,35 @@ export const semanticIntents = {
       "unknown": "oklch(65.0568% 0.16930 280.23)"
     },
     "surface": {
-      "canvas": "oklch(13.6531% 0.00904 285.14)",
-      "divider": "oklch(100.0000% 0.00000 0.00 / 0.07)",
+      "canvas": "oklch(20.3962% 0.00728 164.17)",
+      "divider": "oklch(34.9609% 0.01582 156.31)",
+      "dominant": {
+        "border": "oklch(47.9449% 0.02524 157.88)",
+        "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40), 0 12px 32px -16px oklch(0.0000% 0.00000 0.00 / 0.65)"
+      },
       "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
       "glass": "oklch(19.5111% 0.01602 284.82 / 0.72)",
-      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(68.2072% 0.17271 282.31 / 0.16), oklch(70.8969% 0.15917 293.54 / 0.05) 45%, oklch(68.2072% 0.17271 282.31 / 0.00) 75%)",
+      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(75.5245% 0.06228 181.42 / 0.12), oklch(75.5245% 0.06228 181.42 / 0.04) 45%, oklch(75.5245% 0.06228 181.42 / 0.00) 75%)",
       "overlay": "0 2px 6px oklch(0.0000% 0.00000 0.00 / 0.50), 0 24px 56px -20px oklch(0.0000% 0.00000 0.00 / 0.90)",
-      "paper": "oklch(20.8382% 0.01576 284.95)",
-      "placeholder": "oklch(26.5197% 0.02040 284.92)",
+      "paper": "oklch(24.1875% 0.00825 169.61)",
+      "placeholder": "oklch(34.9609% 0.01582 156.31)",
       "rim": "linear-gradient(180deg, oklch(100.0000% 0.00000 0.00 / 0.09), oklch(100.0000% 0.00000 0.00 / 0.02) 48%, oklch(100.0000% 0.00000 0.00 / 0.00))",
-      "subtle": "oklch(23.9593% 0.01903 284.87)"
+      "subtle": "oklch(28.2061% 0.01007 164.17)"
     },
     "text": {
-      "disabled": "oklch(54.2517% 0.02632 290.89)",
-      "muted": "oklch(68.9453% 0.02185 291.94)",
-      "primary": "oklch(96.6625% 0.00802 293.91)",
-      "secondary": "oklch(77.6532% 0.02260 291.61)"
+      "disabled": "oklch(54.0541% 0.02178 162.39)",
+      "muted": "oklch(71.2460% 0.01862 158.93)",
+      "primary": "oklch(96.7794% 0.00449 134.85)",
+      "secondary": "oklch(81.7817% 0.01289 156.94)"
     }
   },
   "light": {
     "action": {
       "primary": {
         "contrastText": "oklch(100% 0 0)",
-        "dark": "oklch(46.7674% 0.20489 275.95)",
-        "light": "oklch(68.2072% 0.17271 282.31)",
-        "main": "oklch(55.5912% 0.22480 277.32)"
+        "dark": "oklch(42.9123% 0.07160 186.90)",
+        "light": "oklch(95.0072% 0.01094 182.87)",
+        "main": "oklch(52.3257% 0.08827 186.65)"
       },
       "secondary": {
         "contrastText": "oklch(0% 0 0 / 0.87)",
@@ -305,11 +319,18 @@ export const semanticIntents = {
       },
       "state": {
         "disabled": "oklch(19.2637% 0.03002 289.38 / 0.30)",
-        "hover": "oklch(19.2637% 0.03002 289.38 / 0.04)",
-        "selected": "oklch(55.5912% 0.22480 277.32 / 0.10)"
+        "hover": "oklch(95.0250% 0.00541 117.93)",
+        "selected": "oklch(95.0072% 0.01094 182.87)"
       }
     },
+    "brand": {
+      "contrastText": "oklch(100% 0 0)",
+      "dark": "oklch(46.7674% 0.20489 275.95)",
+      "light": "oklch(68.2072% 0.17271 282.31)",
+      "main": "oklch(55.5912% 0.22480 277.32)"
+    },
     "chart": {
+      "area": "oklch(95.0072% 0.01094 182.87)",
       "categorical1": "oklch(61.1455% 0.10629 211.41)",
       "categorical2": "oklch(52.8516% 0.17984 142.50)",
       "categorical3": "oklch(68.8587% 0.12944 333.09)",
@@ -318,20 +339,20 @@ export const semanticIntents = {
       "categorical6": "oklch(63.1081% 0.17194 39.82)",
       "categorical7": "oklch(40.9284% 0.18096 265.79)",
       "categorical8": "oklch(41.6885% 0.16228 13.58)",
-      "grid": "oklch(21.0084% 0.03176 264.66 / 0.08)",
+      "grid": "oklch(21.9569% 0.00360 164.71 / 0.08)",
       "negative": "oklch(41.6885% 0.16228 13.58)",
       "neutral": "oklch(68.9453% 0.02185 291.94)",
       "opportunity": "oklch(65.4202% 0.13460 96.09)",
       "positive": "oklch(52.8516% 0.17984 142.50)",
-      "sentiment": "oklch(55.5912% 0.22480 277.32)",
+      "sentiment": "oklch(52.3257% 0.08827 186.65)",
       "unknown": "oklch(40.9284% 0.18096 265.79)",
-      "volume": "oklch(60.5631% 0.21892 292.72)"
+      "volume": "oklch(52.3257% 0.08827 186.65)"
     },
     "communication": {
-      "incomingBorder": "oklch(88.3201% 0.01499 290.27)",
+      "incomingBorder": "oklch(86.8321% 0.01343 82.40)",
       "incomingSurface": "oklch(100.0000% 0.00000 0.00)",
-      "outgoingBorder": "oklch(88.8320% 0.04647 288.11)",
-      "outgoingSurface": "oklch(95.4872% 0.02273 288.67)"
+      "outgoingBorder": "oklch(85.6521% 0.02698 178.94)",
+      "outgoingSurface": "oklch(95.0072% 0.01094 182.87)"
     },
     "feedback": {
       "error": {
@@ -375,9 +396,9 @@ export const semanticIntents = {
     },
     "measurement": {
       "contrastText": "oklch(100% 0 0)",
-      "dark": "oklch(46.7674% 0.20489 275.95)",
-      "light": "oklch(68.2072% 0.17271 282.31)",
-      "main": "oklch(55.5912% 0.22480 277.32)"
+      "dark": "oklch(42.9123% 0.07160 186.90)",
+      "light": "oklch(95.0072% 0.01094 182.87)",
+      "main": "oklch(52.3257% 0.08827 186.65)"
     },
     "sentiment": {
       "negative": "oklch(41.6885% 0.16228 13.58)",
@@ -386,22 +407,26 @@ export const semanticIntents = {
       "unknown": "oklch(40.9284% 0.18096 265.79)"
     },
     "surface": {
-      "canvas": "oklch(96.8572% 0.00664 286.28)",
-      "divider": "oklch(19.2637% 0.03002 289.38 / 0.06)",
-      "elevation": "0 1px 2px oklch(18.2192% 0.01835 284.43 / 0.04), 0 4px 16px -8px oklch(18.2192% 0.01835 284.43 / 0.08)",
+      "canvas": "oklch(96.7853% 0.00453 78.30)",
+      "divider": "oklch(91.4244% 0.00918 78.28)",
+      "dominant": {
+        "border": "oklch(86.8321% 0.01343 82.40)",
+        "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 12px 32px -16px oklch(21.9569% 0.00360 164.71 / 0.16)"
+      },
+      "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 4px 16px -8px oklch(21.9569% 0.00360 164.71 / 0.08)",
       "glass": "oklch(100.0000% 0.00000 0.00 / 0.72)",
-      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(55.5912% 0.22480 277.32 / 0.10), oklch(60.5631% 0.21892 292.72 / 0.04) 45%, oklch(55.5912% 0.22480 277.32 / 0.00) 75%)",
-      "overlay": "0 2px 6px oklch(18.2192% 0.01835 284.43 / 0.06), 0 18px 40px -16px oklch(18.2192% 0.01835 284.43 / 0.22)",
+      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(52.3257% 0.08827 186.65 / 0.10), oklch(52.3257% 0.08827 186.65 / 0.04) 45%, oklch(52.3257% 0.08827 186.65 / 0.00) 75%)",
+      "overlay": "0 2px 6px oklch(21.9569% 0.00360 164.71 / 0.06), 0 18px 40px -16px oklch(21.9569% 0.00360 164.71 / 0.22)",
       "paper": "oklch(100.0000% 0.00000 0.00)",
-      "placeholder": "oklch(93.3310% 0.01073 286.19)",
-      "rim": "linear-gradient(180deg, oklch(18.2192% 0.01835 284.43 / 0.07), oklch(18.2192% 0.01835 284.43 / 0.03))",
-      "subtle": "oklch(95.1126% 0.00934 286.22)"
+      "placeholder": "oklch(91.4244% 0.00918 78.28)",
+      "rim": "linear-gradient(180deg, oklch(21.9569% 0.00360 164.71 / 0.07), oklch(21.9569% 0.00360 164.71 / 0.03))",
+      "subtle": "oklch(96.1577% 0.00574 84.57)"
     },
     "text": {
-      "disabled": "oklch(68.9453% 0.02185 291.94)",
-      "muted": "oklch(52.8246% 0.02494 291.26)",
-      "primary": "oklch(20.5622% 0.01778 289.83)",
-      "secondary": "oklch(47.4910% 0.02403 291.57)"
+      "disabled": "oklch(71.2916% 0.01333 156.88)",
+      "muted": "oklch(52.9987% 0.00786 145.46)",
+      "primary": "oklch(21.9569% 0.00360 164.71)",
+      "secondary": "oklch(49.1619% 0.00685 153.64)"
     }
   }
 } as const;
@@ -416,12 +441,18 @@ export const semanticColorSchemes = {
     },
     "action": {
       "disabled": "oklch(100.0000% 0.00000 0.00 / 0.30)",
-      "hover": "oklch(100.0000% 0.00000 0.00 / 0.05)",
-      "selected": "oklch(68.2072% 0.17271 282.31 / 0.16)"
+      "hover": "oklch(31.1696% 0.01409 158.06)",
+      "selected": "oklch(30.4536% 0.03004 181.98)"
     },
     "background": {
-      "default": "oklch(13.6531% 0.00904 285.14)",
-      "paper": "oklch(20.8382% 0.01576 284.95)"
+      "default": "oklch(20.3962% 0.00728 164.17)",
+      "paper": "oklch(24.1875% 0.00825 169.61)"
+    },
+    "brand": {
+      "contrastText": "oklch(0% 0 0 / 0.87)",
+      "dark": "oklch(55.5912% 0.22480 277.32)",
+      "light": "oklch(74.5658% 0.13200 282.31)",
+      "main": "oklch(68.2072% 0.17271 282.31)"
     },
     "calm": {
       "contrastText": "oklch(0% 0 0 / 0.87)",
@@ -430,6 +461,7 @@ export const semanticColorSchemes = {
       "main": "oklch(68.2072% 0.17271 282.31)"
     },
     "chart": {
+      "area": "oklch(30.4536% 0.03004 181.98)",
       "categorical1": "oklch(67.9613% 0.11788 210.83)",
       "categorical2": "oklch(52.8516% 0.17984 142.50)",
       "categorical3": "oklch(75.7281% 0.12276 333.48)",
@@ -438,23 +470,23 @@ export const semanticColorSchemes = {
       "categorical6": "oklch(60.6460% 0.19455 37.69)",
       "categorical7": "oklch(65.0568% 0.16930 280.23)",
       "categorical8": "oklch(55.8644% 0.18371 14.17)",
-      "grid": "oklch(100.0000% 0.00000 0.00 / 0.10)",
+      "grid": "oklch(100.0000% 0.00000 0.00 / 0.08)",
       "negative": "oklch(55.8644% 0.18371 14.17)",
       "neutral": "oklch(32.6039% 0.02112 285.17)",
       "opportunity": "oklch(84.4069% 0.16972 96.01)",
       "positive": "oklch(52.8516% 0.17984 142.50)",
-      "sentiment": "oklch(68.2072% 0.17271 282.31)",
+      "sentiment": "oklch(75.5245% 0.06228 181.42)",
       "unknown": "oklch(65.0568% 0.16930 280.23)",
-      "volume": "oklch(70.8969% 0.15917 293.54)"
+      "volume": "oklch(75.5245% 0.06228 181.42)"
     },
     "communication": {
-      "incomingBorder": "oklch(32.6039% 0.02112 285.17)",
-      "incomingSurface": "oklch(23.9593% 0.01903 284.87)",
-      "outgoingBorder": "oklch(38.7617% 0.10215 284.98)",
-      "outgoingSurface": "oklch(26.3231% 0.07416 283.36)"
+      "incomingBorder": "oklch(47.9449% 0.02524 157.88)",
+      "incomingSurface": "oklch(24.1875% 0.00825 169.61)",
+      "outgoingBorder": "oklch(49.6372% 0.04569 177.76)",
+      "outgoingSurface": "oklch(30.4536% 0.03004 181.98)"
     },
     "contrastThreshold": 4.5,
-    "divider": "oklch(100.0000% 0.00000 0.00 / 0.07)",
+    "divider": "oklch(34.9609% 0.01582 156.31)",
     "error": {
       "contrastText": "oklch(0% 0 0 / 0.87)",
       "dark": "oklch(55.8438% 0.18329 22.70)",
@@ -468,12 +500,12 @@ export const semanticColorSchemes = {
       "main": "oklch(67.9613% 0.11788 210.83)"
     },
     "mode": "dark",
-    "placeholder": "oklch(26.5197% 0.02040 284.92)",
+    "placeholder": "oklch(34.9609% 0.01582 156.31)",
     "primary": {
       "contrastText": "oklch(0% 0 0 / 0.87)",
-      "dark": "oklch(55.5912% 0.22480 277.32)",
-      "light": "oklch(74.5658% 0.13200 282.31)",
-      "main": "oklch(68.2072% 0.17271 282.31)"
+      "dark": "oklch(65.4100% 0.06620 180.22)",
+      "light": "oklch(84.5666% 0.04732 182.84)",
+      "main": "oklch(75.5245% 0.06228 181.42)"
     },
     "secondary": {
       "contrastText": "oklch(0% 0 0 / 0.87)",
@@ -488,18 +520,22 @@ export const semanticColorSchemes = {
       "main": "oklch(67.3098% 0.16244 144.21)"
     },
     "surface": {
+      "dominant": {
+        "border": "oklch(47.9449% 0.02524 157.88)",
+        "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40), 0 12px 32px -16px oklch(0.0000% 0.00000 0.00 / 0.65)"
+      },
       "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
       "glass": "oklch(19.5111% 0.01602 284.82 / 0.72)",
-      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(68.2072% 0.17271 282.31 / 0.16), oklch(70.8969% 0.15917 293.54 / 0.05) 45%, oklch(68.2072% 0.17271 282.31 / 0.00) 75%)",
+      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(75.5245% 0.06228 181.42 / 0.12), oklch(75.5245% 0.06228 181.42 / 0.04) 45%, oklch(75.5245% 0.06228 181.42 / 0.00) 75%)",
       "overlay": "0 2px 6px oklch(0.0000% 0.00000 0.00 / 0.50), 0 24px 56px -20px oklch(0.0000% 0.00000 0.00 / 0.90)",
       "rim": "linear-gradient(180deg, oklch(100.0000% 0.00000 0.00 / 0.09), oklch(100.0000% 0.00000 0.00 / 0.02) 48%, oklch(100.0000% 0.00000 0.00 / 0.00))",
-      "subtle": "oklch(23.9593% 0.01903 284.87)"
+      "subtle": "oklch(28.2061% 0.01007 164.17)"
     },
     "text": {
-      "disabled": "oklch(54.2517% 0.02632 290.89)",
-      "muted": "oklch(68.9453% 0.02185 291.94)",
-      "primary": "oklch(96.6625% 0.00802 293.91)",
-      "secondary": "oklch(77.6532% 0.02260 291.61)"
+      "disabled": "oklch(54.0541% 0.02178 162.39)",
+      "muted": "oklch(71.2460% 0.01862 158.93)",
+      "primary": "oklch(96.7794% 0.00449 134.85)",
+      "secondary": "oklch(81.7817% 0.01289 156.94)"
     },
     "warning": {
       "contrastText": "oklch(0% 0 0 / 0.87)",
@@ -517,12 +553,18 @@ export const semanticColorSchemes = {
     },
     "action": {
       "disabled": "oklch(19.2637% 0.03002 289.38 / 0.30)",
-      "hover": "oklch(19.2637% 0.03002 289.38 / 0.04)",
-      "selected": "oklch(55.5912% 0.22480 277.32 / 0.10)"
+      "hover": "oklch(95.0250% 0.00541 117.93)",
+      "selected": "oklch(95.0072% 0.01094 182.87)"
     },
     "background": {
-      "default": "oklch(96.8572% 0.00664 286.28)",
+      "default": "oklch(96.7853% 0.00453 78.30)",
       "paper": "oklch(100.0000% 0.00000 0.00)"
+    },
+    "brand": {
+      "contrastText": "oklch(100% 0 0)",
+      "dark": "oklch(46.7674% 0.20489 275.95)",
+      "light": "oklch(68.2072% 0.17271 282.31)",
+      "main": "oklch(55.5912% 0.22480 277.32)"
     },
     "calm": {
       "contrastText": "oklch(100% 0 0)",
@@ -531,6 +573,7 @@ export const semanticColorSchemes = {
       "main": "oklch(55.5912% 0.22480 277.32)"
     },
     "chart": {
+      "area": "oklch(95.0072% 0.01094 182.87)",
       "categorical1": "oklch(61.1455% 0.10629 211.41)",
       "categorical2": "oklch(52.8516% 0.17984 142.50)",
       "categorical3": "oklch(68.8587% 0.12944 333.09)",
@@ -539,23 +582,23 @@ export const semanticColorSchemes = {
       "categorical6": "oklch(63.1081% 0.17194 39.82)",
       "categorical7": "oklch(40.9284% 0.18096 265.79)",
       "categorical8": "oklch(41.6885% 0.16228 13.58)",
-      "grid": "oklch(21.0084% 0.03176 264.66 / 0.08)",
+      "grid": "oklch(21.9569% 0.00360 164.71 / 0.08)",
       "negative": "oklch(41.6885% 0.16228 13.58)",
       "neutral": "oklch(68.9453% 0.02185 291.94)",
       "opportunity": "oklch(65.4202% 0.13460 96.09)",
       "positive": "oklch(52.8516% 0.17984 142.50)",
-      "sentiment": "oklch(55.5912% 0.22480 277.32)",
+      "sentiment": "oklch(52.3257% 0.08827 186.65)",
       "unknown": "oklch(40.9284% 0.18096 265.79)",
-      "volume": "oklch(60.5631% 0.21892 292.72)"
+      "volume": "oklch(52.3257% 0.08827 186.65)"
     },
     "communication": {
-      "incomingBorder": "oklch(88.3201% 0.01499 290.27)",
+      "incomingBorder": "oklch(86.8321% 0.01343 82.40)",
       "incomingSurface": "oklch(100.0000% 0.00000 0.00)",
-      "outgoingBorder": "oklch(88.8320% 0.04647 288.11)",
-      "outgoingSurface": "oklch(95.4872% 0.02273 288.67)"
+      "outgoingBorder": "oklch(85.6521% 0.02698 178.94)",
+      "outgoingSurface": "oklch(95.0072% 0.01094 182.87)"
     },
     "contrastThreshold": 4.5,
-    "divider": "oklch(19.2637% 0.03002 289.38 / 0.06)",
+    "divider": "oklch(91.4244% 0.00918 78.28)",
     "error": {
       "contrastText": "oklch(100% 0 0)",
       "dark": "oklch(39.0907% 0.12830 22.70)",
@@ -569,12 +612,12 @@ export const semanticColorSchemes = {
       "main": "oklch(61.1455% 0.10629 211.41)"
     },
     "mode": "light",
-    "placeholder": "oklch(93.3310% 0.01073 286.19)",
+    "placeholder": "oklch(91.4244% 0.00918 78.28)",
     "primary": {
       "contrastText": "oklch(100% 0 0)",
-      "dark": "oklch(46.7674% 0.20489 275.95)",
-      "light": "oklch(68.2072% 0.17271 282.31)",
-      "main": "oklch(55.5912% 0.22480 277.32)"
+      "dark": "oklch(42.9123% 0.07160 186.90)",
+      "light": "oklch(95.0072% 0.01094 182.87)",
+      "main": "oklch(52.3257% 0.08827 186.65)"
     },
     "secondary": {
       "contrastText": "oklch(0% 0 0 / 0.87)",
@@ -589,18 +632,22 @@ export const semanticColorSchemes = {
       "main": "oklch(52.8516% 0.17984 142.50)"
     },
     "surface": {
-      "elevation": "0 1px 2px oklch(18.2192% 0.01835 284.43 / 0.04), 0 4px 16px -8px oklch(18.2192% 0.01835 284.43 / 0.08)",
+      "dominant": {
+        "border": "oklch(86.8321% 0.01343 82.40)",
+        "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 12px 32px -16px oklch(21.9569% 0.00360 164.71 / 0.16)"
+      },
+      "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 4px 16px -8px oklch(21.9569% 0.00360 164.71 / 0.08)",
       "glass": "oklch(100.0000% 0.00000 0.00 / 0.72)",
-      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(55.5912% 0.22480 277.32 / 0.10), oklch(60.5631% 0.21892 292.72 / 0.04) 45%, oklch(55.5912% 0.22480 277.32 / 0.00) 75%)",
-      "overlay": "0 2px 6px oklch(18.2192% 0.01835 284.43 / 0.06), 0 18px 40px -16px oklch(18.2192% 0.01835 284.43 / 0.22)",
-      "rim": "linear-gradient(180deg, oklch(18.2192% 0.01835 284.43 / 0.07), oklch(18.2192% 0.01835 284.43 / 0.03))",
-      "subtle": "oklch(95.1126% 0.00934 286.22)"
+      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(52.3257% 0.08827 186.65 / 0.10), oklch(52.3257% 0.08827 186.65 / 0.04) 45%, oklch(52.3257% 0.08827 186.65 / 0.00) 75%)",
+      "overlay": "0 2px 6px oklch(21.9569% 0.00360 164.71 / 0.06), 0 18px 40px -16px oklch(21.9569% 0.00360 164.71 / 0.22)",
+      "rim": "linear-gradient(180deg, oklch(21.9569% 0.00360 164.71 / 0.07), oklch(21.9569% 0.00360 164.71 / 0.03))",
+      "subtle": "oklch(96.1577% 0.00574 84.57)"
     },
     "text": {
-      "disabled": "oklch(68.9453% 0.02185 291.94)",
-      "muted": "oklch(52.8246% 0.02494 291.26)",
-      "primary": "oklch(20.5622% 0.01778 289.83)",
-      "secondary": "oklch(47.4910% 0.02403 291.57)"
+      "disabled": "oklch(71.2916% 0.01333 156.88)",
+      "muted": "oklch(52.9987% 0.00786 145.46)",
+      "primary": "oklch(21.9569% 0.00360 164.71)",
+      "secondary": "oklch(49.1619% 0.00685 153.64)"
     },
     "warning": {
       "contrastText": "oklch(100% 0 0)",
@@ -671,18 +718,22 @@ export const typography = {
     "lineHeight": 1.4
   },
   "kpi": {
-    "fontSize": "3rem",
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontSize": "clamp(3.25rem, 5vw, 4.5rem)",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 600,
     "letterSpacing": "-0.035em",
-    "lineHeight": 1.05
+    "lineHeight": 1.05,
+    "overflowWrap": "anywhere"
   },
   "metric": {
-    "fontSize": "1.75rem",
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontSize": "clamp(2rem, 3vw, 2.5rem)",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 600,
     "letterSpacing": "-0.02em",
-    "lineHeight": 1.2
+    "lineHeight": 1.1,
+    "overflowWrap": "anywhere"
   },
   "subtitle1": {
     "fontSize": "1rem",
@@ -717,6 +768,11 @@ export const componentTokens = {
   },
   "MuiTooltip": {
     "borderRadius": 8
+  },
+  "StatusChip": {
+    "borderRadius": 999,
+    "dotSize": 6,
+    "fontSize": "0.75rem"
   },
   "analytics": {
     "barGap": 2,

@@ -43,3 +43,7 @@
 - The diff lists a retired component's `_preview/<Name>.css` among the delete paths, but this shape never emits per-preview CSS (component styling is runtime-injected), so those entries are always absent remotely. A `delete_files` call reporting fewer deletions than paths sent is expected here; re-send without the missing entries only if the call actually errors.
 - Fetch the remote design anchor immediately before an upload. An exported `_ds_sync.json` is only a local fallback for diff and validation; it does not prove that the remote anchor is current. On 2026-09-17 the checked-in `.cache/remote-sync.json` described 28 components while the live project held 36.
 - `conventions.md` is uploaded as the README header and is the design agent's primary rulebook, so every name it uses must exist in the built artifacts. Re-validate the component names, bundle exports, `theme.effects.*` helpers, palette roles, typography variants, shell dimensions, and `--dipsy-*` properties against `ds-bundle/` and `src/theme/generated/static-tokens.css` whenever the theme or the surface changes.
+
+## Pleasure Pass font inputs
+
+Space Grotesk Variable is bundled through `extraFonts` alongside Inter. Numeric `kpi` and `metric` roles use it; prose remains Inter. Both CSS-only font dependencies are excluded from knip dependency discovery and checked explicitly by the font integration tests and browser captures.

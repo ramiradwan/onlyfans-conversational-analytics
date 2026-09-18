@@ -9,7 +9,8 @@
   "tsconfig": ".design-sync/tsconfig.json",
   "cssEntry": ".design-sync/styles.css",
   "extraFonts": [
-    "node_modules/@fontsource-variable/inter/opsz.css"
+    "node_modules/@fontsource-variable/inter/opsz.css",
+    "node_modules/@fontsource-variable/space-grotesk/wght.css"
   ],
   "readmeHeader": ".design-sync/conventions.md",
   "componentSrcMap": {

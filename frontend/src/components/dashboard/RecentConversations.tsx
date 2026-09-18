@@ -105,9 +105,9 @@ export function RecentConversations({
                   <Box
                     component="span"
                     sx={{
-                      bgcolor: 'primary.main',
+                      bgcolor: 'measurement.main',
                       borderRadius: 999,
-                      color: 'primary.contrastText',
+                      color: 'measurement.contrastText',
                       fontSize: '0.75rem',
                       fontVariantNumeric: 'tabular-nums',
                       fontWeight: 600,

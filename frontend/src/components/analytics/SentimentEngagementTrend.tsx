@@ -227,11 +227,6 @@ function markerSymbol(polarity: Polarity): string {
   return '×';
 }
 
-/** A translucent wash of `color` for the area under the line, via color-mix. */
-function wash(color: string): string {
-  return `color-mix(in oklch, ${color} 9%, transparent)`;
-}
-
 export interface SentimentEngagementTrendProps {
   sentiment: readonly AnalyticsTrendPoint[];
   engagement?: readonly AnalyticsTrendPoint[];
@@ -267,10 +262,15 @@ export function SentimentEngagementTrend({
       >
         <Legend aria-label={engagement?.length ? 'Chart legend' : 'Series label'}>
           <LegendItem>
-            <LegendLine $color={theme.vars.palette.chart.sentiment} aria-hidden="true" />
-            <Typography variant="caption">
-              Latest tone: {sentimentLabel(latestSentiment.value)} {formatSentimentScore(latestSentiment.value)}
-            </Typography>
+            {latestEngagement && <LegendLine $color={theme.vars.palette.chart.sentiment} aria-hidden="true" />}
+            <Box data-visual="latest-tone">
+              <Typography component="span" variant="body2" sx={{ color: 'text.secondary' }}>
+                Latest tone: {sentimentLabel(latestSentiment.value)}{' '}
+              </Typography>
+              <Typography component="span" variant="kpi" sx={{ color: 'measurement.main', display: 'block' }}>
+                {formatSentimentScore(latestSentiment.value)}
+              </Typography>
+            </Box>
           </LegendItem>
           {latestEngagement && (
             <LegendItem>
@@ -340,7 +340,7 @@ export function SentimentEngagementTrend({
                 strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
               />
-              <path d={areaPath(sentiment)} fill={wash(theme.vars.palette.chart.sentiment)} />
+              <path d={areaPath(sentiment)} fill={theme.vars.palette.chart.area} />
               <path
                 d={linePath(sentiment)}
                 fill="none"

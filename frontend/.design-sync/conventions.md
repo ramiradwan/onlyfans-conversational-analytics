@@ -51,7 +51,7 @@ This is a MUI v9 theme/prop system, not a utility-class library. Compose the bun
 - Primitives: take `Alert`, `Box`, `Button`, `Card`, `CardContent`, `Chip`, `Divider`, `Grid`, `IconButton`, `Link`, `Paper`, `Skeleton`, `Stack`, `TextField`, `Tooltip`, and `Typography` from `window.BridgeDesignSystem`. A separate MUI copy does not see the bundled theme and renders with stock MUI styles.
 
 - Surfaces: content and workspace backgrounds use `background.default`; cards, drawers, and panels use `background.paper`. Content surfaces stay opaque. `theme.effects.glassmorphism(theme)` is for navigation and app-bar chrome only. `theme.effects.ambientGlow(theme)` is for setup, empty, and success moments only.
-- Cards: the theme already styles MUI cards; use `Panel` or `theme.effects.cardBorder(theme)` for custom panels and `theme.effects.chartFrame(theme)` for chart frames.
+- Cards: `Panel` accepts `dominant`, `secondary` and `quiet` emphasis. Use one dominant surface per screen. The theme already styles MUI cards; use `Panel` or `theme.effects.cardBorder(theme)` for custom panels and `theme.effects.chartFrame(theme)` for chart frames.
 - Radius shows hierarchy: surface radius for page-level surfaces, control radius for buttons, inputs, and menus, compact radius for small inline objects, and pill shapes only for status.
 - Text: use `text.primary`, `text.secondary`, and `text.disabled`. Keep normal-size text in `text.*` roles unless contrast is verified; use other intent colors only for their declared meaning.
 - Color roles: `primary` and `secondary` adapt action intents; use `measurement` for measured values and `sentiment` for polarity. Feedback keeps `success`, `warning`, `error`, and `info`. `accent` and `calm` are compatibility names, not choices for new components. See the [intent contract guide](../src/theme/README.md).
@@ -61,7 +61,7 @@ This is a MUI v9 theme/prop system, not a utility-class library. Compose the bun
 - Conversation UI: use `theme.vars.palette.communication.incomingSurface`, `incomingBorder`, `outgoingSurface`, and `outgoingBorder`.
 - Analytics: use `theme.vars.palette.chart.categorical1` through `categorical8` in fixed order for identity, and `positive`, `neutral`, `negative`, and `unknown` for sentiment. Keep chart labels in text colors, keep legends for multiple series, and provide a table equivalent.
 - Layout: use `theme.spacing(n)`, responsive `sx`, and theme breakpoints. The shell uses `componentTokens.shell` (64 px desktop rail, 264 px mobile drawer, 72 px header, 1320 px dashboard maximum).
-- Typography: use MUI variants (`h4`, `h5`, `h6`, `subtitle1`, `subtitle2`, `body1`, `body2`, `caption`). Inter ships with the design system.
+- Typography: use MUI variants (`h4`, `h5`, `h6`, `subtitle1`, `subtitle2`, `body1`, `body2`, `caption`). Inter ships for prose; locally bundled Space Grotesk is used only by `kpi` and `metric`.
 - Motion: 120 ms for control feedback, 200 ms for UI transitions, and 320 ms for movement across the layout. Animate transform and opacity only, and keep visible focus treatment.
 
 ## Extension popup and setup page

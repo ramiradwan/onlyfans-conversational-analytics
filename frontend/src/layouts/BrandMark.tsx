@@ -44,9 +44,9 @@ export function BrandMark() {
         data-visual="brand-tile"
         sx={(theme) => ({
           alignItems: 'center',
-          background: `linear-gradient(140deg, ${theme.vars.palette.primary.light}, ${theme.vars.palette.primary.main})`,
+          background: `linear-gradient(140deg, ${theme.vars.palette.brand.light}, ${theme.vars.palette.brand.main})`,
           borderRadius: `${layoutTokens.radius.compact}px`,
-          color: theme.vars.palette.primary.contrastText,
+          color: theme.vars.palette.brand.contrastText,
           display: 'flex',
           flex: '0 0 auto',
           height: BRAND_MARK_SIZE,

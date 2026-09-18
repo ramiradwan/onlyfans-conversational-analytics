@@ -39,3 +39,13 @@ npm run check:unused
 The generator checks token-reference provenance, policy shape, gamut, required contrast pairs and reserved consumer references. Component tests and browser captures still verify labels, interaction, focus, reduced motion and the rendered result; metadata is not an accessibility certificate.
 
 `tests/fixtures/theme-appearance-baseline.json` pins the legacy exports and static declarations from `4510a838a125744bb8dadaff977f7239791da663`. Change it only with a separately reviewed visual change. Do not refresh it to make an unintended difference pass.
+
+## Pleasure Pass foundations
+
+Warm neutrals and jade now carry surfaces, measurements and primary actions. Light and dark values are authored independently. The `brand` intent preserves the existing violet mark separately from actions.
+
+Space Grotesk is bundled locally for `kpi` and `metric`. Inter remains the face for prose, headings and labels. Design previews load both local font packages.
+
+Use `Panel` emphasis to distinguish the one dominant surface from secondary content and quiet rows. Status styling preserves labels, feedback meanings and live announcements. This phase adds no revenue display, first-insights ceremony or readiness transition.
+
+The historical appearance fixture is unchanged. Compatibility checks retain its brand, layout, shape, static prose and motion constraints. Palette, effects and numeric typography are deliberate changes covered by Pleasure Pass tests and browser captures.
