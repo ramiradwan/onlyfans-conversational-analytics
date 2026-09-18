@@ -9,6 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright';
 
+import { captureStaticSurfaces } from './static-surfaces.mjs';
+
 import { captureReviewChecks } from './review-contracts.mjs';
 import { assertNumericTypography } from './appearance-contracts.mjs';
 import { captureVisionDiagnostics } from './vision-diagnostics.mjs';
@@ -251,7 +253,7 @@ async function assertMetricHierarchy(page) {
 }
 
 async function assertBrandMarkIfPresent(page) {
-  const tile = page.locator('[data-visual="brand-tile"]').first();
+  const tile = page.locator('[data-visual="brand-tile"]').filter({ visible: true }).first();
   if (await tile.count() === 0) return;
   const box = await tile.boundingBox();
   if (!box || Math.abs(box.width - 32) > 1 || Math.abs(box.height - 32) > 1) {
@@ -408,13 +410,16 @@ async function capture() {
     }
     review = await captureReviewChecks(browser, base, outDir);
     failures.push(...review.failures);
+    const staticReport = await captureStaticSurfaces(browser, outDir);
+    failures.push(...staticReport.failures);
+    review.static = { file: 'static-surfaces/acceptance.json', passed: staticReport.checks.length, screenshots: staticReport.entries.length, failures: staticReport.failures.length };
   } finally {
     await browser.close();
     vite.kill();
   }
   await writeFile(
     join(outDir, 'manifest.json'),
-    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, diagnostics, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
+    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, diagnostics, static: review?.static ?? null, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
   );
   if (failures.length) {
     console.error(`${failures.length} screen(s) did not reach their ready state:\n${failures.join('\n')}`);

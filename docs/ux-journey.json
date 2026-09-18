@@ -84,7 +84,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "Preview remains independent of the desktop app" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "preview" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "preview" }
       ]
     },
     {
@@ -97,7 +97,7 @@
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "paused analytics offer resume only when no review is pending" },
         { "kind": "browser", "file": "tools/e2e-capture/tests/standalone-preview.spec.mjs", "name": "pause unregisters capture and subsequent reads do not increase metrics" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "paused" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "paused" }
       ]
     },
     {
@@ -109,7 +109,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "first Full attempt explains that the desktop app is required" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "desktop_needed" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "desktop_needed" }
       ]
     },
     {
@@ -121,7 +121,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "running desktop app with no usable creator context explains setup is incomplete" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "setup_incomplete" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "setup_incomplete" }
       ]
     },
     {
@@ -133,7 +133,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "running desktop app advances an unpaired user to pairing" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_required" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_required" }
       ]
     },
     {
@@ -153,9 +153,9 @@
         { "kind": "unit", "file": "frontend/tests/CompanionPairingControls.test.tsx", "name": "requires explicit code comparison before versioned confirmation without exposing the identity thumbprint" },
         { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "closing the pairing window cancels pairing" },
         { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "a confirmed pairing closes its window and the popup shows the connected state" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_compare" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_window_compare" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_window_connected" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_compare" },
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_window_compare" },
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_window_connected" }
       ]
     },
     {
@@ -170,8 +170,8 @@
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "pairing before the desktop app is ready names the desktop step first" },
         { "kind": "unit", "file": "extension/tests/companion-client.test.mjs", "name": "a refusal before any offer reports that the desktop app is not ready for pairing" },
         { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "pairing before the desktop app is ready shows the desktop step and then the code" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_not_ready" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_window_not_ready" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_not_ready" },
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_window_not_ready" }
       ]
     },
     {
@@ -184,7 +184,7 @@
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "pairing failure has a concrete retry path" },
         { "kind": "unit", "file": "extension/tests/companion-client.test.mjs", "name": "a refusal before any offer reports that the desktop app is not ready for pairing" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "pairing_failed" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_failed" }
       ]
     },
     {
@@ -208,7 +208,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "returning paired user gets a stopped-app recovery state" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "desktop_stopped" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "desktop_stopped" }
       ]
     },
     {
@@ -223,7 +223,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "authenticated local transport alone enters activation checking, never Full-ready" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "activation_checking" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "activation_checking" }
       ]
     },
     {
@@ -236,7 +236,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "commercial activation required routes the customer to desktop activation without protocol fields" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "activation_required" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "activation_required" }
       ]
     },
     {
@@ -248,7 +248,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "commercial authority failure is distinct and recoverable" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "activation_unavailable" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "activation_unavailable" }
       ]
     },
     {
@@ -260,7 +260,7 @@
       ],
       "evidence": [
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "commercial authority alone renders activation active but not Full-ready" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "activation_active_analysis_blocked" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "activation_active_analysis_blocked" }
       ]
     },
     {
@@ -275,7 +275,7 @@
         { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "Full is ready only after secure delivery, commercial authority, and analysis admission" },
         { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "connection details are restored after opening the desktop app closes the popup" },
         { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "a confirmed pairing closes its window and the popup shows the connected state" },
-        { "kind": "visual", "file": "extension/qualification/customer-journey-visual.spec.mjs", "name": "full_ready" }
+        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "full_ready" }
       ]
     },
     {

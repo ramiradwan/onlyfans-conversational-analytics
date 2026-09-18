@@ -211,6 +211,9 @@ export async function captureReviewChecks(browser, base, outDir) {
           }
           assert(await setup.evaluate(n => n.matches(':focus-visible')), 'setup is not keyboard focusable');
           await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+          // Measure after the keyboard event has reached MUI's painted focus state.
+          await page.waitForFunction(node => node.matches(':focus-visible') && getComputedStyle(node).outlineWidth === '2px',
+            await setup.elementHandle(), { timeout: 3000 });
           near(parseFloat((await appearance(setup)).outlineWidth), 2, 'setup keyboard focus ring');
           await page.screenshot({ path: join(directory, `passkey-layout-${mode}-${viewport.width}.png`), animations: 'disabled' });
           const keyBoxes = () => Promise.all([cardLocator, page.locator('[data-visual="passkey-lock"]'), page.getByRole('heading', { level: 1 }),
