@@ -14,7 +14,8 @@ test('visual state copy matches the popup sources', async () => {
   for (const state of Object.values(STATES)) {
     for (const key of ['mode', 'badge', 'title', 'body', 'primary', 'secondary', 'activation', 'analysis']) {
       if (state[key] === undefined) continue;
-      const literals = [`'${state[key]}'`, `>${state[key]}<`];
+      const quoted = String(state[key]).replaceAll("'", "\\'");
+      const literals = [`'${quoted}'`, JSON.stringify(state[key]), `>${state[key]}<`];
       expect(literals.some((literal) => sources.includes(literal)), `${key}: ${state[key]}`).toBe(true);
     }
   }

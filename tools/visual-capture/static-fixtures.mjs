@@ -29,7 +29,10 @@ export async function staticFixtures() {
     const dom = new JSDOM(popupHtml);
     const doc = dom.window.document;
     applyPopupState(state, doc);
-    if (state.panel) doc.getElementById(state.panel).classList.remove('hidden');
+    if (state.panel) {
+      doc.getElementById(state.panel).classList.remove('hidden');
+      for (const id of ['journey-card', 'preview-metrics', 'history-prompt']) doc.getElementById(id).classList.add('hidden');
+    }
     if (state.fullReview) {
       doc.getElementById('preview-disclosure').classList.add('hidden');
       doc.getElementById('full-secondary').textContent = 'Keep Preview';
@@ -63,6 +66,8 @@ export async function staticFixtures() {
     ['invalid-code', 'registration_required'], ['link-unavailable', 'registration_required'],
     ['approval-unavailable', 'creator_approval_pending'], ['completed', null],
     ['recovery', 'recovery_required'],
+    ['approval-pending', 'creator_approval_pending'], ['approval-offline', 'creator_approval_pending'],
+    ['approval-unavailable-help', 'creator_approval_pending'],
   ];
   for (const [name, stage] of setupStates) {
     const linkAvailable = !name.includes('unavailable');
@@ -80,11 +85,16 @@ export async function staticFixtures() {
     };
     const controller = createProvisioningController({ document,
       elements: Object.fromEntries(elementIds.map(([, name, id]) => [name, document.getElementById(id)])),
-      fetch: async () => ({ ok: true, json: async () => payload }),
+      fetch: async (path) => path.endsWith('/acquire')
+        ? { ok: false, status: name === 'approval-offline' ? 503 : 409, json: async () => ({
+          reason: name === 'approval-offline' ? 'hosted_unavailable' : 'binding_acquisition_unavailable',
+        }) } : { ok: true, json: async () => payload },
       sendExtensionMessage: async () => ({ type: 'provisioning.identity.result', version: 1,
         authenticated_profile: { creator_account_id: 'fixture-account' } }),
     });
     await controller.start();
+    if (['approval-pending', 'approval-offline'].includes(name)) await controller.acquireAssociation();
+    if (name === 'approval-unavailable-help') document.querySelector('.recovery-help').open = true;
     if (name === 'invalid-code') {
       const field = document.getElementById('claim-package');
       field.value = 'invalid code'; field.textContent = field.value;

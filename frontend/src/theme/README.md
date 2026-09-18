@@ -66,6 +66,8 @@ The popup and setup page load local Latin Inter and Space Grotesk from the same 
 
 Run `npm run sync:static-tokens` after changing the font source or static roles. Do not edit the `static-fonts` or `static-font-preloads` blocks directly. The old font-stack variable remains compatible; the new UI and numeric variables include the bundled fallback faces.
 
-Static feedback fields use named, opaque colors. Healthy settled cards use paper with a labeled feedback dot. Hover, focus, disabled controls, dominant cards and quiet navigation retain separate meanings. Popup disclosures keep their wording and structure. Setup continues to use its existing controller and validation rules.
+Static feedback fields use named, opaque colors. Healthy settled cards use paper and state readiness once in the task heading. Hover, focus, disabled controls, dominant cards and quiet navigation retain separate meanings. Popup disclosures keep their wording and structure. Setup continues to use its existing controller and validation rules.
 
 The visual workflow includes `static-surfaces/acceptance.json` and fold/full screenshots. Setup fixtures are rendered by the existing controller with synthetic responses; they qualify presentation, not signed-grant authority. The checks verify actual rendered fonts, first-frame canvas color, layout shifts, keyboard focus, disclosure visibility and narrow overflow. They retain the limits in `stability-contracts.mjs`; Bridge's separate production-boot diagnostics remain unchanged.
+
+Operational copy names the current task once. Setup feedback appears beside the active control only after a check or failure. Completed steps stay compact. Recovery guidance names an existing route. Use periods, not semicolons. Protected disclosures retain their substance, structure and prominence. The only disclosure edit in this pass replaces a semicolon with a period.

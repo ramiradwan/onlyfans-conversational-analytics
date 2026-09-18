@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
+import { inspectTaskCopy } from './task-copy.mjs';
 import { assertStaticAccessibility } from './static-accessibility.mjs';
 import { staticFixtures } from './static-fixtures.mjs';
 import { CANVAS_DELTA, LAYOUT_SHIFT, colorDistance, grade, gradeLayoutShifts } from './stability-contracts.mjs';
@@ -97,7 +98,7 @@ async function inspect(page, fixture, width, session) {
       metrics.focus = focus;
       await control.blur();
     }
-    return { ...metrics, fonts };
+    return { ...metrics, fonts, task: await inspectTaskCopy(page, fixture) };
   } finally { await session.detach(); }
 }
 export async function captureStaticSurfaces(browser, outDir) {

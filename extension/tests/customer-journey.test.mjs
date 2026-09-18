@@ -28,7 +28,7 @@ test('Preview remains independent of the desktop app', () => {
     desktopRuntimeReachable: false,
   });
   assert.equal(result.id, CUSTOMER_STATES.PREVIEW_AVAILABLE);
-  assert.equal(result.primaryLabel, 'Activate Full analysis');
+  assert.equal(result.primaryLabel, 'Add Full analysis');
 });
 
 test('paused analytics offer resume only when no review is pending', () => {
@@ -61,7 +61,7 @@ test('first Full attempt explains that the desktop app is required', () => {
   });
   assert.equal(result.id, CUSTOMER_STATES.DESKTOP_APP_NEEDED);
   assert.equal(result.primaryLabel, 'Install desktop app');
-  assert.match(result.body, /Preview can still be used without it/);
+  assert.match(result.body, /Preview works without the desktop app/);
 });
 
 test('returning paired user gets a stopped-app recovery state', () => {
@@ -99,7 +99,7 @@ test('pairing progress explains comparison and never claims success early', () =
     status: status(), pairing: pairing('pairing'), desktopRuntimeReachable: true,
   });
   assert.equal(connecting.id, CUSTOMER_STATES.PAIRING_IN_PROGRESS);
-  assert.match(connecting.body, /secure connection/);
+  assert.match(connecting.body, /Keep this window open/);
 
   const compare = deriveCustomerJourney({
     status: status(), pairing: pairing('compare'), desktopRuntimeReachable: true,
@@ -152,7 +152,7 @@ test('commercial activation required routes the customer to desktop activation w
     analysisReadiness: readiness('required'),
   });
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_REQUIRED);
-  assert.equal(result.title, 'Full activation required');
+  assert.equal(result.title, 'Finish activating Full analysis');
   assert.equal(result.primaryAction, 'open_dashboard');
   assert.equal(result.primaryLabel, 'Open desktop app');
   assert.equal(result.secondaryAction, 'retry_readiness');
@@ -186,7 +186,7 @@ test('commercial authority alone renders activation active but not Full-ready', 
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_ACTIVE);
   assert.equal(result.title, 'Analysis is not available right now');
   assert.notEqual(result.id, CUSTOMER_STATES.FULL_READY);
-  assert.match(result.body, /analysis cannot run/);
+  assert.match(result.body, /Full analysis is activated/);
 });
 
 test('Full is ready only after secure delivery, commercial authority, and analysis admission', () => {
@@ -206,7 +206,7 @@ test('Full is ready only after secure delivery, commercial authority, and analys
   });
   assert.equal(ready.id, CUSTOMER_STATES.FULL_READY);
   assert.equal(ready.primaryLabel, 'Open analysis');
-  assert.equal(ready.title, 'Full analysis is ready');
+  assert.equal(ready.title, 'Your analysis is ready');
 });
 
 test('desktop runtime probe reports an opened loopback socket and closes it', async () => {

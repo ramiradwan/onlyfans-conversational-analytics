@@ -102,26 +102,23 @@ test('a clean installation registers, authenticates, and reaches its configured 
     await test.step('the pasted claim package registers the installation', async () => {
       await page.locator('#claim-package').fill(descriptor.claim_package);
       await page.locator('#claim-submit').click();
-      await expect(page.locator('#provisioning-status'))
-        .toHaveText('This computer is connected to secure setup. Confirm your signed-in creator account.');
+      await expect(page.locator('#identity-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#claim-step')).toHaveAttribute('data-state', 'completed');
     });
 
     await test.step('the detected creator account is confirmed and approved', async () => {
-      await expect(page.locator('#detected-identity')).toHaveText('Signed-in creator account detected');
+      await expect(page.locator('#confirm-identity')).toBeEnabled();
       await page.locator('#confirm-identity').click();
-      await expect(page.locator('#provisioning-status'))
-        .toContainText('Approval is still waiting for completion');
+      await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
       await page.locator('#acquire-association').click();
-      await expect(page.locator('#provisioning-status'))
-        .toHaveText('Creator account approved. Finish desktop setup.');
+      await expect(page.locator('#finalize-step')).toHaveAttribute('data-state', 'current');
     });
 
     let configuration = null;
     await test.step('finalization writes runtime configuration', async () => {
       await page.locator('#finalize-provisioning').click();
       await expect(page.locator('#provisioning-status'))
-        .toHaveText('Desktop setup is complete. The desktop app will restart; then return to the extension.');
+        .toHaveText('The desktop app will restart. Then return to the extension.');
       configuration = await readRuntimeConfiguration(
         path.join(dataDirectory, RUNTIME_CONFIGURATION_FILENAME),
       );

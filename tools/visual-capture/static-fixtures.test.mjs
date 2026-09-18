@@ -8,7 +8,7 @@ const fixtures = await staticFixtures();
 
 test('static capture covers the existing popup matrix, expanded disclosures, and all setup stages', () => {
   assert.equal(fixtures.filter((item) => item.surface === 'popup').length, 25);
-  assert.equal(fixtures.filter((item) => item.surface === 'provisioning').length, 9);
+  assert.equal(fixtures.filter((item) => item.surface === 'provisioning').length, 12);
   for (const fixture of fixtures) {
     const dom = new JSDOM(fixture.html);
     assert.equal(dom.window.document.querySelectorAll('script').length, 0);
@@ -27,6 +27,21 @@ test('setup fixtures use real controller outcomes rather than invented status co
     const dom = new JSDOM(fixtures.find((item) => item.surface === 'provisioning' && item.name === name).html);
     const steps = [...dom.window.document.querySelectorAll('[data-step]')];
     assert.equal(steps.findIndex((node) => node.dataset.state === 'current'), step);
+    dom.window.close();
+  }
+});
+
+test('approval feedback stays local and never implies approval from an attempted check', () => {
+  for (const name of ['approval-pending', 'approval-offline']) {
+    const dom = new JSDOM(fixtures.find((item) => item.name === name).html);
+    const document = dom.window.document;
+    const feedback = document.getElementById('provisioning-status');
+    assert.equal(feedback.closest('[aria-current="step"]').id, 'binding-step');
+    assert.equal(document.getElementById('finalize-provisioning').disabled, true);
+    assert.equal(document.getElementById('acquire-association').getAttribute('aria-describedby'), 'provisioning-status');
+    assert(feedback.textContent.trim().length > 0);
+    assert(!feedback.textContent.includes(';'));
+    assert.equal(feedback.dataset.tone, name === 'approval-offline' ? 'error' : 'neutral');
     dom.window.close();
   }
 });

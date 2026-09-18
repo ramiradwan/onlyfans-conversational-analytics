@@ -297,7 +297,6 @@ def test_served_shell_has_accessible_step_structure_and_inline_adaptive_theme() 
         "claim-package-help",
         "claim-package-validation",
         "claim-package-count",
-        "claim-action-help",
     }
     for control_id in (
         "claim-submit",

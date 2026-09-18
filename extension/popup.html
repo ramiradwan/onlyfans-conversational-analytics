@@ -30,9 +30,9 @@
       </header>
 
       <section id="journey-card" class="journey-card" data-tone="info" aria-labelledby="journey-title">
-        <p id="journey-badge" class="state-badge">Checking</p>
-        <h2 id="journey-title" tabindex="-1">Checking what you need next…</h2>
-        <p id="journey-body">This takes a moment.</p>
+        <p id="journey-badge" class="state-badge hidden" aria-hidden="true">Checking</p>
+        <h2 id="journey-title" tabindex="-1" aria-live="polite" aria-atomic="true">Checking status…</h2>
+        <p id="journey-body"></p>
         <div id="companion-pairing" class="pairing hidden">
           <p id="pairing-status" class="visually-hidden" role="status" aria-live="polite">Connect the extension to the desktop app to continue Full setup.</p>
           <p id="pairing-code" class="pairing-code hidden" aria-label="Connection comparison code"></p>
@@ -51,10 +51,9 @@
       </div>
 
       <section id="legal-unavailable" class="warning hidden">
-        <h2>Activation is not configured for this build</h2>
+        <h2>Activation is unavailable</h2>
         <p>
-          The required legal documents are not bound to this product revision, so new Preview or
-          Full setup cannot be completed from this build.
+          This app is missing the required legal documents.
         </p>
       </section>
 
@@ -137,7 +136,7 @@
               <li>
                 <strong>Other people’s information:</strong> messages can contain private or sensitive
                 information about people you communicate with. Enabling Full is your choice to
-                activate this Extension data handling; it is
+                activate this Extension data handling. It is
                 <strong>not consent on behalf of those people</strong>.
               </li>
             </ul>
@@ -169,7 +168,7 @@
 
       <section id="history-prompt" class="hidden" aria-labelledby="history-title">
         <h2 id="history-title">Include earlier conversations</h2>
-        <p>Analysis starts with new messages. Allow message history to add the conversations you already have.</p>
+        <p>Add your existing conversations to the analysis.</p>
         <button id="history" class="secondary" type="button">Allow message history</button>
       </section>
 
@@ -212,7 +211,7 @@
 
       <footer>
         <span>Use only with a creator account you are authorized to analyze.</span>
-        <span>Independent software; not affiliated with or endorsed by OnlyFans.</span>
+        <span>Independent software. It is not affiliated with or endorsed by OnlyFans.</span>
         <a id="privacy-link" href="#" aria-disabled="true">Privacy information unavailable</a>
       </footer>
     </main>

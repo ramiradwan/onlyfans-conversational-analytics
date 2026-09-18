@@ -110,7 +110,11 @@ function closeView(view) {
 // Focuses the journey card, which shows the outcome of an action.
 function returnHome() {
   showView('home');
-  elements['journey-title'].focus();
+  const target = isShown(elements['pre-mode']) ? document.getElementById('activation-title')
+    : isShown(elements['mode-choice']) ? document.getElementById('mode-choice-title')
+      : elements['journey-title'];
+  target.setAttribute('tabindex', '-1');
+  target.focus();
 }
 
 function setLocked(element, locked) {
@@ -211,6 +215,13 @@ function renderJourney() {
   elements['journey-badge'].textContent = journeyBadge(journey.id);
   elements['journey-title'].textContent = journey.title;
   elements['journey-body'].textContent = journey.body;
+  show(elements['journey-body'], Boolean(journey.body));
+  // The required review owns this screen. Do not repeat its task in another card.
+  const reviewing = ['pre-mode', 'mode-choice', 'legal-unavailable'].some((id) => isShown(elements[id]));
+  show(elements['journey-card'], isPairingWindow || !reviewing);
+  show(elements['preview-metrics'], !reviewing && (currentStatus.consent.mode === 'preview'
+    || (currentStatus.consent.mode === 'paused' && currentStatus.consent.resume_mode === 'preview')));
+  show(elements['history-prompt'], !reviewing && currentStatus.phase === 'full' && currentStatus.history_permission === false);
   // The pairing controls inside the card own pair and cancel, so the journey buttons do not repeat them.
   const pairingShown = isShown(elements['companion-pairing']);
   const pairOwned = journey.primaryAction === 'pair' && pairingShown && isShown(elements['pair-companion']);
@@ -473,7 +484,7 @@ async function chooseMode(mode) {
     renderLegal(legalStatus);
     if (mode === 'full' && result.status.phase === 'identity') {
       await probeDesktop();
-      elements.feedback.textContent = 'Full setup started. Follow the next step above.';
+      elements.feedback.textContent = ''; // The journey card already describes the next task.
       elements['journey-card'].scrollIntoView({ block: 'nearest' });
     }
   } catch (error) {
@@ -532,7 +543,7 @@ async function runJourneyAction(action) {
   if (action === 'install_desktop') {
     const download = secureExternalUrl(companionConfig.desktop_app_download_url);
     if (download === null) {
-      elements.feedback.textContent = 'The desktop app download is not configured in this build.';
+      elements.feedback.textContent = 'The desktop app download is unavailable.';
       return;
     }
     await chrome.tabs.create({ url: download });

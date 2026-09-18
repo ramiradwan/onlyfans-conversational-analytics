@@ -38,10 +38,10 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.PAUSED,
       tone: 'info',
-      title: 'Analytics are paused',
+      title: 'Analytics paused',
       body: resumeAvailable
-        ? 'Nothing new is collected while paused. Resume whenever you are ready.'
-        : 'Nothing new is collected while paused. Review the updated information below to continue.',
+        ? 'No new activity is collected.'
+        : 'No new activity is collected. Review the updated information to resume.',
       primaryAction: resumeAvailable ? 'resume' : null,
       primaryLabel: resumeAvailable ? 'Resume analytics' : null,
       secondaryAction: null,
@@ -56,10 +56,10 @@ export function deriveCustomerJourney({
       tone: 'info',
       title: preview ? 'Preview is ready' : 'Start with Preview',
       body: preview
-        ? 'Your activity counts update as you use OnlyFans. For insights from your conversations, add Full analysis.'
-        : 'Preview counts messages and chats in this browser for seven days, without keeping message text. You can add Full analysis later.',
+        ? 'Add Full analysis for insights from your conversations.'
+        : 'Count activity in this browser without keeping message text.',
       primaryAction: preview ? 'review_full' : null,
-      primaryLabel: preview ? 'Activate Full analysis' : null,
+      primaryLabel: preview ? 'Add Full analysis' : null,
       secondaryAction: null,
       secondaryLabel: null,
     });
@@ -72,7 +72,7 @@ export function deriveCustomerJourney({
       title: pairing.state === 'compare' ? 'Confirm the connection' : 'Connecting to the desktop app',
       body: pairing.state === 'compare'
         ? 'Compare the six-digit code here with the code in the desktop app. Confirm only when both codes match.'
-        : 'Keep this window open while the extension and desktop app create a secure connection.',
+        : 'Keep this window open.',
       primaryAction: null,
       primaryLabel: null,
       secondaryAction: 'cancel_pairing',
@@ -85,7 +85,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.PAIRING_FAILED,
       tone: 'error',
       title: 'Connection was not completed',
-      body: 'In the desktop app, choose Connect extension again. Then try again here. Nothing is shared until the connection works.',
+      body: 'In the desktop app, choose Connect extension and try again.',
       primaryAction: 'pair',
       primaryLabel: 'Try connection again',
       secondaryAction: null,
@@ -111,8 +111,8 @@ export function deriveCustomerJourney({
       tone: 'warning',
       title: 'Desktop app needed for Full analysis',
       body: desktopDownloadAvailable
-        ? 'Full analysis runs in the desktop app on this computer. Preview can still be used without it.'
-        : 'The desktop app download is not available yet. You can keep using Preview in the meantime.',
+        ? 'Full analysis runs on this computer. Preview works without the desktop app.'
+        : 'The download is unavailable. You can still use Preview.',
       primaryAction: desktopDownloadAvailable ? 'install_desktop' : null,
       primaryLabel: desktopDownloadAvailable ? 'Install desktop app' : null,
       secondaryAction: null,
@@ -125,7 +125,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.PAIRING_NOT_READY,
       tone: 'warning',
       title: 'Continue in the desktop app',
-      body: 'Open Settings in the desktop app and choose Connect extension. Then choose Pair device here.',
+      body: 'In the desktop app, open Settings and choose Connect extension.',
       primaryAction: 'open_desktop_settings',
       primaryLabel: 'Open desktop app settings',
       secondaryAction: 'pair',
@@ -137,8 +137,8 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.SETUP_INCOMPLETE,
       tone: 'warning',
-      title: 'Open your creator account to continue',
-      body: 'Open OnlyFans and sign in to the creator account you want to analyze. Then return here to connect the extension.',
+      title: 'Sign in to your creator account',
+      body: 'Use OnlyFans in this browser, then return here.',
       primaryAction: 'open_creator_account',
       primaryLabel: 'Open creator account',
       secondaryAction: 'open_dashboard',
@@ -150,8 +150,8 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.PAIRING_REQUIRED,
       tone: 'info',
-      title: 'Connect this extension to the desktop app',
-      body: 'The desktop app is running. Pair it with this extension to start Full analysis.',
+      title: 'Connect to the desktop app',
+      body: 'Connect to view insights from your conversations.',
       primaryAction: 'pair',
       primaryLabel: 'Pair device',
       secondaryAction: 'open_dashboard',
@@ -164,7 +164,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.FULL_UNAVAILABLE,
       tone: 'progress',
       title: 'Finishing the desktop connection',
-      body: 'Paired. The extension is finishing its secure connection to the desktop app.',
+      body: '',
       primaryAction: 'retry_full',
       primaryLabel: 'Retry connection',
       secondaryAction: 'open_dashboard',
@@ -177,7 +177,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.ACTIVATION_CHECKING,
       tone: 'progress',
       title: 'Checking activation',
-      body: 'Checking whether Full analysis is active in the desktop app.',
+      body: '',
       primaryAction: null,
       primaryLabel: null,
       secondaryAction: null,
@@ -189,8 +189,8 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.ACTIVATION_REQUIRED,
       tone: 'warning',
-      title: 'Full activation required',
-      body: 'To see insights from your conversations, finish activation in Settings in the desktop app.',
+      title: 'Finish activating Full analysis',
+      body: 'Continue in Settings in the desktop app.',
       primaryAction: 'open_dashboard',
       primaryLabel: 'Open desktop app',
       secondaryAction: 'retry_readiness',
@@ -202,8 +202,8 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.ACTIVATION_UNAVAILABLE,
       tone: 'error',
-      title: 'Full activation needs attention',
-      body: 'Activation could not be confirmed right now. Check again in a moment; your saved data is not affected.',
+      title: 'Couldn\'t check activation',
+      body: 'Your saved data is unchanged.',
       primaryAction: 'retry_readiness',
       primaryLabel: 'Check again',
       secondaryAction: 'open_dashboard',
@@ -218,8 +218,8 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.FULL_READY,
       tone: 'success',
-      title: 'Full analysis is ready',
-      body: 'Everything is connected. Your insights are in the desktop app.',
+      title: 'Your analysis is ready',
+      body: '',
       primaryAction: 'open_dashboard',
       primaryLabel: 'Open analysis',
       secondaryAction: null,
@@ -235,7 +235,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.ACTIVATION_ACTIVE,
       tone: 'warning',
       title: 'Analysis is not available right now',
-      body: 'Full activation is active, but analysis cannot run at the moment. Check again shortly; your saved data is not affected.',
+      body: 'Full analysis is activated. Your saved data is unchanged.',
       primaryAction: 'retry_readiness',
       primaryLabel: 'Check again',
       secondaryAction: 'open_dashboard',
@@ -247,7 +247,7 @@ export function deriveCustomerJourney({
     id: CUSTOMER_STATES.FULL_UNAVAILABLE,
     tone: 'warning',
     title: 'Full analysis is temporarily unavailable',
-    body: 'Check again, or open the desktop app to see what needs attention.',
+    body: 'Open the desktop app to see what needs attention.',
     primaryAction: 'retry_readiness',
     primaryLabel: 'Check again',
     secondaryAction: 'open_dashboard',

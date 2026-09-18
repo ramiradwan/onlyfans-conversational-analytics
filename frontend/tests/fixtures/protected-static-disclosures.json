@@ -1,0 +1,20 @@
+{
+  "source": "b9b36a1a350acf00d88435f6b931e8d2d5368600",
+  "blocks": {
+    "pre-mode": {
+      "start": "      <section id=\"pre-mode\"",
+      "end": "      <section id=\"mode-choice\"",
+      "sha256": "d7e146aa9101922c9a6a6e9bca544b910be5ae94ea4e86bdca4e09fe923d09e7"
+    },
+    "preview-disclosure": {
+      "start": "        <div id=\"preview-disclosure\"",
+      "end": "        <div id=\"full-disclosure\"",
+      "sha256": "4fe7bbed84f5c7c10d8584acf4b77edaac52886beccd361e60bc7052e45dfc80"
+    },
+    "full-disclosure": {
+      "start": "        <div id=\"full-disclosure\"",
+      "end": "      <section id=\"preview-metrics\"",
+      "sha256": "b3a774a40934ff63b48b89deca344c0978d458c7aea45955bbc977935bd424fb"
+    }
+  }
+}

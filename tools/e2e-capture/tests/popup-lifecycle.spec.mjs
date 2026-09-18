@@ -390,7 +390,7 @@ test('connection details are restored after opening the desktop app closes the p
   try {
     await browser.set({ mode: 'full', paired: true });
     const popup = await browser.openToolbarPopup();
-    await expect.poll(() => popup.text('#journey-title')).toBe('Full analysis is ready');
+    await expect.poll(() => popup.text('#journey-title')).toBe('Your analysis is ready');
     await popup.click('#open-connection');
     await expect.poll(() => popup.view()).toBe('connection');
     await popup.click('#open-dashboard');
@@ -435,7 +435,7 @@ test('pairing before the desktop app is ready shows the desktop step and then th
   try {
     await browser.set({ mode: 'full', paired: false });
     const popup = await browser.openToolbarPopup();
-    await expect.poll(() => popup.text('#journey-title')).toBe('Connect this extension to the desktop app');
+    await expect.poll(() => popup.text('#journey-title')).toBe('Connect to the desktop app');
     const pairing = await pairingWindowFrom(browser, popup, '#pair-companion');
 
     await expect(pairing.locator('#journey-title')).toHaveText('Continue in the desktop app');
@@ -474,7 +474,7 @@ test('closing the pairing window cancels pairing', async () => {
     await browser.set({ mode: 'full', paired: false });
     desktop.pairingWindowOpen = true;
     const popup = await browser.openToolbarPopup();
-    await expect.poll(() => popup.text('#journey-title')).toBe('Connect this extension to the desktop app');
+    await expect.poll(() => popup.text('#journey-title')).toBe('Connect to the desktop app');
     const pairing = await pairingWindowFrom(browser, popup, '#pair-companion');
     await expect(pairing.locator('#pairing-code')).toHaveText('483 217');
     expect((await browser.state()).cancelled).toBe(0);
@@ -486,7 +486,7 @@ test('closing the pairing window cancels pairing', async () => {
 
     await popup.close();
     const reopened = await browser.openToolbarPopup();
-    await expect.poll(() => reopened.text('#journey-title')).toBe('Connect this extension to the desktop app');
+    await expect.poll(() => reopened.text('#journey-title')).toBe('Connect to the desktop app');
     expect(await reopened.visible('#pairing-code')).toBe(false);
   } finally {
     await browser.close();
@@ -500,7 +500,7 @@ test('a confirmed pairing closes its window and the popup shows the connected st
     await browser.set({ mode: 'full', paired: false });
     desktop.pairingWindowOpen = true;
     const popup = await browser.openToolbarPopup();
-    await expect.poll(() => popup.text('#journey-title')).toBe('Connect this extension to the desktop app');
+    await expect.poll(() => popup.text('#journey-title')).toBe('Connect to the desktop app');
     const pairing = await pairingWindowFrom(browser, popup, '#pair-companion');
     await expect(pairing.locator('#pairing-code')).toHaveText('483 217');
     await popup.close();
@@ -511,7 +511,7 @@ test('a confirmed pairing closes its window and the popup shows the connected st
     expect((await browser.state())).toMatchObject({ paired: true, cancelled: 0 });
 
     const reopened = await browser.openToolbarPopup();
-    await expect.poll(() => reopened.text('#journey-title')).toBe('Full analysis is ready');
+    await expect.poll(() => reopened.text('#journey-title')).toBe('Your analysis is ready');
     expect(await reopened.visible('#pair-companion')).toBe(false);
   } finally {
     await browser.close();

@@ -64,19 +64,19 @@ test('first-run setup preserves authoritative creator approval across return and
       await expect(page.locator('#claim-step')).toHaveAttribute('data-state', 'completed');
       await expect(page.locator('#identity-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#claim-submit')).toBeDisabled();
-      await expect(page.locator('#detected-identity')).toHaveText('Signed-in creator account detected');
+      await expect(page.locator('#confirm-identity')).toBeEnabled();
     });
 
     await test.step('creator confirmation resumes at pending approval without exposing coordinates', async () => {
       await page.locator('#confirm-identity').click();
-      await expect(page.locator('#provisioning-status')).toContainText('Approval is still waiting for completion');
+      await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.locator('#identity-step')).toHaveAttribute('data-state', 'completed');
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#continue-creator-approval')).toBeVisible();
       await expect(page.locator('#continue-creator-approval')).toHaveAttribute('href', descriptor.hosted_onboarding_url);
       await expect(page.locator('#acquire-association')).toBeEnabled();
-      await expect(page.locator('#detected-identity')).toHaveText('Creator account already confirmed');
+      await expect(page.locator('#identity-step .step-state')).toHaveText('Done');
       await expect(page.locator('body')).not.toContainText(descriptor.creator_account_id);
       await expect(page.locator('body')).not.toContainText(descriptor.installation_id);
       await expect(page.locator('body')).not.toContainText(descriptor.organization_id);
@@ -95,7 +95,8 @@ test('first-run setup preserves authoritative creator approval across return and
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#finalize-step')).toHaveAttribute('data-state', 'locked');
       await expect(page.locator('#finalize-provisioning')).toBeDisabled();
-      await expect(page.locator('#provisioning-status')).toContainText('Approval is still waiting for completion');
+      await expect(page.locator('#provisioning-status')).toHaveText('');
+      await expect(page.locator('#binding-step-description')).toBeVisible();
     });
 
     await test.step('pending approval survives browser restart through a fresh secure handoff', async () => {
@@ -114,7 +115,7 @@ test('first-run setup preserves authoritative creator approval across return and
 
     await test.step('authoritative approval acquisition advances durable state to finalization', async () => {
       await page.locator('#acquire-association').click();
-      await expect(page.locator('#provisioning-status')).toHaveText('Creator account approved. Finish desktop setup.');
+      await expect(page.locator('#finalize-step')).toHaveAttribute('data-state', 'current');
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'completed');
       await expect(page.locator('#continue-creator-approval')).not.toBeVisible();

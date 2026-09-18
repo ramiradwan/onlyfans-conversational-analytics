@@ -886,3 +886,7 @@ main:has(#mode-choice:not(.hidden)) #journey-primary:not(:disabled) {
   border-color: var(--dipsy-intent-surface-trust-border);
 }
 main:has(#mode-choice:not(.hidden)) #journey-primary:hover:not(:disabled) { background: var(--dipsy-color-hover); }
+
+/* The task heading carries home status once. Details keep their separate status readout. */
+main[data-view="home"] .status-line { display: none; }
+#journey-badge, #journey-body:empty { display: none; }
