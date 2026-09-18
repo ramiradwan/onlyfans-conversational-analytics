@@ -91,6 +91,7 @@ class WebAuthnAuthorityResult(str, Enum):
     CREDENTIAL_MISSING = "credential_missing"
     CREDENTIAL_REVOKED = "credential_revoked"
     CREDENTIAL_AMBIGUOUS = "credential_ambiguous"
+    CREDENTIAL_ALREADY_ENROLLED = "credential_already_enrolled"
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +263,19 @@ class WebAuthnAuthorityPort:
                 for grant_type in ACCOUNT_AUTHORITY_GRANT_TYPES
             )
             if not session:
+                active_credential = connection.execute(
+                    """
+                    SELECT 1 FROM webauthn_credentials
+                    WHERE external_issuer = ? AND external_subject = ?
+                        AND installation_id = ? AND revoked_at IS NULL
+                    LIMIT 1
+                    """,
+                    (external_issuer, external_subject, installation_id),
+                ).fetchone()
+                if active_credential is not None:
+                    return _authority_refusal(
+                        WebAuthnAuthorityResult.CREDENTIAL_ALREADY_ENROLLED
+                    )
                 return WebAuthnAuthorityDecision(
                     WebAuthnAuthorityResult.AUTHORIZED,
                     RegistrationAuthority(

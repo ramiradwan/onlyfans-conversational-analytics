@@ -844,6 +844,22 @@ class SQLiteAuthenticationStore:
         if credential.signature_count < 0:
             raise ValueError("signature_count must be non-negative")
         with self.database.transaction() as connection:
+            # The immediate transaction serializes competing registration finishes.
+            active_credential = connection.execute(
+                """
+                SELECT 1 FROM webauthn_credentials
+                WHERE external_issuer = ? AND external_subject = ?
+                    AND installation_id = ? AND revoked_at IS NULL
+                LIMIT 1
+                """,
+                (
+                    credential.external_issuer,
+                    credential.external_subject,
+                    credential.installation_id,
+                ),
+            ).fetchone()
+            if active_credential is not None:
+                raise AuthenticationStateError("An active WebAuthn credential already exists")
             connection.execute(
                 """
                 INSERT INTO webauthn_credentials (

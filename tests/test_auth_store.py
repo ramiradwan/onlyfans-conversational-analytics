@@ -941,3 +941,57 @@ def test_expiry_is_sampled_after_waiting_for_the_sqlite_write_lock(
         if blocker.in_transaction:
             blocker.rollback()
         blocker.close()
+
+
+def test_second_active_webauthn_credential_inserts_nothing(
+    store: SQLiteAuthenticationStore, instant: datetime,
+) -> None:
+    first = register_credential(store, instant)
+    before = store.build_runtime_policy()
+    with pytest.raises(AuthenticationStateError):
+        store.register_webauthn_credential(replace(first, credential_id="second", principal_id="different-local-principal"))
+    assert store.webauthn_credential(first.credential_id, principal_id=first.principal_id) == first
+    assert store.webauthn_credential("second", principal_id="different-local-principal") is None
+    assert store.build_runtime_policy() == before
+    with store.database.read() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM webauthn_credentials").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("field", ["external_issuer", "external_subject", "installation_id"])
+def test_distinct_webauthn_external_tuple_still_inserts(
+    store: SQLiteAuthenticationStore, instant: datetime, field: str,
+) -> None:
+    first = register_credential(store, instant)
+    other = replace(first, credential_id="second", **{field: "different-" + field})
+    store.register_webauthn_credential(other)
+    assert store.webauthn_credential(other.credential_id, principal_id=other.principal_id) == other
+
+
+def test_revoked_only_webauthn_tuple_can_register_again(
+    store: SQLiteAuthenticationStore, instant: datetime,
+) -> None:
+    first = register_credential(store, instant)
+    store.revoke(RevocationKey(RevocationScopeType.WEBAUTHN_CREDENTIAL, first.credential_id), reason="test revocation")
+    second = replace(first, credential_id="replacement")
+    store.register_webauthn_credential(second)
+    assert store.webauthn_credential(second.credential_id, principal_id=second.principal_id) == second
+
+
+def test_concurrent_webauthn_registration_has_one_winner(
+    store: SQLiteAuthenticationStore, instant: datetime,
+) -> None:
+    first = register_credential(store, instant)
+    store.revoke(RevocationKey(RevocationScopeType.WEBAUTHN_CREDENTIAL, first.credential_id), reason="test revocation")
+    peers = [SQLiteAuthenticationStore(store.database.path, clock=lambda: instant) for _ in range(2)]
+    ready = Barrier(2)
+    def register(index: int) -> str:
+        ready.wait(timeout=10)
+        try:
+            peers[index].register_webauthn_credential(replace(first, credential_id=f"concurrent-{index}"))
+        except AuthenticationStateError:
+            return "refused"
+        return "registered"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(register, range(2))) == ["refused", "registered"]
+    with store.database.read() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM webauthn_credentials WHERE revoked_at IS NULL").fetchone()[0] == 1

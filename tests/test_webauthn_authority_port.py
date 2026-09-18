@@ -93,6 +93,8 @@ def test_port_derives_registration_and_session_authority_from_verified_state(
     identity: AuthContext,
 ) -> None:
     references = record_required_grants(store)
+    port = WebAuthnAuthorityPort(store, clock=clock)
+    registration = port.registration_authority(store.build_runtime_policy(identity))
     store.register_webauthn_credential(
         WebAuthnCredential(
             credential_id=CREDENTIAL_ID,
@@ -106,9 +108,6 @@ def test_port_derives_registration_and_session_authority_from_verified_state(
         )
     )
     policy = store.build_runtime_policy(identity)
-    port = WebAuthnAuthorityPort(store, clock=clock)
-
-    registration = port.registration_authority(policy)
     session = port.session_authority(policy)
 
     assert registration.result is WebAuthnAuthorityResult.AUTHORIZED
@@ -576,3 +575,84 @@ def required_grant(
             membership_roles if grant_type == "membership_snapshot" else None
         ),
     )
+
+
+@pytest.mark.parametrize("with_identity", [False, True])
+def test_registration_refuses_active_credential_without_locking_login(
+    store: SQLiteAuthenticationStore,
+    clock: MutableClock,
+    identity: AuthContext,
+    with_identity: bool,
+) -> None:
+    record_required_grants(store)
+    port = WebAuthnAuthorityPort(store, clock=clock)
+    policy_identity = identity if with_identity else None
+    assert port.registration_authority(store.build_runtime_policy(policy_identity)).result is WebAuthnAuthorityResult.AUTHORIZED
+    assert port.session_authority(store.build_runtime_policy(policy_identity)).result is WebAuthnAuthorityResult.CREDENTIAL_MISSING
+    store.register_webauthn_credential(WebAuthnCredential(
+        credential_id=CREDENTIAL_ID, principal_id=PRINCIPAL_ID,
+        external_issuer=ISSUER, external_subject=SUBJECT,
+        installation_id=INSTALLATION_ID, public_key=b"synthetic-key",
+        signature_count=0, enrolled_at=INSTANT,
+    ))
+    decision = port.registration_authority(store.build_runtime_policy(policy_identity))
+    assert decision.result.value == "credential_already_enrolled"
+    assert decision.authority is None
+    assert port.session_authority(store.build_runtime_policy(policy_identity)).result is WebAuthnAuthorityResult.AUTHORIZED
+
+
+def test_registration_checks_external_tuple_not_local_principal(
+    store: SQLiteAuthenticationStore, clock: MutableClock, identity: AuthContext,
+) -> None:
+    record_required_grants(store)
+    store.register_webauthn_credential(WebAuthnCredential(
+        credential_id=CREDENTIAL_ID, principal_id="another-local-principal",
+        external_issuer=ISSUER, external_subject=SUBJECT,
+        installation_id=INSTALLATION_ID, public_key=b"synthetic-key",
+        signature_count=0, enrolled_at=INSTANT,
+    ))
+    decision = WebAuthnAuthorityPort(store, clock=clock).registration_authority(store.build_runtime_policy(identity))
+    assert decision.result.value == "credential_already_enrolled"
+    assert decision.authority is None
+
+
+@pytest.mark.parametrize("with_identity", [False, True])
+def test_registration_remains_authorized_with_only_revoked_credentials(
+    store: SQLiteAuthenticationStore, clock: MutableClock,
+    identity: AuthContext, with_identity: bool,
+) -> None:
+    record_required_grants(store)
+    store.register_webauthn_credential(WebAuthnCredential(
+        credential_id=CREDENTIAL_ID, principal_id=PRINCIPAL_ID,
+        external_issuer=ISSUER, external_subject=SUBJECT,
+        installation_id=INSTALLATION_ID, public_key=b"synthetic-key",
+        signature_count=0, enrolled_at=INSTANT,
+    ))
+    store.revoke(RevocationKey(RevocationScopeType.WEBAUTHN_CREDENTIAL, CREDENTIAL_ID), reason="test revocation")
+    decision = WebAuthnAuthorityPort(store, clock=clock).registration_authority(
+        store.build_runtime_policy(identity if with_identity else None)
+    )
+    assert decision.result is WebAuthnAuthorityResult.AUTHORIZED
+    assert isinstance(decision.authority, RegistrationAuthority)
+
+
+def test_existing_duplicate_credentials_open_without_migration_or_recovery(
+    store: SQLiteAuthenticationStore, clock: MutableClock, identity: AuthContext,
+) -> None:
+    record_required_grants(store)
+    # Reproduce a legacy installation rather than bypassing the new insert API in production.
+    with store.database.transaction() as connection:
+        for credential_id in ("legacy-first", "legacy-second"):
+            connection.execute(
+                """INSERT INTO webauthn_credentials
+                (credential_id, principal_id, external_issuer, external_subject,
+                 installation_id, public_key, signature_count, enrolled_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (credential_id, PRINCIPAL_ID, ISSUER, SUBJECT, INSTALLATION_ID,
+                 b"synthetic-key", 0, INSTANT.isoformat()),
+            )
+    reopened = SQLiteAuthenticationStore(store.database.path, clock=clock)
+    port = WebAuthnAuthorityPort(reopened, clock=clock)
+    for policy in (reopened.build_runtime_policy(), reopened.build_runtime_policy(identity)):
+        assert port.registration_authority(policy).result.value == "credential_already_enrolled"
+        assert port.session_authority(policy).result is WebAuthnAuthorityResult.CREDENTIAL_AMBIGUOUS

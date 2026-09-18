@@ -1,0 +1,33 @@
+name: Architecture impact
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  architecture-impact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout proposed Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+
+      - name: Check protected architecture impact declaration
+        run: >
+          python tools/check_boundary_declaration.py
+          --event-path "$GITHUB_EVENT_PATH"
+          --base-ref "${{ github.event.pull_request.base.sha }}"
+          --head-ref "${{ github.event.pull_request.head.sha }}"
