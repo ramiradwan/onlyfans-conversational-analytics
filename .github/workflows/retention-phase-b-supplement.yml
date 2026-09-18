@@ -100,7 +100,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Retrieve exact-run frontend build
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: frontend-dist-${{ env.PRODUCT_SHA }}
           path: app/static/dist
@@ -190,7 +190,7 @@ jobs:
             extension/package-lock.json
 
       - name: Retrieve exact-run fixed SQLCipher wheel
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
@@ -207,7 +207,7 @@ jobs:
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Retrieve exact-run frontend build
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: frontend-dist-${{ env.PRODUCT_SHA }}
           path: app/static/dist
@@ -216,7 +216,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Retrieve exact-run extension build
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: extension-dist-${{ env.PRODUCT_SHA }}
           path: extension/dist
@@ -266,13 +266,13 @@ jobs:
           persist-credentials: false
 
       - name: Download Linux evidence
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: retention-supplement-linux-${{ env.PRODUCT_SHA }}
           path: ${{ env.EVIDENCE_DIR }}
 
       - name: Download Windows evidence
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: retention-supplement-windows-${{ env.PRODUCT_SHA }}
           path: ${{ env.EVIDENCE_DIR }}
