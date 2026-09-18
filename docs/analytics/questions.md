@@ -60,7 +60,7 @@ For multi-message findings, record all dependencies. Stop serving the finding wh
 
 `app/api/endpoints/insights.py` owns authenticated analytics HTTP access. `app/services/insights_service.py` consumes the configured analytics runtime. Read handlers must not build projections inline or bypass analysis admission.
 
-`HistoryAnalyticsSource` is the approved canonical gateway. Its current read model sorts by timestamp, winning stream epoch, winning source sequence, and message ID. It does not expose source-order confidence, coverage intervals, event kind, or per-message version digests. Do not manufacture these fields in a handler. Add them through the gateway where source evidence exists; otherwise preserve unknown states. This contract does not authorize capture or canonical-schema redesign.
+`HistoryAnalyticsSource` is the approved canonical gateway. Its account read model sorts by timestamp, winning stream epoch, winning source sequence, and message ID. It does not expose source-order confidence, coverage intervals, event kind, or per-message version digests. Do not manufacture these fields in a handler. Add them through the gateway where source evidence exists; otherwise preserve unknown states. The separate [evidence reader](evidence.md) exposes bounded source-version reads without expanding the account document. This contract does not authorize capture or canonical-schema redesign.
 
 `EnrichmentStage` and the analyzer interfaces own classifications. `GraphReader` and the projection stores own bounded reads and publication. Extend indexed lookup only for demonstrated question needs. Reuse the existing generation and canonical-witness checks.
 

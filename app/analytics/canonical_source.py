@@ -7,6 +7,10 @@ import json
 from app.persistence import sqlite_api as sqlite3
 from datetime import datetime
 
+from app.analytics.evidence_contracts import (
+    EvidenceLocation, EvidenceMessage, MAX_EVIDENCE_TEXT_CHARS,
+)
+from app.analytics.query_execution import QuestionBudget
 from app.canonical.read_models import AccountReadModel
 from app.persistence.history import HistoryRepository
 
@@ -29,6 +33,81 @@ class HistoryAnalyticsSource:
 
             return nullcontext(self.connection)
         return self.history.database.read()
+
+    def read_evidence_message(
+        self, account_id: str, location: EvidenceLocation, budget: QuestionBudget,
+    ) -> EvidenceMessage | None:
+        """Read one live, undeleted source by its indexed canonical identity."""
+
+        if self.connection is not None:
+            raise ValueError("evidence_live_read_required")
+        location = EvidenceLocation.model_validate(location)
+        budget.check()
+        with self.history.database.read() as connection:
+            budget.check()
+            timeout_ms = max(1, int(budget.remaining_seconds() * 1000))
+            connection.execute(f"PRAGMA busy_timeout={timeout_ms}")
+            connection.execute("PRAGMA query_only=ON")
+            interrupted = []
+
+            def progress() -> int:
+                try:
+                    budget.check()
+                except Exception as error:
+                    interrupted.append(error)
+                    return 1
+                return 0
+
+            connection.set_progress_handler(progress, 100)
+            try:
+                budget.consume()
+                row = connection.execute(
+                    """SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
+                              m.sender_platform_user_id,m.upstream_updated_at,
+                              m.content_hash,m.winning_stream_epoch,m.winning_source_seq
+                         FROM account_messages AS m
+                         JOIN account_heads AS h
+                           ON h.creator_account_id=m.creator_account_id
+                         JOIN account_chats AS c
+                           ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
+                        WHERE m.creator_account_id=? AND m.message_id=? AND m.chat_id=?
+                          AND m.is_deleted=0 AND c.is_deleted=0 AND length(m.text)<=?
+                          AND length(CAST(m.text AS BLOB))<=?
+                          AND NOT EXISTS (
+                              SELECT 1 FROM entity_tombstones AS t
+                               WHERE t.creator_account_id=m.creator_account_id
+                                 AND ((t.entity_kind='message' AND t.entity_id=m.message_id)
+                                   OR (t.entity_kind='chat' AND t.entity_id=m.chat_id)))
+                          AND NOT EXISTS (
+                              SELECT 1 FROM deletion_barriers AS b
+                               WHERE b.creator_account_id=m.creator_account_id
+                                 AND ((b.scope_kind='account' AND b.scope_key='*')
+                                   OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
+                                   OR (b.scope_kind='message' AND b.scope_key=m.message_id)
+                                   OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
+                          AND NOT EXISTS (
+                              SELECT 1 FROM participant_deletion_chat_scopes AS p
+                               WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id)
+                        LIMIT 1""",
+                    (account_id, location.message_id, location.conversation_id,
+                     MAX_EVIDENCE_TEXT_CHARS, MAX_EVIDENCE_TEXT_CHARS * 4),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                if interrupted:
+                    raise interrupted[0] from None
+                budget.check()
+                raise
+            finally:
+                connection.set_progress_handler(None, 0)
+        budget.check()
+        if row is None:
+            return None
+        return EvidenceMessage(
+            account_id=account_id, location=location, source_revision=row[0],
+            text=row[1], sent_at=row[2], direction=row[3], sender_id=row[4],
+            upstream_updated_at=row[5], content_hash=row[6],
+            stream_epoch=row[7], source_sequence=row[8],
+        )
 
     def account_exists(self, creator_account_id: str) -> bool:
         with self._read() as connection:

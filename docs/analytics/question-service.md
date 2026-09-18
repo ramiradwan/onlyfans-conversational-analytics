@@ -28,7 +28,7 @@ The service fixes the cutoff on the first page and preserves it across later pag
 
 `assert_current(snapshot, budget)` must recheck the active generation and its canonical witness using the existing publication rules. It must raise the existing unavailable/building/error failure when the snapshot is no longer permitted. The service calls it before and after the handler, including for empty results.
 
-The snapshot's retention deadline covers all required inputs, not only the source references displayed on the current page. The service checks expiry before execution and before returning data. It also verifies displayed reference times and revisions. Source-version digests identify evidence; resolving or verifying its text belongs to the canonical evidence reader.
+The snapshot's retention deadline covers all required inputs, not only the source references displayed on the current page. The service checks expiry before execution and before returning data. It also verifies displayed reference times and revisions. Source-version digests identify evidence; resolving or verifying its text belongs to the [canonical evidence reader](evidence.md).
 
 Handlers must use indexed, account-scoped selection and keyset paging. They must not materialize an account through `nodes()`, `edges()`, or a full projection document. The `after` position is the last returned evidence time and conversation reference, not an offset into changing results.
 

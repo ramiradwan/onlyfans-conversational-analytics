@@ -27,6 +27,7 @@ Readers use the active projection. Missing, building, and failed projections rem
 ## Main modules
 
 - `pipeline.py` — coordinates analytics rebuild and publication.
+- `evidence.py` and `evidence_contracts.py` — bounded source-reference lookup through canonical reads. See [Source evidence](../../docs/analytics/evidence.md).
 - `enrichment.py` and `analyzers.py` — message enrichment interfaces and built-in analyzers.
 - `metrics.py` — conversation and creator metrics.
 - `graph_projection.py` and `graph_store.py` — relationship-graph projection and queries.
