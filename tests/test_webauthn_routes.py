@@ -587,6 +587,8 @@ def _register_public_key(
 def _registration_payload(
     private_key: ec.EllipticCurvePrivateKey,
     challenge: str,
+    *,
+    credential_bytes: bytes = CREDENTIAL_BYTES,
 ) -> dict[str, object]:
     public_numbers = private_key.public_key().public_numbers()
     cose_key = {
@@ -602,8 +604,8 @@ def _registration_payload(
             b"\x45",
             (0).to_bytes(4, "big"),
             bytes(16),
-            len(CREDENTIAL_BYTES).to_bytes(2, "big"),
-            CREDENTIAL_BYTES,
+            len(credential_bytes).to_bytes(2, "big"),
+            credential_bytes,
             _cbor(cose_key),
         )
     )
@@ -611,8 +613,8 @@ def _registration_payload(
         {"fmt": "none", "authData": authenticator_data, "attStmt": {}}
     )
     return {
-        "id": CREDENTIAL_ID,
-        "rawId": CREDENTIAL_ID,
+        "id": _encode(credential_bytes),
+        "rawId": _encode(credential_bytes),
         "type": "public-key",
         "response": {
             "clientDataJSON": _client_data("webauthn.create", challenge),
@@ -696,3 +698,64 @@ def _encode(value: bytes) -> str:
 
 def _decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def test_second_registration_is_refused_and_original_passkey_still_signs_in(
+    store: SQLiteAuthenticationStore,
+) -> None:
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    application = _application(
+        policy=lambda: _policy(store),
+        authority_port=WebAuthnAuthorityPort(store, clock=lambda: INSTANT),
+        service=_service(store),
+    )
+    headers = {"X-CSRF-Token": csrf_token(_policy(store))}
+    with TestClient(application, base_url=ORIGIN) as client:
+        first = client.post("/api/v1/webauthn/registration/begin", headers=headers)
+        pending = client.post("/api/v1/webauthn/registration/begin", headers=headers)
+        assert first.status_code == pending.status_code == 200
+        assert "excludeCredentials" not in first.json()
+        finished = client.post("/api/v1/webauthn/registration/finish", headers=headers,
+            json=_registration_payload(private_key, first.json()["challenge"]))
+        assert finished.status_code == 200
+        for route, body in [
+            ("begin", None),
+            ("finish", _registration_payload(private_key, pending.json()["challenge"])),
+        ]:
+            refused = client.post(f"/api/v1/webauthn/registration/{route}", headers=headers, **({"json": body} if body else {}))
+            assert refused.status_code == 403
+            assert refused.json() == {"detail": "WebAuthn is not available for this session"}
+            assert "set-cookie" not in refused.headers
+        login = client.post("/api/v1/webauthn/login/begin", headers=headers)
+        assert login.status_code == 200
+        signed_in = client.post("/api/v1/webauthn/login/finish", headers=headers,
+            json=_authentication_payload(private_key, login.json()["challenge"]))
+        assert signed_in.status_code == 200
+        assert settings.bridge_session_cookie_name in signed_in.cookies
+    with store.database.read() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM webauthn_credentials WHERE revoked_at IS NULL").fetchone()[0] == 1
+
+
+def test_registration_finish_maps_atomic_duplicate_refusal_to_generic_400(
+    store: SQLiteAuthenticationStore,
+) -> None:
+    # Both requests obtained authority before either finish committed.
+    application = _application(
+        policy=lambda: _policy(store), authority_port=_AuthorizedRegistrationPort(),
+        service=_service(store),
+    )
+    headers = {"X-CSRF-Token": csrf_token(_policy(store))}
+    with TestClient(application, base_url=ORIGIN) as client:
+        pending = [client.post("/api/v1/webauthn/registration/begin", headers=headers) for _ in range(2)]
+        assert all(response.status_code == 200 for response in pending)
+        first = client.post("/api/v1/webauthn/registration/finish", headers=headers,
+            json=_registration_payload(ec.generate_private_key(ec.SECP256R1()), pending[0].json()["challenge"]))
+        assert first.status_code == 200
+        second = client.post("/api/v1/webauthn/registration/finish", headers=headers,
+            json=_registration_payload(ec.generate_private_key(ec.SECP256R1()), pending[1].json()["challenge"], credential_bytes=b"second-synthetic-credential"))
+        assert second.status_code == 400
+        assert second.json() == {"detail": "WebAuthn ceremony could not be completed"}
+        assert "set-cookie" not in second.headers
+    with store.database.read() as connection:
+        rows = connection.execute("SELECT credential_id FROM webauthn_credentials WHERE revoked_at IS NULL").fetchall()
+        assert [row["credential_id"] for row in rows] == [CREDENTIAL_ID]
