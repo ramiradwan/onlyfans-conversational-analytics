@@ -55,3 +55,7 @@ See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 ## Conversation questions
 
 [Question endpoints](../../docs/analytics/question-endpoints.md) connect bounded handlers, witnessed SQLite publication metadata, and exact source resolution. The production adapter reports missing event types as undetermined. Pricing execution remains disabled until its quality gate passes. These routes do not run inference or rebuild projections inline.
+
+## Enrichment reuse
+
+[Reuse unchanged message analysis](../../docs/analytics/enrichment-reuse.md) describes the account-scoped per-analyzer cache, its generation lifetime, context inputs, and size limits. Graph publication remains whole-generation.

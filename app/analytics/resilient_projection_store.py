@@ -130,6 +130,9 @@ class LazySQLiteAnalyticsProjectionStore:
             self._next_retry_at = 0.0
             self._recovery_count += 1
 
+    def load_enrichment_entries(self, account_id, keys, **kwargs):
+        return self._read("load_enrichment_entries", account_id, account_id, keys, **kwargs)
+
     def question_pricing(self, account_id, snapshot, references, budget):
         return self._read("question_pricing", account_id, account_id, snapshot, references, budget)
 

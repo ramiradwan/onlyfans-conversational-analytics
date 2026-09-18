@@ -581,7 +581,9 @@
         "app/analytics/query_*.py",
         "app/analytics/evidence*.py",
         "app/analytics/__init__.py",
-        "app/analytics/README.md"
+        "app/analytics/README.md",
+        "app/analytics/enrichment_cache.py",
+        "app/analytics/enrichment_sql.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",
@@ -623,7 +625,8 @@
         "app/analytics/financial.py",
         "app/analytics/topics.py",
         "app/analytics/activity.py",
-        "app/analytics/insights.py"
+        "app/analytics/insights.py",
+        "app/analytics/enrichment_inputs.py"
       ],
       "role": "Derived feature analytics, metrics calculations, and enrichment analyzers consuming canonical read models or graph projections.",
       "authority": "derived",
@@ -1305,7 +1308,9 @@
           "app/analytics/retention_store.py",
           "app/analytics/query_*.py",
           "app/analytics/evidence*.py",
-          "app/analytics/canonical_source.py"
+          "app/analytics/canonical_source.py",
+          "app/analytics/enrichment*.py",
+          "app/analytics/sql/0005_enrichment_reuse.sql"
         ]
       },
       {
@@ -1364,7 +1369,9 @@
           "app/analytics/runtime.py",
           "app/analytics/rebuild.*",
           "app/analytics/analyzers.py",
-          "app/analytics/metrics.py"
+          "app/analytics/metrics.py",
+          "app/analytics/enrichment*.py",
+          "app/analytics/sql/0005_enrichment_reuse.sql"
         ]
       },
       {
@@ -1391,7 +1398,9 @@
           "app/analytics/*projection_store.py",
           "app/analytics/query_*.py",
           "app/analytics/evidence*.py",
-          "app/analytics/canonical_source.py"
+          "app/analytics/canonical_source.py",
+          "app/analytics/enrichment*.py",
+          "app/analytics/sql/0005_enrichment_reuse.sql"
         ]
       },
       {
@@ -1412,7 +1421,9 @@
           "app/analytics/pipeline.py",
           "app/analytics/query_*.py",
           "app/analytics/evidence*.py",
-          "app/analytics/canonical_source.py"
+          "app/analytics/canonical_source.py",
+          "app/analytics/enrichment*.py",
+          "app/analytics/sql/0005_enrichment_reuse.sql"
         ]
       },
       {

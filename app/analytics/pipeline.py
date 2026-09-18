@@ -30,6 +30,7 @@ from pydantic import ValidationError
 
 from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.enrichment import EnrichmentStage
+from app.analytics.enrichment_cache import reuse_build
 from app.analytics.errors import (
     CanonicalAccountNotFound,
     CanonicalRevisionChanged,
@@ -115,6 +116,7 @@ class AnalyticsPipeline:
         graph_projector: RelationshipGraphProjector | None = None,
         max_revision_retries: int = 3,
         clock: Callable[[], datetime] = utc_now,
+        reuse_enrichment: bool = True,
     ) -> None:
         if max_revision_retries <= 0:
             raise ValueError("max_revision_retries must be positive")
@@ -158,6 +160,7 @@ class AnalyticsPipeline:
         self.graph_projector = graph_projector or RelationshipGraphProjector()
         self.max_revision_retries = max_revision_retries
         self._retention_clock = clock
+        self.reuse_enrichment = reuse_enrichment
         self.pipeline_revision = (
             f"analytics.pipeline.v3+{self.enrichment.revision}+graph.relationship.v1"
         )
@@ -303,19 +306,22 @@ class AnalyticsPipeline:
                 )
                 if existing is None and callable(next_generation):
                     generation = next_generation(creator_account_id)
-                if cancellation_check is None:
-                    artifact = self._build(
-                        creator_account_id,
-                        account,
-                        projection_generation=generation,
-                    )
-                else:
-                    artifact = self._build(
-                        creator_account_id,
-                        account,
-                        projection_generation=generation,
-                        cancellation_check=cancellation_check,
-                    )
+                with reuse_build(self.projections, creator_account_id,
+                        self._retention_clock, cancellation_check,
+                        enabled=self.reuse_enrichment) as reuse:
+                    if cancellation_check is None:
+                        artifact = self._build(
+                            creator_account_id,
+                            account,
+                            projection_generation=generation,
+                        )
+                    else:
+                        artifact = self._build(
+                            creator_account_id,
+                            account,
+                            projection_generation=generation,
+                            cancellation_check=cancellation_check,
+                        )
                 check_cancelled(cancellation_check)
                 observed = self.source.account_read_model(creator_account_id)
                 check_cancelled(cancellation_check)
@@ -331,6 +337,7 @@ class AnalyticsPipeline:
                     canonical_identity=account_identity,
                     publication_epoch=publication_epoch,
                     cancellation_check=cancellation_check,
+                    **({"enrichment_entries": tuple(reuse.entries.values())} if reuse else {}),
                 )
                 try:
                     check_cancelled(cancellation_check)

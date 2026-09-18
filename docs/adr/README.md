@@ -25,6 +25,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0026: Use bounded, source-linked analytics questions](0026-bounded-analytics-questions.md)
 
+- [ADR 0027: Reuse versioned analyzer results within analytics generations](0027-enrichment-reuse.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

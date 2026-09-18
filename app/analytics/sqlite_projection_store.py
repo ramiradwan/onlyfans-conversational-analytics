@@ -112,6 +112,11 @@ class SQLiteAnalyticsProjectionStore:
         if reconcile:
             self.reconcile_startup()
 
+    def load_enrichment_entries(self, account_id, keys, **kwargs):
+        from app.analytics.enrichment_sql import load_entries
+
+        return load_entries(self, account_id, keys, **kwargs)
+
     def question_pricing(self, account_id, snapshot, references, budget):
         from app.analytics.query_publication import published_pricing
 
@@ -267,9 +272,14 @@ class SQLiteAnalyticsProjectionStore:
         canonical_identity: CanonicalIdentity,
         publication_epoch: str | None = None,
         cancellation_check: CancellationCheck | None = None,
+        enrichment_entries: tuple[bytes, ...] = (),
     ) -> str:
         """Persist and validate one inactive generation from one canonical snapshot."""
 
+        from app.analytics.enrichment_cache import validate_entries
+        from app.analytics.enrichment_sql import insert_entries
+
+        cached = validate_entries(artifact, enrichment_entries)
         check_cancelled(cancellation_check)
         projection = artifact.projection
         partition_ref = account_ref(creator_account_id)
@@ -391,6 +401,7 @@ class SQLiteAnalyticsProjectionStore:
                     _json(projection.model_dump(mode="json")),
                 ),
             )
+            insert_entries(connection, generation_id, cached)
         writer = SQLiteGraphGenerationWriter(
             self.database,
             generation_id=generation_id,
