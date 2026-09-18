@@ -5,6 +5,8 @@ import {
 } from 'onlyfans-analytics-frontend';
 import type { ConversationSummary } from '../../src/protocol';
 
+import './card.module.css';
+
 const conversationSummaries: ConversationSummary[] = previewConversations.map((conversation) => ({
   conversation_id: conversation.conversation_id,
   platform_user_id: conversation.platform_user_id,

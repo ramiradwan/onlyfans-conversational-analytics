@@ -1,20 +1,20 @@
-import { Box, ChartPlaceholder, Typography } from 'onlyfans-analytics-frontend';
+import { ChartPlaceholder, Panel, Typography } from 'onlyfans-analytics-frontend';
+
+import './card.module.css';
 
 export function DashboardChart() {
   return (
-    <Box sx={{ bgcolor: 'background.paper', maxWidth: 760, p: 2 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Sentiment over time
-      </Typography>
+    <Panel sx={{ maxWidth: 760 }}>
+      <Typography variant="h6">Sentiment over time</Typography>
       <ChartPlaceholder height={260} />
-    </Box>
+    </Panel>
   );
 }
 
 export function CompactChart() {
   return (
-    <Box sx={{ bgcolor: 'background.paper', maxWidth: 520, p: 2 }}>
+    <Panel sx={{ maxWidth: 520, p: 2 }}>
       <ChartPlaceholder height={180} />
-    </Box>
+    </Panel>
   );
 }

@@ -5,6 +5,8 @@ import {
   createPreviewBridgeStore,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 const previewStore = createPreviewBridgeStore();
 const previewActivationApi = createPreviewActivationApi();
 

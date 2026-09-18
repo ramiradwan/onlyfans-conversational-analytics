@@ -1,8 +1,10 @@
 import { Box, QueryInput, Typography } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function Ready() {
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 720, p: 2 }}>
+    <Box sx={{ maxWidth: 720 }}>
       <Typography
         variant="subtitle2"
         sx={{
@@ -18,7 +20,7 @@ export function Ready() {
 
 export function DisabledWhileProcessing() {
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 720, p: 2 }}>
+    <Box sx={{ maxWidth: 720 }}>
       <Typography
         variant="subtitle2"
         sx={{

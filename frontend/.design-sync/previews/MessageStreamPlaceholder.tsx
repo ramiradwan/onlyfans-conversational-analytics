@@ -4,9 +4,11 @@ import {
   Typography,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function MessageHistoryLoading() {
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 720, p: 2 }}>
+    <Box sx={{ maxWidth: 720 }}>
       <Typography variant="subtitle1" sx={{ mb: 1 }}>
         Messages
       </Typography>

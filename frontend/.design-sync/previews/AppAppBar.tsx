@@ -5,6 +5,8 @@ import {
   seedPreviewShellStore,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 seedPreviewShellStore();
 
 export function LiveDesktopHeader() {

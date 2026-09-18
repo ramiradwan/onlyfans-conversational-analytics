@@ -5,6 +5,8 @@ import {
   Typography,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function InsightSummary() {
   return (
     <Panel sx={{ maxWidth: 560 }}>
@@ -26,6 +28,28 @@ export function InsightSummary() {
         Based on messages stored on this computer.
       </Typography>
     </Panel>
+  );
+}
+
+export function Emphasis() {
+  return (
+    <Stack spacing={2} sx={{ maxWidth: 560 }}>
+      <Panel emphasis="dominant">
+        <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>Messages this week</Typography>
+        <Typography variant="kpi">2,436</Typography>
+      </Panel>
+      <Panel>
+        <Typography variant="subtitle2">Most discussed topic</Typography>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          Behind-the-scenes content came up in 18 of your last 50 conversations.
+        </Typography>
+      </Panel>
+      <Panel emphasis="quiet">
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          Based on messages stored on this computer.
+        </Typography>
+      </Panel>
+    </Stack>
   );
 }
 

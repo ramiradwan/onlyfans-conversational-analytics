@@ -62,6 +62,11 @@ export function qualifyThemeColors(root: JsonObject) {
     requirePair('measurement.main', 'surface.paper', 4.5);
     if (color(intents, 'action.state.focus') !== color(intents, 'action.state.hover')) throw new Error(mode + ': focus must use the authored hover fill');
     requirePair('measurement.dark', 'surface.paper', 4.5);
+    for (const tone of ['info', 'success', 'warning', 'error']) {
+      requirePair('text.primary', 'surface.feedback.' + tone + '.fill', 4.5);
+      requirePair('text.secondary', 'surface.feedback.' + tone + '.fill', 4.5);
+      requirePair('action.state.selectedForeground', 'surface.feedback.' + tone + '.fill', 4.5);
+    }
     requirePair('surface.avatar.text', 'surface.avatar.fill', 4.5);
     requirePair('surface.trust.ink', 'surface.trust.fill', 3);
     requirePair('action.state.selectedForeground', 'action.state.selected', 4.5);

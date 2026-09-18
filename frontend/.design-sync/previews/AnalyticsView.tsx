@@ -4,6 +4,8 @@ import {
   seedPreviewAnalytics,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function LoadedDashboard() {
   seedPreviewAnalytics();
   return (

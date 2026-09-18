@@ -1,0 +1,4 @@
+/* Preview cards render on the app canvas. `html body` outranks the card template's own body rule. */
+html body {
+  background-color: var(--bridge-palette-background-default);
+}

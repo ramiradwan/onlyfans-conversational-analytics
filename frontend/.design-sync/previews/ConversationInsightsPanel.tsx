@@ -10,6 +10,8 @@ import {
   storyWindowSources,
 } from '../../src/story-only/analyticsFixtures';
 
+import './card.module.css';
+
 const conversationRef = ('c1:' + '2'.repeat(64)) as ConversationRef;
 
 const mockSlice = {
@@ -71,7 +73,7 @@ const mockInsight: AnalyticsConversationInsight = {
 
 export function ActiveConversationInsights() {
   return (
-    <Box sx={{ bgcolor: 'background.default', height: 720, maxWidth: 360, p: 2 }}>
+    <Box sx={{ height: 720, maxWidth: 360 }}>
       <ConversationInsightsPanel
         fanName="Bailey Hart"
         insight={mockInsight}
@@ -84,7 +86,7 @@ export function ActiveConversationInsights() {
 
 export function UnselectedConversation() {
   return (
-    <Box sx={{ bgcolor: 'background.default', height: 420, maxWidth: 360, p: 2 }}>
+    <Box sx={{ height: 420, maxWidth: 360 }}>
       <ConversationInsightsPanel
         fanName={null}
         insight={null}

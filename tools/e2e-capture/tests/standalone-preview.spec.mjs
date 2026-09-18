@@ -184,7 +184,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
     expect(await context.cookies('https://onlyfans.com/')).toEqual([]);
 
     await test.step('a clean profile starts off with no optional access or capture scripts', async () => {
-      await expect(popup.locator('#mode-label')).toHaveText('Analytics off — no OnlyFans access');
+      await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
       await expect(popup.locator('#messages-count')).toHaveText('0');
       await expect(popup.locator('#chats-count')).toHaveText('0');
       await expect(popup.locator('#brain-status')).toHaveText('Not connected');
@@ -203,7 +203,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       await configureSyntheticLegalBindings(worker, popup);
       await completePreModeLegalActions(popup);
       await enablePreviewAnalytics(context, popup, worker);
-      await expect(popup.locator('#mode-label')).toHaveText('Activity preview enabled');
+      await expect(popup.locator('#mode-label')).toHaveText('Preview on');
       await expect.poll(async () => (await extensionState(worker)).capturePhase).toBe('preview');
       const snapshot = await extensionSnapshot(worker);
       expect(snapshot.permissions.origins ?? []).toContain(ONLYFANS_ORIGIN_PATTERN);
@@ -292,7 +292,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       popup.once('dialog', (dialog) => dialog.accept());
       await popup.getByRole('button', { name: 'Delete all extension data' }).click();
       await expect(popup.locator('#feedback')).toHaveText('All local extension data was deleted.');
-      await expect(popup.locator('#mode-label')).toHaveText('Analytics off — no OnlyFans access');
+      await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
       const deleted = await extensionSnapshot(worker);
       expect(deleted.state.consentMode).toBe('off');
       expect(deleted.state.capturePhase).toBe('off');
@@ -316,7 +316,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       worker = await extensionWorker(context);
       expect(extensionId(worker)).toBe(targetExtensionId);
       popup = await openPopup(context, targetExtensionId, pageErrors);
-      await expect(popup.locator('#mode-label')).toHaveText('Analytics off — no OnlyFans access');
+      await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
       await expect(popup.locator('#messages-count')).toHaveText('0');
       await expect(popup.locator('#chats-count')).toHaveText('0');
       const restarted = await extensionSnapshot(worker);

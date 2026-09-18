@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { qualifyThemeColors } from './chart-qualification.ts';
 import { contrastRatio, contrastRatioOnComposite } from './color-validation.ts';
 import { buildTokenGraph, isObject, publicIntents, validateBridgeIntents, type JsonObject, type JsonValue } from './intent-contracts.ts';
+import { generateStaticFontsCss, replaceStaticFontPreloads } from './static-fonts.ts';
 import { validateRepositoryConsumers } from './token-consumers.ts';
 
 const filename = fileURLToPath(import.meta.url);
@@ -299,13 +300,23 @@ export function generateStaticTokensCss(tokensJsonSource: string): string {
   const colorSchemes = getObject(getObject(resolved, 'tier2'), 'colorSchemes');
   const intents = getObject(getObject(resolved, 'tier2'), 'intents');
   const px = (value: JsonValue): string => String(value) + 'px';
-  // Static surfaces bundle neither the web fonts nor their metric-matched fallback faces.
+  const components = getObject(resolved, 'tier3');
+  const staticUi = getObject(components, 'staticUi');
+  const shell = getObject(components, 'shell');
+  const brandInset = Number(shell.railInset) + (Number(shell.desktopRailWidth) - Number(staticUi.brandSize)) / 2;
+  // Preserve the legacy stack. New static UI roles load the bundled faces and measured fallbacks.
   const withoutBundledFallbacks = (stack: string): string =>
     stack.split(/,\s*/).filter((family) => !/ Fallback"$/.test(family)).join(', ');
 
   const shared: Array<[string, string]> = [
     ['font-family', withoutBundledFallbacks(getString(typography, 'fontFamily'))],
     ['font-family-mono', getString(typography, 'fontFamilyMono')],
+    ['font-family-ui', getString(typography, 'fontFamily')],
+    ['font-family-numeric', getString(typography, 'displayNumeric')],
+    ...Object.entries(staticUi).map(
+      ([name, value]): [string, string] => ['static-' + name.replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase()), typeof value === 'number' ? px(value) : String(value)],
+    ),
+    ['static-brand-inset', px(brandInset)],
     ...['regular', 'medium', 'semibold', 'bold'].map(
       (weight): [string, string] => ['font-weight-' + weight, String(weights[weight])],
     ),
@@ -393,6 +404,8 @@ function main(): void {
   writeIfChanged(generatedPath, generateThemeSource(tokensSource));
   const css = generateStaticTokensCss(tokensSource);
   writeIfChanged(staticTokensPath, css);
+  const fonts = generateStaticFontsCss(repositoryRoot);
+  writeIfChanged(path.join(themeDirectory, 'generated', 'static-fonts.css'), fonts);
   console.log('Theme generated deterministically from tokens.json');
   const reportIndex = process.argv.indexOf('--color-report');
   if (reportIndex >= 0) {
@@ -404,8 +417,14 @@ function main(): void {
   if (process.argv.includes('--static-surfaces')) {
     for (const consumer of staticTokenConsumers) {
       const consumerPath = path.join(repositoryRoot, consumer);
-      const updated = replaceStaticTokenBlock(fs.readFileSync(consumerPath, 'utf8'), css);
+      const updated = replaceStaticTokenBlock(
+        replaceStaticTokenBlock(fs.readFileSync(consumerPath, 'utf8'), css), fonts, 'static-fonts',
+      );
       if (writeIfChanged(consumerPath, updated)) console.log('Updated design tokens in ' + consumer);
+    }
+    for (const [consumer, count] of [['extension/popup.html', 2], ['app/provisioning/provisioning.html', 1]] as const) {
+      const consumerPath = path.join(repositoryRoot, consumer);
+      writeIfChanged(consumerPath, replaceStaticFontPreloads(fs.readFileSync(consumerPath, 'utf8'), fonts, count));
     }
     const firstPaint = generateFirstPaintCss(tokensSource);
     for (const consumer of firstPaintConsumers) {

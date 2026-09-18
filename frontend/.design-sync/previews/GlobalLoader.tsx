@@ -1,8 +1,10 @@
 import { Box, GlobalLoader } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function ProcessingOverlay() {
   return (
-    <Box sx={{ bgcolor: 'background.default', minHeight: 360, position: 'relative' }}>
+    <Box sx={{ minHeight: 360, position: 'relative' }}>
       <GlobalLoader />
     </Box>
   );

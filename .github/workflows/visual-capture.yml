@@ -5,6 +5,13 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
+      - 'extension/popup.html'
+      - 'extension/popup.css'
+      - 'extension/popup.js'
+      - 'extension/runtime/customer-journey.mjs'
+      - 'extension/qualification/*visual*.mjs'
+      - 'app/provisioning/provisioning.html'
+      - 'app/provisioning/provisioning.js'
       - 'tools/visual-capture/**'
       - '.github/workflows/visual-capture.yml'
   pull_request:
@@ -12,6 +19,13 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'frontend/**'
+      - 'extension/popup.html'
+      - 'extension/popup.css'
+      - 'extension/popup.js'
+      - 'extension/runtime/customer-journey.mjs'
+      - 'extension/qualification/*visual*.mjs'
+      - 'app/provisioning/provisioning.html'
+      - 'app/provisioning/provisioning.js'
       - 'tools/visual-capture/**'
       - '.github/workflows/visual-capture.yml'
 

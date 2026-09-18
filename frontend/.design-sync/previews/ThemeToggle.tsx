@@ -5,6 +5,8 @@ import {
   Typography,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function InApplicationBar() {
   return (
     <Stack

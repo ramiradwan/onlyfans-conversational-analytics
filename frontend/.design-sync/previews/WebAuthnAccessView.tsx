@@ -6,6 +6,8 @@ import {
 
 import type { WebAuthnApi } from '../../src/services/webauthnApi';
 
+import './card.module.css';
+
 const noopWebAuthnApi: WebAuthnApi = {
   enroll: async () => {},
   login: async () => {},
@@ -13,7 +15,7 @@ const noopWebAuthnApi: WebAuthnApi = {
 
 export function PasskeyAccess() {
   return (
-    <Box sx={{ bgcolor: 'background.default', minHeight: 480, p: 2, width: '100%' }}>
+    <Box sx={{ minHeight: 480, width: '100%' }}>
       <WebAuthnAccessView api={noopWebAuthnApi} onAuthenticated={previewNoop} />
     </Box>
   );

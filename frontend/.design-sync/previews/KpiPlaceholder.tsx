@@ -5,9 +5,11 @@ import {
   Typography,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function DashboardMetricsLoading() {
   return (
-    <Box sx={{ bgcolor: 'background.default', p: 2, width: '100%' }}>
+    <Box sx={{ width: '100%' }}>
       <Typography
         variant="subtitle2"
         sx={{

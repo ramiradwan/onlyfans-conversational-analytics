@@ -27,6 +27,9 @@ def test_visual_capture_runs_only_for_relevant_ui_changes() -> None:
     for event in ("push", "pull_request"):
         paths = set(workflow["on"][event]["paths"])
         assert "frontend/**" in paths
+        assert {"extension/popup.html", "extension/popup.css", "extension/popup.js",
+                "extension/runtime/customer-journey.mjs", "app/provisioning/provisioning.html",
+                "app/provisioning/provisioning.js"} <= paths
         assert "tools/visual-capture/**" in paths
         assert ".github/workflows/visual-capture.yml" in paths
     assert "edited" not in workflow["on"]["pull_request"]["types"]

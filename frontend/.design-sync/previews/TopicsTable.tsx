@@ -1,6 +1,8 @@
-import { Box, TopicsTable, Typography } from 'onlyfans-analytics-frontend';
+import { Panel, TopicsTable, Typography } from 'onlyfans-analytics-frontend';
 
 import type { AnalyticsTopicMetric } from '../../src/analytics';
+
+import './card.module.css';
 
 const sampleTopics: AnalyticsTopicMetric[] = [
   { id: 'planning', label: 'Planning', volume: 18, sharePercent: 37.5, trendPercent: 12.5 },
@@ -13,22 +15,18 @@ const sampleTopics: AnalyticsTopicMetric[] = [
 
 export function TopicMetrics() {
   return (
-    <Box sx={{ bgcolor: 'background.paper', maxWidth: 840, p: 3 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Topic metrics
-      </Typography>
+    <Panel sx={{ maxWidth: 840 }}>
+      <Typography variant="h6">Topic metrics</Typography>
       <TopicsTable topics={sampleTopics} />
-    </Box>
+    </Panel>
   );
 }
 
 export function EmptyState() {
   return (
-    <Box sx={{ bgcolor: 'background.paper', maxWidth: 840, p: 3 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Topic metrics
-      </Typography>
+    <Panel sx={{ maxWidth: 840 }}>
+      <Typography variant="h6">Topic metrics</Typography>
       <TopicsTable topics={[]} />
-    </Box>
+    </Panel>
   );
 }

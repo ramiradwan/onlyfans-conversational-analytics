@@ -1,8 +1,10 @@
 import { Box, QueryResponseBubble } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function AnswerWithResults() {
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 760, p: 2 }}>
+    <Box sx={{ maxWidth: 760 }}>
       <QueryResponseBubble
         response={{
           id: 'response-1',
@@ -23,7 +25,7 @@ export function AnswerWithResults() {
 
 export function ConciseAnswer() {
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 640, p: 2 }}>
+    <Box sx={{ maxWidth: 640 }}>
       <QueryResponseBubble
         response={{
           id: 'response-2',

@@ -8,9 +8,11 @@ import {
   Stack,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function StoredMessages() {
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 640, p: 2 }}>
+    <Box sx={{ maxWidth: 640 }}>
       <Panel>
         <Stack spacing={2}>
           <SectionHeader summary="Saved only on this computer." title="Stored messages" />

@@ -26,6 +26,7 @@ const ids = [
   'feedback', 'legal-unavailable', 'pre-mode', 'terms-accepted', 'risk-acknowledged',
   'terms-link', 'risk-link', 'activate-software', 'mode-choice', 'preview-disclosure',
   'full-disclosure', 'enable-preview', 'enable-full', 'not-now-preview', 'full-secondary',
+  'review-full', 'preview-choice-title', 'full-choice-title',
   'restore-access', 'reload-tabs', 'pause', 'history', 'history-prompt', 'open-dashboard', 'revoke',
   'clear-preview', 'delete-local-data', 'privacy-link', 'preview-metrics',
   'open-connection', 'open-manage', 'connection-back', 'manage-back', 'connection-title', 'manage-title',
@@ -72,6 +73,13 @@ if (isPairingWindow) {
   document.title = 'Pair with the desktop app';
 }
 
+// Carries text written for the customer; other errors are replaced by a plain fallback.
+class NoticeError extends Error {}
+
+function noticeText(error, fallback) {
+  return error instanceof NoticeError ? error.message : fallback;
+}
+
 function show(element, visible) {
   element.classList.toggle('hidden', !visible);
 }
@@ -110,7 +118,12 @@ function closeView(view) {
 // Focuses the journey card, which shows the outcome of an action.
 function returnHome() {
   showView('home');
-  elements['journey-title'].focus();
+  const target = isShown(elements['pre-mode']) ? document.getElementById('activation-title')
+    : isShown(elements['preview-disclosure']) ? elements['preview-choice-title']
+      : isShown(elements['full-disclosure']) ? elements['full-choice-title']
+        : elements['journey-title'];
+  target.setAttribute('tabindex', '-1');
+  target.focus();
 }
 
 function setLocked(element, locked) {
@@ -137,8 +150,8 @@ function secureExternalUrl(value) {
 
 function phaseLabel(status) {
   return ({
-    off: 'Analytics off — no OnlyFans access',
-    preview: 'Activity preview enabled',
+    off: 'Analytics off',
+    preview: 'Preview on',
     identity: 'Full setup in progress',
     full: status.delivery?.transport_state === 'authenticated' ? 'Desktop connected' : 'Full setup in progress',
     paused: 'Analytics paused',
@@ -149,25 +162,32 @@ function phaseLabel(status) {
   })[status.phase] ?? 'Analytics inactive';
 }
 
-function journeyBadge(state) {
+// States whose title already says everything have no badge.
+function journeyBadge(journey) {
+  if (journey.id === 'full_unavailable' && journey.tone === 'progress') return 'Connecting';
   return ({
-    preview_available: 'Preview',
-    paused: 'Paused',
-    desktop_app_needed: 'Next step',
+    desktop_app_needed: 'Setup',
     desktop_app_unavailable: 'Needs attention',
-    setup_incomplete: 'Setup needed',
-    pairing_required: 'Next step',
+    setup_incomplete: 'Setup',
+    pairing_required: 'Setup',
     pairing_in_progress: 'Connecting',
-    pairing_failed: 'Try again',
-    pairing_not_ready: 'Next step',
+    pairing_failed: 'Needs attention',
+    pairing_not_ready: 'Setup',
     pairing_window_connected: 'Connected',
     activation_checking: 'Checking',
-    activation_required: 'Activation required',
+    activation_required: 'Setup',
     activation_active: 'Needs attention',
     activation_unavailable: 'Needs attention',
     full_ready: 'Ready',
     full_unavailable: 'Needs attention',
-  })[state] ?? 'Status';
+  })[journey.id] ?? '';
+}
+
+// The initial mode choice can be shown, whether or not the customer dismissed it.
+function modeChoiceAvailable(status = legalStatus) {
+  if (status === null || !status.configured || status.flow.stage !== 'mode_selection') return false;
+  const mode = currentStatus?.consent?.mode ?? status.consent_mode;
+  return !['preview', 'full'].includes(mode) && !(mode === 'paused' && !status.requires_reauthorization);
 }
 
 function resetAnalysisReadiness() {
@@ -206,11 +226,19 @@ function renderJourney() {
     desktopDownloadAvailable: secureExternalUrl(companionConfig.desktop_app_download_url) !== null,
     analysisReadiness,
     resumeAvailable: legalStatus !== null && legalStatus.requires_reauthorization !== true,
+    modeChoiceAvailable: modeChoiceAvailable(),
   });
   elements['journey-card'].dataset.tone = journey.tone;
-  elements['journey-badge'].textContent = journeyBadge(journey.id);
+  elements['journey-badge'].textContent = journeyBadge(journey);
   elements['journey-title'].textContent = journey.title;
   elements['journey-body'].textContent = journey.body;
+  show(elements['journey-body'], Boolean(journey.body));
+  // The required review owns this screen. Do not repeat its task in another card.
+  const reviewing = ['pre-mode', 'mode-choice', 'legal-unavailable'].some((id) => isShown(elements[id]));
+  show(elements['journey-card'], isPairingWindow || !reviewing);
+  show(elements['preview-metrics'], !reviewing && (currentStatus.consent.mode === 'preview'
+    || (currentStatus.consent.mode === 'paused' && currentStatus.consent.resume_mode === 'preview')));
+  show(elements['history-prompt'], !reviewing && currentStatus.phase === 'full' && currentStatus.history_permission === false);
   // The pairing controls inside the card own pair and cancel, so the journey buttons do not repeat them.
   const pairingShown = isShown(elements['companion-pairing']);
   const pairOwned = journey.primaryAction === 'pair' && pairingShown && isShown(elements['pair-companion']);
@@ -320,9 +348,9 @@ async function sendLegal(message) {
 
 async function requestAnalyticsAccess(mode) {
   const origins = requiredOriginsForMode(mode);
-  if (origins.length === 0) throw new Error('There is no active analytics mode to authorize.');
+  if (origins.length === 0) throw new NoticeError('There is no active analytics mode to authorize.');
   const granted = await chrome.permissions.request({ origins });
-  if (!granted) throw new Error('Required site access was not granted. Nothing was enabled.');
+  if (!granted) throw new NoticeError('Site access was not allowed, so nothing was turned on.');
 }
 
 function bindLink(element, path, binding) {
@@ -362,15 +390,13 @@ function renderLegal(status) {
     });
   }
 
-  const chooseInitial = status.configured
-    && flow.stage === 'mode_selection'
-    && !active
-    && !normalPaused
-    && !initialModeChoiceDismissed;
+  // One step at a time: the Preview step first, the Full review only when asked for.
+  const chooseInitial = modeChoiceAvailable(status) && !initialModeChoiceDismissed;
   const chooseUpgrade = status.configured && mode === 'preview' && fullReviewRequested;
+  const reviewFull = chooseUpgrade || (chooseInitial && fullReviewRequested);
   show(elements['mode-choice'], chooseInitial || chooseUpgrade);
-  show(elements['preview-disclosure'], chooseInitial);
-  show(elements['full-disclosure'], chooseInitial || chooseUpgrade);
+  show(elements['preview-disclosure'], chooseInitial && !reviewFull);
+  show(elements['full-disclosure'], reviewFull);
   elements['full-secondary'].textContent = mode === 'preview' ? 'Keep Preview' : 'Not now';
   if (status.requires_reauthorization === true) {
     elements.feedback.textContent = 'Data-handling information changed. Review it before restarting analytics.';
@@ -396,7 +422,7 @@ function render(status) {
   const dropCount = Object.values(status.delivery.capture_drop_counts ?? {})
     .reduce((total, value) => total + (Number.isSafeInteger(value) ? value : 0), 0);
   elements['capture-health'].textContent = status.delivery.startup_error_code === 'startup_failed'
-    ? 'Full analysis could not start. Start the desktop app and retry.'
+    ? 'Full analytics could not start. Start the desktop app and try again.'
     : dropCount > 0 ? `${dropCount} update${dropCount === 1 ? '' : 's'} could not be recorded.` : '';
   elements['history-health'].textContent = !status.delivery.history_error_code
     ? ''
@@ -435,7 +461,7 @@ async function probeDesktop() {
 
 function restorePopupContext(context) {
   initialModeChoiceDismissed = context.initial_choice_dismissed;
-  fullReviewRequested = context.full_review_requested && currentStatus?.consent?.mode === 'preview';
+  fullReviewRequested = context.full_review_requested && currentStatus?.consent?.mode !== 'full';
   if (context.view === 'manage' || (context.view === 'connection' && isShown(elements['open-connection']))) {
     openView(context.view);
   }
@@ -451,9 +477,10 @@ async function legalAction(type, checkbox = null) {
     const result = await sendLegal({ type });
     initialModeChoiceDismissed = false;
     renderLegal(result);
+    if (isShown(elements['preview-disclosure'])) elements['preview-choice-title'].focus();
   } catch (error) {
     if (checkbox !== null) checkbox.checked = false;
-    elements.feedback.textContent = error.message;
+    elements.feedback.textContent = noticeText(error, 'This step could not be saved. Try again.');
   } finally {
     setBusy(false);
   }
@@ -471,13 +498,10 @@ async function chooseMode(mode) {
     fullReviewRequested = false;
     initialModeChoiceDismissed = false;
     renderLegal(legalStatus);
-    if (mode === 'full' && result.status.phase === 'identity') {
-      await probeDesktop();
-      elements.feedback.textContent = 'Full setup started. Follow the next step above.';
-      elements['journey-card'].scrollIntoView({ block: 'nearest' });
-    }
+    if (mode === 'full' && result.status.phase === 'identity') await probeDesktop();
+    elements['journey-title'].focus();
   } catch (error) {
-    elements.feedback.textContent = error.message ?? 'The change could not be applied.';
+    elements.feedback.textContent = noticeText(error, 'Your choice could not be applied. Try again.');
   } finally {
     setBusy(false);
   }
@@ -493,7 +517,7 @@ async function transition(mode) {
     render(status);
     await probeDesktop();
   } catch (error) {
-    elements.feedback.textContent = error.message ?? 'The change could not be applied.';
+    elements.feedback.textContent = noticeText(error, 'The change could not be applied. Try again.');
   } finally {
     setBusy(false);
   }
@@ -521,18 +545,29 @@ async function openPairingWindow() {
   }
 }
 
+function openModeChoice({ full }) {
+  initialModeChoiceDismissed = false;
+  fullReviewRequested = full;
+  renderLegal(legalStatus);
+  elements[full ? 'full-choice-title' : 'preview-choice-title'].focus();
+}
+
+// Leaving the mode choice returns focus to the journey card, which names the next step.
+function closeModeChoice() {
+  renderLegal(legalStatus);
+  elements['journey-title'].focus();
+}
+
 async function runJourneyAction(action) {
   if (!action) return;
-  if (action === 'review_full') {
-    fullReviewRequested = true;
-    renderLegal(legalStatus);
-    elements['mode-choice'].scrollIntoView({ block: 'nearest' });
+  if (action === 'review_full' || action === 'choose_mode') {
+    openModeChoice({ full: action === 'review_full' });
     return;
   }
   if (action === 'install_desktop') {
     const download = secureExternalUrl(companionConfig.desktop_app_download_url);
     if (download === null) {
-      elements.feedback.textContent = 'The desktop app download is not configured in this build.';
+      elements.feedback.textContent = 'The desktop app download is unavailable.';
       return;
     }
     await chrome.tabs.create({ url: download });
@@ -596,7 +631,7 @@ elements['restore-access'].addEventListener('click', async () => {
     render(await send({ type: UI_TRANSITION_MESSAGE_TYPE, mode }));
     elements.feedback.textContent = 'Required site access was restored.';
   } catch (error) {
-    elements.feedback.textContent = error.message ?? 'Site access could not be restored.';
+    elements.feedback.textContent = noticeText(error, 'Site access could not be restored. Try again.');
   } finally {
     setBusy(false);
   }
@@ -613,12 +648,17 @@ elements['reload-tabs'].addEventListener('click', async () => {
 });
 elements['not-now-preview'].addEventListener('click', () => {
   initialModeChoiceDismissed = true;
-  renderLegal(legalStatus);
+  closeModeChoice();
 });
+elements['review-full'].addEventListener('click', () => openModeChoice({ full: true }));
+// Declining Full keeps Preview when it is on, and otherwise returns to the Preview step.
 elements['full-secondary'].addEventListener('click', () => {
-  if ((currentStatus?.consent?.mode ?? null) === 'preview') fullReviewRequested = false;
-  else initialModeChoiceDismissed = true;
-  renderLegal(legalStatus);
+  if ((currentStatus?.consent?.mode ?? null) === 'preview') {
+    fullReviewRequested = false;
+    closeModeChoice();
+  } else {
+    openModeChoice({ full: false });
+  }
 });
 elements['open-connection'].addEventListener('click', () => openView('connection'));
 elements['open-manage'].addEventListener('click', () => openView('manage'));
@@ -669,7 +709,7 @@ elements['open-dashboard'].addEventListener('click', () => {
 elements['pair-companion'].addEventListener('click', () => { void openPairingWindow(); });
 elements['cancel-pairing'].addEventListener('click', cancelPairing);
 elements['forget-companion'].addEventListener('click', () => {
-  if (window.confirm('Forget the desktop app and stop this connection? You will need to pair again to use Full analysis.')) {
+  if (window.confirm('Forget the desktop app and stop this connection? You will need to pair again to use Full analytics.')) {
     returnHome();
     resetAnalysisReadiness();
     pairingPort.postMessage({ type: 'forget' });
@@ -682,10 +722,10 @@ elements.history.addEventListener('click', async () => {
       permissions: ['webRequest'],
       origins: [ONLYFANS_ORIGIN_PATTERN],
     });
-    if (!granted) throw new Error('History access was not granted. Live analytics is unchanged.');
+    if (!granted) throw new NoticeError('History access was not allowed. Live analytics is unchanged.');
     await chrome.tabs.create({ url: companionConfig.history_settings_url });
   } catch (error) {
-    elements.feedback.textContent = error.message;
+    elements.feedback.textContent = noticeText(error, 'Message history could not be opened. Try again.');
   } finally {
     setBusy(false);
   }
