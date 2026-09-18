@@ -46,3 +46,7 @@ See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 - [Brain](../README.md)
 - [Proposed analytics scope](../../docs/adr/0013-conversational-analytics-scope.md)
 - [Testing](../../docs/testing.md)
+
+## Question execution
+
+`query_contracts.py`, `query_execution.py`, `query_cursor.py`, and `query_service.py` provide typed question plans, bounded read-adapter ports, authenticated pagination, and result validation. See [Execute an analytics question](../../docs/analytics/question-service.md) for composition and adapter requirements.

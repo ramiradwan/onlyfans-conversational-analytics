@@ -578,6 +578,7 @@
         "app/analytics/cancellation.py",
         "app/analytics/networkx_adapter.py",
         "app/analytics/opaque_refs.py",
+        "app/analytics/query_*.py",
         "app/analytics/__init__.py",
         "app/analytics/README.md"
       ],
@@ -1300,7 +1301,8 @@
           "app/persistence/deletion_operations.py",
           "app/persistence/history.py",
           "app/analytics/pipeline.py",
-          "app/analytics/retention_store.py"
+          "app/analytics/retention_store.py",
+          "app/analytics/query_*.py"
         ]
       },
       {
@@ -1383,7 +1385,8 @@
         "path_patterns": [
           "app/persistence/projection_activation.py",
           "app/persistence/projection_pipeline.py",
-          "app/analytics/*projection_store.py"
+          "app/analytics/*projection_store.py",
+          "app/analytics/query_*.py"
         ]
       },
       {
@@ -1391,14 +1394,16 @@
         "path_patterns": [
           "app/persistence/projection_activation.py",
           "app/analytics/*projection_store.py",
-          "app/analytics/*graph_store.py"
+          "app/analytics/*graph_store.py",
+          "app/analytics/query_*.py"
         ]
       },
       {
         "invariant": "provenance-integrity",
         "path_patterns": [
           "app/analytics/provenance.py",
-          "app/analytics/pipeline.py"
+          "app/analytics/pipeline.py",
+          "app/analytics/query_*.py"
         ]
       },
       {
