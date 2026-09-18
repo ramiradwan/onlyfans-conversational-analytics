@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check intent-contracts.ts, generate-theme.ts, token-consumers.ts, createTheme.ts and package scripts before changing these rules. -->
+<!-- CODE-VERIFY: Check intent-contracts.ts, generate-theme.ts, token-consumers.ts, chart-qualification.ts, createTheme.ts and package scripts before changing these rules. -->
 
 # Bridge intent tokens
 
@@ -10,11 +10,11 @@ Palette intents require authored `main`, `light`, `dark`, and `contrastText` val
 
 ## Use the roles
 
-MUI adapts action intents to `primary` and `secondary`, and feedback intents to `success`, `warning`, `error` and `info`. Use `measurement` for measured values. Existing `accent` and `calm` names remain deprecated compatibility adapters. Do not use them for new components.
+MUI adapts action intents to `primary` and `secondary`, and feedback intents to `success`, `warning`, `error` and `info`. Use `measurement` for measured values. Existing `accent` and `calm` names remain deprecated compatibility adapters. New application consumers of their palette paths fail validation; the adapters remain available for compatibility.
 
-Components use `theme.vars.palette` or semantic `sx` paths. Static surfaces receive `--dipsy-intent-*` variables. Existing `--dipsy-color-*` variables retain their values during migration.
+Components use `theme.vars.palette` or semantic `sx` paths. Static surfaces receive `--dipsy-intent-*` variables. Existing `--dipsy-color-*` variable names remain compatible and resolve through the active intents.
 
-Financial colors have a separate, reserved source family. They are validated but omitted from runtime tokens, MUI and static CSS. Token aliases into that family and explicit financial-token references in consumers fail checks. Existing chart opportunity and categorical colors are unchanged in this appearance-preserving batch; they do not alias financial tokens.
+Financial colors have a separate, reserved source family. They are validated but omitted from runtime tokens, MUI and static CSS. Token aliases into that family and explicit financial-token references in consumers fail checks. Analytical opportunity uses measurement jade. The fourth categorical slot uses slate instead of financial yellow. No public intent may reuse the reserved financial field color.
 
 ## Color validation
 

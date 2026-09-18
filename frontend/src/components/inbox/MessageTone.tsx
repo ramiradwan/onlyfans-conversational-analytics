@@ -6,7 +6,7 @@ const ToneDot = styled('span', {
   shouldForwardProp: (property) => property !== 'tone',
 })<{ tone: 'positive' | 'negative' }>(({ tone, theme }) => ({
   backgroundColor:
-    tone === 'positive' ? theme.vars.palette.success.main : theme.vars.palette.error.main,
+    tone === 'positive' ? theme.vars.palette.sentiment.positive : theme.vars.palette.sentiment.negative,
   borderRadius: '50%',
   display: 'inline-block',
   flexShrink: 0,

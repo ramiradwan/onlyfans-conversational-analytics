@@ -27,16 +27,17 @@ const IconTile = styled(Box, {
 })<{ $tone: MetricTone }>(({ theme, $tone }) => {
   const color =
     $tone === 'sentiment'
-      ? theme.vars.palette.chart.positive
+      ? theme.vars.palette.sentiment.positive
       : $tone === 'opportunity'
         ? theme.vars.palette.chart.opportunity
         : $tone === 'connection'
           ? theme.vars.palette.secondary.main
-          : theme.vars.palette.primary.main;
+          : theme.vars.palette.measurement.main;
+  const field = theme.vars.palette.surface.metric[$tone === 'primary' ? 'measurement' : $tone];
   return {
     alignItems: 'center',
-    backgroundColor: `color-mix(in oklch, ${color} 10%, ${theme.vars.palette.background.paper})`,
-    border: `1px solid color-mix(in oklch, ${color} 20%, ${theme.vars.palette.background.paper})`,
+    backgroundColor: field.fill,
+    border: `1px solid ${field.border}`,
     borderRadius: Number(theme.shape.borderRadius) * 2,
     color,
     display: 'flex',

@@ -205,19 +205,20 @@ export const semanticIntents = {
     },
     "chart": {
       "area": "oklch(30.4536% 0.03004 181.98)",
+      "baseline": "oklch(71.2460% 0.01862 158.93)",
       "categorical1": "oklch(67.9613% 0.11788 210.83)",
       "categorical2": "oklch(52.8516% 0.17984 142.50)",
       "categorical3": "oklch(75.7281% 0.12276 333.48)",
-      "categorical4": "oklch(84.4069% 0.16972 96.01)",
+      "categorical4": "oklch(73.9265% 0.03350 255.62)",
       "categorical5": "oklch(62.0995% 0.13581 162.19)",
       "categorical6": "oklch(60.6460% 0.19455 37.69)",
       "categorical7": "oklch(65.0568% 0.16930 280.23)",
       "categorical8": "oklch(55.8644% 0.18371 14.17)",
       "grid": "oklch(100.0000% 0.00000 0.00 / 0.08)",
-      "negative": "oklch(55.8644% 0.18371 14.17)",
-      "neutral": "oklch(32.6039% 0.02112 285.17)",
-      "opportunity": "oklch(84.4069% 0.16972 96.01)",
-      "positive": "oklch(52.8516% 0.17984 142.50)",
+      "negative": "oklch(67.6862% 0.14532 10.42)",
+      "neutral": "oklch(75.7108% 0.01924 155.69)",
+      "opportunity": "oklch(75.5245% 0.06228 181.42)",
+      "positive": "oklch(63.7937% 0.10617 147.12)",
       "sentiment": "oklch(75.5245% 0.06228 181.42)",
       "unknown": "oklch(65.0568% 0.16930 280.23)",
       "volume": "oklch(75.5245% 0.06228 181.42)"
@@ -275,9 +276,9 @@ export const semanticIntents = {
       "main": "oklch(75.5245% 0.06228 181.42)"
     },
     "sentiment": {
-      "negative": "oklch(55.8644% 0.18371 14.17)",
-      "neutral": "oklch(32.6039% 0.02112 285.17)",
-      "positive": "oklch(52.8516% 0.17984 142.50)",
+      "negative": "oklch(67.6862% 0.14532 10.42)",
+      "neutral": "oklch(75.7108% 0.01924 155.69)",
+      "positive": "oklch(63.7937% 0.10617 147.12)",
       "unknown": "oklch(65.0568% 0.16930 280.23)"
     },
     "surface": {
@@ -288,8 +289,27 @@ export const semanticIntents = {
         "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40), 0 12px 32px -16px oklch(0.0000% 0.00000 0.00 / 0.65)"
       },
       "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
+      "error": "oklch(30.5024% 0.03766 0.57)",
       "glass": "oklch(19.5111% 0.01602 284.82 / 0.72)",
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(75.5245% 0.06228 181.42 / 0.12), oklch(75.5245% 0.06228 181.42 / 0.04) 45%, oklch(75.5245% 0.06228 181.42 / 0.00) 75%)",
+      "metric": {
+        "connection": {
+          "border": "oklch(43.4931% 0.06989 299.93)",
+          "fill": "oklch(30.3925% 0.03786 294.98)"
+        },
+        "measurement": {
+          "border": "oklch(49.6372% 0.04569 177.76)",
+          "fill": "oklch(30.4536% 0.03004 181.98)"
+        },
+        "opportunity": {
+          "border": "oklch(49.6372% 0.04569 177.76)",
+          "fill": "oklch(30.4536% 0.03004 181.98)"
+        },
+        "sentiment": {
+          "border": "oklch(48.8342% 0.06939 148.88)",
+          "fill": "oklch(30.6389% 0.03699 154.48)"
+        }
+      },
       "overlay": "0 2px 6px oklch(0.0000% 0.00000 0.00 / 0.50), 0 24px 56px -20px oklch(0.0000% 0.00000 0.00 / 0.90)",
       "paper": "oklch(24.1875% 0.00825 169.61)",
       "placeholder": "oklch(34.9609% 0.01582 156.31)",
@@ -331,18 +351,19 @@ export const semanticIntents = {
     },
     "chart": {
       "area": "oklch(95.0072% 0.01094 182.87)",
+      "baseline": "oklch(52.9987% 0.00786 145.46)",
       "categorical1": "oklch(61.1455% 0.10629 211.41)",
       "categorical2": "oklch(52.8516% 0.17984 142.50)",
-      "categorical3": "oklch(68.8587% 0.12944 333.09)",
-      "categorical4": "oklch(65.4202% 0.13460 96.09)",
-      "categorical5": "oklch(67.2173% 0.14081 162.15)",
+      "categorical3": "oklch(64.3772% 0.13354 333.67)",
+      "categorical4": "oklch(54.1259% 0.03161 248.41)",
+      "categorical5": "oklch(59.6248% 0.12942 160.20)",
       "categorical6": "oklch(63.1081% 0.17194 39.82)",
       "categorical7": "oklch(40.9284% 0.18096 265.79)",
       "categorical8": "oklch(41.6885% 0.16228 13.58)",
       "grid": "oklch(21.9569% 0.00360 164.71 / 0.08)",
       "negative": "oklch(41.6885% 0.16228 13.58)",
-      "neutral": "oklch(68.9453% 0.02185 291.94)",
-      "opportunity": "oklch(65.4202% 0.13460 96.09)",
+      "neutral": "oklch(55.1753% 0.01609 155.30)",
+      "opportunity": "oklch(52.3257% 0.08827 186.65)",
       "positive": "oklch(52.8516% 0.17984 142.50)",
       "sentiment": "oklch(52.3257% 0.08827 186.65)",
       "unknown": "oklch(40.9284% 0.18096 265.79)",
@@ -402,7 +423,7 @@ export const semanticIntents = {
     },
     "sentiment": {
       "negative": "oklch(41.6885% 0.16228 13.58)",
-      "neutral": "oklch(68.9453% 0.02185 291.94)",
+      "neutral": "oklch(55.1753% 0.01609 155.30)",
       "positive": "oklch(52.8516% 0.17984 142.50)",
       "unknown": "oklch(40.9284% 0.18096 265.79)"
     },
@@ -414,8 +435,27 @@ export const semanticIntents = {
         "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 12px 32px -16px oklch(21.9569% 0.00360 164.71 / 0.16)"
       },
       "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 4px 16px -8px oklch(21.9569% 0.00360 164.71 / 0.08)",
+      "error": "oklch(94.6989% 0.01877 25.61)",
       "glass": "oklch(100.0000% 0.00000 0.00 / 0.72)",
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(52.3257% 0.08827 186.65 / 0.10), oklch(52.3257% 0.08827 186.65 / 0.04) 45%, oklch(52.3257% 0.08827 186.65 / 0.00) 75%)",
+      "metric": {
+        "connection": {
+          "border": "oklch(86.2749% 0.04357 306.50)",
+          "fill": "oklch(94.7415% 0.01682 304.80)"
+        },
+        "measurement": {
+          "border": "oklch(85.6521% 0.02698 178.94)",
+          "fill": "oklch(95.0072% 0.01094 182.87)"
+        },
+        "opportunity": {
+          "border": "oklch(85.6521% 0.02698 178.94)",
+          "fill": "oklch(95.0072% 0.01094 182.87)"
+        },
+        "sentiment": {
+          "border": "oklch(86.3617% 0.04532 140.09)",
+          "fill": "oklch(95.2086% 0.01686 137.02)"
+        }
+      },
       "overlay": "0 2px 6px oklch(21.9569% 0.00360 164.71 / 0.06), 0 18px 40px -16px oklch(21.9569% 0.00360 164.71 / 0.22)",
       "paper": "oklch(100.0000% 0.00000 0.00)",
       "placeholder": "oklch(91.4244% 0.00918 78.28)",
@@ -462,19 +502,20 @@ export const semanticColorSchemes = {
     },
     "chart": {
       "area": "oklch(30.4536% 0.03004 181.98)",
+      "baseline": "oklch(71.2460% 0.01862 158.93)",
       "categorical1": "oklch(67.9613% 0.11788 210.83)",
       "categorical2": "oklch(52.8516% 0.17984 142.50)",
       "categorical3": "oklch(75.7281% 0.12276 333.48)",
-      "categorical4": "oklch(84.4069% 0.16972 96.01)",
+      "categorical4": "oklch(73.9265% 0.03350 255.62)",
       "categorical5": "oklch(62.0995% 0.13581 162.19)",
       "categorical6": "oklch(60.6460% 0.19455 37.69)",
       "categorical7": "oklch(65.0568% 0.16930 280.23)",
       "categorical8": "oklch(55.8644% 0.18371 14.17)",
       "grid": "oklch(100.0000% 0.00000 0.00 / 0.08)",
-      "negative": "oklch(55.8644% 0.18371 14.17)",
-      "neutral": "oklch(32.6039% 0.02112 285.17)",
-      "opportunity": "oklch(84.4069% 0.16972 96.01)",
-      "positive": "oklch(52.8516% 0.17984 142.50)",
+      "negative": "oklch(67.6862% 0.14532 10.42)",
+      "neutral": "oklch(75.7108% 0.01924 155.69)",
+      "opportunity": "oklch(75.5245% 0.06228 181.42)",
+      "positive": "oklch(63.7937% 0.10617 147.12)",
       "sentiment": "oklch(75.5245% 0.06228 181.42)",
       "unknown": "oklch(65.0568% 0.16930 280.23)",
       "volume": "oklch(75.5245% 0.06228 181.42)"
@@ -525,8 +566,27 @@ export const semanticColorSchemes = {
         "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40), 0 12px 32px -16px oklch(0.0000% 0.00000 0.00 / 0.65)"
       },
       "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
+      "error": "oklch(30.5024% 0.03766 0.57)",
       "glass": "oklch(19.5111% 0.01602 284.82 / 0.72)",
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(75.5245% 0.06228 181.42 / 0.12), oklch(75.5245% 0.06228 181.42 / 0.04) 45%, oklch(75.5245% 0.06228 181.42 / 0.00) 75%)",
+      "metric": {
+        "connection": {
+          "border": "oklch(43.4931% 0.06989 299.93)",
+          "fill": "oklch(30.3925% 0.03786 294.98)"
+        },
+        "measurement": {
+          "border": "oklch(49.6372% 0.04569 177.76)",
+          "fill": "oklch(30.4536% 0.03004 181.98)"
+        },
+        "opportunity": {
+          "border": "oklch(49.6372% 0.04569 177.76)",
+          "fill": "oklch(30.4536% 0.03004 181.98)"
+        },
+        "sentiment": {
+          "border": "oklch(48.8342% 0.06939 148.88)",
+          "fill": "oklch(30.6389% 0.03699 154.48)"
+        }
+      },
       "overlay": "0 2px 6px oklch(0.0000% 0.00000 0.00 / 0.50), 0 24px 56px -20px oklch(0.0000% 0.00000 0.00 / 0.90)",
       "rim": "linear-gradient(180deg, oklch(100.0000% 0.00000 0.00 / 0.09), oklch(100.0000% 0.00000 0.00 / 0.02) 48%, oklch(100.0000% 0.00000 0.00 / 0.00))",
       "subtle": "oklch(28.2061% 0.01007 164.17)"
@@ -574,18 +634,19 @@ export const semanticColorSchemes = {
     },
     "chart": {
       "area": "oklch(95.0072% 0.01094 182.87)",
+      "baseline": "oklch(52.9987% 0.00786 145.46)",
       "categorical1": "oklch(61.1455% 0.10629 211.41)",
       "categorical2": "oklch(52.8516% 0.17984 142.50)",
-      "categorical3": "oklch(68.8587% 0.12944 333.09)",
-      "categorical4": "oklch(65.4202% 0.13460 96.09)",
-      "categorical5": "oklch(67.2173% 0.14081 162.15)",
+      "categorical3": "oklch(64.3772% 0.13354 333.67)",
+      "categorical4": "oklch(54.1259% 0.03161 248.41)",
+      "categorical5": "oklch(59.6248% 0.12942 160.20)",
       "categorical6": "oklch(63.1081% 0.17194 39.82)",
       "categorical7": "oklch(40.9284% 0.18096 265.79)",
       "categorical8": "oklch(41.6885% 0.16228 13.58)",
       "grid": "oklch(21.9569% 0.00360 164.71 / 0.08)",
       "negative": "oklch(41.6885% 0.16228 13.58)",
-      "neutral": "oklch(68.9453% 0.02185 291.94)",
-      "opportunity": "oklch(65.4202% 0.13460 96.09)",
+      "neutral": "oklch(55.1753% 0.01609 155.30)",
+      "opportunity": "oklch(52.3257% 0.08827 186.65)",
       "positive": "oklch(52.8516% 0.17984 142.50)",
       "sentiment": "oklch(52.3257% 0.08827 186.65)",
       "unknown": "oklch(40.9284% 0.18096 265.79)",
@@ -637,8 +698,27 @@ export const semanticColorSchemes = {
         "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 12px 32px -16px oklch(21.9569% 0.00360 164.71 / 0.16)"
       },
       "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 4px 16px -8px oklch(21.9569% 0.00360 164.71 / 0.08)",
+      "error": "oklch(94.6989% 0.01877 25.61)",
       "glass": "oklch(100.0000% 0.00000 0.00 / 0.72)",
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(52.3257% 0.08827 186.65 / 0.10), oklch(52.3257% 0.08827 186.65 / 0.04) 45%, oklch(52.3257% 0.08827 186.65 / 0.00) 75%)",
+      "metric": {
+        "connection": {
+          "border": "oklch(86.2749% 0.04357 306.50)",
+          "fill": "oklch(94.7415% 0.01682 304.80)"
+        },
+        "measurement": {
+          "border": "oklch(85.6521% 0.02698 178.94)",
+          "fill": "oklch(95.0072% 0.01094 182.87)"
+        },
+        "opportunity": {
+          "border": "oklch(85.6521% 0.02698 178.94)",
+          "fill": "oklch(95.0072% 0.01094 182.87)"
+        },
+        "sentiment": {
+          "border": "oklch(86.3617% 0.04532 140.09)",
+          "fill": "oklch(95.2086% 0.01686 137.02)"
+        }
+      },
       "overlay": "0 2px 6px oklch(21.9569% 0.00360 164.71 / 0.06), 0 18px 40px -16px oklch(21.9569% 0.00360 164.71 / 0.22)",
       "rim": "linear-gradient(180deg, oklch(21.9569% 0.00360 164.71 / 0.07), oklch(21.9569% 0.00360 164.71 / 0.03))",
       "subtle": "oklch(96.1577% 0.00574 84.57)"

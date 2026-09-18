@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { chromium } from 'playwright';
 import { assertNumericTypography } from './appearance-contracts.mjs';
+import { captureVisionDiagnostics } from './vision-diagnostics.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const frontend = resolve(here, '../../frontend');
@@ -317,6 +318,7 @@ async function capture() {
   const { base, vite } = await startHarness();
   const browser = await chromium.launch();
   const entries = [];
+  const diagnostics = [];
   const failures = [];
   try {
     for (const viewport of VIEWPORTS) {
@@ -385,6 +387,10 @@ async function capture() {
               capturedHeight: height,
             });
 
+            if (screen.workspace === 'analytics' && screen.state === 'model' && !screen.variant) {
+              const captures = await captureVisionDiagnostics(page, outDir, name);
+              diagnostics.push(...captures.map((capture) => ({ ...capture, mode, viewport: viewport.name })));
+            }
             if (errors.length) throw new Error(errors.join('\n'));
             console.log(`captured ${name} fold + full`);
           } catch (error) {
@@ -403,7 +409,7 @@ async function capture() {
   }
   await writeFile(
     join(outDir, 'manifest.json'),
-    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, failures }, null, 2)}\n`,
+    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, diagnostics, failures }, null, 2)}\n`,
   );
   if (failures.length) {
     console.error(`${failures.length} screen(s) did not reach their ready state:\n${failures.join('\n')}`);

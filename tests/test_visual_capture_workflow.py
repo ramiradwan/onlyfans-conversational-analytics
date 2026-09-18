@@ -55,3 +55,12 @@ def test_visual_capture_artifact_is_bound_to_the_product_revision() -> None:
     upload = next(step for step in job["steps"] if step.get("name") == "Upload visual states")
     assert upload["with"]["name"] == "visual-states-${{ env.PRODUCT_SHA }}"
     assert upload["with"]["retention-days"] == 30
+
+
+def test_visual_capture_qualifies_colors_and_diagnostic_cleanup() -> None:
+    steps = _load(VISUAL_WORKFLOW)["jobs"]["visual-capture"]["steps"]
+    commands = {step.get("name"): step.get("run", "") for step in steps}
+    assert commands["Test visual capture contracts"] == "node --test tools/visual-capture/*.test.mjs"
+    assert "--color-report ../artifacts/visual-capture/color-qualification.json" in commands["Record color qualification"]
+    names = [step.get("name") for step in steps]
+    assert names.index("Capture visual states") < names.index("Record color qualification") < names.index("Upload visual states")

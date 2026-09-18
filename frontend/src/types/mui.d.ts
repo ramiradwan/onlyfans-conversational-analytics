@@ -70,6 +70,8 @@ declare module '@mui/material/styles' {
       rim: string;
       glow: string;
       dominant: { border: string; elevation: string };
+      error: string;
+      metric: Record<'measurement' | 'sentiment' | 'opportunity' | 'connection', { fill: string; border: string }>;
     };
     communication: {
       incomingSurface: string;
@@ -80,6 +82,7 @@ declare module '@mui/material/styles' {
     chart: {
       sentiment: string;
       area: string;
+      baseline: string;
       volume: string;
       neutral: string;
       positive: string;

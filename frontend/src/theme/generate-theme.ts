@@ -3,6 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { qualifyThemeColors } from './chart-qualification.ts';
 import { contrastRatio, contrastRatioOnComposite } from './color-validation.ts';
 import { buildTokenGraph, isObject, publicIntents, validateBridgeIntents, type JsonObject, type JsonValue } from './intent-contracts.ts';
 import { validateRepositoryConsumers } from './token-consumers.ts';
@@ -219,6 +220,7 @@ function resolveTokens(tokensJsonSource: string): JsonObject {
   const tier2 = getObject(resolved, 'tier2');
   tier2.intents = publicIntents(graph);
   validateContrast(getObject(tier2, 'colorSchemes'));
+  qualifyThemeColors(resolved);
   return resolved;
 }
 
@@ -360,6 +362,10 @@ function writeIfChanged(filePath: string, content: string): boolean {
   return true;
 }
 
+export function generateColorReport(tokensJsonSource: string): string {
+  return JSON.stringify(qualifyThemeColors(resolveTokens(tokensJsonSource)), null, 2) + '\n';
+}
+
 function main(): void {
   validateRepositoryConsumers(repositoryRoot);
   const tokensSource = fs.readFileSync(sourcePath, 'utf8');
@@ -368,6 +374,13 @@ function main(): void {
   const css = generateStaticTokensCss(tokensSource);
   writeIfChanged(staticTokensPath, css);
   console.log('Theme generated deterministically from tokens.json');
+  const reportIndex = process.argv.indexOf('--color-report');
+  if (reportIndex >= 0) {
+    const output = process.argv[reportIndex + 1];
+    if (!output || output.startsWith('--')) throw new Error('--color-report requires an output path');
+    fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
+    writeIfChanged(output, generateColorReport(tokensSource));
+  }
   if (process.argv.includes('--static-surfaces')) {
     for (const consumer of staticTokenConsumers) {
       const consumerPath = path.join(repositoryRoot, consumer);

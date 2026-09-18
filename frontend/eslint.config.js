@@ -244,7 +244,7 @@ export default [
   },
   {
     // These files execute directly under Node ESM rather than through Vite.
-    files: ["src/theme/{generate-theme,intent-contracts,color-validation,token-consumers}.ts"],
+    files: ["src/theme/{generate-theme,intent-contracts,color-validation,chart-qualification,token-consumers}.ts"],
     rules: {
       "import/extensions": ["error", "ignorePackages", { ts: "always" }],
     },

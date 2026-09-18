@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
-const buildModules = ['generate-theme', 'intent-contracts', 'color-validation', 'token-consumers'];
+const buildModules = ['generate-theme', 'intent-contracts', 'color-validation', 'chart-qualification', 'token-consumers'];
 const financialCss = /--(?:bridge-palette|dipsy-intent|dipsy-color)-financial(?:-|\b)/;
 
 export function validateConsumerSource(source: string, filename: string): void {
@@ -13,6 +13,9 @@ export function validateConsumerSource(source: string, filename: string): void {
   if (!/\.[cm]?[jt]sx?$/.test(filename)) return;
   const file = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, /[jt]sx$/.test(filename) ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   function visit(node: ts.Node): void {
+    if (ts.isPropertyAccessExpression(node) && ['accent', 'calm'].includes(node.name.text)
+      && /(?:^|\.)palette$/.test(node.expression.getText(file))) fail('deprecated palette alias: use a product intent');
+    if (ts.isStringLiteralLike(node) && /^(accent|calm)\./.test(node.text)) fail('deprecated palette alias: use a product intent');
     if (ts.isIdentifier(node) && node.text === 'augmentColor') fail('Bridge owns explicit palette tones; augmentColor is not allowed');
     if (ts.isPropertyAccessExpression(node) && node.name.text === 'financial') fail('financial color tokens are reserved');
     if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === 'financial') fail('financial color tokens are reserved');

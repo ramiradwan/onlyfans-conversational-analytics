@@ -327,7 +327,7 @@ export function SentimentEngagementTrend({
                 x2={WIDTH - RIGHT}
                 y1={ZERO_Y}
                 y2={ZERO_Y}
-                stroke={theme.vars.palette.text.disabled}
+                stroke={theme.vars.palette.chart.baseline}
                 strokeWidth="1.5"
                 vectorEffect="non-scaling-stroke"
               />

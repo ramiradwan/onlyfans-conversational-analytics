@@ -55,6 +55,7 @@ function buildPalette(scheme: SchemeTokens, contrastThreshold: number): PaletteO
       elevation: scheme.surface.elevation, overlay: scheme.surface.overlay,
       rim: scheme.surface.rim, glow: scheme.surface.glow,
       dominant: scheme.surface.dominant,
+      error: scheme.surface.error, metric: scheme.surface.metric,
     },
     communication: scheme.communication,
     chart: scheme.chart,

@@ -31,7 +31,7 @@ const StateCard = styled(Paper)(({ theme }) => ({
 
 const StateIcon = styled(Box)(({ theme }) => ({
   alignItems: 'center',
-  backgroundColor: `color-mix(in oklch, ${theme.vars.palette.error.main} 10%, ${theme.vars.palette.background.paper})`,
+  backgroundColor: theme.vars.palette.surface.error,
   borderRadius: `${theme.shape.borderRadius}px`,
   color: theme.vars.palette.error.main,
   display: 'flex',

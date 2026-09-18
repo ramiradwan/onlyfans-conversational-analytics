@@ -67,10 +67,16 @@ jobs:
         working-directory: tools/visual-capture
         run: npx playwright install chromium
 
+      - name: Test visual capture contracts
+        run: node --test tools/visual-capture/*.test.mjs
+
       - name: Capture visual states
         env:
           VISUAL_CAPTURE_REVISION: ${{ env.PRODUCT_SHA }}
         run: node tools/visual-capture/capture.mjs artifacts/visual-capture
+
+      - name: Record color qualification
+        run: npm run generate:theme --prefix frontend -- --color-report ../artifacts/visual-capture/color-qualification.json
 
       - name: Upload visual states
         if: always()
