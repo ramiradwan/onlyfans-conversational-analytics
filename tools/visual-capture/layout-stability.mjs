@@ -35,6 +35,8 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'narrow', width: 390, height: 844 },
 ];
+/** A laptop window too short to fit the passkey error below the card without moving the card. */
+const SHORT_VIEWPORT = { name: 'short', width: 1366, height: 600 };
 const COLOR_CASES = [
   { name: 'no saved mode, light system', colorScheme: 'light', savedMode: null },
   { name: 'no saved mode, dark system', colorScheme: 'dark', savedMode: null },
@@ -136,6 +138,20 @@ async function brandFontUrls(context, base) {
   } finally {
     await page.close();
   }
+}
+
+/** Space between the passkey card and the end of the main area's content box. */
+function roomBelowCard() {
+  const main = document.querySelector('main');
+  const card = document.querySelector('[data-visual="passkey-card"]');
+  const end = main.getBoundingClientRect().bottom - Number.parseFloat(getComputedStyle(main).paddingBottom);
+  return end - card.getBoundingClientRect().bottom;
+}
+
+/** Height the passkey error takes below the card, including its top margin. */
+function errorHeight() {
+  const alert = document.querySelector('[role="alert"]');
+  return alert.getBoundingClientRect().height + Number.parseFloat(getComputedStyle(alert).marginTop);
 }
 
 async function settle(page) {
@@ -263,7 +279,7 @@ async function measureBoot(browser) {
 async function measureHarness(browser) {
   const { base, vite } = await startHarness();
   try {
-    for (const viewport of VIEWPORTS) {
+    for (const viewport of [...VIEWPORTS, SHORT_VIEWPORT]) {
       const context = await browser.newContext({
         viewport, colorScheme: 'light', deviceScaleFactor: 1, locale: 'en-US', reducedMotion: 'reduce', timezoneId: 'UTC',
       });
@@ -279,7 +295,8 @@ async function measureHarness(browser) {
         await settle(page);
         return page;
       };
-      for (const screen of SCREENS.filter((candidate) => !candidate.variant && !candidate.act)) {
+      const screens = viewport === SHORT_VIEWPORT ? [] : SCREENS.filter((candidate) => !candidate.variant && !candidate.act);
+      for (const screen of screens) {
         const scenario = `${screen.workspace}, ${screen.state}, ${viewport.name}`;
         let page;
         try {
@@ -296,11 +313,15 @@ async function measureHarness(browser) {
       try {
         page = await open(SCREENS.find((screen) => screen.workspace === 'passkey' && screen.state === 'resting'));
         await page.evaluate(() => { window.__stability.shifts = []; });
+        const room = await page.evaluate(roomBelowCard);
         // The error arrives after the system passkey prompt closes, so the click is dispatched
         // without user input and any resulting shift counts.
         await page.getByRole('button', { name: 'Sign in with passkey' }).evaluate((button) => button.click());
         await page.getByRole('alert').waitFor({ state: 'visible' });
         await settle(page);
+        if (viewport === SHORT_VIEWPORT && await page.evaluate(errorHeight) <= room) {
+          throw new Error('the error fit below the card, so the short window did not exercise it');
+        }
         recordShifts(scenario, await page.evaluate(() => window.__stability.shifts));
       } catch (error) {
         record(scenario, 'error', error.message.split('\n')[0], 'fail');
