@@ -36,7 +36,50 @@ afterEach(() => {
   bridgeTransportStore.reset();
 });
 
+function connectExtension() {
+  bridgeTransportStore.bindAccount('creator-1');
+  bridgeTransportStore.setAgent({
+    creator_account_id: 'creator-1',
+    status: 'connected',
+    agent_installation_id: '90000000-0000-4000-8000-000000000002',
+    connection_id: '90000000-0000-4000-8000-000000000003',
+    required_config_revision: 'config-1',
+    applied_config_revision: 'config-1',
+    required_history_settings_revision: 1,
+    applied_history_settings_revision: 1,
+    last_heartbeat_at: '2026-07-19T12:00:00Z',
+    degraded_reason: null,
+  });
+}
+
 describe('SettingsView history consent', () => {
+  it('asks for consent only once the browser extension is connected', async () => {
+    const api: HistorySettingsApi = {
+      get: vi.fn(async () => initial),
+      update: vi.fn(async () => initial),
+      revoke: vi.fn(async () => initial),
+    };
+
+    const view = render(
+      <ThemeProvider theme={theme} defaultMode="light">
+        <SettingsView api={api} />
+      </ThemeProvider>,
+    );
+    expect(await screen.findByText('Available once the browser extension is connected.')).toBeTruthy();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Turn on message history' })).toBeNull();
+
+    view.unmount();
+    connectExtension();
+    render(
+      <ThemeProvider theme={theme} defaultMode="light">
+        <SettingsView api={api} />
+      </ThemeProvider>,
+    );
+    expect(await screen.findByRole('button', { name: 'Turn on message history' })).toBeTruthy();
+    expect(screen.queryByText('Available once the browser extension is connected.')).toBeNull();
+  });
+
   it('requires explicit consent, then exposes pause/resume and revocation through the REST service', async () => {
     const running: HistorySettings = {
       ...initial,
@@ -60,20 +103,21 @@ describe('SettingsView history consent', () => {
       revoke: vi.fn(async () => revoked),
     };
 
+    connectExtension();
     render(
       <ThemeProvider theme={theme} defaultMode="light">
         <SettingsView api={api} />
       </ThemeProvider>,
     );
 
-    const start = await screen.findByRole('button', { name: 'Start historical sync' });
+    const start = await screen.findByRole('button', { name: 'Turn on message history' });
     expect(start.hasAttribute('disabled')).toBe(true);
     fireEvent.click(
       screen.getByRole('checkbox', {
-        name: /I authorize read-only local historical sync/,
+        name: /I allow read-only syncing of my older messages/,
       }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Start historical sync' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on message history' }));
 
     await waitFor(() => expect(api.update).toHaveBeenCalledTimes(1));
     expect(api.update).toHaveBeenCalledWith(
@@ -84,11 +128,13 @@ describe('SettingsView history consent', () => {
         consent_policy_version: 'history-consent-v1',
       }),
     );
-    expect(await screen.findByRole('button', { name: 'Pause sync' })).toBeTruthy();
-    expect(screen.getByText('platform-creator-1')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Pause' })).toBeTruthy();
+    expect(screen.queryByText('platform-creator-1')).toBeNull();
+    expect(screen.queryByText('history-consent-v1')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke consent' }));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Revoke consent' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
+    expect(api.revoke).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Turn off' }));
     await waitFor(() => expect(api.revoke).toHaveBeenCalledWith(2));
   });
 
@@ -104,7 +150,7 @@ describe('SettingsView history consent', () => {
         <SettingsView api={api} />
       </ThemeProvider>,
     );
-    expect(await screen.findByText(/available to the creator account owner/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Start historical sync' })).toBeNull();
+    expect(await screen.findByText('Only the account owner can change message history.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Turn on message history' })).toBeNull();
   });
 });

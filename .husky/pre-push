@@ -1,7 +1,5 @@
-#!/bin/sh  
-. "$(dirname "$0")/_/husky.sh"  
-  
-cd frontend || exit 1  
-  
-# Lint, typecheck, and build — all matching CI exactly  
-npm run lint && npm run typecheck && npm run build  
+#!/bin/sh
+cd frontend || exit 1
+
+# The build script runs theme generation, typecheck, lint, bundling and the story-isolation check.
+npm run build

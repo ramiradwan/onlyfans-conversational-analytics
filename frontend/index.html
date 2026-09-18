@@ -4,6 +4,47 @@
     <meta charset="UTF-8" />  
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />  
     <title>* Conversational Analytics</title>  
+
+    <!-- Sets the saved color scheme before first paint. -->
+    <script>(function() {
+try {
+  let colorScheme = '';
+  const mode = localStorage.getItem('mui-mode') || 'light';
+  const dark = localStorage.getItem('mui-color-scheme-dark') || 'dark';
+  const light = localStorage.getItem('mui-color-scheme-light') || 'light';
+  if (mode === 'system') {
+    // handle system mode
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mql.matches) {
+      colorScheme = dark
+    } else {
+      colorScheme = light
+    }
+  }
+  if (mode === 'light') {
+    colorScheme = light;
+  }
+  if (mode === 'dark') {
+    colorScheme = dark;
+  }
+  if (colorScheme) {
+    document.documentElement.setAttribute('data-mui-color-scheme', colorScheme);
+  }
+} catch(e){}})();</script>
+    <style>
+      /* first-paint:start */
+      :root {
+        color-scheme: light;
+        background-color: oklch(96.7853% 0.00453 78.30);
+        color: oklch(21.9569% 0.00360 164.71);
+      }
+      :root[data-mui-color-scheme="dark"] {
+        color-scheme: dark;
+        background-color: oklch(20.3962% 0.00728 164.17);
+        color: oklch(96.7794% 0.00449 134.85);
+      }
+      /* first-paint:end */
+    </style>
   
     <!-- Favicon -->  
     <link rel="icon" type="image/png" href="/favicon.png" />  

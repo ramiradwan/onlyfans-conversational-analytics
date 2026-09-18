@@ -4,6 +4,8 @@ Use [CONTRIBUTING.md](CONTRIBUTING.md) for setup and contribution rules, [docs/t
 
 `docs/architecture-boundaries.json` is the authoritative machine-readable architecture baseline. Read [docs/architecture-boundaries.md](docs/architecture-boundaries.md) before modifying subsystem boundaries, dependency directions, or declared exceptions.
 
+`docs/ux-journey.json` is the authoritative customer journey baseline: each state names the code that renders it and the tests that exercise it. States are anchored on code identifiers such as `data-journey-state`, never on interface copy, so wording changes do not touch the manifest. Update it when a customer-visible state, step, or action changes, and run `python tools/validate_ux_journey.py`. Tests assert that guidance exists and is linked to its control; they assert exact wording only for security-relevant or externally approved text.
+
 Accepted [architecture decisions](docs/adr/README.md) are authoritative. Read the relevant ADR before changing system boundaries, persistence, authentication, protocol behavior, or packaging. If implementation and an accepted ADR disagree, do not silently choose one; correct the inconsistency or update the architecture decision. Do not promote or wholesale implement proposed ADR 0012; it remains proposed.
 
 ## Architecture constraints

@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreatorVaultControls } from '../src/components/CreatorVaultControls';
@@ -88,7 +88,7 @@ afterEach(() => {
 });
 
 describe('CreatorVaultControls', () => {
-  it('exercises finite enable, deletion, unlink treatment, export, and disable through the API', async () => {
+  it('exercises finite enable, confirmed deletion, export, and confirmed disable through the API', async () => {
     const command = vi.fn(async (input: CreatorVaultCommand) => (
       result(input, input.action === 'disable' ? disabled : enabled)
     ));
@@ -105,46 +105,46 @@ describe('CreatorVaultControls', () => {
       </ThemeProvider>,
     );
 
-    expect(await screen.findByText('Disabled')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Keep until I delete' })).toBeNull();
+    expect(await screen.findByText('Off')).toBeTruthy();
+    expect(screen.queryByLabelText('Days to keep')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on archive' }));
+    const archiveDialog = within(screen.getByRole('dialog'));
+    expect(archiveDialog.queryByRole('radio')).toBeNull();
+    expect(screen.queryByText(/removed automatically/)).toBeNull();
+    expect(screen.queryByLabelText(/ ID$/)).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Retention days'), {
+    const submit = archiveDialog.getByRole('button', { name: 'Turn on archive' });
+    fireEvent.change(archiveDialog.getByLabelText('Days to keep'), { target: { value: '0' } });
+    expect(submit.hasAttribute('disabled')).toBe(true);
+    fireEvent.change(archiveDialog.getByLabelText('Days to keep'), {
       target: { value: '365' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Enable finite Vault' }));
+    fireEvent.click(submit);
     await waitFor(() => expect(command).toHaveBeenCalledWith({
       action: 'enable_finite',
       finite_horizon_days: 365,
     }));
-    expect(await screen.findByRole('button', { name: 'Disable Vault' })).toBeTruthy();
-    expect(screen.getByText(/normal uninstall removes the program but leaves the product data directory/i)).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Turn off archive' })).toBeTruthy();
+    expect(screen.getByText('Keeping messages for 365 days')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByLabelText('Days to keep')).toBeNull());
 
-    fireEvent.change(screen.getByLabelText('Message ID'), {
-      target: { value: 'message-42' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Delete selected scope' }));
-    await waitFor(() => expect(command).toHaveBeenCalledWith({
-      action: 'delete_message',
-      target_id: 'message-42',
-    }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete all Vault data' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete all messages' }));
+    expect(command).not.toHaveBeenCalledWith({ action: 'delete_all' });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete all' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(command).toHaveBeenCalledWith({ action: 'delete_all' }));
+    expect(await screen.findByText('Messages deleted.')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Apply unlink treatment' }));
-    await waitFor(() => expect(command).toHaveBeenCalledWith({
-      action: 'unlink',
-      unlink_archive_treatment: 'preserve',
-    }));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Export Creator Vault' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download messages' }));
     await waitFor(() => expect(api.exportDocument).toHaveBeenCalledTimes(1));
     expect(onDownload).toHaveBeenCalledWith(exportDocument);
-    expect(await screen.findByText(/recovery copies may still remain/)).toBeTruthy();
+    expect(await screen.findByText(/Some backup copies may stay on this computer/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Disable Vault' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off archive' }));
+    expect(command).not.toHaveBeenCalledWith({ action: 'disable' });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Turn off' }));
     await waitFor(() => expect(command).toHaveBeenCalledWith({ action: 'disable' }));
-    expect(await screen.findByText('Disabled')).toBeTruthy();
+    expect(await screen.findByText('Off')).toBeTruthy();
   });
 
   it('surfaces incomplete managed deletion and retries dependent cleanup', async () => {
@@ -178,13 +178,16 @@ describe('CreatorVaultControls', () => {
       </ThemeProvider>,
     );
 
-    expect(await screen.findByText('Enabled')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete all Vault data' }));
-    expect(await screen.findByText(/dependent cleanup is still incomplete/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry cleanup' }));
+    expect(await screen.findByText('Keeping messages for 365 days')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete all messages' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete all' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText("Deleting isn't finished")).toBeTruthy();
+    expect(screen.queryByText('Messages deleted.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish deleting' }));
     await waitFor(() => expect(retryDeletion).toHaveBeenCalledWith('operation-1'));
-    expect(await screen.findByText('The managed Vault deletion completed.')).toBeTruthy();
-    expect(screen.queryByText('Vault cleanup is incomplete')).toBeNull();
+    expect(await screen.findByText('Messages deleted.')).toBeTruthy();
+    expect(screen.queryByText("Deleting isn't finished")).toBeNull();
   });
 
   it('shows the indefinite option only when the backend capability permits it', async () => {
@@ -214,8 +217,12 @@ describe('CreatorVaultControls', () => {
       </ThemeProvider>,
     );
 
-    const indefinite = await screen.findByRole('button', { name: 'Keep until I delete' });
-    fireEvent.click(indefinite);
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn on archive' }));
+    const archiveDialog = within(screen.getByRole('dialog'));
+    expect(archiveDialog.getByLabelText('Days to keep')).toBeTruthy();
+    fireEvent.click(archiveDialog.getByRole('radio', { name: 'Keep until I delete them' }));
+    expect(archiveDialog.queryByLabelText('Days to keep')).toBeNull();
+    fireEvent.click(archiveDialog.getByRole('button', { name: 'Turn on archive' }));
     await waitFor(() => expect(api.command).toHaveBeenCalledWith({
       action: 'enable_indefinite',
     }));
@@ -235,8 +242,8 @@ describe('CreatorVaultControls', () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByText(/available only to the creator account owner/)).toBeTruthy();
+    expect(screen.getByText('Only the account owner can manage stored messages.')).toBeTruthy();
     expect(api.get).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: 'Enable finite Vault' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Turn on archive' })).toBeNull();
   });
 });

@@ -228,7 +228,7 @@ export const storyBaselineState: AnalyticsReadState = {
   status: 'baseline',
   data: storyAnalyticsModel,
   isRefreshing: false,
-  message: 'Directional baseline — not calibrated production analysis.',
+  message: 'These results are early estimates.',
 };
 export const storyLoadingState: AnalyticsReadState = {
   status: 'loading',
@@ -240,20 +240,20 @@ export const storyUnavailableState: AnalyticsReadState = {
   status: 'unavailable',
   data: null,
   isRefreshing: false,
-  message: 'No analytics projection is available for this account.',
+  message: "Analytics aren't available for this account yet.",
 };
 export const storyBuildingState: AnalyticsReadState = {
   status: 'building',
   data: storyAnalyticsModel,
   isRefreshing: false,
-  message: 'The next analytics projection is building.',
+  message: 'Your analytics are still being prepared.',
   previousStatus: 'baseline',
 };
 export const storyErrorState: AnalyticsReadState = {
   status: 'error',
   data: null,
   isRefreshing: false,
-  message: 'The analytics read failed for this visual state.',
+  message: 'Check your connection and try again.',
   previousStatus: null,
 };
 

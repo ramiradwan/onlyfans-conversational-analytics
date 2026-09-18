@@ -20,8 +20,14 @@ export async function openPopup(context, targetExtensionId, pageErrors) {
   await popup.goto(`chrome-extension://${targetExtensionId}/popup.html`, {
     waitUntil: 'domcontentloaded',
   });
-  await expect(popup.locator('#mode-label')).not.toHaveText('Checking local status…');
+  await expect(popup.locator('#mode-label')).not.toHaveText('Checking status…');
   return popup;
+}
+
+export async function openManageExtension(popup) {
+  const manage = popup.locator('#manage-view');
+  if (!(await manage.isVisible())) await popup.getByRole('button', { name: 'Manage extension' }).click();
+  await expect(manage).toBeVisible();
 }
 
 export async function browserProcessId(context) {
@@ -174,20 +180,20 @@ export async function enablePreviewAnalytics(context, popup, worker) {
 export async function assertFullProminentDisclosure(popup) {
   const full = popup.locator('#full-disclosure');
   await expect(full).toBeVisible();
-  await expect(full).toContainText('Full analytics handles substantially more information than Preview.');
+  await expect(full).toContainText('Before choosing Full, review these points:');
   await expect(full).toContainText('Message content:');
   await expect(full).toContainText('leaves the Extension but remains on the same computer');
-  await expect(full).toContainText('No general automatic expiry period currently applies');
-  await expect(full).toContainText('Delete all Extension data does not delete conversation information already stored by the companion analytics service');
-  await expect(full).toContainText('not consent on behalf of those people');
-  await expect(full.getByRole('link', { name: 'Extension Privacy Notice' })).toBeVisible();
+  await expect(full).toContainText('no general automatic age-based expiry');
+  await expect(full).toContainText('does not delete Full information already retained by the companion analytics service');
+  await expect(full).toContainText('not consent on behalf of a subscriber or another person');
+  await expect(full.getByRole('link', { name: 'read the complete data-handling description' })).toBeVisible();
   await expect(full.getByRole('button', { name: 'Enable Full analytics' })).toBeVisible();
 }
 
 export async function upgradePreviewToFull(context, popup, worker) {
   const review = popup.locator('#journey-primary');
   await expect(review).toHaveAttribute('data-action', 'review_full');
-  await expect(review).toHaveText('Activate Full analysis');
+  await expect(review).toHaveText('Review Full analytics');
   await review.click();
   await assertFullProminentDisclosure(popup);
   await acceptPermissionFor(
@@ -202,6 +208,7 @@ export async function upgradePreviewToFull(context, popup, worker) {
 export async function connectFullAnalytics(context, popup, worker) {
   await configureSyntheticLegalBindings(worker, popup);
   await completePreModeLegalActions(popup);
+  await popup.getByRole('button', { name: 'Review Full analytics' }).click();
   await assertFullProminentDisclosure(popup);
   await acceptPermissionFor(
     context,

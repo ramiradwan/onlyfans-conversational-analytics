@@ -804,7 +804,7 @@ async function auditArtifactView(view, {
 
   const popup = TEXT_DECODER.decode(await view.read('popup.html'));
   assert.match(popup, /Observed in this browser/);
-  assert.match(popup, /never message text/);
+  assert.match(popup, /Preview retains no message text/);
   assert.match(popup, /not affiliated with or endorsed by OnlyFans/);
 
   const extensionConfig = validateExtensionConfig(

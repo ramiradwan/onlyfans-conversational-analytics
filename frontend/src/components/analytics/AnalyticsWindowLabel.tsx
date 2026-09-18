@@ -19,7 +19,7 @@ export function AnalyticsWindowLabel({ source }: AnalyticsWindowLabelProps) {
         color: 'text.secondary'
       }}
     >
-      Data window: {label}
+      {label}
     </Typography>
   );
 }

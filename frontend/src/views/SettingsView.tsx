@@ -1,18 +1,15 @@
-import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import PauseCircleOutlinedIcon from '@mui/icons-material/PauseCircleOutlined';
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined';
 import {
   Alert,
-  AlertTitle,
   Box,
   Button,
   Checkbox,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
-  Divider,
   FormControlLabel,
   LinearProgress,
   Skeleton,
@@ -21,30 +18,40 @@ import {
 } from '@mui/material';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
-import { Panel } from '../components/ui';
+import { Panel, SectionHeader, useRevealHold, type SectionStatus } from '../components/ui';
 import { usePermissions } from '../hooks/usePermissions';
 import type { HistorySettings } from '../protocol';
 import {
   historySettingsApi as defaultHistorySettingsApi,
+  HistorySettingsApiError,
   type HistorySettingsApi,
 } from '../services/historySettingsApi';
 import { bridgeTransportStore } from '../store/transportStore';
 import { coverageProgressLabel } from '../utils/dataReadiness';
+import { extensionConnection } from '../utils/statusCopy';
+
+const NUMBER_FORMAT = new Intl.NumberFormat('en-US');
 
 interface SettingsViewProps {
   api?: HistorySettingsApi;
 }
 
-function stateColor(state: HistorySettings['effective_state']) {
-  if (state === 'running') return 'success' as const;
-  if (state === 'paused') return 'warning' as const;
-  return 'default' as const;
+function changeFailure(cause: unknown, fallback: string): string {
+  if (cause instanceof HistorySettingsApiError && (cause.status === 409 || cause.status === 412)) {
+    return 'These settings changed in another window. Reload the page and try again.';
+  }
+  return fallback;
 }
 
-function sentenceCase(value: string): string {
-  return value.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase());
+function waitingText(settings: HistorySettings): string {
+  if (settings.desired_state === 'running') {
+    return 'Waiting for the browser extension to start. If nothing changes, open the extension and choose Allow message history.';
+  }
+  if (settings.desired_state === 'paused') return 'Pausing when the browser extension next connects.';
+  return 'Waiting for the browser extension to apply this change.';
 }
 
+/** Message history section of Settings: consent, progress, and pause or turn-off controls. */
 export default function SettingsView({ api = defaultHistorySettingsApi }: SettingsViewProps) {
   const { canManageHistorySync } = usePermissions();
   const transport = useSyncExternalStore(
@@ -58,6 +65,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
   const [error, setError] = useState<string | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  useRevealHold(loading);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -68,9 +76,9 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
         setError(null);
         setLoading(false);
       },
-      (cause: unknown) => {
+      () => {
         if (controller.signal.aborted) return;
-        setError(cause instanceof Error ? cause.message : 'History settings are unavailable.');
+        setError("Message history settings couldn't be loaded. Reload the page to try again.");
         setLoading(false);
       },
     );
@@ -95,7 +103,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
       setSettings(next);
       setConsentAccepted(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The settings change failed.');
+      setError(changeFailure(cause, "Your change couldn't be saved. Try again."));
     } finally {
       setBusy(false);
     }
@@ -111,259 +119,173 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
       bridgeTransportStore.clearMessageCache();
       setConfirmRevoke(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Consent could not be revoked.');
+      setConfirmRevoke(false);
+      setError(changeFailure(cause, "Message history couldn't be turned off. Try again."));
     } finally {
       setBusy(false);
     }
   };
 
-  const hasConsent = settings?.consent_revision !== null && settings?.desired_state !== 'revoked';
+  const hasConsent = settings !== null
+    && settings.consent_revision !== null
+    && settings.desired_state !== 'revoked';
+  const paused = hasConsent && settings.desired_state === 'paused';
   const progress = transport.snapshotProgress.percentage;
+  const { completeConversations, discoveredConversations } = transport.snapshotProgress;
+  const historyComplete = transport.coverage.status === 'complete';
+  // Consent is asked for only once the extension that performs the sync is connected.
+  const waitingForExtension =
+    settings !== null && !hasConsent && extensionConnection(transport.agent) === 'offline';
+  const status: SectionStatus | null = settings === null
+    ? null
+    : !hasConsent
+      ? { label: 'Off', tone: 'default' }
+      : paused
+        ? { label: 'Paused', tone: 'warning' }
+        : { label: 'On', tone: 'success' };
 
   return (
-    <Box sx={{ maxWidth: 960, mx: 'auto', width: '100%' }}>
-      <Stack spacing={3}>
-        <Box>
-          <Typography component="h1" variant="h4">Settings</Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              color: 'text.secondary',
-              mt: 0.5
-            }}>
-            Control local historical acquisition and see exactly what data is ready.
-          </Typography>
-        </Box>
+    <Panel>
+      <SectionHeader
+        status={status}
+        summary={
+          settings !== null && !hasConsent
+            ? 'Add your older conversations so your numbers cover your whole history.'
+            : undefined
+        }
+        title="Message history"
+      />
 
-        {error && (
-          <Alert severity="error" role="alert">
-            <AlertTitle>Settings need attention</AlertTitle>
-            {error}
-          </Alert>
-        )}
+      {error && <Alert severity="error" role="alert">{error}</Alert>}
 
-        {transport.agent?.degraded_reason && (
-          <Alert severity="warning" role="status">
-            <AlertTitle>Local Agent needs attention</AlertTitle>
-            {transport.agent.degraded_reason}{' '}
-            Use the pairing controls below and compare the code with the extension popup.
-          </Alert>
-        )}
-
-        {!canManageHistorySync && (
-          <Alert severity="info">
-            History controls are available to the creator account owner. You can still view status.
-          </Alert>
-        )}
-
-        <Panel>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{
-            justifyContent: 'space-between'
-          }}>
-            <Box>
-              <Typography component="h2" variant="h6">Historical coverage</Typography>
-              <Typography variant="body2" sx={{
-                color: 'text.secondary'
-              }}>
-                {coverageProgressLabel(transport.coverage)}
-              </Typography>
+      {loading ? (
+        <Stack spacing={1} role="status" aria-label="Loading message history settings">
+          <Skeleton width="60%" />
+          <Skeleton width="80%" />
+          <Skeleton height={40} width={200} variant="rounded" />
+        </Stack>
+      ) : settings !== null ? (
+        <Stack data-journey-state="desktop.message_history" spacing={2}>
+          {waitingForExtension ? (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Available once the browser extension is connected.
+            </Typography>
+          ) : !hasConsent ? (
+            <Box component="ul" sx={{ color: 'text.secondary', m: 0, pl: 2.5, typography: 'body2' }}>
+              <li>Read-only: it never sends messages or changes your account.</li>
+              <li>Synced message history stays on this computer.</li>
+              <li>Pause or turn it off at any time.</li>
             </Box>
-            <Chip
-              label={sentenceCase(transport.coverage.phase)}
-              color={transport.coverage.phase === 'blocked' ? 'error' : 'default'}
-              variant="outlined"
-            />
-          </Stack>
-          {progress !== null && (
+          ) : historyComplete ? (
+            <Typography variant="body2">
+              {discoveredConversations === null
+                ? 'History synced.'
+                : `All ${NUMBER_FORMAT.format(discoveredConversations)} conversations synced.`}
+            </Typography>
+          ) : (
             <Stack spacing={0.75}>
-              <LinearProgress
-                aria-label="Historical coverage progress"
-                value={progress}
-                variant="determinate"
-              />
-              <Typography variant="caption" sx={{
-                color: 'text.secondary'
-              }}>
-                {transport.snapshotProgress.completeConversations} of{' '}
-                {transport.snapshotProgress.discoveredConversations ?? 'unknown'} conversations complete
-              </Typography>
+              <Typography variant="body2">{coverageProgressLabel(transport.coverage)}</Typography>
+              {progress !== null && (
+                <>
+                  <LinearProgress
+                    aria-label="Message history progress"
+                    value={progress}
+                    variant="determinate"
+                  />
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    {discoveredConversations === null
+                      ? `${NUMBER_FORMAT.format(completeConversations)} conversations synced so far`
+                      : `${NUMBER_FORMAT.format(completeConversations)} of ${NUMBER_FORMAT.format(discoveredConversations)} conversations`}
+                  </Typography>
+                </>
+              )}
             </Stack>
           )}
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-            <Chip label={`Projection: ${sentenceCase(transport.projection.status)}`} size="small" />
-            <Chip label={`Live updates: ${sentenceCase(transport.liveFreshness.status)}`} size="small" />
-          </Stack>
-        </Panel>
 
-        <Panel>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{
-            justifyContent: 'space-between'
-          }}>
-            <Box>
-              <Typography component="h2" variant="h6">Historical message sync</Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: 'text.secondary',
-                  maxWidth: 680
-                }}>
-                Read older creator-visible conversations through your authenticated browser session.
-                Acquisition is read-only, stays local, and can be paused or revoked at any time.
-              </Typography>
-            </Box>
-            {settings && (
-              <Stack spacing={0.75} sx={{
-                alignItems: { sm: 'flex-end' }
-              }}>
-                <Chip
-                  color={stateColor(settings.effective_state)}
-                  label={`Effective: ${sentenceCase(settings.effective_state)}`}
+          {hasConsent && settings.desired_state !== settings.effective_state && (
+            <Alert severity="info" role="status">{waitingText(settings)}</Alert>
+          )}
+
+          {!canManageHistorySync && (
+            <Alert severity="info">Only the account owner can change message history.</Alert>
+          )}
+
+          {!hasConsent && !waitingForExtension && canManageHistorySync && (
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  checked={consentAccepted}
+                  onChange={(event) => setConsentAccepted(event.target.checked)}
+                />
+              )}
+              label="I allow read-only syncing of my older messages to this computer."
+            />
+          )}
+
+          {canManageHistorySync && !waitingForExtension && (
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.5}
+              sx={{ alignItems: { xs: 'flex-start', sm: 'center' } }}
+            >
+              {!hasConsent ? (
+                <Button
+                  disabled={!consentAccepted || busy}
+                  onClick={() => void update('running', true)}
+                  startIcon={<PlayCircleOutlinedIcon />}
+                  variant="contained"
+                >
+                  Turn on message history
+                </Button>
+              ) : paused ? (
+                <Button
+                  disabled={busy}
+                  onClick={() => void update('running')}
+                  startIcon={<PlayCircleOutlinedIcon />}
+                  variant="contained"
+                >
+                  Resume
+                </Button>
+              ) : (
+                <Button
+                  disabled={busy}
+                  onClick={() => void update('paused')}
+                  size="small"
+                  startIcon={<PauseCircleOutlinedIcon />}
                   variant="outlined"
-                />
-                <Typography variant="caption" sx={{
-                  color: 'text.secondary'
-                }}>
-                  Requested: {sentenceCase(settings.desired_state)}
-                </Typography>
-              </Stack>
-            )}
-          </Stack>
-
-          <Divider />
-
-          {loading ? (
-            <Stack spacing={1} role="status" aria-label="Loading history settings">
-              <Skeleton width="45%" />
-              <Skeleton width="80%" />
-              <Skeleton height={40} width={180} variant="rounded" />
-            </Stack>
-          ) : settings !== null ? (
-            <Stack spacing={2}>
-              {settings.desired_state !== settings.effective_state && (
-                <Alert severity="info" role="status">
-                  The requested state is saved. Waiting for the bound Agent to apply the new
-                  configuration.
-                </Alert>
+                >
+                  Pause
+                </Button>
               )}
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
-                <Box>
-                  <Typography variant="caption" sx={{
-                    color: 'text.secondary'
-                  }}>Recent-first priority</Typography>
-                  <Typography variant="body2">
-                    Start with the latest {settings.recent_window_days} days
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: 'text.secondary',
-                      display: 'block'
-                    }}>
-                    Sync then continues to the proven start of available history.
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" sx={{
-                    color: 'text.secondary'
-                  }}>Page size</Typography>
-                  <Typography variant="body2">{settings.page_size} messages</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" sx={{
-                    color: 'text.secondary'
-                  }}>Applied revision</Typography>
-                  <Typography variant="body2">
-                    {settings.effective_config_revision ?? 'Waiting to apply'}
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" sx={{
-                    color: 'text.secondary'
-                  }}>
-                    Authorized platform identity
-                  </Typography>
-                  <Typography variant="body2">
-                    {settings.authorized_platform_creator_id ?? 'Established when consent starts'}
-                  </Typography>
-                </Box>
-              </Stack>
-
-              {!hasConsent && canManageHistorySync && (
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={consentAccepted}
-                      onChange={(event) => setConsentAccepted(event.target.checked)}
-                    />
-                  }
-                  label={`I authorize read-only local historical sync under policy ${settings.consent_policy_version}.`}
-                />
-              )}
-
-              {canManageHistorySync && (
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                  {!hasConsent ? (
-                    <Button
-                      disabled={!consentAccepted || busy}
-                      onClick={() => void update('running', true)}
-                      startIcon={<PlayCircleOutlinedIcon />}
-                      variant="contained"
-                    >
-                      Start historical sync
-                    </Button>
-                  ) : settings.desired_state === 'running' ? (
-                    <Button
-                      disabled={busy}
-                      onClick={() => void update('paused')}
-                      startIcon={<PauseCircleOutlinedIcon />}
-                      variant="outlined"
-                    >
-                      Pause sync
-                    </Button>
-                  ) : (
-                    <Button
-                      disabled={busy}
-                      onClick={() => void update('running')}
-                      startIcon={<PlayCircleOutlinedIcon />}
-                      variant="contained"
-                    >
-                      Resume sync
-                    </Button>
-                  )}
-
-                  {hasConsent && (
-                    <Button
-                      color="error"
-                      disabled={busy}
-                      onClick={() => setConfirmRevoke(true)}
-                      startIcon={<DeleteOutlinedIcon />}
-                    >
-                      Revoke consent
-                    </Button>
-                  )}
-                </Stack>
+              {hasConsent && (
+                <Button
+                  disabled={busy}
+                  onClick={() => setConfirmRevoke(true)}
+                  size="small"
+                  sx={{ color: 'text.secondary' }}
+                >
+                  Turn off
+                </Button>
               )}
             </Stack>
-          ) : null}
-        </Panel>
-      </Stack>
+          )}
+        </Stack>
+      ) : null}
 
       <Dialog open={confirmRevoke} onClose={() => !busy && setConfirmRevoke(false)}>
-        <DialogTitle>Revoke historical sync consent?</DialogTitle>
+        <DialogTitle>Turn off message history?</DialogTitle>
         <DialogContent>
-          <Typography variant="body2">
-            Historical acquisition will stop and this browser’s paged message cache will be cleared.
-            History already synced to the server is retained — revoking stops further collection, it
-            does not delete data already acquired. Live capture status is managed separately.
-          </Typography>
+          <DialogContentText>
+            Older messages stop syncing. Messages already synced stay on this computer.
+          </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button disabled={busy} onClick={() => setConfirmRevoke(false)}>Cancel</Button>
           <Button color="error" disabled={busy} onClick={() => void revoke()} variant="contained">
-            Revoke consent
+            Turn off
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </Panel>
   );
 }

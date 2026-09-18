@@ -1,34 +1,6 @@
 name: Production companion Snow qualification
 
 on:
-  push:
-    branches:
-      - extension/production-readiness
-    paths:
-      - 'tools/native-snow-brain-spike/**'
-      - 'native/companion-snow/**'
-      - 'extension/crypto/snow/**'
-      - 'extension/vendor/companion-snow/**'
-      - 'extension/runtime/packaged-snow.mjs'
-      - 'app/transport/companion*'
-      - 'app/security/companion*'
-      - 'app/api/endpoints/companion*'
-      - 'app/persistence/companion*'
-      - 'app/persistence/auth*'
-      - 'extension/runtime/companion*'
-      - 'extension/transport/companion*'
-      - 'extension/qualification/companion-*'
-      - 'extension/build.mjs'
-      - 'extension/manifest.json'
-      - 'tools/companion-session-qualification/**'
-      - 'tests/test_companion*'
-      - 'requirements*.txt'
-      - 'packaging/**'
-      - 'extension/qualification/snow-wasm-spike/**'
-      - 'contracts/companion-pairing-profile/**'
-      - 'contracts/companion-pairing-v1/**'
-      - '.gitattributes'
-      - '.github/workflows/native-snow-brain-feasibility.yml'
   workflow_dispatch:
 
 permissions:
@@ -39,15 +11,15 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup production Python line
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
@@ -282,7 +254,7 @@ jobs:
 
       - name: Upload production Snow qualification evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: native-snow-brain-feasibility
           if-no-files-found: error

@@ -1,12 +1,16 @@
-import { Box, Stack, Typography } from '@mui/material';
 import {
+  Box,
   MessageBubble,
+  Stack,
+  Typography,
   createPreviewMessage,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 export function ConversationExchange() {
   return (
-    <Box sx={{ bgcolor: 'background.default', p: 2, maxWidth: 680 }}>
+    <Box sx={{ maxWidth: 680 }}>
       <Typography
         variant="subtitle2"
         sx={{

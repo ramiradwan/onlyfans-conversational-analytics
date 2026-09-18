@@ -1,4 +1,4 @@
-import { Box, useTheme } from '@mui/material';
+import { Box } from '@mui/material';
 import { useCallback, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 
@@ -7,10 +7,9 @@ import { componentTokens } from '@/theme';
 import { AppAppBar } from './AppAppBar';
 import { AppDrawer } from './AppDrawer';
 
-const { desktopRailWidth, headerHeight, mobileDrawerWidth } = componentTokens.shell;
+const { desktopRailWidth, headerHeight, mobileDrawerWidth, railInset } = componentTokens.shell;
 
 export function AppShell() {
-  const theme = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleDrawerToggle = useCallback(() => {
@@ -22,15 +21,12 @@ export function AppShell() {
   }, []);
 
   return (
-    <Box sx={{ display: 'flex', height: '100dvh', minHeight: 0 }}>
-      <AppAppBar
-        drawerWidth={desktopRailWidth}
-        headerHeight={headerHeight}
-        onDrawerToggle={handleDrawerToggle}
-      />
+    <Box sx={{ bgcolor: 'background.default', display: 'flex', height: '100dvh', minHeight: 0 }}>
+      <AppAppBar headerHeight={headerHeight} onDrawerToggle={handleDrawerToggle} />
 
       <AppDrawer
         drawerWidth={desktopRailWidth}
+        headerHeight={headerHeight}
         mobileDrawerWidth={mobileDrawerWidth}
         mobileOpen={mobileOpen}
         onDrawerClose={handleDrawerClose}
@@ -40,7 +36,6 @@ export function AppShell() {
         component="main"
         id="main-content"
         sx={{
-          bgcolor: 'background.default',
           display: 'flex',
           flex: 1,
           flexDirection: 'column',
@@ -49,7 +44,7 @@ export function AppShell() {
           minWidth: 0,
           overflow: 'hidden',
           pt: `${headerHeight}px`,
-          width: { sm: `calc(100% - ${desktopRailWidth}px)` },
+          width: { sm: `calc(100% - ${desktopRailWidth + railInset}px)` },
         }}
       >
         <Box
@@ -60,11 +55,9 @@ export function AppShell() {
             minHeight: 0,
             minWidth: 0,
             overflow: 'hidden',
-            p: {
-              xs: theme.spacing(2),
-              sm: theme.spacing(2.5),
-              lg: theme.spacing(3),
-            },
+            pb: { xs: 2, sm: 1.5 },
+            pt: { xs: 1, sm: `${railInset}px` },
+            px: { xs: 2, sm: 3, lg: 4 },
           }}
         >
           <Outlet />

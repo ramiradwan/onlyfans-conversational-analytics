@@ -19,7 +19,15 @@ import {
   type StoryAnalyticsStateKey,
 } from './analyticsFixtures';
 import { StoryView, type StoryViewName } from './StoryViews';
+import {
+  StoryWorkspace,
+  storyJourneyOptions,
+  storyWorkspaceOptions,
+  type StoryJourneyName,
+  type StoryWorkspaceName,
+} from './StoryWorkspace';
 import { theme } from '../theme';
+import '../index.css';
 
 type StoryMode = 'light' | 'dark';
 
@@ -63,7 +71,6 @@ const Content = styled(Box)({
 });
 
 const viewOptions: readonly { key: StoryViewName; label: string }[] = [
-  { key: 'dashboard', label: 'Dashboard' },
   { key: 'analytics', label: 'Analytics' },
   { key: 'inbox', label: 'Inbox' },
   { key: 'graph', label: 'Graph' },
@@ -72,7 +79,7 @@ const viewOptions: readonly { key: StoryViewName; label: string }[] = [
 function parseView(value: string | null): StoryViewName {
   return viewOptions.some((option) => option.key === value)
     ? (value as StoryViewName)
-    : 'dashboard';
+    : 'analytics';
 }
 
 function parseState(value: string | null): StoryAnalyticsStateKey {
@@ -80,6 +87,18 @@ function parseState(value: string | null): StoryAnalyticsStateKey {
   return storyAnalyticsStateOptions.some((option) => option.key === value)
     ? (value as StoryAnalyticsStateKey)
     : 'baseline';
+}
+
+function parseWorkspace(value: string | null): StoryWorkspaceName | null {
+  return storyWorkspaceOptions.some((option) => option.key === value)
+    ? (value as StoryWorkspaceName)
+    : null;
+}
+
+function parseJourney(value: string | null): StoryJourneyName {
+  return storyJourneyOptions.some((option) => option.key === value)
+    ? (value as StoryJourneyName)
+    : 'populated';
 }
 
 function replaceQuery(name: string, value: string) {
@@ -140,9 +159,23 @@ const params = new URLSearchParams(window.location.search);
 const mode: StoryMode = params.get('mode') === 'light' ? 'light' : 'dark';
 const view = parseView(params.get('view'));
 const stateKey = parseState(params.get('state'));
+const workspace = parseWorkspace(params.get('workspace'));
+const journey = parseJourney(params.get('state'));
 document.documentElement.setAttribute('data-mui-color-scheme', mode);
 
 export function VisualHarness() {
+  if (workspace) {
+    return (
+      <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange>
+        <CssBaseline />
+        <StoryWorkspace
+          analyticsState={storyAnalyticsState(stateKey)}
+          journey={journey}
+          workspace={workspace}
+        />
+      </ThemeProvider>
+    );
+  }
   const state = storyAnalyticsState(stateKey);
   return (
     <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange>

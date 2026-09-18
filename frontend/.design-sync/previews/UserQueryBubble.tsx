@@ -1,9 +1,15 @@
-import { Box, Stack, Typography } from '@mui/material';
-import { UserQueryBubble } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  Stack,
+  Typography,
+  UserQueryBubble,
+} from 'onlyfans-analytics-frontend';
+
+import './card.module.css';
 
 export function AnalyticsQuestions() {
   return (
-    <Box sx={{ bgcolor: 'background.default', maxWidth: 720, p: 2 }}>
+    <Box sx={{ maxWidth: 720 }}>
       <Typography
         variant="subtitle2"
         sx={{

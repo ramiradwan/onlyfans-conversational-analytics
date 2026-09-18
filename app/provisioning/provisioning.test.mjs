@@ -85,9 +85,9 @@ test('identity detection is read-only and confirmation requires computer setup',
   await controller.refreshIdentity();
 
   assert.deepEqual(extensionCalls, [[EXTENSION_ID, { type: 'provisioning.identity.query', version: 1 }]]);
-  assert.equal(elements.detectedIdentity.textContent, 'Signed-in creator account detected');
+  assert.match(elements.identityStatus.textContent, /Connect this computer/);
   assert.equal(elements.confirmIdentity.disabled, true, 'identity_confirmation_requires_registration');
-  assert.match(elements.identityConfirmHelp.textContent, /Connect this computer/);
+  assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(fetchCalls.length, 0, 'identity_query_never_starts_association');
   assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
 });
@@ -96,7 +96,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
   await context.test('missing extension answer', async () => {
     const { controller, elements } = harness({ extensionResponse: new Error('no receiver') });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /installed and enabled/i);
+    assert.match(elements.identityStatus.textContent, /Enable.*extension/i);
     assert.equal(elements.confirmIdentity.disabled, true);
   });
 
@@ -104,7 +104,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
     for (const extensionId of ['', 'wrong', 'q'.repeat(32)]) {
       const { controller, elements, extensionCalls } = harness({ extensionId });
       await controller.refreshIdentity();
-      assert.match(elements.identityStatus.textContent, /installed and enabled/i);
+      assert.match(elements.identityStatus.textContent, /Enable.*extension/i);
       assert.equal(elements.confirmIdentity.disabled, true);
       assert.equal(extensionCalls.length, 0, 'invalid_extension_id_never_messages_extension');
     }
@@ -117,7 +117,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
       },
     });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /Open OnlyFans.*sign in/i);
+    assert.match(elements.identityStatus.textContent, /Sign in.*OnlyFans/i);
     assert.equal(elements.confirmIdentity.disabled, true);
   });
 
@@ -129,7 +129,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
       },
     });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /could not identify/i);
+    assert.match(elements.identityStatus.textContent, /could not find/i);
     assert.equal(elements.confirmIdentity.disabled, true);
     assert.equal(parseIdentityResponse({
       type: 'provisioning.identity.result', version: 1, authenticated_profile: {},
@@ -150,10 +150,10 @@ test('invalid setup-code input is rejected immediately and never fetched', async
   assert.equal(fetchCalls.length, 1, 'only_initial_status_was_fetched');
 
   const cases = [
-    ['', /Paste the setup code/],
-    ['abcd efgh', /only letters, numbers, hyphens, and underscores/],
-    ['a', /appears incomplete/],
-    ['a'.repeat(1401), /1,400 characters or fewer/],
+    ['', /Paste your setup code/],
+    ['abcd efgh', /unexpected characters/],
+    ['a', /is incomplete/],
+    ['a'.repeat(1401), /too long/],
   ];
   for (const [value, expectedMessage] of cases) {
     elements.claimPackage.value = value;
@@ -185,12 +185,12 @@ test('surrounding setup-code whitespace is accepted and the exact trimmed value 
 
 test('all decoder refusal reasons have dedicated actionable public copy', async () => {
   const expectedMessages = {
-    size: 'This setup code is too large. Return to secure setup, create a new code, and paste it here.',
-    encoding: 'This setup code is incomplete or was changed. Copy it again and paste it without changes.',
-    profile: 'This setup code is for a different setup. Return to secure setup and create a new code.',
-    schema: 'This setup code is incomplete or out of date. Return to secure setup and create a new code.',
-    device: 'This setup code cannot be used on this computer. Run setup on a supported computer or contact support.',
-    consumed: 'This setup code has already been used. Return to secure setup and create a new code.',
+    size: 'This code is too long. Get a new code from the setup tab.',
+    encoding: 'This code is incomplete or changed. Copy the whole code again.',
+    profile: 'This code is for a different setup. Get a new code from the setup tab.',
+    schema: 'This code is incomplete or out of date. Get a new code from the setup tab.',
+    device: 'This computer cannot use this code. Continue on a supported computer.',
+    consumed: 'This code was already used. Get a new code from the setup tab.',
   };
 
   for (const [reason, expected] of Object.entries(expectedMessages)) {
@@ -210,7 +210,7 @@ test('approval pending and hosted outage have distinct recovery copy', async () 
   }) });
   pending.elements.claimPackage.value = VALID_PACKAGE;
   await pending.controller.submitClaim({ preventDefault() {} });
-  assert.match(pending.elements.status.textContent, /approval is still pending/i);
+  assert.match(pending.elements.status.textContent, /connection is not approved yet/i);
 
   const offline = harness({ fetch: async () => response(503, {
     state: 'provisioning_ready', reason: 'hosted_unavailable',
@@ -270,7 +270,7 @@ test('registration and each successful action advance exactly one accessible ste
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(elements.acquireAssociation.disabled, false);
   assert.equal(elements.finalizeProvisioning.disabled, true);
-  assert.match(elements.status.textContent, /Complete creator approval.*check approval/i);
+  assert.equal(elements.status.textContent, '', 'the active step provides the instruction without a duplicate banner');
 
   await controller.acquireAssociation();
   assert.deepEqual(stepStates(elements), ['completed', 'completed', 'completed', 'current']);
@@ -319,7 +319,7 @@ test('configured restart on arrival completes every step and skips extension det
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(elements.acquireAssociation.disabled, true);
   assert.equal(elements.finalizeProvisioning.disabled, true);
-  assert.match(elements.finalizeActionHelp.textContent, /desktop app will restart/i);
+  assert.match(elements.status.textContent, /desktop app will restart/i);
 });
 
 test('confirm is single-flight and completed actions cannot be repeated', async () => {
@@ -389,7 +389,7 @@ test('session, host, and interrupted requests retain actionable guidance', async
     const { controller, elements } = harness({ fetch: async () => { throw new Error('offline'); } });
     elements.claimPackage.value = VALID_PACKAGE;
     await controller.submitClaim({ preventDefault() {} });
-    assert.match(elements.status.textContent, /desktop app.*internet connection.*try again/i);
+    assert.match(elements.status.textContent, /desktop app.*running.*try again/i);
   });
 });
 
@@ -400,7 +400,7 @@ test('unexpected successful mutation shape is visible and does not advance', asy
 
     await controller.submitClaim({ preventDefault() {} });
 
-    assert.match(elements.status.textContent, /unexpected result/);
+    assert.match(elements.status.textContent, /could not be checked/);
     assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
     assert.equal(elements.claimSubmit.disabled, false);
   }
@@ -421,7 +421,7 @@ test('initial status accepts only its exact closed success shape', async (contex
       await controller.start();
       assert.equal(
         elements.status.textContent,
-        'Desktop setup returned an unexpected state. Close this page and reopen the desktop app.',
+        'Setup could not be checked. Reopen the desktop app.',
       );
       assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
       assert.equal(elements.confirmIdentity.disabled, true);
@@ -447,7 +447,7 @@ test('claim rejects every malformed successful body without advancing', async (c
       await controller.start();
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
-      assert.match(elements.status.textContent, /unexpected result\. Try the setup code again/);
+      assert.match(elements.status.textContent, /code could not be checked/);
       assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
       assert.equal(elements.claimSubmit.disabled, false);
       assert.equal(elements.confirmIdentity.disabled, true);
@@ -480,7 +480,7 @@ test('association creation rejects every malformed successful body without advan
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
       await controller.confirmIdentity();
-      assert.match(elements.status.textContent, /unexpected result\. Check the signed-in account and try again/);
+      assert.match(elements.status.textContent, /account could not be confirmed/);
       assert.deepEqual(stepStates(elements), ['completed', 'current', 'locked', 'locked']);
       assert.equal(elements.acquireAssociation.disabled, true);
       assert.equal(elements.finalizeProvisioning.disabled, true);
@@ -514,7 +514,7 @@ test('approval rejects every malformed successful body without advancing', async
       await controller.submitClaim({ preventDefault() {} });
       await controller.confirmIdentity();
       await controller.acquireAssociation();
-      assert.match(elements.status.textContent, /unexpected approval result\. Check approval again/);
+      assert.match(elements.status.textContent, /connection could not be checked/);
       assert.deepEqual(stepStates(elements), ['completed', 'completed', 'current', 'locked']);
       assert.equal(elements.finalizeProvisioning.disabled, true);
     });
@@ -550,7 +550,7 @@ test('finalization rejects every malformed successful body without advancing', a
       await controller.confirmIdentity();
       await controller.acquireAssociation();
       await controller.finalizeProvisioning();
-      assert.match(elements.status.textContent, /unexpected result\. Try finishing setup again/);
+      assert.match(elements.status.textContent, /Setup did not finish/);
       assert.deepEqual(stepStates(elements), ['completed', 'completed', 'completed', 'current']);
       assert.equal(elements.finalizeProvisioning.disabled, false);
     });

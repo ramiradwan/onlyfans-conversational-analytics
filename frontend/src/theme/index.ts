@@ -1,4 +1,4 @@
-export { theme } from './createTheme';
+export { colorSchemeProps, theme } from './createTheme';
 export {
   brandPalette,
   brandTypography,

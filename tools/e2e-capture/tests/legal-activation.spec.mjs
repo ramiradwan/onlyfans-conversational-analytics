@@ -52,7 +52,7 @@ test('runtime Legal flow proves Preview activation then distinct Full upgrade ev
       await configureSyntheticLegalBindings(worker, popup);
       await completePreModeLegalActions(popup);
       await enablePreviewAnalytics(context, popup, worker);
-      await expect(popup.locator('#mode-label')).toHaveText('Activity preview enabled');
+      await expect(popup.locator('#mode-label')).toHaveText('Preview on');
     });
 
     const auditAfterPreview = await legalAudit(worker);

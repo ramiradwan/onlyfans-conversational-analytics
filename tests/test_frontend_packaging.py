@@ -157,6 +157,77 @@ def test_production_manifest_rejects_css_asset_that_escapes_dist_root(
     assert "Vite manifest frontend asset is invalid" in response.text
 
 
+def test_template_preloads_only_the_latin_font_subsets(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(
+        frontend,
+        "_manifest_load",
+        frontend.ManifestLoad(
+            {
+                "index.html": {
+                    "isEntry": True,
+                    "file": "assets/entry.js",
+                    "css": ["assets/entry.css"],
+                    "assets": [
+                        "assets/inter-cyrillic-opsz-normal-C1_a.woff2",
+                        "assets/inter-latin-ext-opsz-normal-E2-b.woff2",
+                        "assets/inter-latin-opsz-normal-L3c.woff2",
+                        "assets/space-grotesk-latin-wght-normal-S4d.woff2",
+                        "assets/logo-latin-x-normal-P5e.png",
+                    ],
+                }
+            }
+        ),
+    )
+
+    response = _frontend_client().get("/")
+
+    assert response.status_code == 200
+    preloads = [
+        line.strip()
+        for line in response.text.splitlines()
+        if 'rel="preload"' in line
+    ]
+    assert preloads == [
+        '<link rel="preload" href="/static/dist/assets/inter-latin-opsz-normal-L3c.woff2" as="font" type="font/woff2" crossorigin>',
+        '<link rel="preload" href="/static/dist/assets/space-grotesk-latin-wght-normal-S4d.woff2" as="font" type="font/woff2" crossorigin>',
+    ]
+    assert response.text.index('rel="preload"') < response.text.index('rel="stylesheet"')
+
+
+def test_production_manifest_rejects_preload_font_that_escapes_dist_root(
+    monkeypatch, tmp_path: Path
+) -> None:
+    bundle_root = tmp_path / "bundle"
+    dist_root = bundle_root / "app" / "static" / "dist"
+    dist_root.mkdir(parents=True)
+    (dist_root / "entry.js").write_text("entry", encoding="utf-8")
+    escaped_font = bundle_root / "app" / "static" / "inter-latin-opsz-normal-X.woff2"
+    escaped_font.write_text("escaped", encoding="utf-8")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(bundle_root), raising=False)
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(frontend, "DIST_DIR", dist_root)
+    monkeypatch.setattr(
+        frontend,
+        "_manifest_load",
+        frontend.ManifestLoad(
+            {
+                "entry": {
+                    "isEntry": True,
+                    "file": "entry.js",
+                    "assets": ["../inter-latin-opsz-normal-X.woff2"],
+                }
+            }
+        ),
+    )
+
+    response = _frontend_client().get("/")
+
+    assert response.status_code == 500
+    assert "Vite manifest frontend asset is invalid" in response.text
+
+
 def test_migration_catalogs_are_lf_only() -> None:
     root = Path(__file__).resolve().parents[1]
     catalogs = (

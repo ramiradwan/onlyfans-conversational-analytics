@@ -2,13 +2,14 @@ import { ThemeProvider } from '@mui/material/styles';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { analyticsWindowLabel } from '../src/analytics';
+import { analyticsWindowLabel, formatCount } from '../src/analytics';
 import { GraphSummaryPanel } from '../src/components/graph';
 import {
   storyAnalyticsModel,
   storyWindowSources,
 } from '../src/story-only/analyticsFixtures';
 import { theme } from '../src/theme';
+import { renderedText } from './renderedText';
 
 afterEach(() => cleanup());
 
@@ -24,10 +25,10 @@ describe('relationship graph presentation', () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByText('84')).toBeTruthy();
-    expect(screen.getByText('126')).toBeTruthy();
+    expect(screen.getByText(formatCount(84))).toBeTruthy();
+    expect(screen.getByText(formatCount(126))).toBeTruthy();
     expect(
-      screen.getAllByText(`Data window: ${analyticsWindowLabel(storyWindowSources.graph)}`).length,
+      screen.getAllByText(renderedText(analyticsWindowLabel(storyWindowSources.graph))).length,
     ).toBe(4);
     expect(screen.getByText('Bounded query API is not integrated.')).toBeTruthy();
     expect((screen.getByLabelText('Relationship question') as HTMLInputElement).disabled).toBe(true);

@@ -1,16 +1,22 @@
-import { Box, Grid, Typography } from '@mui/material';
-import { KpiPlaceholder } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  Grid,
+  KpiPlaceholder,
+  Typography,
+} from 'onlyfans-analytics-frontend';
+
+import './card.module.css';
 
 export function DashboardMetricsLoading() {
   return (
-    <Box sx={{ bgcolor: 'background.default', p: 2, width: '100%' }}>
+    <Box sx={{ width: '100%' }}>
       <Typography
         variant="subtitle2"
         sx={{
           color: 'text.secondary',
           mb: 1.5
         }}>
-        Loading key metrics
+        Processing your data…
       </Typography>
       <Grid container spacing={2}>
         {Array.from({ length: 4 }, (_, index) => (

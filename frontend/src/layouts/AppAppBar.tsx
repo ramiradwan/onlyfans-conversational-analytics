@@ -1,32 +1,40 @@
-import CloudDoneOutlinedIcon from '@mui/icons-material/CloudDoneOutlined';
-import CloudOffOutlinedIcon from '@mui/icons-material/CloudOffOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
-import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
-import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
-import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import {
   AppBar,
-  Chip,
+  Box,
+  Button,
   IconButton,
+  Popover,
   Stack,
   Toolbar,
-  Tooltip,
   Typography,
-  useTheme,
 } from '@mui/material';
-import { useSyncExternalStore } from 'react';
+import { useId, useState, useSyncExternalStore } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { StatusChip } from '@/components/ui';
+import { componentTokens } from '@/theme';
 import {
   coverageProgressLabel,
+  humanizeProjectionReason,
   isConfigurationAligned,
   isFullyCurrent,
 } from '@/utils/dataReadiness';
+import {
+  extensionConnection,
+  extensionIssue,
+  extensionLabel,
+  insightsLabel,
+  newMessagesLabel,
+  protocolErrorText,
+  setupIncomplete,
+} from '@/utils/statusCopy';
 import { bridgeTransportStore, type BridgeTransportState } from '@store/transportStore';
 
+import { BRAND_INSET, BrandMark } from './BrandMark';
+
 interface AppAppBarProps {
-  drawerWidth: number;
   headerHeight?: number;
   onDrawerToggle: () => void;
 }
@@ -34,14 +42,12 @@ interface AppAppBarProps {
 type StatusPresentation = {
   color: 'success' | 'warning' | 'error' | 'default';
   detail: string;
-  icon: React.ReactElement;
   label: string;
 };
 
 export function getStatusPresentation(
   state: Readonly<BridgeTransportState>,
 ): StatusPresentation {
-  const dimensions = `Coverage: ${state.coverage.status}. Projection: ${state.projection.status}. Live freshness: ${state.liveFreshness.status}.`;
   const configurationAligned = isConfigurationAligned(state.agent);
   const readiness = {
     coverage: state.coverage,
@@ -49,38 +55,70 @@ export function getStatusPresentation(
     liveFreshness: state.liveFreshness,
     configurationAligned,
   };
-  const configurationMismatch = state.agent !== null && !configurationAligned;
+  const extension = extensionConnection(state.agent);
+  const extensionProblem = extensionIssue(extension);
+  const projectionUnavailable =
+    state.system?.readiness === 'unavailable' || state.projection.status === 'unavailable';
 
-  if (state.protocolError !== null || state.agent?.degraded_reason || configurationMismatch) {
-    const detail =
-      state.protocolError?.detail ??
-      state.agent?.degraded_reason ??
-      'The requested history configuration has not been applied by the bound Agent.';
+  if (state.protocolError !== null) {
     return {
       color: 'error',
-      detail: `${detail} ${dimensions}`,
-      icon: <WarningAmberOutlinedIcon />,
+      detail: protocolErrorText(state.protocolError),
       label: 'Action needed',
     };
   }
 
   if (
-    state.viewRevision === null ||
-    state.system?.readiness === 'unavailable' ||
-    state.projection.status === 'unavailable'
+    state.viewRevision === null &&
+    !projectionUnavailable &&
+    state.connection !== 'disconnected' &&
+    state.connection !== 'error'
   ) {
     return {
+      color: 'default',
+      detail: 'Loading your latest data.',
+      label: 'Connecting',
+    };
+  }
+
+  if (state.viewRevision !== null && setupIncomplete(state.coverage)) {
+    const extensionReady = extension === 'connected';
+    return {
+      color: 'warning',
+      detail: extensionReady
+        ? 'Turn on message history to continue setup.'
+        : 'Connect the browser extension to continue setup.',
+      label: 'Needs setup',
+    };
+  }
+
+  if (extensionProblem !== null) {
+    return extension === 'applying_settings'
+      ? {
+          color: 'warning',
+          detail: extensionProblem.detail,
+          label: 'Applying settings',
+        }
+      : {
+          color: 'error',
+          detail: extensionProblem.detail,
+          label: 'Action needed',
+        };
+  }
+
+  if (state.viewRevision === null || projectionUnavailable) {
+    return {
       color: 'error',
-      detail: `${state.system?.detail ?? 'No valid Brain projection is available.'} ${dimensions}`,
-      icon: <CloudOffOutlinedIcon />,
+      detail: humanizeProjectionReason(
+        state.projection.reason,
+        "Your conversations can't be shown right now.",
+      ),
       label: 'Data unavailable',
     };
   }
 
   if (
     state.liveFreshness.status !== 'current' ||
-    state.agent?.status === 'stale' ||
-    state.agent?.status === 'disconnected' ||
     state.connection === 'disconnected' ||
     state.connection === 'error' ||
     state.connection === 'reconnecting' ||
@@ -88,8 +126,7 @@ export function getStatusPresentation(
   ) {
     return {
       color: 'warning',
-      detail: `The last valid projection remains visible, but newer activity may be delayed. ${dimensions}`,
-      icon: <CloudOffOutlinedIcon />,
+      detail: 'Your data is shown, but new messages may take longer to appear.',
       label: 'Updates delayed',
     };
   }
@@ -97,8 +134,7 @@ export function getStatusPresentation(
   if (state.coverage.status !== 'complete' && state.coverage.phase === 'paused') {
     return {
       color: 'warning',
-      detail: `${coverageProgressLabel(state.coverage)}. ${dimensions}`,
-      icon: <CloudOffOutlinedIcon />,
+      detail: 'Message history sync is paused. You can resume it in Settings.',
       label: 'History paused',
     };
   }
@@ -106,77 +142,77 @@ export function getStatusPresentation(
   if (state.coverage.status !== 'complete') {
     return {
       color: 'warning',
-      detail: `${coverageProgressLabel(state.coverage)}. ${dimensions}`,
-      icon: <SyncOutlinedIcon />,
+      detail: `${coverageProgressLabel(state.coverage)}. Numbers grow as older messages arrive.`,
       label: 'Syncing history',
     };
   }
 
   if (
-    state.projection.status !== 'current' ||
-    state.projection.projected_revision < state.projection.canonical_revision ||
-    state.readModelState === 'resyncing' ||
-    state.system?.readiness === 'degraded'
+    isFullyCurrent(readiness) &&
+    state.readModelState !== 'resyncing' &&
+    state.system?.readiness !== 'degraded'
   ) {
     return {
-      color: 'warning',
-      detail: `Historical acquisition is complete while Brain updates its projections. ${dimensions}`,
-      icon: <SyncOutlinedIcon />,
-      label: 'Updating insights',
-    };
-  }
-
-  if (isFullyCurrent(readiness)) {
-    return {
       color: 'success',
-      detail: `Historical coverage, analytics projection, and live updates are current. ${dimensions}`,
-      icon: <CloudDoneOutlinedIcon />,
+      detail: 'Your message history is synced and your insights are current.',
       label: 'Up to date',
     };
   }
 
   return {
     color: 'warning',
-    detail: `The current state has not met every up-to-date invariant. ${dimensions}`,
-    icon: <SensorsOutlinedIcon />,
+    detail: 'Your latest messages are being added to your insights.',
     label: 'Updating insights',
   };
 }
 
+/** Coverage, projection, and live freshness stay separately visible alongside the combined label. */
+export function getStatusRows(
+  state: Readonly<BridgeTransportState>,
+): readonly { label: string; value: string }[] {
+  return [
+    { label: 'Browser extension', value: extensionLabel(extensionConnection(state.agent)) },
+    { label: 'Message history', value: coverageProgressLabel(state.coverage) },
+    { label: 'Insights', value: insightsLabel(state.projection) },
+    { label: 'New messages', value: newMessagesLabel(state.liveFreshness) },
+  ];
+}
+
 export function AppAppBar({
-  drawerWidth,
-  headerHeight = 72,
+  headerHeight = componentTokens.shell.headerHeight,
   onDrawerToggle,
 }: AppAppBarProps) {
-  const theme = useTheme();
   const transportState = useSyncExternalStore(
     bridgeTransportStore.subscribe,
     bridgeTransportStore.getState,
     bridgeTransportStore.getState,
   );
   const status = getStatusPresentation(transportState);
+  const [statusAnchor, setStatusAnchor] = useState<HTMLElement | null>(null);
+  const statusOpen = statusAnchor !== null;
+  const statusDetailsId = useId();
 
   return (
     <AppBar
       component="header"
       position="fixed"
+      color="inherit"
       elevation={0}
-      sx={{
+      sx={(theme) => ({
+        ...theme.effects.headerBorder(theme),
+        bgcolor: 'background.default',
         color: 'text.primary',
         height: headerHeight,
         justifyContent: 'center',
-        ml: { sm: `${drawerWidth}px` },
-        width: { sm: `calc(100% - ${drawerWidth}px)` },
-        ...theme.effects.glassmorphism(theme),
-        ...theme.effects.headerBorder(theme),
-      }}
+      })}
     >
       <Toolbar
         disableGutters
         sx={{
           gap: 1.5,
           minHeight: `${headerHeight}px !important`,
-          px: { xs: 2, sm: 2.5, lg: 3 },
+          pl: { xs: 2, sm: `${BRAND_INSET}px` },
+          pr: { xs: 2, sm: 3, lg: 4 },
         }}
       >
         <IconButton
@@ -190,35 +226,70 @@ export function AppAppBar({
           <MenuIcon />
         </IconButton>
 
-        <Stack sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-            Bridge
-          </Typography>
-          <Typography variant="caption" noWrap sx={{
-            color: 'text.muted'
-          }}>
-            Conversational analytics
-          </Typography>
-        </Stack>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <BrandMark />
+        </Box>
 
-        <Tooltip title={status.detail}>
-          <Chip
-            aria-live="polite"
-            aria-label={`${status.label}. Open data settings`}
-            color={status.color}
-            component={RouterLink}
-            icon={status.icon}
-            label={status.label}
-            size="small"
-            variant="outlined"
-            to="/settings"
-            sx={{
-              display: { xs: 'none', sm: 'inline-flex' },
-              bgcolor: 'background.paper',
-              fontWeight: 700,
-            }}
-          />
-        </Tooltip>
+        <StatusChip
+          aria-controls={statusOpen ? statusDetailsId : undefined}
+          aria-expanded={statusOpen}
+          aria-haspopup="dialog"
+          aria-label={`Status: ${status.label}. Show details`}
+          aria-live="polite"
+          label={status.label}
+          onClick={(event) => setStatusAnchor(event.currentTarget)}
+          tone={status.color}
+          settled={status.color === 'success'}
+        />
+        <Popover
+          id={statusDetailsId}
+          open={statusOpen}
+          anchorEl={statusAnchor}
+          onClose={() => setStatusAnchor(null)}
+          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+          slotProps={{ paper: { 'aria-label': 'Status details', role: 'dialog' } }}
+        >
+          <Stack spacing={1.5} sx={{ maxWidth: 320, p: 2 }}>
+            <Box>
+              <Typography variant="subtitle2">{status.label}</Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                {status.detail}
+              </Typography>
+            </Box>
+            <Box
+              component="dl"
+              sx={{
+                columnGap: 2,
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr',
+                m: 0,
+                rowGap: 0.5,
+              }}
+            >
+              {getStatusRows(transportState).map((row) => (
+                <Box key={row.label} sx={{ display: 'contents' }}>
+                  <Typography component="dt" variant="body2" sx={{ color: 'text.secondary' }}>
+                    {row.label}
+                  </Typography>
+                  <Typography component="dd" variant="body2" sx={{ m: 0 }}>
+                    {row.value}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+            <Button
+              component={RouterLink}
+              onClick={() => setStatusAnchor(null)}
+              size="small"
+              sx={{ alignSelf: 'flex-start' }}
+              to="/settings"
+              variant="outlined"
+            >
+              Open settings
+            </Button>
+          </Stack>
+        </Popover>
 
         <ThemeToggle />
       </Toolbar>

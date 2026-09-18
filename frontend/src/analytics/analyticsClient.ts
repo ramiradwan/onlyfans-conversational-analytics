@@ -68,14 +68,14 @@ async function parseError(response: Response): Promise<AnalyticsClientError> {
     ? (response.status as AnalyticsHttpStatus)
     : null;
   const defaults: Record<AnalyticsHttpStatus, { code: string; message: string }> = {
-    401: { code: 'authentication_failed', message: 'The session could not be authenticated.' },
-    403: { code: 'account_binding_mismatch', message: 'The session is not authorized for these analytics.' },
-    404: { code: 'analytics_unavailable', message: 'Canonical analytics are not available for this account.' },
-    422: { code: 'analytics_request_invalid', message: 'The analytics range is invalid.' },
-    503: { code: 'analytics_unavailable', message: 'Canonical analytics are still being prepared.' },
+    401: { code: 'authentication_failed', message: 'Your session ended. Reload the page to sign in again.' },
+    403: { code: 'account_binding_mismatch', message: "This account can't view these analytics." },
+    404: { code: 'analytics_unavailable', message: "Analytics aren't available for this account yet." },
+    422: { code: 'analytics_request_invalid', message: 'Choose a valid date range.' },
+    503: { code: 'analytics_unavailable', message: 'Your analytics are still being prepared.' },
   };
   const fallback = status === null
-    ? { code: 'analytics_http_error', message: 'Canonical analytics could not be loaded.' }
+    ? { code: 'analytics_http_error', message: 'Check your connection and try again.' }
     : defaults[status];
   return new AnalyticsClientError({
     status: status ?? undefined,
@@ -115,7 +115,7 @@ export async function fetchAnalyticsUpdate(
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new AnalyticsClientError({
       code: 'analytics_network_error',
-      message: 'Canonical analytics could not be reached.',
+      message: "The app couldn't be reached. Check that it's running.",
       retryable: true,
     });
   }

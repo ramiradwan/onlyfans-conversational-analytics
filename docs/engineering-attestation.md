@@ -28,7 +28,7 @@ The required Product environment, variables, and secrets are listed in [the sign
 Use a fresh candidate from a commit after the producer control baseline and a new immutable `v*` tag. Do not reuse a pre-control package.
 
 1. Dispatch `.github/workflows/windows-package.yml` from the release tag itself: select the `v*` tag under **Use workflow from**, and pass `product_revision` as the exact 40-character commit that tag names. The workflow refuses any other dispatch ref before it retrieves a document or builds anything, and the attestation refuses a run whose head branch is not the release tag.
-2. Confirm the source commit has a completed, successful Product CI `push` run on `main` with the exact three required jobs, and that the Windows-package run is green. Pull-request CI does not qualify a source package.
+2. Confirm the source commit has a completed, successful Product CI `push` run on `main` with the exact four release-qualified jobs: `build-and-test`, `fixed-sqlcipher-wheel`, `windows-tests`, and `windows-browser-e2e`. Pull-request CI does not qualify a source package.
 3. Complete a clean-install rehearsal for the exact packaged installer on a machine with no repository checkout.
 4. Obtain the reviewed projection source commit and its canonical SHA-256.
 5. Dispatch `.github/workflows/engineering-attestation.yml` with the Windows-package run ID, release tag, projection source commit, and projection digest.

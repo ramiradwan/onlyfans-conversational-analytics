@@ -1,5 +1,3 @@
-#!/bin/sh  
-. "$(dirname "$0")/_/husky.sh"  
-  
-cd frontend || exit 1  
-npx lint-staged  
+#!/bin/sh
+cd frontend || exit 1
+npx lint-staged

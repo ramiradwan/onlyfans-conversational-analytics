@@ -29,7 +29,7 @@ python tools/check_boundary_declaration.py --base-ref origin/main --head-ref HEA
 python tools/check_boundary_declaration.py --changed-file frontend/src/components/ConversationCard.tsx --report-only
 ```
 
-The first command validates a local pull-request body and diff. The second only reports path classification.
+The first command validates a local pull-request body and diff. The second only reports path classification. [The standalone architecture workflow](../.github/workflows/architecture-impact.yml) handles pull-request body edits without rerunning the full CI workflow.
 
 ## Stateful ingestion tests
 
@@ -97,6 +97,8 @@ CI runs six general histories of fourteen deliveries and four deletion histories
 
 ## CI coverage
 
-GitHub Actions uses Python 3.11 and Node.js 22. CI runs architecture checks, contract tests, Agent snapshot qualification, Windows backend tests, and capture end-to-end tests. Bridge dependency checks reject cycles in protected protocol, store, and service modules.
+GitHub Actions uses Python 3.11 and Node.js 22. [Product CI](../.github/workflows/ci.yml) keeps the four release-qualified jobs: Linux build and tests, the Windows SQLCipher producer, Windows backend tests, and Windows browser acceptance. Both Windows consumers verify that the SQLCipher artifact belongs to the exact source commit and workflow run before using it.
 
-See [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) for current commands. See [Product qualification](qualification.md) and [Windows acceptance](installation-and-acceptance.md) for release checks.
+[Visual capture](../.github/workflows/visual-capture.yml) runs separately for relevant Bridge changes. [Retention Phase-B evidence](../.github/workflows/retention-phase-b-evidence.yml) starts from a successful exact Product CI run instead of polling for one. The supplement remains an explicit workflow.
+
+See [Product qualification](qualification.md) and [Windows acceptance](installation-and-acceptance.md) for release checks.

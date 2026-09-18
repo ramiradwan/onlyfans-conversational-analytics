@@ -417,21 +417,29 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       await page.goto(`${BRAIN_ORIGIN}/`, { waitUntil: 'domcontentloaded' });
       const dashboard = page.getByRole('main');
       await expect(
-        dashboard.getByRole('heading', { name: 'Creator dashboard' }),
+        dashboard.getByRole('heading', { level: 1, name: 'Dashboard' }),
       ).toBeVisible();
-      for (const [title, value] of [
-        ['Total conversations', '2+'],
-        ['Total messages', '4+'],
-        ['Inbound messages', '3+'],
-        ['Outbound messages', '1+'],
+      const overview = dashboard.getByRole('region', { name: 'Overview' });
+      for (const [label, value] of [
+        ['Conversations', '2+'],
+        ['Messages', '4+'],
       ]) {
-        const card = dashboard.getByText(title, { exact: true }).locator('..');
-        await expect(card.getByText(value, { exact: true })).toBeVisible();
         await expect(
-          card.getByText(/Based on synced messages · sample \d+ · As of/),
+          overview.getByRole('group', { name: label }).getByText(value, { exact: true }),
         ).toBeVisible();
       }
-      await expect(dashboard.getByText('Ask is not connected')).toBeVisible();
+      for (const [label, value] of [
+        ['Received', '3+'],
+        ['Sent', '1+'],
+      ]) {
+        const legend = overview.getByText(label, { exact: true }).locator('..');
+        await expect(legend.getByText(value, { exact: true })).toBeVisible();
+      }
+      await dashboard.getByRole('button', { name: 'Details' }).click();
+      const details = page.getByRole('dialog', { name: 'How these numbers are counted' });
+      await expect(details.getByText('Messages synced so far', { exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(details).toBeHidden();
       await expect(dashboard.getByRole('textbox')).toHaveCount(0);
       await expect(dashboard.getByRole('button', { name: /export/i })).toHaveCount(0);
       await expect(dashboard.getByText(/revenue/i)).toHaveCount(0);
@@ -452,12 +460,12 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(firstPage.items.map((item) => item.message_id)).toEqual([
         SYNTHETIC.messageOnlyMessageId,
       ]);
-      await expect(page.getByRole('main').getByText('Degraded', { exact: true })).toBeVisible();
+      await expect(page.getByRole('main').getByRole('alert')).toBeVisible();
       const conversationRows = page.locator('[aria-label="Conversation list"] [role="button"]');
       await expect(conversationRows).toHaveCount(2);
 
       await expect(page.getByRole('article')).toHaveCount(1);
-      await expect(page.getByRole('button', { name: 'No earlier stored messages' })).toBeVisible();
+      await expect(page.getByText('No earlier messages on this computer', { exact: true })).toBeVisible();
 
       const primaryPageResponsePromise = page.waitForResponse((response) => (
         new URL(response.url()).pathname
@@ -473,7 +481,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         SYNTHETIC.historyMessageIds,
       );
       await expect(page.getByRole('article')).toHaveCount(3);
-      await expect(page.getByRole('button', { name: 'No earlier stored messages' })).toBeVisible();
+      await expect(page.getByText('No earlier messages on this computer', { exact: true })).toBeVisible();
       const primaryMessageRows = await page.getByRole('article').count();
 
       const messageOnlyRow = conversationRows.filter({
@@ -739,8 +747,8 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       } catch (error) {
         const ui = {
           loading: await bridgePage.getByText('Loading messages…', { exact: true }).count(),
-          unavailable: await bridgePage.getByText('Message history is unavailable.', { exact: true }).count(),
-          noStored: await bridgePage.getByText('No stored messages yet', { exact: true }).count(),
+          unavailable: await bridgePage.getByText("Messages couldn't load. Try again.", { exact: true }).count(),
+          noStored: await bridgePage.getByText('No messages saved yet', { exact: true }).count(),
           tryAgain: await bridgePage.getByRole('button', { name: 'Try again' }).count(),
         };
         throw new Error(

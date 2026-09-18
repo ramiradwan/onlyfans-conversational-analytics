@@ -1,6 +1,6 @@
+import type { AlertProps } from '@mui/material/Alert';
 import { createTheme, type PaletteOptions, type Theme } from '@mui/material/styles';
 import type {} from '@mui/material/themeCssVarsAugmentation';
-import type {} from '@mui/x-data-grid/themeAugmentation';
 
 import {
   brandPalette,
@@ -9,52 +9,66 @@ import {
   effectTokens,
   layoutTokens,
   semanticColorSchemes,
+  semanticIntents,
   shape,
   typography,
 } from './generated/tokens';
 
 type SchemeTokens =
-  | typeof semanticColorSchemes.light
-  | typeof semanticColorSchemes.dark;
+  | typeof semanticIntents.light
+  | typeof semanticIntents.dark;
 
-function buildPalette(scheme: SchemeTokens): PaletteOptions {
-  const seed = createTheme({
-    palette: {
-      mode: scheme.mode,
-      contrastThreshold: scheme.contrastThreshold,
-      tonalOffset: 0.2,
-    },
-  });
-  const augment = (name: string, main: string) =>
-    seed.palette.augmentColor({ color: { main }, name });
+const { duration, easing, pressScale } = effectTokens.motion;
 
+function milliseconds(value: string): number {
+  return Number.parseInt(value, 10);
+}
+
+/** Transition shorthand for the given properties on one motion step. */
+function transition(properties: readonly string[], step: keyof typeof duration = 'fast'): string {
+  return properties
+    .map((property) => `${property} ${duration[step]} ${easing.standard}`)
+    .join(', ');
+}
+
+// MUI adapts Bridge intents; compatibility names retain their existing values.
+function buildPalette(scheme: SchemeTokens, contrastThreshold: number): PaletteOptions {
   return {
-    contrastThreshold: scheme.contrastThreshold,
-    primary: augment('primary', scheme.primary.main),
-    secondary: augment('secondary', scheme.secondary.main),
-    accent: augment('accent', scheme.accent.main),
-    calm: augment('calm', scheme.calm.main),
-    success: augment('success', scheme.success.main),
-    warning: augment('warning', scheme.warning.main),
-    error: augment('error', scheme.error.main),
-    info: augment('info', scheme.info.main),
-    background: scheme.background,
+    contrastThreshold,
+    primary: scheme.action.primary,
+    secondary: scheme.action.secondary,
+    accent: scheme.legacy.accent,
+    calm: scheme.legacy.calm,
+    success: scheme.feedback.success,
+    warning: scheme.feedback.warning,
+    error: scheme.feedback.error,
+    info: scheme.feedback.info,
+    measurement: scheme.measurement,
+    brand: scheme.brand,
+    sentiment: scheme.sentiment,
+    background: { default: scheme.surface.canvas, paper: scheme.surface.paper },
     text: scheme.text,
-    divider: scheme.divider,
-    action: scheme.action,
-    placeholder: scheme.placeholder,
-    surface: scheme.surface,
+    divider: scheme.surface.divider,
+    action: scheme.action.state,
+    placeholder: scheme.surface.placeholder,
+    surface: {
+      subtle: scheme.surface.subtle, glass: scheme.surface.glass,
+      elevation: scheme.surface.elevation, overlay: scheme.surface.overlay,
+      rim: scheme.surface.rim, glow: scheme.surface.glow,
+      dominant: scheme.surface.dominant,
+      tooltip: scheme.surface.tooltip,
+      avatar: scheme.surface.avatar,
+      trust: scheme.surface.trust,
+      segment: scheme.surface.segment,
+      error: scheme.surface.error, metric: scheme.surface.metric,
+    },
     communication: scheme.communication,
     chart: scheme.chart,
   };
 }
 
-function surfaceEffect(theme: Theme) {
+function rim(theme: Theme) {
   return {
-    border: 'none',
-    borderRadius: `${componentTokens.MuiPaper.borderRadius}px`,
-    boxShadow: theme.vars.palette.surface.elevation,
-    position: 'relative' as const,
     '&::before': {
       background: theme.vars.palette.surface.rim,
       borderRadius: 'inherit',
@@ -69,28 +83,87 @@ function surfaceEffect(theme: Theme) {
   };
 }
 
+/** Opaque content surface: tonal separation from the canvas with a hairline rim. */
+function surfaceEffect(theme: Theme) {
+  return {
+    border: 'none',
+    borderRadius: `${componentTokens.MuiPaper.borderRadius}px`,
+    boxShadow: theme.vars.palette.surface.elevation,
+    position: 'relative' as const,
+    ...rim(theme),
+  };
+}
+
+/** Floating layer above content: menus, popovers, dialogs and navigation chrome. */
+function overlayEffect(theme: Theme) {
+  return {
+    boxShadow: theme.vars.palette.surface.overlay,
+    ...rim(theme),
+  };
+}
+
 const focusRing = (theme: Theme) => ({
   outline: effectTokens.focus.width + ' solid ' + theme.vars.palette.primary.main,
   outlineOffset: effectTokens.focus.offset,
 });
 
+/** Standard alert: a paper surface tinted by the feedback tone, with body text at full contrast. */
+function feedbackSurface(theme: Theme, tone: NonNullable<AlertProps['severity']>) {
+  const main = theme.vars.palette[tone].main;
+  const paper = theme.vars.palette.background.paper;
+  const { toneBorder, toneFill } = componentTokens.MuiAlert;
+  // Mixing with transparent keeps the tone's hue; the paper beneath keeps the surface opaque.
+  const fill = `color-mix(in oklch, ${main} ${toneFill}, transparent)`;
+  return {
+    backgroundColor: paper,
+    backgroundImage: `linear-gradient(${fill}, ${fill})`,
+    border: `${effectTokens.borders.thin} solid color-mix(in oklch, ${main} ${toneBorder}, transparent)`,
+    color: theme.vars.palette.text.primary,
+    '& .MuiAlert-icon': { color: main },
+  };
+}
+
+/** ThemeProvider color scheme props; the first-paint head script in the HTML entries mirrors them. */
+export const colorSchemeProps = { defaultMode: 'light' } as const;
+
 export const theme = createTheme({
   cssVariables: {
     cssVarPrefix: 'bridge',
     colorSchemeSelector: 'data-mui-color-scheme',
+    nativeColor: true,
   },
   brandPalette,
   brandTypography,
   colorSchemes: {
-    light: { palette: buildPalette(semanticColorSchemes.light) },
-    dark: { palette: buildPalette(semanticColorSchemes.dark) },
+    light: { palette: buildPalette(semanticIntents.light, semanticColorSchemes.light.contrastThreshold) },
+    dark: { palette: buildPalette(semanticIntents.dark, semanticColorSchemes.dark.contrastThreshold) },
   },
   spacing: layoutTokens.spacingUnit,
   breakpoints: { values: layoutTokens.breakpoints },
   zIndex: layoutTokens.zIndex,
   shape,
   typography,
+  transitions: {
+    duration: {
+      shortest: milliseconds(duration.fast),
+      shorter: milliseconds(duration.fast),
+      short: milliseconds(duration.standard),
+      standard: milliseconds(duration.standard),
+      complex: milliseconds(duration.spatial),
+      enteringScreen: milliseconds(duration.standard),
+      leavingScreen: milliseconds(duration.fast),
+    },
+    easing: {
+      easeInOut: easing.standard,
+      easeOut: easing.enter,
+      easeIn: easing.exit,
+      sharp: easing.standard,
+    },
+  },
   effects: {
+    ambientGlow: (theme: Theme) => ({
+      backgroundImage: theme.vars.palette.surface.glow,
+    }),
     cardBorder: surfaceEffect,
     chartFrame: surfaceEffect,
     glassmorphism: (theme: Theme) => ({
@@ -98,22 +171,43 @@ export const theme = createTheme({
       backgroundColor: theme.vars.palette.surface.glass,
       WebkitBackdropFilter: effectTokens.glassmorphism.backdropFilter,
     }),
-    headerBorder: () => ({}),
-    sideBorder: () => ({}),
+    headerBorder: (theme: Theme) => ({
+      boxShadow: `inset 0 -${effectTokens.borders.thin} 0 ${theme.vars.palette.divider}`,
+    }),
+    overlay: overlayEffect,
+    sideBorder: overlayEffect,
   },
   components: {
+    MuiAlert: {
+      styleOverrides: {
+        standard: ({ ownerState, theme }: { ownerState: AlertProps; theme: Theme }) =>
+          feedbackSurface(theme, ownerState.color ?? ownerState.severity ?? 'success'),
+      },
+    },
+    MuiCollapse: {
+      defaultProps: {
+        timeout: {
+          enter: milliseconds(duration.standard),
+          exit: milliseconds(duration.fast),
+        },
+        easing: {
+          enter: easing.enter,
+          exit: easing.exit,
+        },
+      },
+    },
     MuiButton: {
       defaultProps: { disableElevation: true },
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
           borderRadius: `${componentTokens.MuiButton.borderRadius}px`,
-          transition:
-            'transform ' + effectTokens.motion.duration + ' ' + effectTokens.motion.easing,
+          transition: transition(['background-color', 'border-color', 'color', 'transform']),
           '&:active': {
-            transform: 'scale(' + componentTokens.MuiButton.activeScale + ')',
+            transform: `scale(${componentTokens.MuiButton.activeScale})`,
           },
           '&:focus-visible': focusRing(theme),
         }),
+        sizeLarge: { minHeight: 48, paddingInline: 22 },
       },
     },
     MuiCard: {
@@ -127,27 +221,52 @@ export const theme = createTheme({
     MuiChip: {
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
+          fontWeight: brandTypography.weights.medium,
           '&:focus-visible': focusRing(theme),
         }),
       },
     },
+    MuiDialog: {
+      styleOverrides: {
+        paper: ({ theme }: { theme: Theme }) => ({
+          borderRadius: `${componentTokens.MuiPaper.borderRadius}px`,
+          ...overlayEffect(theme),
+        }),
+      },
+    },
     MuiIconButton: {
+      // The authored focus field and ring replace MUI's animated grey keyboard ripple.
+      defaultProps: { disableFocusRipple: true },
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
           borderRadius: `${componentTokens.MuiButton.borderRadius}px`,
-          transition:
-            'background-color ' +
-            effectTokens.motion.duration +
-            ' ' +
-            effectTokens.motion.easing +
-            ', transform ' +
-            effectTokens.motion.duration +
-            ' ' +
-            effectTokens.motion.easing,
+          transition: transition(['background-color', 'color', 'transform']),
           '&:active': {
-            transform: 'scale(' + componentTokens.MuiButton.activeScale + ')',
+            transform: `scale(${pressScale})`,
           },
-          '&:focus-visible': focusRing(theme),
+          '&:focus-visible, &.Mui-focusVisible': { ...focusRing(theme), backgroundColor: theme.vars.palette.action.focus },
+        }),
+      },
+    },
+    MuiLinearProgress: {
+      styleOverrides: {
+        root: { borderRadius: layoutTokens.radius.pill, height: 6 },
+        bar: { borderRadius: layoutTokens.radius.pill },
+      },
+    },
+    MuiListItemButton: {
+      styleOverrides: {
+        root: ({ theme }: { theme: Theme }) => ({
+          borderRadius: `${componentTokens.MuiListItemButton.borderRadius}px`,
+          transition: transition(['background-color', 'color', 'transform']),
+          '&:active': {
+            transform: `scale(${componentTokens.MuiListItemButton.activeScale})`,
+          },
+          '&:focus-visible, &.Mui-focusVisible': {
+            backgroundColor: theme.vars.palette.action.focus,
+            ...focusRing(theme),
+            outlineOffset: '-' + effectTokens.focus.offset,
+          },
         }),
       },
     },
@@ -161,25 +280,11 @@ export const theme = createTheme({
         }),
       },
     },
-    MuiListItemButton: {
+    MuiPopover: {
       styleOverrides: {
-        root: ({ theme }: { theme: Theme }) => ({
-          transition:
-            'background-color ' +
-            effectTokens.motion.duration +
-            ' ' +
-            effectTokens.motion.easing +
-            ', transform ' +
-            effectTokens.motion.duration +
-            ' ' +
-            effectTokens.motion.easing,
-          '&:active': {
-            transform: 'scale(' + componentTokens.MuiListItemButton.activeScale + ')',
-          },
-          '&:focus-visible': {
-            ...focusRing(theme),
-            outlineOffset: '-' + effectTokens.focus.offset,
-          },
+        paper: ({ theme }: { theme: Theme }) => ({
+          borderRadius: `${componentTokens.MuiMenu.borderRadius}px`,
+          ...overlayEffect(theme),
         }),
       },
     },
@@ -190,15 +295,59 @@ export const theme = createTheme({
         }),
       },
     },
-    MuiDataGrid: {
-      defaultProps: { density: 'compact' },
+    MuiTableCell: {
+      styleOverrides: {
+        root: { fontVariantNumeric: brandTypography.numeric },
+      },
+    },
+    MuiToggleButtonGroup: {
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
-          border: 'none',
-          '& .MuiDataGrid-columnHeaders': {
-            backgroundColor: theme.vars.palette.action.hover,
+          backgroundColor: theme.vars.palette.surface.segment.track,
+          border: `1px solid ${theme.vars.palette.divider}`,
+          borderRadius: `${componentTokens.segmentedControl.trackRadius}px`,
+          padding: componentTokens.segmentedControl.padding,
+          gap: componentTokens.segmentedControl.padding,
+          '& .MuiToggleButton-root': {
+            border: 0, margin: 0,
+            borderRadius: `${componentTokens.segmentedControl.segmentRadius}px`,
           },
         }),
+      },
+    },
+    MuiToggleButton: {
+      styleOverrides: {
+        root: ({ theme }: { theme: Theme }) => ({
+          ...theme.typography.caption,
+          fontWeight: brandTypography.weights.medium,
+          color: theme.vars.palette.text.secondary,
+          textTransform: 'none',
+          '&:hover': { backgroundColor: theme.vars.palette.action.hover },
+          '&.Mui-selected, &.Mui-selected:hover': {
+            backgroundColor: theme.vars.palette.surface.segment.selected,
+            color: theme.vars.palette.text.primary,
+            boxShadow: theme.vars.palette.surface.segment.elevation,
+            fontWeight: brandTypography.weights.semibold,
+          },
+          '&:focus-visible, &.Mui-focusVisible': { ...focusRing(theme), outlineOffset: '-2px' },
+          '&.Mui-disabled': { color: theme.vars.palette.text.disabled },
+        }),
+      },
+    },
+    MuiTooltip: {
+      styleOverrides: {
+        tooltip: ({ theme }: { theme: Theme }) => ({
+          borderRadius: `${componentTokens.MuiTooltip.borderRadius}px`,
+          backgroundColor: theme.vars.palette.surface.tooltip.fill,
+          color: theme.vars.palette.surface.tooltip.text,
+          fontSize: theme.typography.caption.fontSize,
+          fontWeight: brandTypography.weights.medium,
+        }),
+      },
+    },
+    MuiTypography: {
+      defaultProps: {
+        variantMapping: { kpi: 'p', metric: 'p', insight: 'span', metricUnit: 'span', numericCaption: 'span', numericBody: 'span', detailLabel: 'span', tableHeading: 'span', passkeyTitle: 'h1' },
       },
     },
     MuiCssBaseline: {

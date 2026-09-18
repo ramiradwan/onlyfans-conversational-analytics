@@ -203,8 +203,7 @@ describe('OperatorInboxView summary and REST-page integration', () => {
 
     expect(screen.getByText('Loading conversations…')).toBeTruthy();
     expect(screen.getByText('Loading messages…')).toBeTruthy();
-    expect(screen.getByText('Unavailable')).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toContain('Updates delayed');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('renders the empty state after a bounded snapshot with no conversations', () => {
@@ -344,8 +343,9 @@ describe('OperatorInboxView summary and REST-page integration', () => {
     renderInbox(store, messageApi);
 
     expect(await screen.findByText('First available message')).toBeTruthy();
-    const boundary = screen.getByRole('button', { name: 'Start of available history' });
-    expect(boundary).toHaveProperty('disabled', true);
+    expect(screen.getByText('Start of conversation')).toBeTruthy();
+    expect(screen.queryByText('No earlier messages on this computer')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Load earlier messages' })).toBeNull();
   });
 
   it('retains an already loaded REST page when live freshness degrades', async () => {
@@ -364,9 +364,8 @@ describe('OperatorInboxView summary and REST-page integration', () => {
     act(() => store.markDisconnected());
 
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Realtime updates paused');
-    expect(alert.textContent).toContain('Showing cached data');
-    expect(screen.getByText('Degraded')).toBeTruthy();
+    expect(alert.textContent).toContain('Updates paused');
+    expect(alert.textContent).toContain('Showing your last conversations while reconnecting.');
     expect(screen.getByText('Still visible')).toBeTruthy();
     await waitFor(() => expect(store.getState().liveFreshness.status).toBe('delayed'));
   });
@@ -390,7 +389,7 @@ describe('OperatorInboxView projection reason presentation', () => {
     renderInbox(store, apiFor({}));
 
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Preparing conversation data');
+    expect(alert.textContent).toContain('Getting your conversations ready');
     expect(alert.textContent).not.toContain('projection_missing');
   });
 

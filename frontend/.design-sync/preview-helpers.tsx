@@ -10,6 +10,7 @@ import type {
   StateSnapshotPayload,
   SystemStatePayload,
 } from '../src/protocol';
+import type { CapabilityLicenseApi } from '../src/services/capabilityLicenseApi';
 import { setAnalyticsStoryState } from '../src/store/analyticsStore';
 import {
   bridgeTransportStore,
@@ -320,6 +321,18 @@ export function createPreviewBridgeStore(): BridgeTransportStore {
 }
 
 export const createPreviewInboxStore = createPreviewBridgeStore;
+
+/** Fixed Full analytics readiness for previews; makes no network calls. */
+export function createPreviewActivationApi(ready = true): CapabilityLicenseApi {
+  return {
+    readiness: async () => ({
+      schema: 'ofca-analysis-readiness/v1',
+      commercial_authority: ready ? 'active' : 'required',
+      analysis_admission: ready ? 'admitted' : 'blocked',
+    }),
+    redeem: async () => ({ state: 'checking' }),
+  };
+}
 
 let previewShellSeeded = false;
 

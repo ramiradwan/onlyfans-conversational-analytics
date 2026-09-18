@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Europe/Helsinki
+    open-pull-requests-limit: 2
+    groups:
+      routine-actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directories:
+      - /frontend
+      - /extension
+      - /tools/e2e-capture
+      - /tools/visual-capture
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Europe/Helsinki
+    open-pull-requests-limit: 2
+    groups:
+      routine-npm:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

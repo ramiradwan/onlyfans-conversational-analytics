@@ -1,25 +1,35 @@
-import { Paper, useTheme, SxProps } from '@mui/material';  
-import React from 'react';  
-  
-export const Panel: React.FC<{ children: React.ReactNode; sx?: SxProps }> = ({  
-  children,  
-  sx,  
-}) => {  
-  const theme = useTheme();  
-  return (  
-    <Paper  
-      sx={{  
-        p: 3,  
-        bgcolor: theme.vars.palette.background.paper,  
-        display: 'flex',  
-        flexDirection: 'column',  
-        gap: 2,  
-        ...theme.effects.cardBorder(theme),  
-        ...sx,  
-      }}  
-      elevation={0}  
-    >  
-      {children}  
-    </Paper>  
-  );  
-};  
+import { Paper, type PaperProps } from '@mui/material';
+
+import { surfaceArrival } from '../../theme/presentationMotion';
+
+export type PanelEmphasis = 'dominant' | 'secondary' | 'quiet';
+export type PanelProps = PaperProps & { emphasis?: PanelEmphasis; arrivalStep?: number };
+
+/** Existing content surface with an explicit place in the page hierarchy. */
+export function Panel({ emphasis = 'secondary', arrivalStep = 0, sx, ...props }: PanelProps) {
+  return (
+    <Paper
+      {...props}
+      elevation={0}
+      data-surface-emphasis={emphasis}
+      sx={[
+        (theme) => ({
+          p: 3, bgcolor: 'background.paper', display: 'flex',
+          flexDirection: 'column', gap: 2, minWidth: 0,
+          ...theme.effects.cardBorder(theme),
+          ...surfaceArrival(arrivalStep),
+          ...(emphasis === 'dominant' ? {
+            border: `1px solid ${theme.vars.palette.surface.dominant.border}`,
+            boxShadow: theme.vars.palette.surface.dominant.elevation,
+            '&::before': { display: 'none' },
+          } : {}),
+          ...(emphasis === 'quiet' ? {
+            bgcolor: 'transparent', border: 0, boxShadow: 'none',
+            '&::before': { display: 'none' },
+          } : {}),
+        }),
+        ...(Array.isArray(sx) ? sx : [sx]),
+      ]}
+    />
+  );
+}

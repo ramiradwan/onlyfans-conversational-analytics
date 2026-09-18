@@ -6,27 +6,38 @@ import { MessageBubble } from '../src/components/inbox/MessageBubble';
 import type { MessageView } from '../src/protocol';
 import { theme } from '../src/theme';
 
-function message(text: string): MessageView {
+function message(text: string, sentiment: MessageView['sentiment'] = 'neutral'): MessageView {
   return {
     message_id: 'message-1',
     text,
     sent_at: '2026-07-20T12:00:00Z',
     direction: 'inbound',
-    sentiment: 'neutral',
+    sentiment,
   };
 }
 
-function renderBubble(text: string) {
+function renderBubble(text: string, sentiment?: MessageView['sentiment']) {
   return render(
     <ThemeProvider theme={theme} defaultMode="light">
       <ul>
-        <MessageBubble message={message(text)} />
+        <MessageBubble message={message(text, sentiment)} />
       </ul>
     </ThemeProvider>,
   );
 }
 
 afterEach(() => cleanup());
+
+describe('MessageBubble tone', () => {
+  it('labels classified tone in words and omits neutral tone', () => {
+    const positive = renderBubble('Thanks!', 'positive');
+    expect(positive.container.querySelector('[role="article"]')?.textContent).toContain('Positive tone');
+    positive.unmount();
+
+    const neutral = renderBubble('Okay', 'neutral');
+    expect(neutral.container.querySelector('[role="article"]')?.textContent).not.toContain('tone');
+  });
+});
 
 describe('MessageBubble message HTML sanitization', () => {
   it('renders allowed formatting as real markup instead of literal tags', () => {

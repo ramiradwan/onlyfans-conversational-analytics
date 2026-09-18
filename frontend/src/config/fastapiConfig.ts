@@ -20,6 +20,7 @@ export function getConfig(): FastAPIConfig {
       USER_ID: undefined,
       CREATOR_ID: undefined,
       BRIDGE_AUTH_TICKET: undefined,
+      SECURE_SETUP_URL: undefined,
     };
   }
 
@@ -38,9 +39,20 @@ export function getConfig(): FastAPIConfig {
       USER_ID: injected.USER_ID ?? undefined,
       CREATOR_ID: injected.CREATOR_ID ?? undefined,
       BRIDGE_AUTH_TICKET: injected.BRIDGE_AUTH_TICKET ?? undefined,
+      SECURE_SETUP_URL: secureSetupUrl(injected.SECURE_SETUP_URL),
     };
   } catch (err) {
     console.error('[CONFIG] Failed to parse injected FastAPI config', err);
     throw err;
+  }
+}
+
+/** Accepts only an absolute HTTPS URL; anything else hides the secure setup link. */
+function secureSetupUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value === '') return undefined;
+  try {
+    return new URL(value).protocol === 'https:' ? value : undefined;
+  } catch {
+    return undefined;
   }
 }

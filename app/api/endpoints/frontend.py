@@ -6,8 +6,10 @@ injecting runtime configuration for the browser extension and WebSocket bridge.
 
 import hmac
 import json
+import re
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Dict, Any
 from urllib.parse import urlsplit
 
@@ -17,6 +19,10 @@ from fastapi.templating import Jinja2Templates
 
 from app.utils.logger import logger
 from app.core.config import settings
+from app.core.customer_release import (
+    CustomerReleaseConfigurationError,
+    load_customer_release_config,
+)
 from app.core.resource_paths import ResourcePathError, resource_path
 from app.api.security import (
     csrf_token,
@@ -32,6 +38,15 @@ TEMPLATES_DIR = resource_path("app/templates")
 DIST_DIR = resource_path("app/static/dist")
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+@lru_cache(maxsize=1)
+def _secure_setup_url() -> str:
+    """Release-owned hosted onboarding URL, or "" when the release has none."""
+    try:
+        return load_customer_release_config().hosted_onboarding_url
+    except CustomerReleaseConfigurationError:
+        return ""
 
 
 @dataclass(frozen=True)
@@ -70,6 +85,9 @@ def _load_manifest() -> ManifestLoad:
     return ManifestLoad({}, "Vite manifest is absent from the compiled frontend package")
 
 
+_FIRST_PAINT_FONT = re.compile(r"-latin-[a-z]+-normal-[\w-]+\.woff2$")
+
+
 def _manifest_entry(manifest: Dict[str, Any]) -> tuple[str | None, Dict[str, Any]]:
     entry_key = next(
         (
@@ -85,13 +103,25 @@ def _manifest_entry(manifest: Dict[str, Any]) -> tuple[str | None, Dict[str, Any
     return entry_key, entry
 
 
+def _first_paint_fonts(entry: Dict[str, Any]) -> list[str]:
+    """Return the latin subsets of the bundled faces, which the first screen renders with."""
+    assets = entry.get("assets", [])
+    if not isinstance(assets, list):
+        return []
+    return [
+        asset
+        for asset in assets
+        if isinstance(asset, str) and _FIRST_PAINT_FONT.search(asset)
+    ]
+
+
 def _validate_manifest_assets(entry: Dict[str, Any]) -> str | None:
     """Ensure manifest-referenced frontend assets stay inside the dist package."""
 
     css_assets = entry.get("css", [])
     if not isinstance(css_assets, list):
         return "Vite manifest has an invalid frontend asset reference"
-    assets = [entry.get("file"), *css_assets]
+    assets = [entry.get("file"), *css_assets, *_first_paint_fonts(entry)]
     if not all(isinstance(asset, str) and asset for asset in assets):
         return "Vite manifest has an invalid frontend asset reference"
     for asset in assets:
@@ -231,6 +261,7 @@ async def serve_frontend(
 
     app_script = entry.get("file") if entry_key else None
     css_files = entry.get("css", []) if entry_key else []
+    font_files = _first_paint_fonts(entry) if entry_key else []
     api_base_url = (
         str(request.base_url).rstrip("/")
         if settings.websocket_auth_mode == "development_stub"
@@ -247,6 +278,7 @@ async def serve_frontend(
         "FASTAPI_WS_URL": ws_url,
         "API_BASE_URL": api_base_url,
         "VERSION": settings.version,
+        "SECURE_SETUP_URL": _secure_setup_url(),
         "CREATOR_ID": None if identity is None else identity.creator_account_id,
         "BRIDGE_ROLE": None if identity is None else identity.role,
         "BRIDGE_AUTH_TICKET": (
@@ -283,6 +315,7 @@ async def serve_frontend(
             "request": request,
             "app_script": f"/static/dist/{app_script}" if app_script else None,
             "css_files": [f"/static/dist/{c}" for c in css_files],
+            "font_preloads": [f"/static/dist/{f}" for f in font_files],
             "config": config,
             "csrf_token": None if identity is None else csrf_token(policy),
         },

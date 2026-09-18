@@ -15,6 +15,7 @@ import { getConversationTitle, sortMessages } from './inboxModel';
 import { MessageBubble } from './MessageBubble';
 import type { ConversationRecord } from '../../protocol';
 import type { ConversationMessageState } from '../../store/transportStore';
+import { componentTokens } from '../../theme';
 
 export const MAX_RENDERED_MESSAGES = 160;
 const WINDOW_SHIFT = 80;
@@ -50,9 +51,11 @@ const MessagesList = styled('ol')(({ theme }) => ({
   display: 'grid',
   gap: theme.spacing(1.5),
   listStyle: 'none',
-  margin: 0,
+  margin: '0 auto',
+  maxWidth: `calc(${componentTokens.inbox.bubbleMaxWidth} + ${theme.spacing(12)})`,
   minHeight: '100%',
   padding: 0,
+  width: '100%',
 }));
 
 const CenteredState = styled(Box)(({ theme }) => ({
@@ -104,6 +107,9 @@ export function MessageStreamPane({
   const pendingAnchor = useRef<PendingAnchor | null>(null);
   const nearBottom = useRef(true);
   const previousLastMessageId = useRef<string | null>(null);
+  const loadOlderButton = useRef<HTMLButtonElement>(null);
+  const historyBoundary = useRef<HTMLElement>(null);
+  const restoreBoundaryFocus = useRef(false);
   const [windowStart, setWindowStart] = useState(0);
   const conversationId = conversation?.conversation_id ?? null;
   const messages = useMemo(
@@ -174,6 +180,8 @@ export function MessageStreamPane({
   }, [renderedMessages]);
 
   const loadOlder = () => {
+    if (messageState?.status === 'loading') return;
+    restoreBoundaryFocus.current = document.activeElement === loadOlderButton.current;
     captureAnchor();
     if (windowStart > 0) {
       setWindowStart(Math.max(0, windowStart - WINDOW_SHIFT));
@@ -207,6 +215,14 @@ export function MessageStreamPane({
   const canLoadOlder =
     windowStart > 0 ||
     (messageState?.hasOlderStoredItems === true && messageState.olderCursor !== null);
+  const showLoadOlder = canLoadOlder || messageState?.status === 'loading';
+
+  // Keyboard focus moves to the history boundary when the button it was on goes away.
+  useEffect(() => {
+    if (showLoadOlder || !restoreBoundaryFocus.current) return;
+    restoreBoundaryFocus.current = false;
+    historyBoundary.current?.focus();
+  }, [showLoadOlder]);
 
   return (
     <Pane variant="outlined" role="region" aria-labelledby="message-stream-title">
@@ -215,17 +231,8 @@ export function MessageStreamPane({
           <Typography id="message-stream-title" component="h2" variant="subtitle1">
             {isLoading ? 'Messages' : title}
           </Typography>
-          {conversation !== null && !loadingMessages && (
-            <Typography variant="caption" sx={{
-              color: 'text.secondary'
-            }}>
-              {messages.length === 1 ? '1 message loaded' : `${messages.length} messages loaded`}
-            </Typography>
-          )}
         </Box>
-        <Stack direction="row" spacing={1} sx={{
-          alignItems: 'center'
-        }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           {messageState?.hasNewerUncachedItems && (
             <Button
               size="small"
@@ -252,9 +259,7 @@ export function MessageStreamPane({
         {loadingMessages ? (
           <CenteredState role="status">
             <Typography variant="body2">Loading messages…</Typography>
-            <Stack spacing={2} sx={{
-              width: '100%'
-            }}>
+            <Stack spacing={2} sx={{ width: '100%' }}>
               <Skeleton variant="rounded" width="58%" height={72} />
               <Skeleton variant="rounded" width="62%" height={88} sx={{ alignSelf: 'flex-end' }} />
               <Skeleton variant="rounded" width="48%" height={72} />
@@ -270,7 +275,7 @@ export function MessageStreamPane({
         ) : messageState?.status === 'error' && messages.length === 0 ? (
           <CenteredState>
             <Alert severity="warning">
-              {messageState.error ?? 'Message history is temporarily unavailable.'}
+              {messageState.error ?? "Messages couldn't load. Try again."}
             </Alert>
             <Button onClick={onReloadLatest}>Try again</Button>
           </CenteredState>
@@ -279,37 +284,40 @@ export function MessageStreamPane({
             <Typography component="p" variant="body1">
               {messageState?.conversationCoverage?.status === 'complete'
                 ? 'No messages in this conversation'
-                : 'No stored messages yet'}
+                : 'No messages saved yet'}
             </Typography>
           </CenteredState>
         ) : (
           <MessagesList aria-label={'Messages with ' + title}>
             <li>
-                <Stack
-                  spacing={1}
-                  sx={{
-                    alignItems: 'center',
-                    pb: 1
-                  }}>
+              <Stack spacing={1} sx={{ alignItems: 'center', pb: 1 }}>
+                {showLoadOlder ? (
                   <Button
-                    disabled={!canLoadOlder || messageState?.status === 'loading'}
+                    aria-disabled={messageState?.status === 'loading'}
                     onClick={loadOlder}
+                    ref={loadOlderButton}
                     size="small"
                     variant="outlined"
                   >
-                    {messageState?.status === 'loading'
-                      ? 'Loading earlier…'
-                      : canLoadOlder
-                        ? 'Load earlier messages'
-                        : messageState?.conversationCoverage.boundary === 'history_start'
-                          ? 'Start of available history'
-                          : 'No earlier stored messages'}
+                    {messageState?.status === 'loading' ? 'Loading earlier…' : 'Load earlier messages'}
                   </Button>
-                  {messageState?.error && (
-                    <Typography color="error" variant="caption">{messageState.error}</Typography>
-                  )}
-                </Stack>
-              </li>
+                ) : (
+                  <Typography
+                    ref={historyBoundary}
+                    tabIndex={-1}
+                    variant="caption"
+                    sx={{ color: 'text.secondary', '&:focus': { outline: 'none' } }}
+                  >
+                    {messageState?.conversationCoverage.boundary === 'history_start'
+                      ? 'Start of conversation'
+                      : 'No earlier messages on this computer'}
+                  </Typography>
+                )}
+                {messageState?.error && (
+                  <Typography color="error" variant="caption">{messageState.error}</Typography>
+                )}
+              </Stack>
+            </li>
             {renderedMessages.map((message) => (
               <MessageBubble key={message.message_id} message={message} />
             ))}

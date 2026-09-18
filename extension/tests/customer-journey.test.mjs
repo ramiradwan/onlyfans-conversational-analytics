@@ -28,7 +28,55 @@ test('Preview remains independent of the desktop app', () => {
     desktopRuntimeReachable: false,
   });
   assert.equal(result.id, CUSTOMER_STATES.PREVIEW_AVAILABLE);
-  assert.equal(result.primaryLabel, 'Activate Full analysis');
+  assert.equal(result.primaryAction, 'review_full');
+  assert.equal(result.primaryLabel, 'Review Full analytics');
+});
+
+test('analytics off reopens the mode choice only when it is available', () => {
+  const available = deriveCustomerJourney({
+    status: status({ mode: 'off', phase: 'off' }),
+    pairing: pairing('unpaired'),
+    modeChoiceAvailable: true,
+  });
+  assert.equal(available.id, CUSTOMER_STATES.ANALYTICS_OFF);
+  assert.equal(available.primaryAction, 'choose_mode');
+  assert.equal(available.primaryLabel, 'Set up Preview');
+
+  const unavailable = deriveCustomerJourney({
+    status: status({ mode: 'off', phase: 'off' }),
+    pairing: pairing('unpaired'),
+  });
+  assert.equal(unavailable.id, CUSTOMER_STATES.ANALYTICS_OFF);
+  assert.equal(unavailable.primaryAction, null);
+});
+
+test('paused analytics offer resume only when no review is pending', () => {
+  const resumable = deriveCustomerJourney({
+    status: status({ mode: 'paused', phase: 'paused' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+    resumeAvailable: true,
+  });
+  assert.equal(resumable.id, CUSTOMER_STATES.PAUSED);
+  assert.equal(resumable.primaryAction, 'resume');
+  assert.doesNotMatch(resumable.title, /Preview/);
+
+  const reviewFirst = deriveCustomerJourney({
+    status: status({ mode: 'paused', phase: 'paused' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+  });
+  assert.equal(reviewFirst.id, CUSTOMER_STATES.PAUSED);
+  assert.equal(reviewFirst.primaryAction, null);
+  assert.match(reviewFirst.body, /Review the updated information/);
+
+  const reviewReady = deriveCustomerJourney({
+    status: status({ mode: 'paused', phase: 'paused' }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+    modeChoiceAvailable: true,
+  });
+  assert.equal(reviewReady.primaryAction, 'choose_mode');
 });
 
 test('first Full attempt explains that the desktop app is required', () => {
@@ -40,7 +88,17 @@ test('first Full attempt explains that the desktop app is required', () => {
   });
   assert.equal(result.id, CUSTOMER_STATES.DESKTOP_APP_NEEDED);
   assert.equal(result.primaryLabel, 'Install desktop app');
-  assert.match(result.body, /Preview can still be used without it/);
+  assert.equal(result.secondaryAction, 'retry_full');
+  assert.match(result.body, /desktop app on this computer/);
+  assert.doesNotMatch(result.body, /Preview/);
+
+  const noDownload = deriveCustomerJourney({
+    status: status(),
+    pairing: pairing('unpaired'),
+    desktopRuntimeReachable: false,
+  });
+  assert.equal(noDownload.primaryAction, 'retry_full');
+  assert.doesNotMatch(noDownload.body, /Preview/);
 });
 
 test('returning paired user gets a stopped-app recovery state', () => {
@@ -78,13 +136,14 @@ test('pairing progress explains comparison and never claims success early', () =
     status: status(), pairing: pairing('pairing'), desktopRuntimeReachable: true,
   });
   assert.equal(connecting.id, CUSTOMER_STATES.PAIRING_IN_PROGRESS);
-  assert.match(connecting.body, /secure connection/);
+  assert.match(connecting.body, /Keep this window open/);
 
   const compare = deriveCustomerJourney({
     status: status(), pairing: pairing('compare'), desktopRuntimeReachable: true,
   });
   assert.equal(compare.id, CUSTOMER_STATES.PAIRING_IN_PROGRESS);
-  assert.match(compare.body, /six-digit code/);
+  assert.match(compare.body, /same code/);
+  assert.match(compare.body, /confirm there/);
 });
 
 test('pairing failure has a concrete retry path', () => {
@@ -93,6 +152,23 @@ test('pairing failure has a concrete retry path', () => {
   });
   assert.equal(result.id, CUSTOMER_STATES.PAIRING_FAILED);
   assert.equal(result.primaryLabel, 'Try connection again');
+});
+
+test('pairing before the desktop app is ready names the desktop step first', () => {
+  const result = deriveCustomerJourney({
+    status: status(), pairing: pairing('desktop_not_ready'), desktopRuntimeReachable: true,
+  });
+  assert.equal(result.id, CUSTOMER_STATES.PAIRING_NOT_READY);
+  assert.equal(result.tone, 'warning');
+  assert.equal(result.primaryAction, 'open_desktop_settings');
+  assert.equal(result.secondaryAction, 'pair');
+  assert.match(result.body, /Connect extension/);
+  assert.doesNotMatch(`${result.title} ${result.body}`, /fail|error|window/i);
+
+  const stopped = deriveCustomerJourney({
+    status: status(), pairing: pairing('desktop_not_ready'), desktopRuntimeReachable: false,
+  });
+  assert.equal(stopped.id, CUSTOMER_STATES.DESKTOP_APP_NEEDED);
 });
 
 test('authenticated local transport alone enters activation checking, never Full-ready', () => {
@@ -114,7 +190,7 @@ test('commercial activation required routes the customer to desktop activation w
     analysisReadiness: readiness('required'),
   });
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_REQUIRED);
-  assert.equal(result.title, 'Full activation required');
+  assert.equal(result.title, 'Finish activating Full analytics');
   assert.equal(result.primaryAction, 'open_dashboard');
   assert.equal(result.primaryLabel, 'Open desktop app');
   assert.equal(result.secondaryAction, 'retry_readiness');
@@ -146,9 +222,9 @@ test('commercial authority alone renders activation active but not Full-ready', 
     analysisReadiness: readiness('active', 'blocked'),
   });
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_ACTIVE);
-  assert.equal(result.title, 'Full activation active');
+  assert.equal(result.title, 'Analysis is not available right now');
   assert.notEqual(result.id, CUSTOMER_STATES.FULL_READY);
-  assert.match(result.body, /licensed analysis is not available/);
+  assert.match(result.body, /Full analytics is activated/);
 });
 
 test('Full is ready only after secure delivery, commercial authority, and analysis admission', () => {
@@ -168,7 +244,7 @@ test('Full is ready only after secure delivery, commercial authority, and analys
   });
   assert.equal(ready.id, CUSTOMER_STATES.FULL_READY);
   assert.equal(ready.primaryLabel, 'Open analysis');
-  assert.match(ready.body, /licensed analysis is ready/);
+  assert.equal(ready.title, 'Your analysis is ready');
 });
 
 test('desktop runtime probe reports an opened loopback socket and closes it', async () => {

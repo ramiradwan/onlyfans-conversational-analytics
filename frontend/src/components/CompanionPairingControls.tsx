@@ -1,9 +1,10 @@
 import {
-  Alert, Button, Checkbox, FormControlLabel, Stack, Typography,
+  Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText,
+  DialogTitle, FormControlLabel, Stack, Typography,
 } from '@mui/material';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { Panel } from './ui';
+import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   companionPairingApi,
@@ -12,6 +13,12 @@ import {
   type CompanionPairingStatus,
 } from '../services/companionPairingApi';
 import { bridgeTransportStore } from '../store/transportStore';
+import {
+  extensionConnection,
+  extensionIssue,
+  extensionLabel,
+  type ExtensionConnection,
+} from '../utils/statusCopy';
 
 const WINDOW_LIMIT_MS = 300_000;
 const POLL_INTERVAL_MS = 1_000;
@@ -19,14 +26,23 @@ const terminal = (status: CompanionPairingStatus) => (
   ['confirmed', 'admitted', 'declined', 'cancelled', 'expired', 'revoked'].includes(status.state)
 );
 
-function PairingAttemptControls({ api, creatorAccountId }: {
+function remainingLabel(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = String(seconds % 60).padStart(2, '0');
+  return `${minutes}:${remainder}`;
+}
+
+function PairingAttemptControls({ api, connection, creatorAccountId }: {
   api: CompanionPairingApi;
+  connection: ExtensionConnection;
   creatorAccountId: string;
 }) {
   const [status, setStatus] = useState<CompanionPairingStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [codesMatch, setCodesMatch] = useState(false);
+  const [connectedCount, setConnectedCount] = useState<number | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const current = useRef<CompanionPairingStatus | null>(null);
   const deadline = useRef(0);
   const operation = useRef<AbortController | null>(null);
@@ -132,43 +148,101 @@ function PairingAttemptControls({ api, creatorAccountId }: {
   const approved = status?.state === 'confirmed' || status?.state === 'admitted';
   const active = status !== null && !terminal(status);
   const awaiting = active && !failed && status.state === 'awaiting_confirmation';
+  const connected = approved || (connectedCount !== null && connectedCount > 0);
+
+  useEffect(() => {
+    if (!active) {
+      setRemainingSeconds(null);
+      return;
+    }
+    const update = () => {
+      setRemainingSeconds(Math.max(0, Math.ceil((deadline.current - Date.now()) / 1000)));
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [active, status?.pairing_id]);
+
+  const issue = extensionIssue(connection);
+  const sectionStatus: SectionStatus | null = connected
+    ? {
+        label: extensionLabel(connection),
+        tone: connection === 'connected' ? 'success' : issue?.severity === 'info' ? 'default' : 'warning',
+      }
+    : connectedCount === null
+      ? null
+      : { label: 'Not connected', tone: 'default' };
 
   return (
-    <Stack spacing={2}>
-      <AdmittedPairings api={api} creatorAccountId={creatorAccountId} refresh={status?.version ?? -1} />
-      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-        Connect the browser extension to this desktop app for the signed-in creator account.
-        In the extension, choose Pair device. Keep both views open until the connection is confirmed.
-      </Typography>
+    <Stack data-journey-state="desktop.extension_pairing" data-pairing-active={active ? 'true' : undefined} spacing={2}>
+      <SectionHeader
+        status={sectionStatus}
+        summary={connectedCount === 0 && status === null
+          ? 'Connect the browser extension so your messages reach this app.'
+          : undefined}
+        title="Browser extension"
+      />
+      <AdmittedPairings
+        api={api}
+        connection={connection}
+        creatorAccountId={creatorAccountId}
+        onCount={setConnectedCount}
+        refresh={status?.version ?? -1}
+      />
       {failed && (
         <Alert severity="error" role="alert">
-          Connection status could not be checked. Keep both views open and try Check connection.
+          The connection couldn&apos;t be checked. Keep this page open and try again.
         </Alert>
       )}
       {approved && (
         <Alert severity="success" role="status">
-          Extension connected. Return to the extension; Full mode will become ready after the secure local connection finishes.
+          Extension connected. Continue with Message history below.
         </Alert>
       )}
       {status && terminal(status) && !approved && (
         <Alert severity="info" role="status">
-          {status.state === 'expired' ? 'The connection window expired. Open a new one and try again.'
-            : status.state === 'revoked' ? 'This extension connection was removed.'
-              : status.state === 'declined' ? 'The codes did not match, so nothing was connected. Open a new connection window and try again.'
-                : 'Connection cancelled. Open a new connection window when you are ready.'}
+          {status.state === 'expired' ? 'Time ran out before the codes were confirmed. Try again.'
+            : status.state === 'revoked' ? 'This browser extension was disconnected.'
+              : status.state === 'declined' ? "The codes didn't match, so nothing was connected. Try again."
+                : 'Connection cancelled.'}
         </Alert>
       )}
       {active && !awaiting && !failed && (
-        <Typography role="status">Waiting for the browser extension…</Typography>
+        <Stack spacing={0.5}>
+          <Typography role="status">
+            Open the browser extension and choose Pair device. Keep this page open.
+          </Typography>
+          {remainingSeconds !== null && (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Connection window expires in {remainingLabel(remainingSeconds)}.
+            </Typography>
+          )}
+        </Stack>
       )}
       {awaiting && (
         <Stack spacing={1.5}>
-          <Typography component="h3" variant="subtitle1">Compare the six-digit code</Typography>
-          <Typography aria-label="Connection comparison code" variant="h4" sx={{ fontFamily: 'monospace' }}>
+          <Typography component="h3" variant="subtitle1">Check the code</Typography>
+          <Typography
+            aria-label="Connection comparison code"
+            variant="h4"
+            sx={(theme) => ({
+              fontFamily: theme.brandTypography.fontFamilyMono,
+              fontSize: theme.typography.h2.fontSize,
+              fontWeight: theme.brandTypography.weights.semibold,
+              letterSpacing: '0.08em',
+              lineHeight: 1.2,
+              marginBlock: theme.spacing(0.5),
+            })}
+          >
             {status.comparison_code!.slice(0, 3)} {status.comparison_code!.slice(3)}
           </Typography>
+          {remainingSeconds !== null && (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Code expires in {remainingLabel(remainingSeconds)}.
+            </Typography>
+          )}
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Check that this same code is shown in the extension. If it is different, do not connect.
+            The browser extension should show the same code. If it doesn&apos;t, don&apos;t connect.
           </Typography>
           <FormControlLabel
             control={(
@@ -178,7 +252,7 @@ function PairingAttemptControls({ api, creatorAccountId }: {
                 onChange={(event) => setCodesMatch(event.target.checked)}
               />
             )}
-            label="The six-digit code matches in both the extension and desktop app."
+            label="The codes match"
           />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
             <Button
@@ -194,15 +268,21 @@ function PairingAttemptControls({ api, creatorAccountId }: {
           </Stack>
         </Stack>
       )}
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: 'flex-start' }} useFlexGap>
         {!active && (
-          <Button disabled={busy} onClick={() => void run('open')} variant="outlined">
-            Open connection window
+          <Button
+            disabled={busy}
+            onClick={() => void run('open')}
+            size={connected ? 'small' : 'medium'}
+            sx={connected ? { ml: -1 } : undefined}
+            variant={connected ? 'text' : 'contained'}
+          >
+            {connected ? 'Connect another extension' : 'Connect extension'}
           </Button>
         )}
         {active && failed && (
           <Button disabled={busy} onClick={() => void run('get')} variant="outlined">
-            Check connection
+            Try again
           </Button>
         )}
         {active && (
@@ -215,14 +295,21 @@ function PairingAttemptControls({ api, creatorAccountId }: {
   );
 }
 
-function AdmittedPairings({ api, creatorAccountId, refresh }: {
-  api: CompanionPairingApi; creatorAccountId: string; refresh: number;
+function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh }: {
+  api: CompanionPairingApi;
+  connection: ExtensionConnection;
+  creatorAccountId: string;
+  onCount: (count: number | null) => void;
+  refresh: number;
 }) {
   const [pins, setPins] = useState<CompanionPairingStatus[]>([]);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [confirming, setConfirming] = useState<CompanionPairingStatus | null>(null);
+  const [checked, setChecked] = useState(false);
   const operation = useRef<AbortController | null>(null);
+  useRevealHold(!checked);
   useEffect(() => {
     const controller = new AbortController();
     operation.current = controller;
@@ -233,53 +320,124 @@ function AdmittedPairings({ api, creatorAccountId, refresh }: {
         throw new Error('Connection scope changed.');
       }
       setPins(values);
+      onCount(values.length);
       setFailed(false);
-    }).catch(() => { if (!controller.signal.aborted) setFailed(true); })
-      .finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    }).catch(() => {
+      if (controller.signal.aborted) return;
+      setFailed(true);
+      onCount(null);
+    }).finally(() => {
+      if (controller.signal.aborted) return;
+      setBusy(false);
+      setChecked(true);
+    });
     return () => { controller.abort(); operation.current?.abort(); };
-  }, [api, creatorAccountId, refresh, revision]);
+  }, [api, creatorAccountId, onCount, refresh, revision]);
   const revoke = async (pin: CompanionPairingStatus) => {
     operation.current?.abort();
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
+    setConfirming(null);
     try {
       await api.revoke(pin.pairing_id, pin.version, controller.signal);
       if (controller.signal.aborted) return;
-      setPins((values) => values.filter((value) => value.pairing_id !== pin.pairing_id));
+      const next = pins.filter((value) => value.pairing_id !== pin.pairing_id);
+      setPins(next);
+      onCount(next.length);
       setFailed(false);
     } catch { if (!controller.signal.aborted) setFailed(true); }
     finally { if (!controller.signal.aborted) setBusy(false); }
   };
+  const issue = extensionIssue(connection);
+  if (pins.length === 0 && !failed && confirming === null) return null;
   return (
-    <Stack spacing={1}>
-      {pins.map((pin, index) => (
-        <Stack key={pin.pairing_id} direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-          <Typography>Connected browser extension {index + 1}</Typography>
-          <Button color="error" disabled={busy} onClick={() => void revoke(pin)}
-            aria-label={`Disconnect browser extension ${index + 1}`}>Disconnect</Button>
-        </Stack>
-      ))}
-      {failed && <Alert severity="error">Connected extensions could not be checked.</Alert>}
-      <Button disabled={busy} onClick={() => setRevision((value) => value + 1)}>Refresh connections</Button>
+    <Stack spacing={1.5}>
+      {pins.length > 0 && (
+        <>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            {issue ? `${issue.detail} ` : ''}
+            Browser site access is managed in the extension. Message history syncing is managed below.
+          </Typography>
+          {pins.map((pin, index) => (
+            <Stack
+              key={pin.pairing_id}
+              direction="row"
+              spacing={2}
+              sx={{ alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <Typography variant="body2">
+                {pins.length === 1 ? 'Extension linked to this app' : `Linked extension ${index + 1}`}
+              </Typography>
+              <Button
+                aria-label={`Disconnect browser extension ${index + 1}`}
+                disabled={busy}
+                onClick={() => setConfirming(pin)}
+                size="small"
+                sx={{ color: 'text.secondary' }}
+              >
+                Disconnect
+              </Button>
+            </Stack>
+          ))}
+        </>
+      )}
+      {failed && (
+        <Alert
+          action={(
+            <Button color="inherit" disabled={busy} onClick={() => setRevision((value) => value + 1)} size="small">
+              Try again
+            </Button>
+          )}
+          severity="error"
+        >
+          Connected extensions couldn&apos;t be checked.
+        </Alert>
+      )}
+      <Dialog open={confirming !== null} onClose={() => setConfirming(null)}>
+        <DialogTitle>Disconnect the browser extension?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            New messages stop reaching this app until you connect it again. Messages already here are kept.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirming(null)}>Cancel</Button>
+          <Button
+            color="error"
+            onClick={() => { if (confirming) void revoke(confirming); }}
+            variant="contained"
+          >
+            Disconnect
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
 
+/** Browser extension section of Settings: connection status, pairing, and disconnect. */
 export function CompanionPairingControls({ api = companionPairingApi }: { api?: CompanionPairingApi }) {
   const { canViewSettings } = usePermissions();
-  const { creatorAccountId } = useSyncExternalStore(
+  const { agent, creatorAccountId } = useSyncExternalStore(
     bridgeTransportStore.subscribe,
     bridgeTransportStore.getState,
     bridgeTransportStore.getState,
   );
   return (
     <Panel>
-      <Typography component="h2" variant="h6">Connect browser extension</Typography>
       {canViewSettings && creatorAccountId ? (
-        <PairingAttemptControls key={creatorAccountId} api={api} creatorAccountId={creatorAccountId} />
+        <PairingAttemptControls
+          key={creatorAccountId}
+          api={api}
+          connection={extensionConnection(agent)}
+          creatorAccountId={creatorAccountId}
+        />
       ) : (
-        <Alert severity="info">Sign in to an approved creator account before connecting the extension.</Alert>
+        <>
+          <SectionHeader title="Browser extension" />
+          <Alert severity="info">Finish setting up the desktop app before connecting the browser extension.</Alert>
+        </>
       )}
     </Panel>
   );

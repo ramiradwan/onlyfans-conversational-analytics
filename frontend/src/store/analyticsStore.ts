@@ -33,7 +33,7 @@ const loadingState = (): AnalyticsReadState => ({
   status: 'loading',
   data: null,
   isRefreshing: false,
-  message: 'Loading canonical analytics…',
+  message: 'Loading your analytics…',
 });
 
 function frameStatus(state: AnalyticsReadState): AnalyticsFrameStatus | null {
@@ -87,7 +87,7 @@ export function createAnalyticsStore(
       const message =
         error instanceof AnalyticsClientError || error instanceof AnalyticsContractError
           ? error.message
-          : 'Canonical analytics could not be loaded.';
+          : 'Check your connection and try again.';
       if (error instanceof AnalyticsClientError) {
         if (error.status === 401 || error.status === 403) {
           set({ state: { status: 'error', data: null, isRefreshing: false, message, previousStatus: null } });
@@ -142,7 +142,7 @@ export function createAnalyticsStore(
             isRefreshing: true,
             message:
               priorStatus === 'baseline'
-                ? 'Directional baseline — not calibrated production analysis.'
+                ? 'These results are early estimates.'
                 : null,
           },
         });
@@ -158,7 +158,7 @@ export function createAnalyticsStore(
             status,
             data: model,
             isRefreshing: false,
-            message: status === 'baseline' ? 'Directional baseline — not calibrated production analysis.' : null,
+            message: status === 'baseline' ? 'These results are early estimates.' : null,
           },
         });
       } catch (error) {

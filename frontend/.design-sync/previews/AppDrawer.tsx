@@ -4,6 +4,8 @@ import {
   seedPreviewShellStore,
 } from 'onlyfans-analytics-frontend';
 
+import './card.module.css';
+
 seedPreviewShellStore();
 
 // The permanent desktop rail is sm-gated (display xs:none / sm:block) and cannot
@@ -14,7 +16,7 @@ export function MobileNavigation() {
     <MemoryRouter initialEntries={['/analytics']}>
       <div style={{ height: 440, position: 'relative', width: 264 }}>
         <AppDrawer
-          drawerWidth={76}
+          drawerWidth={64}
           mobileDrawerWidth={264}
           mobileOpen
           onDrawerClose={() => {}}

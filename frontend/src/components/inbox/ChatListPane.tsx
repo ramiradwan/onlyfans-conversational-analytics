@@ -15,7 +15,6 @@ import {
 } from '@mui/material';
 
 import { formatTimestamp, getConversationTitle } from './inboxModel';
-import { MessageFlagIcon } from './MessageFlagIcons';
 import type { ConversationRecord } from '../../protocol';
 import { conversationLatestMessage } from '../../store/transportStore';
 import { componentTokens } from '../../theme';
@@ -56,15 +55,8 @@ const ConversationItem = styled(ListItemButton)(({ theme }) => ({
   '&.Mui-selected:hover': {
     backgroundColor: theme.vars.palette.action.selected,
   },
-  '&.Mui-selected::before': {
-    backgroundColor: theme.vars.palette.primary.main,
-    borderRadius: 999,
-    bottom: '18%',
-    content: '""',
-    insetInlineStart: 2,
-    position: 'absolute',
-    top: '18%',
-    width: 3,
+  '&.Mui-selected .MuiAvatar-root': {
+    backgroundColor: theme.vars.palette.background.paper,
   },
   '&:hover': {
     backgroundColor: theme.vars.palette.action.hover,
@@ -72,8 +64,8 @@ const ConversationItem = styled(ListItemButton)(({ theme }) => ({
 }));
 
 const FanAvatar = styled(Avatar)(({ theme }) => ({
-  backgroundColor: theme.vars.palette.calm.main,
-  color: theme.vars.palette.calm.contrastText,
+  backgroundColor: theme.vars.palette.action.selected,
+  color: theme.vars.palette.text.primary,
   fontWeight: theme.typography.fontWeightMedium,
 }));
 
@@ -217,9 +209,6 @@ export function ChatListPane({
                         <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
                           {lastMessage?.text.trim() || 'No messages yet'}
                         </Typography>
-                        {lastMessage !== null && (
-                          <MessageFlagIcon sentiment={lastMessage.sentiment} context="latest" />
-                        )}
                       </PreviewRow>
                     }
                   />

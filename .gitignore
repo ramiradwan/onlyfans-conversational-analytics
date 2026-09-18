@@ -84,6 +84,8 @@ tools/e2e-capture/node_modules/
 tools/e2e-capture/.extension-dist/
 tools/e2e-capture/playwright-report/
 tools/e2e-capture/test-results/
+tools/visual-capture/node_modules/
+tools/visual-capture/output/
 
 # Generated Product -> Legal evidence bundles are handoff artifacts, not source.
 /artifacts/legal/
@@ -101,6 +103,8 @@ yarn-error.log*
 # ------------------------
 frontend/src/theme/generated/*
 !frontend/src/theme/generated/tokens.ts
+!frontend/src/theme/generated/static-tokens.css
+!frontend/src/theme/generated/static-fonts.css
 
 # Cryptographic key material
 *.pem

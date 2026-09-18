@@ -1,0 +1,7 @@
+{
+  "revision": "72ff62c90b9accc283d14733804ee0664d6092bb",
+  "sha256": {
+    "extension/popup.html": "f98080bfecade155196729367c8276a5dc3cf574347c1236162a6a2885741edf",
+    "frontend/src/layouts/BrandMark.tsx": "e8c4abf47a87638518775736bc72d02b80e8f4b905d3d0a4e860e6ae46c5cb64"
+  }
+}

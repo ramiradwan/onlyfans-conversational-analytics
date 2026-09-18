@@ -1,5 +1,6 @@
-import { Box } from '@mui/material';
-import { GraphExplorerView } from 'onlyfans-analytics-frontend';
+import { Box, GraphExplorerView } from 'onlyfans-analytics-frontend';
+
+import './card.module.css';
 
 export function EmptyWorkspace() {
   return (

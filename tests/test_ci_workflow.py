@@ -77,12 +77,12 @@ def _workflow_document() -> dict[str, Any]:
     return document
 
 
-def test_pull_request_body_edits_rerun_architecture_declaration_gate() -> None:
+def test_pull_request_body_edits_do_not_rerun_heavy_ci() -> None:
     # BaseLoader preserves YAML's "on" key instead of coercing it to True.
     workflow = yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     events = workflow["on"]["pull_request"]
-    assert "edited" in events.get("types", []), (
-        "correcting a PR architecture declaration must schedule a fresh event payload"
+    assert "edited" not in events.get("types", []), (
+        "PR body edits belong to the standalone architecture-impact workflow, not heavy CI"
     )
     assert {"opened", "synchronize", "reopened"} <= set(events["types"])
 
@@ -230,7 +230,7 @@ def test_a_windows_runner_executes_the_backend_tests_on_every_push() -> None:
     """Retargeting the Windows job at ubuntu-latest turns the named check red.
 
     That is the failure mode this check exists to catch: the backend suite
-    still runs, still passes, and every `skipif(os.name != "nt")` test quietly
+    still runs, still passes, and every `skipif(os.name != \"nt\")` test quietly
     stops executing anywhere in CI.
     """
 
@@ -395,10 +395,11 @@ def _assert_windows_tier_b_qualification(workflow: dict[str, Any]) -> None:
     ]
     assert len(evidence) == 1, "Windows CI must retain persistence runner evidence"
     evidence_with = evidence[0].get("with", {})
-    assert evidence_with.get("name") == "windows-persistence-evidence-${{ github.sha }}"
+    assert evidence_with.get("name") == "windows-persistence-evidence-${{ env.PRODUCT_SHA }}"
     assert evidence_with.get("if-no-files-found") == "error"
     evidence_paths = str(evidence_with.get("path", ""))
     assert "fixed-sqlcipher-runtime-evidence.json" in evidence_paths
+    assert "windows-persistence-ci-source.json" in evidence_paths
     for profile in ("general", "deletion", "smoke"):
         assert f"tier-b-{profile}-junit.xml" in evidence_paths
     found = _tier_b_steps(workflow)

@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CompanionPairingControls } from '../src/components/CompanionPairingControls';
@@ -59,28 +59,31 @@ describe('companion pairing controls', () => {
     const api = makeApi({ pins: vi.fn(async () => [pin]) });
     mount(api);
     await act(async () => {});
-    expect(screen.getByText('Connected browser extension 1')).toBeTruthy();
     await click('Disconnect browser extension 1');
+    expect(api.revoke).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Disconnect' })));
     expect(api.revoke).toHaveBeenCalledWith(pin.pairing_id, 4, expect.any(AbortSignal));
-    expect(screen.queryByText('Connected browser extension 1')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Disconnect browser extension 1' })).toBeNull();
   });
 
   it('refuses a connection list from another account', async () => {
     const api = makeApi({ pins: vi.fn(async () => [{ ...awaiting, state: 'admitted', creator_account_id: 'other' }]) });
     mount(api);
     await act(async () => {});
-    expect(screen.getByText('Connected extensions could not be checked.')).toBeTruthy();
+    expect(screen.getByText("Connected extensions couldn't be checked.")).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Disconnect browser extension 1' })).toBeNull();
   });
 
   it('requires explicit code comparison before versioned confirmation without exposing the identity thumbprint', async () => {
     const api = makeApi();
     mount(api);
-    await click('Open connection window');
+    await click('Connect extension');
     expect(api.open).toHaveBeenCalledWith('creator-1', expect.any(AbortSignal));
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
+    expect(screen.getByText(/Connection window expires in 5:00/)).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(screen.getByLabelText('Connection comparison code').textContent).toBe('012 345');
+    expect(screen.getByText(/Code expires in 4:59/)).toBeTruthy();
     expect(screen.queryByText(awaiting.agent_identity_thumbprint!)).toBeNull();
     expect(screen.queryByText(/Extension identity:/)).toBeNull();
     expect((screen.getByRole('button', { name: 'Confirm connection' }) as HTMLButtonElement).disabled).toBe(true);
@@ -88,7 +91,7 @@ describe('companion pairing controls', () => {
     await click('Confirm connection');
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'confirm', 3, expect.any(AbortSignal));
     expect(screen.getByText(/Extension connected/)).toBeTruthy();
-    expect(screen.getByText(/secure local connection finishes/)).toBeTruthy();
+    expect(screen.getByText(/Continue with Message history below/)).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(300_000));
     expect(api.get).toHaveBeenCalledTimes(1);
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
@@ -97,10 +100,10 @@ describe('companion pairing controls', () => {
   it('declines mismatched codes without requiring acceptance', async () => {
     const api = makeApi({ open: vi.fn(async () => awaiting) });
     mount(api);
-    await click('Open connection window');
+    await click('Connect extension');
     await click("Codes don't match");
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'decline', 3, expect.any(AbortSignal));
-    expect(screen.getByText(/codes did not match, so nothing was connected/)).toBeTruthy();
+    expect(screen.getByText(/codes didn't match, so nothing was connected/)).toBeTruthy();
   });
 
   it('preserves comparison acceptance across unchanged polls and resets it when the code changes', async () => {
@@ -109,7 +112,7 @@ describe('companion pairing controls', () => {
       .mockResolvedValueOnce({ ...awaiting, comparison_code: '987654' });
     const api = makeApi({ open: vi.fn(async () => awaiting), get });
     mount(api);
-    await click('Open connection window');
+    await click('Connect extension');
     fireEvent.click(screen.getByRole('checkbox'));
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
@@ -122,7 +125,7 @@ describe('companion pairing controls', () => {
   it('cancels a pending window and stops polling', async () => {
     const api = makeApi();
     mount(api);
-    await click('Open connection window');
+    await click('Connect extension');
     await click('Cancel');
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'cancel', 0, expect.any(AbortSignal));
     await act(async () => vi.advanceTimersByTimeAsync(300_000));
@@ -140,9 +143,9 @@ describe('companion pairing controls', () => {
       }),
     });
     mount(api);
-    await click('Open connection window');
+    await click('Connect extension');
     await act(async () => vi.advanceTimersByTimeAsync(2000));
-    expect(screen.getByText('The connection window expired. Open a new one and try again.')).toBeTruthy();
+    expect(screen.getByText('Time ran out before the codes were confirmed. Try again.')).toBeTruthy();
     expect(signal?.aborted).toBe(true);
     await act(async () => resolve(awaiting));
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
@@ -156,7 +159,7 @@ describe('companion pairing controls', () => {
       return new Promise((done) => { resolve = done; });
     }) });
     mount(api);
-    await click('Open connection window');
+    await click('Connect extension');
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     await act(async () => bridgeTransportStore.bindAccount('creator-2'));
     expect(signal?.aborted).toBe(true);
@@ -174,7 +177,7 @@ describe('companion pairing controls', () => {
       return new Promise((done) => { resolve = done; });
     }) });
     const view = mount(api);
-    await click('Open connection window');
+    await click('Connect extension');
     view.unmount();
     expect(signal?.aborted).toBe(true);
     await act(async () => resolve(awaiting));
@@ -186,15 +189,15 @@ describe('companion pairing controls', () => {
     const get = vi.fn().mockRejectedValueOnce(new Error('untrusted error body')).mockResolvedValue(awaiting);
     const api = makeApi({ open: vi.fn(async () => awaiting), get });
     mount(api);
-    await click('Open connection window');
+    await click('Connect extension');
     fireEvent.click(screen.getByRole('checkbox'));
     await act(async () => vi.advanceTimersByTimeAsync(1000));
-    expect(screen.getByRole('alert').textContent).toContain('Connection status could not be checked');
+    expect(screen.getByRole('alert').textContent).toContain("The connection couldn't be checked");
     expect(screen.queryByText('untrusted error body')).toBeNull();
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(2000));
     expect(get).toHaveBeenCalledTimes(1);
-    await click('Check connection');
+    await click('Try again');
     expect(screen.getByLabelText('Connection comparison code')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Confirm connection' }) as HTMLButtonElement).disabled).toBe(true);
   });
@@ -202,7 +205,7 @@ describe('companion pairing controls', () => {
   it('rejects polling responses for another account before showing their code', async () => {
     const api = makeApi({ get: vi.fn(async () => ({ ...awaiting, creator_account_id: 'other-account' })) });
     mount(api);
-    await click('Open connection window');
+    await click('Connect extension');
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     expect(screen.getByRole('alert')).toBeTruthy();
@@ -212,7 +215,7 @@ describe('companion pairing controls', () => {
     useUserStore.getState().actions.setUserRole(null);
     const api = makeApi();
     mount(api);
-    expect(screen.queryByRole('button', { name: 'Open connection window' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connect extension' })).toBeNull();
     expect(api.open).not.toHaveBeenCalled();
   });
 });

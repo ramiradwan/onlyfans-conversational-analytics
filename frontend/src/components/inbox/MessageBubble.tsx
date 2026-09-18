@@ -1,7 +1,7 @@
 import { Paper, Stack, styled, Typography } from '@mui/material';
 
 import { formatTimestamp } from './inboxModel';
-import { MessageFlagIcon } from './MessageFlagIcons';
+import { MessageTone } from './MessageTone';
 import type { MessageView } from '../../protocol';
 import { componentTokens } from '../../theme';
 import { sanitizeMessageHtml } from '../../utils/sanitizeMessageHtml';
@@ -28,6 +28,7 @@ const BubbleSurface = styled(Paper, {
       ? theme.vars.palette.communication.outgoingBorder
       : theme.vars.palette.communication.incomingBorder),
   borderRadius: componentTokens.inbox.bubbleRadius,
+  boxShadow: 'none',
   color: theme.vars.palette.text.primary,
   maxWidth:
     'min(' +
@@ -41,7 +42,7 @@ const BubbleSurface = styled(Paper, {
 
 const BubbleMetadata = styled(Stack)(({ theme }) => ({
   alignItems: 'center',
-  color: theme.vars.palette.text.secondary,
+  color: theme.vars.palette.text.muted,
   flexDirection: 'row',
   gap: theme.spacing(1),
   justifyContent: 'flex-end',
@@ -82,14 +83,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           dangerouslySetInnerHTML={{ __html: sanitizeMessageHtml(message.text) }}
         />
         <BubbleMetadata>
-          <MessageFlagIcon sentiment={message.sentiment} />
+          <MessageTone sentiment={message.sentiment} />
           <Typography
             component="time"
             dateTime={message.sent_at}
             variant="caption"
-            sx={{
-              color: 'inherit'
-            }}
+            sx={{ color: 'inherit' }}
           >
             {formatTimestamp(message.sent_at)}
           </Typography>

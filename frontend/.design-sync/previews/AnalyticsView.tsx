@@ -1,8 +1,10 @@
-import { Box } from '@mui/material';
 import {
   AnalyticsView,
+  Box,
   seedPreviewAnalytics,
 } from 'onlyfans-analytics-frontend';
+
+import './card.module.css';
 
 export function LoadedDashboard() {
   seedPreviewAnalytics();

@@ -8,14 +8,12 @@ import {
 } from '../src/story-only/analyticsFixtures';
 import {
   StoryAnalyticsView,
-  StoryDashboardView,
   StoryGraphView,
   StoryInboxView,
 } from '../src/story-only/StoryViews';
 import { theme } from '../src/theme';
 
 const storyViews = [
-  StoryDashboardView,
   StoryAnalyticsView,
   StoryInboxView,
   StoryGraphView,

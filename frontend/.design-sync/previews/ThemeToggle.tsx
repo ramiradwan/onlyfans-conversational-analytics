@@ -1,5 +1,11 @@
-import { Box, Stack, Typography } from '@mui/material';
-import { ThemeToggle } from 'onlyfans-analytics-frontend';
+import {
+  Box,
+  Stack,
+  ThemeToggle,
+  Typography,
+} from 'onlyfans-analytics-frontend';
+
+import './card.module.css';
 
 export function InApplicationBar() {
   return (
@@ -20,12 +26,12 @@ export function InApplicationBar() {
         <Typography variant="subtitle1" sx={{
           fontWeight: 600
         }}>
-          Bridge
+          Appearance
         </Typography>
         <Typography variant="caption" sx={{
           color: 'text.secondary'
         }}>
-          Appearance follows your selected mode
+          Switch between light and dark
         </Typography>
       </Box>
       <ThemeToggle />

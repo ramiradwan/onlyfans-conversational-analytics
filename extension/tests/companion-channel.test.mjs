@@ -122,6 +122,27 @@ test('raw socket rejects text, oversize frames and queue overflow with fixed err
   }
 });
 
+test('raw socket keeps a well-formed peer close reason and ignores malformed ones', async () => {
+  const open = async () => {
+    let socket;
+    const wire = await openLoopbackSocket('ws://127.0.0.1:17871/ws/agent/pairing', { text: true, webSocketFactory() {
+      socket = { readyState: 1, bufferedAmount: 0, close() {} }; queueMicrotask(() => socket.onopen()); return socket;
+    } });
+    return { wire, socket };
+  };
+  const refused = await open();
+  refused.socket.onclose({ code: 1008, reason: 'pairing_state_refused' });
+  assert.equal(refused.wire.closed, true);
+  assert.equal(refused.wire.closeReason, 'pairing_state_refused');
+  const malformed = await open();
+  malformed.socket.onclose({ code: 1008, reason: 'Pairing refused!' });
+  assert.equal(malformed.wire.closeReason, null);
+  const local = await open();
+  local.wire.close();
+  local.socket.onclose({ code: 4008, reason: 'companion_session_closed' });
+  assert.equal(local.wire.closeReason, null);
+});
+
 test('a silent peer holding a partial encrypted document is closed at its assembly deadline', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const peer = fixture(), channel = await peer.open();

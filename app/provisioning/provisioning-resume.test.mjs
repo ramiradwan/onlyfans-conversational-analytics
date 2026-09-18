@@ -44,7 +44,8 @@ function response(status, payload) {
 function document() {
   return {
     hidden: false,
-    querySelector() {
+    querySelector(selector) {
+      if (selector != 'main') return null;
       return { dataset: { provisioningCsrf: 'csrf', provisioningExtensionId: '' } };
     },
     addEventListener() {},
@@ -80,13 +81,13 @@ test('pending approval is a neutral durable state and remains pending after an a
   await controller.start();
   assert.equal(ui.bindingStep.dataset.state, 'current');
   assert.equal(ui.finalizeStep.dataset.state, 'locked');
-  assert.match(ui.status.textContent, /waiting for completion/i);
+  assert.equal(ui.status.textContent, '');
   assert.equal(ui.status.dataset.tone, 'neutral');
 
   await controller.acquireAssociation();
   assert.equal(ui.bindingStep.dataset.state, 'current');
   assert.equal(ui.finalizeProvisioning.disabled, true);
-  assert.match(ui.status.textContent, /waiting for completion/i);
+  assert.match(ui.status.textContent, /connection is not approved yet/i);
   assert.equal(ui.status.dataset.tone, 'neutral');
   assert.deepEqual(JSON.parse(calls.at(-1)[1].body), {});
 });
@@ -121,7 +122,7 @@ test('only matching authoritative approval unlocks finalization', async () => {
   assert.equal(ui.bindingStep.dataset.state, 'completed');
   assert.equal(ui.finalizeStep.dataset.state, 'current');
   assert.equal(ui.finalizeProvisioning.disabled, false);
-  assert.equal(ui.status.textContent, 'Creator account approved. Finish desktop setup.');
+  assert.equal(ui.status.textContent, '');
 });
 
 test('recovery state never exposes approval or finalization actions', async () => {
@@ -145,5 +146,5 @@ test('recovery state never exposes approval or finalization actions', async () =
   assert.equal(ui.bindingStep.dataset.state, 'locked');
   assert.equal(ui.acquireAssociation.disabled, true);
   assert.equal(ui.finalizeProvisioning.disabled, true);
-  assert.match(ui.status.textContent, /Do not reuse the setup code/);
+  assert.match(ui.status.textContent, /Do not reuse this setup code/);
 });

@@ -1,9 +1,11 @@
-import { Box } from '@mui/material';
-import type { ConversationSummary } from '../../src/protocol';
 import {
+  Box,
   ChatListPane,
   previewConversations,
 } from 'onlyfans-analytics-frontend';
+import type { ConversationSummary } from '../../src/protocol';
+
+import './card.module.css';
 
 const conversationSummaries: ConversationSummary[] = previewConversations.map((conversation) => ({
   conversation_id: conversation.conversation_id,
