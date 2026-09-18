@@ -173,6 +173,239 @@ export const effectTokens = {
   }
 } as const;
 
+export const semanticIntents = {
+  "dark": {
+    "action": {
+      "primary": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(55.5912% 0.22480 277.32)",
+        "light": "oklch(74.5658% 0.13200 282.31)",
+        "main": "oklch(68.2072% 0.17271 282.31)"
+      },
+      "secondary": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(60.5631% 0.21892 292.72)",
+        "light": "oklch(76.7175% 0.12734 293.54)",
+        "main": "oklch(70.8969% 0.15917 293.54)"
+      },
+      "state": {
+        "disabled": "oklch(100.0000% 0.00000 0.00 / 0.30)",
+        "hover": "oklch(100.0000% 0.00000 0.00 / 0.05)",
+        "selected": "oklch(68.2072% 0.17271 282.31 / 0.16)"
+      }
+    },
+    "chart": {
+      "categorical1": "oklch(67.9613% 0.11788 210.83)",
+      "categorical2": "oklch(52.8516% 0.17984 142.50)",
+      "categorical3": "oklch(75.7281% 0.12276 333.48)",
+      "categorical4": "oklch(84.4069% 0.16972 96.01)",
+      "categorical5": "oklch(62.0995% 0.13581 162.19)",
+      "categorical6": "oklch(60.6460% 0.19455 37.69)",
+      "categorical7": "oklch(65.0568% 0.16930 280.23)",
+      "categorical8": "oklch(55.8644% 0.18371 14.17)",
+      "grid": "oklch(100.0000% 0.00000 0.00 / 0.10)",
+      "negative": "oklch(55.8644% 0.18371 14.17)",
+      "neutral": "oklch(32.6039% 0.02112 285.17)",
+      "opportunity": "oklch(84.4069% 0.16972 96.01)",
+      "positive": "oklch(52.8516% 0.17984 142.50)",
+      "sentiment": "oklch(68.2072% 0.17271 282.31)",
+      "unknown": "oklch(65.0568% 0.16930 280.23)",
+      "volume": "oklch(70.8969% 0.15917 293.54)"
+    },
+    "communication": {
+      "incomingBorder": "oklch(32.6039% 0.02112 285.17)",
+      "incomingSurface": "oklch(23.9593% 0.01903 284.87)",
+      "outgoingBorder": "oklch(38.7617% 0.10215 284.98)",
+      "outgoingSurface": "oklch(26.3231% 0.07416 283.36)"
+    },
+    "feedback": {
+      "error": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(55.8438% 0.18329 22.70)",
+        "light": "oklch(73.5430% 0.12686 22.35)",
+        "main": "oklch(66.9287% 0.15857 22.35)"
+      },
+      "info": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(61.1455% 0.10629 211.41)",
+        "light": "oklch(74.3690% 0.09430 210.83)",
+        "main": "oklch(67.9613% 0.11788 210.83)"
+      },
+      "success": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(52.8516% 0.17984 142.50)",
+        "light": "oklch(73.8478% 0.12995 144.21)",
+        "main": "oklch(67.3098% 0.16244 144.21)"
+      },
+      "warning": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(56.9556% 0.10021 77.48)",
+        "light": "oklch(85.0921% 0.11453 77.48)",
+        "main": "oklch(81.3651% 0.14316 77.48)"
+      }
+    },
+    "legacy": {
+      "accent": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(60.5631% 0.21892 292.72)",
+        "light": "oklch(76.7175% 0.12734 293.54)",
+        "main": "oklch(70.8969% 0.15917 293.54)"
+      },
+      "calm": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(55.5912% 0.22480 277.32)",
+        "light": "oklch(74.5658% 0.13200 282.31)",
+        "main": "oklch(68.2072% 0.17271 282.31)"
+      }
+    },
+    "measurement": {
+      "contrastText": "oklch(0% 0 0 / 0.87)",
+      "dark": "oklch(55.5912% 0.22480 277.32)",
+      "light": "oklch(74.5658% 0.13200 282.31)",
+      "main": "oklch(68.2072% 0.17271 282.31)"
+    },
+    "sentiment": {
+      "negative": "oklch(55.8644% 0.18371 14.17)",
+      "neutral": "oklch(32.6039% 0.02112 285.17)",
+      "positive": "oklch(52.8516% 0.17984 142.50)",
+      "unknown": "oklch(65.0568% 0.16930 280.23)"
+    },
+    "surface": {
+      "canvas": "oklch(13.6531% 0.00904 285.14)",
+      "divider": "oklch(100.0000% 0.00000 0.00 / 0.07)",
+      "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
+      "glass": "oklch(19.5111% 0.01602 284.82 / 0.72)",
+      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(68.2072% 0.17271 282.31 / 0.16), oklch(70.8969% 0.15917 293.54 / 0.05) 45%, oklch(68.2072% 0.17271 282.31 / 0.00) 75%)",
+      "overlay": "0 2px 6px oklch(0.0000% 0.00000 0.00 / 0.50), 0 24px 56px -20px oklch(0.0000% 0.00000 0.00 / 0.90)",
+      "paper": "oklch(20.8382% 0.01576 284.95)",
+      "placeholder": "oklch(26.5197% 0.02040 284.92)",
+      "rim": "linear-gradient(180deg, oklch(100.0000% 0.00000 0.00 / 0.09), oklch(100.0000% 0.00000 0.00 / 0.02) 48%, oklch(100.0000% 0.00000 0.00 / 0.00))",
+      "subtle": "oklch(23.9593% 0.01903 284.87)"
+    },
+    "text": {
+      "disabled": "oklch(54.2517% 0.02632 290.89)",
+      "muted": "oklch(68.9453% 0.02185 291.94)",
+      "primary": "oklch(96.6625% 0.00802 293.91)",
+      "secondary": "oklch(77.6532% 0.02260 291.61)"
+    }
+  },
+  "light": {
+    "action": {
+      "primary": {
+        "contrastText": "oklch(100% 0 0)",
+        "dark": "oklch(46.7674% 0.20489 275.95)",
+        "light": "oklch(68.2072% 0.17271 282.31)",
+        "main": "oklch(55.5912% 0.22480 277.32)"
+      },
+      "secondary": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(50.4887% 0.21167 291.99)",
+        "light": "oklch(70.8969% 0.15917 293.54)",
+        "main": "oklch(60.5631% 0.21892 292.72)"
+      },
+      "state": {
+        "disabled": "oklch(19.2637% 0.03002 289.38 / 0.30)",
+        "hover": "oklch(19.2637% 0.03002 289.38 / 0.04)",
+        "selected": "oklch(55.5912% 0.22480 277.32 / 0.10)"
+      }
+    },
+    "chart": {
+      "categorical1": "oklch(61.1455% 0.10629 211.41)",
+      "categorical2": "oklch(52.8516% 0.17984 142.50)",
+      "categorical3": "oklch(68.8587% 0.12944 333.09)",
+      "categorical4": "oklch(65.4202% 0.13460 96.09)",
+      "categorical5": "oklch(67.2173% 0.14081 162.15)",
+      "categorical6": "oklch(63.1081% 0.17194 39.82)",
+      "categorical7": "oklch(40.9284% 0.18096 265.79)",
+      "categorical8": "oklch(41.6885% 0.16228 13.58)",
+      "grid": "oklch(21.0084% 0.03176 264.66 / 0.08)",
+      "negative": "oklch(41.6885% 0.16228 13.58)",
+      "neutral": "oklch(68.9453% 0.02185 291.94)",
+      "opportunity": "oklch(65.4202% 0.13460 96.09)",
+      "positive": "oklch(52.8516% 0.17984 142.50)",
+      "sentiment": "oklch(55.5912% 0.22480 277.32)",
+      "unknown": "oklch(40.9284% 0.18096 265.79)",
+      "volume": "oklch(60.5631% 0.21892 292.72)"
+    },
+    "communication": {
+      "incomingBorder": "oklch(88.3201% 0.01499 290.27)",
+      "incomingSurface": "oklch(100.0000% 0.00000 0.00)",
+      "outgoingBorder": "oklch(88.8320% 0.04647 288.11)",
+      "outgoingSurface": "oklch(95.4872% 0.02273 288.67)"
+    },
+    "feedback": {
+      "error": {
+        "contrastText": "oklch(100% 0 0)",
+        "dark": "oklch(39.0907% 0.12830 22.70)",
+        "light": "oklch(64.6750% 0.14663 22.70)",
+        "main": "oklch(55.8438% 0.18329 22.70)"
+      },
+      "info": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(42.8018% 0.07440 211.41)",
+        "light": "oklch(68.9164% 0.08503 211.41)",
+        "main": "oklch(61.1455% 0.10629 211.41)"
+      },
+      "success": {
+        "contrastText": "oklch(100% 0 0)",
+        "dark": "oklch(36.9961% 0.12589 142.50)",
+        "light": "oklch(62.2813% 0.14387 142.50)",
+        "main": "oklch(52.8516% 0.17984 142.50)"
+      },
+      "warning": {
+        "contrastText": "oklch(100% 0 0)",
+        "dark": "oklch(38.6572% 0.09108 59.53)",
+        "light": "oklch(64.1797% 0.10409 59.53)",
+        "main": "oklch(55.2246% 0.13011 59.53)"
+      }
+    },
+    "legacy": {
+      "accent": {
+        "contrastText": "oklch(0% 0 0 / 0.87)",
+        "dark": "oklch(50.4887% 0.21167 291.99)",
+        "light": "oklch(70.8969% 0.15917 293.54)",
+        "main": "oklch(60.5631% 0.21892 292.72)"
+      },
+      "calm": {
+        "contrastText": "oklch(100% 0 0)",
+        "dark": "oklch(46.7674% 0.20489 275.95)",
+        "light": "oklch(68.2072% 0.17271 282.31)",
+        "main": "oklch(55.5912% 0.22480 277.32)"
+      }
+    },
+    "measurement": {
+      "contrastText": "oklch(100% 0 0)",
+      "dark": "oklch(46.7674% 0.20489 275.95)",
+      "light": "oklch(68.2072% 0.17271 282.31)",
+      "main": "oklch(55.5912% 0.22480 277.32)"
+    },
+    "sentiment": {
+      "negative": "oklch(41.6885% 0.16228 13.58)",
+      "neutral": "oklch(68.9453% 0.02185 291.94)",
+      "positive": "oklch(52.8516% 0.17984 142.50)",
+      "unknown": "oklch(40.9284% 0.18096 265.79)"
+    },
+    "surface": {
+      "canvas": "oklch(96.8572% 0.00664 286.28)",
+      "divider": "oklch(19.2637% 0.03002 289.38 / 0.06)",
+      "elevation": "0 1px 2px oklch(18.2192% 0.01835 284.43 / 0.04), 0 4px 16px -8px oklch(18.2192% 0.01835 284.43 / 0.08)",
+      "glass": "oklch(100.0000% 0.00000 0.00 / 0.72)",
+      "glow": "radial-gradient(120% 90% at 0% 0%, oklch(55.5912% 0.22480 277.32 / 0.10), oklch(60.5631% 0.21892 292.72 / 0.04) 45%, oklch(55.5912% 0.22480 277.32 / 0.00) 75%)",
+      "overlay": "0 2px 6px oklch(18.2192% 0.01835 284.43 / 0.06), 0 18px 40px -16px oklch(18.2192% 0.01835 284.43 / 0.22)",
+      "paper": "oklch(100.0000% 0.00000 0.00)",
+      "placeholder": "oklch(93.3310% 0.01073 286.19)",
+      "rim": "linear-gradient(180deg, oklch(18.2192% 0.01835 284.43 / 0.07), oklch(18.2192% 0.01835 284.43 / 0.03))",
+      "subtle": "oklch(95.1126% 0.00934 286.22)"
+    },
+    "text": {
+      "disabled": "oklch(68.9453% 0.02185 291.94)",
+      "muted": "oklch(52.8246% 0.02494 291.26)",
+      "primary": "oklch(20.5622% 0.01778 289.83)",
+      "secondary": "oklch(47.4910% 0.02403 291.57)"
+    }
+  }
+} as const;
+
 export const semanticColorSchemes = {
   "dark": {
     "accent": {

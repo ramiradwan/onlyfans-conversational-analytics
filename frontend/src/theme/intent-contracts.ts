@@ -1,6 +1,6 @@
 // Build-time policy and alias graph. Validate metadata before stripping it.
 import { z } from 'zod';
-import { assertGamut, contrastRatio } from './color-validation.js';
+import { assertGamut, contrastRatio } from './color-validation.ts';
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -49,6 +49,16 @@ const adapterRoles: Record<string, string> = {
   background: 'surface', divider: 'surface', placeholder: 'surface', surface: 'surface',
   text: 'text', communication: 'communication', chart: 'chart',
 };
+function adapterTarget(path: string): string | undefined {
+  const match = /^tier2\.colorSchemes\.(light|dark)\.([^.]+)(?:\.(.+))?$/.exec(path);
+  if (!match || !adapterRoles[match[2]]) return undefined;
+  const [, scheme, role, field] = match;
+  const prefix = 'tier2.intents.' + scheme + '.';
+  if (role === 'background') return prefix + 'surface.' + (field === 'default' ? 'canvas' : field);
+  if (role === 'divider' || role === 'placeholder') return prefix + 'surface.' + role;
+  return prefix + adapterRoles[role] + (field ? '.' + field : '');
+}
+
 export type TokenGraph = {
   resolved: JsonObject;
   policies: Map<string, IntentPolicy>;
@@ -75,6 +85,9 @@ export function buildTokenGraph(raw: JsonObject): TokenGraph {
         const parsed = policySchema.safeParse(resolvePolicy(value._intent));
         if (!parsed.success) throw new Error(path + ' has invalid _intent: ' + parsed.error.message);
         const policy = parsed.data;
+        if (!policy.semantic.startsWith('decorative.') && !policy.accessibility.colorIndependentMeaning) {
+          throw new Error(path + ': essential intents require color-independent meaning');
+        }
         if (policy.allowedGamut === 'display-p3' && !policy.semantic.startsWith('decorative.')) {
           throw new Error(path + ': essential intents require srgb');
         }
@@ -157,6 +170,10 @@ export function buildTokenGraph(raw: JsonObject): TokenGraph {
   }
   for (const [path, value] of nodes) {
     const result = resolve(path);
+    const expected = adapterTarget(path);
+    if (expected && typeof value === 'string' && ref(value) !== expected) {
+      throw new Error(path + ': adapter must reference {' + expected + '}');
+    }
     if (ref(value)) {
       for (const dependency of result.dependencies) {
         if (isFinancialPath(dependency) && !isFinancialPath(path)) throw new Error(path + ': financial tokens are reserved');
@@ -216,6 +233,7 @@ export function validateBridgeIntents(graph: TokenGraph): void {
       if (!policy || policy.semantic !== semantic || policy.kind !== kind) throw new Error(path + ': missing or mismatched intent contract');
       if (role === 'financial' && policy.stability !== 'reserved') throw new Error(path + ': financial must remain reserved');
       if (role.startsWith('legacy.') && policy.stability !== 'deprecated') throw new Error(path + ': compatibility intents must be deprecated');
+      if (role !== 'financial' && !role.startsWith('legacy.') && policy.stability !== 'stable') throw new Error(path + ': public intents must remain stable');
     }
   }
 }

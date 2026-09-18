@@ -53,8 +53,8 @@ This is a MUI v9 theme/prop system, not a utility-class library. Compose the bun
 - Surfaces: content and workspace backgrounds use `background.default`; cards, drawers, and panels use `background.paper`. Content surfaces stay opaque. `theme.effects.glassmorphism(theme)` is for navigation and app-bar chrome only. `theme.effects.ambientGlow(theme)` is for setup, empty, and success moments only.
 - Cards: the theme already styles MUI cards; use `Panel` or `theme.effects.cardBorder(theme)` for custom panels and `theme.effects.chartFrame(theme)` for chart frames.
 - Radius shows hierarchy: surface radius for page-level surfaces, control radius for buttons, inputs, and menus, compact radius for small inline objects, and pill shapes only for status.
-- Text: use `text.primary`, `text.secondary`, and `text.disabled`. Keep normal-size text in `text.*` roles unless contrast is verified; accent and info are emphasis and data roles.
-- Brand roles: `primary`, `secondary`, `accent`, `calm`, `success`, `warning`, `error`, and `info`. Prefer semantic roles over raw color values.
+- Text: use `text.primary`, `text.secondary`, and `text.disabled`. Keep normal-size text in `text.*` roles unless contrast is verified; use other intent colors only for their declared meaning.
+- Color roles: `primary` and `secondary` adapt action intents; use `measurement` for measured values and `sentiment` for polarity. Feedback keeps `success`, `warning`, `error`, and `info`. `accent` and `calm` are compatibility names, not choices for new components. See the [intent contract guide](../src/theme/README.md).
 - Status: use `StatusChip` with a `tone`; the colored dot carries the tone so the label stays short. Success is deliberately quiet.
 - Settings: build each card from `SectionHeader` (title, one-line summary, status chip) and `SettingRow` (label, short description, action at the end), separated by dividers.
 - Numbers: use the `kpi` typography variant for the single headline number and `metric` for secondary numbers, with tabular numerals. `DashboardOverview` shows one dominant total, the message volume, and its received/sent split.
@@ -66,7 +66,7 @@ This is a MUI v9 theme/prop system, not a utility-class library. Compose the bun
 
 ## Extension popup and setup page
 
-The browser extension popup and the desktop setup page are plain HTML and CSS, not React. They use the same design tokens as CSS custom properties with the `--dipsy-` prefix (for example `--dipsy-color-primary`, `--dipsy-color-paper`, `--dipsy-radius-control`, `--dipsy-space-unit`, `--dipsy-shadow-raised`), with dark values applied through `prefers-color-scheme`. Mock these surfaces with the same cards and pill status badges as the app, at the popup's 390 px width. Secondary popup screens (connection details, extension management) open as separate views with a Back button. Required legal and data-handling text on these surfaces keeps its wording and prominence.
+The browser extension popup and the desktop setup page are plain HTML and CSS, not React. They use the same design tokens as CSS custom properties with the `--dipsy-` prefix (for example `--dipsy-intent-action-primary-main`, `--dipsy-intent-surface-paper`, `--dipsy-radius-control`, `--dipsy-space-unit`, `--dipsy-shadow-raised`), with dark values applied through `prefers-color-scheme`. Mock these surfaces with the same cards and pill status badges as the app, at the popup's 390 px width. Secondary popup screens (connection details, extension management) open as separate views with a Back button. Required legal and data-handling text on these surfaces keeps its wording and prominence.
 
 ## Sources of truth
 

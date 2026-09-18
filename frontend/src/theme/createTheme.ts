@@ -8,13 +8,14 @@ import {
   effectTokens,
   layoutTokens,
   semanticColorSchemes,
+  semanticIntents,
   shape,
   typography,
 } from './generated/tokens';
 
 type SchemeTokens =
-  | typeof semanticColorSchemes.light
-  | typeof semanticColorSchemes.dark;
+  | typeof semanticIntents.light
+  | typeof semanticIntents.dark;
 
 const { duration, easing, pressScale } = effectTokens.motion;
 
@@ -29,24 +30,30 @@ function transition(properties: readonly string[], step: keyof typeof duration =
     .join(', ');
 }
 
-// Bridge owns light/main/dark intent tones; nativeColor remains enabled for runtime CSS color operations.
-function buildPalette(scheme: SchemeTokens): PaletteOptions {
+// MUI adapts Bridge intents; compatibility names retain their existing values.
+function buildPalette(scheme: SchemeTokens, contrastThreshold: number): PaletteOptions {
   return {
-    contrastThreshold: scheme.contrastThreshold,
-    primary: scheme.primary,
-    secondary: scheme.secondary,
-    accent: scheme.accent,
-    calm: scheme.calm,
-    success: scheme.success,
-    warning: scheme.warning,
-    error: scheme.error,
-    info: scheme.info,
-    background: scheme.background,
+    contrastThreshold,
+    primary: scheme.action.primary,
+    secondary: scheme.action.secondary,
+    accent: scheme.legacy.accent,
+    calm: scheme.legacy.calm,
+    success: scheme.feedback.success,
+    warning: scheme.feedback.warning,
+    error: scheme.feedback.error,
+    info: scheme.feedback.info,
+    measurement: scheme.measurement,
+    sentiment: scheme.sentiment,
+    background: { default: scheme.surface.canvas, paper: scheme.surface.paper },
     text: scheme.text,
-    divider: scheme.divider,
-    action: scheme.action,
-    placeholder: scheme.placeholder,
-    surface: scheme.surface,
+    divider: scheme.surface.divider,
+    action: scheme.action.state,
+    placeholder: scheme.surface.placeholder,
+    surface: {
+      subtle: scheme.surface.subtle, glass: scheme.surface.glass,
+      elevation: scheme.surface.elevation, overlay: scheme.surface.overlay,
+      rim: scheme.surface.rim, glow: scheme.surface.glow,
+    },
     communication: scheme.communication,
     chart: scheme.chart,
   };
@@ -101,8 +108,8 @@ export const theme = createTheme({
   brandPalette,
   brandTypography,
   colorSchemes: {
-    light: { palette: buildPalette(semanticColorSchemes.light) },
-    dark: { palette: buildPalette(semanticColorSchemes.dark) },
+    light: { palette: buildPalette(semanticIntents.light, semanticColorSchemes.light.contrastThreshold) },
+    dark: { palette: buildPalette(semanticIntents.dark, semanticColorSchemes.dark.contrastThreshold) },
   },
   spacing: layoutTokens.spacingUnit,
   breakpoints: { values: layoutTokens.breakpoints },

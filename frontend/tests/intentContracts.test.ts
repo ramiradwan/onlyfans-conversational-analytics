@@ -92,6 +92,27 @@ describe('intent contracts before metadata removal', () => {
     (policy(p).usage as JsonObject).allow = ['measurement', 'component'];
     expect(() => buildTokenGraph({ ...source(p), consumer: '{tier2.intents.light.measurement.main}' })).toThrow(/does not allow/);
   });
+  it('requires color-independent meaning for essential roles', () => {
+    const p = palette();
+    (policy(p).accessibility as JsonObject).colorIndependentMeaning = false;
+    expect(() => buildTokenGraph(source(p))).toThrow(/color-independent/);
+  });
+  it('enforces declared non-text pairs and rejects translucent backdrops', () => {
+    const p = palette();
+    (policy(p).accessibility as JsonObject).nonText = { against: ['{backdrop}'], minimum: 3 };
+    expect(() => buildTokenGraph({ ...source(p), backdrop: 'oklch(100% 0 0)' })).not.toThrow();
+    expect(() => buildTokenGraph({ ...source(p), backdrop: p.main })).toThrow(/non-text contrast/);
+    expect(() => buildTokenGraph({ ...source(p), backdrop: 'oklch(100% 0 0 / 0.5)' })).toThrow(/opaque/);
+  });
+  it('validates colors embedded in effects, not only palette fields', () => {
+    expect(() => buildTokenGraph({ effect: 'linear-gradient(0deg, oklch(60% 0.4 30), oklch(100% 0 0))' })).toThrow(/sRGB/);
+  });
+  it('does not let a financial-family reference hide behind a different alias name', () => {
+    const raw = source();
+    raw.bridge = { value: '{tier2.intents.light.financial.main}' };
+    raw.consumer = '{bridge.value}';
+    expect(() => buildTokenGraph(raw)).toThrow(/financial tokens are reserved/);
+  });
   it('resolves object-alias children and rejects cycles', () => {
     const raw = { color: { main: 'oklch(50% 0 0)' }, alias: '{color}', child: '{alias.main}' };
     expect(buildTokenGraph(raw).resolved.child).toBe('oklch(50% 0 0)');

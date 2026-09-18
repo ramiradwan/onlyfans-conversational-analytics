@@ -56,6 +56,8 @@ declare module '@mui/material/styles' {
   }
 
   interface Palette {
+    measurement: PaletteColor;
+    sentiment: Record<'positive' | 'negative' | 'neutral' | 'unknown', string>;
     accent: PaletteColor;
     calm: PaletteColor;
     placeholder: string;
@@ -94,6 +96,8 @@ declare module '@mui/material/styles' {
   }
 
   interface PaletteOptions {
+    measurement?: PaletteColorOptions;
+    sentiment?: Palette['sentiment'];
     accent?: PaletteColorOptions;
     calm?: PaletteColorOptions;
     placeholder?: string;

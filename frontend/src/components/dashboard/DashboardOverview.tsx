@@ -53,7 +53,7 @@ function SplitLegend({ color, label, value }: { color: string; label: string; va
   );
 }
 
-const RECEIVED_COLOR = 'primary.main';
+const RECEIVED_COLOR = 'measurement.main';
 const SENT_COLOR = 'communication.outgoingBorder';
 
 /** Headline counts: one dominant conversation total with the message volume and its direction split. */

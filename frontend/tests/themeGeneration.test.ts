@@ -47,7 +47,14 @@ describe('theme token generation', () => {
       'oklch(55.5912% 0.22480 277.32)',
       'oklch(92% 0.01 277.32)',
     );
-    expect(() => generateThemeSource(weakPrimary)).toThrow(/primary\.main \(selection cue\).*3:1/i);
+    type Tone = { contrastText: string };
+    const weak = JSON.parse(weakPrimary) as { tier2: { intents: { light: { measurement: Tone; action: { primary: Tone }; legacy: { calm: Tone } } } } };
+    const light = weak.tier2.intents.light;
+    // Keep the authored text pairs valid so this falsifier isolates the selection cue.
+    for (const tone of [light.measurement, light.action.primary, light.legacy.calm]) {
+      tone.contrastText = '{tier1.onColor.black87}';
+    }
+    expect(() => generateThemeSource(JSON.stringify(weak))).toThrow(/primary\.main \(selection cue\).*3:1/i);
   });
 
   it('leads the brand font stack with the family the bundled stylesheet declares', () => {
@@ -112,7 +119,7 @@ describe('static surface design tokens', () => {
     expect(() => replaceStaticTokenBlock(pair + pair, css)).toThrow(/marker pair/);
   });
 
-  it('derives on-primary text from the scheme contrast threshold', () => {
+  it('uses the authored on-primary text for each scheme', () => {
     const [light, dark] = css.split('@media (prefers-color-scheme: dark)');
     expect(light).toContain('--dipsy-color-on-primary: oklch(100% 0 0);');
     expect(dark).toContain('--dipsy-color-on-primary: oklch(0% 0 0 / 0.87);');
