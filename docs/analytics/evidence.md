@@ -16,7 +16,7 @@ Call `bind(policy, reference, location, valid_until=...)` before returning the r
 
 Call `resolve(policy, reference)` to open the source. Resolution checks the reference and reads the message twice through fresh canonical connections. Both reads must match the reference's account revision, source digest, identifiers, and timestamp. Any canonical revision change requires rerunning the question, even if that particular message is unchanged.
 
-`ResolvedEvidence.location` identifies the conversation and message for local navigation. It is not a URL or an authorization grant. An HTTP adapter must use existing activation and session dependencies, send `Cache-Control: no-store`, and return no text on failure. Render text as text, not HTML. HTTP and interface composition remain separate from this component.
+`ResolvedEvidence.location` identifies the conversation and message for local navigation. It is not a URL or an authorization grant. An HTTP adapter must use existing activation and session dependencies, send `Cache-Control: no-store`, and return no text on failure. Render text as text, not HTML. The [HTTP composition](question-endpoints.md) connects this component to authenticated routes. Interface rendering remains separate.
 
 ## Refusals
 
@@ -46,4 +46,4 @@ Source spans use Unicode code-point offsets into the exact text version. `browse
 python -m pytest tests/test_analytics_evidence.py tests/test_analytics_question_service.py tests/test_analytics_question_contracts.py
 ```
 
-The evidence tests exercise encrypted canonical storage, exact source text, version changes, deletion barriers, expiry, account isolation, callback failures, cache limits, concurrent invalidation, and indexed query plans. They do not establish classifier quality, HTTP activation, or laptop capacity. Runtime composition must connect the locator lifecycle and recovery hooks before enabling evidence access.
+The evidence tests exercise encrypted canonical storage, exact source text, version changes, deletion barriers, expiry, account isolation, callback failures, cache limits, concurrent invalidation, and indexed query plans. They do not establish classifier quality, HTTP activation, or laptop capacity. The question runtime connects locator lifecycle and recovery hooks as described in the endpoint guide.

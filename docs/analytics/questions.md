@@ -2,7 +2,7 @@
 
 # Analytics question contract
 
-This specification defines `no_later_creator_reply.v1` and `pricing_discussions.v1`. It does not enable endpoints. The synthetic cases in `tests/fixtures/analytics/questions/` contain manually chosen expected answers, not model-quality evidence.
+This specification defines `no_later_creator_reply.v1` and `pricing_discussions.v1`. The [HTTP adapter](question-endpoints.md) exposes these plans with explicit activation and source-data limits. The synthetic cases in `tests/fixtures/analytics/questions/` contain manually chosen expected answers, not model-quality evidence.
 
 ## Scope, time, and counting
 

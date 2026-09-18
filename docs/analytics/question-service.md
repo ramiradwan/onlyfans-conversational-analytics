@@ -4,7 +4,7 @@
 
 `AnalyticsQuestionService` validates approved questions and delivers bounded pages from a pinned, read-only projection. It does not register a database adapter, enable an HTTP endpoint, run inference, or rebuild projections.
 
-The [question contract](questions.md) defines what the questions mean. The service owns execution constraints, not topic classification or source-text resolution.
+The [question contract](questions.md) defines what the questions mean. The service owns execution constraints, not topic classification or source-text resolution. The [HTTP composition](question-endpoints.md) connects its database, source, and lifecycle adapters.
 
 ## Compose the service
 

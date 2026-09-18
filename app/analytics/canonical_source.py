@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 import json
 from app.persistence import sqlite_api as sqlite3
 from datetime import datetime
@@ -33,6 +34,23 @@ class HistoryAnalyticsSource:
 
             return nullcontext(self.connection)
         return self.history.database.read()
+
+    @contextmanager
+    def open_question_scope(self, account_id, budget):
+        """Pin live canonical identity and bound every source read."""
+
+        from app.analytics.query_canonical import CanonicalQuestionScope
+        from app.analytics.query_identity import canonical_question_identity
+        from app.analytics.query_sql import bounded_sql
+
+        if self.connection is not None:
+            raise ValueError("question_live_read_required")
+        with self.history.database.read() as connection, bounded_sql(connection, budget):
+            scope = CanonicalQuestionScope(connection, account_id, budget)
+            scope.identity = canonical_question_identity(connection, account_id, scope.revision, budget)
+            scope.check(budget)
+            yield scope
+            scope.check(budget)
 
     def read_evidence_message(
         self, account_id: str, location: EvidenceLocation, budget: QuestionBudget,
@@ -108,6 +126,11 @@ class HistoryAnalyticsSource:
             upstream_updated_at=row[5], content_hash=row[6],
             stream_epoch=row[7], source_sequence=row[8],
         )
+
+    def account_revision(self, account_id: str) -> int | None:
+        with self._read() as connection:
+            row = connection.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?", (account_id,)).fetchone()
+        return None if row is None else int(row[0])
 
     def account_exists(self, creator_account_id: str) -> bool:
         with self._read() as connection:

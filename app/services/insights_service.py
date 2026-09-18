@@ -850,3 +850,61 @@ async def get_full_snapshot(
                 ),
             )
     raise ProjectionUnavailable(availability="unavailable")
+
+
+async def _run_question_read(policy, value, *, evidence=False):
+    """Run bounded reads off the event loop and schedule only permitted recovery."""
+
+    from functools import partial
+    from threading import Event
+    import anyio
+    from app.analytics.evidence import EvidenceUnavailable
+    from app.security.runtime_policy import authorized_account
+
+    account = authorized_account(policy, None)
+    runtime = analytics_runtime()
+    resources = runtime.questions
+    if resources is None or resources.closed:
+        raise ProjectionUnavailable()
+    cancelled = Event()
+    operation = resources.resolve if evidence else resources.execute
+    try:
+        return await anyio.to_thread.run_sync(
+            partial(operation, policy, value, cancellation_check=cancelled.is_set),
+            abandon_on_cancel=True)
+    except (ProjectionUnavailable, ProjectionStorageUnavailable, EvidenceUnavailable) as error:
+        refresh = resources.take_refresh(account) or not isinstance(error, EvidenceUnavailable)
+        resources.discard(account)
+        state = runtime.scheduler.state(account)
+        if refresh and not runtime.scheduler.closed and callable(getattr(runtime.source, "account_revision", None)):
+            try:
+                revision = await anyio.to_thread.run_sync(runtime.source.account_revision, account)
+                if revision is not None:
+                    await runtime.scheduler.request_recovery(account, revision)
+            except Exception:
+                # Recovery failure cannot make stale data readable or disclose source errors.
+                pass
+        if isinstance(error, ProjectionUnavailable):
+            availability = state.availability.value
+            if availability not in {"building", "error"}:
+                availability = error.availability
+            raise ProjectionUnavailable(availability=availability, reason_code=error.reason_code) from None
+        raise
+    finally:
+        cancelled.set()
+
+
+async def answer_question(policy, plan):
+    return await _run_question_read(policy, plan)
+
+
+async def resolve_question_evidence(policy, reference):
+    return await _run_question_read(policy, reference, evidence=True)
+
+
+def clear_question_evidence(policy):
+    from app.security.runtime_policy import authorized_account
+
+    runtime = analytics_runtime()
+    if runtime.questions is not None:
+        runtime.questions.discard(authorized_account(policy, None))

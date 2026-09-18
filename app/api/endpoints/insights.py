@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+
+from app.analytics.evidence import EvidenceUnavailable
+from app.analytics.evidence_contracts import ResolvedEvidence
+from app.analytics.query_contracts import QuestionEvidence, QuestionPlan, QuestionResult
+from app.api.security import verify_csrf_token, verify_same_origin
+
 
 from app.analytics.errors import (
     AnalyticsError,
@@ -205,3 +211,121 @@ async def get_projection(
         return await insights_service.active_projection(account_id)
     except AnalyticsError as error:
         raise _analytics_http_error(error) from error
+
+
+
+def _question_schema(model):
+    schema = model.model_json_schema()
+    definitions = schema.pop("$defs", {})
+
+    def expand(value):
+        if isinstance(value, dict):
+            if "$ref" in value:
+                return expand(definitions[value["$ref"].split("/")[-1]])
+            return {key: expand(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [expand(item) for item in value]
+        return value
+
+    return {"requestBody": {"required": True, "content": {
+        "application/json": {"schema": expand(schema)}}}}
+
+
+def _question_authorize(request, policy):
+    verify_same_origin(request)
+    verify_csrf_token(policy, request.headers.get("x-csrf-token"))
+    if request.query_params:
+        raise HTTPException(422, detail="Question filters must be in the request body.")
+
+
+async def _question_body(request):
+    import asyncio
+    import json
+
+    if request.headers.get("content-type", "").split(";", 1)[0].strip() != "application/json":
+        raise HTTPException(415, detail="Use an application/json request.")
+    if request.headers.get("content-encoding", "identity") != "identity":
+        raise HTTPException(415, detail="Compressed requests are not supported.")
+
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate_field")
+            result[key] = value
+        return result
+
+    async def read():
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > 16384:
+                raise HTTPException(413, detail="The question request is too large.")
+            body.extend(chunk)
+        return json.loads(body, object_pairs_hook=unique_object)
+
+    try:
+        return await asyncio.wait_for(read(), timeout=2)
+    except (ValueError, UnicodeError, RecursionError, TimeoutError):
+        raise HTTPException(422, detail="The question request is invalid.") from None
+
+
+def _question_failure(error):
+    if isinstance(error, HTTPException):
+        if error.status_code == 422:
+            return _question_failure(InvalidAnalyticsRequest(
+                "analytics_question_invalid", "The question request is invalid."))
+        error.headers = {**(error.headers or {}), "Cache-Control": "no-store"}
+        return error
+    if isinstance(error, EvidenceUnavailable):
+        return HTTPException(404, detail={"code": error.code, "message": error.public_message,
+            "availability": "unavailable"}, headers={"Cache-Control": "no-store"})
+    result = _analytics_http_error(error)
+    result.headers = {"Cache-Control": "no-store"}
+    return result
+
+
+@router.get("/questions", operation_id="getAnalyticsQuestions", responses=PROTECTED_ERROR_RESPONSES)
+def get_questions(response: Response, policy: RuntimePolicy = Depends(get_authenticated_account_session)):
+    account_bound_to_session(policy, None)
+    response.headers["Cache-Control"] = "no-store"
+    return {"questions": [
+        {"question": "no_later_creator_reply.v1", "enabled": True,
+         "limitations": ["Message types and history coverage may be unknown."]},
+        {"question": "pricing_discussions.v1", "enabled": False,
+         "reason": "analytics_pricing_not_qualified"}]}
+
+
+@router.post("/questions", response_model=QuestionResult, operation_id="answerAnalyticsQuestion",
+             responses=PROTECTED_ERROR_RESPONSES, openapi_extra=_question_schema(QuestionPlan))
+async def answer_question(request: Request, response: Response,
+                          policy: RuntimePolicy = Depends(get_authenticated_account_session)):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        _question_authorize(request, policy)
+        return await insights_service.answer_question(policy, await _question_body(request))
+    except (AnalyticsError, HTTPException) as error:
+        raise _question_failure(error) from None
+
+
+@router.post("/questions/evidence", response_model=ResolvedEvidence,
+             operation_id="resolveAnalyticsEvidence", responses=PROTECTED_ERROR_RESPONSES,
+             openapi_extra=_question_schema(QuestionEvidence))
+async def resolve_evidence(request: Request, response: Response,
+                           policy: RuntimePolicy = Depends(get_authenticated_account_session)):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        _question_authorize(request, policy)
+        return await insights_service.resolve_question_evidence(policy, await _question_body(request))
+    except (AnalyticsError, HTTPException) as error:
+        raise _question_failure(error) from None
+
+
+@router.delete("/questions/evidence", status_code=204, operation_id="clearAnalyticsEvidence",
+               responses=PROTECTED_ERROR_RESPONSES)
+def clear_evidence(request: Request, policy: RuntimePolicy = Depends(get_authenticated_account_session)):
+    try:
+        _question_authorize(request, policy)
+        insights_service.clear_question_evidence(policy)
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+    except (AnalyticsError, HTTPException) as error:
+        raise _question_failure(error) from None

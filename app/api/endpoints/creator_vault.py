@@ -276,6 +276,9 @@ async def apply_creator_vault_command(
                 )
     except RetentionPolicyError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    finally:
+        from app.analytics.runtime import invalidate_question_sources
+        invalidate_question_sources(account_id)
 
     response.headers["Cache-Control"] = "no-store"
     return VaultCommandResponse(

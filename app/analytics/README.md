@@ -51,3 +51,7 @@ See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 ## Question execution
 
 `query_contracts.py`, `query_execution.py`, `query_cursor.py`, and `query_service.py` provide typed question plans, bounded read-adapter ports, authenticated pagination, and result validation. See [Execute an analytics question](../../docs/analytics/question-service.md) for composition and adapter requirements.
+
+## Conversation questions
+
+[Question endpoints](../../docs/analytics/question-endpoints.md) connect bounded handlers, witnessed SQLite publication metadata, and exact source resolution. The production adapter reports missing event types as undetermined. Pricing execution remains disabled until its quality gate passes. These routes do not run inference or rebuild projections inline.

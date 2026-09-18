@@ -112,6 +112,18 @@ class SQLiteAnalyticsProjectionStore:
         if reconcile:
             self.reconcile_startup()
 
+    def question_pricing(self, account_id, snapshot, references, budget):
+        from app.analytics.query_publication import published_pricing
+
+        return published_pricing(self, account_id, snapshot, references, budget)
+
+    def question_snapshot(self, account_id, canonical_identity, budget):
+        """Return witnessed metadata for a bounded live-source question read."""
+
+        from app.analytics.query_publication import published_snapshot
+
+        return published_snapshot(self, account_id, canonical_identity, budget)
+
     def get(
         self,
         creator_account_id: str,
