@@ -1,4 +1,4 @@
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Stack, Typography, type SxProps, type Theme } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import { StatusChip, type StatusTone } from './StatusChip';
@@ -11,15 +11,17 @@ export interface SectionStatus {
 /** Settings card heading: title, one-line summary, and a status chip announced on change. */
 export function SectionHeader({
   status,
+  sx,
   summary,
   title,
 }: {
   status?: SectionStatus | null;
+  sx?: SxProps<Theme>;
   summary?: ReactNode;
   title: string;
 }) {
   return (
-    <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+    <Stack direction="row" spacing={2} sx={[{ alignItems: 'flex-start', justifyContent: 'space-between' }, ...(Array.isArray(sx) ? sx : [sx])]}>
       <Box sx={{ minWidth: 0 }}>
         <Typography component="h2" variant="h6">
           {title}
@@ -40,10 +42,12 @@ export function SectionHeader({
 /** One setting: label and short description, with its action aligned to the end. */
 export function SettingRow({
   action,
+  sx,
   description,
   title,
 }: {
   action?: ReactNode;
+  sx?: SxProps<Theme>;
   description?: ReactNode;
   title: string;
 }) {
@@ -51,7 +55,7 @@ export function SettingRow({
     <Stack
       direction={{ xs: 'column', sm: 'row' }}
       spacing={{ xs: 1.5, sm: 3 }}
-      sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+      sx={[{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }, ...(Array.isArray(sx) ? sx : [sx])]}
     >
       <Box sx={{ minWidth: 0 }}>
         <Typography component="h3" variant="subtitle2">

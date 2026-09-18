@@ -13,6 +13,10 @@ type BridgeEffectStyles = CSSProperties & {
 };
 
 declare module '@mui/material/styles' {
+  interface TypeAction {
+    selectedForeground: string;
+  }
+
   interface TypeText {
     muted: string;
   }
@@ -46,11 +50,25 @@ declare module '@mui/material/styles' {
   }
 
   interface TypographyVariants {
+    insight: ReactCSSProperties;
+    metricUnit: ReactCSSProperties;
+    numericCaption: ReactCSSProperties;
+    numericBody: ReactCSSProperties;
+    detailLabel: ReactCSSProperties;
+    tableHeading: ReactCSSProperties;
+    passkeyTitle: ReactCSSProperties;
     kpi: ReactCSSProperties;
     metric: ReactCSSProperties;
   }
 
   interface TypographyVariantsOptions {
+    insight?: ReactCSSProperties;
+    metricUnit?: ReactCSSProperties;
+    numericCaption?: ReactCSSProperties;
+    numericBody?: ReactCSSProperties;
+    detailLabel?: ReactCSSProperties;
+    tableHeading?: ReactCSSProperties;
+    passkeyTitle?: ReactCSSProperties;
     kpi?: ReactCSSProperties;
     metric?: ReactCSSProperties;
   }
@@ -63,6 +81,10 @@ declare module '@mui/material/styles' {
     calm: PaletteColor;
     placeholder: string;
     surface: {
+      avatar: { fill: string; text: string };
+      trust: { fill: string; ink: string; border: string };
+      segment: { track: string; selected: string; elevation: string };
+      tooltip: { fill: string; text: string };
       subtle: string;
       glass: string;
       elevation: string;
@@ -123,6 +145,13 @@ declare module '@mui/material/Button' {
 
 declare module '@mui/material/Typography' {
   interface TypographyPropsVariantOverrides {
+    insight: true;
+    metricUnit: true;
+    numericCaption: true;
+    numericBody: true;
+    detailLabel: true;
+    tableHeading: true;
+    passkeyTitle: true;
     kpi: true;
     metric: true;
   }

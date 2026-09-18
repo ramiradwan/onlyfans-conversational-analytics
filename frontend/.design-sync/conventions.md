@@ -50,7 +50,7 @@ This is a MUI v9 theme/prop system, not a utility-class library. Compose the bun
 
 - Primitives: take `Alert`, `Box`, `Button`, `Card`, `CardContent`, `Chip`, `Divider`, `Grid`, `IconButton`, `Link`, `Paper`, `Skeleton`, `Stack`, `TextField`, `Tooltip`, and `Typography` from `window.BridgeDesignSystem`. A separate MUI copy does not see the bundled theme and renders with stock MUI styles.
 
-- Surfaces: content and workspace backgrounds use `background.default`; cards, drawers, and panels use `background.paper`. Content surfaces stay opaque. `theme.effects.glassmorphism(theme)` is for navigation and app-bar chrome only. `theme.effects.ambientGlow(theme)` is for setup, empty, and success moments only.
+- Surfaces: content and workspace backgrounds use `background.default`; cards, drawers, and panels use `background.paper`. Content surfaces stay opaque. The desktop rail is opaque `background.paper`; glass is reserved for chrome with content passing beneath it. `theme.effects.ambientGlow(theme)` is for setup, empty, and success moments only.
 - Cards: `Panel` accepts `dominant`, `secondary` and `quiet` emphasis. Use one dominant surface per screen. The theme already styles MUI cards; use `Panel` or `theme.effects.cardBorder(theme)` for custom panels and `theme.effects.chartFrame(theme)` for chart frames.
 - Radius shows hierarchy: surface radius for page-level surfaces, control radius for buttons, inputs, and menus, compact radius for small inline objects, and pill shapes only for status.
 - Text: use `text.primary`, `text.secondary`, and `text.disabled`. Keep normal-size text in `text.*` roles unless contrast is verified; use other intent colors only for their declared meaning.

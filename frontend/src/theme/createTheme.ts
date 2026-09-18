@@ -55,6 +55,10 @@ function buildPalette(scheme: SchemeTokens, contrastThreshold: number): PaletteO
       elevation: scheme.surface.elevation, overlay: scheme.surface.overlay,
       rim: scheme.surface.rim, glow: scheme.surface.glow,
       dominant: scheme.surface.dominant,
+      tooltip: scheme.surface.tooltip,
+      avatar: scheme.surface.avatar,
+      trust: scheme.surface.trust,
+      segment: scheme.surface.segment,
       error: scheme.surface.error, metric: scheme.surface.metric,
     },
     communication: scheme.communication,
@@ -205,6 +209,8 @@ export const theme = createTheme({
       },
     },
     MuiIconButton: {
+      // The authored focus field and ring replace MUI's animated grey keyboard ripple.
+      defaultProps: { disableFocusRipple: true },
       styleOverrides: {
         root: ({ theme }: { theme: Theme }) => ({
           borderRadius: `${componentTokens.MuiButton.borderRadius}px`,
@@ -212,7 +218,7 @@ export const theme = createTheme({
           '&:active': {
             transform: `scale(${pressScale})`,
           },
-          '&:focus-visible': focusRing(theme),
+          '&:focus-visible, &.Mui-focusVisible': { ...focusRing(theme), backgroundColor: theme.vars.palette.action.focus },
         }),
       },
     },
@@ -230,7 +236,8 @@ export const theme = createTheme({
           '&:active': {
             transform: `scale(${componentTokens.MuiListItemButton.activeScale})`,
           },
-          '&:focus-visible': {
+          '&:focus-visible, &.Mui-focusVisible': {
+            backgroundColor: theme.vars.palette.action.focus,
             ...focusRing(theme),
             outlineOffset: '-' + effectTokens.focus.offset,
           },
@@ -267,17 +274,54 @@ export const theme = createTheme({
         root: { fontVariantNumeric: brandTypography.numeric },
       },
     },
+    MuiToggleButtonGroup: {
+      styleOverrides: {
+        root: ({ theme }: { theme: Theme }) => ({
+          backgroundColor: theme.vars.palette.surface.segment.track,
+          border: `1px solid ${theme.vars.palette.divider}`,
+          borderRadius: `${componentTokens.segmentedControl.trackRadius}px`,
+          padding: componentTokens.segmentedControl.padding,
+          gap: componentTokens.segmentedControl.padding,
+          '& .MuiToggleButton-root': {
+            border: 0, margin: 0,
+            borderRadius: `${componentTokens.segmentedControl.segmentRadius}px`,
+          },
+        }),
+      },
+    },
+    MuiToggleButton: {
+      styleOverrides: {
+        root: ({ theme }: { theme: Theme }) => ({
+          ...theme.typography.caption,
+          fontWeight: brandTypography.weights.medium,
+          color: theme.vars.palette.text.secondary,
+          textTransform: 'none',
+          '&:hover': { backgroundColor: theme.vars.palette.action.hover },
+          '&.Mui-selected, &.Mui-selected:hover': {
+            backgroundColor: theme.vars.palette.surface.segment.selected,
+            color: theme.vars.palette.text.primary,
+            boxShadow: theme.vars.palette.surface.segment.elevation,
+            fontWeight: brandTypography.weights.semibold,
+          },
+          '&:focus-visible, &.Mui-focusVisible': { ...focusRing(theme), outlineOffset: '-2px' },
+          '&.Mui-disabled': { color: theme.vars.palette.text.disabled },
+        }),
+      },
+    },
     MuiTooltip: {
       styleOverrides: {
-        tooltip: {
+        tooltip: ({ theme }: { theme: Theme }) => ({
           borderRadius: `${componentTokens.MuiTooltip.borderRadius}px`,
+          backgroundColor: theme.vars.palette.surface.tooltip.fill,
+          color: theme.vars.palette.surface.tooltip.text,
+          fontSize: theme.typography.caption.fontSize,
           fontWeight: brandTypography.weights.medium,
-        },
+        }),
       },
     },
     MuiTypography: {
       defaultProps: {
-        variantMapping: { kpi: 'p', metric: 'p' },
+        variantMapping: { kpi: 'p', metric: 'p', insight: 'span', metricUnit: 'span', numericCaption: 'span', numericBody: 'span', detailLabel: 'span', tableHeading: 'span', passkeyTitle: 'h1' },
       },
     },
     MuiCssBaseline: {

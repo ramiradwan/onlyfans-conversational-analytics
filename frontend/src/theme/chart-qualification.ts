@@ -1,7 +1,7 @@
 // Build-only checks for rendered chart marks, persistent fields and reserved colors.
 import Color from 'colorjs.io';
 
-import { contrastRatio, parseColor } from './color-validation.ts';
+import { contrastRatio, contrastRatioOnComposite, parseColor } from './color-validation.ts';
 import type { JsonObject } from './intent-contracts.ts';
 
 type PairResult = { mode: string; foreground: string; background: string; minimum: number; ratio: number };
@@ -60,6 +60,30 @@ export function qualifyThemeColors(root: JsonObject) {
     }
     requirePair('feedback.error.main', 'surface.error', 3);
     requirePair('measurement.main', 'surface.paper', 4.5);
+    if (color(intents, 'action.state.focus') !== color(intents, 'action.state.hover')) throw new Error(mode + ': focus must use the authored hover fill');
+    requirePair('measurement.dark', 'surface.paper', 4.5);
+    requirePair('surface.avatar.text', 'surface.avatar.fill', 4.5);
+    requirePair('surface.trust.ink', 'surface.trust.fill', 3);
+    requirePair('action.state.selectedForeground', 'action.state.selected', 4.5);
+    for (const backdrop of ['surface.paper', 'surface.canvas']) {
+      const ratio = contrastRatioOnComposite(color(intents, 'surface.tooltip.text'), color(intents, 'surface.tooltip.fill'), color(intents, backdrop));
+      pairs.push({ mode, foreground: 'surface.tooltip.text', background: 'surface.tooltip.fill over ' + backdrop, minimum: 4.5, ratio });
+      if (ratio < 4.5) throw new Error(mode + ': tooltip text contrast fails');
+    }
+    for (const field of ['action', 'surface']) {
+      const checkNeutral = (value: unknown): void => {
+        if (typeof value === 'string') {
+          for (const literal of value.match(/oklch\([^)]*\)/gi) ?? []) {
+            const [, chroma, hue] = new Color(literal).to('oklch').coords;
+            if (chroma !== null && hue !== null && chroma > 0.02 && hue >= 270 && hue <= 300) {
+              throw new Error(mode + '.' + field + ': violet leaked into neutral chrome');
+            }
+          }
+        } else if (value && typeof value === 'object') Object.values(value).forEach(checkNeutral);
+      };
+      checkNeutral(intents[field]);
+    }
+
     for (let first = 1; first <= 8; first++) {
       for (let second = first + 1; second <= 8; second++) {
         const a = 'chart.categorical' + first, b = 'chart.categorical' + second;

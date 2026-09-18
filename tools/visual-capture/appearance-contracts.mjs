@@ -1,7 +1,7 @@
 /** Browser checks for local font loading, numeric hierarchy and text containment. */
 export async function assertNumericTypography(page, viewport) {
   await page.evaluate((width) => {
-    const metrics = [...document.querySelectorAll('.MuiTypography-kpi, .MuiTypography-metric, [data-visual="reply-metric-value"]')];
+    const metrics = [...document.querySelectorAll('.MuiTypography-kpi, .MuiTypography-metric, .MuiTypography-insight, [data-visual="reply-metric-value"]')];
     if (metrics.length === 0) return;
     const loaded = [...document.fonts].some((face) => face.family.includes('Space Grotesk Variable') && face.status === 'loaded');
     if (!loaded) throw new Error('The bundled numeric font did not load');
@@ -11,7 +11,7 @@ export async function assertNumericTypography(page, viewport) {
       if (value.clientWidth && value.scrollWidth > value.clientWidth + 1) throw new Error('Numeric value is clipped');
     }
     for (const heading of document.querySelectorAll('h1,h2,h3')) {
-      if (getComputedStyle(heading).fontFamily.includes('Space Grotesk')) throw new Error('Display font leaked into a heading');
+      if (!heading.matches('main[data-journey-state="desktop.passkey_sign_in"] h1.MuiTypography-passkeyTitle') && getComputedStyle(heading).fontFamily.includes('Space Grotesk')) throw new Error('Display font leaked into a heading');
     }
     const total = document.querySelector('[data-visual="conversation-total"]');
     const messages = document.querySelector('[data-visual="message-total"]');

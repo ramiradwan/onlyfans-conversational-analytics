@@ -202,19 +202,20 @@ export function AppAppBar({
       position="fixed"
       color="inherit"
       elevation={0}
-      sx={{
+      sx={(theme) => ({
+        ...theme.effects.headerBorder(theme),
         bgcolor: 'background.default',
         color: 'text.primary',
         height: headerHeight,
         justifyContent: 'center',
-      }}
+      })}
     >
       <Toolbar
         disableGutters
         sx={{
           gap: 1.5,
           minHeight: `${headerHeight}px !important`,
-          pl: { xs: 1, sm: `${BRAND_INSET}px` },
+          pl: { xs: 2, sm: `${BRAND_INSET}px` },
           pr: { xs: 2, sm: 3, lg: 4 },
         }}
       >
@@ -242,6 +243,7 @@ export function AppAppBar({
           label={status.label}
           onClick={(event) => setStatusAnchor(event.currentTarget)}
           tone={status.color}
+          settled={status.color === 'success'}
         />
         <Popover
           id={statusDetailsId}

@@ -1,8 +1,11 @@
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { Alert, Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { useState } from 'react';
 
 import { BrandMark } from '../layouts/BrandMark';
 import { webauthnApi, type WebAuthnApi } from '../services/webauthnApi';
+import { componentTokens } from '../theme';
+import { surfaceArrival } from '../theme/presentationMotion';
 
 /** Browser ceremony outcomes where the person closed the prompt or let it time out. */
 const CANCELLED_CEREMONIES = new Set(['NotAllowedError', 'AbortError']);
@@ -55,13 +58,23 @@ export function WebAuthnAccessView({
           p: { xs: 4, sm: 5 },
           width: '100%',
           ...theme.effects.cardBorder(theme),
+          ...surfaceArrival(),
           ...theme.effects.ambientGlow(theme),
         })}
       >
         <Stack spacing={3}>
           <BrandMark />
+          <Box aria-hidden="true" data-visual="passkey-lock" sx={{
+            alignItems: 'center', display: 'flex', justifyContent: 'center',
+            width: componentTokens.Passkey.tileSize, height: componentTokens.Passkey.tileSize,
+            borderRadius: `${componentTokens.Passkey.tileRadius}px`,
+            bgcolor: 'surface.trust.fill', color: 'surface.trust.ink',
+            border: '1px solid', borderColor: 'surface.trust.border',
+          }}>
+            <LockOutlinedIcon sx={{ fontSize: componentTokens.Passkey.iconSize }} />
+          </Box>
           <Box>
-            <Typography component="h1" variant="h4">Protect access to your messages</Typography>
+            <Typography component="h1" variant="passkeyTitle">Protect access to your messages</Typography>
             <Typography sx={{ color: 'text.secondary', mt: 1 }}>
               Use a passkey to unlock synced message history in this app. You can use your fingerprint,
               face, or device PIN.

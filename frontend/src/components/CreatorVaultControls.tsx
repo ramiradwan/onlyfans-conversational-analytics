@@ -193,9 +193,12 @@ export function CreatorVaultControls({
   );
 
   return (
-    <Panel>
-      <Stack data-journey-state="desktop.stored_messages" spacing={2}>
-        <SectionHeader summary="Saved only on this computer." title="Stored messages" />
+    <Panel data-visual="stored-messages" sx={{ p: 0,
+      '& .MuiButton-outlined:not(.Mui-disabled)': { color: 'action.selectedForeground', borderColor: 'surface.trust.border' },
+    }}>
+      <Stack data-journey-state="desktop.stored_messages" spacing={0}
+        sx={{ '& > .MuiAlert-root, & > [role="status"]': { m: 3 } }}>
+        <SectionHeader sx={{ p: 3 }} summary="Saved only on this computer." title="Stored messages" />
 
         {error && !editingArchive && <Alert severity="error" role="alert">{error}</Alert>}
         {notice && <Alert severity="success" role="status">{notice}</Alert>}
@@ -225,6 +228,7 @@ export function CreatorVaultControls({
             <Divider />
 
             <SettingRow
+              sx={{ px: 3, py: 2.25 }}
               action={status.policy.enabled ? (
                 <Button
                   disabled={busy}
@@ -252,6 +256,7 @@ export function CreatorVaultControls({
             <Divider />
 
             <SettingRow
+              sx={{ px: 3, py: 2.25 }}
               action={(
                 <Button
                   disabled={busy || !status.capabilities.export}
@@ -269,6 +274,7 @@ export function CreatorVaultControls({
             <Divider />
 
             <SettingRow
+              sx={{ px: 3, py: 2.25 }}
               action={(
                 <Button
                   aria-haspopup="dialog"

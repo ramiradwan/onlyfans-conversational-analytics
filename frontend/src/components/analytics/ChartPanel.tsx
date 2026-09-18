@@ -44,7 +44,7 @@ export function ChartPanel({
   const generatedTitleId = useId().replace(/:/g, '');
   const titleId = labelledBy ?? `analytics-panel-${generatedTitleId}-title`;
   return (
-    <Root emphasis={emphasis} role="region" aria-labelledby={titleId}>
+    <Root arrivalStep={emphasis === 'dominant' ? 0 : 1} emphasis={emphasis} role="region" aria-labelledby={titleId}>
       <Header>
         <Box sx={{
           minWidth: 0

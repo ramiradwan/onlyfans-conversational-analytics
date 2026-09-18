@@ -9,6 +9,7 @@ import {
   type AnalyticsTrendPoint,
 } from '../../analytics';
 import { componentTokens } from '../../theme';
+import { lineArrival, pointArrival } from '../../theme/presentationMotion';
 
 const WIDTH = 640;
 const HEIGHT = 260;
@@ -37,6 +38,7 @@ const Plot = styled(Box)(({ theme }) => ({
   minHeight: componentTokens.analytics.chartHeight,
   overflow: 'hidden',
   position: 'relative',
+  '& path': lineArrival,
 }));
 
 const ChartSvg = styled('svg')({
@@ -103,6 +105,16 @@ const MarkButton = styled('button', {
     },
     '&[data-emphasized="true"]::before, &:hover::before, &:focus-visible::before': reveal,
     '&[data-emphasized="true"] .chart-marker-symbol, &:hover .chart-marker-symbol, &:focus-visible .chart-marker-symbol': reveal,
+    '&[data-endpoint="true"]::before': {
+      backgroundColor: theme.vars.palette.measurement.main,
+      border: `${componentTokens.analytics.latestMarkRingWidth}px solid ${theme.vars.palette.background.paper}`,
+      borderRadius: '50%',
+      height: componentTokens.analytics.latestMarkSize,
+      width: componentTokens.analytics.latestMarkSize,
+      boxSizing: 'content-box',
+      ...pointArrival,
+    },
+    '&[data-endpoint="true"] .chart-marker-symbol': { color: theme.vars.palette.measurement.contrastText, transform: 'none' },
     '&:focus-visible': {
       borderRadius: '50%',
       outline: `2px solid ${theme.vars.palette.primary.main}`,
@@ -263,11 +275,11 @@ export function SentimentEngagementTrend({
         <Legend aria-label={engagement?.length ? 'Chart legend' : 'Series label'}>
           <LegendItem>
             {latestEngagement && <LegendLine $color={theme.vars.palette.chart.sentiment} aria-hidden="true" />}
-            <Box data-visual="latest-tone">
-              <Typography component="span" variant="body2" sx={{ color: 'text.secondary' }}>
+            <Box data-visual="latest-tone" sx={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 1.5 }}>
+              <Typography component="span" variant="detailLabel" sx={{ color: 'text.secondary' }}>
                 Latest tone: {sentimentLabel(latestSentiment.value)}{' '}
               </Typography>
-              <Typography component="span" variant="kpi" sx={{ color: 'measurement.main', display: 'block' }}>
+              <Typography component="span" variant="insight" sx={{ color: 'measurement.dark' }}>
                 {formatSentimentScore(latestSentiment.value)}
               </Typography>
             </Box>
@@ -327,8 +339,10 @@ export function SentimentEngagementTrend({
                 x2={WIDTH - RIGHT}
                 y1={ZERO_Y}
                 y2={ZERO_Y}
+                data-visual="tone-baseline"
                 stroke={theme.vars.palette.chart.baseline}
-                strokeWidth="1.5"
+                strokeWidth="1"
+                strokeDasharray="4 4"
                 vectorEffect="non-scaling-stroke"
               />
               <line
@@ -390,6 +404,7 @@ export function SentimentEngagementTrend({
                   aria-label={label}
                   aria-describedby={active?.series === 'sentiment' && active.index === index ? tooltipId : undefined}
                   data-emphasized={index === sentiment.length - 1 ? 'true' : undefined}
+                  data-endpoint={index === sentiment.length - 1 ? 'true' : undefined}
                   data-hit-target={componentTokens.analytics.markHitTarget}
                   style={{ left: `${(x / WIDTH) * 100}%`, top: `${(y / HEIGHT) * 100}%` }}
                   onMouseEnter={() => setActive({ series: 'sentiment', index, left: x, top: y, label })}

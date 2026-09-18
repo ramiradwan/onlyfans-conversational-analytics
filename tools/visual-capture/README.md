@@ -17,3 +17,5 @@ Only the populated Analytics screen receives color-vision simulations: protanopi
 The color report contains measured foreground/background pairs and separate categorical-color distances. Generation rejects failing required pairs and reserved financial-color reuse. Distances have no accessibility pass threshold. Review the labels, polarity symbols, keyboard tooltips and table alternative as well as the colors.
 
 The workflow uploads screenshots, the manifest and the color report together under the exact Product commit. It does not merge or deploy the product.
+
+Review checks run in isolated pages after the ordinary matrix. `review/acceptance.json` stores measured rail sizes and insets, hover/selection contrast, focus styles and restoration, brand pixels, typography, track alignment and motion behavior. Hover and keyboard-focus screenshots are stored alongside the report. A failed review check fails the visual workflow.

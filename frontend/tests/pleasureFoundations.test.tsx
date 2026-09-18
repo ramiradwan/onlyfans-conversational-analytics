@@ -35,7 +35,7 @@ describe('Pleasure Pass foundations', () => {
     expect(mark).toContain('theme.vars.palette.brand.main');
     expect(mark).not.toContain('theme.vars.palette.primary');
   });
-  it('bundles the display face in application and design previews, for numeric roles only', () => {
+  it('bundles the display face in application and design previews, for declared numeric and passkey title roles', () => {
     const css = fs.readFileSync('src/index.css', 'utf8');
     const config = JSON.parse(fs.readFileSync('.design-sync/config.json', 'utf8'));
     const font = '@fontsource-variable/space-grotesk/wght.css';
@@ -46,7 +46,7 @@ describe('Pleasure Pass foundations', () => {
     expect(typography.metric.fontFamily).toContain('Space Grotesk Variable');
     expect(typography.fontFamily).not.toContain('Space Grotesk');
     for (const [role, definition] of Object.entries(typography)) {
-      if (role !== 'kpi' && role !== 'metric') expect(JSON.stringify(definition)).not.toContain('Space Grotesk');
+      if (!['kpi', 'metric', 'insight', 'numericCaption', 'numericBody', 'passkeyTitle'].includes(role)) expect(JSON.stringify(definition)).not.toContain('Space Grotesk');
     }
     expect(css).not.toMatch(/@import\s+.*https?:/);
     expect(effectTokens.motion.duration).toEqual({ fast: '120ms', standard: '200ms', spatial: '320ms' });

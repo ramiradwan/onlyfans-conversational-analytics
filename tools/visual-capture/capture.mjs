@@ -8,6 +8,8 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { chromium } from 'playwright';
+
+import { captureReviewChecks } from './review-contracts.mjs';
 import { assertNumericTypography } from './appearance-contracts.mjs';
 import { captureVisionDiagnostics } from './vision-diagnostics.mjs';
 
@@ -320,6 +322,7 @@ async function capture() {
   const entries = [];
   const diagnostics = [];
   const failures = [];
+  let review = null;
   try {
     for (const viewport of VIEWPORTS) {
       for (const mode of MODES) {
@@ -403,13 +406,15 @@ async function capture() {
         await context.close();
       }
     }
+    review = await captureReviewChecks(browser, base, outDir);
+    failures.push(...review.failures);
   } finally {
     await browser.close();
     vite.kill();
   }
   await writeFile(
     join(outDir, 'manifest.json'),
-    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, diagnostics, failures }, null, 2)}\n`,
+    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, diagnostics, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
   );
   if (failures.length) {
     console.error(`${failures.length} screen(s) did not reach their ready state:\n${failures.join('\n')}`);

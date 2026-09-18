@@ -1,36 +1,40 @@
 import { Box, Stack, Typography, styled } from '@mui/material';
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 
 import {
   formatCount,
   formatPercentValue,
   type AnalyticsTopicMetric,
 } from '../../analytics';
-import { componentTokens } from '../../theme';
+import { componentTokens, layoutTokens } from '../../theme';
+import { barArrival } from '../../theme/presentationMotion';
 
 const DesktopScroller = styled(Box)(({ theme }) => ({
   display: 'none',
   overflowX: 'auto',
   [theme.breakpoints.up('sm')]: { display: 'block' },
   '& table': {
-    borderCollapse: 'separate',
-    borderSpacing: `0 ${componentTokens.analytics.barGap}px`,
+    display: 'grid',
+    gridTemplateColumns: componentTokens.analytics.topicColumns,
     fontSize: theme.typography.body2.fontSize,
     minWidth: theme.spacing(70),
     width: '100%',
   },
+  '& thead, & tbody, & tr': { display: 'grid', gridColumn: '1 / -1', gridTemplateColumns: 'subgrid' },
   '& th, & td': {
+    minWidth: 0,
+    alignContent: 'center',
     borderBottom: `1px solid ${theme.vars.palette.divider}`,
     padding: theme.spacing(1, 1.25),
     textAlign: 'start',
     verticalAlign: 'middle',
   },
   '& th': {
-    color: theme.vars.palette.text.secondary,
-    fontWeight: theme.typography.fontWeightMedium,
+    ...theme.typography.tableHeading,
+    color: theme.vars.palette.text.muted,
   },
   '& td:not(:first-of-type)': {
-    fontVariantNumeric: 'tabular-nums',
+    ...theme.typography.numericBody,
   },
 }));
 
@@ -48,25 +52,27 @@ const NarrowTopic = styled('li')(({ theme }) => ({
   padding: theme.spacing(1.75, 0),
 }));
 
-const MagnitudeCell = styled(Box)(({ theme }) => ({
+const MagnitudeCell = styled(Box, { shouldForwardProp: (p) => p !== '$labelled' })<{ $labelled?: boolean }>(({ theme, $labelled }) => ({
   alignItems: 'center',
   display: 'grid',
   gap: theme.spacing(1),
-  gridTemplateColumns: `minmax(${theme.spacing(9)}, 1fr) auto`,
+  minWidth: 0,
+  gridTemplateColumns: $labelled ? 'minmax(0, 1fr) calc(var(--topic-count-width) + 9ch)' : 'minmax(0, 1fr) var(--topic-count-width)',
 }));
 
 const BarTrack = styled(Box)(({ theme }) => ({
   backgroundColor: theme.vars.palette.surface.subtle,
   height: componentTokens.analytics.barThickness,
-  minWidth: theme.spacing(10),
+  minWidth: 0,
+  borderRadius: `${layoutTokens.radius.pill}px`,
   overflow: 'hidden',
 }));
 
 const Bar = styled(Box)(({ theme }) => ({
-  backgroundColor: theme.vars.palette.chart.sentiment,
-  borderRadius: `0 ${componentTokens.analytics.dataEndRadius}px ${componentTokens.analytics.dataEndRadius}px 0`,
+  backgroundColor: theme.vars.palette.measurement.main,
+  borderRadius: 'inherit',
   height: '100%',
-  minWidth: componentTokens.analytics.barGap,
+  ...barArrival,
 }));
 
 const NarrowMetadata = styled(Stack)(({ theme }) => ({
@@ -89,22 +95,25 @@ export function TopicsTable({ topics }: TopicsTableProps) {
     [topics],
   );
 
+  const countWidth = `${Math.max(3, ...topics.map((topic) => formatCount(topic.volume).length))}ch`;
+  const columnStyle = { '--topic-count-width': countWidth } as CSSProperties;
+
   if (topics.length === 0) {
     return <Typography sx={{ color: 'text.secondary' }}>No topics found for these dates.</Typography>;
   }
 
   return (
     <>
-      <NarrowTopics aria-label="Topics and trend">
+      <NarrowTopics aria-label="Topics and trend" style={columnStyle}>
         {topics.map((topic) => (
           <NarrowTopic key={topic.id}>
             <Typography component="p" variant="subtitle2">{topic.label}</Typography>
-            <MagnitudeCell>
-              <BarTrack aria-hidden="true">
+            <MagnitudeCell $labelled>
+              <BarTrack aria-hidden="true" data-visual="topic-track">
                 <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
               </BarTrack>
               <Typography component="span" variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                {formatCount(topic.volume)} messages
+                <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography> messages
               </Typography>
             </MagnitudeCell>
             <NarrowMetadata>
@@ -117,10 +126,10 @@ export function TopicsTable({ topics }: TopicsTableProps) {
         ))}
       </NarrowTopics>
 
-      <DesktopScroller>
-        <table aria-label="Topics and trend">
+      <DesktopScroller style={columnStyle}>
+        <table aria-label="Topics and trend" role="table">
           <thead>
-            <tr>
+            <tr role="row">
               <th scope="col">Topic</th>
               <th scope="col">Messages</th>
               <th scope="col">Share</th>
@@ -129,14 +138,14 @@ export function TopicsTable({ topics }: TopicsTableProps) {
           </thead>
           <tbody>
             {topics.map((topic) => (
-              <tr key={topic.id}>
+              <tr role="row" key={topic.id}>
                 <td>{topic.label}</td>
                 <td>
                   <MagnitudeCell>
-                    <BarTrack aria-hidden="true">
+                    <BarTrack aria-hidden="true" data-visual="topic-track">
                       <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
                     </BarTrack>
-                    <span>{formatCount(topic.volume)}</span>
+                    <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography>
                   </MagnitudeCell>
                 </td>
                 <td>{formatPercentValue(topic.sharePercent)}</td>

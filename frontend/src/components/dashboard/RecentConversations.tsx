@@ -16,6 +16,8 @@ import { Link as RouterLink } from 'react-router-dom';
 
 import type { ConversationSummary } from '../../protocol';
 import { conversationLatestMessage } from '../../store/transportStore';
+import { componentTokens } from '../../theme';
+import { surfaceArrival } from '../../theme/presentationMotion';
 import {
   formatTimestamp,
   getConversationTitle,
@@ -43,7 +45,7 @@ export function RecentConversations({
     <Paper
       component="section"
       aria-labelledby={headingId}
-      sx={(theme) => ({ maxWidth: 880, mx: 'auto', py: 1, width: '100%', ...theme.effects.cardBorder(theme) })}
+      sx={(theme) => ({ maxWidth: 880, mx: 'auto', py: 1, width: '100%', ...theme.effects.cardBorder(theme), ...surfaceArrival(1) })}
     >
       <Stack
         direction="row"
@@ -70,12 +72,13 @@ export function RecentConversations({
                 <Avatar
                   aria-hidden="true"
                   sx={{
-                    bgcolor: 'surface.subtle',
-                    color: 'text.primary',
-                    fontSize: '0.95rem',
+                    bgcolor: 'surface.avatar.fill',
+                    color: 'surface.avatar.text',
+                    borderRadius: `${componentTokens.RecentConversations.avatarRadius}px`,
+                    fontSize: componentTokens.RecentConversations.avatarFontSize,
                     fontWeight: 600,
-                    height: 36,
-                    width: 36,
+                    height: componentTokens.RecentConversations.avatarSize,
+                    width: componentTokens.RecentConversations.avatarSize,
                   }}
                 >
                   {title.slice(0, 1).toUpperCase()}
@@ -95,8 +98,8 @@ export function RecentConversations({
                   <Typography
                     component="time"
                     dateTime={lastActivity}
-                    variant="caption"
-                    sx={{ color: 'text.secondary' }}
+                    variant="numericCaption"
+                    sx={{ color: 'text.muted' }}
                   >
                     {formatTimestamp(lastActivity)}
                   </Typography>

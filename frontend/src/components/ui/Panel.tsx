@@ -1,10 +1,12 @@
 import { Paper, type PaperProps } from '@mui/material';
 
+import { surfaceArrival } from '../../theme/presentationMotion';
+
 export type PanelEmphasis = 'dominant' | 'secondary' | 'quiet';
-export type PanelProps = PaperProps & { emphasis?: PanelEmphasis };
+export type PanelProps = PaperProps & { emphasis?: PanelEmphasis; arrivalStep?: number };
 
 /** Existing content surface with an explicit place in the page hierarchy. */
-export function Panel({ emphasis = 'secondary', sx, ...props }: PanelProps) {
+export function Panel({ emphasis = 'secondary', arrivalStep = 0, sx, ...props }: PanelProps) {
   return (
     <Paper
       {...props}
@@ -15,6 +17,7 @@ export function Panel({ emphasis = 'secondary', sx, ...props }: PanelProps) {
           p: 3, bgcolor: 'background.paper', display: 'flex',
           flexDirection: 'column', gap: 2, minWidth: 0,
           ...theme.effects.cardBorder(theme),
+          ...surfaceArrival(arrivalStep),
           ...(emphasis === 'dominant' ? {
             border: `1px solid ${theme.vars.palette.surface.dominant.border}`,
             boxShadow: theme.vars.palette.surface.dominant.elevation,

@@ -57,3 +57,18 @@ export function formatDurationFromSeconds(value: number | null): string {
   if (value < 60) return formatDecimal(value, 0) + ' sec';
   return formatDecimal(value / 60, 1) + ' min';
 }
+
+/** Keeps locale-specific percent placement and spacing intact while styling the unit. */
+export function formatRatioPercentParts(value: number, fractionDigits = 0, locales?: Intl.LocalesArgument): Intl.NumberFormatPart[] {
+  return new Intl.NumberFormat(locales, {
+    style: 'percent', minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits,
+  }).formatToParts(value);
+}
+
+/** The product's existing minute label, separated without changing its wording. */
+export function formatMinutesParts(value: number): Intl.NumberFormatPart[] {
+  return [
+    ...new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).formatToParts(value),
+    { type: 'literal', value: ' ' }, { type: 'unit', value: 'min' },
+  ];
+}

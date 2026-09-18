@@ -3,11 +3,23 @@ import { Box, Typography, styled } from '@mui/material';
 import {
   formatCount,
   formatDecimal,
-  formatRatioPercent,
+  formatRatioPercentParts,
+  formatMinutesParts,
   type AnalyticsResponseMetrics,
 } from '../../analytics';
+import { componentTokens, layoutTokens } from '../../theme';
+import { barArrival } from '../../theme/presentationMotion';
 
 const UNAVAILABLE = '—';
+
+function NumberParts({ parts }: { parts: Intl.NumberFormatPart[] | null }) {
+  if (parts === null) return <>{UNAVAILABLE}</>;
+  return <>{parts.map((part, index) => (
+    part.type === 'unit' || part.type === 'percentSign' || part.type === 'literal'
+      ? <Typography component="span" variant="metricUnit" data-metric-unit key={index} sx={{ color: 'text.secondary' }}>{part.value}</Typography>
+      : <span key={index}>{part.value}</span>
+  ))}</>;
+}
 
 const Metrics = styled('dl')(({ theme }) => ({
   display: 'grid',
@@ -50,11 +62,11 @@ export interface ResponseOverviewProps {
 
 export function ResponseOverview({ metrics }: ResponseOverviewProps) {
   const replyTime = metrics.averageHandlingMinutes === null
-    ? UNAVAILABLE
-    : `${formatDecimal(metrics.averageHandlingMinutes)} min`;
+    ? null
+    : formatMinutesParts(metrics.averageHandlingMinutes);
   const coveragePercent = metrics.responseCoverage === null
-    ? UNAVAILABLE
-    : formatRatioPercent(metrics.responseCoverage);
+    ? null
+    : formatRatioPercentParts(metrics.responseCoverage);
   const coverageSupport = metrics.responseCoverage === null
     ? null
     : `${formatCount(metrics.respondedCount)} of ${formatCount(metrics.responseOpportunityCount)} messages`;
@@ -68,7 +80,7 @@ export function ResponseOverview({ metrics }: ResponseOverviewProps) {
             Average reply time
           </Typography>
           <MetricValue data-visual="reply-metric-value">
-            {replyTime}
+            <NumberParts parts={replyTime} />
           </MetricValue>
         </Metric>
         <Metric>
@@ -76,8 +88,17 @@ export function ResponseOverview({ metrics }: ResponseOverviewProps) {
             Messages you replied to
           </Typography>
           <MetricValue data-visual="reply-metric-value">
-            {coveragePercent}
+            <NumberParts parts={coveragePercent} />
           </MetricValue>
+          {metrics.responseCoverage !== null && (
+            <Box aria-hidden="true" data-visual="reply-coverage-track" sx={{
+              bgcolor: 'surface.subtle', borderRadius: `${layoutTokens.radius.pill}px`,
+              height: componentTokens.analytics.coverageHeight, overflow: 'hidden', mt: 1, mb: 0.5,
+            }}>
+              <Box data-visual="reply-coverage-fill" sx={{ bgcolor: 'measurement.main', height: '100%', borderRadius: 'inherit', ...barArrival }}
+                style={{ width: `${Math.min(1, Math.max(0, metrics.responseCoverage)) * 100}%` }} />
+            </Box>
+          )}
           {coverageSupport && <MetricSupport>{coverageSupport}</MetricSupport>}
         </Metric>
         <Metric>

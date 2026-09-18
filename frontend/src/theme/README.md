@@ -44,8 +44,18 @@ The generator checks token-reference provenance, policy shape, gamut, required c
 
 Warm neutrals and jade now carry surfaces, measurements and primary actions. Light and dark values are authored independently. The `brand` intent preserves the existing violet mark separately from actions.
 
-Space Grotesk is bundled locally for `kpi` and `metric`. Inter remains the face for prose, headings and labels. Design previews load both local font packages.
+Space Grotesk is bundled locally for `kpi`, `metric`, `insight`, numeric captions and counts. Inter remains the default face for prose, headings and labels. The reviewed passkey title is the only display-heading exception. Design previews load both local font packages.
 
 Use `Panel` emphasis to distinguish the one dominant surface from secondary content and quiet rows. Status styling preserves labels, feedback meanings and live announcements. This phase adds no revenue display, first-insights ceremony or readiness transition.
 
 The historical appearance fixture is unchanged. Compatibility checks retain its brand, layout, shape, static prose and motion constraints. Palette, effects and numeric typography are deliberate changes covered by Pleasure Pass tests and browser captures.
+
+## Review contracts
+
+The desktop rail uses opaque paper. Its item width derives from the rail width and the difference between surface and control radii. Hover is weaker than selection; keyboard focus uses the authored hover fill and a visible ring. Icon buttons keep pointer feedback but omit the default animated keyboard ripple. Tooltip colors and both brand tiles use shared intents.
+
+Motion keyframes live in the token source and run through `presentationMotion.ts`. Arrivals use transform and opacity only, last at most the spatial duration including delay, and stop under reduced motion. The healthy app status settles once; shared section statuses do not animate by default.
+
+The header remains 72px and opaque. Dashboard and Stored messages glows remain outside the approved glow scope. Do not infer a freshness status for Stored messages or a tone column for Topics from the reference template; their current data does not provide those fields.
+
+The visual workflow records computed review measurements in `review/acceptance.json`, including rail geometry, state contrast, focus restoration, popup brand parity, numeric roles, aligned topic tracks and reduced-motion behavior. Its checks supplement the ordinary screenshot matrix; neither replaces visual review.

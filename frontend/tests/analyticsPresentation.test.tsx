@@ -229,9 +229,9 @@ describe('analytics dates, units and accessible trend detail', () => {
 
     const repliesPanel = screen.getByRole('region', { name: 'Your replies' });
     const replies = within(repliesPanel);
-    expect(replies.getByText(renderedText(formatRatioPercent(0)), { exact: true })).toBeTruthy();
+    expect(replies.getByText('Messages you replied to').parentElement?.querySelector('dd')?.textContent).toBe(formatRatioPercent(0));
     expect(replies.getByText(`${formatCount(0)} of ${formatCount(0)} messages`, { exact: true })).toBeTruthy();
-    expect(replies.getByText(formatDecimal(0, 0), { exact: true })).toBeTruthy();
+    expect(replies.getByText('Turns per conversation').parentElement?.querySelector('dd')?.textContent).toBe(formatDecimal(0, 0));
     expect(screen.getByText('Nothing to show for these dates.')).toBeTruthy();
     expect(screen.getByText('No topics found for these dates.')).toBeTruthy();
   });
@@ -266,7 +266,7 @@ describe('analytics dates, units and accessible trend detail', () => {
     expect(topicView.textContent).toContain(formatPercentValue(37.5));
     expect(topicView.textContent).toContain(formatPercentValue(12.5));
     const response = within(responsePanel);
-    expect(response.getByText(renderedText(formatRatioPercent(0.75)), { exact: true })).toBeTruthy();
+    expect(response.getByText('Messages you replied to').parentElement?.querySelector('dd')?.textContent).toBe(formatRatioPercent(0.75));
     expect(response.getByText(`${formatCount(15)} of ${formatCount(20)} messages`, { exact: true })).toBeTruthy();
     expect(responsePanel.textContent).not.toContain('Silence');
     expect(sentimentPanel.textContent).toContain(formatSentimentScore(0.35));

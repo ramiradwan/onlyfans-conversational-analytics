@@ -37,6 +37,8 @@ interface NavigationItem {
 }
 
 const RAIL_ITEM_SIZE = 44;
+const RAIL_ITEM_INSET = componentTokens.MuiPaper.borderRadius - componentTokens.MuiListItemButton.borderRadius;
+const RAIL_ITEM_WIDTH = componentTokens.shell.desktopRailWidth - 2 * RAIL_ITEM_INSET;
 
 function DrawerNavItem({
   item,
@@ -60,14 +62,16 @@ function DrawerNavItem({
         minHeight: RAIL_ITEM_SIZE,
         mx: labelled ? 1.5 : 'auto',
         px: labelled ? 1.5 : 0,
-        width: labelled ? 'auto' : RAIL_ITEM_SIZE,
+        flexGrow: labelled ? 1 : 0,
+        flexShrink: 0,
+        width: labelled ? 'auto' : RAIL_ITEM_WIDTH,
         '&:hover': {
           bgcolor: theme.vars.palette.action.hover,
-          color: theme.vars.palette.text.primary,
+          color: theme.vars.palette.text.secondary,
         },
         '&.active': {
           bgcolor: theme.vars.palette.action.selected,
-          color: theme.vars.palette.primary.main,
+          color: theme.vars.palette.action.selectedForeground,
         },
         '&.active .MuiListItemText-primary': {
           fontWeight: theme.typography.fontWeightMedium,
@@ -104,7 +108,7 @@ function NavigationList({
   onNavigate?: () => void;
 }) {
   return (
-    <List aria-label="Primary navigation" sx={{ py: 1 }}>
+    <List aria-label="Primary navigation" sx={{ py: `${RAIL_ITEM_INSET}px` }}>
       {navigationItems.map((item) => (
         <DrawerNavItem
           key={item.to}
@@ -156,13 +160,22 @@ export function AppDrawer({
         open={mobileOpen}
         onClose={closeMobileDrawer}
         ModalProps={{ keepMounted: true }}
-        slotProps={{ paper: { 'aria-label': 'Mobile navigation', id: 'mobile-navigation' } }}
+        slotProps={{
+          paper: { 'aria-label': 'Mobile navigation', id: 'mobile-navigation' },
+          transition: {
+            // A kept-mounted, initially hidden paper may reject the focus trap's first attempt.
+            onEntered: (node: HTMLElement) => {
+              if (!node.contains(node.ownerDocument.activeElement)) node.focus({ preventScroll: true });
+            },
+          },
+        }}
         sx={{
           display: { xs: 'block', sm: 'none' },
           '& .MuiDrawer-paper': {
             bgcolor: 'background.paper',
             boxSizing: 'border-box',
             width: mobileDrawerWidth,
+            borderRadius: `0 ${componentTokens.MuiPaper.borderRadius}px ${componentTokens.MuiPaper.borderRadius}px 0`,
             ...theme.effects.overlay(theme),
           },
         }}
@@ -184,7 +197,7 @@ export function AppDrawer({
         sx={{
           display: { xs: 'none', sm: 'block' },
           '& .MuiDrawer-paper': {
-            ...theme.effects.glassmorphism(theme),
+            bgcolor: 'background.paper',
             ...theme.effects.overlay(theme),
             border: 0,
             borderRadius: `${componentTokens.MuiPaper.borderRadius}px`,

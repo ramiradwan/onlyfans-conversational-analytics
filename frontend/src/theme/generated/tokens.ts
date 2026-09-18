@@ -82,14 +82,19 @@ export const brandTypography = {
     "body1": "1rem",
     "body2": "0.875rem",
     "caption": "0.75rem",
+    "detailLabel": "0.8125rem",
     "h1": "2.5rem",
     "h2": "2rem",
     "h3": "1.75rem",
     "h4": "1.5rem",
     "h5": "1.25rem",
     "h6": "1rem",
+    "insight": "2.875rem",
     "kpi": "clamp(3.25rem, 5vw, 4.5rem)",
-    "metric": "clamp(2rem, 3vw, 2.5rem)"
+    "metric": "clamp(2rem, 3vw, 2.5rem)",
+    "metricUnit": "1.25rem",
+    "passkeyTitle": "1.625rem",
+    "tableHeading": "0.6875rem"
   },
   "weights": {
     "bold": 700,
@@ -168,6 +173,52 @@ export const effectTokens = {
       "exit": "cubic-bezier(0.3, 0, 1, 1)",
       "standard": "cubic-bezier(0.2, 0, 0, 1)"
     },
+    "keyframes": {
+      "barArrival": {
+        "from": {
+          "transform": "scaleX(0)"
+        },
+        "to": {
+          "transform": "scaleX(1)"
+        }
+      },
+      "lineArrival": {
+        "from": {
+          "opacity": 0
+        },
+        "to": {
+          "opacity": 1
+        }
+      },
+      "pointArrival": {
+        "from": {
+          "opacity": 0,
+          "transform": "scale(0.6)"
+        },
+        "to": {
+          "opacity": 1,
+          "transform": "scale(1)"
+        }
+      },
+      "statusSettled": {
+        "from": {
+          "opacity": 0.55
+        },
+        "to": {
+          "opacity": 1
+        }
+      },
+      "surfaceArrival": {
+        "from": {
+          "opacity": 0,
+          "transform": "translateY(12px)"
+        },
+        "to": {
+          "opacity": 1,
+          "transform": "none"
+        }
+      }
+    },
     "pressScale": 0.97
   },
   "rim": {
@@ -187,14 +238,16 @@ export const semanticIntents = {
       },
       "secondary": {
         "contrastText": "oklch(0% 0 0 / 0.87)",
-        "dark": "oklch(60.5631% 0.21892 292.72)",
-        "light": "oklch(76.7175% 0.12734 293.54)",
-        "main": "oklch(70.8969% 0.15917 293.54)"
+        "dark": "oklch(71.2460% 0.01862 158.93)",
+        "light": "oklch(96.7794% 0.00449 134.85)",
+        "main": "oklch(81.7817% 0.01289 156.94)"
       },
       "state": {
         "disabled": "oklch(100.0000% 0.00000 0.00 / 0.30)",
-        "hover": "oklch(31.1696% 0.01409 158.06)",
-        "selected": "oklch(30.4536% 0.03004 181.98)"
+        "focus": "oklch(27.5% 0.010 183)",
+        "hover": "oklch(27.5% 0.010 183)",
+        "selected": "oklch(30.4536% 0.03004 181.98)",
+        "selectedForeground": "oklch(84.5666% 0.04732 182.84)"
       }
     },
     "brand": {
@@ -282,6 +335,10 @@ export const semanticIntents = {
       "unknown": "oklch(65.0568% 0.16930 280.23)"
     },
     "surface": {
+      "avatar": {
+        "fill": "oklch(30.4536% 0.03004 181.98)",
+        "text": "oklch(84.5666% 0.04732 182.84)"
+      },
       "canvas": "oklch(20.3962% 0.00728 164.17)",
       "divider": "oklch(34.9609% 0.01582 156.31)",
       "dominant": {
@@ -290,12 +347,12 @@ export const semanticIntents = {
       },
       "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
       "error": "oklch(30.5024% 0.03766 0.57)",
-      "glass": "oklch(19.5111% 0.01602 284.82 / 0.72)",
+      "glass": "oklch(24.1875% 0.00825 169.61 / 0.72)",
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(75.5245% 0.06228 181.42 / 0.12), oklch(75.5245% 0.06228 181.42 / 0.04) 45%, oklch(75.5245% 0.06228 181.42 / 0.00) 75%)",
       "metric": {
         "connection": {
-          "border": "oklch(43.4931% 0.06989 299.93)",
-          "fill": "oklch(30.3925% 0.03786 294.98)"
+          "border": "oklch(47.9449% 0.02524 157.88)",
+          "fill": "oklch(28.2061% 0.01007 164.17)"
         },
         "measurement": {
           "border": "oklch(49.6372% 0.04569 177.76)",
@@ -314,7 +371,21 @@ export const semanticIntents = {
       "paper": "oklch(24.1875% 0.00825 169.61)",
       "placeholder": "oklch(34.9609% 0.01582 156.31)",
       "rim": "linear-gradient(180deg, oklch(100.0000% 0.00000 0.00 / 0.09), oklch(100.0000% 0.00000 0.00 / 0.02) 48%, oklch(100.0000% 0.00000 0.00 / 0.00))",
-      "subtle": "oklch(28.2061% 0.01007 164.17)"
+      "segment": {
+        "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
+        "selected": "oklch(24.1875% 0.00825 169.61)",
+        "track": "oklch(20.3962% 0.00728 164.17)"
+      },
+      "subtle": "oklch(28.2061% 0.01007 164.17)",
+      "tooltip": {
+        "fill": "oklch(34.9609% 0.01582 156.31 / 0.92)",
+        "text": "oklch(100% 0 0)"
+      },
+      "trust": {
+        "border": "oklch(49.6372% 0.04569 177.76)",
+        "fill": "oklch(30.4536% 0.03004 181.98)",
+        "ink": "oklch(84.5666% 0.04732 182.84)"
+      }
     },
     "text": {
       "disabled": "oklch(54.0541% 0.02178 162.39)",
@@ -332,15 +403,17 @@ export const semanticIntents = {
         "main": "oklch(52.3257% 0.08827 186.65)"
       },
       "secondary": {
-        "contrastText": "oklch(0% 0 0 / 0.87)",
-        "dark": "oklch(50.4887% 0.21167 291.99)",
-        "light": "oklch(70.8969% 0.15917 293.54)",
-        "main": "oklch(60.5631% 0.21892 292.72)"
+        "contrastText": "oklch(100% 0 0)",
+        "dark": "oklch(21.9569% 0.00360 164.71)",
+        "light": "oklch(96.1577% 0.00574 84.57)",
+        "main": "oklch(49.1619% 0.00685 153.64)"
       },
       "state": {
-        "disabled": "oklch(19.2637% 0.03002 289.38 / 0.30)",
-        "hover": "oklch(95.0250% 0.00541 117.93)",
-        "selected": "oklch(95.0072% 0.01094 182.87)"
+        "disabled": "oklch(21.9569% 0.00360 164.71 / 0.30)",
+        "focus": "oklch(97.5% 0.005 183)",
+        "hover": "oklch(97.5% 0.005 183)",
+        "selected": "oklch(95.0072% 0.01094 182.87)",
+        "selectedForeground": "oklch(42.9123% 0.07160 186.90)"
       }
     },
     "brand": {
@@ -428,6 +501,10 @@ export const semanticIntents = {
       "unknown": "oklch(40.9284% 0.18096 265.79)"
     },
     "surface": {
+      "avatar": {
+        "fill": "oklch(95.0072% 0.01094 182.87)",
+        "text": "oklch(42.9123% 0.07160 186.90)"
+      },
       "canvas": "oklch(96.7853% 0.00453 78.30)",
       "divider": "oklch(91.4244% 0.00918 78.28)",
       "dominant": {
@@ -440,8 +517,8 @@ export const semanticIntents = {
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(52.3257% 0.08827 186.65 / 0.10), oklch(52.3257% 0.08827 186.65 / 0.04) 45%, oklch(52.3257% 0.08827 186.65 / 0.00) 75%)",
       "metric": {
         "connection": {
-          "border": "oklch(86.2749% 0.04357 306.50)",
-          "fill": "oklch(94.7415% 0.01682 304.80)"
+          "border": "oklch(86.8321% 0.01343 82.40)",
+          "fill": "oklch(96.1577% 0.00574 84.57)"
         },
         "measurement": {
           "border": "oklch(85.6521% 0.02698 178.94)",
@@ -460,7 +537,21 @@ export const semanticIntents = {
       "paper": "oklch(100.0000% 0.00000 0.00)",
       "placeholder": "oklch(91.4244% 0.00918 78.28)",
       "rim": "linear-gradient(180deg, oklch(21.9569% 0.00360 164.71 / 0.07), oklch(21.9569% 0.00360 164.71 / 0.03))",
-      "subtle": "oklch(96.1577% 0.00574 84.57)"
+      "segment": {
+        "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 4px 16px -8px oklch(21.9569% 0.00360 164.71 / 0.08)",
+        "selected": "oklch(100.0000% 0.00000 0.00)",
+        "track": "oklch(96.7853% 0.00453 78.30)"
+      },
+      "subtle": "oklch(96.1577% 0.00574 84.57)",
+      "tooltip": {
+        "fill": "oklch(21.9569% 0.00360 164.71 / 0.92)",
+        "text": "oklch(100% 0 0)"
+      },
+      "trust": {
+        "border": "oklch(85.6521% 0.02698 178.94)",
+        "fill": "oklch(95.0072% 0.01094 182.87)",
+        "ink": "oklch(42.9123% 0.07160 186.90)"
+      }
     },
     "text": {
       "disabled": "oklch(71.2916% 0.01333 156.88)",
@@ -481,8 +572,10 @@ export const semanticColorSchemes = {
     },
     "action": {
       "disabled": "oklch(100.0000% 0.00000 0.00 / 0.30)",
-      "hover": "oklch(31.1696% 0.01409 158.06)",
-      "selected": "oklch(30.4536% 0.03004 181.98)"
+      "focus": "oklch(27.5% 0.010 183)",
+      "hover": "oklch(27.5% 0.010 183)",
+      "selected": "oklch(30.4536% 0.03004 181.98)",
+      "selectedForeground": "oklch(84.5666% 0.04732 182.84)"
     },
     "background": {
       "default": "oklch(20.3962% 0.00728 164.17)",
@@ -550,9 +643,9 @@ export const semanticColorSchemes = {
     },
     "secondary": {
       "contrastText": "oklch(0% 0 0 / 0.87)",
-      "dark": "oklch(60.5631% 0.21892 292.72)",
-      "light": "oklch(76.7175% 0.12734 293.54)",
-      "main": "oklch(70.8969% 0.15917 293.54)"
+      "dark": "oklch(71.2460% 0.01862 158.93)",
+      "light": "oklch(96.7794% 0.00449 134.85)",
+      "main": "oklch(81.7817% 0.01289 156.94)"
     },
     "success": {
       "contrastText": "oklch(0% 0 0 / 0.87)",
@@ -561,18 +654,22 @@ export const semanticColorSchemes = {
       "main": "oklch(67.3098% 0.16244 144.21)"
     },
     "surface": {
+      "avatar": {
+        "fill": "oklch(30.4536% 0.03004 181.98)",
+        "text": "oklch(84.5666% 0.04732 182.84)"
+      },
       "dominant": {
         "border": "oklch(47.9449% 0.02524 157.88)",
         "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40), 0 12px 32px -16px oklch(0.0000% 0.00000 0.00 / 0.65)"
       },
       "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
       "error": "oklch(30.5024% 0.03766 0.57)",
-      "glass": "oklch(19.5111% 0.01602 284.82 / 0.72)",
+      "glass": "oklch(24.1875% 0.00825 169.61 / 0.72)",
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(75.5245% 0.06228 181.42 / 0.12), oklch(75.5245% 0.06228 181.42 / 0.04) 45%, oklch(75.5245% 0.06228 181.42 / 0.00) 75%)",
       "metric": {
         "connection": {
-          "border": "oklch(43.4931% 0.06989 299.93)",
-          "fill": "oklch(30.3925% 0.03786 294.98)"
+          "border": "oklch(47.9449% 0.02524 157.88)",
+          "fill": "oklch(28.2061% 0.01007 164.17)"
         },
         "measurement": {
           "border": "oklch(49.6372% 0.04569 177.76)",
@@ -589,7 +686,21 @@ export const semanticColorSchemes = {
       },
       "overlay": "0 2px 6px oklch(0.0000% 0.00000 0.00 / 0.50), 0 24px 56px -20px oklch(0.0000% 0.00000 0.00 / 0.90)",
       "rim": "linear-gradient(180deg, oklch(100.0000% 0.00000 0.00 / 0.09), oklch(100.0000% 0.00000 0.00 / 0.02) 48%, oklch(100.0000% 0.00000 0.00 / 0.00))",
-      "subtle": "oklch(28.2061% 0.01007 164.17)"
+      "segment": {
+        "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
+        "selected": "oklch(24.1875% 0.00825 169.61)",
+        "track": "oklch(20.3962% 0.00728 164.17)"
+      },
+      "subtle": "oklch(28.2061% 0.01007 164.17)",
+      "tooltip": {
+        "fill": "oklch(34.9609% 0.01582 156.31 / 0.92)",
+        "text": "oklch(100% 0 0)"
+      },
+      "trust": {
+        "border": "oklch(49.6372% 0.04569 177.76)",
+        "fill": "oklch(30.4536% 0.03004 181.98)",
+        "ink": "oklch(84.5666% 0.04732 182.84)"
+      }
     },
     "text": {
       "disabled": "oklch(54.0541% 0.02178 162.39)",
@@ -612,9 +723,11 @@ export const semanticColorSchemes = {
       "main": "oklch(60.5631% 0.21892 292.72)"
     },
     "action": {
-      "disabled": "oklch(19.2637% 0.03002 289.38 / 0.30)",
-      "hover": "oklch(95.0250% 0.00541 117.93)",
-      "selected": "oklch(95.0072% 0.01094 182.87)"
+      "disabled": "oklch(21.9569% 0.00360 164.71 / 0.30)",
+      "focus": "oklch(97.5% 0.005 183)",
+      "hover": "oklch(97.5% 0.005 183)",
+      "selected": "oklch(95.0072% 0.01094 182.87)",
+      "selectedForeground": "oklch(42.9123% 0.07160 186.90)"
     },
     "background": {
       "default": "oklch(96.7853% 0.00453 78.30)",
@@ -681,10 +794,10 @@ export const semanticColorSchemes = {
       "main": "oklch(52.3257% 0.08827 186.65)"
     },
     "secondary": {
-      "contrastText": "oklch(0% 0 0 / 0.87)",
-      "dark": "oklch(50.4887% 0.21167 291.99)",
-      "light": "oklch(70.8969% 0.15917 293.54)",
-      "main": "oklch(60.5631% 0.21892 292.72)"
+      "contrastText": "oklch(100% 0 0)",
+      "dark": "oklch(21.9569% 0.00360 164.71)",
+      "light": "oklch(96.1577% 0.00574 84.57)",
+      "main": "oklch(49.1619% 0.00685 153.64)"
     },
     "success": {
       "contrastText": "oklch(100% 0 0)",
@@ -693,6 +806,10 @@ export const semanticColorSchemes = {
       "main": "oklch(52.8516% 0.17984 142.50)"
     },
     "surface": {
+      "avatar": {
+        "fill": "oklch(95.0072% 0.01094 182.87)",
+        "text": "oklch(42.9123% 0.07160 186.90)"
+      },
       "dominant": {
         "border": "oklch(86.8321% 0.01343 82.40)",
         "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 12px 32px -16px oklch(21.9569% 0.00360 164.71 / 0.16)"
@@ -703,8 +820,8 @@ export const semanticColorSchemes = {
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(52.3257% 0.08827 186.65 / 0.10), oklch(52.3257% 0.08827 186.65 / 0.04) 45%, oklch(52.3257% 0.08827 186.65 / 0.00) 75%)",
       "metric": {
         "connection": {
-          "border": "oklch(86.2749% 0.04357 306.50)",
-          "fill": "oklch(94.7415% 0.01682 304.80)"
+          "border": "oklch(86.8321% 0.01343 82.40)",
+          "fill": "oklch(96.1577% 0.00574 84.57)"
         },
         "measurement": {
           "border": "oklch(85.6521% 0.02698 178.94)",
@@ -721,7 +838,21 @@ export const semanticColorSchemes = {
       },
       "overlay": "0 2px 6px oklch(21.9569% 0.00360 164.71 / 0.06), 0 18px 40px -16px oklch(21.9569% 0.00360 164.71 / 0.22)",
       "rim": "linear-gradient(180deg, oklch(21.9569% 0.00360 164.71 / 0.07), oklch(21.9569% 0.00360 164.71 / 0.03))",
-      "subtle": "oklch(96.1577% 0.00574 84.57)"
+      "segment": {
+        "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 4px 16px -8px oklch(21.9569% 0.00360 164.71 / 0.08)",
+        "selected": "oklch(100.0000% 0.00000 0.00)",
+        "track": "oklch(96.7853% 0.00453 78.30)"
+      },
+      "subtle": "oklch(96.1577% 0.00574 84.57)",
+      "tooltip": {
+        "fill": "oklch(21.9569% 0.00360 164.71 / 0.92)",
+        "text": "oklch(100% 0 0)"
+      },
+      "trust": {
+        "border": "oklch(85.6521% 0.02698 178.94)",
+        "fill": "oklch(95.0072% 0.01094 182.87)",
+        "ink": "oklch(42.9123% 0.07160 186.90)"
+      }
     },
     "text": {
       "disabled": "oklch(71.2916% 0.01333 156.88)",
@@ -760,6 +891,13 @@ export const typography = {
     "fontWeight": 400,
     "lineHeight": 1.66
   },
+  "detailLabel": {
+    "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "fontSize": "0.8125rem",
+    "fontWeight": 400,
+    "letterSpacing": "0",
+    "lineHeight": 1.43
+  },
   "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
   "h1": {
     "fontSize": "2.5rem",
@@ -797,6 +935,14 @@ export const typography = {
     "letterSpacing": "-0.01em",
     "lineHeight": 1.4
   },
+  "insight": {
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontSize": "2.875rem",
+    "fontVariantNumeric": "tabular-nums",
+    "fontWeight": 600,
+    "letterSpacing": "-0.03em",
+    "lineHeight": 1.1
+  },
   "kpi": {
     "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
     "fontSize": "clamp(3.25rem, 5vw, 4.5rem)",
@@ -811,9 +957,40 @@ export const typography = {
     "fontSize": "clamp(2rem, 3vw, 2.5rem)",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 600,
-    "letterSpacing": "-0.02em",
+    "letterSpacing": "-0.03em",
     "lineHeight": 1.1,
     "overflowWrap": "anywhere"
+  },
+  "metricUnit": {
+    "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "fontSize": "1.25rem",
+    "fontWeight": 500,
+    "letterSpacing": "0",
+    "lineHeight": 1.1
+  },
+  "numericBody": {
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontSize": "0.875rem",
+    "fontVariantNumeric": "tabular-nums",
+    "fontWeight": 500,
+    "letterSpacing": "0",
+    "lineHeight": 1.43
+  },
+  "numericCaption": {
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontSize": "0.75rem",
+    "fontVariantNumeric": "tabular-nums",
+    "fontWeight": 400,
+    "letterSpacing": "0",
+    "lineHeight": 1.66
+  },
+  "passkeyTitle": {
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontSize": "1.625rem",
+    "fontVariantNumeric": "tabular-nums",
+    "fontWeight": 600,
+    "letterSpacing": "-0.02em",
+    "lineHeight": 1.3
   },
   "subtitle1": {
     "fontSize": "1rem",
@@ -824,6 +1001,14 @@ export const typography = {
     "fontSize": "0.875rem",
     "fontWeight": 600,
     "lineHeight": 1.43
+  },
+  "tableHeading": {
+    "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "fontSize": "0.6875rem",
+    "fontWeight": 600,
+    "letterSpacing": ".09em",
+    "lineHeight": 1.5,
+    "textTransform": "uppercase"
   }
 } as const;
 
@@ -849,20 +1034,35 @@ export const componentTokens = {
   "MuiTooltip": {
     "borderRadius": 8
   },
+  "Passkey": {
+    "iconSize": 26,
+    "tileRadius": 18,
+    "tileSize": 56
+  },
+  "RecentConversations": {
+    "avatarFontSize": "0.8125rem",
+    "avatarRadius": 11,
+    "avatarSize": 34
+  },
   "StatusChip": {
     "borderRadius": 999,
     "dotSize": 6,
-    "fontSize": "0.75rem"
+    "fontSize": "0.75rem",
+    "settledDotSize": 7
   },
   "analytics": {
     "barGap": 2,
-    "barThickness": 14,
+    "barThickness": 7,
     "chartHeight": 280,
+    "coverageHeight": 8,
     "dataEndRadius": 4,
+    "latestMarkRingWidth": 2.5,
+    "latestMarkSize": 10,
     "markHitTarget": 24,
     "markSize": 8,
     "metricIconSize": 48,
-    "refreshOpacity": 0.56
+    "refreshOpacity": 0.56,
+    "topicColumns": "minmax(0, 1.6fr) minmax(0, 2fr) 92px 176px"
   },
   "inbox": {
     "bubbleMaxWidth": "36rem",
@@ -870,6 +1070,11 @@ export const componentTokens = {
     "bubbleWidth": "70%",
     "conversationPaneMinWidth": "18rem",
     "insightsPaneMinWidth": "17rem"
+  },
+  "segmentedControl": {
+    "padding": 2,
+    "segmentRadius": 7,
+    "trackRadius": 9
   },
   "shell": {
     "dashboardMaxWidth": 1320,

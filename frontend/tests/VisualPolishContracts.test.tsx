@@ -49,8 +49,8 @@ describe('frontend visual polish contracts', () => {
     const { container } = renderWithTheme(<ResponseOverview metrics={metrics} />);
 
     expect(container.querySelectorAll('[data-visual="reply-metric-value"]')).toHaveLength(3);
-    expect(screen.getByText(renderedText(`${formatDecimal(6.4)} min`))).toBeTruthy();
-    expect(screen.getByText(renderedText(formatRatioPercent(0.75)))).toBeTruthy();
+    expect(screen.getByText('Average reply time').parentElement?.querySelector('dd')?.textContent).toBe(`${formatDecimal(6.4)} min`);
+    expect(screen.getByText('Messages you replied to').parentElement?.querySelector('dd')?.textContent).toBe(formatRatioPercent(0.75));
     expect(screen.getByText(`${formatCount(15)} of ${formatCount(20)} messages`)).toBeTruthy();
     expect(screen.getByText(formatDecimal(31, 0))).toBeTruthy();
   });
