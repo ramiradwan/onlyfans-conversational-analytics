@@ -1,5 +1,4 @@
 import { CssBaseline, GlobalStyles } from '@mui/material';
-import InitColorSchemeScript from '@mui/material/InitColorSchemeScript';
 import { ThemeProvider } from '@mui/material/styles';
 import { useEffect } from 'react';
 import { BrowserRouter } from 'react-router-dom';
@@ -10,7 +9,7 @@ import { analyticsStoreActions } from '@store/analyticsStore';
 import { useUserStore } from '@store/userStore';
 
 import { AppRouter } from './routing/AppRouter';
-import { theme } from './theme';
+import { colorSchemeProps, theme } from './theme';
 import { WebAuthnAccessView } from './views/WebAuthnAccessView';
 
 const globalStyles = (
@@ -67,21 +66,14 @@ export function App() {
   }, []);
 
   return (
-    <>
-      <InitColorSchemeScript
-        attribute="data-mui-color-scheme"
-        defaultMode="light"
-      />
-
-      <ThemeProvider theme={theme} defaultMode="light" disableTransitionOnChange>
-        <CssBaseline />
-        {globalStyles}
-        {hasSessionIdentity ? (
-          <BrowserRouter>
-            <AppRouter />
-          </BrowserRouter>
-        ) : <WebAuthnAccessView />}
-      </ThemeProvider>
-    </>
+    <ThemeProvider theme={theme} {...colorSchemeProps} disableTransitionOnChange>
+      <CssBaseline />
+      {globalStyles}
+      {hasSessionIdentity ? (
+        <BrowserRouter>
+          <AppRouter />
+        </BrowserRouter>
+      ) : <WebAuthnAccessView />}
+    </ThemeProvider>
   );
 }

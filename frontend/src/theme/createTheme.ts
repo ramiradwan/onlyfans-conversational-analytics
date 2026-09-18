@@ -123,6 +123,9 @@ function feedbackSurface(theme: Theme, tone: NonNullable<AlertProps['severity']>
   };
 }
 
+/** ThemeProvider color scheme props; the first-paint head script in the HTML entries mirrors them. */
+export const colorSchemeProps = { defaultMode: 'light' } as const;
+
 export const theme = createTheme({
   cssVariables: {
     cssVarPrefix: 'bridge',

@@ -74,8 +74,8 @@ export const brandPalette = {
 } as const;
 
 export const brandTypography = {
-  "displayNumeric": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
-  "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+  "displayNumeric": "\"Space Grotesk Variable\", \"Space Grotesk Variable Fallback\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+  "fontFamily": "\"Inter Variable\", \"Inter Variable Fallback\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
   "fontFamilyMono": "ui-monospace, SFMono-Regular, Menlo, monospace",
   "numeric": "tabular-nums",
   "scale": {
@@ -892,13 +892,13 @@ export const typography = {
     "lineHeight": 1.66
   },
   "detailLabel": {
-    "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "fontFamily": "\"Inter Variable\", \"Inter Variable Fallback\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
     "fontSize": "0.8125rem",
     "fontWeight": 400,
     "letterSpacing": "0",
     "lineHeight": 1.43
   },
-  "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+  "fontFamily": "\"Inter Variable\", \"Inter Variable Fallback\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
   "h1": {
     "fontSize": "2.5rem",
     "fontWeight": 700,
@@ -936,7 +936,7 @@ export const typography = {
     "lineHeight": 1.4
   },
   "insight": {
-    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk Variable Fallback\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
     "fontSize": "2.875rem",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 600,
@@ -944,7 +944,7 @@ export const typography = {
     "lineHeight": 1.1
   },
   "kpi": {
-    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk Variable Fallback\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
     "fontSize": "clamp(3.25rem, 5vw, 4.5rem)",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 600,
@@ -953,7 +953,7 @@ export const typography = {
     "overflowWrap": "anywhere"
   },
   "metric": {
-    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk Variable Fallback\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
     "fontSize": "clamp(2rem, 3vw, 2.5rem)",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 600,
@@ -962,14 +962,14 @@ export const typography = {
     "overflowWrap": "anywhere"
   },
   "metricUnit": {
-    "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "fontFamily": "\"Inter Variable\", \"Inter Variable Fallback\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
     "fontSize": "1.25rem",
     "fontWeight": 500,
     "letterSpacing": "0",
     "lineHeight": 1.1
   },
   "numericBody": {
-    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk Variable Fallback\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
     "fontSize": "0.875rem",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 500,
@@ -977,7 +977,7 @@ export const typography = {
     "lineHeight": 1.43
   },
   "numericCaption": {
-    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk Variable Fallback\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
     "fontSize": "0.75rem",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 400,
@@ -985,7 +985,7 @@ export const typography = {
     "lineHeight": 1.66
   },
   "passkeyTitle": {
-    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
+    "fontFamily": "\"Space Grotesk Variable\", \"Space Grotesk Variable Fallback\", \"Space Grotesk\", \"Inter Variable\", sans-serif",
     "fontSize": "1.625rem",
     "fontVariantNumeric": "tabular-nums",
     "fontWeight": 600,
@@ -1003,7 +1003,7 @@ export const typography = {
     "lineHeight": 1.43
   },
   "tableHeading": {
-    "fontFamily": "\"Inter Variable\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "fontFamily": "\"Inter Variable\", \"Inter Variable Fallback\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
     "fontSize": "0.6875rem",
     "fontWeight": 600,
     "letterSpacing": ".09em",

@@ -299,9 +299,12 @@ export function generateStaticTokensCss(tokensJsonSource: string): string {
   const colorSchemes = getObject(getObject(resolved, 'tier2'), 'colorSchemes');
   const intents = getObject(getObject(resolved, 'tier2'), 'intents');
   const px = (value: JsonValue): string => String(value) + 'px';
+  // Static surfaces bundle neither the web fonts nor their metric-matched fallback faces.
+  const withoutBundledFallbacks = (stack: string): string =>
+    stack.split(/,\s*/).filter((family) => !/ Fallback"$/.test(family)).join(', ');
 
   const shared: Array<[string, string]> = [
-    ['font-family', getString(typography, 'fontFamily')],
+    ['font-family', withoutBundledFallbacks(getString(typography, 'fontFamily'))],
     ['font-family-mono', getString(typography, 'fontFamilyMono')],
     ...['regular', 'medium', 'semibold', 'bold'].map(
       (weight): [string, string] => ['font-weight-' + weight, String(weights[weight])],
@@ -330,29 +333,46 @@ export function generateStaticTokensCss(tokensJsonSource: string): string {
   ).replace(/\r\n/g, '\n');
 }
 
-const STATIC_BLOCK_START = '/* design-tokens:start */';
-const STATIC_BLOCK_END = '/* design-tokens:end */';
+/**
+ * Emits the canvas the app HTML paints before the bundle runs, keyed to the color scheme
+ * attribute that the head script and the theme set.
+ */
+export function generateFirstPaintCss(tokensJsonSource: string): string {
+  const colorSchemes = getObject(getObject(resolveTokens(tokensJsonSource), 'tier2'), 'colorSchemes');
+  const rule = (selector: string, scheme: 'light' | 'dark'): string => {
+    const colors = getObject(colorSchemes, scheme);
+    return selector + ' {\n'
+      + '  color-scheme: ' + scheme + ';\n'
+      + '  background-color: ' + getString(getObject(colors, 'background'), 'default') + ';\n'
+      + '  color: ' + getString(getObject(colors, 'text'), 'primary') + ';\n'
+      + '}';
+  };
+  return rule(':root', 'light') + '\n' + rule(':root[data-mui-color-scheme="dark"]', 'dark') + '\n';
+}
 
-/** Replaces the marker-delimited token block, keeping the start marker's indentation. */
-export function replaceStaticTokenBlock(consumerSource: string, css: string): string {
+/** Replaces the marker-delimited generated block, keeping the start marker's indentation. */
+export function replaceStaticTokenBlock(consumerSource: string, css: string, marker = 'design-tokens'): string {
+  const blockStart = '/* ' + marker + ':start */';
+  const blockEnd = '/* ' + marker + ':end */';
   const source = consumerSource.replace(/\r\n/g, '\n');
-  const start = source.indexOf(STATIC_BLOCK_START);
-  const end = source.indexOf(STATIC_BLOCK_END);
-  if (start < 0 || end < start || source.indexOf(STATIC_BLOCK_START, start + 1) >= 0) {
-    throw new Error('Expected exactly one ordered design-tokens marker pair');
+  const start = source.indexOf(blockStart);
+  const end = source.indexOf(blockEnd);
+  if (start < 0 || end < start || source.indexOf(blockStart, start + 1) >= 0) {
+    throw new Error('Expected exactly one ordered ' + marker + ' marker pair');
   }
   const lineStart = source.lastIndexOf('\n', start) + 1;
   const indent = source.slice(lineStart, start);
-  if (!/^[ \t]*$/.test(indent)) throw new Error('design-tokens:start must begin its line');
+  if (!/^[ \t]*$/.test(indent)) throw new Error(marker + ':start must begin its line');
   const body = css
     .trimEnd()
     .split('\n')
     .map((line) => (line.length === 0 ? line : indent + line))
     .join('\n');
-  return source.slice(0, start) + STATIC_BLOCK_START + '\n' + body + '\n' + indent + source.slice(end);
+  return source.slice(0, start) + blockStart + '\n' + body + '\n' + indent + source.slice(end);
 }
 
 export const staticTokenConsumers = ['extension/popup.css', 'app/provisioning/provisioning.html'];
+export const firstPaintConsumers = ['app/templates/index.html', 'frontend/index.html'];
 const repositoryRoot = path.resolve(themeDirectory, '..', '..', '..');
 
 function writeIfChanged(filePath: string, content: string): boolean {
@@ -386,6 +406,12 @@ function main(): void {
       const consumerPath = path.join(repositoryRoot, consumer);
       const updated = replaceStaticTokenBlock(fs.readFileSync(consumerPath, 'utf8'), css);
       if (writeIfChanged(consumerPath, updated)) console.log('Updated design tokens in ' + consumer);
+    }
+    const firstPaint = generateFirstPaintCss(tokensSource);
+    for (const consumer of firstPaintConsumers) {
+      const consumerPath = path.join(repositoryRoot, consumer);
+      const updated = replaceStaticTokenBlock(fs.readFileSync(consumerPath, 'utf8'), firstPaint, 'first-paint');
+      if (writeIfChanged(consumerPath, updated)) console.log('Updated first-paint colors in ' + consumer);
     }
   }
 }

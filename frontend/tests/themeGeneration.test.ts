@@ -1,8 +1,14 @@
+import InitColorSchemeScript from '@mui/material/InitColorSchemeScript';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import { brandTypography, colorSchemeProps, theme } from '../src/theme';
 import {
+  firstPaintConsumers,
+  generateFirstPaintCss,
   generateStaticTokensCss,
   generateThemeSource,
   replaceStaticTokenBlock,
@@ -119,5 +125,73 @@ describe('static surface design tokens', () => {
     const [light, dark] = css.split('@media (prefers-color-scheme: dark)');
     expect(light).toContain('--dipsy-color-on-primary: oklch(100% 0 0);');
     expect(dark).toContain('--dipsy-color-on-primary: oklch(0% 0 0 / 0.87);');
+  });
+});
+
+describe('first-paint head', () => {
+  const tokensSource = fs.readFileSync(path.resolve(process.cwd(), 'src/theme/tokens.json'), 'utf8');
+  const css = generateFirstPaintCss(tokensSource);
+  const colorSchemeScript = renderToStaticMarkup(
+    createElement(InitColorSchemeScript, { attribute: 'data-mui-color-scheme', ...colorSchemeProps }),
+  ).replace(/^<script[^>]*>/, '<script>');
+
+  it.each(firstPaintConsumers)('%s carries the current first-paint colors and color scheme script', (consumer) => {
+    const source = fs
+      .readFileSync(path.resolve(process.cwd(), '..', consumer), 'utf8')
+      .replace(/\r\n/g, '\n');
+    expect(replaceStaticTokenBlock(source, css, 'first-paint')).toBe(source);
+    expect(source).toContain(colorSchemeScript);
+  });
+
+  it('paints the canvas and text the theme renders for each scheme', () => {
+    const [light, dark] = css.split(':root[data-mui-color-scheme="dark"]');
+    for (const [block, scheme] of [[light, 'light'], [dark, 'dark']] as const) {
+      const palette = theme.colorSchemes[scheme]?.palette;
+      expect(block).toContain('color-scheme: ' + scheme + ';');
+      expect(block).toContain('background-color: ' + palette?.background.default + ';');
+      expect(block).toContain('color: ' + palette?.text.primary + ';');
+    }
+    expect(theme.getColorSchemeSelector('dark')).toContain('[data-mui-color-scheme="dark"]');
+  });
+});
+
+describe('first-paint fonts', () => {
+  const indexCss = fs.readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf8');
+
+  it('defines a fallback face for every fallback family in the font stacks', () => {
+    const families = [brandTypography.fontFamily, brandTypography.displayNumeric]
+      .flatMap((stack) => stack.match(/"[^"]+ Fallback"/g) ?? [])
+      .map((quoted) => quoted.slice(1, -1));
+    expect(families).toEqual(['Inter Variable Fallback', 'Space Grotesk Variable Fallback']);
+    for (const family of families) {
+      expect(indexCss).toContain(`font-family: '${family}';`);
+    }
+  });
+
+  it('names the installed font versions the fallback metrics were measured against', () => {
+    const measured = /Measured against (\S+) and (\S+);/.exec(indexCss)?.slice(1);
+    expect(measured).toHaveLength(2);
+    for (const pkg of ['@fontsource-variable/inter', '@fontsource-variable/space-grotesk']) {
+      const manifest = fs.readFileSync(path.resolve(process.cwd(), 'node_modules', pkg, 'package.json'), 'utf8');
+      const { version } = JSON.parse(manifest) as { version: string };
+      expect(measured).toContain(`${pkg}@${version}`);
+    }
+  });
+
+  it('preloads exactly the latin subset of each imported font', () => {
+    const backend = fs.readFileSync(path.resolve(process.cwd(), '../app/api/endpoints/frontend.py'), 'utf8');
+    const source = /_FIRST_PAINT_FONT = re\.compile\(r"([^"]+)"\)/.exec(backend)?.[1];
+    expect(source).toBeDefined();
+    const preloaded = new RegExp(source!);
+    const imports = [...indexCss.matchAll(/@import '(@fontsource-variable\/[^']+\.css)';/g)].map((match) => match[1]);
+    expect(imports).toHaveLength(2);
+    for (const specifier of imports) {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'node_modules', specifier), 'utf8');
+      const faces = [...css.matchAll(/url\(\.\/files\/([\w-]+)\.woff2\)[\s\S]*?unicode-range: ([^;]+);/g)];
+      expect(faces.length).toBeGreaterThan(1);
+      // Vite emits bundled assets as `[name]-[hash][extname]`.
+      const selected = faces.filter(([, name]) => preloaded.test(`assets/${name}-Hash_0-9.woff2`));
+      expect(selected.map(([, , range]) => range.startsWith('U+0000-00FF,'))).toEqual([true]);
+    }
   });
 });

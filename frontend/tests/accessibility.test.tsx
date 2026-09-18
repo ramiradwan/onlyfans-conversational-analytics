@@ -225,15 +225,25 @@ describe('critical accessibility gates', () => {
       },
     });
 
+    const activationApi: CapabilityLicenseApi = {
+      readiness: vi.fn(async () => ({
+        schema: 'ofca-analysis-readiness/v1' as const,
+        commercial_authority: 'required' as const,
+        analysis_admission: 'blocked' as const,
+      })),
+      redeem: vi.fn(async () => { throw new Error('not used'); }),
+    };
+
     render(
       <ThemeProvider theme={theme} defaultMode="light">
         <MemoryRouter>
-          <CreatorDashboardView />
+          <CreatorDashboardView activationApi={activationApi} />
         </MemoryRouter>
       </ThemeProvider>,
     );
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
+    await screen.findByRole('region', { name: 'Finish setup' });
     expect(screen.getByRole('heading', { name: 'Recent conversations' })).toBeTruthy();
     await expectNoCriticalOrSeriousViolations(document.body);
   });

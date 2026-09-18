@@ -47,6 +47,10 @@ const LOCAL_DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 });
 const LOCAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+const READINESS_WAIT_MS = 3000;
+
+/** Last settled Full analytics readiness per API; `null` when it could not be read. */
+const settledReadiness = new WeakMap<CapabilityLicenseApi, boolean | null>();
 
 type CreatorDashboardState = Omit<
   Pick<
@@ -314,25 +318,37 @@ export default function CreatorDashboardView({
 }: CreatorDashboardViewProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const { canViewInbox } = usePermissions();
-  const hasSnapshot = state.viewRevision !== null;
-  const [fullAnalyticsReady, setFullAnalyticsReady] = useState<boolean | null>(null);
+  // `undefined` until the first readiness result settles.
+  const [fullAnalyticsReady, setFullAnalyticsReady] = useState<boolean | null | undefined>(
+    () => settledReadiness.get(activationApi),
+  );
+  // The overview stays in its loading state until readiness settles, so the setup prompt never
+  // lands above rendered numbers.
+  const hasSnapshot = state.viewRevision !== null && fullAnalyticsReady !== undefined;
 
   useEffect(() => {
-    if (!hasSnapshot) {
-      setFullAnalyticsReady(null);
-      return;
-    }
     const controller = new AbortController();
-    void activationApi.readiness(controller.signal).then((next) => {
-      if (controller.signal.aborted) return;
-      setFullAnalyticsReady(
-        next.commercial_authority === 'active' && next.analysis_admission === 'admitted',
-      );
-    }).catch(() => {
-      if (!controller.signal.aborted) setFullAnalyticsReady(null);
-    });
-    return () => controller.abort();
-  }, [activationApi, hasSnapshot]);
+    let pending = true;
+    const settle = (next: boolean | null) => {
+      if (!pending) return;
+      pending = false;
+      settledReadiness.set(activationApi, next);
+      setFullAnalyticsReady(next);
+    };
+    const timeout = window.setTimeout(() => {
+      settle(null);
+      controller.abort();
+    }, READINESS_WAIT_MS);
+    void activationApi.readiness(controller.signal).then(
+      (next) => settle(next.commercial_authority === 'active' && next.analysis_admission === 'admitted'),
+      () => settle(null),
+    ).finally(() => window.clearTimeout(timeout));
+    return () => {
+      pending = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [activationApi]);
 
   const readiness: DataReadiness = {
     coverage: state.coverage,
