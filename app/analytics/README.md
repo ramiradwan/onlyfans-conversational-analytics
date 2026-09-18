@@ -37,6 +37,10 @@ Readers use the active projection. Missing, building, and failed projections rem
 
 See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 
+## Question specifications
+
+[Bounded analytics questions](../../docs/analytics/questions.md) defines source-linked query semantics. [Local analysis](../../docs/analytics/local-analysis.md) defines model and package limits. These specifications do not enable additional endpoints or model downloads.
+
 ## Related documentation
 
 - [Brain](../README.md)

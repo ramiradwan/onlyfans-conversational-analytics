@@ -23,6 +23,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0022: Keep activation Legal evidence append-only in the Extension](0022-append-only-legal-activation-evidence.md)
 - [ADR 0025: Adopt CapabilityLicense delivery contracts](0025-adopt-capability-license-delivery-contracts.md)
 
+- [ADR 0026: Use bounded, source-linked analytics questions](0026-bounded-analytics-questions.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)
