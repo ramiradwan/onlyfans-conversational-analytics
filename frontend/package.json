@@ -63,7 +63,7 @@
     "chokidar-cli": "^3.0.0",
     "colorjs.io": "0.7.1",
     "dependency-cruiser": "18.2.0",
-    "eslint": "^9.39.5",
+    "eslint": "^10.10.0",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
