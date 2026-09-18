@@ -15,7 +15,7 @@ import {
 } from '@mui/material';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
-import { Panel, SectionHeader, type SectionStatus } from './ui';
+import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
 import { getConfig } from '../config/fastapiConfig';
 import {
   CAPABILITY_LICENSE_CONTINUATION_PATTERN,
@@ -57,6 +57,7 @@ export function CommercialActivationControls({
   const [setupOpened, setSetupOpened] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const titleId = useId();
+  useRevealHold(checking);
 
   const checkReadiness = () => {
     operation.current?.abort();

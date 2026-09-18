@@ -17,7 +17,7 @@ import {
 } from '@mui/material';
 import { useEffect, useId, useState } from 'react';
 
-import { Panel, SectionHeader, SettingRow } from './ui';
+import { Panel, SectionHeader, SettingRow, useRevealHold } from './ui';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   creatorVaultApi as defaultCreatorVaultApi,
@@ -73,6 +73,7 @@ export function CreatorVaultControls({
   const [archiveChoice, setArchiveChoice] = useState<ArchiveChoice>('finite');
   const archiveTitleId = useId();
   const archiveChoiceId = useId();
+  useRevealHold(loading);
 
   useEffect(() => {
     if (!isCreator) {

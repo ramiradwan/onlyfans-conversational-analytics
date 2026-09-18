@@ -5,6 +5,7 @@ import SettingsView from './SettingsView';
 import { CommercialActivationControls } from '../components/CommercialActivationControls';
 import { CompanionPairingControls } from '../components/CompanionPairingControls';
 import { CreatorVaultControls } from '../components/CreatorVaultControls';
+import { RevealGroup } from '../components/ui';
 import type { CompanionPairingApi } from '../services/companionPairingApi';
 import type { CreatorVaultApi } from '../services/creatorVaultApi';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
@@ -52,12 +53,20 @@ export default function SettingsWithVaultView({
     <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pb: 3 }}>
       <Stack data-visual="settings-frame" spacing={3} sx={{ maxWidth: 880, mx: 'auto', width: '100%' }}>
         <Typography component="h1" variant="h4">Settings</Typography>
-        <SettingsSurface elevation={0}>
-          <CompanionPairingControls api={pairingApi} />
-          <SettingsView api={historyApi} />
-          <CommercialActivationControls api={activationApi} />
-          <CreatorVaultControls api={vaultApi} />
-        </SettingsSurface>
+        <RevealGroup
+          fallback={(
+            <Typography role="status" variant="body2" sx={{ color: 'text.secondary', px: 0.5 }}>
+              Processing your data…
+            </Typography>
+          )}
+        >
+          <SettingsSurface elevation={0}>
+            <CompanionPairingControls api={pairingApi} />
+            <SettingsView api={historyApi} />
+            <CommercialActivationControls api={activationApi} />
+            <CreatorVaultControls api={vaultApi} />
+          </SettingsSurface>
+        </RevealGroup>
       </Stack>
     </Box>
   );

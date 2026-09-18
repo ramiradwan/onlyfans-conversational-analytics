@@ -18,7 +18,7 @@ import {
 } from '@mui/material';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
-import { Panel, SectionHeader, type SectionStatus } from '../components/ui';
+import { Panel, SectionHeader, useRevealHold, type SectionStatus } from '../components/ui';
 import { usePermissions } from '../hooks/usePermissions';
 import type { HistorySettings } from '../protocol';
 import {
@@ -65,6 +65,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
   const [error, setError] = useState<string | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  useRevealHold(loading);
 
   useEffect(() => {
     const controller = new AbortController();

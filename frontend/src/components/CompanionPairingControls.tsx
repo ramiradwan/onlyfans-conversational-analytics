@@ -4,7 +4,7 @@ import {
 } from '@mui/material';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { Panel, SectionHeader, type SectionStatus } from './ui';
+import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   companionPairingApi,
@@ -307,7 +307,9 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [confirming, setConfirming] = useState<CompanionPairingStatus | null>(null);
+  const [checked, setChecked] = useState(false);
   const operation = useRef<AbortController | null>(null);
+  useRevealHold(!checked);
   useEffect(() => {
     const controller = new AbortController();
     operation.current = controller;
@@ -324,7 +326,11 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
       if (controller.signal.aborted) return;
       setFailed(true);
       onCount(null);
-    }).finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    }).finally(() => {
+      if (controller.signal.aborted) return;
+      setBusy(false);
+      setChecked(true);
+    });
     return () => { controller.abort(); operation.current?.abort(); };
   }, [api, creatorAccountId, onCount, refresh, revision]);
   const revoke = async (pin: CompanionPairingStatus) => {

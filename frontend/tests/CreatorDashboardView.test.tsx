@@ -213,7 +213,7 @@ afterEach(() => {
 });
 
 describe('CreatorDashboardView', () => {
-  it('shows a busy overview and no alert before the first snapshot', async () => {
+  it('shows only the processing status and no alert before the first snapshot', async () => {
     const store = createBridgeTransportStore();
     store.bindAccount(ACCOUNT_ID);
 
@@ -221,7 +221,7 @@ describe('CreatorDashboardView', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy();
     expect(screen.getByRole('status').textContent).toBe('Processing your data…');
-    expect(screen.getByRole('region', { name: 'Overview' }).getAttribute('aria-busy')).toBe('true');
+    expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Recent conversations' })).toBeNull();
   });
@@ -452,13 +452,13 @@ describe('CreatorDashboardView', () => {
     expect(alert.textContent).toContain('This needs attention');
   });
 
-  it('keeps the overview loading until Full analytics readiness settles on first load', async () => {
+  it('renders the setup prompt and the overview together once readiness settles', async () => {
     let resolve!: (readiness: CapabilityLicenseReadiness) => void;
     const api = readinessApi(null, () => new Promise((settle) => { resolve = settle; }));
     mountDashboard(readyStore(), api);
 
-    expect(screen.getByRole('region', { name: 'Overview' }).getAttribute('aria-busy')).toBe('true');
     expect(screen.getByRole('status').textContent).toBe('Processing your data…');
+    expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
     expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
 
     await act(async () => resolve({
@@ -467,8 +467,10 @@ describe('CreatorDashboardView', () => {
       analysis_admission: 'blocked',
     }));
 
-    expect(screen.getByRole('region', { name: 'Finish setup' })).toBeTruthy();
-    expect(screen.getByRole('region', { name: 'Overview' }).getAttribute('aria-busy')).not.toBe('true');
+    const prompt = screen.getByRole('region', { name: 'Finish setup' });
+    const overview = screen.getByRole('region', { name: 'Overview' });
+    expect(prompt.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('Processing your data…')).toBeNull();
     expectStat('Messages', '19');
   });
 
@@ -489,11 +491,11 @@ describe('CreatorDashboardView', () => {
     try {
       const api = readinessApi(null, () => new Promise(() => undefined));
       mountDashboard(readyStore(), api);
-      expect(screen.getByRole('region', { name: 'Overview' }).getAttribute('aria-busy')).toBe('true');
+      expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
 
       act(() => vi.advanceTimersByTime(3000));
 
-      expect(screen.getByRole('region', { name: 'Overview' }).getAttribute('aria-busy')).not.toBe('true');
+      expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
       expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
       expect(vi.mocked(api.readiness).mock.calls[0]?.[0]?.aborted).toBe(true);
     } finally {

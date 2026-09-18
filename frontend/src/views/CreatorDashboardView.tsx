@@ -322,8 +322,8 @@ export default function CreatorDashboardView({
   const [fullAnalyticsReady, setFullAnalyticsReady] = useState<boolean | null | undefined>(
     () => settledReadiness.get(activationApi),
   );
-  // The overview stays in its loading state until readiness settles, so the setup prompt never
-  // lands above rendered numbers.
+  // Content waits for the snapshot and readiness together, because readiness decides whether the
+  // setup prompt sits above the overview.
   const hasSnapshot = state.viewRevision !== null && fullAnalyticsReady !== undefined;
 
   useEffect(() => {
@@ -409,10 +409,9 @@ export default function CreatorDashboardView({
           />
         )}
 
-        {showNumbers && (
+        {showNumbers && hasSnapshot && (
           <DashboardOverview
             conversations={format(analytics?.total_conversations)}
-            isLoading={!hasSnapshot}
             messages={format(analytics?.total_messages)}
             progress={progress}
             received={format(analytics?.inbound_messages)}
