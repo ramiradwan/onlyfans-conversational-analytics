@@ -329,9 +329,22 @@ def test_served_shell_has_accessible_step_structure_and_inline_adaptive_theme() 
         )
     )
     assert "@import" not in style
-    assert "@font-face" not in style
-    assert "url(" not in style
-    assert markup.external_asset_tags == []
+    # Fonts are embedded in this document, not fetched from runtime or hosted assets.
+    import base64
+    import re
+
+    font_urls = re.findall(r"url\(([^)]+)\)", style)
+    assert len(font_urls) == 2
+    for url in font_urls:
+        assert url.startswith("data:font/woff2;base64,")
+        assert base64.b64decode(url.split(",", 1)[1], validate=True).startswith(b"wOF2")
+    assert "SIL OPEN FONT LICENSE" in style
+    assert "Inter Variable Fallback" in style
+    assert markup.external_asset_tags == ["link"]
+    preload = markup.elements_by_id["static-font-0"]
+    assert preload["rel"] == "preload" and preload["as"] == "font"
+    assert preload["href"] == font_urls[0]
+    assert preload["type"] == "font/woff2"
     assert markup.scripts == [
         {"type": "module", "src": "/provisioning/provisioning.js"}
     ]

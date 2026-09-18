@@ -1,0 +1,10 @@
+{
+  "revision": "c15b5815cb4fc9809b978b7d74af7d160c87d843",
+  "sha256": {
+    "extension/popup.html": "f98080bfecade155196729367c8276a5dc3cf574347c1236162a6a2885741edf",
+    "extension/popup.js": "766b3e930b07a695b499cbfa6db718271f3e0dc054c1478061b8021f6723e057",
+    "app/provisioning/provisioning.js": "12c295ff2a0641791f868eb6d50352b8c05dfa9c50aa91cd45e77d0e081c3a00",
+    "app/provisioning/creator-platform-data-risk-disclosure.html": "3532abcaa51189102aaa3e8fc762cf1af06f0564bb1c115bb28ded6c41831246"
+  },
+  "provisioningBodyText": "Set up desktop app Four short steps get Full analysis ready on this computer. Keep this page open until setup is done. Read the Creator platform & data risk disclosure before you continue. It opens in a new tab. Start by connecting this computer. 1 Connect this computer Current step Get a setup code from secure setup, then paste it below. Open secure setup Secure setup opens in a new tab. Sign in there, then copy the setup code. Setup code Paste the whole code without changing it. Ready for a setup code. 0 / 1,400 characters Continue setup Paste the setup code from secure setup. 2 Confirm your creator account Not started In another tab, sign in to OnlyFans with the creator account you want to analyze. The extension detects the account for you. No creator account check has completed. Account: Not detected yet Check signed-in account Confirm account Connect this computer before confirming your creator account. 3 Approve your creator account Not started Approve the account in secure setup, then come back here and choose Check approval. Continue approval Creator approval cannot be opened right now. If you already completed it in secure setup, choose Check approval. Otherwise contact support. Secure setup opens in a new tab. Check approval Confirm your creator account before checking approval. 4 Finish desktop setup Not started The desktop app restarts when setup is finished. Finish setup Creator approval must complete before desktop setup can finish."
+}

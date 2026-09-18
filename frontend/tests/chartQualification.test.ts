@@ -14,7 +14,7 @@ describe('analytical color qualification', () => {
     expect(generateColorReport(source)).toBe(report);
     const result = JSON.parse(report);
     expect(result.schema).toBe('bridge-color-qualification/v1');
-    expect(result.pairs).toHaveLength(72);
+    expect(result.pairs).toHaveLength(96);
     expect(result.pairs.every((pair: { ratio: number; minimum: number }) => pair.ratio >= pair.minimum)).toBe(true);
     expect(result.diagnostics.distances).toHaveLength(56);
     expect(result.diagnostics.meaning).toContain('not accessibility scores');

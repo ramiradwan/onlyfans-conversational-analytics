@@ -59,3 +59,13 @@ Motion keyframes live in the token source and run through `presentationMotion.ts
 The header remains 72px and opaque. Dashboard and Stored messages glows remain outside the approved glow scope. Do not infer a freshness status for Stored messages or a tone column for Topics from the reference template; their current data does not provide those fields.
 
 The visual workflow records computed review measurements in `review/acceptance.json`, including rail geometry, state contrast, focus restoration, popup brand parity, numeric roles, aligned topic tracks and reduced-motion behavior. Its checks supplement the ordinary screenshot matrix; neither replaces visual review.
+
+## Static surfaces
+
+The popup and setup page load local Latin Inter and Space Grotesk from the same pinned Fontsource packages as Bridge. `static-fonts.ts` embeds the WOFF2 bytes and redistribution notices in their existing CSS, copies the measured fallbacks from `src/index.css`, and generates early font preloads. Setup preloads Inter only; the popup also preloads its numeric face. No new runtime route, external font request, or JavaScript font gate is required.
+
+Run `npm run sync:static-tokens` after changing the font source or static roles. Do not edit the `static-fonts` or `static-font-preloads` blocks directly. The old font-stack variable remains compatible; the new UI and numeric variables include the bundled fallback faces.
+
+Static feedback fields use named, opaque colors. Healthy settled cards use paper with a labeled feedback dot. Hover, focus, disabled controls, dominant cards and quiet navigation retain separate meanings. Popup disclosures keep their wording and structure. Setup continues to use its existing controller and validation rules.
+
+The visual workflow includes `static-surfaces/acceptance.json` and fold/full screenshots. Setup fixtures are rendered by the existing controller with synthetic responses; they qualify presentation, not signed-grant authority. The checks verify actual rendered fonts, first-frame canvas color, layout shifts, keyboard focus, disclosure visibility and narrow overflow. They retain the limits in `stability-contracts.mjs`; Bridge's separate production-boot diagnostics remain unchanged.

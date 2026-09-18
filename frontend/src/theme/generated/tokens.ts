@@ -347,6 +347,24 @@ export const semanticIntents = {
       },
       "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
       "error": "oklch(30.5024% 0.03766 0.57)",
+      "feedback": {
+        "error": {
+          "border": "oklch(38.2977% 0.05365 22.19)",
+          "fill": "oklch(29.4211% 0.01654 28.94)"
+        },
+        "info": {
+          "border": "oklch(38.7312% 0.05816 204.59)",
+          "fill": "oklch(29.5721% 0.03099 198.55)"
+        },
+        "success": {
+          "border": "oklch(38.9424% 0.06701 146.29)",
+          "fill": "oklch(29.8349% 0.03204 149.99)"
+        },
+        "warning": {
+          "border": "oklch(44.1037% 0.05764 85.02)",
+          "fill": "oklch(31.8891% 0.02551 97.20)"
+        }
+      },
       "glass": "oklch(24.1875% 0.00825 169.61 / 0.72)",
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(75.5245% 0.06228 181.42 / 0.12), oklch(75.5245% 0.06228 181.42 / 0.04) 45%, oklch(75.5245% 0.06228 181.42 / 0.00) 75%)",
       "metric": {
@@ -513,6 +531,24 @@ export const semanticIntents = {
       },
       "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 4px 16px -8px oklch(21.9569% 0.00360 164.71 / 0.08)",
       "error": "oklch(94.6989% 0.01877 25.61)",
+      "feedback": {
+        "error": {
+          "border": "oklch(84.5805% 0.05413 14.61)",
+          "fill": "oklch(94.1936% 0.01929 13.71)"
+        },
+        "info": {
+          "border": "oklch(86.5687% 0.04978 206.48)",
+          "fill": "oklch(94.9207% 0.01903 206.55)"
+        },
+        "success": {
+          "border": "oklch(83.8991% 0.07259 144.91)",
+          "fill": "oklch(93.9473% 0.02673 145.38)"
+        },
+        "warning": {
+          "border": "oklch(85.4369% 0.04801 72.40)",
+          "fill": "oklch(94.5542% 0.01773 72.81)"
+        }
+      },
       "glass": "oklch(100.0000% 0.00000 0.00 / 0.72)",
       "glow": "radial-gradient(120% 90% at 0% 0%, oklch(52.3257% 0.08827 186.65 / 0.10), oklch(52.3257% 0.08827 186.65 / 0.04) 45%, oklch(52.3257% 0.08827 186.65 / 0.00) 75%)",
       "metric": {
@@ -1125,6 +1161,23 @@ export const componentTokens = {
       "variant": "rectangular",
       "width": "100%"
     }
+  },
+  "staticUi": {
+    "bodySize": "1rem",
+    "brandGlyphSize": 20,
+    "brandSize": 32,
+    "captionSize": "0.75rem",
+    "controlHeight": 44,
+    "headerHeight": 72,
+    "labelSize": "0.875rem",
+    "largeControlHeight": 48,
+    "popupBodySize": "0.8125rem",
+    "popupHeadingSize": "1rem",
+    "popupMaxHeight": "600px",
+    "popupMetricSize": "1.5rem",
+    "popupMinWidth": "320px",
+    "popupWidth": "390px",
+    "setupMaxWidth": "42rem"
   }
 } as const;
 
