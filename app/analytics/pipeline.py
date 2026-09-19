@@ -32,6 +32,7 @@ from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.enrichment import EnrichmentStage
 from app.analytics.generation_reference import GenerationReference
 from app.analytics.enrichment_cache import reuse_build
+from app.analytics.compact_graph import CompactArtifact, CompactGraph
 from app.analytics.conversation_reuse import assemble, conversation_build
 from app.analytics.source_snapshot import SourceCatalog
 from app.analytics.errors import (
@@ -138,6 +139,7 @@ class AnalyticsPipeline:
         clock: Callable[[], datetime] = utc_now,
         reuse_enrichment: bool = True,
         reuse_conversations: bool = True,
+        compact_graph: bool = True,
     ) -> None:
         if max_revision_retries <= 0:
             raise ValueError("max_revision_retries must be positive")
@@ -179,6 +181,7 @@ class AnalyticsPipeline:
         self._retention_clock = clock
         self.reuse_enrichment = reuse_enrichment
         self.reuse_conversations = reuse_conversations
+        self.compact_graph = compact_graph
         self.pipeline_revision = (
             f"analytics.pipeline.v3+{self.enrichment.revision}+graph.relationship.v1"
         )
@@ -351,7 +354,7 @@ class AnalyticsPipeline:
                 try:
                     with reuse_build(self.projections, creator_account_id,
                             self._retention_clock, cancellation_check,
-                            enabled=self.reuse_enrichment) as reuse, conversation_build(self.projections, creator_account_id) as conversation_state:
+                            enabled=self.reuse_enrichment) as reuse, conversation_build(self.projections, creator_account_id, compact=self.compact_graph) as conversation_state:
                         if cancellation_check is None:
                             artifact = self._build(
                                 creator_account_id,
@@ -697,7 +700,8 @@ class AnalyticsPipeline:
             source_revision=account.view_revision,
             projection_generation=projection_generation,
             canonical_content_digest=snapshot_identity(account).content_digest,
-            graph_digest=graph_content_digest(nodes, edges),
+            graph_digest=(nodes.digest(check=lambda: check_cancelled(cancellation_check))
+                if isinstance(nodes, CompactGraph) else graph_content_digest(nodes, edges)),
             analyzers=self.enrichment.provenance(enrichments),
             window=AnalyticsWindow(
                 scope=WindowScope.ALL_TIME,
@@ -720,6 +724,8 @@ class AnalyticsPipeline:
                 check=lambda: check_cancelled(cancellation_check))
         })
         check_cancelled(cancellation_check)
+        if isinstance(nodes, CompactGraph):
+            return CompactArtifact(projection, nodes)
         return RebuildArtifact(projection=projection, nodes=nodes, edges=edges)
 
     def _artifact(

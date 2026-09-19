@@ -38,11 +38,11 @@ def test_append_recomputes_one_conversation_and_preserves_independent_enrichment
     cold_equal(ready, first.artifact)
     ready.source.loaded.clear()
     calls = []
-    original = ready.pipeline.graph_projector.project
+    original = ready.pipeline.graph_projector.batches
     def project(account, revision, conversations, *args, **kwargs):
         calls.extend(c.conversation_id for c in conversations)
         return original(account, revision, conversations, *args, **kwargs)
-    monkeypatch.setattr(ready.pipeline.graph_projector, 'project', project)
+    monkeypatch.setattr(ready.pipeline.graph_projector, 'batches', project)
     with ready.repositories.database.transaction() as db:
         insert_message(db, 'chat-1', 'new', NOW-timedelta(hours=1), 4)
         advance(db)

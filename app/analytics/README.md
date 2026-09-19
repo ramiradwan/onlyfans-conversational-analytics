@@ -71,3 +71,7 @@ See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 ## Stored publication references
 
 [Bounded publication](../../docs/analytics/bounded-publication.md) describes compact SQLite handoffs, explicit artifact reads, and streaming verification. Full-generation construction and writes remain separate workload costs.
+
+## Compact graph construction
+
+The built-in SQLite path retains encoded graph records between bounded projector batches. See [Compact graph construction](../../docs/analytics/compact-graph.md) for input ownership, verification, and remaining account-wide costs.

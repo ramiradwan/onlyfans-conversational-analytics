@@ -56,7 +56,20 @@ def stable_edge_id(
 class RelationshipGraphProjector:
     """Build message-level temporal and relationship-dynamics graph records."""
 
-    def project(
+    def project(self, creator_account_id, source_revision, conversations, enrichments,
+                metrics, *, cancellation_check=None):
+        nodes, edges = {}, {}
+        for batch_nodes, batch_edges in self.batches(creator_account_id, source_revision,
+                conversations, enrichments, metrics, cancellation_check=cancellation_check):
+            for records, target, name in ((batch_nodes, nodes, "node_id"), (batch_edges, edges, "edge_id")):
+                for record in records:
+                    key = getattr(record, name)
+                    if key in target and target[key] != record:
+                        raise ValueError("graph_record_identity_collision")
+                    target[key] = record
+        return self._summarize(account_ref(creator_account_id), source_revision, nodes, edges, cancellation_check)
+
+    def batches(
         self,
         creator_account_id: str,
         source_revision: int,
@@ -65,7 +78,7 @@ class RelationshipGraphProjector:
         metrics: list[ConversationMetrics],
         *,
         cancellation_check: CancellationCheck | None = None,
-    ) -> tuple[list[GraphNode], list[GraphEdge], GraphProjectionSummary]:
+    ):
         check_cancelled(cancellation_check)
         partition_ref = account_ref(creator_account_id)
         nodes: dict[str, GraphNode] = {}
@@ -373,9 +386,14 @@ class RelationshipGraphProjector:
                     )
                 previous_message_node_id = message_node_id
                 previous_sent_at = enrichment.sent_at
+                if (sequence + 1) % 128 == 0:
+                    yield list(nodes.values()), list(edges.values())
+                    nodes.clear()
+                    edges.clear()
 
         self._conversation_edges(edges, partition_ref, metrics, cancellation_check)
-        return self._summarize(partition_ref, source_revision, nodes, edges, cancellation_check)
+        if nodes or edges:
+            yield list(nodes.values()), list(edges.values())
 
     def _conversation_edges(self, edges, partition_ref, metrics, cancellation_check):
         grouped = defaultdict(list)

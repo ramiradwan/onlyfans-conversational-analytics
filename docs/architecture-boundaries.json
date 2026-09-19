@@ -589,7 +589,8 @@
         "app/analytics/conversation_sql.py",
         "app/analytics/source_tokens.py",
         "app/analytics/generation_reference.py",
-        "app/analytics/projection_encoding.py"
+        "app/analytics/projection_encoding.py",
+        "app/analytics/compact_graph.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",
@@ -1327,7 +1328,8 @@
           "app/analytics/scheduling.py",
           "app/persistence/sql/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
-          "app/analytics/generation_reference.py"
+          "app/analytics/generation_reference.py",
+          "app/analytics/compact_graph.py"
         ]
       },
       {
@@ -1376,7 +1378,8 @@
         "path_patterns": [
           "app/analytics/identity.py",
           "app/analytics/graph_*.py",
-          "app/analytics/*graph_store.py"
+          "app/analytics/*graph_store.py",
+          "app/analytics/compact_graph.py"
         ]
       },
       {
@@ -1393,7 +1396,8 @@
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
           "app/analytics/scheduling.py",
-          "app/analytics/projection_encoding.py"
+          "app/analytics/projection_encoding.py",
+          "app/analytics/compact_graph.py"
         ]
       },
       {
@@ -1405,7 +1409,8 @@
           "app/analytics/conversation_*.py",
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
-          "app/analytics/scheduling.py"
+          "app/analytics/scheduling.py",
+          "app/analytics/compact_graph.py"
         ]
       },
       {
@@ -1418,7 +1423,8 @@
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
           "app/analytics/scheduling.py",
-          "app/analytics/projection_encoding.py"
+          "app/analytics/projection_encoding.py",
+          "app/analytics/compact_graph.py"
         ]
       },
       {
@@ -1439,7 +1445,8 @@
           "app/persistence/sql/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
           "app/analytics/sql/0007_projection_query_metadata.sql",
-          "app/analytics/generation_reference.py"
+          "app/analytics/generation_reference.py",
+          "app/analytics/compact_graph.py"
         ]
       },
       {
@@ -1456,7 +1463,8 @@
           "app/analytics/sql/0006_conversation_fragments.sql",
           "app/analytics/scheduling.py",
           "app/analytics/sql/0007_projection_query_metadata.sql",
-          "app/analytics/generation_reference.py"
+          "app/analytics/generation_reference.py",
+          "app/analytics/compact_graph.py"
         ]
       },
       {
@@ -1476,7 +1484,8 @@
           "app/persistence/sql/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
           "app/analytics/generation_reference.py",
-          "app/analytics/projection_encoding.py"
+          "app/analytics/projection_encoding.py",
+          "app/analytics/compact_graph.py"
         ]
       },
       {

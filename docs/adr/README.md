@@ -35,6 +35,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0031: Use stored references for analytics publication](0031-bounded-publication-handoff.md)
 
+- [ADR 0032: Retain canonical graph records during SQLite construction](0032-compact-graph-construction.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

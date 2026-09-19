@@ -211,6 +211,7 @@ def test_corruption_after_witness_completion_cannot_become_visible(fixture):
 
 def test_stored_candidate_releases_the_original_graph(fixture, monkeypatch):
     import gc
+    fixture.pipeline.compact_graph = False
     stage = fixture.stores.projections.stage_artifact
     references = []
     def observe(artifact, **kwargs):
@@ -295,6 +296,7 @@ def test_private_build_staging_still_rejects_unchecked_properties(fixture):
 
 def test_mutating_private_graph_after_input_validation_fails_stored_verification(fixture, monkeypatch):
     fixture.pipeline.reuse_conversations = False
+    fixture.pipeline.compact_graph = False
     validate = fixture.stores.projections._validate_artifact_shape
     def mutate(artifact, **kwargs):
         validate(artifact, **kwargs)

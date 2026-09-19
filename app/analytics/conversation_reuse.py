@@ -8,6 +8,7 @@ from datetime import timedelta
 
 from pydantic import AwareDatetime, Field
 
+from app.analytics.compact_graph import CompactGraph, CompactArtifact, _json
 from app.analytics.cancellation import check_cancelled
 from app.analytics.enrichment_cache import ACTIVE_REUSE, CacheRecord, CachedEnrichment, fingerprint
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
@@ -72,6 +73,7 @@ class ConversationBuild:
         self.reused = 0
         self.recomputed = 0
         self.reader = None
+        self.compact = False
 
     def retain(self, fragment: ConversationFragment) -> None:
         if len(self.entries) >= MAX_FRAGMENTS:
@@ -87,8 +89,9 @@ ACTIVE_CONVERSATIONS: ContextVar[ConversationBuild | None] = ContextVar("convers
 
 
 @contextmanager
-def conversation_build(store, account_id):
+def conversation_build(store, account_id, *, compact=False):
     state = ConversationBuild()
+    state.compact = compact and getattr(store, "generation_references_supported", lambda: False)()
     opener = getattr(store, "open_conversation_fragments", None)
     with opener(account_id) if callable(opener) else nullcontext(None) as reader:
         state.reader = reader
@@ -105,12 +108,15 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
     state, reuse = ACTIVE_CONVERSATIONS.get() or ConversationBuild(), ACTIVE_REUSE.get()
     config = fingerprint({"pipeline": pipeline.pipeline_config_digest,
         "metrics": CONVERSATION_METRICS_PROVENANCE.model_dump(mode="json"), "fragment": "v1"})
+    compact = CompactGraph(account_ref(account_id)) if state.compact else None
+    check = lambda: check_cancelled(cancellation_check)
     fragments, enrichments, metrics = [], [], []
     loader = state.reader
     for chat_id, input_digest in catalog.digests.items():
         check_cancelled(cancellation_check)
         ref = conversation_ref(account_id, chat_id)
         fragment = None
+        local_graph = None
         if pipeline.reuse_conversations and reuse is not None and callable(loader):
             data = loader(ref, input_digest, config, cancellation_check=cancellation_check)
             if data is not None and len(data) <= MAX_FRAGMENT_BYTES:
@@ -141,20 +147,48 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
             findings = pipeline.enrichment.enrich_conversation(account_id, conversation,
                 cancellation_check=cancellation_check)
             counts = build_conversation_metrics(account_id, conversation, findings)
-            nodes, edges, _ = pipeline.graph_projector.project(account_id, catalog.view_revision,
-                [conversation], findings, [counts], cancellation_check=cancellation_check)
+            local_graph = None
+            if compact is not None:
+                local_graph = CompactGraph(account_ref(account_id))
+                for batch_nodes, batch_edges in pipeline.graph_projector.batches(account_id,
+                        catalog.view_revision, [conversation], findings, [counts],
+                        cancellation_check=cancellation_check):
+                    local_graph.add(batch_nodes, batch_edges, check=check)
+                nodes, edges = (local_graph.materialize() if len(findings) <= 256
+                    and local_graph.encoded_bytes <= MAX_FRAGMENT_BYTES // 2 else (None, None))
+            else:
+                nodes, edges, _ = pipeline.graph_projector.project(account_id, catalog.view_revision,
+                    [conversation], findings, [counts], cancellation_check=cancellation_check)
             entries = () if reuse is None else tuple(
                 data.decode() for data in reuse.conversation_entries(ref))
-            fragment = ConversationFragment(account_ref=account_ref(account_id), conversation_ref=ref,
-                input_digest=input_digest, config_digest=config, retention_cutoff=cutoff,
-                expires_at=min(m.sent_at for m in findings) + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS),
-                enrichments=findings, metrics=counts, nodes=nodes, edges=edges, analyzer_entries=entries)
-        fragments.append(fragment)
-        enrichments.extend(fragment.enrichments)
-        metrics.append(fragment.metrics)
-        if pipeline.reuse_conversations and reuse is not None:
+            if nodes is not None:
+                fragment = ConversationFragment(account_ref=account_ref(account_id), conversation_ref=ref,
+                    input_digest=input_digest, config_digest=config, retention_cutoff=cutoff,
+                    expires_at=min(m.sent_at for m in findings) + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS),
+                    enrichments=findings, metrics=counts, nodes=nodes, edges=edges, analyzer_entries=entries)
+        if compact is not None:
+            if local_graph is not None:
+                compact.merge(local_graph, check=check)
+            else:
+                compact.add(fragment.nodes, fragment.edges, check=check)
+                findings, counts = fragment.enrichments, fragment.metrics
+            enrichments.extend(findings)
+            metrics.append(counts)
+        else:
+            fragments.append(fragment)
+            enrichments.extend(fragment.enrichments)
+            metrics.append(fragment.metrics)
+        if fragment is not None and pipeline.reuse_conversations and reuse is not None:
             state.retain(fragment)
-        check_cancelled(cancellation_check)
+        check()
+    if compact is not None:
+        timeline = {}
+        pipeline.graph_projector._conversation_edges(timeline, account_ref(account_id), metrics, cancellation_check)
+        compact.add([], timeline.values(), check=check)
+        if not compact.nodes:
+            nodes, edges, _ = pipeline.graph_projector.project(account_id, catalog.view_revision, [], [], [])
+            compact.add(nodes, edges, check=check)
+        return enrichments, metrics, compact, None, compact.summary(catalog.view_revision)
     nodes, edges, summary = pipeline.graph_projector.compose(account_id, catalog.view_revision,
         fragments, metrics, cancellation_check=cancellation_check)
     return enrichments, metrics, nodes, edges, summary
@@ -169,8 +203,10 @@ def iter_validated_fragments(artifact, entries: tuple[bytes, ...]):
         raise ValueError("conversation_fragment_budget_invalid")
     messages = {m.message_ref: m for m in artifact.projection.message_enrichments}
     metrics = {m.conversation_ref: m for m in artifact.projection.conversation_metrics}
-    nodes = {n.node_id: n for n in artifact.nodes}
-    edges = {e.edge_id: e for e in artifact.edges}
+    compact = isinstance(artifact, CompactArtifact)
+    nodes = artifact.graph.nodes if compact else {n.node_id: n for n in artifact.nodes}
+    edges = artifact.graph.edges if compact else {e.edge_id: e for e in artifact.edges}
+    comparable = (lambda record: _json(record.model_dump(mode="json"))) if compact else (lambda record: record)
     seen = set()
     for data in entries:
         if len(data) > MAX_FRAGMENT_BYTES:
@@ -182,8 +218,8 @@ def iter_validated_fragments(artifact, entries: tuple[bytes, ...]):
         if (metrics.get(item.conversation_ref) != item.metrics
                 or any(messages.get(m.message_ref) != m for m in item.enrichments)
                 or len(item.enrichments) != item.metrics.message_count
-                or any(nodes.get(n.node_id) != n for n in item.nodes)
-                or any(edges.get(e.edge_id) != e for e in item.edges)):
+                or any(nodes.get(n.node_id) != comparable(n) for n in item.nodes)
+                or any(edges.get(e.edge_id) != comparable(e) for e in item.edges)):
             raise ValueError("conversation_fragment_output_invalid")
         seen.add(item.conversation_ref)
         yield item

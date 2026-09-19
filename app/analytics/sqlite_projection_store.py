@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.database import ProjectionsDatabase
+from app.analytics.compact_graph import CompactArtifact, write_compact_graph
 from app.analytics.graph_privacy import safe_graph_records
 from app.analytics.projection_encoding import projection_document
 from app.analytics.graph_store import (
@@ -303,30 +304,33 @@ class SQLiteAnalyticsProjectionStore:
             raise ProjectionValidationError("canonical projection identity differs")
         if self.canonical_identity_reader(creator_account_id) != canonical_identity:
             raise ProjectionActivationConflict("canonical identity changed")
-        if _copy_graph:
-            safe_nodes, safe_edges = safe_graph_records(artifact.nodes, artifact.edges)
+        compact = isinstance(artifact, CompactArtifact)
+        if compact:
+            if _copy_graph:
+                raise ProjectionValidationError("compact_graph_requires_owned_build")
+            safe_artifact = artifact
+            safe_nodes, safe_edges = artifact.graph.nodes, artifact.graph.edges
+            if (artifact.graph.account_ref != partition_ref
+                    or artifact.graph.summary(projection.source_revision) != projection.graph
+                    or artifact.graph.digest(check=lambda: check_cancelled(cancellation_check)) != projection.graph_digest
+                    or _projection_digest(projection) != projection.projection_digest):
+                raise ProjectionValidationError("compact_graph_identity_invalid")
+            current_projection = self.get(creator_account_id, canonical_identity=canonical_identity)
+            same_content = current_projection == projection
         else:
-            safe_nodes, safe_edges = artifact.nodes, artifact.edges
-        safe_artifact = RebuildArtifact(
-            projection=projection,
-            nodes=safe_nodes,
-            edges=safe_edges,
-        )
-        self._validate_artifact_shape(safe_artifact, owned_graph=_copy_graph)
-        current = self.get_artifact(
-            creator_account_id,
-            canonical_identity=canonical_identity,
-        )
-        if (
-            current is not None
-            and current.projection.pipeline_revision == projection.pipeline_revision
-            and current.projection.pipeline_config_digest
-            == projection.pipeline_config_digest
-            and current != safe_artifact
-        ):
+            safe_nodes, safe_edges = (safe_graph_records(artifact.nodes, artifact.edges)
+                                      if _copy_graph else (artifact.nodes, artifact.edges))
+            safe_artifact = RebuildArtifact(projection=projection, nodes=safe_nodes, edges=safe_edges)
+            self._validate_artifact_shape(safe_artifact, owned_graph=_copy_graph)
+            current = self.get_artifact(creator_account_id, canonical_identity=canonical_identity)
+            current_projection = current.projection if current is not None else None
+            same_content = current == safe_artifact
+        if (current_projection is not None
+                and current_projection.pipeline_revision == projection.pipeline_revision
+                and current_projection.pipeline_config_digest == projection.pipeline_config_digest
+                and not same_content):
             raise ProjectionRevisionConflict(
-                "the same canonical and pipeline identity produced different content"
-            )
+                "the same canonical and pipeline identity produced different content")
         # Artifact validation already checked this exact privately owned graph.
         graph_digest = projection.graph_digest
         pipeline_digest = pipeline_identity_digest(projection)
@@ -425,7 +429,10 @@ class SQLiteAnalyticsProjectionStore:
             lease_seconds=self.lease_seconds,
         )
         with writer.lease_session():
-            writer._replace_validated_records(safe_nodes, safe_edges)
+            if compact:
+                write_compact_graph(writer, artifact.graph, check=lambda: check_cancelled(cancellation_check))
+            else:
+                writer._replace_validated_records(safe_nodes, safe_edges)
             writer.write_stats(
                 source_revision=projection.source_revision,
                 node_count=len(safe_nodes),
