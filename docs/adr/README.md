@@ -37,6 +37,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0032: Retain canonical graph records during SQLite construction](0032-compact-graph-construction.md)
 
+- [ADR 0033: Validate large projection documents one record at a time](0033-streamed-document-header-validation.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

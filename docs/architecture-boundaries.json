@@ -334,7 +334,8 @@
         "app/persistence/archive_export.py",
         "app/persistence/__init__.py",
         "app/persistence/sql/**",
-        "app/persistence/auth_sql/**"
+        "app/persistence/auth_sql/**",
+        "app/persistence/json_header.py"
       ],
       "role": "Authoritative canonical conversation storage, SQLite database lifecycle and SQLCipher runtime qualification, schema migrations, and irreversible deletion closure.",
       "authority": "authoritative",
@@ -1277,7 +1278,8 @@
           "app/persistence/migrations.py",
           "app/persistence/sql/**",
           "app/persistence/sql/0009_analytics_source_tokens.sql",
-          "app/analytics/source_tokens.py"
+          "app/analytics/source_tokens.py",
+          "app/persistence/json_header.py"
         ]
       },
       {
@@ -1370,7 +1372,8 @@
         "invariant": "persistence-transport-separation",
         "path_patterns": [
           "app/persistence/history.py",
-          "app/persistence/database.py"
+          "app/persistence/database.py",
+          "app/persistence/json_header.py"
         ]
       },
       {
@@ -1447,7 +1450,8 @@
           "app/analytics/sql/0007_projection_query_metadata.sql",
           "app/analytics/generation_reference.py",
           "app/analytics/compact_graph.py",
-          "app/analytics/sql/0008_projection_metadata_parsing.sql"
+          "app/analytics/sql/0008_projection_metadata_parsing.sql",
+          "app/analytics/sql/0009_projection_validation_header.sql"
         ]
       },
       {
@@ -1466,7 +1470,8 @@
           "app/analytics/sql/0007_projection_query_metadata.sql",
           "app/analytics/generation_reference.py",
           "app/analytics/compact_graph.py",
-          "app/analytics/sql/0008_projection_metadata_parsing.sql"
+          "app/analytics/sql/0008_projection_metadata_parsing.sql",
+          "app/analytics/sql/0009_projection_validation_header.sql"
         ]
       },
       {

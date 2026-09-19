@@ -30,7 +30,7 @@ This reduction applies to the canonical adapter's inferred ordering and unknown 
 
 Question reads use a small generation-bound metadata row instead of parsing the full projection document for its count, sequence, and earliest source time. Insert triggers derive these values from the document. Independent inserts must match it; updates and active deletion are refused. Retirement and generation deletion preserve cleanup.
 
-Metadata insertion and its independent binding check each extract the required document fields together. They parse the resulting small header array for scalar values rather than repeatedly extracting each field from the complete projection. Missing values, numeric comparisons, and null source times retain their binding checks.
+Metadata insertion and its independent binding check use the generated [validation header](document-validation.md). The header is derived by validating every JSON item without retaining the complete array parse tree. The stored document and its independent publication verification remain complete.
 
 Graph hashing validates and encodes one record at a time in canonical order. It produces the same digest as encoding the complete JSON document. Cancellation is checked between records. Publication still validates the full graph and writes a complete generation.
 

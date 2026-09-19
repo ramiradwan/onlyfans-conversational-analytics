@@ -343,7 +343,11 @@ class SQLiteAnalyticsProjectionStore:
         generation_id = str(uuid4())
         now = _now()
         lease_expires = now + timedelta(seconds=self.lease_seconds)
-        with self.database.transaction() as connection:
+        from app.persistence.json_header import json_validation_scope
+
+        with self.database.transaction() as connection, json_validation_scope(
+            lambda: check_cancelled(cancellation_check)
+        ):
             active = connection.execute(
                 """
                 SELECT generation_id, canonical_revision

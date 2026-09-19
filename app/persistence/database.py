@@ -69,6 +69,9 @@ def _configure_connection_cipher(
 ) -> None:
     if len(encryption_key) != 32:
         raise SQLiteConfigurationError("SQLite encryption key must contain 32 bytes")
+    from app.persistence.json_header import configure_json_functions
+
+    configure_json_functions(connection)
     key_hex = encryption_key.hex()
     connection.execute(f'PRAGMA key = "x\'{key_hex}\'"')
     sqlite3.require_cipher(connection)
