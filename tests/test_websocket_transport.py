@@ -408,8 +408,9 @@ def test_agent_drop_reconnects_with_new_connection_and_fence() -> None:
 
 
 def test_valid_fixture_exchange_routes_ack_and_presence_end_to_end() -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/ws/bridge") as bridge:
+    # Entering the client gives both sockets one event loop, so a broadcast from
+    # the Agent's handler wakes the Bridge's pending receive.
+    with TestClient(app) as client, client.websocket_connect("/ws/bridge") as bridge:
         bridge_handshake(bridge)
         with client.websocket_connect("/__test__/agent-protocol") as agent:
             hello, session = agent_handshake(agent)
@@ -432,7 +433,7 @@ def test_valid_fixture_exchange_routes_ack_and_presence_end_to_end() -> None:
             agent.send_json(observed)
             presence = bridge.receive_json()
             while presence["type"] != "presence.state":
-                assert presence["type"] in {"state.snapshot", "state.delta"}
+                assert presence["type"] in {"state.snapshot", "state.delta", "system.state"}
                 presence = bridge.receive_json()
             assert presence["type"] == "presence.state"
             assert presence["payload"]["freshness"] == "current"

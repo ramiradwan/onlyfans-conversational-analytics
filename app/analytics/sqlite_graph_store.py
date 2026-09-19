@@ -1660,13 +1660,8 @@ class SQLiteGraphReader:
 
 
 _INITIAL_GRAPH_WRITE_CHUNK = 500
-# The adaptive chunk size only ever shrinks (see _record_operation_duration).
-# Flooring it keeps a pathological run of slow writes — e.g. a Windows SQLite
-# I/O hiccup under a short test lease — from collapsing the chunk toward 1 and
-# turning a 50k-row replace() into ~50k heartbeat-gated iterations that hang for
-# minutes. The floor bounds the iteration count without touching the per-chunk
-# lease heartbeat barrier that keeps the generation fenced.
 _MIN_GRAPH_WRITE_CHUNK = 64
+_MAX_GRAPH_WRITE_CHUNK = 4_000
 
 
 class SQLiteGraphGenerationWriter:
@@ -1703,6 +1698,7 @@ class SQLiteGraphGenerationWriter:
         self._terminal_transition = False
         self._ownership_lost = False
         self._valid = True
+        self._write_connection = None
 
     @property
     def generation_id(self) -> str:
@@ -1900,11 +1896,11 @@ class SQLiteGraphGenerationWriter:
                         """,
                         node_parameters,
                     )
-                self._record_operation_duration(time.monotonic() - transaction_started)
+                self._record_operation_duration(time.monotonic() - transaction_started, allow_growth=True)
                 node_start += chunk_size
-                self._wait_for_heartbeat(
-                    max(0.001, min(0.1, self._lease_seconds / 5))
-                )
+                # The committed transaction renewed the lease on this thread.
+                # The next transaction rechecks ownership before writing.
+                self._check_heartbeat()
 
             edge_start = 0
             while edge_start < len(ordered_edges):
@@ -1927,19 +1923,19 @@ class SQLiteGraphGenerationWriter:
                         """,
                         edge_parameters,
                     )
-                self._record_operation_duration(time.monotonic() - transaction_started)
+                self._record_operation_duration(time.monotonic() - transaction_started, allow_growth=True)
                 edge_start += chunk_size
-                self._wait_for_heartbeat(
-                    max(0.001, min(0.1, self._lease_seconds / 5))
-                )
+                # The committed transaction renewed the lease on this thread.
+                # The next transaction rechecks ownership before writing.
+                self._check_heartbeat()
             self.refresh()
 
-    def _record_operation_duration(self, elapsed: float) -> None:
+    def _record_operation_duration(self, elapsed: float, *, allow_growth: bool = False) -> None:
         self._worst_operation_seconds = max(
             elapsed,
             self._worst_operation_seconds * 0.75,
         )
-        target_duration = self._lease_seconds / 5
+        target_duration = min(1.0, self._lease_seconds / 5)
         if elapsed > target_duration and self._chunk_size > _MIN_GRAPH_WRITE_CHUNK:
             scaled = max(
                 _MIN_GRAPH_WRITE_CHUNK,
@@ -1948,6 +1944,8 @@ class SQLiteGraphGenerationWriter:
             self._chunk_size = max(
                 _MIN_GRAPH_WRITE_CHUNK, min(self._chunk_size - 1, scaled)
             )
+        elif allow_growth and self._worst_operation_seconds < target_duration / 4:
+            self._chunk_size = min(_MAX_GRAPH_WRITE_CHUNK, self._chunk_size * 2)
 
     def _remaining_lease_seconds(self) -> float:
         with self._state_lock:
@@ -1961,19 +1959,6 @@ class SQLiteGraphGenerationWriter:
         if remaining <= 0:
             return min(0.25, max(0.01, self._lease_seconds / 2))
         return min(0.25, max(0.01, remaining / 2))
-
-    def _wait_for_heartbeat(self, interval: float) -> None:
-        thread = self._heartbeat_thread
-        if thread is None:
-            return
-        deadline = time.monotonic() + interval
-        initial = self._remaining_lease_seconds()
-        while self._remaining_lease_seconds() <= initial:
-            self._check_heartbeat()
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return
-            time.sleep(min(0.001, remaining))
 
     @contextmanager
     def lease_session(self):
@@ -2006,12 +1991,18 @@ class SQLiteGraphGenerationWriter:
             self._start_heartbeat()
             started = True
             self._check_heartbeat()
+            self._write_connection = self.database.connect()
+            from app.analytics.database import GENERATION_WRITE_CACHE_KIB
+            self._write_connection.execute(f"PRAGMA cache_size=-{GENERATION_WRITE_CACHE_KIB}")
             yield
         except BaseException as error:
             operation_error = error
             raise
         finally:
             heartbeat_error = self._stop_heartbeat() if started else None
+            connection, self._write_connection = self._write_connection, None
+            if connection is not None:
+                connection.close()
             with self._state_lock:
                 self._lease_session_depth = 0
                 self._lease_session_owner = None
@@ -2253,7 +2244,13 @@ class SQLiteGraphGenerationWriter:
     @contextmanager
     def _owned_transaction(self):
         self._check_heartbeat()
-        connection = self.database.connect()
+        with self._state_lock:
+            if self._write_connection is not None and self._lease_session_owner != threading.get_ident():
+                raise GraphStoreError("graph_lease_session_busy")
+            connection = self._write_connection
+        owned = connection is None
+        if owned:
+            connection = self.database.connect()
         try:
             with self._write_gate:
                 self._check_heartbeat()
@@ -2271,7 +2268,8 @@ class SQLiteGraphGenerationWriter:
                     connection.rollback()
                     raise
         finally:
-            connection.close()
+            if owned:
+                connection.close()
         self._check_heartbeat()
 
     def _renew_on_connection(

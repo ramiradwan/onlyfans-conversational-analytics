@@ -129,11 +129,16 @@ class InProcessProjectionScheduler:
         worker_count: int = 2,
         queue_capacity: int = 64,
         failure_state_capacity: int | None = None,
+        reconciliation_interval: float = 0,
     ) -> None:
         if worker_count <= 0:
             raise ValueError("worker_count must be positive")
         if queue_capacity <= 0:
             raise ValueError("queue_capacity must be positive")
+        if not 0 <= reconciliation_interval <= 3600:
+            raise ValueError("reconciliation_interval_invalid")
+        self.reconciliation_interval = reconciliation_interval
+        self._reconciliation_task = None
         self.pipeline = pipeline
         self.worker_count = worker_count
         self.queue_capacity = queue_capacity
@@ -425,23 +430,64 @@ class InProcessProjectionScheduler:
                         )
             delay = 0.05
 
+    async def canonical_revision(self, creator_account_id: str) -> int:
+        read = getattr(self.pipeline.source, "account_revision", None)
+        if callable(read):
+            revision = await self._run_owned(functools.partial(read, creator_account_id))
+            if revision is None:
+                from app.analytics.errors import CanonicalAccountNotFound
+                raise CanonicalAccountNotFound()
+            return revision
+        return (await self.canonical_account(creator_account_id)).view_revision
+
     async def start(self, *, recover: bool = True) -> None:
         """Schedule every canonical account that lacks a current projection."""
 
         with self._state_lock:
             if not self._accepting or self._closed:
                 raise ProjectionCoordinatorClosed()
+        if not recover:
+            await self._ensure_projection_storage()
+            await self._ensure_publication_epoch()
+            return
+        if self.reconciliation_interval and (self._reconciliation_task is None or self._reconciliation_task.done()):
+            self._reconciliation_task = asyncio.create_task(self._reconcile_periodically(),
+                name="analytics-canonical-reconciliation")
+        await self.reconcile_once()
+
+    async def _reconcile_periodically(self) -> None:
+        while not self.closed:
+            await asyncio.sleep(self.reconciliation_interval)
+            try:
+                await self.reconcile_once()
+            except Exception:
+                # Currentness is checked on every read; the next wake retries repair.
+                continue
+
+    async def reconcile_once(self) -> None:
+        """Recover missed notifications and expired projections through normal admission."""
+
+        if self.closed:
+            return
         await self._ensure_projection_storage()
         await self._ensure_publication_epoch()
-        if not recover:
-            return
         revisions = await self._run_owned(self.pipeline.source.account_revisions)
         for creator_account_id, revision in revisions:
-            if await self._projection_is_current(creator_account_id, revision):
+            if self.closed:
+                return
+            try:
+                current = await self._projection_is_current(creator_account_id, revision)
+            except ProjectionBackpressure:
+                return
+            except Exception:
+                current = False
+            if current:
                 with self._state_lock:
                     self._record_available_locked(creator_account_id, revision)
                 continue
-            while True:
+            with self._state_lock:
+                self._available.pop(creator_account_id, None)
+            while not self.closed:
                 try:
                     await self.schedule(
                         creator_account_id,
@@ -762,6 +808,7 @@ class InProcessProjectionScheduler:
             self._recovery_requests.clear()
             executor = self._executor
             recovery_task = self._recovery_task
+            reconciliation_task = self._reconciliation_task
             epoch = self._publication_epoch
             self._publication_epoch = None
             self._publication_epoch_storage_serial = -1
@@ -785,9 +832,12 @@ class InProcessProjectionScheduler:
             self._cancel_task(task)
         if recovery_task is not None:
             self._cancel_task(recovery_task)
+        if reconciliation_task is not None:
+            self._cancel_task(reconciliation_task)
         joined_tasks = (
             tasks
             + ((recovery_task,) if recovery_task is not None else ())
+            + ((reconciliation_task,) if reconciliation_task is not None else ())
             + (storage_task,)
         )
 
@@ -837,6 +887,7 @@ class InProcessProjectionScheduler:
             self._recovery_requests.clear()
             executor = self._executor
             recovery_task = self._recovery_task
+            reconciliation_task = self._reconciliation_task
             epoch = self._publication_epoch
             self._publication_epoch = None
             self._publication_epoch_storage_serial = -1
@@ -865,6 +916,10 @@ class InProcessProjectionScheduler:
             loop = recovery_task.get_loop()
             if loop.is_running():
                 loop.call_soon_threadsafe(recovery_task.cancel)
+        if reconciliation_task is not None and not reconciliation_task.done():
+            loop = reconciliation_task.get_loop()
+            if loop.is_running():
+                loop.call_soon_threadsafe(reconciliation_task.cancel)
         with self._state_lock:
             self._detached_worker_count = sum(
                 not future.done() for future in futures

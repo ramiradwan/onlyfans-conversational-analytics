@@ -27,6 +27,7 @@ Readers use the active projection. Missing, building, and failed projections rem
 ## Main modules
 
 - `pipeline.py` — coordinates analytics rebuild and publication.
+- `evidence.py` and `evidence_contracts.py` — bounded source-reference lookup through canonical reads. See [Source evidence](../../docs/analytics/evidence.md).
 - `enrichment.py` and `analyzers.py` — message enrichment interfaces and built-in analyzers.
 - `metrics.py` — conversation and creator metrics.
 - `graph_projection.py` and `graph_store.py` — relationship-graph projection and queries.
@@ -37,8 +38,32 @@ Readers use the active projection. Missing, building, and failed projections rem
 
 See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 
+## Question specifications
+
+[Bounded analytics questions](../../docs/analytics/questions.md) defines source-linked query semantics. [Local analysis](../../docs/analytics/local-analysis.md) defines model and package limits. These specifications do not enable additional endpoints or model downloads.
+
 ## Related documentation
 
 - [Brain](../README.md)
 - [Proposed analytics scope](../../docs/adr/0013-conversational-analytics-scope.md)
 - [Testing](../../docs/testing.md)
+
+## Question execution
+
+`query_contracts.py`, `query_execution.py`, `query_cursor.py`, and `query_service.py` provide typed question plans, bounded read-adapter ports, authenticated pagination, and result validation. See [Execute an analytics question](../../docs/analytics/question-service.md) for composition and adapter requirements.
+
+## Conversation questions
+
+[Question endpoints](../../docs/analytics/question-endpoints.md) connect bounded handlers, witnessed SQLite publication metadata, and exact source resolution. The production adapter reports missing event types as undetermined. Pricing execution remains disabled until its quality gate passes. These routes do not run inference or rebuild projections inline.
+
+## Enrichment reuse
+
+[Reuse unchanged message analysis](../../docs/analytics/enrichment-reuse.md) describes the account-scoped per-analyzer cache, its generation lifetime, context inputs, and size limits. Graph publication remains whole-generation.
+
+## Continuous processing
+
+[Changed-conversation processing](../../docs/analytics/continuous-processing.md) reuses exact conversation outputs, streams canonical identity checks, and reconciles missed work and expiry through the existing scheduler. Publication remains a complete validated generation.
+
+## Generation throughput
+
+[Generation validation and writes](../../docs/analytics/generation-throughput.md) describes scoped integrity checks, owned connections, and bounded adaptive batches.

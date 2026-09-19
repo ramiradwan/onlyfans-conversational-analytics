@@ -112,6 +112,33 @@ class SQLiteAnalyticsProjectionStore:
         if reconcile:
             self.reconcile_startup()
 
+    def open_conversation_fragments(self, account_id):
+        from app.analytics.conversation_sql import fragment_reader
+
+        return fragment_reader(self, account_id)
+
+    def load_conversation_fragment(self, account_id, conversation, input_digest, config_digest, **kwargs):
+        from app.analytics.conversation_sql import load_fragment
+
+        return load_fragment(self, account_id, conversation, input_digest, config_digest, **kwargs)
+
+    def load_enrichment_entries(self, account_id, keys, **kwargs):
+        from app.analytics.enrichment_sql import load_entries
+
+        return load_entries(self, account_id, keys, **kwargs)
+
+    def question_pricing(self, account_id, snapshot, references, budget):
+        from app.analytics.query_publication import published_pricing
+
+        return published_pricing(self, account_id, snapshot, references, budget)
+
+    def question_snapshot(self, account_id, canonical_identity, budget):
+        """Return witnessed metadata for a bounded live-source question read."""
+
+        from app.analytics.query_publication import published_snapshot
+
+        return published_snapshot(self, account_id, canonical_identity, budget)
+
     def get(
         self,
         creator_account_id: str,
@@ -126,18 +153,8 @@ class SQLiteAnalyticsProjectionStore:
         )
         if generation_id is None:
             return None
-        self._validate_persisted_generation(generation_id)
-        with self.database.read() as connection:
-            row = connection.execute(
-                """
-                SELECT document_json FROM analytics_projections
-                WHERE generation_id=? AND creator_account_id=?
-                """,
-                (generation_id, partition_ref),
-            ).fetchone()
-            if row is None:
-                raise ProjectionValidationError("active projection document is missing")
-            return AnalyticsProjection.model_validate_json(row[0])
+        values = self._validate_persisted_generation(generation_id)
+        return values["projection"]
 
     def get_artifact(
         self,
@@ -153,25 +170,9 @@ class SQLiteAnalyticsProjectionStore:
         )
         if generation_id is None:
             return None
-        self._validate_persisted_generation(generation_id)
-        with self.database.read() as connection:
-            projection_row = connection.execute(
-                """
-                SELECT document_json FROM analytics_projections
-                WHERE generation_id=? AND creator_account_id=?
-                """,
-                (generation_id, partition_ref),
-            ).fetchone()
-            if projection_row is None:
-                raise ProjectionValidationError("active projection document is missing")
-            nodes, edges = _generation_graph(
-                connection, generation_id, partition_ref
-            )
-            return RebuildArtifact(
-                projection=AnalyticsProjection.model_validate_json(projection_row[0]),
-                nodes=nodes,
-                edges=edges,
-            )
+        values = self._validate_persisted_generation(generation_id)
+        return RebuildArtifact(projection=values["projection"],
+                               nodes=values["nodes"], edges=values["edges"])
 
     def replace(
         self,
@@ -198,21 +199,23 @@ class SQLiteAnalyticsProjectionStore:
     def next_projection_generation(self, creator_account_id: str) -> int:
         partition_ref = account_ref(creator_account_id)
         with self.database.read() as connection:
-            rows = connection.execute(
-                """
-                SELECT p.document_json FROM analytics_projections AS p
-                JOIN projection_generations AS g
-                  ON g.generation_id=p.generation_id
-                 AND g.creator_account_id=p.creator_account_id
-                WHERE g.creator_account_id=?
-                """,
-                (partition_ref,),
-            ).fetchall()
-        generations = [
-            AnalyticsProjection.model_validate_json(row[0]).projection_generation
-            for row in rows
-        ]
-        return max(generations, default=0) + 1
+            if connection.execute("PRAGMA user_version").fetchone()[0] < 7:
+                rows = connection.execute(
+                    "SELECT document_json FROM analytics_projections WHERE creator_account_id=?",
+                    (partition_ref,),
+                )
+                return max((AnalyticsProjection.model_validate_json(row[0]).projection_generation
+                            for row in rows), default=0) + 1
+            row = connection.execute(
+                """SELECT MAX(q.projection_generation), COUNT(*), COUNT(q.generation_id)
+                   FROM analytics_projections p
+                   JOIN projection_generations g USING (generation_id,creator_account_id)
+                   LEFT JOIN projection_query_metadata q USING (generation_id,creator_account_id)
+                   WHERE g.creator_account_id=?""", (partition_ref,),
+            ).fetchone()
+        if row[1] != row[2]:
+            raise ProjectionValidationError("projection_sequence_metadata_missing")
+        return int(row[0] or 0) + 1
 
     def replace_artifact(
         self,
@@ -255,9 +258,19 @@ class SQLiteAnalyticsProjectionStore:
         canonical_identity: CanonicalIdentity,
         publication_epoch: str | None = None,
         cancellation_check: CancellationCheck | None = None,
+        enrichment_entries: tuple[bytes, ...] = (),
+        conversation_fragments: tuple[bytes, ...] = (),
     ) -> str:
         """Persist and validate one inactive generation from one canonical snapshot."""
 
+        from app.analytics.enrichment_cache import validate_entries
+        from app.analytics.enrichment_sql import insert_entries
+
+        from app.analytics.conversation_reuse import validate_fragments
+        from app.analytics.conversation_sql import insert_fragments
+
+        fragments = validate_fragments(artifact, conversation_fragments)
+        cached = validate_entries(artifact, enrichment_entries)
         check_cancelled(cancellation_check)
         projection = artifact.projection
         partition_ref = account_ref(creator_account_id)
@@ -290,9 +303,8 @@ class SQLiteAnalyticsProjectionStore:
             raise ProjectionRevisionConflict(
                 "the same canonical and pipeline identity produced different content"
             )
-        graph_digest = _graph_digest(safe_nodes, safe_edges)
-        if projection.graph_digest != graph_digest:
-            raise ProjectionValidationError("graph projection digest differs")
+        # Artifact validation already checked this exact privately owned graph.
+        graph_digest = projection.graph_digest
         pipeline_digest = pipeline_identity_digest(projection)
         if pipeline_digest != projection.pipeline_identity_digest:
             raise ProjectionValidationError("pipeline identity differs")
@@ -379,6 +391,8 @@ class SQLiteAnalyticsProjectionStore:
                     _json(projection.model_dump(mode="json")),
                 ),
             )
+            insert_entries(connection, generation_id, cached)
+            insert_fragments(connection, generation_id, fragments, conversation_fragments)
         writer = SQLiteGraphGenerationWriter(
             self.database,
             generation_id=generation_id,
@@ -673,6 +687,12 @@ class SQLiteAnalyticsProjectionStore:
     def reconcile_startup(self) -> dict[str, int]:
         """Quarantine unwitnessed active rows and recover only exact identities."""
 
+        with self.database.read() as connection:
+            integrity = connection.execute("PRAGMA integrity_check").fetchall()
+            if len(integrity) != 1 or integrity[0][0] != "ok":
+                raise ProjectionValidationError("projection_integrity_invalid")
+            if connection.execute("PRAGMA foreign_key_check").fetchall():
+                raise GraphReferentialIntegrityError("projection_foreign_key_invalid")
         counts = {"retired": 0, "activated": 0, "completed": 0, "cancelled": 0}
         now = _now()
         with self.database.read() as connection:
@@ -858,6 +878,8 @@ class SQLiteAnalyticsProjectionStore:
         partition_ref = validated_account_ref(partition_ref)
 
         with self.database.transaction() as connection:
+            from app.analytics.database import GENERATION_WRITE_CACHE_KIB
+            connection.execute(f"PRAGMA cache_size=-{GENERATION_WRITE_CACHE_KIB}")
             rows = connection.execute(
                 """
                 SELECT generation_id FROM projection_generations
@@ -872,6 +894,12 @@ class SQLiteAnalyticsProjectionStore:
                 ),
             ).fetchall()
             for row in rows:
+                # Remove outgoing references before their endpoints in this transaction.
+                for table in ("graph_edges", "graph_nodes"):
+                    connection.execute(
+                        f"DELETE FROM {table} WHERE generation_id=? AND creator_account_id=?",
+                        (row[0], partition_ref),
+                    )
                 connection.execute(
                     "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
                     (row[0],),
@@ -916,13 +944,14 @@ class SQLiteAnalyticsProjectionStore:
         allow_building: bool = False,
         deadline: float | None = None,
         cancellation_check: CancellationCheck | None = None,
-    ) -> None:
+    ) -> dict[str, object]:
         def check() -> None:
             _check_operation_budget(deadline, cancellation_check)
 
         try:
             check()
             with self.database.read() as connection:
+                connection.execute("BEGIN")
                 connection.set_progress_handler(
                     lambda: int(
                         (deadline is not None and time.monotonic() > deadline)
@@ -970,13 +999,7 @@ class SQLiteAnalyticsProjectionStore:
                 ):
                     raise ProjectionValidationError("projection_digest_invalid")
                 check()
-                integrity = connection.execute("PRAGMA integrity_check").fetchall()
-                check()
-                if len(integrity) != 1 or integrity[0][0] != "ok":
-                    raise ProjectionValidationError("projection_integrity_invalid")
-                if connection.execute("PRAGMA foreign_key_check").fetchall():
-                    raise GraphReferentialIntegrityError("projection_foreign_key_invalid")
-                check()
+                return values
         except GraphDeadlineExceeded:
             raise
         except (ProjectionValidationError, GraphReferentialIntegrityError):
@@ -1419,6 +1442,40 @@ class SQLiteAnalyticsProjectionStore:
             self.crash_hook(stage, generation_id)
 
 
+def _validate_generation_links(connection, generation_id, account_id, nodes, edges, check):
+    """Check the candidate's referential closure without scanning other accounts."""
+
+    check()
+    epoch = connection.execute(
+        """SELECT 1 FROM projection_generations g
+           JOIN projection_publication_epochs e ON e.publication_epoch=g.publication_epoch
+           WHERE g.generation_id=? AND g.creator_account_id=?""",
+        (generation_id, account_id),
+    ).fetchone()
+    if epoch is None:
+        raise GraphReferentialIntegrityError("projection_epoch_absent")
+    schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
+    optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7}
+    node_ids = {node.node_id for node in nodes}
+    for edge in edges:
+        check()
+        if edge.source_id not in node_ids or edge.target_id not in node_ids:
+            raise GraphReferentialIntegrityError("graph_endpoint_absent")
+    for table in ("analytics_projections", "graph_nodes", "graph_edges",
+                  "graph_partition_stats", "enrichment_reuse", "conversation_fragments",
+                  "projection_query_metadata", "graph_algorithm_metrics"):
+        check()
+        if schema_version < optional_since.get(table, 0):
+            continue
+        for comparison in ("<", ">"):
+            foreign = connection.execute(
+                f"SELECT 1 FROM {table} WHERE generation_id=? AND creator_account_id{comparison}? LIMIT 1",
+                (generation_id, account_id),
+            ).fetchone()
+            if foreign is not None:
+                raise GraphReferentialIntegrityError("projection_account_mismatch")
+
+
 def recompute_generation(
     connection: sqlite3.Connection,
     generation_id: str,
@@ -1472,10 +1529,10 @@ def recompute_generation(
         account_id,
         check=run_check,
     )
-    safe_nodes, safe_edges = safe_graph_records(nodes, edges, check=run_check)
-    if nodes != safe_nodes or edges != safe_edges:
-        raise ProjectionValidationError("graph properties exceed the safe allowlist")
-    graph_digest = _graph_digest(nodes, edges, check=run_check)
+    from app.analytics.graph_privacy import _validated_graph_digest
+
+    _validate_generation_links(connection, generation_id, account_id, nodes, edges, run_check)
+    graph_digest = _validated_graph_digest(nodes, edges, check=run_check)
     run_check()
     if projection.graph_digest != graph_digest:
         raise ProjectionValidationError("graph document digest differs")
@@ -1506,6 +1563,8 @@ def recompute_generation(
         raise ProjectionValidationError("edge-kind coverage differs")
     return {
         "projection": projection,
+        "nodes": nodes,
+        "edges": edges,
         "projection_digest": projection_digest,
         "graph_digest": graph_digest,
         "node_count": len(nodes),

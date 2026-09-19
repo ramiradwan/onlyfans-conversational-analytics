@@ -12,6 +12,9 @@ from app.persistence.migrations import MigrationRunner
 from app.analytics.opaque_refs import normalize_account_ref
 
 
+GENERATION_WRITE_CACHE_KIB = 16 * 1024
+
+
 GenerationStatus = Literal[
     "building", "validated", "activation_pending", "active", "retired"
 ]

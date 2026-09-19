@@ -14,6 +14,7 @@ from app.analytics.analyzers import (
 )
 from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.errors import AnalyzerConfigurationInvalid
+from app.analytics.enrichment_inputs import analyze_messages, analyzer_policy
 from app.analytics.provenance import stable_config_digest
 from app.analytics.opaque_refs import (
     account_ref,
@@ -24,7 +25,6 @@ from app.analytics.opaque_refs import (
 from app.models.analytics import (
     AnalyzerProvenance,
     CanonicalConversation,
-    MessageAnalysisInput,
     MessageEnrichment,
 )
 
@@ -42,6 +42,7 @@ class EnrichmentStage:
         self.sentiment = sentiment or RuleBasedSentimentAnalyzer()
         self.topics_entities = topics_entities or RuleBasedTopicEntityAnalyzer()
         self.engagement = engagement or RuleBasedEngagementAnalyzer()
+        self._input_policies = tuple(analyzer_policy(a) for a in (self.sentiment, self.topics_entities, self.engagement))
         self._descriptors = tuple(
             self._descriptor(analyzer)
             for analyzer in (
@@ -69,8 +70,10 @@ class EnrichmentStage:
                     "config_digest": item.config_digest,
                     "mode": item.mode.value,
                     "calibration_status": item.calibration_status.value,
+                    "input_policy": (policy.model_dump(mode="json") if policy else None),
                 }
-                for item in self._descriptors
+                for item, policy in zip(self._descriptors,
+                    self._input_policies, strict=True)
             ],
         )
 
@@ -121,6 +124,12 @@ class EnrichmentStage:
             )
         ]
 
+    def validate_configuration(self) -> None:
+        analyzers = (self.sentiment, self.topics_entities, self.engagement)
+        if (tuple(self._descriptor(item) for item in analyzers) != self._descriptors
+                or tuple(analyzer_policy(item) for item in analyzers) != self._input_policies):
+            raise AnalyzerConfigurationInvalid()
+
     def enrich_conversation(
         self,
         creator_account_id: str,
@@ -134,51 +143,13 @@ class EnrichmentStage:
             key=lambda message: (message.sent_at, message.source_ordinal),
         )
         results: list[MessageEnrichment] = []
-        for message in ordered:
-            check_cancelled(cancellation_check)
-            analysis_input = MessageAnalysisInput(
-                creator_account_id=creator_account_id,
-                conversation_id=conversation.conversation_id,
-                participant_id=conversation.platform_user_id,
-                message_id=message.message_id,
-                text=message.text,
-                sent_at=message.sent_at,
-                direction=message.direction,
-            )
-            sentiment_result = self.sentiment.analyze(analysis_input)
-            check_cancelled(cancellation_check)
-            topic_entity_result = self.topics_entities.analyze(analysis_input)
-            check_cancelled(cancellation_check)
-            engagement_result = self.engagement.analyze(analysis_input)
-            check_cancelled(cancellation_check)
-            descriptors = self._descriptors
-            sentiment_result = sentiment_result.model_copy(
-                update={
-                    "analyzer_name": descriptors[0].analyzer_name,
-                    "analyzer_revision": descriptors[0].revision,
-                    "analyzer_config_digest": descriptors[0].config_digest,
-                    "analysis_mode": descriptors[0].mode,
-                    "calibration_status": descriptors[0].calibration_status,
-                }
-            )
-            topic_entity_result = topic_entity_result.model_copy(
-                update={
-                    "analyzer_name": descriptors[1].analyzer_name,
-                    "analyzer_revision": descriptors[1].revision,
-                    "analyzer_config_digest": descriptors[1].config_digest,
-                    "analysis_mode": descriptors[1].mode,
-                    "calibration_status": descriptors[1].calibration_status,
-                }
-            )
-            engagement_result = engagement_result.model_copy(
-                update={
-                    "analyzer_name": descriptors[2].analyzer_name,
-                    "analyzer_revision": descriptors[2].revision,
-                    "analyzer_config_digest": descriptors[2].config_digest,
-                    "analysis_mode": descriptors[2].mode,
-                    "calibration_status": descriptors[2].calibration_status,
-                }
-            )
+        self.validate_configuration()
+        analyzers = (self.sentiment, self.topics_entities, self.engagement)
+        for message, outputs in analyze_messages(
+            creator_account_id, conversation, ordered, analyzers,
+            self._descriptors, cancellation_check,
+        ):
+            sentiment_result, topic_entity_result, engagement_result = outputs
             results.append(
                 MessageEnrichment(
                     account_ref=account_ref(creator_account_id),

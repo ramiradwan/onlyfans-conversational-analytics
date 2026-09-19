@@ -23,6 +23,16 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0022: Keep activation Legal evidence append-only in the Extension](0022-append-only-legal-activation-evidence.md)
 - [ADR 0025: Adopt CapabilityLicense delivery contracts](0025-adopt-capability-license-delivery-contracts.md)
 
+- [ADR 0026: Use bounded, source-linked analytics questions](0026-bounded-analytics-questions.md)
+
+- [ADR 0027: Reuse versioned analyzer results within analytics generations](0027-enrichment-reuse.md)
+
+- [ADR 0028: Recompute changed conversations within full analytics generations](0028-conversation-incremental-processing.md)
+
+- [ADR 0029: Bind cached source verification to database changes](0029-source-verification-tokens.md)
+
+- [ADR 0030: Separate generation validation from whole-file checks](0030-generation-validation-scope.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

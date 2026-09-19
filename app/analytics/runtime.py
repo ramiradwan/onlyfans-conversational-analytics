@@ -14,10 +14,11 @@ from app.analytics.errors import (
     ProjectionStorageUnavailable,
 )
 from app.analytics.factory import create_analytics_stores
-from app.analytics.identity import canonical_identity
+from app.analytics.identity import canonical_identity, source_identity
 from app.analytics.licensed_pipeline import LicensedAnalyticsPipeline
 from app.analytics.pipeline import AnalyticsPipeline, CanonicalReadModelSource
 from app.analytics.scheduling import InProcessProjectionScheduler
+from app.analytics.query_runtime import QuestionResources
 from app.core.config import settings
 from app.persistence.projection_activation import ProjectionActivationRepository
 from app.security.analysis_authorization import clear_analysis_policies
@@ -33,6 +34,7 @@ class AnalyticsRuntime:
     source: CanonicalReadModelSource
     pipeline: AnalyticsPipeline
     scheduler: InProcessProjectionScheduler
+    questions: QuestionResources | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +91,8 @@ def configure_default_analytics_runtime(
                 previous_runtime is not None
                 and previous_runtime.source is previous.source
             ):
+                if previous_runtime.questions is not None:
+                    previous_runtime.questions.close()
                 previous_runtime.scheduler.abort()
                 _RUNTIMES.pop(id(previous.source), None)
             if _STARTUP_TASK_SOURCE_KEY == id(previous.source):
@@ -106,6 +110,8 @@ def configure_default_analytics_runtime(
         ):
             return existing
         if existing is not None and existing.source is source:
+            if existing.questions is not None:
+                existing.questions.close()
             existing.scheduler.abort()
             _RUNTIMES.pop(id(source), None)
             if _STARTUP_TASK_SOURCE_KEY == id(source):
@@ -150,7 +156,8 @@ def _runtime_for_source_locked(
     runtime = AnalyticsRuntime(
         source=source,
         pipeline=pipeline,
-        scheduler=InProcessProjectionScheduler(pipeline),
+        scheduler=InProcessProjectionScheduler(pipeline, reconciliation_interval=30),
+        questions=QuestionResources(source, pipeline),
     )
     _RUNTIMES[key] = runtime
     return runtime
@@ -180,11 +187,7 @@ def _build_pipeline(
         projections_path=configuration.projections_path,
         canonical_path=configuration.canonical_path,
         activation=configuration.activation,
-        canonical_identity_reader=lambda account_id: (
-            canonical_identity(source.account_read_model(account_id))
-            if source.account_exists(account_id)
-            else None
-        ),
+        canonical_identity_reader=lambda account_id: source_identity(source, account_id),
         lazy=True,
     )
     return pipeline_type(
@@ -209,7 +212,10 @@ def projection_scheduler(
 async def start_default_analytics_runtime() -> InProcessProjectionScheduler:
     """Start the configured scheduler and recover projections."""
 
-    scheduler = projection_scheduler()
+    runtime = analytics_runtime()
+    if runtime.questions is not None:
+        runtime.questions.start()
+    scheduler = runtime.scheduler
     await scheduler.start(recover=True)
     return scheduler
 
@@ -223,6 +229,9 @@ def launch_default_analytics_runtime() -> asyncio.Task[None]:
         return _STARTUP_TASK
 
     async def start() -> None:
+        runtime = analytics_runtime()
+        if runtime.questions is not None:
+            runtime.questions.start()
         try:
             await scheduler.start(recover=True)
         except (ProjectionCoordinatorClosed, ProjectionStorageUnavailable):
@@ -262,12 +271,12 @@ async def request_projection_rebuild(
         if not configuration.post_commit_rebuild_enabled:
             return False
     runtime = analytics_runtime(source)
+    if runtime.questions is not None:
+        runtime.questions.discard(creator_account_id)
     if runtime.scheduler.closed:
         return False
-    account = await runtime.scheduler.canonical_account(creator_account_id)
-    await runtime.scheduler.request_recovery(
-        creator_account_id, account.view_revision
-    )
+    revision = await runtime.scheduler.canonical_revision(creator_account_id)
+    await runtime.scheduler.request_recovery(creator_account_id, revision)
     return True
 
 
@@ -283,6 +292,8 @@ async def shutdown_default_analytics_runtime(*, timeout: float = 5.0) -> bool:
         runtime = _RUNTIMES.get(key)
     if runtime is None or runtime.source is not source:
         return True
+    if runtime.questions is not None:
+        runtime.questions.close()
     drained = await runtime.scheduler.close(timeout=timeout)
     global _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     startup_task = _STARTUP_TASK
@@ -302,6 +313,8 @@ def reset_analytics_runtimes() -> None:
     global _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     with _RUNTIME_LOCK:
         for runtime in _RUNTIMES.values():
+            if runtime.questions is not None:
+                runtime.questions.close()
             runtime.scheduler.abort()
         _RUNTIMES.clear()
     clear_analysis_policies()
@@ -309,3 +322,15 @@ def reset_analytics_runtimes() -> None:
         _STARTUP_TASK.cancel()
     _STARTUP_TASK = None
     _STARTUP_TASK_SOURCE_KEY = None
+
+
+def invalidate_question_sources(account_id: str) -> None:
+    """Discard derived navigation state without opening an analytics store."""
+
+    with _RUNTIME_LOCK:
+        resources = [runtime.questions for runtime in _RUNTIMES.values() if runtime.questions is not None]
+    for resource in resources:
+        try:
+            resource.discard(account_id)
+        except Exception:
+            LOGGER.warning("analytics_question_event reason_code=evidence_invalidation_failed")

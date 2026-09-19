@@ -2,6 +2,8 @@
 
 - Status: proposed
 
+[ADR 0026](0026-bounded-analytics-questions.md) adopts the record separation, source fidelity, uncertainty, and versioned metric definitions for bounded analytics questions. The remaining scope here stays proposed.
+
 ## Context and problem statement
 
 The product preserves and analyzes creator-visible conversations. ADR 0009 makes SQLite canonical and treats graph, search, analytics, and Bridge views as rebuildable local projections; no database, broker, or placeholder enrichment result is itself an analytics authority.
