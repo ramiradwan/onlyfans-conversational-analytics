@@ -2150,6 +2150,9 @@ class SQLiteGraphGenerationWriter:
 
     def validate(self) -> str:
         from app.analytics.sqlite_projection_store import recompute_generation
+        from app.analytics.validation_receipt import capture_receipt, content_stamp
+
+        self.validation_receipt = None
 
         with self.lease_session():
             self._check_heartbeat()
@@ -2164,6 +2167,7 @@ class SQLiteGraphGenerationWriter:
                     def keepalive() -> None:
                         self._check_heartbeat()
 
+                    verified_stamp = content_stamp(connection)
                     values = recompute_generation(
                         connection,
                         self._generation_id,
@@ -2200,7 +2204,9 @@ class SQLiteGraphGenerationWriter:
                     if updated.rowcount != 1:
                         self._invalidate_ownership()
                         raise GraphStoreError("graph_generation_ownership_lost")
+                    receipt = capture_receipt(connection, self._generation_id, verified_stamp=verified_stamp)
                     connection.commit()
+                    self.validation_receipt = receipt
                 except BaseException:
                     connection.rollback()
                     raise

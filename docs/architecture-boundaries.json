@@ -595,7 +595,11 @@
         "app/analytics/shared_graph.py",
         "app/analytics/conversation_pages.py",
         "app/analytics/conversation_page_sql.py",
-        "app/analytics/projection_verification.py"
+        "app/analytics/projection_verification.py",
+        "app/analytics/validation_receipt.py",
+        "app/analytics/currentness.py",
+        "app/analytics/sql/0012_generation_content_epoch.sql",
+        "app/analytics/catalog_cache.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",
@@ -1283,7 +1287,8 @@
           "app/persistence/sql/**",
           "app/persistence/sql/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
-          "app/persistence/json_header.py"
+          "app/persistence/json_header.py",
+          "app/analytics/catalog_cache.py"
         ]
       },
       {
@@ -1292,7 +1297,8 @@
           "app/persistence/history.py",
           "app/transport/manager.py",
           "app/persistence/sql/0009_analytics_source_tokens.sql",
-          "app/analytics/source_tokens.py"
+          "app/analytics/source_tokens.py",
+          "app/analytics/catalog_cache.py"
         ]
       },
       {
@@ -1339,7 +1345,11 @@
           "app/analytics/shared_graph.py",
           "app/analytics/sql/0010_shared_graph_segments.sql",
           "app/analytics/sql/0011_conversation_pages.sql",
-          "app/analytics/projection_verification.py"
+          "app/analytics/projection_verification.py",
+          "app/analytics/validation_receipt.py",
+          "app/analytics/currentness.py",
+          "app/analytics/sql/0012_generation_content_epoch.sql",
+          "app/analytics/catalog_cache.py"
         ]
       },
       {
@@ -1412,7 +1422,10 @@
           "app/analytics/projection_encoding.py",
           "app/analytics/compact_graph.py",
           "app/analytics/sql/0011_conversation_pages.sql",
-          "app/analytics/projection_verification.py"
+          "app/analytics/projection_verification.py",
+          "app/analytics/validation_receipt.py",
+          "app/analytics/currentness.py",
+          "app/analytics/sql/0012_generation_content_epoch.sql"
         ]
       },
       {
@@ -1446,7 +1459,10 @@
           "app/analytics/shared_graph.py",
           "app/analytics/sql/0010_shared_graph_segments.sql",
           "app/analytics/sql/0011_conversation_pages.sql",
-          "app/analytics/projection_verification.py"
+          "app/analytics/projection_verification.py",
+          "app/analytics/validation_receipt.py",
+          "app/analytics/currentness.py",
+          "app/analytics/sql/0012_generation_content_epoch.sql"
         ]
       },
       {
@@ -1474,7 +1490,11 @@
           "app/analytics/shared_graph.py",
           "app/analytics/sql/0010_shared_graph_segments.sql",
           "app/analytics/sql/0011_conversation_pages.sql",
-          "app/analytics/projection_verification.py"
+          "app/analytics/projection_verification.py",
+          "app/analytics/validation_receipt.py",
+          "app/analytics/currentness.py",
+          "app/analytics/sql/0012_generation_content_epoch.sql",
+          "app/analytics/catalog_cache.py"
         ]
       },
       {
@@ -1498,7 +1518,10 @@
           "app/analytics/shared_graph.py",
           "app/analytics/sql/0010_shared_graph_segments.sql",
           "app/analytics/sql/0011_conversation_pages.sql",
-          "app/analytics/projection_verification.py"
+          "app/analytics/projection_verification.py",
+          "app/analytics/validation_receipt.py",
+          "app/analytics/currentness.py",
+          "app/analytics/sql/0012_generation_content_epoch.sql"
         ]
       },
       {
@@ -1521,7 +1544,11 @@
           "app/analytics/projection_encoding.py",
           "app/analytics/compact_graph.py",
           "app/analytics/sql/0011_conversation_pages.sql",
-          "app/analytics/projection_verification.py"
+          "app/analytics/projection_verification.py",
+          "app/analytics/validation_receipt.py",
+          "app/analytics/currentness.py",
+          "app/analytics/sql/0012_generation_content_epoch.sql",
+          "app/analytics/catalog_cache.py"
         ]
       },
       {

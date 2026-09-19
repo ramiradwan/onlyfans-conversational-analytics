@@ -14,11 +14,11 @@ The deferred result contains a reference and a reader callback, not cached messa
 
 ## Verification and encoding
 
-Graph verification reads ordered rows, validates their types and properties, and computes the canonical digest from their actual contents. An indexed join checks edge endpoints within the candidate. Account scope and persisted counts are checked independently. Matching two supplied digest strings is not sufficient. Stored content is verified during staging and again at the final activation gate, rather than once more between those gates. Final verification failure cancels the completed witness and retires the candidate.
+Graph verification reads ordered rows, validates their types and properties, and computes the canonical digest from their actual contents. An indexed join checks edge endpoints within the candidate. Account scope and persisted counts are checked independently. Matching two supplied digest strings is not sufficient. Stored content is verified during staging. The final activation gate requires either an unchanged live receipt under ADR 0036 or another complete verification. Final verification failure cancels the completed witness and retires the candidate.
 
 When graph objects are not requested, the verifier checks stored columns directly using the same identity and closed-property rules as the public models. It normalizes timestamps and encodes the same canonical JSON without constructing temporary graph models. Non-integer or negative stored edge sequences are rejected. The verifier retains only the current row and counters. Full artifact reads materialize the validated graph explicitly. Database statement progress and row-level checks retain cancellation and deadline handling.
 
-Validation-only staging and activation calls also check projection records individually. They calculate the digest from each normalized record and retain a separate metadata header, not message or conversation model arrays. Every record is checked at both gates. Full projection and artifact reads retain their ordinary complete models.
+Validation-only staging and activation calls also check projection records individually. They calculate the digest from each normalized record and retain a separate metadata header, not message or conversation model arrays. Every record is checked during staging; activation binds that completed check to unchanged stored contents or repeats it. Full projection and artifact reads retain their ordinary complete models.
 
 The streaming path handles the complete top-level field order produced by the canonical writer, including insignificant whitespace. Documents with another order or omitted default fields use the existing full-model compatibility path. The original JSON string remains in memory, so this is not a total memory cap. Cancellation is checked between streamed records.
 
@@ -49,3 +49,7 @@ The workload reports candidate construction and publication before requesting an
 Report private and working-set memory under an explicit guard for capacity tests. An incomplete workload does not establish supported capacity. Passing these tests does not qualify constrained laptops, the complete ingestion-to-interface journey, or production message classification.
 
 Capacity runs can use `--verification-mode digests` to compare independently rebuilt projection, graph, and source digests with the verified stored reference. The selected comparison mode is recorded. Warm queries run before the independent rebuild, so that diagnostic computation does not consume the source-cache lifetime before query measurement.
+
+## Live validation receipts
+
+[ADR 0036](../adr/0036-validated-generation-receipts.md) defines the single-use receipt. The exact trigger contract, store identity, schema cookie, monotonic content epoch and generation fields must match inside the activation write transaction. Receipts expire after 60 seconds and are bounded to eight. A missing or invalid receipt requires full validation. Explicit reads and backups retain their complete checks.

@@ -573,6 +573,10 @@ class AnalyticsPipeline:
         identity = source_identity(self.source, creator_account_id)
         if identity is None or identity.revision < requested_revision:
             return False
+        currentness = getattr(self.projections, "projection_currentness", None)
+        if callable(currentness):
+            return currentness(creator_account_id, identity, self.pipeline_revision,
+                               self.pipeline_config_digest, self._retention_clock)
         projection = self.projections.get(creator_account_id, canonical_identity=identity)
         return bool(
             projection is not None

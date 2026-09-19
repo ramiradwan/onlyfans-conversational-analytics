@@ -183,7 +183,9 @@ def test_direct_projection_call_still_returns_an_eager_snapshot(fixture):
         db.execute("UPDATE account_messages SET text='New source'")
     assert result.artifact is snapshot
 
-def test_staging_and_final_activation_each_verify_persisted_content(fixture, monkeypatch):
+@pytest.mark.parametrize("receipts", [False, True])
+def test_activation_requires_full_verification_or_an_unchanged_receipt(fixture, monkeypatch, receipts):
+    fixture.stores.projections.reuse_validation_receipts = receipts
     from unittest.mock import Mock
     from app.analytics import sqlite_projection_store as storage
     verify = Mock(wraps=storage.recompute_generation)
@@ -191,7 +193,7 @@ def test_staging_and_final_activation_each_verify_persisted_content(fixture, mon
     candidate = fixture.pipeline.build_candidate(ACCOUNT)
     assert verify.call_count == 1
     fixture.pipeline.publish_candidate(candidate)
-    assert verify.call_count == 2
+    assert verify.call_count == (1 if receipts else 2)
 
 
 def test_corruption_after_witness_completion_cannot_become_visible(fixture):

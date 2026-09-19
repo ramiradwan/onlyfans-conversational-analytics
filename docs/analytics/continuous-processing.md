@@ -55,3 +55,15 @@ The forced unchanged phase measures rebuilding with reuse, not the ordinary unch
 Source scans, full graph serialization, validation, and generation writes remain workload costs. The [laptop workload and acceptance targets](qualification.md) remain separate gates. This command does not establish installer size, constrained-laptop performance, or production feature accuracy.
 
 No model, runtime dependency, public protocol change, or additional database is required. Conversation fragments belong to the disposable analytics store. Source-verification tokens and the date index also have an additive canonical migration, described in [Read verification](read-verification.md).
+
+## Source catalog reuse
+
+The canonical gateway can reuse an account catalog for the existing 60-second source-identity lifetime. The current transaction-maintained source token and identity must still match. The cache holds at most eight accounts, 4,096 conversations per account and 512 KiB of digest-key bytes in total, excluding Python overhead. It retains no message text. Returned maps are separate copies. Reads do not extend expiry.
+
+Mutation, missing tracking, schema change, restart, identity-cache clearing or expiry prevents reuse. Caller-owned canonical connections always read their own snapshot. Publication refresh ensures an unexpired identity instead of rescanning an already current one. Canonical witness transactions retain independent source checks. Their own bounded cache can reuse an identity previously scanned by the witness repository when the in-transaction source token and tracking schema are unchanged. They do not populate that cache from a worker-supplied digest.
+
+## Reconciliation cost
+
+A successful complete currentness check can be reused for 60 seconds while its generation, source identity, pipeline and storage-change stamp remain identical. Each reuse still checks the completed witness and source expiry. This bounded metadata cache avoids repeatedly reading an unchanged graph during adjacent scheduler polls. It is separate from activation receipts and never grants analysis authority.
+
+A cold check, expired proof or changed storage stamp still requires a complete validated projection read. This is not a constant-time guarantee for cold reconciliation or changed conversations.

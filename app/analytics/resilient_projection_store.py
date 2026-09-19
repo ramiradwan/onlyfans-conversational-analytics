@@ -154,6 +154,9 @@ class LazySQLiteAnalyticsProjectionStore:
     def question_snapshot(self, account_id, canonical_identity, budget):
         return self._read("question_snapshot", account_id, account_id, canonical_identity, budget)
 
+    def projection_currentness(self, account_id, *args):
+        return self._read("projection_currentness", account_id, account_id, *args)
+
     def get(self, creator_account_id: str, **kwargs):
         return self._read("get", creator_account_id, creator_account_id, **kwargs)
 

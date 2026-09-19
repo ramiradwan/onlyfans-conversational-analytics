@@ -391,6 +391,8 @@ class SQLiteProjectionActivationRepository:
 
     def __init__(self, database: CanonicalSQLite) -> None:
         self.database = database
+        from app.analytics.source_tokens import SourceIdentityCache
+        self._verified_sources = SourceIdentityCache()
         self._publication_fences: dict[str, _SQLitePublicationFence] = {}
         self._publication_fences_lock = RLock()
 
@@ -627,7 +629,7 @@ class SQLiteProjectionActivationRepository:
                 connection, publication_epoch, publication_capability_digest
             ):
                 raise ProjectionActivationConflict("publication epoch revoked")
-            if _sqlite_identity(connection, creator_account_id) != canonical_identity:
+            if _sqlite_identity(connection, creator_account_id, cache=self._verified_sources) != canonical_identity:
                 raise ProjectionActivationConflict("canonical identity changed")
             pending = connection.execute(
                 """
@@ -765,7 +767,7 @@ class SQLiteProjectionActivationRepository:
             )
             now = _now()
             identity_changed = (
-                _sqlite_identity(connection, current.creator_account_id) != expected
+                _sqlite_identity(connection, current.creator_account_id, cache=self._verified_sources) != expected
             )
             epoch_revoked = not _sqlite_publication_epoch_open(
                 connection,
@@ -894,7 +896,7 @@ class SQLiteProjectionActivationRepository:
 
 
 def _sqlite_identity(
-    connection: sqlite3.Connection, creator_account_id: str
+    connection: sqlite3.Connection, creator_account_id: str, *, cache=None
 ) -> CanonicalIdentity | None:
     row = connection.execute(
         "SELECT canonical_revision FROM account_heads WHERE creator_account_id = ?",
@@ -902,11 +904,18 @@ def _sqlite_identity(
     ).fetchone()
     if row is None:
         return None
+    token = cache.token(connection, creator_account_id) if cache is not None else None
+    cached = cache.get(creator_account_id, token) if cache is not None else None
+    if cached is not None:
+        return cached
     source = HistoryAnalyticsSource(
         HistoryRepository.__new__(HistoryRepository),
         connection=connection,
     )
-    return source.read_identity(creator_account_id)
+    identity = source.read_identity(creator_account_id)
+    if cache is not None and identity is not None:
+        cache.put(creator_account_id, token, identity)
+    return identity
 
 
 def _sqlite_publication_epoch_open(

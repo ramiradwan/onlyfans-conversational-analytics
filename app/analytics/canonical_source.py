@@ -29,6 +29,8 @@ class HistoryAnalyticsSource:
         self.connection = connection
         from app.analytics.source_tokens import SourceIdentityCache
         self._identity_cache = SourceIdentityCache()
+        from app.analytics.catalog_cache import SourceCatalogCache
+        self._catalog_cache = SourceCatalogCache(self._identity_cache)
 
     def _read(self):
         if self.connection is not None:
@@ -52,9 +54,16 @@ class HistoryAnalyticsSource:
                 if row is None:
                     raise CanonicalAccountNotFound()
                 token = self._identity_cache.token(connection, account_id) if self.connection is None else None
-                identity, digests, count = scan_identity(connection, account_id, int(row[0]), check=check)
-                check()
-                self._identity_cache.put(account_id, token, identity)
+                cached = self._catalog_cache.get(account_id, token) if self.connection is None else None
+                if cached is None:
+                    identity, digests, count = scan_identity(connection, account_id, int(row[0]), check=check)
+                    check()
+                    self._identity_cache.put(account_id, token, identity)
+                    self._catalog_cache.put(account_id, token, identity, digests)
+                else:
+                    identity, digests = cached
+                    count = 0
+                    check()
             finally:
                 if own_transaction:
                     connection.rollback()
@@ -75,10 +84,10 @@ class HistoryAnalyticsSource:
             return None
 
     def refresh_identity_cache(self, account_id: str) -> None:
-        """Compute a fresh identity after a successful long-running publication."""
+        """Ensure an unexpired identity without extending an existing cache lifetime."""
 
         if self.connection is None:
-            self.analytics_snapshot(account_id)
+            self.read_identity(account_id)
 
     def conversation_read_model(self, account_id: str, conversation_id: str, *, cancellation_check=None):
         from app.analytics.cancellation import check_cancelled

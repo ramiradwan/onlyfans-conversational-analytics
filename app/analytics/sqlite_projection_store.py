@@ -107,6 +107,11 @@ class SQLiteAnalyticsProjectionStore:
         self.lease_seconds = lease_seconds
         self.rollback_retention = rollback_retention
         self.gc_batch_size = gc_batch_size
+        from app.analytics.validation_receipt import ValidationReceipts
+        self._validation_receipts = ValidationReceipts()
+        self.reuse_validation_receipts = True
+        from app.analytics.currentness import GenerationCurrentness
+        self._currentness = GenerationCurrentness()
         self.graph = SQLiteGraphReader(
             self.database,
             active_generation_resolver=self._active_generation_for_graph,
@@ -154,6 +159,9 @@ class SQLiteAnalyticsProjectionStore:
         from app.analytics.query_publication import published_snapshot
 
         return published_snapshot(self, account_id, canonical_identity, budget)
+
+    def projection_currentness(self, account_id, identity, revision, config, retention_clock):
+        return self._currentness.matches(self, account_id, identity, revision, config, retention_clock)
 
     def get(
         self,
@@ -457,6 +465,7 @@ class SQLiteAnalyticsProjectionStore:
             self._checkpoint("built", generation_id)
             check_cancelled(cancellation_check)
             writer.validate()
+            self._validation_receipts.put(getattr(writer, "validation_receipt", None))
         self._checkpoint("validated", generation_id)
         check_cancelled(cancellation_check)
         return generation_id
@@ -1092,7 +1101,6 @@ class SQLiteAnalyticsProjectionStore:
             canonical_identity
         ):
             raise ProjectionActivationConflict("canonical identity changed")
-        self._validate_persisted_generation(generation_id, materialize_projection=False)
         now = _timestamp(_now())
         with self.database.transaction() as connection:
             candidate = connection.execute(
@@ -1105,6 +1113,9 @@ class SQLiteAnalyticsProjectionStore:
             ).fetchone()
             if not self._intent_matches(candidate, intent, require_completed=True):
                 raise ProjectionReconciliationError("activation witness CAS differs")
+            reused = self.reuse_validation_receipts and self._validation_receipts.take(connection, candidate)
+            if not reused:
+                self._validate_persisted_generation(generation_id, materialize_projection=False)
             current = connection.execute(
                 """
                 SELECT generation_id, canonical_revision

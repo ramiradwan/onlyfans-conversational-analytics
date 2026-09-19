@@ -25,3 +25,5 @@ This removes duplicate handoff and verification representations, not every accou
 No new dependency, database, model, or download is required. The existing migration catalog must be included in the package. Authorization, durable commits, foreign keys, property checks, source expiry, publication fencing, and backup checks remain required.
 
 [Bounded publication](../analytics/bounded-publication.md) defines caller behavior and qualification. ADRs 0020, 0028, 0029, and 0030 retain their publication and integrity requirements.
+
+ADR 0036 refines the repeated-scan requirement. An unchanged, single-use process-local validation receipt can satisfy the final content check inside the activation transaction. Missing or invalid receipts require full verification. The canonical witness and publication checks remain independent.
