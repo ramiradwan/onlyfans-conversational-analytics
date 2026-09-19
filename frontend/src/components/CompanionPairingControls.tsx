@@ -210,7 +210,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
       {active && !awaiting && !failed && (
         <Stack spacing={0.5}>
           <Typography role="status">
-            Open the browser extension and choose Pair device. Keep this page open.
+            Open the browser extension and choose Continue setup. In the setup tab, choose Pair device. Keep this page open.
           </Typography>
           {remainingSeconds !== null && (
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -222,6 +222,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
       {awaiting && (
         <Stack spacing={1.5}>
           <Typography component="h3" variant="subtitle1">Check the code</Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>Desktop code</Typography>
           <Typography
             aria-label="Connection comparison code"
             variant="h4"
@@ -242,7 +243,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
             </Typography>
           )}
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            The browser extension should show the same code. If it doesn&apos;t, don&apos;t connect.
+            Compare this with the extension’s setup tab. Confirm here only if both codes match.
           </Typography>
           <FormControlLabel
             control={(

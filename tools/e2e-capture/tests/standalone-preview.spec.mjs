@@ -187,7 +187,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
       await expect(popup.locator('#messages-count')).toHaveText('0');
       await expect(popup.locator('#chats-count')).toHaveText('0');
-      await expect(popup.locator('#brain-status')).toHaveText('Not connected');
+      await expect(popup.locator('#journey-primary')).toHaveText('Continue setup');
       const snapshot = await extensionSnapshot(worker);
       expect(snapshot.state.consentMode).toBe('off');
       expect(snapshot.state.capturePhase).toBe('off');
@@ -211,7 +211,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(snapshot.permissions.permissions ?? []).not.toContain('webRequest');
       expect(snapshot.scriptIds).toEqual(['ofca-preview-isolated', 'ofca-preview-main']);
       expect(snapshot.state.runtimeReady).toBe(false);
-      const reload = popup.getByRole('button', { name: 'Reload OnlyFans tabs to apply access' });
+      const reload = popup.getByRole('button', { name: 'Reload OnlyFans tabs', exact: true });
       await expect(reload).toBeVisible();
       const reloaded = platformPage.waitForEvent('domcontentloaded');
       await reload.click();
@@ -252,7 +252,6 @@ test('standalone preview survives pause, deletion, and restart without a local s
 
     let pausedMetrics = null;
     await test.step('pause unregisters capture and subsequent reads do not increase metrics', async () => {
-      await openManageExtension(popup);
       await popup.getByRole('button', { name: 'Pause analytics' }).click();
       await expect(popup.locator('#mode-label')).toHaveText('Analytics paused');
       await expect.poll(async () => (await extensionState(worker)).capturePhase).toBe('paused');
@@ -288,10 +287,11 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(typeof previousFlow?.completed_event_id).toBe('string');
       deletedLegalTransactionId = previousFlow.transaction_id;
 
-      await openManageExtension(popup);
-      popup.once('dialog', (dialog) => dialog.accept());
-      await popup.getByRole('button', { name: 'Delete all extension data' }).click();
-      await expect(popup.locator('#feedback')).toHaveText('All local extension data was deleted.');
+      const options = await openManageExtension(popup);
+      await options.locator('#delete-local-data').click();
+      await options.getByRole('dialog').getByRole('button', { name: 'Delete extension data', exact: true }).click();
+      await expect(options.locator('#feedback')).toHaveText('Extension data deleted. Desktop-stored messages are unchanged.');
+      await popup.bringToFront();
       await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
       const deleted = await extensionSnapshot(worker);
       expect(deleted.state.consentMode).toBe('off');

@@ -154,17 +154,17 @@ test('protocol facade publishes only the fresh authenticated ticket and encrypte
   } finally { socket.close(); }
 });
 
-test('popup pairing is restricted to the packaged popup and disconnect cancels comparison', async () => {
+test('setup pairing is restricted to its packaged page and disconnect cancels comparison', async () => {
   const h = harness(); h.unpair(); h.client.registerPopup();
   const listener = h.chrome.runtime.onConnect.listeners[0];
   const foreign = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: 'https://onlyfans.com/' } };
   listener(foreign); assert.equal(h.stats.stores, 0);
-  const states = [], port = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL('popup.html#pairing') }, onMessage: event(), onDisconnect: event(), postMessage(state) { states.push(state); } };
+  const states = [], port = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL('setup.html') }, onMessage: event(), onDisconnect: event(), postMessage(state) { states.push(state); } };
   listener(port); await tick(); port.onMessage.listeners[0]({ type: 'pair' });
   for (let i = 0; i < 10 && !states.some((state) => state.state === 'compare'); i++) await tick();
   assert.equal(states.find((state) => state.state === 'compare').comparison_code, vector.expected.comparison_code);
   port.onDisconnect.listeners[0](); await tick(); assert.equal(h.stats.cancel, 1); assert.equal(h.stats.networks, 0);
-  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,state'));
+  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,owns_attempt,state'));
 });
 
 test('the transient toolbar popup can inspect status but cannot start a comparison', async () => {
@@ -212,4 +212,41 @@ test('startup has a ten-second total deadline even when crypto loading never ret
   const operation = h.client.adapter.loadBrainBinding(); const rejected = assert.rejects(operation);
   await tick(); t.mock.timers.tick(10000); await rejected;
   assert.equal(h.channels[0].closed, true); assert.equal(h.client.connected, false);
+});
+
+function uiPort(h, page) {
+  const values = [];
+  const port = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL(page) },
+    onMessage: event(), onDisconnect: event(), postMessage(value) { values.push(value); } };
+  h.chrome.runtime.onConnect.listeners[0](port);
+  return { values, send(type) { port.onMessage.listeners[0]({ type }); }, close() { port.onDisconnect.listeners[0](); } };
+}
+test('only the owning setup page can cancel a comparison and observers receive no code', async () => {
+  const h = harness(); h.unpair(); h.client.registerPopup();
+  const owner = uiPort(h, 'setup.html'), observer = uiPort(h, 'popup.html'), second = uiPort(h, 'setup.html#full');
+  await tick(); owner.send('pair');
+  for (let i = 0; i < 20 && !owner.values.some((value) => value.state === 'compare'); i++) await tick();
+  assert.equal(owner.values.at(-1).owns_attempt, true);
+  assert.equal(observer.values.at(-1).comparison_code, null);
+  assert.equal(observer.values.at(-1).owns_attempt, false);
+  assert.equal(second.values.at(-1).owns_attempt, false);
+  second.send('cancel'); observer.send('cancel'); second.send('pair');
+  observer.close(); second.close(); await tick();
+  assert.equal(h.stats.cancel, 0);
+  assert.equal((await h.client.status()).state, 'compare');
+  owner.close(); await tick(); assert.equal(h.stats.cancel, 1);
+  assert.equal((await h.client.status()).state, 'unpaired');
+});
+test('forget is an Options-only action and acknowledgement follows reconciliation', async () => {
+  const h = harness(), gate = deferred();
+  h.client.registerPopup({ onForget: () => gate.promise });
+  const popup = uiPort(h, 'popup.html'), setup = uiPort(h, 'setup.html'), options = uiPort(h, 'options.html');
+  await tick(); popup.send('forget'); setup.send('forget'); await tick();
+  assert.equal(h.stats.forget, 0);
+  options.send('forget'); await tick();
+  assert.equal(h.stats.forget, 1);
+  assert.equal(options.values.some((value) => value.type === 'pairing_command_result'), false);
+  gate.resolve(); await tick();
+  assert.deepEqual(options.values.find((value) => value.type === 'pairing_command_result'),
+    { type: 'pairing_command_result', command: 'forget', ok: true });
 });

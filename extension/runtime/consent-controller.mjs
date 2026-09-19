@@ -1,3 +1,4 @@
+import { allowsUiMessage } from './ui-surfaces.mjs';
 import { OperationScope, SerialExecutor } from './operation-scope.mjs';
 import { DELETE_INTENT_KEY, deletionIntent } from './deletion-state.mjs';
 import { LOCAL_SERVICE_PATTERN, LOCAL_SERVICE_HEALTH } from '../transport/local-service-endpoints.mjs';
@@ -115,11 +116,7 @@ function trustedContentSender(sender, chromeApi) {
   }
 }
 
-function trustedUiSender(sender, chromeApi) {
-  return sender?.id === chromeApi.runtime.id
-    && typeof sender?.url === 'string'
-    && sender.url.startsWith(chromeApi.runtime.getURL(''));
-}
+
 
 export class ConsentController {
   constructor({
@@ -705,7 +702,7 @@ export class ConsentController {
       return true;
     }
 
-    if (!trustedUiSender(sender, this.chromeApi)) return false;
+    if (!allowsUiMessage(sender, message, this.chromeApi)) return false;
     if (message?.type === UI_RELOAD_TABS_MESSAGE_TYPE && Object.keys(message).length === 1) {
       void this.runLegalOperation(async ({ assertCurrent, status }) => {
         assertCurrent();

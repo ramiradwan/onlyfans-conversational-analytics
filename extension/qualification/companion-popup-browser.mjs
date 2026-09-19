@@ -6,8 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, expect } from '@playwright/test';
 import { build } from 'esbuild';
 
-// UI composition qualification with a synthetic comparison peer. The native
-// production transport gate separately exercises cryptographic admission.
+// UI composition with a synthetic peer; native qualification covers cryptography.
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const temporary = await mkdtemp(path.join(tmpdir(), 'ofca-companion-popup-'));
 const directory = path.join(temporary, 'extension');
@@ -15,9 +14,13 @@ let context;
 try {
   await cp(path.join(root, 'dist'), directory, { recursive: true });
   const manifest = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
-  await build({ entryPoints: [path.join(root, 'popup.js')], bundle: true, format: 'iife', outfile: path.join(directory, 'popup.js') });
+  for (const name of ['popup', 'setup', 'options']) await build({
+    entryPoints: [path.join(root, `${name}.js`)], bundle: true, format: 'iife', outfile: path.join(directory, `${name}.js`),
+  });
   await build({ stdin: { resolveDir: root, contents: `
     import { createCompanionClient } from './runtime/companion-client.mjs';
+    import { registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
+    registerSurfaceNavigation();
     const state = { cancelled: 0, receivedPair: 0, senders: [] };
     globalThis.popupQualificationState = () => structuredClone(state);
     chrome.runtime.onConnect.addListener((port) => state.senders.push(port.sender.url));
@@ -55,28 +58,34 @@ try {
     ...(browser && browser !== 'playwright' ? { executablePath: browser } : { channel: 'chromium' }),
     headless: true, args: [`--disable-extensions-except=${directory}`, `--load-extension=${directory}`],
   });
+  // Stub only page reachability; never contact a desktop app on the host.
+  await context.addInitScript(() => { window.WebSocket = class {
+    constructor() { queueMicrotask(() => this.onopen?.()); } close() {}
+  }; });
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
   const id = new URL(worker.url()).host;
+  const state = () => worker.evaluate(() => globalThis.popupQualificationState());
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${id}/popup.html`);
-  await expect(popup.locator('#pair-companion')).toBeVisible();
+  await expect(popup.locator('#journey-primary')).toBeVisible();
   const opened = context.waitForEvent('page');
-  await popup.locator('#pair-companion').click();
+  await popup.locator('#journey-primary').click();
   const comparison = await opened;
-  await comparison.waitForURL(`chrome-extension://${id}/popup.html#pairing`);
+  await comparison.waitForURL(`chrome-extension://${id}/setup.html`);
+  assert.equal((await state()).receivedPair, 0);
+  await comparison.locator('#pair-companion').click();
   await expect(comparison.locator('#pairing-code')).toHaveText('123 456');
   await popup.bringToFront();
   await expect(comparison.locator('#pairing-code')).toHaveText('123 456');
-  const state = () => worker.evaluate(() => globalThis.popupQualificationState());
   assert.equal((await state()).cancelled, 0);
   assert.equal((await state()).receivedPair, 1);
-  assert.ok((await state()).senders.includes(`chrome-extension://${id}/popup.html#pairing`));
+  assert.ok((await state()).senders.includes(`chrome-extension://${id}/setup.html`));
   await comparison.close();
   await expect.poll(async () => (await state()).cancelled).toBe(1);
   const cdp = await context.newCDPSession(popup);
   const version = await cdp.send('Browser.getVersion');
   const report = { result: 'passed', browser: version.product, scope: 'synthetic_peer_popup_composition',
-    scenarios: ['persistent_comparison_window', 'focus_change_preserves_comparison', 'exact_packaged_sender_admission', 'window_close_cancels_pairing'] };
+    scenarios: ['persistent_setup_tab', 'focus_change_preserves_comparison', 'exact_packaged_sender_admission', 'setup_close_cancels_pairing'] };
   if (process.argv[3]) await writeFile(process.argv[3], JSON.stringify(report, null, 2) + '\n');
   process.stdout.write(JSON.stringify(report) + '\n');
 } finally {

@@ -1,3 +1,4 @@
+import { registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
 import { createReadOnlyAgentRuntime } from './transport/read-only-agent-runtime.mjs';
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
 import { ReadOnlyAgentWebSocketClient } from './transport/read-only-agent-websocket.mjs';
@@ -197,3 +198,5 @@ companionClient.registerPopup({
   onForget: () => consentController.reconcile(),
 });
 void consentController.initialize().catch(() => undefined);
+
+registerSurfaceNavigation();

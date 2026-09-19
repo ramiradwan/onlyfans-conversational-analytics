@@ -1,8 +1,7 @@
 // Visual fixtures exercise production markup and the existing setup controller, never live data.
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { applyPopupState, POPUP_STATES } from '../../extension/qualification/popup-visual-fixtures.mjs';
-import { deriveCustomerJourney } from '../../extension/runtime/customer-journey.mjs';
+import { SURFACE_STATES, surfaceDocument, surfaceBundle } from '../../extension/qualification/surface-fixtures.mjs';
 import { createProvisioningController } from '../../app/provisioning/provisioning.js';
 
 const { JSDOM } = createRequire(new URL('../../frontend/package.json', import.meta.url))('jsdom');
@@ -10,52 +9,11 @@ const read = (name) => readFile(new URL('../../' + name, import.meta.url), 'utf8
 const withoutScripts = (html) => html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
 
 export async function staticFixtures() {
-  const popupHtml = withoutScripts(await read('extension/popup.html'));
-  const journey = deriveCustomerJourney({ status: { consent: { mode: 'off' } } });
-  const inactive = { tone: journey.tone, mode: 'Analytics off', badge: '', title: journey.title, body: journey.body };
-  const popupStates = {
-    ...POPUP_STATES,
-    software_activation: { ...inactive, panel: 'pre-mode' },
-    software_activation_ready: { ...inactive, panel: 'pre-mode', accepted: true },
-    legal_unavailable: { ...inactive, panel: 'legal-unavailable' },
-    mode_choice: { ...inactive, panel: 'mode-choice' },
-    mode_choice_full: { ...inactive, panel: 'mode-choice', fullReview: true },
-    full_review: { ...POPUP_STATES.preview, panel: 'mode-choice', fullReview: true, upgrade: true },
-    connection: { ...POPUP_STATES.full_ready, view: 'connection' },
-    manage: { ...POPUP_STATES.full_ready, view: 'manage' },
-  };
   const fixtures = [];
-  for (const [name, state] of Object.entries(popupStates)) {
-    const dom = new JSDOM(popupHtml);
-    const doc = dom.window.document;
-    applyPopupState(state, doc);
-    if (state.panel) {
-      doc.getElementById(state.panel).classList.remove('hidden');
-      for (const id of ['journey-card', 'preview-metrics', 'history-prompt']) doc.getElementById(id).classList.add('hidden');
-    }
-    if (state.fullReview) {
-      doc.getElementById('preview-disclosure').classList.add('hidden');
-      doc.getElementById('full-disclosure').classList.remove('hidden');
-      if (state.upgrade) doc.getElementById('full-secondary').textContent = 'Keep Preview';
-    }
-    if (state.accepted) {
-      for (const id of ['terms-accepted', 'risk-acknowledged']) {
-        doc.getElementById(id).setAttribute('checked', '');
-        doc.getElementById(id).disabled = true;
-      }
-      doc.getElementById('activate-software').disabled = false;
-    }
-    if (state.view === 'manage') {
-      for (const id of ['pause', 'forget-companion', 'revoke']) doc.getElementById(id).classList.remove('hidden');
-    }
-    if (state.preview) {
-      for (const [id, count] of Object.entries({ 'messages-count': 128, 'chats-count': 24, 'inbound-count': 80, 'outbound-count': 48 })) {
-        doc.getElementById(id).textContent = String(count);
-      }
-    }
-    fixtures.push({ surface: 'popup', name, html: dom.serialize(), pairing: state.view === 'pairing',
-      widths: state.panel || name === 'preview' ? [390, 320] : [390] });
-    dom.window.close();
+  for (const [name, state] of Object.entries(SURFACE_STATES)) {
+    fixtures.push({ surface: state.surface, name, state,
+      html: await surfaceDocument(state), script: await surfaceBundle(state.surface),
+      widths: state.surface === 'popup' ? [390, 320] : [1440, 390] });
   }
   const template = withoutScripts(await read('app/provisioning/provisioning.html'));
   const controllerSource = await read('app/provisioning/provisioning.js');

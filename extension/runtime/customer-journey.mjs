@@ -85,7 +85,7 @@ export function deriveCustomerJourney({
       title: pairing.state === 'compare' ? 'Confirm the connection' : 'Connecting to the desktop app',
       body: pairing.state === 'compare'
         ? 'Check that the desktop app shows the same code, then confirm there.'
-        : 'Keep this window open.',
+        : 'Keep this page open.',
       primaryAction: null,
       primaryLabel: null,
       secondaryAction: 'cancel_pairing',
@@ -111,8 +111,8 @@ export function deriveCustomerJourney({
       return Object.freeze({
         id: CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE,
         tone: 'warning',
-        title: 'Desktop app is not running',
-        body: 'Start the desktop app, then try again. Your connection is saved.',
+        title: 'Desktop app is unavailable',
+        body: 'Open the desktop app, then try again. Your connection is saved.',
         primaryAction: 'retry_full',
         primaryLabel: 'Retry connection',
         secondaryAction: null,

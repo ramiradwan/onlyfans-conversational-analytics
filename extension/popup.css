@@ -580,6 +580,9 @@ body {
 
 main { padding: 16px; }
 
+/* Navigation appears in its final position after the first status response. */
+main:not([data-initialized="true"]) > :is(nav.menu, footer) { display: none; }
+
 header {
   display: flex;
   align-items: center;
@@ -688,18 +691,6 @@ section::before, .panel::before {
   font-weight: var(--dipsy-font-weight-semibold);
 }
 .metrics span { display: block; color: var(--dipsy-color-text-muted); font-size: var(--dipsy-static-caption-size); }
-
-/* Secondary screens replace the home content; the header and footer stay in place. */
-main[data-view="home"] > .subview,
-main[data-view="connection"] > :not(header, footer, #connection-view),
-main[data-view="manage"] > :not(header, footer, #manage-view) { display: none; }
-
-/* The pairing window shows only the pairing card and fills its own window. */
-main[data-view="pairing"] > :not(header, footer, #journey-card, #feedback),
-main[data-view="pairing"] .status-line { display: none; }
-body:has(> main[data-view="pairing"]) { width: auto; max-width: none; max-height: none; }
-main[data-view="pairing"] .journey-card { padding: 20px; }
-main[data-view="pairing"] .pairing-code { margin: 16px 0; font-size: 34px; }
 
 .menu { display: grid; gap: 2px; padding: 0; background: transparent; box-shadow: none; }
 .menu::before { display: none; }
@@ -890,5 +881,15 @@ main:has(#mode-choice:not(.hidden)) #journey-primary:not(:disabled) {
 main:has(#mode-choice:not(.hidden)) #journey-primary:hover:not(:disabled) { background: var(--dipsy-color-hover); }
 
 /* The task heading carries home status once. Details keep their separate status readout. */
-main[data-view="home"] .status-line { display: none; }
-#journey-badge, #journey-body:empty { display: none; }
+#journey-badge:empty, #journey-body:empty { display: none; }
+
+/* The popup has no hidden settings or setup screens. */
+body[data-surface="popup"] .popup-action-only {
+  padding: 0; border: 0; background: transparent; box-shadow: none;
+}
+body[data-surface="popup"] .popup-action-only > :not(button) { display: none; }
+body[data-surface="popup"] #pause { margin: 0 0 12px; }
+#preview-metrics { border: var(--dipsy-border-thin) solid var(--dipsy-intent-surface-dominant-border); box-shadow: var(--dipsy-intent-surface-dominant-elevation); }
+#preview-metrics::before { display: none; }
+.feedback { color: var(--dipsy-color-text-secondary); }
+.feedback[data-error="true"] { color: var(--dipsy-color-error); }

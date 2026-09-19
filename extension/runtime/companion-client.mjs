@@ -1,3 +1,4 @@
+import { uiSurface } from './ui-surfaces.mjs';
 import { openPairingStore } from './companion-pairing-store.mjs';
 import { loadPackagedSnow } from './packaged-snow.mjs';
 import { signAgentSessionProof, snowKeypairGenerator } from './companion-agent-identity.mjs';
@@ -46,6 +47,7 @@ export function createCompanionClient({
   let storePromise, trustPromise, installationPromise, connecting = null, connectingAccount = null, connectionAbort = null, active = null;
   let generation = 0, pairingAbort = null, state = { state: 'unpaired', comparison_code: null };
   const subscribers = new Set();
+  let pairingOwner = null;
   const store = () => {
     if (!storePromise) {
       const opening = Promise.resolve().then(storeFactory);
@@ -302,11 +304,17 @@ export function createCompanionClient({
   };
   function registerPopup({ onPaired = async () => {}, onForget = async () => {} } = {}) {
     chromeApi.runtime.onConnect.addListener((port) => {
-      const pairingWindow = port.sender?.url === chromeApi.runtime.getURL('popup.html#pairing');
-      if (port.name !== PAIRING_PORT_NAME || port.sender?.id !== chromeApi.runtime.id
-        || (!pairingWindow && port.sender.url !== chromeApi.runtime.getURL('popup.html'))) return;
+      const surface = uiSurface(port.sender, chromeApi);
+      if (port.name !== PAIRING_PORT_NAME || surface === null) return;
       const controller = new AbortController();
-      const notify = (value) => { try { port.postMessage(value); } catch {} };
+      const notify = (value) => {
+        const projection = value?.state ? {
+          ...value,
+          comparison_code: surface === 'setup' ? value.comparison_code : null,
+          owns_attempt: surface === 'setup' && pairingOwner === port,
+        } : value;
+        try { port.postMessage(projection); } catch {}
+      };
       const notifyReadiness = (value) => notify({ type: 'analysis_readiness', ...value });
       subscribers.add(notify);
       port.onDisconnect.addListener(() => { subscribers.delete(notify); controller.abort(); });
@@ -315,20 +323,34 @@ export function createCompanionClient({
           || !['pair', 'status', 'forget', 'cancel', 'readiness'].includes(message.type)) return;
         void (async () => {
           if (message.type === 'pair') {
-            if (!pairingWindow) throw failure();
-            const existing = await status();
-            if (existing.state === 'paired') { notify(existing); return; }
-            await pair({ signal: controller.signal }); await onPaired();
+            if (surface !== 'setup') return;
+            if (pairingOwner !== null) { notify(await status()); return; }
+            pairingOwner = port;
+            try {
+              const existing = await status();
+              if (existing.state === 'paired') { notify(existing); return; }
+              await pair({ signal: controller.signal }); await onPaired();
+            } finally {
+              if (pairingOwner === port) pairingOwner = null;
+            }
           }
-          else if (message.type === 'forget') { await forget(); await onForget(); }
-          else if (message.type === 'cancel') pairingAbort?.abort();
+          else if (message.type === 'forget') {
+            if (surface !== 'options') return;
+            await forget(); await onForget();
+            notify({ type: 'pairing_command_result', command: 'forget', ok: true });
+          }
+          else if (message.type === 'cancel') {
+            if (surface === 'setup' && pairingOwner === port) pairingAbort?.abort();
+          }
           else if (message.type === 'readiness') {
             notifyReadiness(await analysisReadiness({ signal: controller.signal }));
             return;
           }
           notify(await status());
         })().catch(() => {
-          if (message.type === 'readiness') {
+          if (message.type === 'forget') {
+            notify({ type: 'pairing_command_result', command: 'forget', ok: false });
+          } else if (message.type === 'readiness') {
             notifyReadiness({ commercial_authority: 'unavailable', analysis_admission: 'blocked' });
           } else if (message.type === 'pair') {
             void status().then(notify, () => notify({ state: 'pairing_failed', comparison_code: null }));

@@ -136,7 +136,7 @@ test('pairing progress explains comparison and never claims success early', () =
     status: status(), pairing: pairing('pairing'), desktopRuntimeReachable: true,
   });
   assert.equal(connecting.id, CUSTOMER_STATES.PAIRING_IN_PROGRESS);
-  assert.match(connecting.body, /Keep this window open/);
+  assert.match(connecting.body, /Keep this page open/);
 
   const compare = deriveCustomerJourney({
     status: status(), pairing: pairing('compare'), desktopRuntimeReachable: true,
