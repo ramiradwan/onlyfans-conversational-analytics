@@ -1446,7 +1446,8 @@
           "app/analytics/source_tokens.py",
           "app/analytics/sql/0007_projection_query_metadata.sql",
           "app/analytics/generation_reference.py",
-          "app/analytics/compact_graph.py"
+          "app/analytics/compact_graph.py",
+          "app/analytics/sql/0008_projection_metadata_parsing.sql"
         ]
       },
       {
@@ -1464,7 +1465,8 @@
           "app/analytics/scheduling.py",
           "app/analytics/sql/0007_projection_query_metadata.sql",
           "app/analytics/generation_reference.py",
-          "app/analytics/compact_graph.py"
+          "app/analytics/compact_graph.py",
+          "app/analytics/sql/0008_projection_metadata_parsing.sql"
         ]
       },
       {
