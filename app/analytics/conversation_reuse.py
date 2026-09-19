@@ -155,12 +155,12 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
             findings, counts, local_graph, cached = restored
             state.reused += 1
             for entry in cached:
-                reuse.retain(entry.key, entry.result())
+                reuse.retain_record(entry)
         elif fragment is not None:
             state.reused += 1
             for data in fragment.analyzer_entries:
                 item = CachedEnrichment.model_validate_json(data)
-                reuse.retain(item.key, item.result())
+                reuse.retain_record(item)
         else:
             raw = catalog.conversation(chat_id)
             parts = pipeline._canonical_conversations(

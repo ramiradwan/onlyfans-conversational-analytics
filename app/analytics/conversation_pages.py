@@ -188,9 +188,10 @@ def restore_pages(packed: PagedConversation, check):
         else:
             item = CachedEnrichment.model_validate(value)
             validate_analyzer(item, sources.get(item.key.message_ref), header)
-            if item.key.digest in cache_keys:
+            signature = item.key.digest
+            if signature in cache_keys:
                 raise ValueError('conversation_page_duplicate_analyzer')
-            cache_keys.add(item.key.digest); entries.append(item)
+            cache_keys.add(signature); entries.append(item)
     validate_summary(header, findings, len(graph.nodes), len(graph.edges))
     for data in graph.edges.values():
         check(); edge = json.loads(data)
@@ -232,9 +233,10 @@ def validate_page_sets(artifact, page_sets, *, check=lambda: None):
             else:
                 item = CachedEnrichment.model_validate(value)
                 validate_analyzer(item, sources.get(item.key.message_ref), header)
-                if item.key.digest in cache_keys:
+                signature = item.key.digest
+                if signature in cache_keys:
                     raise ValueError('conversation_page_duplicate_analyzer')
-                cache_keys.add(item.key.digest)
+                cache_keys.add(signature)
         validate_summary(header, findings, len(nodes), len(edges))
         for page in packed.pages:
             if page.kind != 'edge':

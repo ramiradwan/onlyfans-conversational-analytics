@@ -2,22 +2,34 @@
 
 import hashlib
 from datetime import timezone
+from itertools import islice
 
 from app.analytics.cancellation import check_cancelled
 from app.analytics.enrichment_cache import MAX_ENTRY_BYTES
 from app.analytics.opaque_refs import account_ref
 
 
-def insert_entries(connection, generation_id, entries):
-    for entry in entries:
-        data = entry.model_dump_json()
-        connection.execute(
+INSERT_BATCH_SIZE = 64
+
+
+def insert_entries(connection, generation_id, entries, *, check=lambda: None):
+    """Write checked scalar records in bounded batches within the caller's transaction."""
+
+    rows = iter(entries)
+    while True:
+        check()
+        batch = list(islice(rows, INSERT_BATCH_SIZE))
+        if not batch:
+            return
+        check()
+        connection.executemany(
             """INSERT INTO enrichment_reuse
                (generation_id,creator_account_id,cache_key,expires_at,document_json,document_digest)
                VALUES (?,?,?,?,?,?)""",
-            (generation_id, entry.key.account_ref, entry.key.digest,
-             entry.key.expires_at.isoformat(), data, hashlib.sha256(data.encode()).hexdigest()),
+            [(generation_id, entry.account_ref, entry.cache_key, entry.expires_at,
+              entry.document_json, entry.document_digest) for entry in batch],
         )
+        check()
 
 
 def load_entries(store, account_id, keys, *, now, cancellation_check=None):

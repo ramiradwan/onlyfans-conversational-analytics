@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+import hashlib
 from typing import Annotated, Callable, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictInt, StrictStr
@@ -125,15 +128,24 @@ class EnrichmentReuse:
         result_json = result.model_dump_json()
         if len(result_json.encode("utf-8")) > MAX_ENTRY_BYTES:
             return
-        entry = CachedEnrichment(key=key, result_json=result_json)
+        self.retain_record(CachedEnrichment(key=key, result_json=result_json))
+
+    def retain_record(self, entry: CachedEnrichment) -> None:
+        """Retain a checked conversation result; staging checks its source again."""
+
+        check_cancelled(self.cancellation)
+        key = entry.key
+        if key.expires_at <= self.clock() or len(self.entries) >= MAX_CACHE_ENTRIES:
+            return
         data = entry.model_dump_json().encode("utf-8")
         if len(data) > MAX_ENTRY_BYTES or self.bytes_used + len(data) > MAX_CACHE_BYTES:
             return
-        previous = self.entries.get(key.digest, b"")
+        signature = key.digest
+        previous = self.entries.get(signature, b"")
         self.bytes_used += len(data) - len(previous)
-        if key.digest not in self.entries:
-            self._conversation_keys.setdefault(key.conversation_ref, []).append(key.digest)
-        self.entries[key.digest] = data
+        if signature not in self.entries:
+            self._conversation_keys.setdefault(key.conversation_ref, []).append(signature)
+        self.entries[signature] = data
 
     def conversation_entries(self, reference: str) -> tuple[bytes, ...]:
         return tuple(self.entries[key] for key in self._conversation_keys.get(reference, ()))
@@ -142,20 +154,25 @@ class EnrichmentReuse:
 ACTIVE_REUSE: ContextVar[EnrichmentReuse | None] = ContextVar("enrichment_reuse", default=None)
 
 
-def validate_entries(artifact, entries: tuple[bytes, ...]) -> list[CachedEnrichment]:
+def _checked_entries(artifact, entries: tuple[bytes, ...], *,
+                     check: Callable[[], None] = lambda: None) -> Iterator[tuple[CachedEnrichment, str]]:
+    check()
     if len(entries) > MAX_CACHE_ENTRIES or sum(map(len, entries)) > MAX_CACHE_BYTES:
         raise ValueError("enrichment_cache_size_invalid")
     messages = {message.message_ref: message for message in artifact.projection.message_enrichments}
-    parsed, seen = [], set()
+    seen = set()
     earliest_expiry = min((m.sent_at for m in messages.values()), default=None)
     if earliest_expiry is not None:
         earliest_expiry += timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
+    check()
     for data in entries:
+        check()
         if len(data) > MAX_ENTRY_BYTES:
             raise ValueError("enrichment_cache_entry_invalid")
         entry = CachedEnrichment.model_validate_json(data)
         source = messages.get(entry.key.message_ref)
-        if source is None or entry.key.digest in seen:
+        signature = entry.key.digest
+        if source is None or signature in seen:
             raise ValueError("enrichment_cache_source_invalid")
         if (entry.key.account_ref != source.account_ref
                 or entry.key.conversation_ref != source.conversation_ref
@@ -164,9 +181,9 @@ def validate_entries(artifact, entries: tuple[bytes, ...]) -> list[CachedEnrichm
                 or entry.key.expires_at < earliest_expiry
                 or entry.key.expires_at > source.sent_at + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)):
             raise ValueError("enrichment_cache_result_invalid")
-        seen.add(entry.key.digest)
-        parsed.append(entry)
-    return parsed
+        seen.add(signature)
+        yield entry, signature
+    check()
 
 
 @contextmanager
@@ -180,3 +197,32 @@ def reuse_build(store, account_id, clock, cancellation, *, enabled=True):
         ACTIVE_REUSE.reset(token)
         if reuse is not None:
             reuse._batch.clear()
+
+
+@dataclass(frozen=True, slots=True)
+class EnrichmentStorageRecord:
+    account_ref: str
+    cache_key: str
+    expires_at: str
+    document_json: str
+    document_digest: str
+
+
+def validate_entries(artifact, entries: tuple[bytes, ...]) -> list[CachedEnrichment]:
+    """Return checked models for stores that retain model-backed entries."""
+
+    return [entry for entry, _ in _checked_entries(artifact, entries)]
+
+
+def storage_entries(artifact, entries: tuple[bytes, ...], *,
+                    check: Callable[[], None] = lambda: None) -> Iterator[EnrichmentStorageRecord]:
+    """Prepare one immutable SQL record after checking it against the artifact."""
+
+    for entry, signature in _checked_entries(artifact, entries, check=check):
+        document = entry.model_dump_json()
+        encoded = document.encode('utf-8')
+        if len(encoded) > MAX_ENTRY_BYTES:
+            raise ValueError("enrichment_cache_entry_invalid")
+        yield EnrichmentStorageRecord(entry.key.account_ref, signature,
+            entry.key.expires_at.isoformat(), document,
+            hashlib.sha256(encoded).hexdigest())

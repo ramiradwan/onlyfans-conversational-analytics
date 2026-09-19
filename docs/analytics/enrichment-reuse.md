@@ -26,6 +26,14 @@ Retirement, deletion, clear, and expiry remove generation cache records. No inde
 
 The earliest source time among the target and all context messages determines expiry. A lookup cannot restart that period. An admitted build is still required even when every analyzer call can be skipped. The cache does not grant analysis authority.
 
+## Checked record staging
+
+An unchanged conversation retains its checked serialized analyzer records without rebuilding the result objects. Each record's key is computed once during retention. Staging still parses the record and compares its result, account, conversation and expiry with the current projection.
+
+SQLite staging validates one record at a time and prepares immutable scalar fields for insertion. It writes at most 64 records per batch inside the existing candidate transaction. Invalid input, cancellation, or an insertion failure rolls back the transaction, including earlier batches. The cache creates no separate transaction or writer. The memory backend uses the same validation rules.
+
+Batches can hold up to 4 MiB of serialized documents in addition to the existing 16 MiB retained-input budget, plus Python objects. This is not a total memory cap. Unchanged cache records are still physically copied into the new generation; this change reduces preparation and SQL-call overhead rather than introducing shared cache storage.
+
 ## Limits and fallback
 
 The pipeline retains at most 30,000 cache records and 16 MiB of serialized cache data per build. Each record is at most 64 KiB. It prepares at most 64 messages per lookup batch, with three analyzer keys per message. SQL lookups use groups of at most 64 keys.
@@ -39,7 +47,7 @@ Analyzer reuse adds no optional ML dependencies or model weights. It does not qu
 ## Verification
 
 ```powershell
-python -m pytest tests/test_enrichment_reuse.py tests/test_enrichment_cache_storage.py tests/test_enrichment_cache_contract.py
+python -m pytest tests/test_enrichment_staging.py tests/test_enrichment_reuse.py tests/test_enrichment_cache_storage.py tests/test_enrichment_cache_contract.py
 ```
 
 These tests count actual analyzer invocations, compare cold and reused artifacts, reopen encrypted stores in a new process, and test account isolation, changed inputs, context dependencies, expiry, failure, corruption, size limits, and analysis admission. Run the [analytics regression baseline](qualification.md) and the architecture checks as well.

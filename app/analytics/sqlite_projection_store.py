@@ -286,7 +286,7 @@ class SQLiteAnalyticsProjectionStore:
     ) -> str:
         """Persist and validate one inactive generation from one canonical snapshot."""
 
-        from app.analytics.enrichment_cache import validate_entries
+        from app.analytics.enrichment_cache import storage_entries
         from app.analytics.enrichment_sql import insert_entries
 
         from app.analytics.conversation_reuse import iter_validated_fragments
@@ -302,7 +302,7 @@ class SQLiteAnalyticsProjectionStore:
         check = lambda: check_cancelled(cancellation_check)
         validate_page_sets(artifact, conversation_pages, check=check)
         fragments = iter_validated_fragments(artifact, conversation_fragments)
-        cached = validate_entries(artifact, enrichment_entries)
+        cached = storage_entries(artifact, enrichment_entries, check=check)
         check_cancelled(cancellation_check)
         projection = artifact.projection
         partition_ref = account_ref(creator_account_id)
@@ -433,7 +433,7 @@ class SQLiteAnalyticsProjectionStore:
                     projection_document(projection, check=lambda: check_cancelled(cancellation_check)),
                 ),
             )
-            insert_entries(connection, generation_id, cached)
+            insert_entries(connection, generation_id, cached, check=check)
             insert_fragments(connection, generation_id, fragments, conversation_fragments)
             insert_page_sets(connection, generation_id, conversation_pages, check=check)
         writer = SQLiteGraphGenerationWriter(
