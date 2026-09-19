@@ -423,6 +423,14 @@ class AnalyticsPipeline:
                     creator_account_id=candidate.creator_account_id,
                     canonical_identity=expected_identity,
                 )
+                refresh = getattr(self.source, "refresh_identity_cache", None)
+                if callable(refresh):
+                    try:
+                        refresh(candidate.creator_account_id)
+                    except Exception:
+                        # Optional cache warming cannot undo a completed publication.
+                        # Reads still verify current tokens and fail closed on a miss.
+                        pass
                 return PipelineRun(
                     artifact=artifact,
                     changed=changed,

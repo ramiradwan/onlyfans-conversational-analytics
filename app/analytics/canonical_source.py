@@ -74,6 +74,12 @@ class HistoryAnalyticsSource:
         except CanonicalAccountNotFound:
             return None
 
+    def refresh_identity_cache(self, account_id: str) -> None:
+        """Compute a fresh identity after a successful long-running publication."""
+
+        if self.connection is None:
+            self.analytics_snapshot(account_id)
+
     def conversation_read_model(self, account_id: str, conversation_id: str, *, cancellation_check=None):
         from app.analytics.cancellation import check_cancelled
         from app.analytics.source_snapshot import read_conversation, cancellable_source_read

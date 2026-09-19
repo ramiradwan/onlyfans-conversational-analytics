@@ -14,6 +14,8 @@ Each gateway instance keeps at most eight entries for 60 seconds. Entries contai
 
 A cache miss scans canonical content. A supplied database connection always reads its own transaction and never uses this cache. Question execution still checks for concurrent canonical changes and rechecks the publication witness before returning.
 
+After a generation publishes, the pipeline performs a fresh source scan to warm the identity cache. This prevents a long publication from consuming the cache lifetime before results are read. Failure to warm the optional cache does not undo publication; reads still require current source verification.
+
 The cache does not authorize a build, make a stale generation readable, or bypass source expiry. Cold requests can still exceed their limits; background verification can populate the cache without executing a question.
 
 ## Bounded reply selection
