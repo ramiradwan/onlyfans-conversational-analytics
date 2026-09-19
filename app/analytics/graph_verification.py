@@ -9,6 +9,7 @@ import json
 from typing import Callable
 
 from app.models.analytics import GraphNode, GraphEdge
+from app.analytics.graph_row_encoding import node_bytes, edge_bytes
 
 
 @dataclass(slots=True)
@@ -50,14 +51,19 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
         try:
             for index, row in enumerate(rows):
                 check()
-                record = decode(row)
-                counts[getattr(record, kind).value] += 1
+                if materialize:
+                    record = decode(row)
+                    record_kind = getattr(record, kind).value
+                    encoded = json.dumps(record.model_dump(mode="json"), ensure_ascii=False,
+                        sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+                    output.append(record)
+                else:
+                    encode = edge_bytes if table == "graph_edges" else node_bytes
+                    record_kind, encoded = encode(row, account_id)
+                counts[record_kind] += 1
                 if index:
                     digest.update(b",")
-                digest.update(json.dumps(record.model_dump(mode="json"), ensure_ascii=False,
-                    sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8"))
-                if materialize:
-                    output.append(record)
+                digest.update(encoded)
         finally:
             rows.close()
     check()

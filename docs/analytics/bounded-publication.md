@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check generation_reference.py, graph_verification.py, projection_encoding.py, pipeline.py, both SQLite stores, conversation_reuse.py, and qualify_continuous_analytics.py before editing behavior claims. -->
+<!-- CODE-VERIFY: Check generation_reference.py, graph_verification.py, graph_row_encoding.py, projection_encoding.py, pipeline.py, both SQLite stores, conversation_reuse.py, and qualify_continuous_analytics.py before editing behavior claims. -->
 
 # Publish a staged generation without copying its graph
 
@@ -16,7 +16,7 @@ The deferred result contains a reference and a reader callback, not cached messa
 
 Graph verification reads ordered rows, validates their types and properties, and computes the canonical digest from their actual contents. An indexed join checks edge endpoints within the candidate. Account scope and persisted counts are checked independently. Matching two supplied digest strings is not sufficient. Stored content is verified during staging and again at the final activation gate, rather than once more between those gates. Final verification failure cancels the completed witness and retires the candidate.
 
-Unless graph objects are requested, the verifier retains only the current row and counters. Full artifact reads materialize the validated graph explicitly. Database statement progress and row-level checks retain cancellation and deadline handling.
+When graph objects are not requested, the verifier checks stored columns directly using the same identity and closed-property rules as the public models. It normalizes timestamps and encodes the same canonical JSON without constructing temporary graph models. Non-integer or negative stored edge sequences are rejected. The verifier retains only the current row and counters. Full artifact reads materialize the validated graph explicitly. Database statement progress and row-level checks retain cancellation and deadline handling.
 
 Projection encoding excludes large arrays from the header serialization, then encodes one message or conversation record at a time. It preserves canonical field order, escaping, numbers, timestamps, and digest bytes. The resulting stored JSON string remains account-sized.
 
@@ -33,7 +33,7 @@ Source-time expiry, canonical witnesses, ownership fencing, durable commits, pro
 Run the focused tests and the [full analytics baseline](qualification.md):
 
 ```powershell
-python -m pytest tests/test_bounded_publication.py tests/test_generation_throughput.py tests/test_graph_digest_stream.py tests/test_conversation_fragment_storage.py
+python -m pytest tests/test_graph_row_encoding.py tests/test_bounded_publication.py tests/test_generation_throughput.py tests/test_graph_digest_stream.py tests/test_conversation_fragment_storage.py
 python tools/qualify_analytics_baseline.py --output C:\temp\bounded-publication-baseline
 python tools/qualify_continuous_analytics.py --messages 10000 --query-samples 100 --output C:\temp\bounded-publication-workload
 ```
