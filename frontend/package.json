@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@swc/plugin-emotion": "^14.15.0",
+    "@swc/plugin-emotion": "^14.19.0",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.1",
     "@types/react": "19.3.0",
@@ -77,6 +77,6 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vite": "^8.3.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
