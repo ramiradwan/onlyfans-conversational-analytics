@@ -51,36 +51,31 @@ def graph_content_digest(
 ) -> str:
     """Digest the exact validated property graph independently of row metadata."""
 
-    safe_nodes, safe_edges = safe_graph_records(nodes, edges, check=check)
-    if check is not None:
-        check()
-    ordered_nodes = sorted(safe_nodes, key=lambda item: item.node_id)
-    if check is not None:
-        check()
-    node_documents = []
-    for item in ordered_nodes:
+    # Encode one validated record at a time using the canonical key order.
+    digest = hashlib.sha256(b'{"edges":[')
+    for name, records, key, validate in (
+        ("edges", edges, lambda item: item.edge_id, safe_graph_edge),
+        ("nodes", nodes, lambda item: item.node_id, safe_graph_node),
+    ):
+        if name == "nodes":
+            digest.update(b'],"nodes":[')
+        safe = []
+        for item in records:
+            if check is not None:
+                check()
+            safe.append(validate(item))
         if check is not None:
             check()
-        node_documents.append(item.model_dump(mode="json"))
-    ordered_edges = sorted(safe_edges, key=lambda item: item.edge_id)
-    if check is not None:
-        check()
-    edge_documents = []
-    for item in ordered_edges:
-        if check is not None:
-            check()
-        edge_documents.append(item.model_dump(mode="json"))
-    value = {"nodes": node_documents, "edges": edge_documents}
-    encoder = json.JSONEncoder(
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    digest = hashlib.sha256()
-    for chunk in encoder.iterencode(value):
-        if check is not None:
-            check()
-        digest.update(chunk.encode("utf-8"))
+        safe.sort(key=key)
+        for index, item in enumerate(safe):
+            if check is not None:
+                check()
+            if index:
+                digest.update(b',')
+            digest.update(json.dumps(item.model_dump(mode="json"), ensure_ascii=False,
+                                     sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        safe.clear()
+    digest.update(b']}')
     if check is not None:
         check()
     return "sha256:" + digest.hexdigest()

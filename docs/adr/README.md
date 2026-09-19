@@ -29,6 +29,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0028: Recompute changed conversations within full analytics generations](0028-conversation-incremental-processing.md)
 
+- [ADR 0029: Bind cached source verification to database changes](0029-source-verification-tokens.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

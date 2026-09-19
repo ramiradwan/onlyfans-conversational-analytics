@@ -27,6 +27,8 @@ class HistoryAnalyticsSource:
     ) -> None:
         self.history = history
         self.connection = connection
+        from app.analytics.source_tokens import SourceIdentityCache
+        self._identity_cache = SourceIdentityCache()
 
     def _read(self):
         if self.connection is not None:
@@ -49,7 +51,10 @@ class HistoryAnalyticsSource:
                 row = connection.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?", (account_id,)).fetchone()
                 if row is None:
                     raise CanonicalAccountNotFound()
+                token = self._identity_cache.token(connection, account_id) if self.connection is None else None
                 identity, digests, count = scan_identity(connection, account_id, int(row[0]), check=check)
+                check()
+                self._identity_cache.put(account_id, token, identity)
             finally:
                 if own_transaction:
                     connection.rollback()
@@ -60,6 +65,11 @@ class HistoryAnalyticsSource:
         from app.analytics.errors import CanonicalAccountNotFound
 
         try:
+            if self.connection is None:
+                with self._read() as connection:
+                    cached = self._identity_cache.get(account_id, self._identity_cache.token(connection, account_id))
+                if cached is not None:
+                    return cached
             return self.analytics_snapshot(account_id).identity
         except CanonicalAccountNotFound:
             return None
@@ -83,8 +93,15 @@ class HistoryAnalyticsSource:
         if self.connection is not None:
             raise ValueError("question_live_read_required")
         with self.history.database.read() as connection, bounded_sql(connection, budget):
+            budget.consume(2)
             scope = CanonicalQuestionScope(connection, account_id, budget)
-            scope.identity = canonical_question_identity(connection, account_id, scope.revision, budget)
+            token = self._identity_cache.token(connection, account_id)
+            scope.identity = self._identity_cache.get(account_id, token)
+            if scope.identity is None:
+                scope.identity = canonical_question_identity(connection, account_id, scope.revision, budget)
+                scope.check(budget)
+                if token == self._identity_cache.token(connection, account_id):
+                    self._identity_cache.put(account_id, token, scope.identity)
             scope.check(budget)
             yield scope
             scope.check(budget)

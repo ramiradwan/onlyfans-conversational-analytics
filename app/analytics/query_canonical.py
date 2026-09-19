@@ -26,6 +26,10 @@ class CanonicalQuestionScope:
             raise ProjectionUnavailable(availability="building")
 
     def conversations(self, question, budget):
+        if question.plan.question == "no_later_creator_reply.v1":
+            from app.analytics.query_reply_source import reply_conversations
+            yield from reply_conversations(self, question, budget)
+            return
         db, account = self.connection, self.account
         candidates = db.execute("""SELECT DISTINCT m.chat_id
             FROM account_messages AS m JOIN account_chats AS c

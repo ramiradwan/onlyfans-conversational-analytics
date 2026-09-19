@@ -22,11 +22,9 @@ def published_snapshot(store, account, identity, budget):
             or intent.creator_account_id != account):
         raise ProjectionUnavailable()
     with store.database.read() as db, bounded_sql(db, budget):
-        row = db.execute("""SELECT content_digest,
-            json_extract(document_json,'$.projection_generation') AS sequence,
-            json_extract(document_json,'$.creator_metrics.message_count') AS messages,
-            json_extract(document_json,'$.creator_metrics.active_from') AS first_source
-            FROM analytics_projections WHERE creator_account_id=? AND generation_id=?""",
+        row = db.execute("""SELECT projection_digest AS content_digest,
+            projection_generation AS sequence, source_message_count AS messages, first_source
+            FROM projection_query_metadata WHERE creator_account_id=? AND generation_id=?""",
             (partition, generation["generation_id"])).fetchone()
     if row is None or row["content_digest"] != generation["projection_digest"]:
         raise ProjectionUnavailable(availability="error")

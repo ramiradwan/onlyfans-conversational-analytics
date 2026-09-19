@@ -586,7 +586,8 @@
         "app/analytics/enrichment_sql.py",
         "app/analytics/source_snapshot.py",
         "app/analytics/conversation_reuse.py",
-        "app/analytics/conversation_sql.py"
+        "app/analytics/conversation_sql.py",
+        "app/analytics/source_tokens.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",
@@ -1271,14 +1272,18 @@
           "app/persistence/history.py",
           "app/persistence/database.py",
           "app/persistence/migrations.py",
-          "app/persistence/sql/**"
+          "app/persistence/sql/**",
+          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/analytics/source_tokens.py"
         ]
       },
       {
         "invariant": "atomic-canonical-commit",
         "path_patterns": [
           "app/persistence/history.py",
-          "app/transport/manager.py"
+          "app/transport/manager.py",
+          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/analytics/source_tokens.py"
         ]
       },
       {
@@ -1317,7 +1322,9 @@
           "app/analytics/conversation_*.py",
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
-          "app/analytics/scheduling.py"
+          "app/analytics/scheduling.py",
+          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/analytics/source_tokens.py"
         ]
       },
       {
@@ -1423,7 +1430,10 @@
           "app/analytics/conversation_*.py",
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
-          "app/analytics/scheduling.py"
+          "app/analytics/scheduling.py",
+          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/analytics/source_tokens.py",
+          "app/analytics/sql/0007_projection_query_metadata.sql"
         ]
       },
       {
@@ -1438,7 +1448,8 @@
           "app/analytics/conversation_*.py",
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
-          "app/analytics/scheduling.py"
+          "app/analytics/scheduling.py",
+          "app/analytics/sql/0007_projection_query_metadata.sql"
         ]
       },
       {
@@ -1454,7 +1465,9 @@
           "app/analytics/conversation_*.py",
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
-          "app/analytics/scheduling.py"
+          "app/analytics/scheduling.py",
+          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/analytics/source_tokens.py"
         ]
       },
       {

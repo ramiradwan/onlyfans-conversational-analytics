@@ -12,7 +12,7 @@ The digest covers the conversation metadata, ordered messages, text, direction, 
 
 An unchanged conversation supplies its message enrichments, metrics, and local graph records. A changed conversation uses the [per-message analyzer cache](enrichment-reuse.md), then rebuilds its metrics and local graph. Undeclared analyzer inputs, custom projectors, and unsupported sources retain the full computation path.
 
-Canonical identity checks still scan source content, including content outside the selected period. Streaming reduces materialization, not the amount of content that must be hashed. Post-commit scheduling reads only the account revision; it does not load message bodies.
+Canonical digest calculation covers source content outside the selected period. [Source verification tokens](read-verification.md) allow bounded reuse of an unchanged identity; cache misses still scan content. Post-commit scheduling reads only the account revision; it does not load message bodies.
 
 ## Graph assembly and visibility
 
@@ -54,4 +54,4 @@ The forced unchanged phase measures rebuilding with reuse, not the ordinary unch
 
 Source scans, full graph serialization, validation, and generation writes remain workload costs. The [laptop workload and acceptance targets](qualification.md) remain separate gates. This command does not establish installer size, constrained-laptop performance, or production feature accuracy.
 
-No model, runtime dependency, public protocol change, or additional database is required. The additive migration affects only the disposable analytics store.
+No model, runtime dependency, public protocol change, or additional database is required. Conversation fragments belong to the disposable analytics store. Source-verification tokens and the date index also have an additive canonical migration, described in [Read verification](read-verification.md).

@@ -22,6 +22,6 @@ Optional fragment records are bounded, immutable after staging, and removed when
 
 Whole-generation serialization, validation, writes, and canonical digest scans remain. Reduced conversation computation does not establish a large-account latency or memory guarantee.
 
-No runtime package, model download, public schema, or canonical migration is added. [Continuous analytics](../analytics/continuous-processing.md) defines limits, lifecycle behavior, and measurements.
+No runtime package, model download, or public schema is required. [ADR 0029](0029-source-verification-tokens.md) governs cached source verification and its canonical metadata. [Continuous analytics](../analytics/continuous-processing.md) defines limits, lifecycle behavior, and measurements.
 
 The authority, encryption, publication, retention, and authorization requirements in ADRs 0009, 0019, 0020, 0026, and 0027 remain in force.
