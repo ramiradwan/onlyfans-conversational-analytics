@@ -544,13 +544,12 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         });
         worker = restart.worker;
         expect(await extensionOutboxProof(worker)).toEqual(pendingEncryptedOutbox);
+        await waitForExtensionState(
+          worker,
+          (candidate) => candidate.capturePhase === 'identity' && !candidate.runtimeReady,
+          'The restarted worker did not reach identity while Brain was offline.',
+        );
         await brain.start();
-        await worker.evaluate(() => new Promise((resolve) => {
-          chrome.runtime.sendMessage({ type: 'ofca.e2e.reconcile' }, () => {
-            void chrome.runtime.lastError;
-            resolve();
-          });
-        }));
       } finally {
         watcher.stop();
       }
@@ -565,7 +564,8 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
           && candidate.outbox?.acknowledgedSourceSeq === 8
           && candidate.outbox?.pendingEntries === 0
         ),
-        'Alarm-restored worker did not replay and acknowledge exact sequences 7-8.',
+        'CDP-restarted worker did not replay and acknowledge exact sequences 7-8.',
+        { timeoutMs: 60_000 },
       );
       expect(recovered.heartbeatTimerPresent).toBe(true);
       expect(recovered.workerInstanceId).not.toBe(oldWorkerInstanceId);

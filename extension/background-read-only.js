@@ -124,6 +124,7 @@ consentController = new PartitionAwareConsentController({
   controlQueue,
   activationEvidenceStore,
   runtimeSummary,
+  hasSavedPairing: async () => (await companionClient.status()).state === 'paired',
   fetchImpl: async () => ({ ok: companionClient.connected }),
 });
 export { consentController };
