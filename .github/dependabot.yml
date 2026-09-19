@@ -12,10 +12,11 @@ updates:
           - "*"
 
   - package-ecosystem: npm
+    # tools/e2e-capture stays on Playwright 1.61.1. Its capture recovery test
+    # fails on Chromium 153, which Playwright 1.63 installs.
     directories:
       - /frontend
       - /extension
-      - /tools/e2e-capture
       - /tools/visual-capture
     schedule:
       interval: monthly
