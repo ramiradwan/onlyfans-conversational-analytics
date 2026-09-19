@@ -36,7 +36,7 @@ function storageArea(values) {
   };
 }
 
-function harness({ unregisterFails = false } = {}) {
+function harness({ unregisterFails = false, ...options } = {}) {
   const local = {};
   const session = {};
   const registeredScripts = [];
@@ -139,6 +139,7 @@ function harness({ unregisterFails = false } = {}) {
     activeModeAuthorization,
     fetchImpl: async () => { throw new Error('not installed'); },
     now: () => new Date('2030-01-08T12:00:00Z'),
+    ...options,
   });
   return {
     chromeApi,
@@ -247,4 +248,108 @@ test('delete attempts permission and storage cleanup after content-script teardo
   assert.equal(h.counters.deletes, 1);
   assert.equal(h.local.ofca_delete_intent_v1.schema, 'ofca-delete-intent/v1');
   assert.deepEqual(h.session, {});
+});
+
+function manualScheduler() {
+  const timers = new Set();
+  return {
+    timers,
+    setTimeout(callback, delay) {
+      const timer = { callback, delay };
+      timers.add(timer);
+      return timer;
+    },
+    clearTimeout(timer) { timers.delete(timer); },
+    async fire() {
+      const timer = timers.values().next().value;
+      assert.ok(timer, 'expected a pending binding retry');
+      timers.delete(timer);
+      await timer.callback();
+      return timer.delay;
+    },
+  };
+}
+
+test('saved pairing retries binding with capped backoff without leaving identity, then starts full', async () => {
+  const scheduler = manualScheduler();
+  const h = harness({ scheduler, hasSavedPairing: async () => true });
+  let bound = false;
+  const probePhases = [];
+  h.controller.adapter.loadBrainBinding = async () => {
+    probePhases.push(h.controller.phase);
+    if (!bound) throw new Error('offline');
+  };
+  h.permissionState.onlyFans = true;
+  await h.controller.setMode('full');
+  for (const delay of [500, 1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
+    assert.equal(await scheduler.fire(), delay);
+    assert.equal(h.controller.phase, 'identity');
+    assert.equal(h.counters.starts, 0);
+    assert.equal(probePhases.at(-1), 'identity');
+  }
+  bound = true;
+  await scheduler.fire();
+  assert.equal(h.controller.phase, 'full');
+  assert.equal(h.counters.starts, 1);
+  assert.equal(scheduler.timers.size, 0);
+  assert.equal((await h.controller.status()).reload_required, true);
+});
+
+test('missing or unreadable saved pairing does not schedule binding probes', async () => {
+  for (const hasSavedPairing of [undefined, async () => false, async () => { throw new Error('unavailable'); }]) {
+    const scheduler = manualScheduler();
+    const h = harness({ scheduler, ...(hasSavedPairing ? { hasSavedPairing } : {}) });
+    h.permissionState.onlyFans = true;
+    await h.controller.setMode('full');
+    assert.equal(h.controller.phase, 'identity');
+    assert.equal(scheduler.timers.size, 0);
+  }
+});
+
+test('consent transition cancels binding retry and stale callback cannot probe', async () => {
+  const scheduler = manualScheduler();
+  const h = harness({ scheduler, hasSavedPairing: async () => true });
+  h.permissionState.onlyFans = true;
+  await h.controller.setMode('full');
+  const stale = scheduler.timers.values().next().value;
+  await h.controller.setMode('pause');
+  let probes = 0;
+  h.controller.adapter.loadBrainBinding = async () => { probes += 1; };
+  await stale.callback();
+  assert.equal(probes, 0);
+  assert.equal(scheduler.timers.size, 0);
+  assert.equal(h.controller.phase, 'paused');
+});
+
+test('partition event during successful retry lets queued reconcile finish recovery', async () => {
+  const scheduler = manualScheduler();
+  const h = harness({ scheduler, hasSavedPairing: async () => true });
+  h.permissionState.onlyFans = true;
+  await h.controller.setMode('full');
+  let first = true;
+  h.controller.adapter.loadBrainBinding = async () => {
+    if (first) {
+      first = false;
+      for (const listener of h.chromeApi.storage.onChanged.listeners) {
+        listener({ active_account_partition_v5: {} }, 'session');
+      }
+    }
+  };
+  await scheduler.fire();
+  assert.equal((await h.controller.status()).phase, 'full');
+  assert.equal(scheduler.timers.size, 0);
+});
+
+test('invalidation during saved-pairing check skips scheduling without rejecting transition', async () => {
+  const scheduler = manualScheduler();
+  let paused;
+  const h = harness({ scheduler, hasSavedPairing: async () => {
+    paused = h.controller.setMode('pause');
+    return true;
+  } });
+  h.permissionState.onlyFans = true;
+  await h.controller.setMode('full');
+  await paused;
+  assert.equal(h.controller.phase, 'paused');
+  assert.equal(scheduler.timers.size, 0);
 });
