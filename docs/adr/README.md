@@ -31,6 +31,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0029: Bind cached source verification to database changes](0029-source-verification-tokens.md)
 
+- [ADR 0030: Separate generation validation from whole-file checks](0030-generation-validation-scope.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

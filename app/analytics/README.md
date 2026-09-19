@@ -63,3 +63,7 @@ See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 ## Continuous processing
 
 [Changed-conversation processing](../../docs/analytics/continuous-processing.md) reuses exact conversation outputs, streams canonical identity checks, and reconciles missed work and expiry through the existing scheduler. Publication remains a complete validated generation.
+
+## Generation throughput
+
+[Generation validation and writes](../../docs/analytics/generation-throughput.md) describes scoped integrity checks, owned connections, and bounded adaptive batches.

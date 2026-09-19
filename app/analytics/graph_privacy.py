@@ -51,30 +51,32 @@ def graph_content_digest(
 ) -> str:
     """Digest the exact validated property graph independently of row metadata."""
 
-    # Encode one validated record at a time using the canonical key order.
+    safe_nodes, safe_edges = safe_graph_records(nodes, edges, check=check)
+    return _validated_graph_digest(safe_nodes, safe_edges, check=check)
+
+
+def _validated_graph_digest(
+    nodes: list[GraphNode], edges: list[GraphEdge], *,
+    check: Callable[[], None] | None = None,
+) -> str:
+    """Encode privately owned, already validated records in canonical order."""
+
     digest = hashlib.sha256(b'{"edges":[')
-    for name, records, key, validate in (
-        ("edges", edges, lambda item: item.edge_id, safe_graph_edge),
-        ("nodes", nodes, lambda item: item.node_id, safe_graph_node),
+    for name, records, key in (
+        ("edges", edges, lambda item: item.edge_id),
+        ("nodes", nodes, lambda item: item.node_id),
     ):
         if name == "nodes":
             digest.update(b'],"nodes":[')
-        safe = []
-        for item in records:
-            if check is not None:
-                check()
-            safe.append(validate(item))
         if check is not None:
             check()
-        safe.sort(key=key)
-        for index, item in enumerate(safe):
+        for index, item in enumerate(sorted(records, key=key)):
             if check is not None:
                 check()
             if index:
                 digest.update(b',')
             digest.update(json.dumps(item.model_dump(mode="json"), ensure_ascii=False,
                                      sort_keys=True, separators=(",", ":")).encode("utf-8"))
-        safe.clear()
     digest.update(b']}')
     if check is not None:
         check()

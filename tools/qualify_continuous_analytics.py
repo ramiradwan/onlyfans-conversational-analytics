@@ -90,6 +90,9 @@ def main():
             fixture.source.loaded.clear()
             before, scans_before = sum(a.calls for a in fixture.analyzers), scan_counts.copy()
             start = time.perf_counter()
+            checkpoints = {}
+            fixture.stores.projections.crash_hook = lambda stage, generation: checkpoints.setdefault(
+                stage, time.perf_counter() - start)
             candidate = fixture.pipeline.build_candidate(ACCOUNT, force=True)
             built = time.perf_counter()
             result = fixture.pipeline.publish_candidate(candidate)
@@ -97,6 +100,10 @@ def main():
             item = {'phase': name, 'build_seconds': built-start, 'publication_seconds': end-built,
                 'total_seconds': end-start, 'analyzer_calls': sum(a.calls for a in fixture.analyzers)-before,
                 'conversation_body_reads': len(fixture.source.loaded),
+                'checkpoints_seconds': checkpoints,
+                'activation_seconds': checkpoints.get('activated'),
+                'post_activation_seconds': ((end-start)-checkpoints['activated']
+                    if 'activated' in checkpoints else None),
                 'identity_work': dict(scan_counts-scans_before), 'process_peak_bytes': peak_memory_bytes()}
             report['phases'].append(item)
             save()
