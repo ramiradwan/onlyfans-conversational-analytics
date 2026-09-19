@@ -991,6 +991,7 @@ class SQLiteAnalyticsProjectionStore:
         *,
         allow_building: bool = False,
         materialize_graph: bool = False,
+        materialize_projection: bool = True,
         deadline: float | None = None,
         cancellation_check: CancellationCheck | None = None,
     ) -> dict[str, object]:
@@ -1023,6 +1024,7 @@ class SQLiteAnalyticsProjectionStore:
                     connection,
                     generation_id,
                     check=check, materialize_graph=materialize_graph,
+                    materialize_projection=materialize_projection,
                 )
                 projection = values["projection"]
                 if (
@@ -1090,7 +1092,7 @@ class SQLiteAnalyticsProjectionStore:
             canonical_identity
         ):
             raise ProjectionActivationConflict("canonical identity changed")
-        self._validate_persisted_generation(generation_id)
+        self._validate_persisted_generation(generation_id, materialize_projection=False)
         now = _timestamp(_now())
         with self.database.transaction() as connection:
             candidate = connection.execute(
@@ -1544,12 +1546,14 @@ def recompute_generation(
     *,
     check: Callable[[], None] | None = None,
     materialize_graph: bool = False,
+    materialize_projection: bool = True,
 ) -> dict[str, object]:
     """Verify stored data with a connection-local page-cache target."""
 
     with generation_verification_cache(connection):
         return _recompute_generation(connection, generation_id, check=check,
-                                     materialize_graph=materialize_graph)
+                                     materialize_graph=materialize_graph,
+                                     materialize_projection=materialize_projection)
 
 
 def _recompute_generation(
@@ -1558,6 +1562,7 @@ def _recompute_generation(
     *,
     check: Callable[[], None] | None = None,
     materialize_graph: bool = False,
+    materialize_projection: bool = True,
 ) -> dict[str, object]:
     """Recompute all row-derived validation values; stored digest fields are ignored."""
 
@@ -1580,11 +1585,17 @@ def _recompute_generation(
     ).fetchone()
     if projection_row is None:
         raise ProjectionValidationError("projection document is missing")
-    projection = AnalyticsProjection.model_validate_json(
-        projection_row["document_json"]
-    )
-    run_check()
-    projection_digest = _projection_digest(projection)
+    if materialize_projection:
+        projection = AnalyticsProjection.model_validate_json(projection_row["document_json"])
+        run_check()
+        projection_digest = _projection_digest(projection)
+    else:
+        if materialize_graph:
+            raise ValueError("projection_materialization_required")
+        from app.analytics.projection_verification import verify_projection_document
+        verified_document = verify_projection_document(projection_row["document_json"], check=run_check)
+        projection = verified_document.header
+        projection_digest = verified_document.digest
     run_check()
     if (
         projection_digest != projection.projection_digest

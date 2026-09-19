@@ -2167,7 +2167,7 @@ class SQLiteGraphGenerationWriter:
                     values = recompute_generation(
                         connection,
                         self._generation_id,
-                        check=keepalive,
+                        check=keepalive, materialize_projection=False,
                     )
                     keepalive()
                     now = _now()

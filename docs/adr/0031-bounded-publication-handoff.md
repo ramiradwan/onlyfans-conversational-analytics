@@ -12,6 +12,8 @@ SQLite publication does not reconstruct a complete graph merely to return a resu
 
 Persisted graph verification validates and hashes one row at a time unless the caller explicitly requests graph objects. Endpoint closure is checked by indexed joins in the same snapshot. The canonical graph digest format is unchanged.
 
+Validation-only gates return a distinct projection metadata header after checking each stored array record and reconstructing the same canonical digest. They do not retain complete message or conversation model arrays. Full projection reads still materialize them. The canonical stored field order uses streaming verification; other supported orders and omitted defaults retain the public model compatibility path. No supplied digest substitutes for reading and validating the records. Publication retention checks and timer setup derive their earliest source time from the same streamed records; retirement cleanup processes one stored document at a time.
+
 Projection JSON and its digest encode message and conversation arrays one record at a time. They preserve the existing canonical JSON bytes. The stored projection document remains complete; this does not introduce a different public schema.
 
 The built-in pipeline validates privately owned graph objects record by record and passes them to the owned writer without a complete clone. Public writer inputs remain subject to validation. Fragment validation during SQLite staging consumes one fragment at a time inside the transaction. A failed fragment rolls back the stage.

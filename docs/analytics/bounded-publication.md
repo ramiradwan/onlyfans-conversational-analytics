@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check generation_reference.py, graph_verification.py, graph_row_encoding.py, projection_encoding.py, pipeline.py, both SQLite stores, conversation_reuse.py, and qualify_continuous_analytics.py before editing behavior claims. -->
+<!-- CODE-VERIFY: Check generation_reference.py, graph_verification.py, graph_row_encoding.py, projection_encoding.py, projection_verification.py, retention_store.py, pipeline.py, both SQLite stores, conversation_reuse.py, and qualify_continuous_analytics.py before editing behavior claims. -->
 
 # Publish a staged generation without copying its graph
 
@@ -18,6 +18,12 @@ Graph verification reads ordered rows, validates their types and properties, and
 
 When graph objects are not requested, the verifier checks stored columns directly using the same identity and closed-property rules as the public models. It normalizes timestamps and encodes the same canonical JSON without constructing temporary graph models. Non-integer or negative stored edge sequences are rejected. The verifier retains only the current row and counters. Full artifact reads materialize the validated graph explicitly. Database statement progress and row-level checks retain cancellation and deadline handling.
 
+Validation-only staging and activation calls also check projection records individually. They calculate the digest from each normalized record and retain a separate metadata header, not message or conversation model arrays. Every record is checked at both gates. Full projection and artifact reads retain their ordinary complete models.
+
+The streaming path handles the complete top-level field order produced by the canonical writer, including insignificant whitespace. Documents with another order or omitted default fields use the existing full-model compatibility path. The original JSON string remains in memory, so this is not a total memory cap. Cancellation is checked between streamed records.
+
+Publication retention checks, timer setup and retired-generation cleanup use the earliest timestamp from the validated message records. They do not infer expiry from an unverified header date. Retired documents are processed one at a time. Full reads used for other retention operations keep their existing behavior.
+
 Projection encoding excludes large arrays from the header serialization, then encodes one message or conversation record at a time. It preserves canonical field order, escaping, numbers, timestamps, and digest bytes. The resulting stored JSON string remains account-sized.
 
 SQLite fragment staging validates one fragment against the complete artifact and inserts it before advancing. A validation failure rolls back the transaction. The built-in pipeline validates its privately owned graph record by record without cloning the complete graph before staging. The public staging and writer paths still copy and revalidate caller-owned records. Final verification rejects any change between input validation and storage.
@@ -33,7 +39,7 @@ Source-time expiry, canonical witnesses, ownership fencing, durable commits, pro
 Run the focused tests and the [full analytics baseline](qualification.md):
 
 ```powershell
-python -m pytest tests/test_graph_row_encoding.py tests/test_bounded_publication.py tests/test_generation_throughput.py tests/test_graph_digest_stream.py tests/test_conversation_fragment_storage.py
+python -m pytest tests/test_projection_verification.py tests/test_graph_row_encoding.py tests/test_bounded_publication.py tests/test_generation_throughput.py tests/test_graph_digest_stream.py tests/test_conversation_fragment_storage.py
 python tools/qualify_analytics_baseline.py --output C:\temp\bounded-publication-baseline
 python tools/qualify_continuous_analytics.py --messages 10000 --query-samples 100 --output C:\temp\bounded-publication-workload
 ```

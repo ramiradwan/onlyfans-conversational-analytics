@@ -594,7 +594,8 @@
         "app/analytics/compact_graph.py",
         "app/analytics/shared_graph.py",
         "app/analytics/conversation_pages.py",
-        "app/analytics/conversation_page_sql.py"
+        "app/analytics/conversation_page_sql.py",
+        "app/analytics/projection_verification.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",
@@ -1337,7 +1338,8 @@
           "app/analytics/compact_graph.py",
           "app/analytics/shared_graph.py",
           "app/analytics/sql/0010_shared_graph_segments.sql",
-          "app/analytics/sql/0011_conversation_pages.sql"
+          "app/analytics/sql/0011_conversation_pages.sql",
+          "app/analytics/projection_verification.py"
         ]
       },
       {
@@ -1409,7 +1411,8 @@
           "app/analytics/scheduling.py",
           "app/analytics/projection_encoding.py",
           "app/analytics/compact_graph.py",
-          "app/analytics/sql/0011_conversation_pages.sql"
+          "app/analytics/sql/0011_conversation_pages.sql",
+          "app/analytics/projection_verification.py"
         ]
       },
       {
@@ -1442,7 +1445,8 @@
           "app/analytics/compact_graph.py",
           "app/analytics/shared_graph.py",
           "app/analytics/sql/0010_shared_graph_segments.sql",
-          "app/analytics/sql/0011_conversation_pages.sql"
+          "app/analytics/sql/0011_conversation_pages.sql",
+          "app/analytics/projection_verification.py"
         ]
       },
       {
@@ -1469,7 +1473,8 @@
           "app/analytics/sql/0009_projection_validation_header.sql",
           "app/analytics/shared_graph.py",
           "app/analytics/sql/0010_shared_graph_segments.sql",
-          "app/analytics/sql/0011_conversation_pages.sql"
+          "app/analytics/sql/0011_conversation_pages.sql",
+          "app/analytics/projection_verification.py"
         ]
       },
       {
@@ -1492,7 +1497,8 @@
           "app/analytics/sql/0009_projection_validation_header.sql",
           "app/analytics/shared_graph.py",
           "app/analytics/sql/0010_shared_graph_segments.sql",
-          "app/analytics/sql/0011_conversation_pages.sql"
+          "app/analytics/sql/0011_conversation_pages.sql",
+          "app/analytics/projection_verification.py"
         ]
       },
       {
@@ -1514,7 +1520,8 @@
           "app/analytics/generation_reference.py",
           "app/analytics/projection_encoding.py",
           "app/analytics/compact_graph.py",
-          "app/analytics/sql/0011_conversation_pages.sql"
+          "app/analytics/sql/0011_conversation_pages.sql",
+          "app/analytics/projection_verification.py"
         ]
       },
       {
