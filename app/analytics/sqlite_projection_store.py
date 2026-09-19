@@ -13,7 +13,7 @@ from typing import Callable
 from uuid import uuid4
 
 from app.analytics.cancellation import CancellationCheck, check_cancelled
-from app.analytics.database import ProjectionsDatabase
+from app.analytics.database import ProjectionsDatabase, generation_verification_cache
 from app.analytics.compact_graph import CompactArtifact, write_compact_graph
 from app.analytics.graph_privacy import safe_graph_records
 from app.analytics.projection_encoding import projection_document
@@ -1539,6 +1539,20 @@ def _validate_generation_links(connection, generation_id, account_id, check):
 
 
 def recompute_generation(
+    connection: sqlite3.Connection,
+    generation_id: str,
+    *,
+    check: Callable[[], None] | None = None,
+    materialize_graph: bool = False,
+) -> dict[str, object]:
+    """Verify stored data with a connection-local page-cache target."""
+
+    with generation_verification_cache(connection):
+        return _recompute_generation(connection, generation_id, check=check,
+                                     materialize_graph=materialize_graph)
+
+
+def _recompute_generation(
     connection: sqlite3.Connection,
     generation_id: str,
     *,

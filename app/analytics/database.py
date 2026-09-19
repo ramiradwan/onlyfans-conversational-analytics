@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,22 @@ from app.analytics.opaque_refs import normalize_account_ref
 
 
 GENERATION_WRITE_CACHE_KIB = 16 * 1024
+GENERATION_VERIFICATION_CACHE_KIB = 32 * 1024
+
+
+@contextmanager
+def generation_verification_cache(connection):
+    """Use a bounded page-cache target for one stored-generation verification."""
+
+    previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
+    target = -GENERATION_VERIFICATION_CACHE_KIB
+    if previous != target:
+        connection.execute(f"PRAGMA cache_size={target}")
+    try:
+        yield
+    finally:
+        if previous != target:
+            connection.execute(f"PRAGMA cache_size={previous}")
 
 
 GenerationStatus = Literal[

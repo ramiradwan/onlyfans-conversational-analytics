@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check graph_privacy.py, sqlite_graph_store.py, sqlite_projection_store.py, tests/test_generation_throughput.py, and backup.py before changing validation or performance claims. -->
+<!-- CODE-VERIFY: Check database.py, graph_privacy.py, sqlite_graph_store.py, sqlite_projection_store.py, tests/test_generation_throughput.py, and backup.py before changing validation or performance claims. -->
 
 # Validate and publish analytics generations
 
@@ -20,12 +20,14 @@ A lease session owns one data-write connection and one heartbeat connection. Eve
 
 Batches start at 500 records. Fast completed writes can grow batches up to 4,000 records; slow operations shrink them, with a floor of 64. Successful writes do not wait for a separate heartbeat before proceeding. Long computation remains covered by the heartbeat, and the next transaction checks ownership again.
 
-Write and retired-generation cleanup connections use a 16 MiB SQLite page-cache target. The setting is connection-local and is not a total memory cap. Cleanup removes edges before nodes and the generation, inside one transaction. Interrupted cleanup rolls back.
+Write and retired-generation cleanup connections use a 16 MiB SQLite page-cache target. Cleanup removes edges before nodes and the generation, inside one transaction. Interrupted cleanup rolls back.
+
+Stored-generation verification temporarily uses a 32 MiB page-cache target on its connection. It restores the previous setting after success, failure or cancellation. It does not cache validation decisions or change transaction boundaries. These connection-local targets do not cap total process memory.
 
 Synchronous durable commits, foreign keys, publication fencing, and atomic generation activation remain enabled. There is no partial public generation or second writer process.
 
 ## Verification
 
-Run `python -m pytest tests/test_generation_throughput.py tests/test_sqlite_graph_store.py tests/test_sqlite_projection_store.py` and the [analytics regression baseline](qualification.md). Include the short-lease, ownership-loss, cancellation, tamper, and backup tests.
+Run `python -m pytest tests/test_generation_verification_cache.py tests/test_generation_throughput.py tests/test_sqlite_graph_store.py tests/test_sqlite_projection_store.py` and the [analytics regression baseline](qualification.md). Include the short-lease, ownership-loss, cancellation, tamper, and backup tests.
 
 Use [the continuous workload command](continuous-processing.md#verification-and-measurement) for comparable timings. Record candidate build, publication, cleanup, memory, and query failures separately. Profiling adds overhead; compare unprofiled runs for latency. Passing correctness checks does not establish the 100,000-message or constrained-laptop targets.
