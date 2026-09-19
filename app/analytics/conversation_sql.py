@@ -48,4 +48,12 @@ def fragment_reader(store, account_id):
                 return None
             data = row['document_json'].encode()
             return data if len(data) <= MAX_FRAGMENT_BYTES and hashlib.sha256(data).hexdigest() == row['document_digest'] else None
+        from app.analytics.conversation_page_sql import supported, load_pages
+        if supported(db):
+            def pages(conversation, input_digest, config_digest, *, cancellation_check=None):
+                if not valid:
+                    return None
+                return load_pages(db, generation['generation_id'], partition, conversation,
+                    input_digest, config_digest, cancellation_check=cancellation_check)
+            load.pages = pages
         yield load

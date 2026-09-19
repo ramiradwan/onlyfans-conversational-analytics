@@ -97,6 +97,7 @@ class AtomicAnalyticsProjectionStore(AnalyticsProjectionStore, Protocol):
         cancellation_check: CancellationCheck | None = None,
         enrichment_entries: tuple[bytes, ...] = (),
         conversation_fragments: tuple[bytes, ...] = (),
+        conversation_pages: tuple = (),
     ) -> str: ...
 
     def publish_generation(
@@ -333,11 +334,14 @@ class InMemoryAnalyticsProjectionStore:
         cancellation_check=None,
         enrichment_entries: tuple[bytes, ...] = (),
         conversation_fragments: tuple[bytes, ...] = (),
+        conversation_pages: tuple = (),
     ) -> str:
         from app.analytics.enrichment_cache import validate_entries
 
         from app.analytics.conversation_reuse import validate_fragments
 
+        if conversation_pages:
+            raise ValueError('conversation_pages_require_sqlite')
         fragments = validate_fragments(artifact, conversation_fragments)
         cached = validate_entries(artifact, enrichment_entries)
         del cancellation_check

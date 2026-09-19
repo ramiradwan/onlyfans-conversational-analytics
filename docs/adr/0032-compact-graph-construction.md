@@ -10,7 +10,7 @@ The compact graph belongs to one build and one account. It is not shared between
 
 The private writer converts records into bounded SQL parameter batches. Existing SQL property checks, endpoint foreign keys, ownership fencing, durable commits, and cancellation remain enabled. Staging and the activation gate independently validate and hash persisted rows. An expected digest is not substituted for checking stored content.
 
-Small conversations can retain full conversation fragments. Compact builds materialize a new fragment only for at most 256 messages and at most half the per-fragment byte limit in encoded graph data. Larger conversations use message-level analyzer reuse. Existing fragment size, count, source-time, and total-byte limits still apply.
+Small conversations can retain full conversation fragments. Compact builds materialize a new fragment only for at most 256 messages and at most half the per-fragment byte limit in encoded graph data. Larger conversations can retain [bounded result pages](0035-paged-conversation-reuse.md); page misses use message-level analyzer reuse. Existing fragment size, count, source-time, and total-byte limits still apply.
 
 Public full-artifact operations and unsupported projectors retain their existing representations. The built-in full projector assembles the same batches for compatibility and clean-build comparisons. Compact mode is an implementation choice, not a new semantic pipeline identity.
 

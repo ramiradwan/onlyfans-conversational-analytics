@@ -139,7 +139,7 @@ def test_populated_header_upgrade_keeps_bytes_backups_and_foreign_keys(tmp_path)
             assert db.execute('PRAGMA user_version').fetchone()[0] == 8
             assert db.execute('SELECT document_json FROM analytics_projections').fetchone()[0] == before
         with updated.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 10
+            assert db.execute('PRAGMA user_version').fetchone()[0] == 11
             assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert not db.execute('PRAGMA foreign_key_check').fetchall()
             assert db.execute('SELECT document_json FROM analytics_projections').fetchone()[0] == before

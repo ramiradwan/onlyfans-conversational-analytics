@@ -74,9 +74,17 @@ class ConversationBuild:
         self.recomputed = 0
         self.reader = None
         self.compact = False
+        self.page_sets = []
+
+    def retain_pages(self, packed) -> None:
+        if (packed is None or len(self.entries) + len(self.page_sets) >= MAX_FRAGMENTS
+                or self.bytes_used + packed.retained_bytes > MAX_FRAGMENT_TOTAL_BYTES):
+            return
+        self.page_sets.append(packed)
+        self.bytes_used += packed.retained_bytes
 
     def retain(self, fragment: ConversationFragment) -> None:
-        if len(self.entries) >= MAX_FRAGMENTS:
+        if len(self.entries) + len(self.page_sets) >= MAX_FRAGMENTS:
             return
         data = fragment.model_dump_json().encode()
         if len(data) > MAX_FRAGMENT_BYTES or self.bytes_used + len(data) > MAX_FRAGMENT_TOTAL_BYTES:
@@ -117,7 +125,20 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         ref = conversation_ref(account_id, chat_id)
         fragment = None
         local_graph = None
-        if pipeline.reuse_conversations and reuse is not None and callable(loader):
+        packed, restored = None, None
+        page_loader = getattr(loader, 'pages', None)
+        if compact is not None and pipeline.reuse_conversations and reuse is not None and callable(page_loader):
+            from app.analytics.conversation_pages import restore_pages
+            candidate = page_loader(ref, input_digest, config, cancellation_check=cancellation_check)
+            if candidate is not None and candidate.retained_bytes <= MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used:
+                h = candidate.header
+                if h.retention_cutoff <= cutoff and h.expires_at > pipeline._retention_clock():
+                    try:
+                        restored = restore_pages(candidate, check)
+                        packed = candidate
+                    except (ValueError, TypeError, KeyError, RecursionError):
+                        restored = None
+        if restored is None and pipeline.reuse_conversations and reuse is not None and callable(loader):
             data = loader(ref, input_digest, config, cancellation_check=cancellation_check)
             if data is not None and len(data) <= MAX_FRAGMENT_BYTES:
                 try:
@@ -130,7 +151,12 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                         fragment = value
                 except (ValueError, TypeError):
                     pass
-        if fragment is not None:
+        if restored is not None:
+            findings, counts, local_graph, cached = restored
+            state.reused += 1
+            for entry in cached:
+                reuse.retain(entry.key, entry.result())
+        elif fragment is not None:
             state.reused += 1
             for data in fragment.analyzer_entries:
                 item = CachedEnrichment.model_validate_json(data)
@@ -178,6 +204,15 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
             fragments.append(fragment)
             enrichments.extend(fragment.enrichments)
             metrics.append(fragment.metrics)
+        if compact is not None and pipeline.reuse_conversations and reuse is not None and callable(page_loader):
+            if packed is None and fragment is None and local_graph is not None:
+                from app.analytics.conversation_pages import create_pages
+                packed = create_pages(account=account_ref(account_id), conversation=ref,
+                    input_digest=input_digest, config_digest=config, cutoff=cutoff,
+                    findings=findings, metrics=counts, graph=local_graph,
+                    analyzer_entries=reuse.conversation_entries(ref),
+                    max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check)
+            state.retain_pages(packed)
         if fragment is not None and pipeline.reuse_conversations and reuse is not None:
             state.retain(fragment)
         check()

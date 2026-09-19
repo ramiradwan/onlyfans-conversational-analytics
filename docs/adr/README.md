@@ -54,3 +54,5 @@ Start from [the ADR template](template.md). Use the next number after the highes
 ## Superseded
 
 - [ADR 0007: Use a static authentication ticket for local development](0007-stub-auth-for-dev.md) — superseded by ADR 0008.
+
+- [0035: Reuse large conversation outputs in bounded pages](0035-paged-conversation-reuse.md).

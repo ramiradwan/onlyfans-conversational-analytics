@@ -389,6 +389,8 @@ class AnalyticsPipeline:
                     publication_epoch=publication_epoch,
                     cancellation_check=cancellation_check,
                     **({"enrichment_entries": tuple(reuse.entries.values())} if reuse else {}),
+                    **({"conversation_pages": tuple(conversation_state.page_sets)}
+                       if conversation_state.page_sets else {}),
                     **({"conversation_fragments": tuple(conversation_state.entries)}
                        if conversation_state.entries else {}),
                 )

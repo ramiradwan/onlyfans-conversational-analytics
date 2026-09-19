@@ -79,3 +79,5 @@ The built-in SQLite path retains encoded graph records between bounded projector
 ## Shared graph content
 
 [Shared graph storage](../../docs/analytics/shared-graph-storage.md) describes immutable graph content, segment membership, generation visibility, and cleanup. Logical graph identities and publication digests remain unchanged.
+
+See [Paged conversation reuse](../../docs/analytics/conversation-pages.md) for bounded reuse of large conversation outputs.
