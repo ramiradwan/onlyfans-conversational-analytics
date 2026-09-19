@@ -2,7 +2,7 @@
 
 # Reuse unchanged message analysis
 
-The analytics pipeline reuses individual sentiment, topic/entity, and engagement results when their declared inputs match. It still rebuilds conversation metrics and the graph, then publishes one coherent generation.
+The analytics pipeline reuses individual sentiment, topic/entity, and engagement results when their declared inputs match. Changed conversations rebuild their metrics and local graph; [conversation-level reuse](continuous-processing.md) supplies unchanged parts. The pipeline publishes one coherent generation.
 
 ## Inputs and adapter identity
 
@@ -34,7 +34,7 @@ When a cache limit is reached, analysis continues without retaining more records
 
 `AnalyticsPipeline(..., reuse_enrichment=False)` disables reuse for qualification. It does not change the pipeline's semantic identity. A clean rebuild with deterministic adapters must match the cached build's full projection and graph at the same generation and source revision.
 
-Cache changes add no optional ML dependencies or model weights. They do not qualify any model, change pricing availability, or implement conversation-level incremental graph construction.
+Analyzer reuse adds no optional ML dependencies or model weights. It does not qualify any model or change pricing availability. [Continuous processing](continuous-processing.md) describes the separate conversation-level optimization and its limits.
 
 ## Verification
 

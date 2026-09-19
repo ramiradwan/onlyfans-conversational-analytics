@@ -906,8 +906,7 @@ def _sqlite_identity(
         HistoryRepository.__new__(HistoryRepository),
         connection=connection,
     )
-    account = source.account_read_model(creator_account_id)
-    return canonical_identity(account)
+    return source.read_identity(creator_account_id)
 
 
 def _sqlite_publication_epoch_open(

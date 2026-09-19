@@ -27,6 +27,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0027: Reuse versioned analyzer results within analytics generations](0027-enrichment-reuse.md)
 
+- [ADR 0028: Recompute changed conversations within full analytics generations](0028-conversation-incremental-processing.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

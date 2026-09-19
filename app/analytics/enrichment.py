@@ -124,6 +124,12 @@ class EnrichmentStage:
             )
         ]
 
+    def validate_configuration(self) -> None:
+        analyzers = (self.sentiment, self.topics_entities, self.engagement)
+        if (tuple(self._descriptor(item) for item in analyzers) != self._descriptors
+                or tuple(analyzer_policy(item) for item in analyzers) != self._input_policies):
+            raise AnalyzerConfigurationInvalid()
+
     def enrich_conversation(
         self,
         creator_account_id: str,
@@ -137,10 +143,8 @@ class EnrichmentStage:
             key=lambda message: (message.sent_at, message.source_ordinal),
         )
         results: list[MessageEnrichment] = []
+        self.validate_configuration()
         analyzers = (self.sentiment, self.topics_entities, self.engagement)
-        if (tuple(self._descriptor(item) for item in analyzers) != self._descriptors
-                or tuple(analyzer_policy(item) for item in analyzers) != self._input_policies):
-            raise AnalyzerConfigurationInvalid()
         for message, outputs in analyze_messages(
             creator_account_id, conversation, ordered, analyzers,
             self._descriptors, cancellation_check,

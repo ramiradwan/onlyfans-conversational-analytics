@@ -130,6 +130,12 @@ class LazySQLiteAnalyticsProjectionStore:
             self._next_retry_at = 0.0
             self._recovery_count += 1
 
+    def open_conversation_fragments(self, account_id):
+        return self._available_store(account_id).open_conversation_fragments(account_id)
+
+    def load_conversation_fragment(self, account_id, *args, **kwargs):
+        return self._read("load_conversation_fragment", account_id, account_id, *args, **kwargs)
+
     def load_enrichment_entries(self, account_id, keys, **kwargs):
         return self._read("load_enrichment_entries", account_id, account_id, keys, **kwargs)
 

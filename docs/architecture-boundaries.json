@@ -583,7 +583,10 @@
         "app/analytics/__init__.py",
         "app/analytics/README.md",
         "app/analytics/enrichment_cache.py",
-        "app/analytics/enrichment_sql.py"
+        "app/analytics/enrichment_sql.py",
+        "app/analytics/source_snapshot.py",
+        "app/analytics/conversation_reuse.py",
+        "app/analytics/conversation_sql.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",
@@ -1310,7 +1313,11 @@
           "app/analytics/evidence*.py",
           "app/analytics/canonical_source.py",
           "app/analytics/enrichment*.py",
-          "app/analytics/sql/0005_enrichment_reuse.sql"
+          "app/analytics/sql/0005_enrichment_reuse.sql",
+          "app/analytics/conversation_*.py",
+          "app/analytics/source_snapshot.py",
+          "app/analytics/sql/0006_conversation_fragments.sql",
+          "app/analytics/scheduling.py"
         ]
       },
       {
@@ -1371,7 +1378,11 @@
           "app/analytics/analyzers.py",
           "app/analytics/metrics.py",
           "app/analytics/enrichment*.py",
-          "app/analytics/sql/0005_enrichment_reuse.sql"
+          "app/analytics/sql/0005_enrichment_reuse.sql",
+          "app/analytics/conversation_*.py",
+          "app/analytics/source_snapshot.py",
+          "app/analytics/sql/0006_conversation_fragments.sql",
+          "app/analytics/scheduling.py"
         ]
       },
       {
@@ -1379,7 +1390,11 @@
         "path_patterns": [
           "app/analytics/graph_*.py",
           "app/analytics/*graph_store.py",
-          "app/analytics/pipeline.py"
+          "app/analytics/pipeline.py",
+          "app/analytics/conversation_*.py",
+          "app/analytics/source_snapshot.py",
+          "app/analytics/sql/0006_conversation_fragments.sql",
+          "app/analytics/scheduling.py"
         ]
       },
       {
@@ -1387,7 +1402,11 @@
         "path_patterns": [
           "app/analytics/pipeline.py",
           "app/analytics/*projection_store.py",
-          "app/analytics/rebuild.*"
+          "app/analytics/rebuild.*",
+          "app/analytics/conversation_*.py",
+          "app/analytics/source_snapshot.py",
+          "app/analytics/sql/0006_conversation_fragments.sql",
+          "app/analytics/scheduling.py"
         ]
       },
       {
@@ -1400,7 +1419,11 @@
           "app/analytics/evidence*.py",
           "app/analytics/canonical_source.py",
           "app/analytics/enrichment*.py",
-          "app/analytics/sql/0005_enrichment_reuse.sql"
+          "app/analytics/sql/0005_enrichment_reuse.sql",
+          "app/analytics/conversation_*.py",
+          "app/analytics/source_snapshot.py",
+          "app/analytics/sql/0006_conversation_fragments.sql",
+          "app/analytics/scheduling.py"
         ]
       },
       {
@@ -1411,7 +1434,11 @@
           "app/analytics/*graph_store.py",
           "app/analytics/query_*.py",
           "app/analytics/evidence*.py",
-          "app/analytics/canonical_source.py"
+          "app/analytics/canonical_source.py",
+          "app/analytics/conversation_*.py",
+          "app/analytics/source_snapshot.py",
+          "app/analytics/sql/0006_conversation_fragments.sql",
+          "app/analytics/scheduling.py"
         ]
       },
       {
@@ -1423,7 +1450,11 @@
           "app/analytics/evidence*.py",
           "app/analytics/canonical_source.py",
           "app/analytics/enrichment*.py",
-          "app/analytics/sql/0005_enrichment_reuse.sql"
+          "app/analytics/sql/0005_enrichment_reuse.sql",
+          "app/analytics/conversation_*.py",
+          "app/analytics/source_snapshot.py",
+          "app/analytics/sql/0006_conversation_fragments.sql",
+          "app/analytics/scheduling.py"
         ]
       },
       {

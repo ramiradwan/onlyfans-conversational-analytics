@@ -231,9 +231,7 @@ def _question_schema(model):
         "application/json": {"schema": expand(schema)}}}}
 
 
-def _question_authorize(request, policy):
-    verify_same_origin(request)
-    verify_csrf_token(policy, request.headers.get("x-csrf-token"))
+def _question_parameters(request):
     if request.query_params:
         raise HTTPException(422, detail="Question filters must be in the request body.")
 
@@ -301,7 +299,9 @@ async def answer_question(request: Request, response: Response,
                           policy: RuntimePolicy = Depends(get_authenticated_account_session)):
     response.headers["Cache-Control"] = "no-store"
     try:
-        _question_authorize(request, policy)
+        verify_same_origin(request)
+        verify_csrf_token(policy, request.headers.get("x-csrf-token"))
+        _question_parameters(request)
         return await insights_service.answer_question(policy, await _question_body(request))
     except (AnalyticsError, HTTPException) as error:
         raise _question_failure(error) from None
@@ -314,7 +314,9 @@ async def resolve_evidence(request: Request, response: Response,
                            policy: RuntimePolicy = Depends(get_authenticated_account_session)):
     response.headers["Cache-Control"] = "no-store"
     try:
-        _question_authorize(request, policy)
+        verify_same_origin(request)
+        verify_csrf_token(policy, request.headers.get("x-csrf-token"))
+        _question_parameters(request)
         return await insights_service.resolve_question_evidence(policy, await _question_body(request))
     except (AnalyticsError, HTTPException) as error:
         raise _question_failure(error) from None
@@ -324,7 +326,9 @@ async def resolve_evidence(request: Request, response: Response,
                responses=PROTECTED_ERROR_RESPONSES)
 def clear_evidence(request: Request, policy: RuntimePolicy = Depends(get_authenticated_account_session)):
     try:
-        _question_authorize(request, policy)
+        verify_same_origin(request)
+        verify_csrf_token(policy, request.headers.get("x-csrf-token"))
+        _question_parameters(request)
         insights_service.clear_question_evidence(policy)
         return Response(status_code=204, headers={"Cache-Control": "no-store"})
     except (AnalyticsError, HTTPException) as error:

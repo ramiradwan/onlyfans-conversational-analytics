@@ -98,6 +98,7 @@ class EnrichmentReuse:
         self.entries: dict[str, bytes] = {}
         self._batch: dict[str, bytes] = {}
         self.bytes_used = 0
+        self._conversation_keys: dict[str, list[str]] = {}
 
     def prefetch(self, keys: list[EnrichmentKey]) -> None:
         check_cancelled(self.cancellation)
@@ -130,7 +131,12 @@ class EnrichmentReuse:
             return
         previous = self.entries.get(key.digest, b"")
         self.bytes_used += len(data) - len(previous)
+        if key.digest not in self.entries:
+            self._conversation_keys.setdefault(key.conversation_ref, []).append(key.digest)
         self.entries[key.digest] = data
+
+    def conversation_entries(self, reference: str) -> tuple[bytes, ...]:
+        return tuple(self.entries[key] for key in self._conversation_keys.get(reference, ()))
 
 
 ACTIVE_REUSE: ContextVar[EnrichmentReuse | None] = ContextVar("enrichment_reuse", default=None)

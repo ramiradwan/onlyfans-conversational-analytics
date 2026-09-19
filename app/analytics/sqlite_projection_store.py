@@ -112,6 +112,16 @@ class SQLiteAnalyticsProjectionStore:
         if reconcile:
             self.reconcile_startup()
 
+    def open_conversation_fragments(self, account_id):
+        from app.analytics.conversation_sql import fragment_reader
+
+        return fragment_reader(self, account_id)
+
+    def load_conversation_fragment(self, account_id, conversation, input_digest, config_digest, **kwargs):
+        from app.analytics.conversation_sql import load_fragment
+
+        return load_fragment(self, account_id, conversation, input_digest, config_digest, **kwargs)
+
     def load_enrichment_entries(self, account_id, keys, **kwargs):
         from app.analytics.enrichment_sql import load_entries
 
@@ -273,12 +283,17 @@ class SQLiteAnalyticsProjectionStore:
         publication_epoch: str | None = None,
         cancellation_check: CancellationCheck | None = None,
         enrichment_entries: tuple[bytes, ...] = (),
+        conversation_fragments: tuple[bytes, ...] = (),
     ) -> str:
         """Persist and validate one inactive generation from one canonical snapshot."""
 
         from app.analytics.enrichment_cache import validate_entries
         from app.analytics.enrichment_sql import insert_entries
 
+        from app.analytics.conversation_reuse import validate_fragments
+        from app.analytics.conversation_sql import insert_fragments
+
+        fragments = validate_fragments(artifact, conversation_fragments)
         cached = validate_entries(artifact, enrichment_entries)
         check_cancelled(cancellation_check)
         projection = artifact.projection
@@ -402,6 +417,7 @@ class SQLiteAnalyticsProjectionStore:
                 ),
             )
             insert_entries(connection, generation_id, cached)
+            insert_fragments(connection, generation_id, fragments, conversation_fragments)
         writer = SQLiteGraphGenerationWriter(
             self.database,
             generation_id=generation_id,

@@ -96,6 +96,7 @@ class AtomicAnalyticsProjectionStore(AnalyticsProjectionStore, Protocol):
         publication_epoch: str | None = None,
         cancellation_check: CancellationCheck | None = None,
         enrichment_entries: tuple[bytes, ...] = (),
+        conversation_fragments: tuple[bytes, ...] = (),
     ) -> str: ...
 
     def publish_generation(
@@ -148,6 +149,7 @@ class _MemoryProjectionGeneration:
     status: MemoryProjectionStatus = "validated"
     intent: ProjectionActivationIntent | None = None
     enrichment_entries: dict[str, bytes] = field(default_factory=dict)
+    conversation_fragments: dict[str, bytes] = field(default_factory=dict)
 
     @property
     def account_ref(self) -> str:
@@ -195,6 +197,36 @@ class InMemoryAnalyticsProjectionStore:
         self._graph_lease_seconds = graph_lease_seconds
         self._ordinal = 0
         self._repository.set_active_visibility(self._graph_generation_is_visible)
+
+    def open_conversation_fragments(self, account_id):
+        from contextlib import nullcontext
+        from app.analytics.cancellation import check_cancelled
+
+        with self._lock:
+            generation = self._active_generation_locked(account_id)
+            intent = None if generation is None else self._activation.get(generation.generation_id)
+            valid = (generation is not None and intent is not None
+                     and intent == generation.intent and intent.state == "completed")
+        def load(conversation, input_digest, config_digest, *, cancellation_check=None):
+            check_cancelled(cancellation_check)
+            with self._lock:
+                if not valid or generation.status != "active":
+                    return None
+                return generation.conversation_fragments.get(conversation)
+        return nullcontext(load)
+
+    def load_conversation_fragment(self, account_id, conversation, input_digest, config_digest, *, cancellation_check=None):
+        from app.analytics.cancellation import check_cancelled
+
+        check_cancelled(cancellation_check)
+        with self._lock:
+            generation = self._active_generation_locked(account_id)
+            if generation is None or generation.intent is None:
+                return None
+            intent = self._activation.get(generation.generation_id)
+            if intent != generation.intent or intent.state != "completed":
+                return None
+            return generation.conversation_fragments.get(conversation)
 
     def load_enrichment_entries(self, account_id, keys, *, now, cancellation_check=None):
         from app.analytics.cancellation import check_cancelled
@@ -300,9 +332,13 @@ class InMemoryAnalyticsProjectionStore:
         publication_epoch: str | None = None,
         cancellation_check=None,
         enrichment_entries: tuple[bytes, ...] = (),
+        conversation_fragments: tuple[bytes, ...] = (),
     ) -> str:
         from app.analytics.enrichment_cache import validate_entries
 
+        from app.analytics.conversation_reuse import validate_fragments
+
+        fragments = validate_fragments(artifact, conversation_fragments)
         cached = validate_entries(artifact, enrichment_entries)
         del cancellation_check
         safe_artifact = self._validated_artifact(artifact, canonical_identity)
@@ -360,6 +396,7 @@ class InMemoryAnalyticsProjectionStore:
                 writer_owner=self._build_owner,
                 publication_capability_digest=epoch[1],
                 ordinal=self._ordinal,
+                conversation_fragments={item.conversation_ref: data for item, data in zip(fragments, conversation_fragments, strict=True)},
                 enrichment_entries={entry.key.digest: data for entry, data in zip(cached, enrichment_entries, strict=True)},
             )
             self._generations[(account_id, writer.generation_id)] = generation
@@ -664,7 +701,8 @@ class InMemoryAnalyticsProjectionStore:
             if projection == existing:
                 return
             identity_changed = (
-                projection.pipeline_revision != existing.pipeline_revision
+                projection.canonical_content_digest != existing.canonical_content_digest
+                or projection.pipeline_revision != existing.pipeline_revision
                 or projection.pipeline_config_digest
                 != existing.pipeline_config_digest
             )
@@ -714,6 +752,7 @@ class InMemoryAnalyticsProjectionStore:
         for (account, _), generation in self._generations.items():
             if account == creator_account_id and generation.status == "retired":
                 generation.enrichment_entries.clear()
+                generation.conversation_fragments.clear()
         retired = sorted(
             (
                 generation

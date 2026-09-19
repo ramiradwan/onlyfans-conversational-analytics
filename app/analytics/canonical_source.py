@@ -35,6 +35,43 @@ class HistoryAnalyticsSource:
             return nullcontext(self.connection)
         return self.history.database.read()
 
+    def analytics_snapshot(self, account_id: str, *, cancellation_check=None):
+        from app.analytics.cancellation import check_cancelled
+        from app.analytics.source_snapshot import SourceCatalog, scan_identity, cancellable_source_read
+        from app.analytics.errors import CanonicalAccountNotFound
+
+        check = lambda: check_cancelled(cancellation_check)
+        with self._read() as connection, cancellable_source_read(connection, cancellation_check):
+            own_transaction = self.connection is None and not connection.in_transaction
+            if own_transaction:
+                connection.execute("BEGIN")
+            try:
+                row = connection.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?", (account_id,)).fetchone()
+                if row is None:
+                    raise CanonicalAccountNotFound()
+                identity, digests, count = scan_identity(connection, account_id, int(row[0]), check=check)
+            finally:
+                if own_transaction:
+                    connection.rollback()
+        return SourceCatalog(identity, digests,
+            lambda chat: self.conversation_read_model(account_id, chat, cancellation_check=cancellation_check), count)
+
+    def read_identity(self, account_id: str):
+        from app.analytics.errors import CanonicalAccountNotFound
+
+        try:
+            return self.analytics_snapshot(account_id).identity
+        except CanonicalAccountNotFound:
+            return None
+
+    def conversation_read_model(self, account_id: str, conversation_id: str, *, cancellation_check=None):
+        from app.analytics.cancellation import check_cancelled
+        from app.analytics.source_snapshot import read_conversation, cancellable_source_read
+
+        with self._read() as connection, cancellable_source_read(connection, cancellation_check):
+            return read_conversation(connection, account_id, conversation_id,
+                check=lambda: check_cancelled(cancellation_check))
+
     @contextmanager
     def open_question_scope(self, account_id, budget):
         """Pin live canonical identity and bound every source read."""

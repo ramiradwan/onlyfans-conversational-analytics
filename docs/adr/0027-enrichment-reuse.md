@@ -17,7 +17,7 @@ Retiring or deleting a generation removes its reuse records. Source-time expiry 
 
 ## Consequences
 
-The graph and aggregate rebuild remain whole-generation operations. Reuse avoids analyzer calls; it does not make graph writes incremental or remove account-wide source reads.
+Analyzer reuse avoids repeated calls inside changed conversations. [Conversation-level reuse](0028-conversation-incremental-processing.md) supplies unchanged metrics and local graph records. Publication remains a whole-generation operation, and exact canonical identity still requires content scans.
 
 Missing, evicted, malformed, or incompatible records require analysis again. Retained output is stable for the same declared inputs. This is not a promise to reproduce a lost generative-model sample after the projection store is discarded.
 

@@ -14,7 +14,7 @@ from app.analytics.errors import (
     ProjectionStorageUnavailable,
 )
 from app.analytics.factory import create_analytics_stores
-from app.analytics.identity import canonical_identity
+from app.analytics.identity import canonical_identity, source_identity
 from app.analytics.licensed_pipeline import LicensedAnalyticsPipeline
 from app.analytics.pipeline import AnalyticsPipeline, CanonicalReadModelSource
 from app.analytics.scheduling import InProcessProjectionScheduler
@@ -156,7 +156,7 @@ def _runtime_for_source_locked(
     runtime = AnalyticsRuntime(
         source=source,
         pipeline=pipeline,
-        scheduler=InProcessProjectionScheduler(pipeline),
+        scheduler=InProcessProjectionScheduler(pipeline, reconciliation_interval=30),
         questions=QuestionResources(source, pipeline),
     )
     _RUNTIMES[key] = runtime
@@ -187,11 +187,7 @@ def _build_pipeline(
         projections_path=configuration.projections_path,
         canonical_path=configuration.canonical_path,
         activation=configuration.activation,
-        canonical_identity_reader=lambda account_id: (
-            canonical_identity(source.account_read_model(account_id))
-            if source.account_exists(account_id)
-            else None
-        ),
+        canonical_identity_reader=lambda account_id: source_identity(source, account_id),
         lazy=True,
     )
     return pipeline_type(
@@ -279,10 +275,8 @@ async def request_projection_rebuild(
         runtime.questions.discard(creator_account_id)
     if runtime.scheduler.closed:
         return False
-    account = await runtime.scheduler.canonical_account(creator_account_id)
-    await runtime.scheduler.request_recovery(
-        creator_account_id, account.view_revision
-    )
+    revision = await runtime.scheduler.canonical_revision(creator_account_id)
+    await runtime.scheduler.request_recovery(creator_account_id, revision)
     return True
 
 

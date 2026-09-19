@@ -59,3 +59,7 @@ See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 ## Enrichment reuse
 
 [Reuse unchanged message analysis](../../docs/analytics/enrichment-reuse.md) describes the account-scoped per-analyzer cache, its generation lifetime, context inputs, and size limits. Graph publication remains whole-generation.
+
+## Continuous processing
+
+[Changed-conversation processing](../../docs/analytics/continuous-processing.md) reuses exact conversation outputs, streams canonical identity checks, and reconciles missed work and expiry through the existing scheduler. Publication remains a complete validated generation.
