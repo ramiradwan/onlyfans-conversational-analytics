@@ -24,7 +24,7 @@ SQLite fragment staging validates one fragment against the complete artifact and
 
 ## Remaining costs
 
-The builder still assembles graph objects and complete projection inputs. It still writes a complete generation. Streamed verification and a compact handoff do not make those operations incremental or establish a total memory cap.
+The builder still assembles graph objects and complete projection inputs. It publishes a complete generation while [sharing unchanged physical graph content](shared-graph-storage.md). Streamed verification and a compact handoff do not make those operations incremental or establish a total memory cap.
 
 Source-time expiry, canonical witnesses, ownership fencing, durable commits, property triggers, foreign keys, and backup checks are unchanged. No runtime dependency or model is added.
 

@@ -39,6 +39,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0033: Validate large projection documents one record at a time](0033-streamed-document-header-validation.md)
 
+- [ADR 0034: Share immutable graph content across generations](0034-shared-graph-content.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

@@ -16,7 +16,7 @@ Public full-artifact operations and unsupported projectors retain their existing
 
 ## Consequences
 
-This reduces retained Python object overhead. The encoded graph, enrichment arrays, source catalog, and projection document still grow with the account. It is not a constant-memory builder or a physical graph-delta store.
+This reduces retained Python object overhead. The encoded graph, enrichment arrays, source catalog, and projection document still grow with the account. It is not a constant-memory builder. [ADR 0034](0034-shared-graph-content.md) defines reuse of physical graph content.
 
 No runtime dependency, model, database, migration, or download is added. A complete generation is still written and verified. Source retention, deletion, analysis authorization, and atomically published graph/metric consistency remain required.
 

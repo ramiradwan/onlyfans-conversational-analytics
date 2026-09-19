@@ -25,6 +25,14 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                       check: Callable[[], None] = lambda: None) -> VerifiedGraph:
     from app.analytics.sqlite_graph_store import _node, _edge
 
+    from app.analytics.shared_graph import supported, uses_segments, ordered_rows
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+
+    shared = supported(connection) and uses_segments(connection, generation_id, account_id)
+    if shared:
+        for table in ('graph_owned_nodes', 'graph_owned_edges'):
+            if connection.execute(f'SELECT 1 FROM {table} WHERE generation_id=? AND creator_account_id=? LIMIT 1', (generation_id, account_id)).fetchone():
+                raise GraphReferentialIntegrityError('graph_generation_layout_mixed')
     digest = hashlib.sha256(b'{"edges":[')
     nodes, edges = [], []
     node_counts, edge_counts = Counter(), Counter()
@@ -35,10 +43,10 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
         check()
         if table == "graph_nodes":
             digest.update(b'],"nodes":[')
-        rows = connection.execute(
-            f"SELECT * FROM {table} WHERE generation_id=? AND creator_account_id=? ORDER BY {key}",
-            (generation_id, account_id),
-        )
+        rows = (ordered_rows(connection, generation_id, account_id, 'node' if table == 'graph_nodes' else 'edge')
+            if shared else connection.execute(
+                f"SELECT * FROM {table} WHERE generation_id=? AND creator_account_id=? ORDER BY {key}",
+                (generation_id, account_id)))
         try:
             for index, row in enumerate(rows):
                 check()

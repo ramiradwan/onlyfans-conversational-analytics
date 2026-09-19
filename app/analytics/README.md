@@ -75,3 +75,7 @@ See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 ## Compact graph construction
 
 The built-in SQLite path retains encoded graph records between bounded projector batches. See [Compact graph construction](../../docs/analytics/compact-graph.md) for input ownership, verification, and remaining account-wide costs.
+
+## Shared graph content
+
+[Shared graph storage](../../docs/analytics/shared-graph-storage.md) describes immutable graph content, segment membership, generation visibility, and cleanup. Logical graph identities and publication digests remain unchanged.

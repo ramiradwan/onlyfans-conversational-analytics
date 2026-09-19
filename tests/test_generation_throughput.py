@@ -51,6 +51,7 @@ def test_artifact_returns_the_records_validated_in_one_snapshot(fixture, monkeyp
 
 @pytest.mark.parametrize('published', [False, True])
 def test_candidate_endpoint_validation_does_not_depend_on_full_file_scan(fixture, published):
+    fixture.pipeline.compact_graph = False
     candidate = fixture.pipeline.build_candidate(ACCOUNT)
     if published:
         fixture.pipeline.publish_candidate(candidate)
@@ -66,6 +67,7 @@ def test_candidate_endpoint_validation_does_not_depend_on_full_file_scan(fixture
 
 
 def test_corrupt_pending_graph_is_refused_at_activation(fixture):
+    fixture.pipeline.compact_graph = False
     from app.analytics.sqlite_projection_store import ProjectionValidationError
     candidate = fixture.pipeline.build_candidate(ACCOUNT)
     with fixture.stores.database.read() as db:
@@ -147,7 +149,7 @@ def test_retired_cleanup_rolls_back_edges_when_endpoint_removal_fails(fixture, m
         def __init__(self, connection):
             self.connection = connection
         def execute(self, sql, parameters=()):
-            if sql.startswith('DELETE FROM graph_nodes'):
+            if sql.startswith(('DELETE FROM graph_nodes', 'DELETE FROM graph_owned_nodes')):
                 raise RuntimeError('synthetic cleanup interruption')
             return self.connection.execute(sql, parameters)
     @contextmanager

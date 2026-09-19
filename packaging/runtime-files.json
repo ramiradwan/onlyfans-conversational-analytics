@@ -86,7 +86,8 @@
         "0006_conversation_fragments.sql": "d5a8bb9ea34a7325d53eca6153e2eebcd95df8216a05408584b27b6a74ca870c",
         "0007_projection_query_metadata.sql": "fbe40588441bffd1c21d83c73cec732db3c7e3c18a3b6d21635c5797f52ac8fe",
         "0008_projection_metadata_parsing.sql": "dc21dd9bed396a61a6a525e36c946021dcb7699571fb9f874838d329cac5bd7d",
-        "0009_projection_validation_header.sql": "a3336b0b904acbb88701b832272daad3eb2ecae4add07173538551424ac65726"
+        "0009_projection_validation_header.sql": "a3336b0b904acbb88701b832272daad3eb2ecae4add07173538551424ac65726",
+        "0010_shared_graph_segments.sql": "b14a679871dd2739b2675a10f9f841dc465f336894a49fc0ae53e8a054e0d598"
       }
     }
   ],

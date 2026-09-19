@@ -2,7 +2,7 @@
 
 # Process changed conversations
 
-The production analytics pipeline recomputes changed conversations and reuses unchanged conversation outputs. It then validates and publishes a complete graph and metrics generation. This is incremental computation, not partial publication or incremental physical graph writes.
+The production analytics pipeline recomputes changed conversations and reuses unchanged conversation outputs. It then validates and publishes a complete graph and metrics generation. Publication remains complete. The built-in SQLite path also [reuses unchanged stored graph content](shared-graph-storage.md).
 
 ## Source reads and change detection
 

@@ -561,6 +561,7 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         projections=stores.projections,
         graph=stores.graph,
     )
+    pipeline.compact_graph = False
     scheduler = InProcessProjectionScheduler(
         pipeline, worker_count=2, queue_capacity=4
     )

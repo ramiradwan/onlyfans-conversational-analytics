@@ -591,7 +591,8 @@
         "app/analytics/source_tokens.py",
         "app/analytics/generation_reference.py",
         "app/analytics/projection_encoding.py",
-        "app/analytics/compact_graph.py"
+        "app/analytics/compact_graph.py",
+        "app/analytics/shared_graph.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",
@@ -1331,7 +1332,9 @@
           "app/persistence/sql/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
           "app/analytics/generation_reference.py",
-          "app/analytics/compact_graph.py"
+          "app/analytics/compact_graph.py",
+          "app/analytics/shared_graph.py",
+          "app/analytics/sql/0010_shared_graph_segments.sql"
         ]
       },
       {
@@ -1382,7 +1385,9 @@
           "app/analytics/identity.py",
           "app/analytics/graph_*.py",
           "app/analytics/*graph_store.py",
-          "app/analytics/compact_graph.py"
+          "app/analytics/compact_graph.py",
+          "app/analytics/shared_graph.py",
+          "app/analytics/sql/0010_shared_graph_segments.sql"
         ]
       },
       {
@@ -1413,7 +1418,9 @@
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
           "app/analytics/scheduling.py",
-          "app/analytics/compact_graph.py"
+          "app/analytics/compact_graph.py",
+          "app/analytics/shared_graph.py",
+          "app/analytics/sql/0010_shared_graph_segments.sql"
         ]
       },
       {
@@ -1427,7 +1434,9 @@
           "app/analytics/sql/0006_conversation_fragments.sql",
           "app/analytics/scheduling.py",
           "app/analytics/projection_encoding.py",
-          "app/analytics/compact_graph.py"
+          "app/analytics/compact_graph.py",
+          "app/analytics/shared_graph.py",
+          "app/analytics/sql/0010_shared_graph_segments.sql"
         ]
       },
       {
@@ -1451,7 +1460,9 @@
           "app/analytics/generation_reference.py",
           "app/analytics/compact_graph.py",
           "app/analytics/sql/0008_projection_metadata_parsing.sql",
-          "app/analytics/sql/0009_projection_validation_header.sql"
+          "app/analytics/sql/0009_projection_validation_header.sql",
+          "app/analytics/shared_graph.py",
+          "app/analytics/sql/0010_shared_graph_segments.sql"
         ]
       },
       {
@@ -1471,7 +1482,9 @@
           "app/analytics/generation_reference.py",
           "app/analytics/compact_graph.py",
           "app/analytics/sql/0008_projection_metadata_parsing.sql",
-          "app/analytics/sql/0009_projection_validation_header.sql"
+          "app/analytics/sql/0009_projection_validation_header.sql",
+          "app/analytics/shared_graph.py",
+          "app/analytics/sql/0010_shared_graph_segments.sql"
         ]
       },
       {

@@ -92,10 +92,18 @@ class CompactArtifact:
     graph: CompactGraph
 
 
-def write_compact_graph(writer, graph: CompactGraph, *, check=lambda: None) -> None:
+def write_compact_graph(writer, graph: CompactGraph, *, check=lambda: None, store=None) -> None:
     """Write private canonical rows under the ordinary lease and SQL guards."""
 
     from app.analytics.sqlite_graph_store import _timestamp
+
+    if store is not None and getattr(store, "reuse_graph_content", True):
+        from app.analytics.shared_graph import supported, write_shared_graph
+        with writer.database.read() as connection:
+            enabled = supported(connection)
+        if enabled:
+            write_shared_graph(writer, graph, store, check=check)
+            return
 
     def parameters(data: str, node: bool):
         record = json.loads(data)

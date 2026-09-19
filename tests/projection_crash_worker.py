@@ -48,6 +48,7 @@ def main() -> None:
     )
     AnalyticsPipeline(
         history_source,
+        compact_graph="--owned-graph" not in sys.argv,
         projections=store,
         graph=store.graph,
     ).project_account("account-a")

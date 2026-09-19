@@ -125,6 +125,7 @@ def test_stored_verification_materializes_graph_only_when_requested(fixture):
 
 
 def test_matching_stored_digest_does_not_hide_corrupted_graph_rows(fixture):
+    fixture.pipeline.compact_graph = False
     candidate = fixture.pipeline.build_candidate(ACCOUNT)
     with fixture.stores.database.transaction() as db:
         db.execute("DROP TRIGGER graph_node_building_update")
@@ -194,6 +195,7 @@ def test_staging_and_final_activation_each_verify_persisted_content(fixture, mon
 
 
 def test_corruption_after_witness_completion_cannot_become_visible(fixture):
+    fixture.pipeline.compact_graph = False
     def corrupt(stage, generation):
         if stage == "canonical_completed":
             with fixture.stores.database.transaction() as db:

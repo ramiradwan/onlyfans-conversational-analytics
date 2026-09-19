@@ -229,7 +229,9 @@ def test_production_graph_mutators_cannot_touch_active_generation(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
-    pipeline_for(repositories, store).project_account("account-a")
+    pipeline = pipeline_for(repositories, store)
+    pipeline.compact_graph = False
+    pipeline.project_account("account-a")
     active = store.database.active_generation("account-a")
     partition_ref = account_ref("account-a")
     nodes = store.graph.nodes(partition_ref)
@@ -559,7 +561,9 @@ def test_startup_quarantines_active_generation_without_exact_witness(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
-    pipeline_for(repositories, store).project_account("account-a")
+    pipeline = pipeline_for(repositories, store)
+    pipeline.compact_graph = False
+    pipeline.project_account("account-a")
     active = store.database.active_generation("account-a")
     assert active is not None and repositories.database is not None
 
@@ -610,6 +614,7 @@ def test_tampered_pending_generation_is_cancelled_and_never_activated(
             "intent_reserved",
             str(canonical_path),
             str(projections_path),
+            "--owned-graph",
         ],
         cwd=Path(__file__).parents[1],
         check=False,
@@ -642,7 +647,9 @@ def test_active_rows_are_schema_immutable_and_digest_checked_on_read(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
-    pipeline_for(repositories, store).project_account("account-a")
+    pipeline = pipeline_for(repositories, store)
+    pipeline.compact_graph = False
+    pipeline.project_account("account-a")
     active = store.database.active_generation("account-a")
     assert active is not None
     statement = """
@@ -1067,6 +1074,7 @@ async def test_graph_digest_tamper_quarantines_projection_and_self_heals(
         projections=stores.projections,
         graph=stores.graph,
     )
+    pipeline.compact_graph = False
     scheduler = InProcessProjectionScheduler(pipeline, worker_count=2, queue_capacity=4)
     await scheduler.start(recover=True)
     await _wait_for_lazy_projection(scheduler, repositories)
