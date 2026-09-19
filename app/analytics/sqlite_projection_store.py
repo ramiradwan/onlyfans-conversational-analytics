@@ -15,6 +15,7 @@ from uuid import uuid4
 from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.graph_privacy import safe_graph_records
+from app.analytics.projection_encoding import projection_document
 from app.analytics.graph_store import (
     GraphDeadlineExceeded,
     GraphReferentialIntegrityError,
@@ -112,6 +113,20 @@ class SQLiteAnalyticsProjectionStore:
         if reconcile:
             self.reconcile_startup()
 
+    def generation_references_supported(self) -> bool:
+        with self.database.read() as connection:
+            return int(connection.execute("PRAGMA user_version").fetchone()[0]) >= 7
+
+    def check_generation_reference(self, account_id, reference):
+        from app.analytics.generation_reference import check_reference
+
+        check_reference(self, account_id, reference)
+
+    def read_generation_artifact(self, account_id, reference):
+        from app.analytics.generation_reference import read_referenced_artifact
+
+        return read_referenced_artifact(self, account_id, reference)
+
     def open_conversation_fragments(self, account_id):
         from app.analytics.conversation_sql import fragment_reader
 
@@ -170,7 +185,7 @@ class SQLiteAnalyticsProjectionStore:
         )
         if generation_id is None:
             return None
-        values = self._validate_persisted_generation(generation_id)
+        values = self._validate_persisted_generation(generation_id, materialize_graph=True)
         return RebuildArtifact(projection=values["projection"],
                                nodes=values["nodes"], edges=values["edges"])
 
@@ -250,6 +265,11 @@ class SQLiteAnalyticsProjectionStore:
             cancellation_check=cancellation_check,
         )
 
+    def stage_built_artifact(self, artifact, **kwargs):
+        """Validate a privately owned build without cloning its complete graph."""
+
+        return self.stage_artifact(artifact, _copy_graph=False, **kwargs)
+
     def stage_artifact(
         self,
         artifact: RebuildArtifact,
@@ -260,16 +280,17 @@ class SQLiteAnalyticsProjectionStore:
         cancellation_check: CancellationCheck | None = None,
         enrichment_entries: tuple[bytes, ...] = (),
         conversation_fragments: tuple[bytes, ...] = (),
+        _copy_graph: bool = True,
     ) -> str:
         """Persist and validate one inactive generation from one canonical snapshot."""
 
         from app.analytics.enrichment_cache import validate_entries
         from app.analytics.enrichment_sql import insert_entries
 
-        from app.analytics.conversation_reuse import validate_fragments
+        from app.analytics.conversation_reuse import iter_validated_fragments
         from app.analytics.conversation_sql import insert_fragments
 
-        fragments = validate_fragments(artifact, conversation_fragments)
+        fragments = iter_validated_fragments(artifact, conversation_fragments)
         cached = validate_entries(artifact, enrichment_entries)
         check_cancelled(cancellation_check)
         projection = artifact.projection
@@ -282,13 +303,16 @@ class SQLiteAnalyticsProjectionStore:
             raise ProjectionValidationError("canonical projection identity differs")
         if self.canonical_identity_reader(creator_account_id) != canonical_identity:
             raise ProjectionActivationConflict("canonical identity changed")
-        safe_nodes, safe_edges = safe_graph_records(artifact.nodes, artifact.edges)
+        if _copy_graph:
+            safe_nodes, safe_edges = safe_graph_records(artifact.nodes, artifact.edges)
+        else:
+            safe_nodes, safe_edges = artifact.nodes, artifact.edges
         safe_artifact = RebuildArtifact(
             projection=projection,
             nodes=safe_nodes,
             edges=safe_edges,
         )
-        self._validate_artifact_shape(safe_artifact)
+        self._validate_artifact_shape(safe_artifact, owned_graph=_copy_graph)
         current = self.get_artifact(
             creator_account_id,
             canonical_identity=canonical_identity,
@@ -388,7 +412,7 @@ class SQLiteAnalyticsProjectionStore:
                     projection.pipeline_revision,
                     projection.pipeline_config_digest,
                     projection.projection_digest,
-                    _json(projection.model_dump(mode="json")),
+                    projection_document(projection, check=lambda: check_cancelled(cancellation_check)),
                 ),
             )
             insert_entries(connection, generation_id, cached)
@@ -401,7 +425,7 @@ class SQLiteAnalyticsProjectionStore:
             lease_seconds=self.lease_seconds,
         )
         with writer.lease_session():
-            writer.replace(nodes=safe_nodes, edges=safe_edges)
+            writer._replace_validated_records(safe_nodes, safe_edges)
             writer.write_stats(
                 source_revision=projection.source_revision,
                 node_count=len(safe_nodes),
@@ -521,7 +545,7 @@ class SQLiteAnalyticsProjectionStore:
             raise ProjectionActivationConflict("projection account differs")
         self._require_live_owner(generation)
         self._require_generation_identity(generation, canonical_identity)
-        self._validate_persisted_generation(generation_id)
+        # The final activation gate verifies stored content before changing visibility.
         if self.canonical_identity_reader(creator_account_id) != (
             canonical_identity
         ):
@@ -942,6 +966,7 @@ class SQLiteAnalyticsProjectionStore:
         generation_id: str,
         *,
         allow_building: bool = False,
+        materialize_graph: bool = False,
         deadline: float | None = None,
         cancellation_check: CancellationCheck | None = None,
     ) -> dict[str, object]:
@@ -973,7 +998,7 @@ class SQLiteAnalyticsProjectionStore:
                 values = recompute_generation(
                     connection,
                     generation_id,
-                    check=check,
+                    check=check, materialize_graph=materialize_graph,
                 )
                 projection = values["projection"]
                 if (
@@ -1402,7 +1427,7 @@ class SQLiteAnalyticsProjectionStore:
             )
 
     @staticmethod
-    def _validate_artifact_shape(artifact: RebuildArtifact) -> None:
+    def _validate_artifact_shape(artifact: RebuildArtifact, *, owned_graph: bool = False) -> None:
         projection = artifact.projection
         if projection.graph.source_revision != projection.source_revision:
             raise ProjectionValidationError("graph and projection revisions differ")
@@ -1434,7 +1459,10 @@ class SQLiteAnalyticsProjectionStore:
             raise GraphReferentialIntegrityError("graph endpoint is absent")
         if _projection_digest(projection) != projection.projection_digest:
             raise ProjectionValidationError("projection content digest differs")
-        if projection.graph_digest != _graph_digest(artifact.nodes, artifact.edges):
+        from app.analytics.graph_privacy import _validated_graph_digest
+
+        digest_graph = _validated_graph_digest if owned_graph else _graph_digest
+        if projection.graph_digest != digest_graph(artifact.nodes, artifact.edges):
             raise ProjectionValidationError("graph projection digest differs")
 
     def _checkpoint(self, stage: str, generation_id: str) -> None:
@@ -1442,7 +1470,7 @@ class SQLiteAnalyticsProjectionStore:
             self.crash_hook(stage, generation_id)
 
 
-def _validate_generation_links(connection, generation_id, account_id, nodes, edges, check):
+def _validate_generation_links(connection, generation_id, account_id, check):
     """Check the candidate's referential closure without scanning other accounts."""
 
     check()
@@ -1456,11 +1484,17 @@ def _validate_generation_links(connection, generation_id, account_id, nodes, edg
         raise GraphReferentialIntegrityError("projection_epoch_absent")
     schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
     optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7}
-    node_ids = {node.node_id for node in nodes}
-    for edge in edges:
-        check()
-        if edge.source_id not in node_ids or edge.target_id not in node_ids:
-            raise GraphReferentialIntegrityError("graph_endpoint_absent")
+    missing = connection.execute("""SELECT 1 FROM graph_edges AS e
+        LEFT JOIN graph_nodes AS source ON source.generation_id=e.generation_id
+            AND source.creator_account_id=e.creator_account_id AND source.node_id=e.source_id
+        LEFT JOIN graph_nodes AS target ON target.generation_id=e.generation_id
+            AND target.creator_account_id=e.creator_account_id AND target.node_id=e.target_id
+        WHERE e.generation_id=? AND e.creator_account_id=?
+          AND (source.node_id IS NULL OR target.node_id IS NULL) LIMIT 1""",
+        (generation_id, account_id)).fetchone()
+    check()
+    if missing is not None:
+        raise GraphReferentialIntegrityError("graph_endpoint_absent")
     for table in ("analytics_projections", "graph_nodes", "graph_edges",
                   "graph_partition_stats", "enrichment_reuse", "conversation_fragments",
                   "projection_query_metadata", "graph_algorithm_metrics"):
@@ -1481,6 +1515,7 @@ def recompute_generation(
     generation_id: str,
     *,
     check: Callable[[], None] | None = None,
+    materialize_graph: bool = False,
 ) -> dict[str, object]:
     """Recompute all row-derived validation values; stored digest fields are ignored."""
 
@@ -1523,16 +1558,22 @@ def recompute_generation(
         != generation["pipeline_identity_digest"]
     ):
         raise ProjectionValidationError("projection row digest differs")
-    nodes, edges = _generation_graph(
-        connection,
-        generation_id,
-        account_id,
-        check=run_check,
-    )
-    from app.analytics.graph_privacy import _validated_graph_digest
+    _validate_generation_links(connection, generation_id, account_id, run_check)
+    if materialize_graph:
+        from app.analytics.graph_privacy import _validated_graph_digest
 
-    _validate_generation_links(connection, generation_id, account_id, nodes, edges, run_check)
-    graph_digest = _validated_graph_digest(nodes, edges, check=run_check)
+        nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
+        graph_digest = _validated_graph_digest(nodes, edges, check=run_check)
+        node_counts = Counter(item.kind.value for item in nodes)
+        edge_counts = Counter(item.relation.value for item in edges)
+    else:
+        from app.analytics.graph_verification import verify_graph_rows
+
+        verified = verify_graph_rows(connection, generation_id, account_id, check=run_check)
+        nodes, edges = verified.nodes, verified.edges
+        graph_digest = verified.digest
+        node_counts, edge_counts = verified.node_counts, verified.edge_counts
+    node_count, edge_count = sum(node_counts.values()), sum(edge_counts.values())
     run_check()
     if projection.graph_digest != graph_digest:
         raise ProjectionValidationError("graph document digest differs")
@@ -1546,16 +1587,14 @@ def recompute_generation(
     if (
         stats is None
         or int(stats["source_revision"]) != projection.source_revision
-        or int(stats["node_count"]) != len(nodes)
-        or int(stats["edge_count"]) != len(edges)
+        or int(stats["node_count"]) != node_count
+        or int(stats["edge_count"]) != edge_count
         or stats["graph_digest"] != graph_digest
-        or projection.graph.node_count != len(nodes)
-        or projection.graph.edge_count != len(edges)
+        or projection.graph.node_count != node_count
+        or projection.graph.edge_count != edge_count
     ):
         raise ProjectionValidationError("graph row coverage or digest differs")
     run_check()
-    node_counts = Counter(item.kind.value for item in nodes)
-    edge_counts = Counter(item.relation.value for item in edges)
     run_check()
     if projection.graph.node_counts_by_kind != dict(sorted(node_counts.items())):
         raise ProjectionValidationError("node-kind coverage differs")
@@ -1567,8 +1606,8 @@ def recompute_generation(
         "edges": edges,
         "projection_digest": projection_digest,
         "graph_digest": graph_digest,
-        "node_count": len(nodes),
-        "edge_count": len(edges),
+        "node_count": node_count,
+        "edge_count": edge_count,
     }
 
 

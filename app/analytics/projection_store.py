@@ -771,14 +771,9 @@ class InMemoryAnalyticsProjectionStore:
 
 
 def projection_content_digest(projection: AnalyticsProjection) -> str:
-    payload = projection.model_dump(mode="json", exclude={"projection_digest"})
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+    from app.analytics.projection_encoding import projection_digest
+
+    return projection_digest(projection)
 
 
 def empty_projection(projection: AnalyticsProjection) -> AnalyticsProjection:

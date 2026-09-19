@@ -1827,13 +1827,15 @@ class SQLiteGraphGenerationWriter:
 
     def replace(self, *, nodes: list[GraphNode], edges: list[GraphEdge]) -> None:
         with self.lease_session():
+            safe_nodes, safe_edges = safe_graph_records(nodes, edges, check=self._check_heartbeat)
+            self._replace_validated_records(safe_nodes, safe_edges)
+
+    def _replace_validated_records(self, safe_nodes, safe_edges) -> None:
+        with self.lease_session():
 
             def keepalive() -> None:
                 self._check_heartbeat()
 
-            safe_nodes, safe_edges = safe_graph_records(
-                nodes, edges, check=keepalive
-            )
             node_map: dict[str, GraphNode] = {}
             for node in safe_nodes:
                 keepalive()

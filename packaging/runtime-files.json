@@ -43,7 +43,8 @@
         "0005_analytics_projection_writer_capability.sql": "237a12a0a164a5eb30eb772c12050b738b5abb2a834e3c7762d1ad5d11dae93b",
         "0006_launcher_session_handoff.sql": "73949dc9a268d4e887ae72175d36ba69c1c741fa27725919ef67bbf93265df42",
         "0007_creator_vault_and_deletion_barriers.sql": "1b1d34c3921c1c9c9fe375c98762f3142c18cd45ac8fa374159bfc0000c7fc9a",
-        "0008_managed_deletion_operations.sql": "cb95093255705abe8ea9e253d6acb831fa363754551ba23a146235207b2442dc"
+        "0008_managed_deletion_operations.sql": "cb95093255705abe8ea9e253d6acb831fa363754551ba23a146235207b2442dc",
+        "0009_analytics_source_tokens.sql": "74043156dce6ef81f2fca8db3d4ccd47772f2cd862afdbd05baf00d621b4a772"
       }
     },
     {
@@ -80,7 +81,10 @@
         "0001_projection_store.sql": "4f9e6a5792d5c6de1a95ffc9fbe71ad298870cfe6d82ff06755af6c77fb6acc3",
         "0002_generation_lifecycle.sql": "d7fa1c72193d22feb2e15a85ef1d03f54088dd21d02588886546e0340be41ada",
         "0003_opaque_graph_contract.sql": "ef3ab0d86ef0c6f3c695010a023364f98ca07c9e1d6878e2db0beb4b3484e3f5",
-        "0004_topic_property_pair.sql": "9bd27a1c33e50bac50a09d097e6707c9e1cd219760cb59a7b9ff8a42f11a47cb"
+        "0004_topic_property_pair.sql": "9bd27a1c33e50bac50a09d097e6707c9e1cd219760cb59a7b9ff8a42f11a47cb",
+        "0005_enrichment_reuse.sql": "ff123ebdff8c6a8a49ad75db04e396f7e674a416658fa3fb66d3ac5d96e6d1a1",
+        "0006_conversation_fragments.sql": "d5a8bb9ea34a7325d53eca6153e2eebcd95df8216a05408584b27b6a74ca870c",
+        "0007_projection_query_metadata.sql": "fbe40588441bffd1c21d83c73cec732db3c7e3c18a3b6d21635c5797f52ac8fe"
       }
     }
   ],

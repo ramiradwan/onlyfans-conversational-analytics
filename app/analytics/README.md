@@ -67,3 +67,7 @@ See [Rebuild analytics](rebuild.md) for the command-line rebuild procedure.
 ## Generation throughput
 
 [Generation validation and writes](../../docs/analytics/generation-throughput.md) describes scoped integrity checks, owned connections, and bounded adaptive batches.
+
+## Stored publication references
+
+[Bounded publication](../../docs/analytics/bounded-publication.md) describes compact SQLite handoffs, explicit artifact reads, and streaming verification. Full-generation construction and writes remain separate workload costs.

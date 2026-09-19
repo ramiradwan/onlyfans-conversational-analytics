@@ -161,13 +161,17 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
 
 
 def validate_fragments(artifact, entries: tuple[bytes, ...]):
+    return list(iter_validated_fragments(artifact, entries))
+
+
+def iter_validated_fragments(artifact, entries: tuple[bytes, ...]):
     if len(entries) > MAX_FRAGMENTS or sum(map(len, entries)) > MAX_FRAGMENT_TOTAL_BYTES:
         raise ValueError("conversation_fragment_budget_invalid")
     messages = {m.message_ref: m for m in artifact.projection.message_enrichments}
     metrics = {m.conversation_ref: m for m in artifact.projection.conversation_metrics}
     nodes = {n.node_id: n for n in artifact.nodes}
     edges = {e.edge_id: e for e in artifact.edges}
-    parsed, seen = [], set()
+    seen = set()
     for data in entries:
         if len(data) > MAX_FRAGMENT_BYTES:
             raise ValueError("conversation_fragment_size_invalid")
@@ -182,5 +186,4 @@ def validate_fragments(artifact, entries: tuple[bytes, ...]):
                 or any(edges.get(e.edge_id) != e for e in item.edges)):
             raise ValueError("conversation_fragment_output_invalid")
         seen.add(item.conversation_ref)
-        parsed.append(item)
-    return parsed
+        yield item

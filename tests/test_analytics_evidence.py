@@ -249,7 +249,7 @@ def test_eviction_and_restart_require_reissuing_query_references(stored):
 @pytest.mark.parametrize("fault", ["edit", "delete", "revision", "clear", "expiry"])
 def test_changes_during_resolution_suppress_the_response(stored, fault, monkeypatch):
     clock = [NOW]
-    resolver, ref, source = prepared(stored, clock=lambda: clock[0])
+    resolver, ref, source = prepared(stored, clock=lambda: clock[0], monotonic=lambda: 0.0)
     read = source.read_evidence_message
     calls = []
     def changes(account, location, limit):
@@ -425,3 +425,18 @@ def test_embedded_null_does_not_bypass_source_byte_limit(stored, monkeypatch):
         pytest.fail("oversized text reached source model construction")
     monkeypatch.setattr("app.analytics.canonical_source.EvidenceMessage", forbidden)
     assert HistoryAnalyticsSource(stored.history).read_evidence_message(ACCOUNT, LOCATION, budget()) is None
+
+
+def test_resolution_budget_expires_during_a_source_read(stored, monkeypatch):
+    from app.analytics.query_execution import QuestionLimitExceeded
+
+    tick = [0.0]
+    resolver, reference, source = prepared(stored, monotonic=lambda: tick[0])
+    read = source.read_evidence_message
+    def delayed(account, location, limit):
+        result = read(account, location, limit)
+        tick[0] += 2.0
+        return result
+    monkeypatch.setattr(source, "read_evidence_message", delayed)
+    with pytest.raises(QuestionLimitExceeded):
+        resolver.resolve(policy(), reference)

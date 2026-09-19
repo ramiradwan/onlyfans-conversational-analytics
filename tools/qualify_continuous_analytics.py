@@ -43,6 +43,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--messages', type=int, default=1000)
     parser.add_argument('--query-samples', type=int, default=100)
+    parser.add_argument('--verification-mode', choices=('full', 'digests'), default='full')
     args = parser.parse_args()
     if not 100 <= args.messages <= 100_000 or not 1 <= args.query_samples <= 100:
         parser.error('Use 100 to 100000 messages and 1 to 100 query samples.')
@@ -75,6 +76,8 @@ def main():
         'logical_cpus': os.cpu_count(), 'messages': args.messages, 'conversations': 101,
         'layout': 'half_in_one_conversation_remainder_across_100', 'evaluation_clock': now.isoformat(),
         'phases': [], 'laptop_qualified': False,
+        'measurement': 'candidate_build_and_publication_without_explicit_artifact_read',
+        'verification_mode': args.verification_mode,
         'unmeasured': ['installer_size', 'disk_type', 'power_mode', 'constrained_laptop_profiles']}
     output = args.output/'report.json'
     def save():
@@ -108,7 +111,7 @@ def main():
             report['phases'].append(item)
             save()
             print(json.dumps(item), flush=True)
-            return result.artifact
+            return result
         phase('cold')
         phase('unchanged_rebuild')
         started = time.perf_counter()
@@ -116,13 +119,8 @@ def main():
             insert_message(db, 'chat-1', 'added-message', now-timedelta(microseconds=1), 2)
             advance(db)
         report['ingest_seconds'] = time.perf_counter()-started
-        updated = phase('one_new_message')
-        cold = AnalyticsPipeline(fixture.source, clock=lambda: now, reuse_enrichment=False, reuse_conversations=False)
-        original = HistoryAnalyticsSource(fixture.repositories.history).account_read_model(ACCOUNT)
-        expected = cold._build(ACCOUNT, original, projection_generation=updated.projection.projection_generation)
-        if expected != updated:
-            raise AssertionError('incremental_result_differs_from_clean_rebuild')
-        report['clean_rebuild_equal'] = True
+        updated_run = phase('one_new_message')
+        report['publication_peak_bytes'] = peak_memory_bytes()
         policy = RuntimePolicy(AuthContext('synthetic-principal', ACCOUNT, 'creator'), AuthorizationEpoch(1))
         resources = QuestionResources(fixture.source, fixture.pipeline, clock=lambda: now)
         plan = {'question': 'no_later_creator_reply.v1', 'timezone': 'UTC',
@@ -149,6 +147,26 @@ def main():
             'p95_seconds_including_failures': ordered[math.ceil(0.95*len(ordered))-1],
             'max_seconds': max(elapsed), 'undetermined_counts': sorted(set(undetermined)),
             'production_message_types_qualified': False}
+        save()
+        read_started = time.perf_counter()
+        updated = updated_run.artifact if args.verification_mode == 'full' else updated_run.reference
+        if updated is None:
+            raise AssertionError('stored_reference_required_for_digest_verification')
+        report['artifact_materialization_seconds'] = (time.perf_counter() - read_started
+            if args.verification_mode == 'full' else None)
+        save()
+        cold = AnalyticsPipeline(fixture.source, clock=lambda: now, reuse_enrichment=False, reuse_conversations=False)
+        original = HistoryAnalyticsSource(fixture.repositories.history).account_read_model(ACCOUNT)
+        header = updated.projection if args.verification_mode == 'full' else updated
+        expected = cold._build(ACCOUNT, original, projection_generation=header.projection_generation)
+        matches = expected == updated if args.verification_mode == 'full' else (
+            expected.projection.projection_digest == header.projection_digest
+            and expected.projection.graph_digest == header.graph_digest
+            and expected.projection.canonical_content_digest == header.canonical_content_digest)
+        if not matches:
+            raise AssertionError('incremental_result_differs_from_clean_rebuild')
+        del expected, original, updated
+        report['clean_rebuild_equal'] = True
         report['process_peak_bytes'] = peak_memory_bytes()
         report['complete'] = True
         save()

@@ -51,8 +51,7 @@ def graph_content_digest(
 ) -> str:
     """Digest the exact validated property graph independently of row metadata."""
 
-    safe_nodes, safe_edges = safe_graph_records(nodes, edges, check=check)
-    return _validated_graph_digest(safe_nodes, safe_edges, check=check)
+    return _record_graph_digest(nodes, edges, check=check, revalidate=True)
 
 
 def _validated_graph_digest(
@@ -61,6 +60,10 @@ def _validated_graph_digest(
 ) -> str:
     """Encode privately owned, already validated records in canonical order."""
 
+    return _record_graph_digest(nodes, edges, check=check, revalidate=False)
+
+
+def _record_graph_digest(nodes, edges, *, check=None, revalidate):
     digest = hashlib.sha256(b'{"edges":[')
     for name, records, key in (
         ("edges", edges, lambda item: item.edge_id),
@@ -75,6 +78,8 @@ def _validated_graph_digest(
                 check()
             if index:
                 digest.update(b',')
+            if revalidate:
+                item = safe_graph_edge(item) if name == "edges" else safe_graph_node(item)
             digest.update(json.dumps(item.model_dump(mode="json"), ensure_ascii=False,
                                      sort_keys=True, separators=(",", ":")).encode("utf-8"))
     digest.update(b']}')
