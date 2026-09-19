@@ -135,6 +135,8 @@ export class ConsentController {
     controlQueue = new SerialExecutor(),
     activationEvidenceStore = null,
     runtimeSummary = () => ({}),
+    hasSavedPairing = async () => false,
+    scheduler = globalThis,
     fetchImpl = globalThis.fetch,
     now = () => new Date(),
   }) {
@@ -174,6 +176,10 @@ export class ConsentController {
     this.clearLocalData = clearLocalData;
     this.activeModeAuthorization = activeModeAuthorization;
     this.runtimeSummary = runtimeSummary;
+    this.hasSavedPairing = hasSavedPairing;
+    this.scheduler = scheduler;
+    this.bindingRetryTimer = null;
+    this.bindingRetryDelay = 500;
     this.fetchImpl = fetchImpl;
     this.now = now;
     this.captureScope = captureScope;
@@ -227,6 +233,9 @@ export class ConsentController {
 
   #invalidate(code) {
     this.controlGeneration += 1;
+    if (this.bindingRetryTimer !== null) this.scheduler.clearTimeout(this.bindingRetryTimer);
+    this.bindingRetryTimer = null;
+    this.bindingRetryDelay = 500;
     this.adapter.invalidate?.();
     this.controlAbort.abort(Object.assign(new Error(code), { code }));
     this.controlAbort = new AbortController();
@@ -437,6 +446,31 @@ export class ConsentController {
     await this.#applyPhase(desired, generation);
     this.#assertGeneration(generation);
     if (['preview', 'full'].includes(this.phase)) this.captureScope.reopen();
+    await this.#scheduleBindingRetry(generation);
+  }
+
+  async #scheduleBindingRetry(generation) {
+    if (generation !== this.controlGeneration || this.phase !== 'identity'
+      || this.state.mode !== 'full' || this.bindingRetryTimer !== null) return;
+    let paired = false;
+    try { paired = await this.hasSavedPairing(); } catch { /* No confirmed pairing. */ }
+    // A storage event or consent transition may invalidate us during the status read.
+    if (!paired || generation !== this.controlGeneration) return;
+    const delay = this.bindingRetryDelay;
+    this.bindingRetryDelay = Math.min(delay * 2, 30_000);
+    this.bindingRetryTimer = this.scheduler.setTimeout(() => {
+      if (generation !== this.controlGeneration) return;
+      this.bindingRetryTimer = null;
+      return this.controlQueue.run(async () => {
+        if (generation !== this.controlGeneration) return;
+        // Keep identity capture available while Brain is offline. Do not invalidate
+        // the companion connection that this probe is trying to establish.
+        const bound = await this.#hasBrainBinding();
+        if (generation !== this.controlGeneration) return;
+        if (bound) await this.#reconcileLocked(generation);
+        else await this.#scheduleBindingRetry(generation);
+      }).catch(() => undefined);
+    }, delay);
   }
 
   reconcile() {
