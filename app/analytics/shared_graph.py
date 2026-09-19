@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 import hashlib
+from heapq import merge
 from itertools import groupby, islice
 import json
 import time
@@ -78,10 +79,44 @@ def _records(graph, plan, check):
         yield values, membership
 
 
+def _content_order(graph, plans, kind, check):
+    """Merge bounded bucket iterators in physical content-key order."""
+
+    records = graph.nodes if kind == 'node' else graph.edges
+    def signature(key):
+        check()
+        return hashlib.sha256(records[key].encode('utf-8')).digest()
+    streams = []
+    for plan in plans:
+        check()
+        if plan.kind == kind and not plan.reused:
+            ordered = replace(plan, keys=sorted(plan.keys, key=signature))
+            streams.append(_records(graph, ordered, check))
+    yield from merge(*streams, key=lambda item: item[0][1])
+
+
+def _existing_ids(connection, table, field, account, identities, check):
+    """Look up bounded parameter groups without running insert triggers on hits."""
+
+    result = set()
+    for offset in range(0, len(identities), 256):
+        check()
+        batch = identities[offset:offset + 256]
+        placeholders = ','.join('?' for _ in batch)
+        result.update(row[0] for row in connection.execute(
+            f'SELECT {field} FROM {table} WHERE creator_account_id=? AND {field} IN ({placeholders})',
+            (account, *batch)))
+    return result
+
+
 def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None) -> dict[str, int]:
     """Write changed content only; verify the complete selected graph at publication."""
 
-    with writer.lease_session():
+    from app.analytics.database import content_write_cache
+
+    with writer.lease_session(), content_write_cache(
+        writer._write_connection, len(graph.nodes) + len(graph.edges)
+    ):
         connection = writer._write_connection
         existing = _predecessor_segments(store, connection, graph.account_ref)
         plans = list(_plans(graph, existing, check))
@@ -101,8 +136,7 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
             ('node', 'node_id,kind,occurred_at,properties_json'),
             ('edge', 'edge_id,source_id,target_id,relation,occurred_at,sequence,properties_json'),
         ):
-            entries = (item for plan in plans if plan.kind == kind and not plan.reused
-                       for item in _records(graph, plan, check))
+            entries = _content_order(graph, plans, kind, check)
             placeholders = ','.join('?' for _ in range(len(fields.split(',')) + 2))
             statement = f'INSERT INTO graph_{kind}_content(creator_account_id,content_id,{fields}) VALUES ({placeholders}) ON CONFLICT(creator_account_id,content_id) DO NOTHING'
             while True:
@@ -113,11 +147,16 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
                     break
                 started = time.monotonic()
                 with writer._owned_transaction() as db:
-                    before = db.total_changes
-                    cursor = db.executemany(statement, [value for value, _ in batch])
-                    statistics[kind + '_content_written'] += cursor.rowcount
+                    existing_content = _existing_ids(db, f'graph_{kind}_content',
+                        'content_id', graph.account_ref, [value[1] for value, _ in batch], check)
+                    changed = [value for value, _ in batch if value[1] not in existing_content]
                     if kind == 'node':
-                        statistics['node_identities_written'] += db.total_changes - before - cursor.rowcount
+                        identities = {value[2] for value in changed}
+                        present = _existing_ids(db, 'graph_node_identities', 'node_id',
+                            graph.account_ref, sorted(identities), check)
+                        statistics['node_identities_written'] += len(identities - present)
+                    cursor = db.executemany(statement, changed)
+                    statistics[kind + '_content_written'] += cursor.rowcount
                     db.executemany(f'INSERT INTO graph_segment_{kind}s(creator_account_id,segment_id,{kind}_id,content_id) VALUES (?,?,?,?)',
                                    [member for _, member in batch])
                 writer._record_operation_duration(time.monotonic() - started, allow_growth=True)

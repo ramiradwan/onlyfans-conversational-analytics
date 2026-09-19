@@ -15,6 +15,7 @@ from app.analytics.opaque_refs import normalize_account_ref
 
 GENERATION_WRITE_CACHE_KIB = 16 * 1024
 GENERATION_VERIFICATION_CACHE_KIB = 32 * 1024
+MAX_CONTENT_WRITE_CACHE_KIB = 128 * 1024
 
 
 @contextmanager
@@ -23,6 +24,28 @@ def generation_verification_cache(connection):
 
     previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
     target = -GENERATION_VERIFICATION_CACHE_KIB
+    if previous != target:
+        connection.execute(f"PRAGMA cache_size={target}")
+    try:
+        yield
+    finally:
+        if previous != target:
+            connection.execute(f"PRAGMA cache_size={previous}")
+
+
+def content_write_cache_target(record_count: int) -> int:
+    if type(record_count) is not int or record_count < 0:
+        raise ValueError("graph_record_count_invalid")
+    return max(GENERATION_WRITE_CACHE_KIB,
+               min(MAX_CONTENT_WRITE_CACHE_KIB, (record_count + 1) // 2))
+
+
+@contextmanager
+def content_write_cache(connection, record_count: int):
+    """Keep the content writer's working set bounded and local to its connection."""
+
+    previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
+    target = -content_write_cache_target(record_count)
     if previous != target:
         connection.execute(f"PRAGMA cache_size={target}")
     try:

@@ -38,12 +38,58 @@ def peak_memory_bytes():
     return values.PeakWorkingSetSize
 
 
+def process_io_counters():
+    """Return native Windows process transfer counters, not database-only I/O."""
+
+    if os.name != 'nt':
+        return None
+    import ctypes
+    class Counters(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_ulonglong) for name in
+            ('ReadOperationCount', 'WriteOperationCount', 'OtherOperationCount',
+             'ReadTransferCount', 'WriteTransferCount', 'OtherTransferCount')]
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel.GetProcessIoCounters.argtypes = [ctypes.c_void_p, ctypes.POINTER(Counters)]
+    kernel.GetProcessIoCounters.restype = ctypes.c_int
+    value = Counters()
+    if not kernel.GetProcessIoCounters(kernel.GetCurrentProcess(), ctypes.byref(value)):
+        return None
+    return {name: int(getattr(value, name)) for name, _ in value._fields_}
+
+
+def reference_artifact(fixture, generation: int, *, compact: bool):
+    """Recompute from canonical sources without reading stored analytics outputs."""
+
+    from app.analytics.pipeline import AnalyticsPipeline
+    from app.analytics.canonical_source import HistoryAnalyticsSource
+    from tests.continuous_analytics_fixture import ACCOUNT
+
+    cold = AnalyticsPipeline(fixture.source, clock=lambda: fixture.clock.now,
+                             reuse_enrichment=False, reuse_conversations=False)
+    if not compact:
+        raw = HistoryAnalyticsSource(fixture.repositories.history).account_read_model(ACCOUNT)
+        return cold._build(ACCOUNT, raw, projection_generation=generation)
+    from app.analytics.conversation_reuse import ConversationBuild, ACTIVE_CONVERSATIONS
+
+    state = ConversationBuild()
+    state.compact = True
+    token = ACTIVE_CONVERSATIONS.set(state)
+    try:
+        source = fixture.source.analytics_snapshot(ACCOUNT)
+        return cold._build(ACCOUNT, source, projection_generation=generation)
+    finally:
+        ACTIVE_CONVERSATIONS.reset(token)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--messages', type=int, default=1000)
     parser.add_argument('--query-samples', type=int, default=100)
     parser.add_argument('--verification-mode', choices=('full', 'digests'), default='full')
+    parser.add_argument('--skip-unchanged-rebuild', action='store_true',
+                        help='Measure cold build and a real update without the forced unchanged diagnostic.')
     args = parser.parse_args()
     if not 100 <= args.messages <= 100_000 or not 1 <= args.query_samples <= 100:
         parser.error('Use 100 to 100000 messages and 1 to 100 query samples.')
@@ -78,6 +124,8 @@ def main():
         'phases': [], 'laptop_qualified': False,
         'measurement': 'candidate_build_and_publication_without_explicit_artifact_read',
         'verification_mode': args.verification_mode,
+        'reference_representation': 'compact_canonical_rebuild' if args.verification_mode == 'digests' else 'full_canonical_rebuild',
+        'forced_unchanged_rebuild': not args.skip_unchanged_rebuild,
         'unmeasured': ['installer_size', 'disk_type', 'power_mode', 'constrained_laptop_profiles']}
     output = args.output/'report.json'
     def save():
@@ -93,6 +141,7 @@ def main():
             fixture.source.loaded.clear()
             before, scans_before = sum(a.calls for a in fixture.analyzers), scan_counts.copy()
             start = time.perf_counter()
+            before_io = process_io_counters()
             checkpoints = {}
             fixture.stores.projections.crash_hook = lambda stage, generation: checkpoints.setdefault(
                 stage, time.perf_counter() - start)
@@ -100,6 +149,7 @@ def main():
             built = time.perf_counter()
             result = fixture.pipeline.publish_candidate(candidate)
             end = time.perf_counter()
+            after_io = process_io_counters()
             item = {'phase': name, 'build_seconds': built-start, 'publication_seconds': end-built,
                 'total_seconds': end-start, 'analyzer_calls': sum(a.calls for a in fixture.analyzers)-before,
                 'conversation_body_reads': len(fixture.source.loaded),
@@ -108,12 +158,15 @@ def main():
                 'post_activation_seconds': ((end-start)-checkpoints['activated']
                     if 'activated' in checkpoints else None),
                 'identity_work': dict(scan_counts-scans_before), 'process_peak_bytes': peak_memory_bytes()}
+            item['process_io_delta'] = ({key: after_io[key] - before_io[key] for key in before_io}
+                if before_io is not None and after_io is not None else None)
             report['phases'].append(item)
             save()
             print(json.dumps(item), flush=True)
             return result
         phase('cold')
-        phase('unchanged_rebuild')
+        if not args.skip_unchanged_rebuild:
+            phase('unchanged_rebuild')
         started = time.perf_counter()
         with fixture.repositories.database.transaction() as db:
             insert_message(db, 'chat-1', 'added-message', now-timedelta(microseconds=1), 2)
@@ -155,17 +208,16 @@ def main():
         report['artifact_materialization_seconds'] = (time.perf_counter() - read_started
             if args.verification_mode == 'full' else None)
         save()
-        cold = AnalyticsPipeline(fixture.source, clock=lambda: now, reuse_enrichment=False, reuse_conversations=False)
-        original = HistoryAnalyticsSource(fixture.repositories.history).account_read_model(ACCOUNT)
         header = updated.projection if args.verification_mode == 'full' else updated
-        expected = cold._build(ACCOUNT, original, projection_generation=header.projection_generation)
+        expected = reference_artifact(fixture, header.projection_generation,
+                                      compact=args.verification_mode == 'digests')
         matches = expected == updated if args.verification_mode == 'full' else (
             expected.projection.projection_digest == header.projection_digest
             and expected.projection.graph_digest == header.graph_digest
             and expected.projection.canonical_content_digest == header.canonical_content_digest)
         if not matches:
             raise AssertionError('incremental_result_differs_from_clean_rebuild')
-        del expected, original, updated
+        del expected, updated
         report['clean_rebuild_equal'] = True
         report['process_peak_bytes'] = peak_memory_bytes()
         report['complete'] = True

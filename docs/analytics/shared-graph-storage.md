@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, and test_shared_graph.py before changing storage or limit claims. -->
+<!-- CODE-VERIFY: Check shared_graph.py, database.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, and test_shared_graph.py before changing storage or limit claims. -->
 
 # Reuse stored graph content
 
@@ -21,6 +21,14 @@ The candidate still undergoes independent stored-content verification before val
 Ordered reads start from the selected generation's manifest, then resolve its segment membership and content. They use bucket and record order directly instead of sorting a scan of every segment retained for the account.
 
 Endpoint verification compares the selected edges' endpoint identities with the selected nodes' actual stored identities. It does not accept an endpoint merely because another generation retains it. SQLite keeps a temporary set of identities for this comparison; graph properties remain streamed and independently validated.
+
+## Physical write order
+
+Content is inserted in content-hash order, matching its primary key, rather than in unrelated graph-identity order. Sorted per-bucket iterators are merged without retaining another complete set of record payloads. Public graph ordering, identities and digest bytes do not change.
+
+Within each existing write transaction, lookups of at most 256 keys skip content already present. New content still passes the SQL property and ownership guards. Membership is written for each changed segment, and the selected graph still undergoes its required persisted-content verification. Identity-write statistics count newly absent identities rather than unrelated trigger updates.
+
+The content writer temporarily requests a page-cache target of 512 bytes per logical record, bounded between 16 MiB and 128 MiB. Its prior connection setting is restored after success, failure or cancellation. This is a bounded I/O working-set tradeoff, not a total memory cap or laptop-capacity claim. Input graph objects and sort-key lists still consume additional memory.
 
 ## Cleanup and recovery
 

@@ -20,7 +20,7 @@ A lease session owns one data-write connection and one heartbeat connection. Eve
 
 Batches start at 500 records. Fast completed writes can grow batches up to 4,000 records; slow operations shrink them, with a floor of 64. Successful writes do not wait for a separate heartbeat before proceeding. Long computation remains covered by the heartbeat, and the next transaction checks ownership again.
 
-Write and retired-generation cleanup connections use a 16 MiB SQLite page-cache target. Cleanup removes edges before nodes and the generation, inside one transaction. Interrupted cleanup rolls back.
+Write sessions and retired-generation cleanup use a 16 MiB SQLite page-cache target by default. Shared-content insertion temporarily selects a record-count-based target up to 128 MiB, then restores the prior setting. Cleanup removes edges before nodes and the generation, inside one transaction. Interrupted cleanup rolls back.
 
 Stored-generation verification temporarily uses a 32 MiB page-cache target on its connection. It restores the previous setting after success, failure or cancellation. It does not cache validation decisions or change transaction boundaries. These connection-local targets do not cap total process memory.
 

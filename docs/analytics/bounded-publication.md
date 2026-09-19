@@ -48,7 +48,7 @@ The workload reports candidate construction and publication before requesting an
 
 Report private and working-set memory under an explicit guard for capacity tests. An incomplete workload does not establish supported capacity. Passing these tests does not qualify constrained laptops, the complete ingestion-to-interface journey, or production message classification.
 
-Capacity runs can use `--verification-mode digests` to compare independently rebuilt projection, graph, and source digests with the verified stored reference. The selected comparison mode is recorded. Warm queries run before the independent rebuild, so that diagnostic computation does not consume the source-cache lifetime before query measurement.
+Capacity runs can use `--verification-mode digests` to compare newly rebuilt projection, graph, and source digests with the verified stored reference. That reference rebuild reads canonical input and reruns every analyzer, metric and projector without stored-result reuse, using the compact graph representation to avoid an unrelated full-model memory peak. Full mode retains the separate full-object comparison. The selected comparison mode and reference representation are recorded. Warm queries run before the independent rebuild, so that diagnostic computation does not consume the source-cache lifetime before query measurement.
 
 ## Live validation receipts
 

@@ -67,3 +67,7 @@ Mutation, missing tracking, schema change, restart, identity-cache clearing or e
 A successful complete currentness check can be reused for 60 seconds while its generation, source identity, pipeline and storage-change stamp remain identical. Each reuse still checks the completed witness and source expiry. This bounded metadata cache avoids repeatedly reading an unchanged graph during adjacent scheduler polls. It is separate from activation receipts and never grants analysis authority.
 
 A cold check, expired proof or changed storage stamp still requires a complete validated projection read. This is not a constant-time guarantee for cold reconciliation or changed conversations.
+
+For capacity measurements that need cold build followed directly by a real update, pass `--skip-unchanged-rebuild`. The report records that omission explicitly. It does not qualify forced unchanged rebuilds or make incomplete oracle verification a passing run. Keep the default workload for diagnosing repeated full-generation rebuild cost.
+
+On Windows, workload phases also record process I/O transfer and operation deltas when available. These cover the benchmark process, including temporary files and logs; they are not database-only disk-write measurements. Do not compare them directly with physical-disk counters from a different platform.
