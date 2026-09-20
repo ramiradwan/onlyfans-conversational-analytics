@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -12,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 CUSTOMER_RELEASE_SCHEMA = "ofca-customer-release/v1"
 CUSTOMER_RELEASE_PATH = Path(__file__).with_name("customer-release.json")
+DEVELOPMENT_CUSTOMER_RELEASE_ENV = "LOCAL_CUSTOMER_RELEASE_CONFIG"
 
 
 class CustomerReleaseConfigurationError(ValueError):
@@ -86,10 +89,16 @@ def validate_customer_release_document(
 
 
 def load_customer_release_config(
-    path: str | Path = CUSTOMER_RELEASE_PATH,
+    path: str | Path | None = None,
     *,
     require_hosted: bool = False,
 ) -> CustomerReleaseConfig:
+    if path is None:
+        path = CUSTOMER_RELEASE_PATH
+        # A source qualification run may bind a complete release artifact without
+        # editing the production template. Frozen packages always use their bundle.
+        if not getattr(sys, "frozen", False):
+            path = os.environ.get(DEVELOPMENT_CUSTOMER_RELEASE_ENV) or path
     try:
         document = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:

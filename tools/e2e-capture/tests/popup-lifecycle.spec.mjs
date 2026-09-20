@@ -9,7 +9,7 @@ import { chromium, expect, test } from '@playwright/test';
 
 import { EXTENSION_DIST, EXTENSION_ROOT, assertBuiltExtension } from '../lib/paths.mjs';
 
-// Drives the real toolbar popup and pairing window against a loopback desktop
+// Drives the real toolbar popup and persistent setup tab against a loopback desktop
 // peer. The peer moves off the production port so a running desktop app is
 // never contacted.
 const { build } = createRequire(path.join(EXTENSION_ROOT, 'package.json'))('esbuild');
@@ -132,10 +132,12 @@ function loopbackPort(port) {
 
 const workerSource = (port) => `
   import { createCompanionClient } from './runtime/companion-client.mjs';
+  import { registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
+  registerSurfaceNavigation();
 
   const PAIRING_ID = ${JSON.stringify(PAIRING_ID)};
   const CHALLENGE = ${JSON.stringify(CHALLENGE)};
-  const LEGAL_ORIGIN = ${JSON.stringify(`http://127.0.0.1:${port}`)};
+  const LEGAL_ORIGIN = 'https://legal.example.test';
   const state = { mode: 'full', paired: false, cancelled: 0 };
   const identity = crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
 
@@ -203,6 +205,7 @@ const workerSource = (port) => `
     set(values) { Object.assign(state, values); },
     async openToolbarPopup() {
       const [normal] = await chrome.windows.getAll({ windowTypes: ['normal'] });
+      await chrome.windows.update(normal.id, { focused: true });
       await chrome.action.openPopup({ windowId: normal.id });
     },
   };
@@ -212,15 +215,15 @@ async function buildExtension(port) {
   extensionDirectory = path.join(temporaryRoot, 'extension');
   await cp(EXTENSION_DIST, extensionDirectory, { recursive: true });
   const plugins = [loopbackPort(port)];
-  await build({
-    entryPoints: [path.join(EXTENSION_ROOT, 'popup.js')], bundle: true, format: 'iife', plugins,
-    outfile: path.join(extensionDirectory, 'popup.js'), logLevel: 'silent',
+  for (const name of ['popup', 'setup', 'options']) await build({
+    entryPoints: [path.join(EXTENSION_ROOT, `${name}.js`)], bundle: true, format: 'iife', plugins,
+    outfile: path.join(extensionDirectory, `${name}.js`), logLevel: 'silent',
   });
   await build({
     stdin: { resolveDir: EXTENSION_ROOT, contents: workerSource(port) }, bundle: true, format: 'esm', plugins,
     outfile: path.join(extensionDirectory, 'popup-lifecycle-worker.mjs'), logLevel: 'silent',
   });
-  for (const bundle of ['popup.js', 'popup-lifecycle-worker.mjs']) {
+  for (const bundle of ['popup.js', 'setup.js', 'options.js', 'popup-lifecycle-worker.mjs']) {
     expect(await readFile(path.join(extensionDirectory, bundle), 'utf8')).not.toContain(PRODUCTION_PORT);
   }
   const manifestPath = path.join(extensionDirectory, 'manifest.json');
@@ -313,6 +316,10 @@ async function launchBrowser() {
       '--host-resolver-rules=MAP bridge.localhost 127.0.0.1',
     ],
   });
+  await context.route('https://legal.example.test/**', (route) => {
+    desktop.pages.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ contentType: 'text/html', body: '<title>Legal document fixture</title>' });
+  });
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
   const extensionId = new URL(worker.url()).host;
   let debugPort = null;
@@ -330,7 +337,18 @@ async function launchBrowser() {
     state: () => worker.evaluate(() => globalThis.popupLifecycle.state()),
     // The toolbar popup has no Playwright page, so it is driven over its own DevTools target.
     async openToolbarPopup() {
-      await worker.evaluate(() => globalThis.popupLifecycle.openToolbarPopup());
+      await context.pages().at(-1)?.bringToFront();
+      // Chrome can still be activating the window after a tab handoff. Retry
+      // only its transient open failure, keeping all other evaluation errors.
+      await expect.poll(async () => {
+        try {
+          await worker.evaluate(() => globalThis.popupLifecycle.openToolbarPopup());
+          return true;
+        } catch (error) {
+          if (!error.message.includes('Failed to open popup')) throw error;
+          return false;
+        }
+      }, { message: 'Chrome did not open the toolbar popup after window activation.' }).toBe(true);
       const url = `chrome-extension://${extensionId}/popup.html`;
       let target = null;
       await expect.poll(async () => {
@@ -348,12 +366,12 @@ async function launchBrowser() {
   };
 }
 
-async function pairingWindowFrom(browser, popup, selector) {
+async function setupFrom(browser, popup) {
   const opened = browser.context.waitForEvent('page');
-  await popup.click(selector);
+  await popup.click('#journey-primary');
   const page = await opened;
-  await page.waitForURL(`chrome-extension://${browser.extensionId}/popup.html#pairing`);
-  await expect(page.locator('main')).toHaveAttribute('data-view', 'pairing');
+  await page.waitForURL(new RegExp(`/setup\\.html(?:#full)?$`));
+  await expect(page.locator('main')).toHaveAttribute('data-ready', 'true');
   return page;
 }
 
@@ -384,136 +402,113 @@ test.beforeEach(() => {
   resetDesktop(server.address().port);
 });
 
-test('connection details are restored after opening the desktop app closes the popup', async () => {
-  test.slow();
+
+test('connection details open in Options and repeated entry reuses that tab', async () => {
   const browser = await launchBrowser();
   try {
     await browser.set({ mode: 'full', paired: true });
     const popup = await browser.openToolbarPopup();
     await expect.poll(() => popup.text('#journey-title')).toBe('Your analysis is ready');
+    const opened = browser.context.waitForEvent('page');
     await popup.click('#open-connection');
-    await expect.poll(() => popup.view()).toBe('connection');
-    await popup.click('#open-dashboard');
-    await popup.closed;
+    const options = await opened;
+    await options.waitForURL(`chrome-extension://${browser.extensionId}/options.html#connection`);
+    await expect(options.locator('#delivery-status')).toHaveText('Connected');
+    await options.locator('#open-dashboard').click();
     await expect.poll(() => desktop.pages).toContain('/');
-
+    expect(options.isClosed()).toBe(false);
     const reopened = await browser.openToolbarPopup();
-    await expect.poll(() => reopened.view()).toBe('connection');
-    await expect.poll(() => reopened.text('#brain-status')).toBe('Running');
-    await expect.poll(() => reopened.visible('#connection-title')).toBe(true);
-  } finally {
-    await browser.close();
-  }
+    await reopened.click('#open-connection');
+    await expect.poll(() => browser.context.pages().filter((page) => page.url().includes('/options.html')).length).toBe(1);
+  } finally { await browser.close(); }
 });
 
-test('the Full analytics review is restored after the privacy notice closes the popup', async () => {
-  test.slow();
+test('Full disclosure stays in the setup tab while a legal document is reviewed', async () => {
   const browser = await launchBrowser();
   try {
     await browser.set({ mode: 'preview', paired: false });
     const popup = await browser.openToolbarPopup();
-    await expect.poll(() => popup.text('#journey-title')).toBe('Preview is ready');
+    await expect.poll(() => popup.visible('#preview-metrics')).toBe(true);
     expect(await popup.visible('#full-disclosure')).toBe(false);
-    await popup.click('#journey-primary');
-    await expect.poll(() => popup.visible('#full-disclosure')).toBe(true);
-    await popup.click('#full-disclosure .extension-privacy-link');
-    await popup.closed;
+    const setup = await setupFrom(browser, popup);
+    await expect(setup.locator('#full-disclosure')).toBeVisible();
+    await setup.locator('#full-disclosure .extension-privacy-link').click();
     await expect.poll(() => desktop.pages).toContain('/extension-privacy');
-
+    expect(setup.isClosed()).toBe(false);
+    await setup.bringToFront();
+    await expect(setup.locator('#enable-full')).toBeVisible();
     const reopened = await browser.openToolbarPopup();
-    await expect.poll(() => reopened.visible('#full-disclosure')).toBe(true);
-    await expect.poll(() => reopened.visible('#enable-full')).toBe(true);
-    expect(await reopened.visible('#preview-disclosure')).toBe(false);
-  } finally {
-    await browser.close();
-  }
+    await reopened.click('#journey-primary');
+    await expect.poll(() => browser.context.pages().filter((page) => page.url().includes('/setup.html')).length).toBe(1);
+    expect((await browser.state()).mode).toBe('preview');
+    expect(desktop.requests).toBe(0);
+  } finally { await browser.close(); }
 });
 
-test('pairing before the desktop app is ready shows the desktop step and then the code', async () => {
-  test.slow();
+test('pairing starts only on explicit setup action and recovers from the desktop not being ready', async () => {
   const browser = await launchBrowser();
   try {
-    await browser.set({ mode: 'full', paired: false });
     const popup = await browser.openToolbarPopup();
-    await expect.poll(() => popup.text('#journey-title')).toBe('Connect to the desktop app');
-    const pairing = await pairingWindowFrom(browser, popup, '#pair-companion');
-
-    await expect(pairing.locator('#journey-title')).toHaveText('Continue in the desktop app');
-    await expect(pairing.locator('#journey-primary')).toHaveText('Open desktop app settings');
-    await expect(pairing.locator('#journey-secondary')).toHaveText('Pair device');
-    await expect(pairing.locator('#pair-companion')).toBeHidden();
-    await expect(pairing.locator('#open-connection')).toBeHidden();
-    await expect(pairing.locator('#journey-card')).not.toContainText(/fail|error|did not/i);
+    const setup = await setupFrom(browser, popup);
+    await expect(setup.locator('#pair-companion')).toBeVisible();
+    expect(desktop.requests).toBe(0);
+    await setup.locator('#pair-companion').click();
+    await expect(setup.locator('#journey-title')).toHaveText('Continue in the desktop app');
+    await expect(setup.locator('#journey-primary')).toHaveText('Open desktop app settings');
+    await expect(setup.locator('#pair-companion')).toHaveText('Pair device');
     expect(desktop.refusals).toBe(1);
-    await expect.poll(async () => (await browser.state()).cancelled).toBe(1);
-
-    await pairing.locator('#journey-primary').click();
+    await setup.locator('#journey-primary').click();
     await expect.poll(() => desktop.pages).toContain('/settings');
-
-    await popup.close();
-    const reopened = await browser.openToolbarPopup();
-    await expect.poll(() => reopened.text('#journey-title')).toBe('Continue in the desktop app');
-    expect(await reopened.visible('#pair-companion')).toBe(false);
-
     desktop.pairingWindowOpen = true;
-    await reopened.click('#journey-secondary');
-    await expect(pairing.locator('#pairing-code')).toHaveText('483 217');
-    await expect(pairing.locator('#journey-title')).toHaveText('Confirm the connection');
+    await setup.locator('#pair-companion').click();
+    await expect(setup.locator('#pairing-code')).toHaveText('483 217');
     expect(desktop.requests).toBe(2);
-    const pairingWindows = browser.context.pages().filter((page) => page.url().endsWith('/popup.html#pairing'));
-    expect(pairingWindows).toHaveLength(1);
-  } finally {
-    await browser.close();
-  }
+  } finally { await browser.close(); }
 });
 
-test('closing the pairing window cancels pairing', async () => {
-  test.slow();
+test('focus changes and closing an observing popup preserve pairing; closing setup cancels it', async () => {
   const browser = await launchBrowser();
   try {
-    await browser.set({ mode: 'full', paired: false });
     desktop.pairingWindowOpen = true;
     const popup = await browser.openToolbarPopup();
-    await expect.poll(() => popup.text('#journey-title')).toBe('Connect to the desktop app');
-    const pairing = await pairingWindowFrom(browser, popup, '#pair-companion');
-    await expect(pairing.locator('#pairing-code')).toHaveText('483 217');
+    const setup = await setupFrom(browser, popup);
+    await setup.locator('#pair-companion').click();
+    await expect(setup.locator('#pairing-code')).toHaveText('483 217');
+    const observer = await browser.openToolbarPopup();
+    await expect.poll(() => observer.text('#journey-title')).toBe('Connection in progress');
+    expect(await observer.visible('#pairing-code')).toBe(false);
+    await observer.close();
+    const other = await browser.context.newPage(); await other.goto('about:blank'); await other.bringToFront();
     expect((await browser.state()).cancelled).toBe(0);
-
-    await pairing.close();
+    await expect(setup.locator('#pairing-code')).toHaveText('483 217');
+    await setup.close();
     await expect.poll(async () => (await browser.state()).cancelled).toBe(1);
     await expect.poll(() => desktop.abandoned).toBe(1);
     expect(desktop.results).toBe(0);
-
-    await popup.close();
     const reopened = await browser.openToolbarPopup();
-    await expect.poll(() => reopened.text('#journey-title')).toBe('Connect to the desktop app');
-    expect(await reopened.visible('#pairing-code')).toBe(false);
-  } finally {
-    await browser.close();
-  }
+    const freshSetup = await setupFrom(browser, reopened);
+    await expect(freshSetup.locator('#pairing-code')).toBeHidden();
+    expect(desktop.requests).toBe(1);
+  } finally { await browser.close(); }
 });
 
-test('a confirmed pairing closes its window and the popup shows the connected state', async () => {
-  test.slow();
+test('a confirmed connection stays in setup and readiness comes from the desktop result', async () => {
   const browser = await launchBrowser();
   try {
-    await browser.set({ mode: 'full', paired: false });
     desktop.pairingWindowOpen = true;
     const popup = await browser.openToolbarPopup();
-    await expect.poll(() => popup.text('#journey-title')).toBe('Connect to the desktop app');
-    const pairing = await pairingWindowFrom(browser, popup, '#pair-companion');
-    await expect(pairing.locator('#pairing-code')).toHaveText('483 217');
-    await popup.close();
-
+    const setup = await setupFrom(browser, popup);
+    await setup.locator('#pair-companion').click();
+    await expect(setup.locator('#pairing-code')).toHaveText('483 217');
+    await expect(setup.locator('#journey-title')).not.toHaveText('Your analysis is ready');
     desktop.confirm();
-    await expect(pairing.locator('#journey-title')).toHaveText('Connected to the desktop app');
-    await expect.poll(() => pairing.isClosed()).toBe(true);
-    expect((await browser.state())).toMatchObject({ paired: true, cancelled: 0 });
-
+    await expect(setup.locator('#journey-title')).toHaveText('Your analysis is ready');
+    await expect(setup.locator('#pairing-code')).toBeHidden();
+    await expect(setup.locator('#ready-details')).toBeVisible();
+    expect(setup.isClosed()).toBe(false);
+    expect(await browser.state()).toMatchObject({ paired: true, cancelled: 0 });
     const reopened = await browser.openToolbarPopup();
     await expect.poll(() => reopened.text('#journey-title')).toBe('Your analysis is ready');
     expect(await reopened.visible('#pair-companion')).toBe(false);
-  } finally {
-    await browser.close();
-  }
+  } finally { await browser.close(); }
 });

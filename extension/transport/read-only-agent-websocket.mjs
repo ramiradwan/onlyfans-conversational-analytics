@@ -1,4 +1,5 @@
 import { LOCAL_SERVICE_WS } from './local-service-endpoints.mjs';
+import { connectionRetryDelay, CONNECTION_STABLE_MS, CONNECTION_ATTEMPT_LIMIT } from '../runtime/recovery-backoff.mjs';
 import {
   READ_ONLY_CAPABILITIES,
   parseAgentToBrainMessage,
@@ -7,6 +8,8 @@ import {
 
 const CONNECTING = 0;
 const OPEN = 1;
+// Leave room in the companion channel's eight-record queue for control RPCs.
+const MAX_IN_FLIGHT_DELTAS = 4;
 export const LEASE_EXPIRED_CLOSE_CODE = 4001;
 
 // The WebSocket API accepts only close code 1000 or the 3000-4999 range; passing
@@ -85,6 +88,7 @@ export class ReadOnlyAgentWebSocketClient {
     this.heartbeatIntervalMs = null;
     this.lastHeartbeatSentAt = null;
     this.reconnectAttempt = 0;
+    this.sessionStartedAt = null;
     this.stopped = true;
     this.reconnectAllowed = true;
     this.syncRequired = false;
@@ -124,7 +128,7 @@ export class ReadOnlyAgentWebSocketClient {
 
   ensureConnected() {
     this.signal?.throwIfAborted();
-    if (this.stopped) this.stopped = false;
+    if (this.stopped || !this.reconnectAllowed || this.reconnectTimer !== null) return;
     if (this.socket && [CONNECTING, OPEN].includes(this.socket.readyState)) return;
     this.clearReconnect();
     this.openSocket();
@@ -147,6 +151,7 @@ export class ReadOnlyAgentWebSocketClient {
 
   stop() {
     this.connectionAbort.abort(new Error('agent_stopped'));
+    this.sessionStartedAt = null;
     this.clearSessionDeadline();
     this.stopped = true;
     this.reconnectAllowed = false;
@@ -220,6 +225,7 @@ export class ReadOnlyAgentWebSocketClient {
         controls.assertCurrent();
         for (const item of entries) {
           if (this.syncRequired || this.sentSourceSeqs.has(item.source_seq)) continue;
+          if (this.sentSourceSeqs.size >= MAX_IN_FLIGHT_DELTAS) return;
           const sent = this.sendBound('ingest.delta', {
             event_id: item.event_id,
             source_seq: item.source_seq,
@@ -413,7 +419,7 @@ export class ReadOnlyAgentWebSocketClient {
     this.configClient?.bindSessionAuthorization?.(session.config_auth_ticket);
     this.sentSourceSeqs.clear();
     this.syncRequired = session.resume_action === 'snapshot_required';
-    this.reconnectAttempt = 0;
+    this.sessionStartedAt = this.now();
     this.startHeartbeat(session.lease.heartbeat_interval_seconds * 1000);
     this.lastHeartbeatSentAt = this.now();
     this.onSession(session);
@@ -563,6 +569,8 @@ export class ReadOnlyAgentWebSocketClient {
           await this.sendNextSnapshotFrame(
             message.payload.snapshot_progress.next_expected_chunk_index,
           );
+        } else {
+          await this.flushOutbox();
         }
         return;
       }
@@ -625,6 +633,10 @@ export class ReadOnlyAgentWebSocketClient {
 
   handleClose(socket) {
     if (this.socket !== socket) return;
+    if (this.sessionStartedAt !== null && this.now() - this.sessionStartedAt >= CONNECTION_STABLE_MS) {
+      this.reconnectAttempt = 0;
+    }
+    this.sessionStartedAt = null;
     this.connectionAbort.abort(new Error('agent_disconnected'));
     this.clearSessionDeadline();
     this.socket = null;
@@ -637,15 +649,14 @@ export class ReadOnlyAgentWebSocketClient {
 
   scheduleReconnect() {
     if (this.reconnectTimer !== null) return;
-    const exponential = Math.min(
-      this.reconnectMaxMs,
-      this.reconnectBaseMs * 2 ** this.reconnectAttempt,
-    );
-    const delay = Math.max(0, Math.round(exponential * (0.5 + this.random())));
     this.reconnectAttempt += 1;
+    const delay = connectionRetryDelay(this.reconnectAttempt, this.random, this.reconnectBaseMs, this.reconnectMaxMs);
     this.reconnectTimer = this.scheduler.setTimeout(() => {
       this.reconnectTimer = null;
-      if (!this.stopped) this.openSocket();
+      if (!this.stopped && this.reconnectAllowed) {
+        if (this.reconnectAttempt >= CONNECTION_ATTEMPT_LIMIT) this.reconnectAttempt = 0;
+        this.openSocket();
+      }
     }, delay);
   }
 

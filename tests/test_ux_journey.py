@@ -66,7 +66,7 @@ def _mutations() -> dict[str, tuple]:
         _state(m, "desktop.setup_prompt")["anchor"]["text"] = 'data-journey-state="desktop.numbers_ready"'
 
     def anchor_outside_surface(m: dict) -> None:
-        _state(m, "desktop.stored_messages")["anchor"] = {"file": "extension/popup.html", "text": "id=\"pre-mode\""}
+        _state(m, "desktop.stored_messages")["anchor"] = {"file": "extension/setup.html", "text": "id=\"pre-mode\""}
 
     def missing_evidence_test(m: dict) -> None:
         _state(m, "extension.full_ready")["evidence"][0]["name"] = "a test that does not exist"

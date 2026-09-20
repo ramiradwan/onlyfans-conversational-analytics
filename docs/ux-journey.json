@@ -6,7 +6,11 @@
       "implementation": [
         "extension/popup.html",
         "extension/popup.js",
-        "extension/runtime/customer-journey.mjs"
+        "extension/runtime/customer-journey.mjs",
+        "extension/ui/presentation.mjs",
+        "extension/ui/surface-client.mjs",
+        "extension/ui/dom.mjs",
+        "extension/runtime/ui-surfaces.mjs"
       ]
     },
     "desktop.setup": {
@@ -24,6 +28,28 @@
         "frontend/src/components/dashboard/DashboardOverview.tsx",
         "frontend/src/components/CommercialActivationControls.tsx",
         "frontend/src/components/CreatorVaultControls.tsx"
+      ]
+    },
+    "extension.setup": {
+      "implementation": [
+        "extension/setup.html",
+        "extension/setup.js",
+        "extension/runtime/customer-journey.mjs",
+        "extension/ui/presentation.mjs",
+        "extension/ui/surface-client.mjs",
+        "extension/ui/dom.mjs",
+        "extension/runtime/ui-surfaces.mjs"
+      ]
+    },
+    "extension.options": {
+      "implementation": [
+        "extension/options.html",
+        "extension/options.js",
+        "extension/runtime/customer-journey.mjs",
+        "extension/ui/presentation.mjs",
+        "extension/ui/surface-client.mjs",
+        "extension/ui/dom.mjs",
+        "extension/runtime/ui-surfaces.mjs"
       ]
     }
   },
@@ -47,394 +73,993 @@
   "states": [
     {
       "id": "extension.software_activation",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/popup.html", "text": "id=\"pre-mode\"" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "id=\"pre-mode\""
+      },
       "transitions": [
-        { "to": "extension.mode_choice", "by": "user", "action": "activate-software" }
+        {
+          "to": "extension.mode_choice",
+          "by": "user",
+          "action": "activate-software"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/legal-activation-ui.test.mjs", "name": "Activate Software is separate from mode choice and no UI calls it consent" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/legal-activation.spec.mjs", "name": "Terms → risk → Activate Software → Preview" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/legal-activation-ui.test.mjs",
+          "name": "Activate Software is separate from mode choice and no UI calls it consent"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/legal-activation.spec.mjs",
+          "name": "Terms → risk → Activate Software → Preview"
+        }
       ]
     },
     {
       "id": "extension.mode_choice",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/popup.html", "text": "id=\"mode-choice\"" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "id=\"mode-choice\""
+      },
       "transitions": [
-        { "to": "extension.preview_available", "by": "user", "action": "enable-preview" },
-        { "to": "extension.desktop_app_needed", "by": "user", "action": "enable-full" },
-        { "to": "extension.setup_incomplete", "by": "user", "action": "enable-full" },
-        { "to": "extension.pairing_required", "by": "user", "action": "enable-full" },
-        { "to": "extension.analytics_off", "by": "user", "action": "not-now-preview" }
+        {
+          "to": "extension.preview_available",
+          "by": "user",
+          "action": "enable-preview"
+        },
+        {
+          "to": "extension.desktop_app_needed",
+          "by": "user",
+          "action": "enable-full"
+        },
+        {
+          "to": "extension.setup_incomplete",
+          "by": "user",
+          "action": "enable-full"
+        },
+        {
+          "to": "extension.pairing_required",
+          "by": "user",
+          "action": "enable-full"
+        },
+        {
+          "to": "extension.analytics_off",
+          "by": "user",
+          "action": "not-now-preview"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/legal-activation-ui.test.mjs", "name": "mode choice keeps every required point visible without a collapsed section" },
-        { "kind": "unit", "file": "extension/tests/activation-evidence.test.mjs", "name": "AE-07 pre-mode and mode-choice retries preserve event IDs and timestamps" },
-        { "kind": "unit", "file": "extension/tests/popup-context.test.mjs", "name": "a saved view and review position restore within the resume window" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/legal-activation.spec.mjs", "name": "runtime Legal flow proves Preview activation then distinct Full upgrade evidence" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "the Full analytics review is restored after the privacy notice closes the popup" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/legal-activation-ui.test.mjs",
+          "name": "mode choice keeps every required point visible without a collapsed section"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/activation-evidence.test.mjs",
+          "name": "AE-07 pre-mode and mode-choice retries preserve event IDs and timestamps"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/legal-activation.spec.mjs",
+          "name": "runtime Legal flow proves Preview activation then distinct Full upgrade evidence"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
+          "name": "Full disclosure stays in the setup tab while a legal document is reviewed"
+        }
       ]
     },
     {
       "id": "extension.analytics_off",
       "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "ANALYTICS_OFF: 'analytics_off'" },
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "ANALYTICS_OFF: 'analytics_off'"
+      },
       "transitions": [
-        { "to": "extension.mode_choice", "by": "user", "action": "choose_mode" }
+        {
+          "to": "extension.mode_choice",
+          "by": "user",
+          "action": "choose_mode"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "analytics off reopens the mode choice only when it is available" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "analytics_off" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "analytics off reopens the mode choice only when it is available"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "off"
+        }
       ]
     },
     {
       "id": "extension.preview_available",
       "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "PREVIEW_AVAILABLE: 'preview_available'" },
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "PREVIEW_AVAILABLE: 'preview_available'"
+      },
       "transitions": [
-        { "to": "extension.mode_choice", "by": "user", "action": "review_full" },
-        { "to": "extension.paused", "by": "user", "action": "pause" }
+        {
+          "to": "extension.mode_choice",
+          "by": "user",
+          "action": "review_full"
+        },
+        {
+          "to": "extension.paused",
+          "by": "user",
+          "action": "pause"
+        },
+        {
+          "to": "extension.options",
+          "by": "user",
+          "action": "open-manage"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "Preview remains independent of the desktop app" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "preview" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "Preview remains independent of the desktop app"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "preview"
+        }
       ]
     },
     {
       "id": "extension.paused",
       "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "PAUSED: 'paused'" },
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "PAUSED: 'paused'"
+      },
       "transitions": [
-        { "to": "extension.preview_available", "by": "user", "action": "resume" },
-        { "to": "extension.mode_choice", "by": "user", "action": "choose_mode" }
+        {
+          "to": "extension.preview_available",
+          "by": "user",
+          "action": "resume"
+        },
+        {
+          "to": "extension.mode_choice",
+          "by": "user",
+          "action": "choose_mode"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "paused analytics offer resume only when no review is pending" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/standalone-preview.spec.mjs", "name": "pause unregisters capture and subsequent reads do not increase metrics" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "paused" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "paused analytics offer resume only when no review is pending"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/standalone-preview.spec.mjs",
+          "name": "pause unregisters capture and subsequent reads do not increase metrics"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "paused"
+        }
       ]
     },
     {
       "id": "extension.desktop_app_needed",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "DESKTOP_APP_NEEDED: 'desktop_app_needed'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "DESKTOP_APP_NEEDED: 'desktop_app_needed'"
+      },
       "transitions": [
-        { "to": "desktop.setup_registration", "by": "user", "action": "install_desktop" },
-        { "to": "extension.pairing_required", "by": "user", "action": "retry_full" }
+        {
+          "to": "desktop.setup_registration",
+          "by": "user",
+          "action": "install_desktop"
+        },
+        {
+          "to": "extension.pairing_required",
+          "by": "user",
+          "action": "retry_full"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "first Full attempt explains that the desktop app is required" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "desktop_needed" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "first Full attempt explains that the desktop app is required"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "desktop_app_needed"
+        }
       ]
     },
     {
       "id": "extension.setup_incomplete",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "SETUP_INCOMPLETE: 'setup_incomplete'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "SETUP_INCOMPLETE: 'setup_incomplete'"
+      },
       "transitions": [
-        { "to": "extension.pairing_required", "by": "user", "action": "open_creator_account" }
+        {
+          "to": "extension.pairing_required",
+          "by": "user",
+          "action": "open_creator_account"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "running desktop app with no usable creator context explains setup is incomplete" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "setup_incomplete" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "running desktop app with no usable creator context explains setup is incomplete"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "setup_incomplete"
+        }
       ]
     },
     {
       "id": "extension.pairing_required",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "PAIRING_REQUIRED: 'pairing_required'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "PAIRING_REQUIRED: 'pairing_required'"
+      },
       "transitions": [
-        { "to": "extension.pairing_in_progress", "by": "user", "action": "pair" }
+        {
+          "to": "extension.pairing_in_progress",
+          "by": "user",
+          "action": "pair"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "running desktop app advances an unpaired user to pairing" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_required" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "running desktop app advances an unpaired user to pairing"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "pairing_required"
+        }
       ]
     },
     {
       "id": "extension.pairing_in_progress",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "PAIRING_IN_PROGRESS: 'pairing_in_progress'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "PAIRING_IN_PROGRESS: 'pairing_in_progress'"
+      },
       "transitions": [
-        { "to": "extension.pairing_required", "by": "user", "action": "cancel_pairing" },
-        { "to": "extension.pairing_required", "by": "user", "action": "close-pairing-window" },
-        { "to": "extension.pairing_not_ready", "by": "system" },
-        { "to": "extension.pairing_failed", "by": "system" },
-        { "to": "extension.full_unavailable", "by": "system" }
+        {
+          "to": "extension.pairing_required",
+          "by": "user",
+          "action": "cancel_pairing"
+        },
+        {
+          "to": "extension.pairing_required",
+          "by": "user",
+          "action": "close-setup-tab"
+        },
+        {
+          "to": "extension.pairing_not_ready",
+          "by": "system"
+        },
+        {
+          "to": "extension.pairing_failed",
+          "by": "system"
+        },
+        {
+          "to": "extension.full_unavailable",
+          "by": "system"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "pairing progress explains comparison and never claims success early" },
-        { "kind": "unit", "file": "extension/tests/companion-client.test.mjs", "name": "cancelling a comparison returns to unpaired and expiry reports a failure" },
-        { "kind": "unit", "file": "frontend/tests/CompanionPairingControls.test.tsx", "name": "requires explicit code comparison before versioned confirmation without exposing the identity thumbprint" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "closing the pairing window cancels pairing" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "a confirmed pairing closes its window and the popup shows the connected state" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_compare" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_window_compare" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_window_connected" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "pairing progress explains comparison and never claims success early"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/companion-client.test.mjs",
+          "name": "cancelling a comparison returns to unpaired and expiry reports a failure"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CompanionPairingControls.test.tsx",
+          "name": "requires explicit code comparison before versioned confirmation without exposing the identity thumbprint"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
+          "name": "focus changes and closing an observing popup preserve pairing; closing setup cancels it"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
+          "name": "a confirmed connection stays in setup and readiness comes from the desktop result"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "pairing_compare"
+        }
       ]
     },
     {
       "id": "extension.pairing_not_ready",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "PAIRING_NOT_READY: 'pairing_not_ready'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "PAIRING_NOT_READY: 'pairing_not_ready'"
+      },
       "transitions": [
-        { "to": "desktop.extension_pairing", "by": "user", "action": "open_desktop_settings" },
-        { "to": "extension.pairing_in_progress", "by": "user", "action": "pair" }
+        {
+          "to": "desktop.extension_pairing",
+          "by": "user",
+          "action": "open_desktop_settings"
+        },
+        {
+          "to": "extension.pairing_in_progress",
+          "by": "user",
+          "action": "pair"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "pairing before the desktop app is ready names the desktop step first" },
-        { "kind": "unit", "file": "extension/tests/companion-client.test.mjs", "name": "a refusal before any offer reports that the desktop app is not ready for pairing" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "pairing before the desktop app is ready shows the desktop step and then the code" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_not_ready" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_window_not_ready" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "pairing before the desktop app is ready names the desktop step first"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/companion-client.test.mjs",
+          "name": "a refusal before any offer reports that the desktop app is not ready for pairing"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
+          "name": "pairing starts only on explicit setup action and recovers from the desktop not being ready"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "pairing_not_ready"
+        }
       ]
     },
     {
       "id": "extension.pairing_failed",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "PAIRING_FAILED: 'pairing_failed'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "PAIRING_FAILED: 'pairing_failed'"
+      },
       "transitions": [
-        { "to": "extension.pairing_in_progress", "by": "user", "action": "pair" }
+        {
+          "to": "extension.pairing_in_progress",
+          "by": "user",
+          "action": "pair"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "pairing failure has a concrete retry path" },
-        { "kind": "unit", "file": "extension/tests/companion-client.test.mjs", "name": "a refusal before any offer reports that the desktop app is not ready for pairing" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "pairing_failed" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "pairing failure has a concrete retry path"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/companion-client.test.mjs",
+          "name": "a refusal before any offer reports that the desktop app is not ready for pairing"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "pairing_failed"
+        }
       ]
     },
     {
       "id": "extension.full_unavailable",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "FULL_UNAVAILABLE: 'full_unavailable'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "FULL_UNAVAILABLE: 'full_unavailable'"
+      },
       "transitions": [
-        { "to": "extension.activation_checking", "by": "system" },
-        { "to": "extension.activation_checking", "by": "user", "action": "retry_full" }
+        {
+          "to": "extension.activation_checking",
+          "by": "system"
+        },
+        {
+          "to": "extension.activation_checking",
+          "by": "user",
+          "action": "retry_full"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "Full is ready only after secure delivery, commercial authority, and analysis admission" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "Full is ready only after secure delivery, commercial authority, and analysis admission"
+        }
       ]
     },
     {
       "id": "extension.desktop_app_unavailable",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "DESKTOP_APP_UNAVAILABLE: 'desktop_app_unavailable'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "DESKTOP_APP_UNAVAILABLE: 'desktop_app_unavailable'"
+      },
       "transitions": [
-        { "to": "extension.full_unavailable", "by": "user", "action": "retry_full" }
+        {
+          "to": "extension.full_unavailable",
+          "by": "user",
+          "action": "retry_full"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "returning paired user gets a stopped-app recovery state" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "desktop_stopped" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "returning paired user gets a stopped-app recovery state"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "desktop_app_unavailable"
+        }
       ]
     },
     {
       "id": "extension.activation_checking",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "ACTIVATION_CHECKING: 'activation_checking'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "ACTIVATION_CHECKING: 'activation_checking'"
+      },
       "transitions": [
-        { "to": "extension.activation_required", "by": "system" },
-        { "to": "extension.activation_unavailable", "by": "system" },
-        { "to": "extension.analysis_blocked", "by": "system" },
-        { "to": "extension.full_ready", "by": "system" }
+        {
+          "to": "extension.activation_required",
+          "by": "system"
+        },
+        {
+          "to": "extension.activation_unavailable",
+          "by": "system"
+        },
+        {
+          "to": "extension.analysis_blocked",
+          "by": "system"
+        },
+        {
+          "to": "extension.full_ready",
+          "by": "system"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "authenticated local transport alone enters activation checking, never Full-ready" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "activation_checking" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "authenticated local transport alone enters activation checking, never Full-ready"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "activation_checking"
+        }
       ]
     },
     {
       "id": "extension.activation_required",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "ACTIVATION_REQUIRED: 'activation_required'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "ACTIVATION_REQUIRED: 'activation_required'"
+      },
       "transitions": [
-        { "to": "desktop.full_analytics_activation", "by": "user", "action": "open_dashboard" },
-        { "to": "extension.activation_checking", "by": "user", "action": "retry_readiness" }
+        {
+          "to": "desktop.full_analytics_activation",
+          "by": "user",
+          "action": "open_dashboard"
+        },
+        {
+          "to": "extension.activation_checking",
+          "by": "user",
+          "action": "retry_readiness"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "commercial activation required routes the customer to desktop activation without protocol fields" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "activation_required" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "commercial activation required routes the customer to desktop activation without protocol fields"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "activation_required"
+        }
       ]
     },
     {
       "id": "extension.activation_unavailable",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "ACTIVATION_UNAVAILABLE: 'activation_unavailable'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "ACTIVATION_UNAVAILABLE: 'activation_unavailable'"
+      },
       "transitions": [
-        { "to": "extension.activation_checking", "by": "user", "action": "retry_readiness" }
+        {
+          "to": "extension.activation_checking",
+          "by": "user",
+          "action": "retry_readiness"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "commercial authority failure is distinct and recoverable" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "activation_unavailable" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "commercial authority failure is distinct and recoverable"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "activation_unavailable"
+        }
       ]
     },
     {
       "id": "extension.analysis_blocked",
-      "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "ACTIVATION_ACTIVE: 'activation_active'" },
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "ACTIVATION_ACTIVE: 'activation_active'"
+      },
       "transitions": [
-        { "to": "extension.activation_checking", "by": "user", "action": "retry_readiness" }
+        {
+          "to": "extension.activation_checking",
+          "by": "user",
+          "action": "retry_readiness"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "commercial authority alone renders activation active but not Full-ready" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "activation_active_analysis_blocked" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "commercial authority alone renders activation active but not Full-ready"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "activation_active"
+        }
       ]
     },
     {
       "id": "extension.full_ready",
       "surface": "extension.popup",
-      "anchor": { "file": "extension/runtime/customer-journey.mjs", "text": "FULL_READY: 'full_ready'" },
+      "anchor": {
+        "file": "extension/runtime/customer-journey.mjs",
+        "text": "FULL_READY: 'full_ready'"
+      },
       "transitions": [
-        { "to": "desktop.numbers_ready", "by": "user", "action": "open_dashboard" },
-        { "to": "extension.desktop_app_unavailable", "by": "system" }
+        {
+          "to": "desktop.numbers_ready",
+          "by": "user",
+          "action": "open_dashboard"
+        },
+        {
+          "to": "extension.desktop_app_unavailable",
+          "by": "system"
+        },
+        {
+          "to": "extension.options",
+          "by": "user",
+          "action": "open-manage"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "extension/tests/customer-journey.test.mjs", "name": "Full is ready only after secure delivery, commercial authority, and analysis admission" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "connection details are restored after opening the desktop app closes the popup" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs", "name": "a confirmed pairing closes its window and the popup shows the connected state" },
-        { "kind": "visual", "file": "extension/qualification/popup-visual-fixtures.mjs", "name": "full_ready" }
+        {
+          "kind": "unit",
+          "file": "extension/tests/customer-journey.test.mjs",
+          "name": "Full is ready only after secure delivery, commercial authority, and analysis admission"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
+          "name": "connection details open in Options and repeated entry reuses that tab"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
+          "name": "a confirmed connection stays in setup and readiness comes from the desktop result"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-fixtures.mjs",
+          "name": "full_ready"
+        }
       ]
     },
     {
       "id": "desktop.setup_registration",
       "surface": "desktop.setup",
-      "anchor": { "file": "app/provisioning/provisioning.js", "text": "'registration_required'" },
+      "anchor": {
+        "file": "app/provisioning/provisioning.js",
+        "text": "'registration_required'"
+      },
       "transitions": [
-        { "to": "desktop.setup_creator_confirmation", "by": "user", "action": "claim-submit" }
+        {
+          "to": "desktop.setup_creator_confirmation",
+          "by": "user",
+          "action": "claim-submit"
+        }
       ],
       "evidence": [
-        { "kind": "browser", "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs", "name": "the pasted claim package registers the installation" }
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs",
+          "name": "the pasted claim package registers the installation"
+        }
       ]
     },
     {
       "id": "desktop.setup_creator_confirmation",
       "surface": "desktop.setup",
-      "anchor": { "file": "app/provisioning/provisioning.js", "text": "'creator_confirmation_required'" },
+      "anchor": {
+        "file": "app/provisioning/provisioning.js",
+        "text": "'creator_confirmation_required'"
+      },
       "transitions": [
-        { "to": "desktop.setup_creator_approval", "by": "user", "action": "confirm-identity" }
+        {
+          "to": "desktop.setup_creator_approval",
+          "by": "user",
+          "action": "confirm-identity"
+        }
       ],
       "evidence": [
-        { "kind": "browser", "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs", "name": "the detected creator account is confirmed and approved" }
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs",
+          "name": "the detected creator account is confirmed and approved"
+        }
       ]
     },
     {
       "id": "desktop.setup_creator_approval",
       "surface": "desktop.setup",
-      "anchor": { "file": "app/provisioning/provisioning.js", "text": "'creator_approval_pending'" },
+      "anchor": {
+        "file": "app/provisioning/provisioning.js",
+        "text": "'creator_approval_pending'"
+      },
       "transitions": [
-        { "to": "desktop.setup_finalization", "by": "user", "action": "acquire-association" }
+        {
+          "to": "desktop.setup_finalization",
+          "by": "user",
+          "action": "acquire-association"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "app/provisioning/provisioning.test.mjs", "name": "approval pending and hosted outage have distinct recovery copy" },
-        { "kind": "browser", "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs", "name": "the detected creator account is confirmed and approved" }
+        {
+          "kind": "unit",
+          "file": "app/provisioning/provisioning.test.mjs",
+          "name": "approval pending and hosted outage have distinct recovery copy"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs",
+          "name": "the detected creator account is confirmed and approved"
+        }
       ]
     },
     {
       "id": "desktop.setup_finalization",
       "surface": "desktop.setup",
-      "anchor": { "file": "app/provisioning/provisioning.js", "text": "'finalization_ready'" },
+      "anchor": {
+        "file": "app/provisioning/provisioning.js",
+        "text": "'finalization_ready'"
+      },
       "transitions": [
-        { "to": "extension.pairing_required", "by": "user", "action": "finalize-provisioning" }
+        {
+          "to": "extension.pairing_required",
+          "by": "user",
+          "action": "finalize-provisioning"
+        }
       ],
       "evidence": [
-        { "kind": "browser", "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs", "name": "finalization writes runtime configuration" }
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs",
+          "name": "finalization writes runtime configuration"
+        }
       ]
     },
     {
       "id": "desktop.passkey_sign_in",
       "surface": "desktop.app",
-      "anchor": { "file": "frontend/src/views/WebAuthnAccessView.tsx", "text": "data-journey-state=\"desktop.passkey_sign_in\"" },
+      "anchor": {
+        "file": "frontend/src/views/WebAuthnAccessView.tsx",
+        "text": "data-journey-state=\"desktop.passkey_sign_in\""
+      },
       "transitions": [
-        { "to": "desktop.setup_prompt", "by": "user", "action": "set-up-passkey" },
-        { "to": "desktop.setup_prompt", "by": "user", "action": "sign-in-with-passkey" }
+        {
+          "to": "desktop.setup_prompt",
+          "by": "user",
+          "action": "set-up-passkey"
+        },
+        {
+          "to": "desktop.setup_prompt",
+          "by": "user",
+          "action": "sign-in-with-passkey"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/WebAuthnAccessView.test.tsx", "name": "signs in an enrolled device without enrolling again" },
-        { "kind": "unit", "file": "frontend/tests/AppBootstrap.test.tsx", "name": "shows passkey access instead of Bridge routes without a session identity" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "passkey" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "signs in an enrolled device without enrolling again"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/AppBootstrap.test.tsx",
+          "name": "shows passkey access instead of Bridge routes without a session identity"
+        },
+        {
+          "kind": "visual",
+          "file": "tools/visual-capture/capture.mjs",
+          "name": "passkey"
+        }
       ]
     },
     {
       "id": "desktop.setup_prompt",
       "surface": "desktop.app",
-      "anchor": { "file": "frontend/src/components/SetupPrompt.tsx", "text": "data-journey-state=\"desktop.setup_prompt\"" },
+      "anchor": {
+        "file": "frontend/src/components/SetupPrompt.tsx",
+        "text": "data-journey-state=\"desktop.setup_prompt\""
+      },
       "transitions": [
-        { "to": "desktop.extension_pairing", "by": "user", "action": "continue-setup" },
-        { "to": "desktop.full_analytics_activation", "by": "user", "action": "continue-setup" }
+        {
+          "to": "desktop.extension_pairing",
+          "by": "user",
+          "action": "continue-setup"
+        },
+        {
+          "to": "desktop.full_analytics_activation",
+          "by": "user",
+          "action": "continue-setup"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/CreatorDashboardView.test.tsx", "name": "replaces the numbers with the setup prompt until history sync starts" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "fresh" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "replaces the numbers with the setup prompt until history sync starts"
+        },
+        {
+          "kind": "visual",
+          "file": "tools/visual-capture/capture.mjs",
+          "name": "fresh"
+        }
       ]
     },
     {
       "id": "desktop.extension_pairing",
       "surface": "desktop.app",
-      "anchor": { "file": "frontend/src/components/CompanionPairingControls.tsx", "text": "data-journey-state=\"desktop.extension_pairing\"" },
+      "anchor": {
+        "file": "frontend/src/components/CompanionPairingControls.tsx",
+        "text": "data-journey-state=\"desktop.extension_pairing\""
+      },
       "transitions": [
-        { "to": "desktop.message_history", "by": "user", "action": "confirm-connection" }
+        {
+          "to": "desktop.message_history",
+          "by": "user",
+          "action": "confirm-connection"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/CompanionPairingControls.test.tsx", "name": "requires explicit code comparison before versioned confirmation without exposing the identity thumbprint" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "pairing-comparison" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CompanionPairingControls.test.tsx",
+          "name": "requires explicit code comparison before versioned confirmation without exposing the identity thumbprint"
+        },
+        {
+          "kind": "visual",
+          "file": "tools/visual-capture/capture.mjs",
+          "name": "pairing-comparison"
+        }
       ]
     },
     {
       "id": "desktop.message_history",
       "surface": "desktop.app",
-      "anchor": { "file": "frontend/src/views/SettingsView.tsx", "text": "data-journey-state=\"desktop.message_history\"" },
+      "anchor": {
+        "file": "frontend/src/views/SettingsView.tsx",
+        "text": "data-journey-state=\"desktop.message_history\""
+      },
       "transitions": [
-        { "to": "desktop.history_syncing", "by": "user", "action": "turn-on-message-history" }
+        {
+          "to": "desktop.history_syncing",
+          "by": "user",
+          "action": "turn-on-message-history"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/SettingsView.test.tsx", "name": "requires explicit consent, then exposes pause/resume and revocation through the REST service" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "history-consent" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "requires explicit consent, then exposes pause/resume and revocation through the REST service"
+        },
+        {
+          "kind": "visual",
+          "file": "tools/visual-capture/capture.mjs",
+          "name": "history-consent"
+        }
       ]
     },
     {
       "id": "desktop.history_syncing",
       "surface": "desktop.app",
-      "anchor": { "file": "frontend/src/components/dashboard/DashboardOverview.tsx", "text": "data-journey-state=\"desktop.history_syncing\"" },
+      "anchor": {
+        "file": "frontend/src/components/dashboard/DashboardOverview.tsx",
+        "text": "data-journey-state=\"desktop.history_syncing\""
+      },
       "transitions": [
-        { "to": "desktop.numbers_ready", "by": "system" }
+        {
+          "to": "desktop.numbers_ready",
+          "by": "system"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/CreatorDashboardView.test.tsx", "name": "marks synced-subset counts and shows sync progress instead of a partial-basis sentence" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "syncing" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "marks synced-subset counts and shows sync progress instead of a partial-basis sentence"
+        },
+        {
+          "kind": "visual",
+          "file": "tools/visual-capture/capture.mjs",
+          "name": "syncing"
+        }
       ]
     },
     {
       "id": "desktop.numbers_ready",
       "surface": "desktop.app",
-      "anchor": { "file": "frontend/src/components/dashboard/DashboardOverview.tsx", "text": "data-journey-state=\"desktop.numbers_ready\"" },
+      "anchor": {
+        "file": "frontend/src/components/dashboard/DashboardOverview.tsx",
+        "text": "data-journey-state=\"desktop.numbers_ready\""
+      },
       "transitions": [
-        { "to": "desktop.full_analytics_activation", "by": "user", "action": "open-settings" },
-        { "to": "desktop.stored_messages", "by": "user", "action": "open-settings" }
+        {
+          "to": "desktop.full_analytics_activation",
+          "by": "user",
+          "action": "open-settings"
+        },
+        {
+          "to": "desktop.stored_messages",
+          "by": "user",
+          "action": "open-settings"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/CreatorDashboardView.test.tsx", "name": "renders complete counts with the basis details in a popover" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "populated" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "renders complete counts with the basis details in a popover"
+        },
+        {
+          "kind": "visual",
+          "file": "tools/visual-capture/capture.mjs",
+          "name": "populated"
+        }
       ]
     },
     {
       "id": "desktop.full_analytics_activation",
       "surface": "desktop.app",
-      "anchor": { "file": "frontend/src/components/CommercialActivationControls.tsx", "text": "data-journey-state=\"desktop.full_analytics_activation\"" },
+      "anchor": {
+        "file": "frontend/src/components/CommercialActivationControls.tsx",
+        "text": "data-journey-state=\"desktop.full_analytics_activation\""
+      },
       "transitions": [
-        { "to": "extension.activation_checking", "by": "user", "action": "activate" }
+        {
+          "to": "extension.activation_checking",
+          "by": "user",
+          "action": "activate"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/CommercialActivationControls.test.tsx", "name": "exposes the customer action when canonical readiness requires activation" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "activation-dialog" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "exposes the customer action when canonical readiness requires activation"
+        },
+        {
+          "kind": "visual",
+          "file": "tools/visual-capture/capture.mjs",
+          "name": "activation-dialog"
+        }
       ]
     },
     {
       "id": "desktop.stored_messages",
       "surface": "desktop.app",
-      "anchor": { "file": "frontend/src/components/CreatorVaultControls.tsx", "text": "data-journey-state=\"desktop.stored_messages\"" },
+      "anchor": {
+        "file": "frontend/src/components/CreatorVaultControls.tsx",
+        "text": "data-journey-state=\"desktop.stored_messages\""
+      },
       "transitions": [],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/CreatorVaultControls.test.tsx", "name": "exercises finite enable, confirmed deletion, export, and confirmed disable through the API" },
-        { "kind": "visual", "file": "tools/visual-capture/capture.mjs", "name": "delete-confirmation" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorVaultControls.test.tsx",
+          "name": "exercises finite enable, confirmed deletion, export, and confirmed disable through the API"
+        },
+        {
+          "kind": "visual",
+          "file": "tools/visual-capture/capture.mjs",
+          "name": "delete-confirmation"
+        }
+      ]
+    },
+    {
+      "id": "extension.options",
+      "surface": "extension.options",
+      "anchor": {
+        "file": "extension/options.html",
+        "text": "id=\"data-title\""
+      },
+      "transitions": [
+        {
+          "to": "extension.preview_available",
+          "by": "user",
+          "action": "open-setup"
+        },
+        {
+          "to": "extension.software_activation",
+          "by": "user",
+          "action": "delete-local-data"
+        },
+        {
+          "to": "extension.full_ready",
+          "by": "user",
+          "action": "open-setup"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "browser",
+          "file": "extension/qualification/surface-interactions.spec.mjs",
+          "name": "deletion is scoped and cancellation makes no deletion request"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/ui-surfaces.test.mjs",
+          "name": "page command ownership leaves legal review in setup and data management in Options"
+        }
       ]
     }
   ]

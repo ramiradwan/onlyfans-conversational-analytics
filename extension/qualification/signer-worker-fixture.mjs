@@ -6,6 +6,7 @@ import { createReadOnlyIndexedDbIngestionStorage } from '../transport/read-only-
 import { DurableIngestOutbox } from '../transport/read-only-durable-outbox.mjs';
 import { HistoryAcquisitionCoordinator } from '../transport/read-only-history-coordinator.mjs';
 import { createAccountSigningPersistence } from '../transport/agent-runtime-core.mjs';
+import { guardSignerRefresh } from '../transport/signer-refresh-budget.mjs';
 
 const realStorage = createReadOnlyIndexedDbIngestionStorage(indexedDB, {
   databaseName: 'synthetic-signer-worker-recovery', encryptionKey: TRAVERSAL_KEY,
@@ -53,6 +54,24 @@ async function snapshot() {
 
 onmessage = async ({ data }) => {
   try {
+    if (data.action === 'refresh-budget') {
+      const guarded = guardSignerRefresh(f.chromeApi, { storage: realStorage,
+        creatorAccountId: TRAVERSAL_ACCOUNT, now: () => Date.parse(TRAVERSAL_TIME) + (data.advanceMs ?? 0) });
+      if (data.interruptAfterReservation) {
+        f.chromeApi.tabs.reload = async () => {
+          postMessage({ stage: 'refresh-reserved' });
+          await new Promise(() => {});
+        };
+      }
+      let blocked = false;
+      try { await guarded.tabs.reload(f.tab.id); }
+      catch (error) {
+        if (error.code !== 'history_refresh_backoff') throw error;
+        blocked = true;
+      }
+      postMessage({ stage: 'refresh-budget-result', blocked, reloads: f.calls.reloads });
+      return;
+    }
     await outbox.initialize();
     if (data.action === 'cancel-after-callback') {
       const controller = new AbortController();

@@ -217,7 +217,8 @@ test('approval pending and hosted outage have distinct recovery copy', async () 
   }) });
   offline.elements.claimPackage.value = VALID_PACKAGE;
   await offline.controller.submitClaim({ preventDefault() {} });
-  assert.match(offline.elements.status.textContent, /internet connection/i);
+  assert.match(offline.elements.status.textContent, /setup service could not complete this step/i);
+  assert.doesNotMatch(offline.elements.status.textContent, /internet connection/i);
 });
 
 test('unknown and non-string refusal reasons use a non-echoing refusal', async () => {

@@ -2,6 +2,13 @@
 module.exports = {
   forbidden: [
     {
+      name: 'extension-ui-does-not-import-bridge',
+      comment: 'Extension pages consume generated visual assets, not Bridge runtime code.',
+      severity: 'error',
+      from: { path: '^(?:extension/)?(?:ui/|popup\\.js|setup\\.js|options\\.js)' },
+      to: { path: '(?:^|/)frontend/' },
+    },
+    {
       name: 'rule-agent-capture-isolation',
       comment:
         'Rule A: Capture modules must produce observations only and must not import transport implementations or runtime control implementations (consent-controller, legal-activation-controller, legal-consent-authorization).',

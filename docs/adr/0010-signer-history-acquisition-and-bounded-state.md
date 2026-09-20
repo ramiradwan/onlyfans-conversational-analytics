@@ -43,6 +43,8 @@ Agent and Brain run the same merge-property fixture suite.
 
 Agent advances an upstream continuation only after `commitPage` atomically stores normalized material transitions, sequenced evidence, the next opaque cursor, the durable job update, and outbox rows.
 
+An inventory page may establish membership using an already committed full chat when only its display name differs at the same upstream activity timestamp. Profile labels have no independent version in this contract. Agent retains the stored label inside the page transaction rather than submitting a conflicting metadata update. This applies only to inventory jobs and requires matching chat identity, platform identity, record kind and activity time, with no other differing fields. It neither rewrites existing entities nor allocates a chat transition; membership evidence and message jobs still commit atomically. A greater upstream version can update the label normally. Ordinary chat deltas, message immutability, tombstones, account/lease checks and Brain's strict equal-version conflict rule remain unchanged.
+
 Coverage uses typed `coverage.observed` changes for `generation.started`, `inventory.member`, `inventory.ended`, `conversation.history_started`, `conversation.head_reconciled`, and `generation.closed`. No event contains a digest or trusted completion flag. Brain freezes membership at inventory end and derives complete coverage only when every frozen member has valid history-start and head-reconciliation evidence covering the generation `as_of`. Closing with missing evidence yields partial coverage. A newly discovered conversation invalidates current completeness and starts a new generation while retaining the prior `complete_as_of`.
 
 ### Bounded snapshot repair

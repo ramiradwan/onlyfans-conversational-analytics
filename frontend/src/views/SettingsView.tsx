@@ -72,6 +72,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
     setLoading(true);
     void api.get(controller.signal).then(
       (next) => {
+        if (controller.signal.aborted) return;
         setSettings(next);
         setError(null);
         setLoading(false);
@@ -84,6 +85,35 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
     );
     return () => controller.abort();
   }, [api]);
+
+  useEffect(() => {
+    if (busy || settings === null || settings.desired_state === 'not_started'
+      || settings.desired_state === settings.effective_state) return;
+    const controller = new AbortController();
+    let delay = 1000;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const next = await api.get(controller.signal);
+        if (controller.signal.aborted) return;
+        setSettings((current) => current !== null
+          && next.settings_revision >= current.settings_revision ? next : current);
+      } catch {
+        // A disconnected extension or temporary local API failure must not
+        // leave a successful acknowledgement hidden until manual navigation.
+      } finally {
+        if (!controller.signal.aborted) {
+          delay = Math.min(delay * 2, 15_000);
+          timer = setTimeout(() => void refresh(), delay);
+        }
+      }
+    };
+    timer = setTimeout(() => void refresh(), delay);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [api, busy, settings?.settings_revision, settings?.desired_state, settings?.effective_state]);
 
   const update = async (desiredState: 'running' | 'paused', acceptConsent = false) => {
     if (settings === null) return;

@@ -404,7 +404,9 @@ def create_provisioning_app(
                 headers={"Cache-Control": "no-store"},
             )
         return JSONResponse(
-            {"state": "configured_restart"}, headers={"Cache-Control": "no-store"}
+            {"state": "configured_restart"},
+            headers={"Cache-Control": "no-store"},
+            background=BackgroundTask(request_completion_exit),
         )
 
     @application.post("/api/v1/provisioning/retry", include_in_schema=False)

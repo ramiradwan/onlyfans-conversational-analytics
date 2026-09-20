@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 
 import { inspectTaskCopy } from './task-copy.mjs';
 import { assertStaticAccessibility } from './static-accessibility.mjs';
+import { installSurfaceFixture } from '../../extension/qualification/surface-runtime-fixture.mjs';
 import { staticFixtures } from './static-fixtures.mjs';
 import { CANVAS_DELTA, LAYOUT_SHIFT, colorDistance, grade, gradeLayoutShifts } from './stability-contracts.mjs';
 
@@ -14,7 +15,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const ORIGIN = 'http://static-visual.localhost';
 const KEY_ELEMENTS = 'h1, header, nav, .brand-mark, button, .primary-link';
 function observe(keySelector) {
-  window.__staticPaint = { shifts: [], first: null };
+  window.__staticPaint = { shifts: [], first: null, firstNumeric: null };
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) window.__staticPaint.shifts.push({
       value: entry.value, hadRecentInput: entry.hadRecentInput,
@@ -29,11 +30,15 @@ function observe(keySelector) {
   const frame = () => {
     const main = document.querySelector('main');
     if (!main?.getBoundingClientRect().height) return requestAnimationFrame(frame);
-    window.__staticPaint.first = {
+    const sample = {
       canvas: getComputedStyle(document.body).backgroundColor,
       faces: [...document.fonts].filter((face) => /Variable$/.test(face.family.replaceAll('"', '')))
         .map((face) => ({ family: face.family, status: face.status })),
     };
+    if (!window.__staticPaint.first) window.__staticPaint.first = sample;
+    const numeral = document.querySelector('#messages-count');
+    if (!window.__staticPaint.firstNumeric && numeral?.getClientRects().length) window.__staticPaint.firstNumeric = sample;
+    requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 }
@@ -70,6 +75,8 @@ async function inspect(page, fixture, width, session) {
         metrics.numericFonts = await actualFonts(session, '#messages-count');
         assert(metrics.numericFonts.some((font) => font.isCustomFont && /Space Grotesk/.test(font.familyName)), 'Counts must use Space Grotesk');
       }
+    }
+    if (fixture.surface === 'setup') {
       const disclosure = { software_activation: '#pre-mode', mode_choice: '#preview-disclosure',
         mode_choice_full: '#full-disclosure', full_review: '#full-disclosure' }[fixture.name];
       if (disclosure) {
@@ -78,7 +85,7 @@ async function inspect(page, fixture, width, session) {
         assert(sizes.every((size) => size >= 12), 'Disclosure text must not shrink below its original size');
         metrics.disclosureSizes = sizes;
       }
-    } else {
+    } else if (fixture.surface === 'provisioning') {
       assert.equal(metrics.brand.x, width >= 600 ? 28 : 16);
       assert.equal(metrics.brand.y, 20);
       const steps = await page.locator('[data-step]').evaluateAll((nodes) => nodes.map((node) => node.dataset.state));
@@ -89,7 +96,7 @@ async function inspect(page, fixture, width, session) {
       if (fixture.name === 'invalid-code') assert.equal(await page.locator('#claim-package').getAttribute('aria-invalid'), 'true');
       if (fixture.name.includes('unavailable')) assert(!await page.locator('#open-secure-setup').isVisible());
     }
-    const control = page.locator('button:visible:enabled, a.primary-link:visible').first();
+    const control = page.locator((await page.locator('dialog[open]').count()) ? 'dialog[open] button:visible:enabled' : 'button:visible:enabled, a.primary-link:visible').first();
     if (await control.count()) {
       await page.keyboard.press('Tab'); await control.focus();
       await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
@@ -105,6 +112,7 @@ export async function captureStaticSurfaces(browser, outDir) {
   const directory = join(outDir, 'static-surfaces');
   await mkdir(directory, { recursive: true });
   const popupCss = await readFile(join(root, 'extension/popup.css'), 'utf8');
+  const setupCss = await readFile(join(root, 'extension/setup.css'), 'utf8');
   const fixtures = await staticFixtures();
   fixtures.push(...fixtures.filter((item) => item.name === 'preview' || item.name === 'connect')
     .map((item) => ({ ...item, sourceName: item.name, name: item.name + '-cold-assets', deliveryDelay: 1500 })));
@@ -125,6 +133,7 @@ export async function captureStaticSurfaces(browser, outDir) {
         const unexpected = [];
         page.on('pageerror', (error) => unexpected.push(error.message));
         await page.addInitScript(observe, KEY_ELEMENTS);
+        if (fixture.state) await page.addInitScript(installSurfaceFixture, fixture.state);
         await page.route('**/*', async (route) => {
           const url = new URL(route.request().url());
           if (url.origin !== ORIGIN) { unexpected.push('Unexpected network request'); return route.abort(); }
@@ -132,20 +141,24 @@ export async function captureStaticSurfaces(browser, outDir) {
             await new Promise((done) => setTimeout(done, fixture.deliveryDelay));
           }
           if (url.pathname === '/popup.css') return route.fulfill({ contentType: 'text/css', body: popupCss });
-          if (url.pathname === '/popup.html' || url.pathname === '/provisioning') return route.fulfill({ contentType: 'text/html', body: fixture.html });
+          if (url.pathname === '/setup.css') return route.fulfill({ contentType: 'text/css', body: setupCss });
+          if (fixture.script && url.pathname === `/${fixture.surface}.js`) return route.fulfill({ contentType: 'text/javascript', body: fixture.script });
+          if (url.pathname === `/${fixture.surface}.html` || url.pathname === '/provisioning') return route.fulfill({ contentType: 'text/html', body: fixture.html });
           return route.fulfill({ status: 404 });
         });
         try {
-          await page.goto(ORIGIN + (fixture.surface === 'popup' ? '/popup.html' : '/provisioning'), { waitUntil: 'networkidle' });
+          await page.goto(ORIGIN + (fixture.surface === 'provisioning' ? '/provisioning' : `/${fixture.surface}.html${fixture.state?.hash ? '#' + fixture.state.hash : ''}`), { waitUntil: 'networkidle' });
+          if (fixture.state) await page.waitForFunction(() => document.querySelector('main[data-ready="true"]') || document.querySelector('#runtime-unavailable:not(.hidden)'));
+          if (fixture.state?.dialog) await page.locator('#delete-local-data').click();
           await page.evaluate(() => document.fonts.ready);
           await page.waitForFunction(() => window.__staticPaint.first !== null);
           await page.waitForTimeout(150);
           const paint = await page.evaluate(() => window.__staticPaint);
           const inter = paint.first.faces.find((face) => face.family === 'Inter Variable');
           assert.equal(inter?.status, 'loaded', 'Inter must be loaded at the first text frame');
-          if (fixture.name.startsWith('preview')) {
-            const numeric = paint.first.faces.find((face) => face.family === 'Space Grotesk Variable');
-            assert.equal(numeric?.status, 'loaded', 'Numeric font must be loaded at the first text frame');
+          if (fixture.surface === 'popup' && fixture.name.startsWith('preview')) {
+            const numeric = paint.firstNumeric?.faces.find((face) => face.family === 'Space Grotesk Variable');
+            assert.equal(numeric?.status, 'loaded', 'Numeric font must be loaded at the first visible count frame');
           }
           const canvas = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
           const delta = colorDistance(paint.first.canvas, canvas);
@@ -162,7 +175,7 @@ export async function captureStaticSurfaces(browser, outDir) {
             entries.push({ file: 'static-surfaces/' + file, surface: fixture.surface, state: fixture.name, mode, viewport, capture: kind });
           }
           console.log('captured ' + name);
-          checks.push({ name, measurements, paint: { first: paint.first, canvasDelta: delta, shifts } });
+          checks.push({ name, measurements, paint: { first: paint.first, firstNumeric: paint.firstNumeric, canvasDelta: delta, shifts } });
         } catch (error) { failures.push(`${name}: ${error.message}`); console.error(failures.at(-1)); }
         finally { await context.close(); }
       }

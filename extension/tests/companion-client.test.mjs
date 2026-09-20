@@ -13,7 +13,7 @@ const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null } = {}) {
+function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, enforcePairing = false } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait;
@@ -24,6 +24,7 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
     async cancel() { stats.cancel++; }, async forget() { paired = false; stats.forget++; }, close() { stats.closedStores++; },
   };
   const client = createCompanionClient({ chromeApi: chrome, allowsFull: () => enabled, detectedAccountId: async () => account,
+    now, random: () => 0.5,
     accountDatabaseName: async (id) => `encrypted-account-${id}`, storeFactory: async () => { stats.stores++; return pairingStore; },
     loadSnow: async () => { stats.snow++; return { SnowSession: class {}, generateStaticKeypair() { return new Uint8Array(64); } }; },
     loadTrust: async () => ({}),
@@ -41,6 +42,10 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
     },
     channelFactory: async (options) => {
       stats.networks++; assert.equal(options.url, 'ws://127.0.0.1:17871/ws/agent');
+      if (enforcePairing && !paired && options.requestId === undefined) {
+        throw new Error('pairing_state_refused');
+      }
+      if (enforcePairing && options.requestId !== undefined) paired = true;
       const index = stats.networks, closeListeners = [], rpcCalls = [], documents = [];
       const challenge = { challenge_id: crypto.randomUUID(), challenge: Buffer.alloc(32, 9).toString('base64url'), session_id: crypto.randomUUID(), expires_at: '2026-09-12T12:00:00Z' };
       const channel = { identity: { ...vector.expected.identity, pairing_id: vector.offer.pairing_id, ...(wrongPin ? { creator_account_id: 'other' } : {}) }, closed: false, rpcCalls, documents,
@@ -85,7 +90,7 @@ test('current Agent proof, storage unseal, configuration and rotation use only t
   try {
     const binding = await h.client.adapter.loadBrainBinding();
     assert.equal(binding.creatorAccountId, ACCOUNT); assert.equal(binding.storageKey, STORAGE_KEY); assert.equal(h.stats.proofValid, true);
-    assert.deepEqual(Object.keys(h.chrome.storage.local.values), ['agent_installation_id']);
+    assert.deepEqual(Object.keys(h.chrome.storage.local.values), ['companion_recovery_v1', 'agent_installation_id']);
     assert.deepEqual(Object.keys(h.chrome.storage.session.values), ['active_account_partition_v5']);
     const id = await h.client.adapter.loadAgentInstallationId();
     const context = { authTicket: 'config-ticket', creatorAccountId: ACCOUNT, agentInstallationId: id, currentEtag: null, currentConfigRevision: null, supportedSchemaVersions: ['2'] };
@@ -98,18 +103,68 @@ test('current Agent proof, storage unseal, configuration and rotation use only t
   } finally { h.client.invalidate(); }
 });
 
+test('explicit confirmed pairing is not blocked by automatic reconnect cooldown', async () => {
+  let time = 1_800_000_000_000;
+  const h = harness({ enforcePairing: true, now: () => time });
+  h.unpair();
+
+  await assert.rejects(h.client.adapter.loadBrainBinding());
+  assert.equal(h.stats.networks, 1);
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 1);
+
+  const pairing = h.client.pair();
+  for (let i = 0; i < 20 && (await h.client.status()).state !== 'compare'; i += 1) await tick();
+  assert.equal((await h.client.status()).state, 'compare');
+  h.pairingResult();
+
+  await pairing;
+  assert.equal((await h.client.status()).state, 'paired');
+  assert.equal(h.client.connected, true);
+  assert.equal(h.stats.networks, 2);
+  h.client.invalidate();
+});
 test('each reconnect reconstructs authority with a new proof instead of durable credentials', async () => {
-  const h = harness();
+  let time = Date.now();
+  const h = harness({ now: () => time });
   try {
     const first = await h.client.adapter.loadBrainBinding();
     h.channels[0].close();
+    await assert.rejects(h.client.adapter.loadBrainBinding(), { code: 'companion_recovery_backoff' });
+    time += 1_000;
     const second = await h.client.adapter.loadBrainBinding();
     assert.notEqual(first.authTicket, second.authTicket); assert.equal(h.stats.networks, 2);
     assert.equal(h.channels[1].rpcCalls[0].method, 'agent.challenge');
-    const restarted = harness({ chromeApi: h.chrome });
+    time += 2_000;
+    const restarted = harness({ chromeApi: h.chrome, now: () => time });
     try { await restarted.client.adapter.loadBrainBinding(); assert.equal(restarted.stats.proofValid, true); }
     finally { restarted.client.invalidate(); }
   } finally { h.client.invalidate(); }
+});
+
+test('repeated protected connection loss backs off across UI polling and worker reconstruction', async () => {
+  let time = Date.now();
+  let h = harness({ now: () => time });
+  for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 300_000]) {
+    await h.client.adapter.loadBrainBinding();
+    h.channels[0].close();
+    for (let poll = 0; poll < 20; poll += 1) {
+      await assert.rejects(h.client.adapter.loadBrainBinding(), { code: 'companion_recovery_backoff' });
+    }
+    assert.equal(h.stats.networks, 1);
+    const restarted = harness({ chromeApi: h.chrome, now: () => time });
+    await assert.rejects(restarted.client.adapter.loadBrainBinding(), { code: 'companion_recovery_backoff' });
+    time += delay - 1;
+    await assert.rejects(restarted.client.adapter.loadBrainBinding(), { code: 'companion_recovery_backoff' });
+    time += 1;
+    h = restarted;
+  }
+  await h.client.adapter.loadBrainBinding();
+  time += 60_000;
+  await h.client.adapter.loadBrainBinding();
+  h.channels[0].close();
+  await h.client.adapter.loadBrainBinding();
+  assert.equal(h.stats.networks, 2, 'a stable minute restores the initial retry budget');
+  h.client.invalidate();
 });
 
 test('account mismatch and unexpected unseal fields never publish a Full binding', async () => {
@@ -154,17 +209,17 @@ test('protocol facade publishes only the fresh authenticated ticket and encrypte
   } finally { socket.close(); }
 });
 
-test('popup pairing is restricted to the packaged popup and disconnect cancels comparison', async () => {
+test('setup pairing is restricted to its packaged page and disconnect cancels comparison', async () => {
   const h = harness(); h.unpair(); h.client.registerPopup();
   const listener = h.chrome.runtime.onConnect.listeners[0];
   const foreign = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: 'https://onlyfans.com/' } };
   listener(foreign); assert.equal(h.stats.stores, 0);
-  const states = [], port = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL('popup.html#pairing') }, onMessage: event(), onDisconnect: event(), postMessage(state) { states.push(state); } };
+  const states = [], port = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL('setup.html') }, onMessage: event(), onDisconnect: event(), postMessage(state) { states.push(state); } };
   listener(port); await tick(); port.onMessage.listeners[0]({ type: 'pair' });
   for (let i = 0; i < 10 && !states.some((state) => state.state === 'compare'); i++) await tick();
   assert.equal(states.find((state) => state.state === 'compare').comparison_code, vector.expected.comparison_code);
   port.onDisconnect.listeners[0](); await tick(); assert.equal(h.stats.cancel, 1); assert.equal(h.stats.networks, 0);
-  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,state'));
+  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,owns_attempt,state'));
 });
 
 test('the transient toolbar popup can inspect status but cannot start a comparison', async () => {
@@ -212,4 +267,41 @@ test('startup has a ten-second total deadline even when crypto loading never ret
   const operation = h.client.adapter.loadBrainBinding(); const rejected = assert.rejects(operation);
   await tick(); t.mock.timers.tick(10000); await rejected;
   assert.equal(h.channels[0].closed, true); assert.equal(h.client.connected, false);
+});
+
+function uiPort(h, page) {
+  const values = [];
+  const port = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL(page) },
+    onMessage: event(), onDisconnect: event(), postMessage(value) { values.push(value); } };
+  h.chrome.runtime.onConnect.listeners[0](port);
+  return { values, send(type) { port.onMessage.listeners[0]({ type }); }, close() { port.onDisconnect.listeners[0](); } };
+}
+test('only the owning setup page can cancel a comparison and observers receive no code', async () => {
+  const h = harness(); h.unpair(); h.client.registerPopup();
+  const owner = uiPort(h, 'setup.html'), observer = uiPort(h, 'popup.html'), second = uiPort(h, 'setup.html#full');
+  await tick(); owner.send('pair');
+  for (let i = 0; i < 20 && !owner.values.some((value) => value.state === 'compare'); i++) await tick();
+  assert.equal(owner.values.at(-1).owns_attempt, true);
+  assert.equal(observer.values.at(-1).comparison_code, null);
+  assert.equal(observer.values.at(-1).owns_attempt, false);
+  assert.equal(second.values.at(-1).owns_attempt, false);
+  second.send('cancel'); observer.send('cancel'); second.send('pair');
+  observer.close(); second.close(); await tick();
+  assert.equal(h.stats.cancel, 0);
+  assert.equal((await h.client.status()).state, 'compare');
+  owner.close(); await tick(); assert.equal(h.stats.cancel, 1);
+  assert.equal((await h.client.status()).state, 'unpaired');
+});
+test('forget is an Options-only action and acknowledgement follows reconciliation', async () => {
+  const h = harness(), gate = deferred();
+  h.client.registerPopup({ onForget: () => gate.promise });
+  const popup = uiPort(h, 'popup.html'), setup = uiPort(h, 'setup.html'), options = uiPort(h, 'options.html');
+  await tick(); popup.send('forget'); setup.send('forget'); await tick();
+  assert.equal(h.stats.forget, 0);
+  options.send('forget'); await tick();
+  assert.equal(h.stats.forget, 1);
+  assert.equal(options.values.some((value) => value.type === 'pairing_command_result'), false);
+  gate.resolve(); await tick();
+  assert.deepEqual(options.values.find((value) => value.type === 'pairing_command_result'),
+    { type: 'pairing_command_result', command: 'forget', ok: true });
 });

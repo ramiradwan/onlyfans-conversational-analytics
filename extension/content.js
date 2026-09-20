@@ -213,7 +213,15 @@ import {
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type !== PAGE_CONTROL_MESSAGE_TYPE || message.action !== 'stop') return false;
+    if (message?.type !== PAGE_CONTROL_MESSAGE_TYPE) return false;
+    if (message.action === 'refresh_identity' && message.version === PAGE_CONTROL_VERSION && active) {
+      window.postMessage({
+        type: PAGE_CONTROL_MESSAGE_TYPE, version: PAGE_CONTROL_VERSION, action: 'refresh_identity',
+      }, pageOrigin);
+      sendResponse?.({ ok: true });
+      return false;
+    }
+    if (message.action !== 'stop') return false;
     stop();
     sendResponse?.({ ok: true });
     return false;

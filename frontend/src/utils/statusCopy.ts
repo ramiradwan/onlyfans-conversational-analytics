@@ -45,12 +45,12 @@ export interface StatusMessage {
 const EXTENSION_ISSUES: Record<Exclude<ExtensionConnection, 'connected'>, StatusMessage> = {
   offline: {
     title: 'Connection interrupted',
-    detail: "New messages won't arrive until the browser extension reconnects. Check that Chrome is open and the extension is on.",
+    detail: "New messages won't arrive until the browser extension reconnects. Check that your browser is open and the extension is on.",
     severity: 'warning',
   },
   not_responding: {
     title: 'Browser extension not responding',
-    detail: 'New messages may be delayed. Check that Chrome is open.',
+    detail: 'New messages may be delayed. Check that your browser is open.',
     severity: 'warning',
   },
   applying_settings: {

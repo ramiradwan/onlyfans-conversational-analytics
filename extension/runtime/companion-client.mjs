@@ -1,3 +1,4 @@
+import { uiSurface } from './ui-surfaces.mjs';
 import { openPairingStore } from './companion-pairing-store.mjs';
 import { loadPackagedSnow } from './packaged-snow.mjs';
 import { signAgentSessionProof, snowKeypairGenerator } from './companion-agent-identity.mjs';
@@ -5,6 +6,7 @@ import { openCompanionChannel, openLoopbackSocket, CompanionChannelError } from 
 import { parseMessage } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { LOCAL_SERVICE_WS, LOCAL_PAIRING_WS } from '../transport/local-service-endpoints.mjs';
+import { createConnectionRecovery, CONNECTION_STABLE_MS } from './recovery-backoff.mjs';
 
 export const PAIRING_PORT_NAME = 'ofca.companion.pairing';
 const INSTALLATION_KEY = 'agent_installation_id';
@@ -41,11 +43,14 @@ export function createCompanionClient({
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
+  now = Date.now, random = Math.random,
   loadTrust = async () => loadGrantTrustSet(await (await fetch(chromeApi.runtime.getURL('companion-grant-trust.json'))).json()),
 } = {}) {
   let storePromise, trustPromise, installationPromise, connecting = null, connectingAccount = null, connectionAbort = null, active = null;
   let generation = 0, pairingAbort = null, state = { state: 'unpaired', comparison_code: null };
+  const recovery = createConnectionRecovery({ storage: chromeApi.storage.local, now, random });
   const subscribers = new Set();
+  let pairingOwner = null;
   const store = () => {
     if (!storePromise) {
       const opening = Promise.resolve().then(storeFactory);
@@ -88,7 +93,14 @@ export function createCompanionClient({
     const accountId = await permitted();
     controls.signal.throwIfAborted(); controls.assertCurrent?.();
     if (active && active.accountId !== accountId) invalidate();
-    if (active && !active.channel.closed && active.accountId === accountId) return active;
+    if (active && !active.channel.closed && active.accountId === accountId) {
+      if (!active.stable && now() - active.openedAt >= CONNECTION_STABLE_MS) {
+        await recovery.stable();
+        if (!active || active.channel.closed) throw failure();
+        active.stable = true;
+      }
+      return active;
+    }
     if (connecting) {
       if (connectingAccount !== accountId) { invalidate(); throw failure(); }
       const connected = await connecting;
@@ -104,6 +116,11 @@ export function createCompanionClient({
       if (generation !== version || !allowsFull?.()) throw failure();
     };
     const operation = (async () => {
+      // The persisted circuit limits automatic reconnects. A freshly confirmed
+      // pairing is already a single user-owned, deadline-bounded attempt and
+      // must not be rejected by a cooldown earned before a pin existed.
+      if (requestId === undefined) await recovery.reserve();
+      current();
       const pairingStore = await store();
       const snow = await loadSnow();
       current(); await permitted(accountId);
@@ -135,9 +152,17 @@ export function createCompanionClient({
           || atob(unlocked.storage_key_base64).length !== 32
           || btoa(atob(unlocked.storage_key_base64)) !== unlocked.storage_key_base64) throw failure();
         current(); await permitted(accountId);
-        active = { channel, accountId, authTicket: authorized.auth_ticket, storageKey: unlocked.storage_key_base64,
+        active = { channel, accountId, openedAt: now(), stable: false,
+          authTicket: authorized.auth_ticket, storageKey: unlocked.storage_key_base64,
           storageBootstrap: authorized.storage_bootstrap, agentInstallationId };
-        channel.onClose(() => { if (active?.channel === channel) active = null; });
+        channel.onClose(() => {
+          if (active?.channel !== channel) return;
+          const wasStable = now() - active.openedAt >= CONNECTION_STABLE_MS;
+          active = null;
+          // Queue the reset before any subsequent reserve; a quiet healthy
+          // connection need not have been polled by an extension UI.
+          if (wasStable) void recovery.stable().catch(() => undefined);
+        });
         return active;
       } catch { channel.close(); throw failure(); }
     })();
@@ -146,10 +171,13 @@ export function createCompanionClient({
       if (connecting === operation) { connecting = null; connectingAccount = null; connectionAbort = null; }
     }
   }
+  async function hasSavedPairing() {
+    if (!allowsFull?.()) return false;
+    return (await (await store()).status()).paired === true;
+  }
   async function status() {
     if (!allowsFull?.()) return { state: 'unavailable', comparison_code: null };
-    const saved = await (await store()).status();
-    if (saved.paired) return { state: 'paired', comparison_code: null };
+    if (await hasSavedPairing()) return { state: 'paired', comparison_code: null };
     if (['pairing', 'compare', 'pairing_failed', 'desktop_not_ready'].includes(state.state)) return { ...state };
     let account = null;
     try { account = await detectedAccountId(); } catch {}
@@ -302,11 +330,17 @@ export function createCompanionClient({
   };
   function registerPopup({ onPaired = async () => {}, onForget = async () => {} } = {}) {
     chromeApi.runtime.onConnect.addListener((port) => {
-      const pairingWindow = port.sender?.url === chromeApi.runtime.getURL('popup.html#pairing');
-      if (port.name !== PAIRING_PORT_NAME || port.sender?.id !== chromeApi.runtime.id
-        || (!pairingWindow && port.sender.url !== chromeApi.runtime.getURL('popup.html'))) return;
+      const surface = uiSurface(port.sender, chromeApi);
+      if (port.name !== PAIRING_PORT_NAME || surface === null) return;
       const controller = new AbortController();
-      const notify = (value) => { try { port.postMessage(value); } catch {} };
+      const notify = (value) => {
+        const projection = value?.state ? {
+          ...value,
+          comparison_code: surface === 'setup' ? value.comparison_code : null,
+          owns_attempt: surface === 'setup' && pairingOwner === port,
+        } : value;
+        try { port.postMessage(projection); } catch {}
+      };
       const notifyReadiness = (value) => notify({ type: 'analysis_readiness', ...value });
       subscribers.add(notify);
       port.onDisconnect.addListener(() => { subscribers.delete(notify); controller.abort(); });
@@ -315,20 +349,34 @@ export function createCompanionClient({
           || !['pair', 'status', 'forget', 'cancel', 'readiness'].includes(message.type)) return;
         void (async () => {
           if (message.type === 'pair') {
-            if (!pairingWindow) throw failure();
-            const existing = await status();
-            if (existing.state === 'paired') { notify(existing); return; }
-            await pair({ signal: controller.signal }); await onPaired();
+            if (surface !== 'setup') return;
+            if (pairingOwner !== null) { notify(await status()); return; }
+            pairingOwner = port;
+            try {
+              const existing = await status();
+              if (existing.state === 'paired') { notify(existing); return; }
+              await pair({ signal: controller.signal }); await onPaired();
+            } finally {
+              if (pairingOwner === port) pairingOwner = null;
+            }
           }
-          else if (message.type === 'forget') { await forget(); await onForget(); }
-          else if (message.type === 'cancel') pairingAbort?.abort();
+          else if (message.type === 'forget') {
+            if (surface !== 'options') return;
+            await forget(); await onForget();
+            notify({ type: 'pairing_command_result', command: 'forget', ok: true });
+          }
+          else if (message.type === 'cancel') {
+            if (surface === 'setup' && pairingOwner === port) pairingAbort?.abort();
+          }
           else if (message.type === 'readiness') {
             notifyReadiness(await analysisReadiness({ signal: controller.signal }));
             return;
           }
           notify(await status());
         })().catch(() => {
-          if (message.type === 'readiness') {
+          if (message.type === 'forget') {
+            notify({ type: 'pairing_command_result', command: 'forget', ok: false });
+          } else if (message.type === 'readiness') {
             notifyReadiness({ commercial_authority: 'unavailable', analysis_admission: 'blocked' });
           } else if (message.type === 'pair') {
             void status().then(notify, () => notify({ state: 'pairing_failed', comparison_code: null }));
@@ -340,6 +388,6 @@ export function createCompanionClient({
       void status().then(notify).catch(() => notify({ state: 'unavailable', comparison_code: null }));
     });
   }
-  return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, status, analysisReadiness, registerPopup,
+  return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, hasSavedPairing, status, analysisReadiness, registerPopup,
     get connected() { return active !== null && !active.channel.closed; } });
 }

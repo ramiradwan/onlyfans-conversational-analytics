@@ -33,6 +33,7 @@ from app.packaged_entry import (
     PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE,
 )
 from app.provisioning.app import PROVISIONING_HANDOFF_PATH, PROVISIONING_REDEEM_PATH
+from app.provisioning.launcher_handoff import load_launcher_handoff
 
 
 BRIDGE_ORIGIN = "http://bridge.localhost:17871"
@@ -200,7 +201,16 @@ class Launcher:
         return target
 
     def _launch_provisioning(self) -> str:
-        token = self.provisioning_token_factory()
+        owner = self._verified_listener()
+        if owner is None:
+            token = self.provisioning_token_factory()
+        else:
+            try:
+                token = load_launcher_handoff(self.configuration.data_directory, pid=owner.pid)
+            except Exception as error:
+                raise LaunchFailure(
+                    "configuration_unavailable", FAILURE_MESSAGES["configuration_unavailable"]
+                ) from error
         if len(token) < 32:
             raise LaunchFailure(
                 "provisioning_handoff_token_invalid",
@@ -214,7 +224,6 @@ class Launcher:
             startup_timeout_seconds=self.configuration.startup_timeout_seconds,
             provisioning_handoff_token=token,
         )
-        owner = self._verified_listener()
         if owner is None:
             process = self._start_and_wait_process(configuration)
         else:

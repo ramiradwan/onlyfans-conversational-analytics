@@ -78,6 +78,7 @@ frontend/.design-sync/node_modules
 # ------------------------
 extension/dist/
 extension/node_modules/
+extension/qualification/test-results/
 native/companion-snow/target/
 extension/crypto/snow/target/
 tools/e2e-capture/node_modules/

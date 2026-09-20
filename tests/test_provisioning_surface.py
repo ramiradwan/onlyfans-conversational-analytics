@@ -387,7 +387,10 @@ def test_ready_provisioning_requests_distinguished_restart() -> None:
 
 def test_finalization_hands_the_page_body_to_the_finalize_action() -> None:
     action = RecordingFinalizeAction()
-    application = provisioning_app(finalize_action=action)
+    exits: list[str] = []
+    application = provisioning_app(
+        finalize_action=action, completion_exit=lambda: exits.append("restart")
+    )
     client, cookie, token = bounded_session(application)
 
     response = client.post(
@@ -398,6 +401,8 @@ def test_finalization_hands_the_page_body_to_the_finalize_action() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"state": "configured_restart"}
+    assert application.state.completion_requested is True
+    assert exits == ["restart"]
     assert action.calls == [
         {
             "association_request_id": ASSOCIATION_REQUEST_ID,
@@ -409,7 +414,10 @@ def test_finalization_hands_the_page_body_to_the_finalize_action() -> None:
 
 def test_a_refused_finalization_reports_its_nonsecret_reason() -> None:
     action = RecordingFinalizeAction(refusal="incomplete_grant_set")
-    application = provisioning_app(finalize_action=action)
+    exits: list[str] = []
+    application = provisioning_app(
+        finalize_action=action, completion_exit=lambda: exits.append("restart")
+    )
     client, cookie, token = bounded_session(application)
 
     response = client.post(
@@ -424,6 +432,8 @@ def test_a_refused_finalization_reports_its_nonsecret_reason() -> None:
         "reason": "incomplete_grant_set",
     }
     assert len(action.calls) == 1
+    assert getattr(application.state, "completion_requested", False) is False
+    assert exits == []
 
 
 def test_finalization_without_the_session_csrf_token_never_reaches_the_action() -> None:

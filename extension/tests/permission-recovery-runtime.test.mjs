@@ -22,10 +22,10 @@ test('both runtime graphs propagate the manifest version into transport construc
   }
 });
 
-test('popup exposes permission recovery and payload-free health fields', async () => {
+test('Options exposes permission recovery and payload-free health fields', async () => {
   const [html, source] = await Promise.all([
-    readFile(new URL('../popup.html', import.meta.url), 'utf8'),
-    readFile(new URL('../popup.js', import.meta.url), 'utf8'),
+    readFile(new URL('../options.html', import.meta.url), 'utf8'),
+    readFile(new URL('../options.js', import.meta.url), 'utf8'),
   ]);
   assert.match(html, /id="restore-access"/);
   assert.match(html, /id="reload-tabs"/);

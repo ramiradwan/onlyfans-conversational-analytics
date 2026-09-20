@@ -9,13 +9,14 @@ const baseline = JSON.parse(fs.readFileSync('tests/fixtures/protected-static-dis
 
 describe('task-focused static copy', () => {
   it('keeps protected disclosures unchanged', () => {
-    const html = read('extension/popup.html');
-    for (const item of Object.values(baseline.blocks) as { start: string; end: string; sha256: string }[]) {
-      const block = html.slice(html.indexOf(item.start), html.indexOf(item.end));
-      expect(createHash('sha256').update(block).digest('hex')).toBe(item.sha256);
+    const doc = parse('extension/setup.html');
+    for (const [id, item] of Object.entries(baseline.blocks) as [string, { element_sha256: string }][]) {
+      const element = doc.getElementById(id);
+      expect(element, id).not.toBeNull();
+      expect(createHash('sha256').update(element!.outerHTML).digest('hex')).toBe(item.element_sha256);
     }
   });
-  it.each(['extension/popup.html', 'app/provisioning/provisioning.html'])('has no semicolons in rendered copy in %s', (file) => {
+  it.each(['extension/popup.html', 'extension/setup.html', 'extension/options.html', 'app/provisioning/provisioning.html'])('has no semicolons in rendered copy in %s', (file) => {
     const doc = parse(file);
     doc.querySelectorAll('style,script').forEach((node) => node.remove());
     expect(doc.body.textContent).not.toContain(';');

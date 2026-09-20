@@ -319,3 +319,16 @@ test('the consumer frozen-tab guard and signer unsafe-refresh policy both preven
     assert.equal(f.calls.saves, 0);
   });
 });
+
+test('installed signer bootstraps using a runnable background tab beside an older frozen tab', async () => {
+  const f = createSignerReleaseFixture();
+  f.chromeApi.tabs.query = async function () {
+    assert.equal(this, f.chromeApi.tabs);
+    return [{ id: 3, active: false, frozen: true }, { ...f.tab }];
+  };
+  const provider = await f.createProvider();
+  const result = await provider.read({ operation: 'identity', refreshMode: 'allow' });
+  assert.equal(result.success, true);
+  assert.equal(f.calls.reloads, 1);
+  assert.equal(f.calls.saves, 1);
+});

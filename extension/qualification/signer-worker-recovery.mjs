@@ -148,6 +148,23 @@ try {
   assert.equal(cancelled.stage, 'cancel-after-callback-rolled-back');
   assert.deepEqual(attemptedExternalUrls, []);
   await terminateWorker();
+
+  // Terminate after the encrypted refresh reservation commits but before reload.
+  // Reconstructed workers must not refund it or repeat the browser side effect.
+  await startWorker();
+  assert.equal((await request('refresh-budget', { interruptAfterReservation: true })).stage, 'refresh-reserved');
+  await terminateWorker();
+  let protectedRefreshes = 0;
+  for (const [advanceMs, blocked] of [[0, true], [899_999, true], [900_000, false],
+    [1_800_000, false], [2_700_000, true], [3_599_999, true], [3_600_000, false]]) {
+    await startWorker();
+    const result = await request('refresh-budget', { advanceMs });
+    assert.equal(result.blocked, blocked);
+    assert.equal(result.reloads, blocked ? 0 : 1);
+    protectedRefreshes += result.reloads;
+    await terminateWorker();
+  }
+  assert.equal(protectedRefreshes, 3);
   const report = {
     scope: 'qa-source-bundle-real-indexeddb-dedicated-worker', shipping_zip_acceptance: false,
     synthetic_chrome_and_network: true, live_network: false, passed: true,
@@ -157,6 +174,8 @@ try {
     completed_wakes: completedWakes, terminated_workers: terminatedWorkers,
     entered_page_transaction_rollback_verified: true, committed_page_reconstruction_verified: true,
     cancellation_after_callback_rollback_verified: true,
+    refresh_budget_survives_worker_termination: true,
+    refresh_budget_checks: 7,
     opaque_cursor_resume_verified: true, message_dedup_verified: true,
     chats: final.chats.length, messages: final.messages.length,
     message_outbox_transitions: final.outbox.filter((row) => row.change.type === 'message.upsert').length,

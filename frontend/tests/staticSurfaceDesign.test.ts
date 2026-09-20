@@ -44,7 +44,7 @@ describe('static surface font delivery', () => {
   });
 });
 
-it.each([['extension/popup.html', 2], ['app/provisioning/provisioning.html', 1]] as const)('keeps early font preloads current in %s', (file, count) => {
+it.each([['extension/popup.html', 2], ['extension/setup.html', 2], ['extension/options.html', 2], ['app/provisioning/provisioning.html', 1]] as const)('keeps early font preloads current in %s', (file, count) => {
   expect(replaceStaticFontPreloads(read(file), fonts, count)).toBe(read(file));
 });
 

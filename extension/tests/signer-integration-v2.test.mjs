@@ -971,6 +971,39 @@ test('coordinator deadline arming, backoff, and fence apply to both modules', as
   }
 });
 
+test('session loss during cold history bootstrap backs off despite disabled wakes and fresh sessions', async (t) => {
+  for (const { name, Coordinator } of COORDINATOR_VARIANTS) await t.test(name, async () => {
+    const durable = outbox();
+    const state = await durable.initialize();
+    let time = 0, reads = 0, session = true;
+    const coordinator = new Coordinator({ outbox: durable, idFactory: id,
+      configuration: () => authorizedConfiguration(true),
+      session: () => session ? { creator_account_id: ACCOUNT, applied_config_revision: 'config-1', account_epoch: state.account_epoch } : null,
+      clock: () => time,
+      signer: { read() { reads += 1; return new Promise(() => {}); } },
+    });
+    for (const delay of [3_000, 6_000, 12_000, 24_000, 48_000, 60_000]) {
+      const expected = reads + 1;
+      const running = coordinator.wake();
+      while (reads !== expected) await new Promise((resolve) => setImmediate(resolve));
+      coordinator.cancelCurrent('Agent session ended');
+      await assert.rejects(running);
+      session = false;
+      assert.deepEqual(await coordinator.wake(), { status: 'disabled', pages: 0 });
+      session = true;
+      for (let wake = 0; wake < 20; wake += 1) {
+        assert.deepEqual(await coordinator.wake(), { status: 'deferred', pages: 0 });
+      }
+      time += delay - 1;
+      assert.deepEqual(await coordinator.wake(), { status: 'deferred', pages: 0 });
+      assert.equal(reads, expected);
+      time += 1;
+    }
+    coordinator.stop();
+    assert.equal((await durable.entries()).length, 0);
+  });
+});
+
 test('the run deadline reaches the global timer without a coordinator receiver', async (t) => {
   for (const { name, Coordinator } of COORDINATOR_VARIANTS) {
     await t.test(name, async () => {
@@ -1140,7 +1173,87 @@ test('429 retry timing is durable, bounded, body-free, and stops at retry_limit'
   assert.equal(pageReads, 2);
   assert.equal(inventory.retry_count, 2);
   assert.equal(inventory.phase, 'closed');
-  assert.equal(inventory.next_attempt_at, null);
+  // The generation never froze its inventory, so it closes as blocked coverage
+  // and carries a bounded rediscovery delay. Waking inside that delay performs
+  // no signer read at all, including the identity read a new generation needs.
+  assert.equal(Date.parse(inventory.next_attempt_at) - clock, 2_000);
+  assert.equal(coordinator.historyErrorCode(), 'history_unavailable');
+  await coordinator.wake();
+  assert.equal(pageReads, 2);
+  assert.equal(
+    (await durable.historyJobs()).filter((job) => job.kind === 'inventory').length,
+    1,
+  );
+});
+
+test('an inventory that never freezes closes as blocked coverage and rediscovers on a bounded delay', async () => {
+  const durable = outbox();
+  const state = await durable.initialize();
+  let clock = Date.parse('2026-07-19T09:00:00Z');
+  const signer = {
+    async read(request) {
+      if (request.operation === 'identity') {
+        return { operation: 'identity', success: true, data: { id: 'creator-platform-1' } };
+      }
+      // The conversation the page hook already captured, at the same upstream
+      // updated_at, carrying a conflicting platform identity. Every inventory page is
+      // refused by the account merge, so no member is ever frozen.
+      return {
+        operation: 'conversations',
+        success: true,
+        data: {
+          items: [{
+            id: 'chat-1',
+            platform_user_id: 'different-fan',
+            display_name: 'Alexandra',
+            updated_at: '2026-07-19T08:00:00Z',
+          }],
+          continuation: null,
+          boundary: 'inventory_end',
+        },
+      };
+    },
+  };
+  const coordinator = new HistoryAcquisitionCoordinator({
+    outbox: durable,
+    signer,
+    idFactory: id,
+    now: () => new Date(clock).toISOString(),
+    clock: () => clock,
+    delay: async () => {},
+    configuration: () => authorizedConfiguration(true, { retry_limit: 1 }),
+    session: () => ({
+      creator_account_id: ACCOUNT,
+      applied_config_revision: 'config-1',
+      account_epoch: state.account_epoch,
+    }),
+  });
+  await durable.enqueue(chat());
+  const inventoryJobs = async () => (await durable.historyJobs())
+    .filter((job) => job.kind === 'inventory');
+
+  await assert.rejects(coordinator.wake(), (error) => error.code === 'identity_conflict');
+  clock += 3_000;
+  await coordinator.wake();
+
+  let jobs = await inventoryJobs();
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].phase, 'closed');
+  assert.equal(jobs[0].last_error_code, 'identity_conflict');
+  assert.equal(jobs[0].boundary, null);
+  assert.equal(Date.parse(jobs[0].next_attempt_at) - clock, 2_000);
+  assert.equal(coordinator.historyErrorCode(), 'history_unavailable');
+
+  // Before the fix a chat outside the generation restarted discovery on this
+  // wake, replacing blocked coverage with a fresh discovering generation.
+  await coordinator.wake();
+  assert.equal((await inventoryJobs()).length, 1);
+  assert.equal(coordinator.historyErrorCode(), 'history_unavailable');
+
+  clock += 2_000;
+  await assert.rejects(coordinator.wake(), (error) => error.code === 'identity_conflict');
+  jobs = await inventoryJobs();
+  assert.equal(jobs.length, 2, 'rediscovery resumes once the bounded delay elapses');
 });
 
 test('recent_window_days prioritizes recent conversations and a new chat opens a new generation', async () => {
