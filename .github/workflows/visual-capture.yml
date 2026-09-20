@@ -81,6 +81,9 @@ jobs:
       - name: Install extension renderer dependencies
         run: npm ci --prefix extension
 
+      - name: Build extension renderer artifact
+        run: npm run build --prefix extension
+
       - name: Install visual capture dependencies
         run: npm ci --prefix tools/visual-capture
 
