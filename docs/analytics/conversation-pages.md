@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql and test_conversation_pages.py before editing behavior or limits. -->
+<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql, sql/0013_shared_conversation_pages.sql, validation_receipt.py, test_conversation_pages.py and test_shared_conversation_pages.py before editing behavior or limits. -->
 
 # Reuse large conversation results
 
@@ -8,20 +8,30 @@ The compact SQLite path stores large conversation results in pages rather than r
 
 A page holds at most 256 records and 256 KiB. A conversation may use at most 4,096 pages. The header and pages count toward the existing 64 MiB per-build fragment limit and 4,096-conversation limit; ordinary fragments share those limits. Oversized records or exhausted capacity prevent retention, not analysis.
 
-`conversation_page_sets` holds the header. `conversation_pages` holds ordered bytes in the same encrypted analytics database. The header covers input and configuration identity, metrics, expiry, counts and the ordered-page checksum. Pages contain findings, graph records or analyzer reuse records. They do not copy source text or native message identifiers.
+`conversation_page_sets` holds each generation's header. Schema 13 stores immutable compressed bytes in `conversation_page_content`, keyed by account and content hash. `conversation_page_refs` selects the ordered pages for each generation. The `conversation_pages` view also reads generation-owned pages from older databases. The header covers input and configuration identity, metrics, expiry, counts and the ordered-page checksum. Pages contain findings, graph records or analyzer reuse records. They do not copy source text or native message identifiers.
 
 Only a completed, active generation supplies pages. Missing, malformed, misordered, incompatible or expired pages cause a source rebuild. Parsing is limited to one page at a time, but the restored conversation output and assembled account graph are still retained. These limits are not a total memory cap.
 
 ## Correctness and lifetime
 
-Staging compares every retained record with its candidate artifact, including analyzer results and graph endpoints. Rows are immutable after insertion. Retirement or generation deletion removes the page set and its children. Partial or discarded builds cannot seed reuse.
+An unchanged page set leaves only its header and predecessor generation reference in build state. Staging reopens that reference inside its write transaction. It requires the same active generation and completed canonical witness, checks the header, and compares every page record with the candidate artifact. Analyzer results and graph endpoints remain checked. An unavailable or changed reference aborts staging without publishing a partial generation.
+
+Existing shared bytes are compared before reuse. Staging writes only references for matching content. New content is inserted once. If an existing content key holds damaged bytes, recomputed output uses generation-owned pages instead of overwriting that predecessor. Retirement can then remove the damaged cache safely.
+
+Rows are immutable after insertion. Retirement or generation deletion removes that generation's page references. Shared bytes remain until the last reference disappears. Cancellation rolls back staged writes or discards the candidate without removing the active predecessor's pages. Partial or discarded builds cannot seed reuse.
+
+Shared page content and references participate in the existing storage-change counter. Missing tracking or an unreviewed schema disables validation receipts. Full stored-graph verification, source-time expiry, and atomic publication remain required.
 
 An edit, late arrival, deletion, changed participant, model/configuration change, or expired source window prevents whole-conversation reuse. Analyzer records preserved in a successful page hit remain available to the separate message-level cache on later edits. Authorization and independent stored-content verification remain required.
 
 ## Qualification
 
-Run `python -m pytest tests/test_conversation_pages.py` and the [analytics baseline](qualification.md). Tests include independent full-build comparisons, page boundaries, source mutations, configuration, missing/corrupted pages, staging tamper, budgets, cancellation, expiry and restart.
+Run `python -m pytest tests/test_conversation_pages.py tests/test_shared_conversation_pages.py` and the [analytics baseline](qualification.md). Tests include independent full-build comparisons, page boundaries, source mutations, configuration, missing/corrupted pages, staging tamper, budgets, cancellation, expiry and restart.
 
 Measure cold construction and changed-message publication separately. Count conversation-body reads, projector calls, analyzer calls, retained bytes and database writes; do not infer a speedup solely from fewer analyzer calls. Compare identical source and workloads with page reuse available and unavailable. Laptop, installer, production classification and 100,000-message update qualification remain separate gates.
 
 Pages use standard-library compression. Both stored bytes and decompressed output are bounded to 256 KiB. Truncated, trailing or oversized streams are rejected. The existing 64 MiB retention budget counts compressed pages and headers; decoding and assembled outputs consume additional memory.
+
+## Remaining work
+
+References still charge their complete compressed payload against the 64 MiB cache budget. This change does not increase coverage beyond that limit. Small fragments and the separate analyzer cache still copy their records. Page restoration still decodes findings and graph records, and the builder still assembles the complete account graph. Physical page sharing does not establish the 100,000-message update target or a total process-memory bound.

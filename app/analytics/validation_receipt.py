@@ -8,6 +8,8 @@ from threading import RLock
 import time
 
 TRIGGER_DIGEST = '4f8d41483167efa99224beced8dad86e5354268c95d40cd32340375dea39c260'
+TRIGGER_DIGESTS = {12: TRIGGER_DIGEST,
+    13: '5fc7f7109392c4a934b6494e03c51bae6e83f36f189252449006ad69e543ea16'}
 MAX_RECEIPTS = 8
 RECEIPT_SECONDS = 60.0
 _VOLATILE = frozenset({'status', 'activation_intent_id', 'witness_sequence',
@@ -15,7 +17,8 @@ _VOLATILE = frozenset({'status', 'activation_intent_id', 'witness_sequence',
 
 
 def content_stamp(connection):
-    if connection.execute("PRAGMA user_version").fetchone()[0] != 12:
+    expected = TRIGGER_DIGESTS.get(connection.execute("PRAGMA user_version").fetchone()[0])
+    if expected is None:
         return None
     table = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='generation_content_epoch'").fetchone()
     if not table:
@@ -23,7 +26,7 @@ def content_stamp(connection):
     rows = connection.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name GLOB 'generation_content_*'")
     signatures = {row[0]: hashlib.sha256(row[1].encode()).hexdigest() for row in rows}
     encoded = json.dumps(signatures, sort_keys=True, separators=(',', ':')).encode()
-    if hashlib.sha256(encoded).hexdigest() != TRIGGER_DIGEST:
+    if hashlib.sha256(encoded).hexdigest() != expected:
         return None
     schema = connection.execute('PRAGMA schema_version').fetchone()[0]
     epoch = connection.execute('SELECT value FROM generation_content_epoch WHERE singleton=1').fetchone()

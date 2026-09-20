@@ -80,7 +80,11 @@ class ConversationBuild:
         if (packed is None or len(self.entries) + len(self.page_sets) >= MAX_FRAGMENTS
                 or self.bytes_used + packed.retained_bytes > MAX_FRAGMENT_TOTAL_BYTES):
             return
-        self.page_sets.append(packed)
+        if packed.generation_id is not None:
+            from app.analytics.conversation_pages import ConversationPageReference
+            self.page_sets.append(ConversationPageReference(packed.generation_id, packed.header))
+        else:
+            self.page_sets.append(packed)
         self.bytes_used += packed.retained_bytes
 
     def retain(self, fragment: ConversationFragment) -> None:

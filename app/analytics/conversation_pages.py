@@ -49,10 +49,24 @@ class ConversationPage:
 class PagedConversation:
     header: ConversationPageHeader
     pages: tuple[ConversationPage, ...]
+    generation_id: str | None = None
 
     @property
     def retained_bytes(self) -> int:
         return len(self.header.model_dump_json().encode()) + sum(len(p.data) for p in self.pages)
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationPageReference:
+    """Carry a witnessed cache identity without retaining its compressed pages."""
+
+    generation_id: str
+    header: ConversationPageHeader
+
+    @property
+    def retained_bytes(self) -> int:
+        # Count the complete payload against the unchanged cache budget.
+        return len(self.header.model_dump_json().encode()) + self.header.byte_count
 
 
 def page_digest(pages) -> str:
@@ -200,17 +214,16 @@ def restore_pages(packed: PagedConversation, check):
     return findings, header.metrics, graph, entries
 
 
-def validate_page_sets(artifact, page_sets, *, check=lambda: None):
+def checked_page_sets(artifact, page_sets, *, check=lambda: None):
     """Bind cache pages to the artifact being staged, not just to their checksums."""
 
-    if not page_sets:
-        return
-    if not isinstance(artifact, CompactArtifact):
-        raise ValueError('conversation_pages_require_compact_artifact')
-    sources = {m.message_ref: m for m in artifact.projection.message_enrichments}
-    metrics = {m.conversation_ref: m for m in artifact.projection.conversation_metrics}
-    seen = set()
+    sources, metrics, seen = None, None, set()
     for packed in page_sets:
+        if sources is None:
+            if not isinstance(artifact, CompactArtifact):
+                raise ValueError('conversation_pages_require_compact_artifact')
+            sources = {m.message_ref: m for m in artifact.projection.message_enrichments}
+            metrics = {m.conversation_ref: m for m in artifact.projection.conversation_metrics}
         header = packed.header
         if (header.account_ref != artifact.projection.account_ref or header.conversation_ref in seen
                 or metrics.get(header.conversation_ref) != header.metrics):
@@ -246,3 +259,12 @@ def validate_page_sets(artifact, page_sets, *, check=lambda: None):
                 if (value['properties'].get('scope') == 'conversation'
                         or value['source_id'] not in nodes or value['target_id'] not in nodes):
                     raise ValueError('conversation_page_endpoint_invalid')
+
+        yield packed
+
+
+def validate_page_sets(artifact, page_sets, *, check=lambda: None):
+    """Validate callers that do not consume one checked set at a time."""
+
+    for _ in checked_page_sets(artifact, page_sets, check=check):
+        pass

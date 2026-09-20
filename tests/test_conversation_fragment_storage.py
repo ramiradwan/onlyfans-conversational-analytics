@@ -115,7 +115,7 @@ def test_additive_migration_preserves_the_published_graph(tmp_path):
         first = pipeline.project_account(ACCOUNT).artifact
         upgraded = ProjectionsDatabase(tmp_path/'legacy.sqlite3')
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 12
+            assert db.execute('PRAGMA user_version').fetchone()[0] == 13
             assert db.execute('SELECT source_message_count FROM projection_query_metadata').fetchone()[0] == first.projection.creator_metrics.message_count
             assert db.execute('SELECT COUNT(*) FROM conversation_fragments').fetchone()[0] == 0
             assert db.execute('SELECT COUNT(*) FROM graph_nodes').fetchone()[0] == len(first.nodes)

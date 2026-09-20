@@ -102,8 +102,8 @@ def test_invalid_pages_fall_back_to_current_source(fixture, fault):
         if fault == 'missing_page':
             db.execute('DELETE FROM conversation_pages WHERE ordinal=1')
         elif fault == 'corrupt_page':
-            db.execute('DROP TRIGGER conversation_pages_update_blocked')
-            db.execute("UPDATE conversation_pages SET data=CAST('[]' AS BLOB) WHERE ordinal=1")
+            db.execute('DROP TRIGGER conversation_page_content_immutable')
+            db.execute("UPDATE conversation_page_content SET data=CAST('[]' AS BLOB) WHERE content_id IN (SELECT content_id FROM conversation_page_refs WHERE ordinal=1)")
         else:
             db.execute('DROP TRIGGER conversation_page_sets_update_blocked')
             db.execute("UPDATE conversation_page_sets SET header_digest=?", ('f'*64,))

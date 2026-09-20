@@ -300,15 +300,14 @@ class SQLiteAnalyticsProjectionStore:
         from app.analytics.conversation_reuse import iter_validated_fragments
         from app.analytics.conversation_sql import insert_fragments
 
-        from app.analytics.conversation_pages import validate_page_sets
-        from app.analytics.conversation_page_sql import insert_page_sets
+        from app.analytics.conversation_pages import checked_page_sets
+        from app.analytics.conversation_page_sql import insert_page_sets, resolve_page_sets
         from app.analytics.conversation_reuse import MAX_FRAGMENTS, MAX_FRAGMENT_TOTAL_BYTES
         if (len(conversation_fragments) + len(conversation_pages) > MAX_FRAGMENTS
                 or sum(map(len, conversation_fragments)) + sum(p.retained_bytes for p in conversation_pages)
                     > MAX_FRAGMENT_TOTAL_BYTES):
             raise ValueError('conversation_fragment_budget_invalid')
         check = lambda: check_cancelled(cancellation_check)
-        validate_page_sets(artifact, conversation_pages, check=check)
         fragments = iter_validated_fragments(artifact, conversation_fragments)
         cached = storage_entries(artifact, enrichment_entries, check=check)
         check_cancelled(cancellation_check)
@@ -443,7 +442,10 @@ class SQLiteAnalyticsProjectionStore:
             )
             insert_entries(connection, generation_id, cached, check=check)
             insert_fragments(connection, generation_id, fragments, conversation_fragments)
-            insert_page_sets(connection, generation_id, conversation_pages, check=check)
+            resolved_pages = resolve_page_sets(connection, self, creator_account_id,
+                                               conversation_pages, check=check)
+            insert_page_sets(connection, generation_id,
+                checked_page_sets(artifact, resolved_pages, check=check), check=check)
         writer = SQLiteGraphGenerationWriter(
             self.database,
             generation_id=generation_id,
@@ -1520,7 +1522,7 @@ def _validate_generation_links(connection, generation_id, account_id, check):
     if epoch is None:
         raise GraphReferentialIntegrityError("projection_epoch_absent")
     schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-    optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11}
+    optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11, "conversation_page_refs": 13, "conversation_owned_pages": 13}
     if schema_version >= 10:
         from app.analytics.shared_graph import verify_segment_links
         verify_segment_links(connection, generation_id, account_id)
@@ -1536,9 +1538,19 @@ def _validate_generation_links(connection, generation_id, account_id, check):
         check()
         if missing is not None:
             raise GraphReferentialIntegrityError("graph_endpoint_absent")
+    if schema_version >= 13:
+        missing = connection.execute("""SELECT 1 FROM conversation_page_refs r
+            LEFT JOIN conversation_page_content c USING(creator_account_id,content_id)
+            LEFT JOIN conversation_page_sets s USING(generation_id,creator_account_id,conversation_ref)
+            WHERE r.generation_id=? AND r.creator_account_id=?
+                AND (c.content_id IS NULL OR s.conversation_ref IS NULL) LIMIT 1""",
+            (generation_id, account_id)).fetchone()
+        if missing is not None:
+            raise GraphReferentialIntegrityError('conversation_page_reference_absent')
     for table in ("analytics_projections", "graph_nodes", "graph_edges",
                   "graph_partition_stats", "enrichment_reuse", "conversation_fragments", "conversation_page_sets", "conversation_pages",
-                  "projection_query_metadata", "graph_algorithm_metrics", "generation_graph_segments"):
+                  "projection_query_metadata", "graph_algorithm_metrics", "generation_graph_segments",
+                  "conversation_page_refs", "conversation_owned_pages"):
         check()
         if schema_version < optional_since.get(table, 0):
             continue
