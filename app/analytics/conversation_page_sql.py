@@ -5,16 +5,16 @@ import hashlib
 
 from app.analytics.cancellation import check_cancelled
 from app.analytics.conversation_pages import (ConversationPageHeader, ConversationPage,
-    PagedConversation, ConversationPageReference, GraphPageReceipt, PAGE_BYTES, MAX_PAGES)
+    PagedConversation, ConversationPageReference, VerifiedPageReference,
+    PAGE_BYTES, MAX_PAGES, verify_page_receipt)
 
 
 def supported(connection):
     return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_page_sets'").fetchone() is not None
 
 
-def load_pages(connection, generation_id, account, conversation, input_digest,
-               config_digest, *, cancellation_check=None):
-    check_cancelled(cancellation_check)
+def load_page_header(connection, generation_id, account, conversation, input_digest,
+                     config_digest):
     row = connection.execute('''SELECT header_json,header_digest FROM conversation_page_sets
         WHERE generation_id=? AND creator_account_id=? AND conversation_ref=?
           AND input_digest=? AND config_digest=? AND length(CAST(header_json AS BLOB))<=65536''',
@@ -30,6 +30,20 @@ def load_pages(connection, generation_id, account, conversation, input_digest,
         return None
     if (header.account_ref != account or header.conversation_ref != conversation
             or header.input_digest != input_digest or header.config_digest != config_digest):
+        return None
+    return header
+
+
+def load_pages(connection, generation_id, account, conversation, input_digest,
+               config_digest, *, cancellation_check=None):
+    from app.analytics.validation_receipt import content_stamp
+
+    check_cancelled(cancellation_check)
+    read_stamp = content_stamp(connection)
+    header = load_page_header(
+        connection, generation_id, account, conversation, input_digest, config_digest
+    )
+    if header is None:
         return None
     pages, used = [], 0
     rows = connection.execute('''SELECT ordinal,kind,data FROM conversation_pages
@@ -49,8 +63,7 @@ def load_pages(connection, generation_id, account, conversation, input_digest,
     if len(pages) != header.page_count or used != header.byte_count:
         return None
     from app.analytics.conversation_graph_sql import graph_records, encoded_graph_records
-    from app.analytics.validation_receipt import content_stamp
-    stamp = content_stamp(connection) if header.graph_digest is not None else None
+    stamp = read_stamp if header.graph_digest is not None else None
     return PagedConversation(header, tuple(pages), generation_id,
         lambda kind, keys, check: graph_records(connection, generation_id, account, kind, keys, check),
         graph_read_stamp=stamp, graph_stamp_reader=lambda: content_stamp(connection),
@@ -69,6 +82,19 @@ def insert_page_sets(connection, generation_id, page_sets, *, check):
             VALUES (?,?,?,?,?,?,?)''',
             (generation_id, h.account_ref, h.conversation_ref, h.input_digest,
              h.config_digest, data, hashlib.sha256(data.encode()).hexdigest()))
+        if isinstance(packed, VerifiedPageReference):
+            if not shared:
+                raise ValueError('conversation_page_reference_storage_unavailable')
+            connection.execute('''INSERT INTO conversation_page_refs
+                (generation_id,creator_account_id,conversation_ref,ordinal,content_id)
+                SELECT ?,creator_account_id,conversation_ref,ordinal,content_id
+                FROM conversation_page_refs
+                WHERE generation_id=? AND creator_account_id=? AND conversation_ref=?
+                ORDER BY ordinal''',
+                (generation_id, packed.generation_id, h.account_ref, h.conversation_ref))
+            if connection.execute('SELECT changes()').fetchone()[0] != h.page_count:
+                raise ValueError('conversation_page_reference_changed')
+            continue
         existing = existing_page_content(connection, h.account_ref, packed.pages, check) if shared else None
         for index, page in enumerate(packed.pages):
             check()
@@ -131,6 +157,8 @@ def resolve_page_sets(connection, store, account_id, page_sets, *, check, source
     account = account_ref(account_id)
     for value in page_sets:
         check()
+        if isinstance(value, VerifiedPageReference):
+            raise ValueError('conversation_page_verified_reference_unavailable')
         if not isinstance(value, ConversationPageReference):
             yield value
             continue
@@ -143,14 +171,30 @@ def resolve_page_sets(connection, store, account_id, page_sets, *, check, source
                 or not store._intent_matches(generation, witness, require_completed=True)
                 or witness.creator_account_id != account_id):
             raise ValueError('conversation_page_reference_unavailable')
+        stored_header = load_page_header(
+            connection, value.generation_id, account, header.conversation_ref,
+            header.input_digest, header.config_digest,
+        )
+        if stored_header != header:
+            raise ValueError('conversation_page_reference_changed')
+        receipt = value.graph_receipt
+        verified = (source_stamp is not None and verify_page_receipt(
+            receipt, value.generation_id, header, source_stamp
+        ))
+        if verified and shared_pages_supported(connection):
+            shared_count = connection.execute(
+                '''SELECT COUNT(*) FROM conversation_page_refs
+                   WHERE generation_id=? AND creator_account_id=? AND conversation_ref=?''',
+                (value.generation_id, account, header.conversation_ref),
+            ).fetchone()[0]
+            if shared_count == header.page_count:
+                yield VerifiedPageReference(value.generation_id, header)
+                continue
         packed = load_pages(connection, value.generation_id, account, header.conversation_ref,
                             header.input_digest, header.config_digest, cancellation_check=check)
         if packed is None or packed.header != header:
             raise ValueError('conversation_page_reference_changed')
-        receipt = value.graph_receipt
-        if (source_stamp is not None and isinstance(receipt, GraphPageReceipt)
-                and receipt.stamp == source_stamp and receipt.generation_id == value.generation_id
-                and receipt.header == header):
+        if verified:
             # The write transaction excluded intervening writers before its own
             # inserts. Bind the checked IDs/digest to the candidate without a
             # second source-graph scan. Full persisted validation still follows.

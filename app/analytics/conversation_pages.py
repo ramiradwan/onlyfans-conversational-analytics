@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 import hashlib
+import hmac
 import json
+import secrets
 import zlib
 from typing import Callable, Literal
 
@@ -24,6 +26,7 @@ PAGE_BYTES = 256 * 1024
 PAGE_RECORDS = 256
 MAX_PAGES = 4096
 GRAPH_REFERENCE_ENCODING = "zlib-json-graph-ids.v2"
+_PAGE_RECEIPT_KEY = secrets.token_bytes(32)
 
 
 class ConversationPageHeader(CacheRecord):
@@ -58,11 +61,12 @@ class ConversationPage:
 
 @dataclass(frozen=True, slots=True)
 class GraphPageReceipt:
-    """One build's checked graph, bound to the exact tracked storage state."""
+    """One build's checked page set, bound to the exact tracked storage state."""
 
     generation_id: str
     header: ConversationPageHeader
     stamp: tuple
+    proof: str = field(repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,15 +102,56 @@ class ConversationPageReference:
         return len(self.header.model_dump_json().encode()) + self.header.byte_count
 
 
+@dataclass(frozen=True, slots=True)
+class VerifiedPageReference:
+    """A same-build page set checked under one unchanged tracked storage stamp."""
+
+    generation_id: str
+    header: ConversationPageHeader
+
+
+def _page_receipt_proof(generation_id: str, header: ConversationPageHeader,
+                        stamp: tuple) -> str:
+    payload = json.dumps(
+        {
+            "generation_id": generation_id,
+            "header": header.model_dump(mode="json"),
+            "stamp": list(stamp),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hmac.new(_PAGE_RECEIPT_KEY, payload, hashlib.sha256).hexdigest()
+
+
+def verify_page_receipt(receipt, generation_id: str, header: ConversationPageHeader,
+                        stamp: tuple) -> bool:
+    """Accept only the exact same-process proof created after a complete restore."""
+
+    if (not isinstance(receipt, GraphPageReceipt)
+            or not isinstance(receipt.proof, str) or len(receipt.proof) != 64
+            or receipt.generation_id != generation_id
+            or receipt.header != header
+            or receipt.stamp != stamp):
+        return False
+    expected = _page_receipt_proof(generation_id, header, stamp)
+    return hmac.compare_digest(receipt.proof, expected)
+
+
 def record_verified_graph_read(packed: PagedConversation) -> PagedConversation:
-    """Call only after restore_pages has checked every row and graph digest."""
+    """Call only after restore_pages has checked every page and graph digest."""
 
     if (packed.generation_id is None or packed.header.graph_digest is None
             or packed.graph_read_stamp is None or packed.graph_stamp_reader is None
             or packed.graph_stamp_reader() != packed.graph_read_stamp):
         return packed
+    proof = _page_receipt_proof(
+        packed.generation_id, packed.header, packed.graph_read_stamp
+    )
     return replace(packed, graph_receipt=GraphPageReceipt(
-        packed.generation_id, packed.header, packed.graph_read_stamp))
+        packed.generation_id, packed.header, packed.graph_read_stamp, proof))
 
 
 def page_digest(pages) -> str:
@@ -299,16 +344,20 @@ def checked_page_sets(artifact, page_sets, *, check=lambda: None):
 
     sources, metrics, seen = None, None, set()
     for packed in page_sets:
-        if sources is None:
+        if metrics is None:
             if not isinstance(artifact, CompactArtifact):
                 raise ValueError('conversation_pages_require_compact_artifact')
-            sources = {m.message_ref: m for m in artifact.projection.message_enrichments}
             metrics = {m.conversation_ref: m for m in artifact.projection.conversation_metrics}
         header = packed.header
         if (header.account_ref != artifact.projection.account_ref or header.conversation_ref in seen
                 or metrics.get(header.conversation_ref) != header.metrics):
             raise ValueError('conversation_pages_artifact_invalid')
         seen.add(header.conversation_ref)
+        if isinstance(packed, VerifiedPageReference):
+            yield packed
+            continue
+        if sources is None:
+            sources = {m.message_ref: m for m in artifact.projection.message_enrichments}
         findings, nodes, edges, cache_keys = [], set(), set(), set()
         for kind, value in records(packed, check, graph=artifact.graph):
             if kind == 'message':

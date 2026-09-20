@@ -32,6 +32,59 @@ def observe_reads(fixture, monkeypatch, change=None):
     return calls
 
 
+def test_verified_page_read_avoids_second_page_decode(fixture, monkeypatch):
+    from app.analytics import conversation_pages
+
+    fixture.pipeline.project_account(ACCOUNT)
+    calls = Counter()
+    unpack = conversation_pages.unpack_page
+    stage = fixture.stores.projections.stage_built_artifact
+    phase = ['build']
+    def observed(data):
+        calls[phase[0]] += 1
+        return unpack(data)
+    def staged(artifact, **kwargs):
+        phase[0] = 'stage'
+        try:
+            return stage(artifact, **kwargs)
+        finally:
+            phase[0] = 'build'
+    monkeypatch.setattr(conversation_pages, 'unpack_page', observed)
+    monkeypatch.setattr(fixture.stores.projections, 'stage_built_artifact', staged)
+    candidate = fixture.pipeline.build_candidate(ACCOUNT, force=True)
+    assert calls['build'] > 0 and calls['stage'] == 0
+    cold_equal(fixture, fixture.pipeline.publish_candidate(candidate).artifact)
+
+
+def test_storage_change_during_page_decode_forces_staging_decode(fixture, monkeypatch):
+    from app.analytics import conversation_pages
+
+    fixture.pipeline.project_account(ACCOUNT)
+    calls, changed = Counter(), []
+    unpack = conversation_pages.unpack_page
+    stage = fixture.stores.projections.stage_built_artifact
+    phase = ['build']
+    def observed(data):
+        calls[phase[0]] += 1
+        result = unpack(data)
+        if phase[0] == 'build' and not changed:
+            with fixture.stores.database.transaction() as db:
+                db.execute('UPDATE generation_content_epoch SET value=value+1')
+            changed.append(True)
+        return result
+    def staged(artifact, **kwargs):
+        phase[0] = 'stage'
+        try:
+            return stage(artifact, **kwargs)
+        finally:
+            phase[0] = 'build'
+    monkeypatch.setattr(conversation_pages, 'unpack_page', observed)
+    monkeypatch.setattr(fixture.stores.projections, 'stage_built_artifact', staged)
+    candidate = fixture.pipeline.build_candidate(ACCOUNT, force=True)
+    assert changed and calls['build'] > 0 and calls['stage'] > 0
+    cold_equal(fixture, fixture.pipeline.publish_candidate(candidate).artifact)
+
+
 def test_verified_graph_read_avoids_second_source_scan(fixture, monkeypatch):
     fixture.pipeline.project_account(ACCOUNT)
     receipts = []
@@ -45,7 +98,7 @@ def test_verified_graph_read_avoids_second_source_scan(fixture, monkeypatch):
     cold_equal(fixture, result.artifact)
 
 
-@pytest.mark.parametrize('fault', ['disabled', 'missing', 'stamp', 'generation',
+@pytest.mark.parametrize('fault', ['disabled', 'missing', 'proof', 'stamp', 'generation',
     'account', 'header', 'changed_storage', 'tracking_removed', 'schema_changed'])
 def test_unusable_graph_receipt_rereads_actual_rows(fixture, monkeypatch, fault):
     fixture.pipeline.project_account(ACCOUNT)
@@ -67,6 +120,8 @@ def test_unusable_graph_receipt_rereads_actual_rows(fixture, monkeypatch, fault)
         else:
             if fault == 'missing':
                 receipt = None
+            elif fault == 'proof':
+                receipt = replace(receipt, proof='0' * 64)
             elif fault == 'stamp':
                 receipt = replace(receipt, stamp=('other-store', *receipt.stamp[1:]))
             elif fault == 'generation':
@@ -134,6 +189,30 @@ def test_graph_receipt_does_not_replace_full_stored_validation(fixture, monkeypa
         assert db.execute('SELECT status FROM projection_generations WHERE generation_id=?',
                           (changed[0],)).fetchone()[0] == 'building'
     fixture.stores.projections.discard_generation(changed[0])
+
+
+def test_internal_verified_page_reference_cannot_be_injected(fixture):
+    from app.analytics.conversation_page_sql import load_page_header, resolve_page_sets
+    from app.analytics.conversation_pages import VerifiedPageReference
+    from app.analytics.validation_receipt import content_stamp
+
+    fixture.pipeline.project_account(ACCOUNT)
+    store = fixture.stores.projections
+    with store.database.transaction() as db:
+        row = db.execute('''SELECT s.* FROM conversation_page_sets s
+            JOIN projection_generations g USING(generation_id,creator_account_id)
+            WHERE g.status='active' LIMIT 1''').fetchone()
+        header = load_page_header(
+            db, row['generation_id'], row['creator_account_id'],
+            row['conversation_ref'], row['input_digest'], row['config_digest'],
+        )
+        assert header is not None
+        marker = VerifiedPageReference(row['generation_id'], header)
+        with pytest.raises(ValueError, match='verified_reference_unavailable'):
+            list(resolve_page_sets(
+                db, store, ACCOUNT, (marker,), check=lambda: None,
+                source_stamp=content_stamp(db),
+            ))
 
 
 def test_graph_receipt_requires_a_write_transaction(fixture):

@@ -45,6 +45,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0036: Bind activation to a verified content epoch](0036-validated-generation-receipts.md)
 
+- [ADR 0037: Reuse same-build page verification during staging](0037-same-build-page-verification.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)
