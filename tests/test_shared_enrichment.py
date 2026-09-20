@@ -271,3 +271,61 @@ def test_cancellation_rolls_back_shared_documents_and_references(fixture, monkey
     assert writes and counts(fixture) == before
     with fixture.stores.database.read() as db:
         assert not list(db.execute('PRAGMA foreign_key_check'))
+
+
+def test_shared_lookups_are_bounded_and_use_the_account_content_key(tmp_path, monkeypatch):
+    from app.analytics import enrichment_sql
+    from app.analytics.opaque_refs import account_ref
+    value = make_fixture(tmp_path, conversations=1, messages=43)
+    insert, observed = enrichment_sql.insert_entries, []
+    def measured(connection, generation_id, entries, **options):
+        class Connection:
+            def __getattr__(self, name):
+                return getattr(connection, name)
+            def execute(self, sql, parameters=()):
+                if 'FROM enrichment_content WHERE' in sql:
+                    observed.append(len(parameters)-2)
+                    assert parameters[:2] == (enrichment_sql.MAX_ENTRY_BYTES, account_ref(ACCOUNT))
+                    plans = [row[3] for row in connection.execute('EXPLAIN QUERY PLAN ' + sql, parameters)]
+                    assert any('USING PRIMARY KEY' in plan for plan in plans)
+                    assert not any('SCAN enrichment_content' in plan for plan in plans)
+                return connection.execute(sql, parameters)
+        return insert(Connection(), generation_id, entries, **options)
+    monkeypatch.setattr(enrichment_sql, 'insert_entries', measured)
+    try:
+        value.pipeline.project_account(ACCOUNT)
+        assert observed == [64, 64, 1]
+        observed.clear()
+        cold_equal(value, value.pipeline.rebuild_account(ACCOUNT).artifact)
+        assert observed == [64, 64, 1]
+    finally:
+        cleanup(value)
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_staging_and_activation_restore_the_connection_cache(fixture, monkeypatch, fail):
+    from contextlib import contextmanager
+    from app.analytics import database, sqlite_projection_store
+    original, restored = database.generation_verification_cache, []
+    @contextmanager
+    def observed(db):
+        previous = db.execute('PRAGMA cache_size').fetchone()[0]
+        try:
+            with original(db):
+                assert db.execute('PRAGMA cache_size').fetchone()[0] == -database.GENERATION_VERIFICATION_CACHE_KIB
+                yield
+        finally:
+            assert db.execute('PRAGMA cache_size').fetchone()[0] == previous
+            restored.append(previous)
+    monkeypatch.setattr(database, 'generation_verification_cache', observed)
+    monkeypatch.setattr(sqlite_projection_store, 'generation_verification_cache', observed)
+    candidate = fixture.pipeline.build_candidate(ACCOUNT)
+    if fail:
+        def reject(*args):
+            raise RuntimeError('activation refused')
+        monkeypatch.setattr(fixture.stores.projections._validation_receipts, 'take', reject)
+        with pytest.raises(RuntimeError, match='activation refused'):
+            fixture.pipeline.publish_candidate(candidate)
+    else:
+        cold_equal(fixture, fixture.pipeline.publish_candidate(candidate).artifact)
+    assert len(restored) >= 3

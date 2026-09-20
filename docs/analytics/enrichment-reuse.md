@@ -40,7 +40,7 @@ SQLite staging validates one record at a time and prepares immutable scalar fiel
 
 Schema 14 stores immutable documents in `enrichment_content` and generation membership in `enrichment_refs`. Staging compares actual stored bytes in account-scoped groups of at most 64 documents. Matching content receives references instead of duplicate payloads. Damaged shared content uses an owned replacement, not an overwrite. The view also reads `enrichment_owned_records` for older data and compatibility writes.
 
-A batch can hold up to 4 MiB of candidate documents and 4 MiB of stored documents, plus Python objects. The 16 MiB retained-input budget is unchanged. These limits are not a total memory cap. Analyzer preparation and conversation-page processing remain separate costs.
+A batch can hold up to 4 MiB of candidate documents and 4 MiB of stored documents, plus Python objects. The 16 MiB retained-input budget is unchanged. These limits are not a total memory cap. Analyzer preparation and conversation-page processing remain separate costs. Cache staging and activation use the existing 32 MiB connection-local cache target and restore the previous setting on exit.
 
 ## Limits and fallback
 

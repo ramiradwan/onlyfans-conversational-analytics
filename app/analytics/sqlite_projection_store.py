@@ -445,11 +445,11 @@ class SQLiteAnalyticsProjectionStore:
                     projection_document(projection, check=lambda: check_cancelled(cancellation_check)),
                 ),
             )
-            insert_entries(connection, generation_id, cached, check=check,
-                shared=getattr(self, "reuse_enrichment_content", True) and shared_entries_supported(connection))
-            insert_fragments(connection, generation_id, fragments, conversation_fragments)
             from app.analytics.database import generation_verification_cache
             with generation_verification_cache(connection):
+                insert_entries(connection, generation_id, cached, check=check,
+                    shared=getattr(self, "reuse_enrichment_content", True) and shared_entries_supported(connection))
+                insert_fragments(connection, generation_id, fragments, conversation_fragments)
                 resolved_pages = resolve_page_sets(connection, self, creator_account_id,
                     conversation_pages, check=check, source_stamp=graph_source_stamp)
                 insert_page_sets(connection, generation_id,
@@ -1112,7 +1112,7 @@ class SQLiteAnalyticsProjectionStore:
         ):
             raise ProjectionActivationConflict("canonical identity changed")
         now = _timestamp(_now())
-        with self.database.transaction() as connection:
+        with self.database.transaction() as connection, generation_verification_cache(connection):
             candidate = connection.execute(
                 """
                 SELECT * FROM projection_generations
