@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 import hashlib
 import json
 import zlib
-from typing import Literal
+from typing import Callable, Literal
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, model_validator
 
 from app.analytics.compact_graph import CompactGraph, CompactArtifact, _json
 from app.analytics.enrichment_cache import CacheRecord, CachedEnrichment
@@ -20,11 +20,12 @@ from app.models.analytics import (AccountRef, ConversationRef, Sha256Digest,
 PAGE_BYTES = 256 * 1024
 PAGE_RECORDS = 256
 MAX_PAGES = 4096
+GRAPH_REFERENCE_ENCODING = "zlib-json-graph-ids.v2"
 
 
 class ConversationPageHeader(CacheRecord):
     format: Literal['conversation-pages.v1'] = 'conversation-pages.v1'
-    encoding: Literal['zlib-json.v1'] = 'zlib-json.v1'
+    encoding: Literal['zlib-json.v1', 'zlib-json-graph-ids.v2'] = 'zlib-json.v1'
     account_ref: AccountRef
     conversation_ref: ConversationRef
     input_digest: Sha256Digest
@@ -37,6 +38,13 @@ class ConversationPageHeader(CacheRecord):
     pages_digest: Sha256Digest
     node_count: int = Field(ge=1)
     edge_count: int = Field(ge=0)
+    graph_digest: Sha256Digest | None = None
+
+    @model_validator(mode='after')
+    def validate_graph_binding(self) -> ConversationPageHeader:
+        if (self.encoding == GRAPH_REFERENCE_ENCODING) != (self.graph_digest is not None):
+            raise ValueError('conversation_page_graph_binding_invalid')
+        return self
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,10 +54,25 @@ class ConversationPage:
 
 
 @dataclass(frozen=True, slots=True)
+class GraphPageReceipt:
+    """One build's checked graph, bound to the exact tracked storage state."""
+
+    generation_id: str
+    header: ConversationPageHeader
+    stamp: tuple
+
+
+@dataclass(frozen=True, slots=True)
 class PagedConversation:
     header: ConversationPageHeader
     pages: tuple[ConversationPage, ...]
     generation_id: str | None = None
+    # This callback is valid only while its source connection remains open.
+    graph_records: Callable[[str, list[str], Callable[[], None]], list[dict]] | None = field(
+        default=None, repr=False, compare=False)
+    graph_read_stamp: tuple | None = field(default=None, repr=False, compare=False)
+    graph_stamp_reader: Callable[[], tuple | None] | None = field(default=None, repr=False, compare=False)
+    graph_receipt: GraphPageReceipt | None = field(default=None, repr=False, compare=False)
 
     @property
     def retained_bytes(self) -> int:
@@ -62,11 +85,23 @@ class ConversationPageReference:
 
     generation_id: str
     header: ConversationPageHeader
+    graph_receipt: GraphPageReceipt | None = field(default=None, repr=False, compare=False)
 
     @property
     def retained_bytes(self) -> int:
         # Count the complete payload against the unchanged cache budget.
         return len(self.header.model_dump_json().encode()) + self.header.byte_count
+
+
+def record_verified_graph_read(packed: PagedConversation) -> PagedConversation:
+    """Call only after restore_pages has checked every row and graph digest."""
+
+    if (packed.generation_id is None or packed.header.graph_digest is None
+            or packed.graph_read_stamp is None or packed.graph_stamp_reader is None
+            or packed.graph_stamp_reader() != packed.graph_read_stamp):
+        return packed
+    return replace(packed, graph_receipt=GraphPageReceipt(
+        packed.generation_id, packed.header, packed.graph_read_stamp))
 
 
 def page_digest(pages) -> str:
@@ -77,12 +112,14 @@ def page_digest(pages) -> str:
 
 
 def create_pages(*, account, conversation, input_digest, config_digest, cutoff,
-                 findings, metrics, graph, analyzer_entries, max_bytes, check):
+                 findings, metrics, graph, analyzer_entries, max_bytes, check, graph_references=False):
     """Stop retaining pages at the shared byte limit; analysis itself still succeeds."""
 
     pages, used = [], 0
+    nodes = (json.dumps(key) for key in graph.nodes) if graph_references else graph.nodes.values()
+    edges = (json.dumps(key) for key in graph.edges) if graph_references else graph.edges.values()
     sources = (('message', (m.model_dump_json() for m in findings)),
-        ('node', graph.nodes.values()), ('edge', graph.edges.values()),
+        ('node', nodes), ('edge', edges),
         ('analyzer', (data.decode('utf-8') for data in analyzer_entries)))
     for kind, records in sources:
         batch, size = [], 2
@@ -104,11 +141,13 @@ def create_pages(*, account, conversation, input_digest, config_digest, cutoff,
     if (not pages or len(pages) > MAX_PAGES or used > max_bytes
             or any(len(page.data) > PAGE_BYTES for page in pages)):
         return None
-    header = ConversationPageHeader(account_ref=account, conversation_ref=conversation,
+    header = ConversationPageHeader(encoding=GRAPH_REFERENCE_ENCODING if graph_references else "zlib-json.v1",
+        account_ref=account, conversation_ref=conversation,
         input_digest=input_digest, config_digest=config_digest, retention_cutoff=cutoff,
         expires_at=min(m.sent_at for m in findings) + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS),
         metrics=metrics, page_count=len(pages), byte_count=used, pages_digest=page_digest(pages),
-        node_count=len(graph.nodes), edge_count=len(graph.edges))
+        node_count=len(graph.nodes), edge_count=len(graph.edges),
+        graph_digest=graph.digest(check=check) if graph_references else None)
     result = PagedConversation(header, tuple(pages))
     return result if result.retained_bytes <= max_bytes else None
 
@@ -128,8 +167,9 @@ def unpack_page(data: bytes) -> bytes:
     return raw
 
 
-def records(packed: PagedConversation, check):
+def records(packed: PagedConversation, check, *, graph=None):
     header = packed.header
+    header.validate_graph_binding()
     if (len(packed.pages) != header.page_count
             or sum(len(p.data) for p in packed.pages) != header.byte_count
             or page_digest(packed.pages) != header.pages_digest):
@@ -143,6 +183,24 @@ def records(packed: PagedConversation, check):
         values = json.loads(unpack_page(page.data))
         if not isinstance(values, list) or not 1 <= len(values) <= PAGE_RECORDS:
             raise ValueError('conversation_page_count_invalid')
+        if header.encoding == GRAPH_REFERENCE_ENCODING and page.kind in ('node', 'edge'):
+            from app.analytics.graph_identity import require_graph_id
+
+            for key in values:
+                check()
+                require_graph_id(key, expected_kind='edge' if page.kind == 'edge' else None)
+            if packed.generation_id is not None:
+                if packed.graph_records is None:
+                    raise ValueError('conversation_page_graph_reader_unavailable')
+                values = packed.graph_records(page.kind, values, check)
+            elif graph is not None:
+                target = graph.nodes if page.kind == 'node' else graph.edges
+                try:
+                    values = [json.loads(target[key]) for key in values]
+                except KeyError as error:
+                    raise ValueError('conversation_page_graph_reference_absent') from error
+            else:
+                raise ValueError('conversation_page_graph_reader_unavailable')
         for value in values:
             check()
             if not isinstance(value, dict):
@@ -211,6 +269,8 @@ def restore_pages(packed: PagedConversation, check):
         check(); edge = json.loads(data)
         if edge['source_id'] not in graph.nodes or edge['target_id'] not in graph.nodes:
             raise ValueError('conversation_page_endpoint_invalid')
+    if header.graph_digest is not None and graph.digest(check=check) != header.graph_digest:
+        raise ValueError('conversation_page_graph_digest_invalid')
     return findings, header.metrics, graph, entries
 
 
@@ -230,7 +290,7 @@ def checked_page_sets(artifact, page_sets, *, check=lambda: None):
             raise ValueError('conversation_pages_artifact_invalid')
         seen.add(header.conversation_ref)
         findings, nodes, edges, cache_keys = [], set(), set(), set()
-        for kind, value in records(packed, check):
+        for kind, value in records(packed, check, graph=artifact.graph):
             if kind == 'message':
                 item = MessageEnrichment.model_validate(value)
                 validate_message(item, header)
@@ -242,6 +302,9 @@ def checked_page_sets(artifact, page_sets, *, check=lambda: None):
                 target, keys = (artifact.graph.nodes, nodes) if kind == 'node' else (artifact.graph.edges, edges)
                 if key in keys or target.get(key) != _json(value):
                     raise ValueError('conversation_pages_graph_invalid')
+                if kind == 'edge' and (value['properties'].get('scope') == 'conversation'
+                        or value['source_id'] not in nodes or value['target_id'] not in nodes):
+                    raise ValueError('conversation_page_endpoint_invalid')
                 keys.add(key)
             else:
                 item = CachedEnrichment.model_validate(value)
@@ -251,15 +314,9 @@ def checked_page_sets(artifact, page_sets, *, check=lambda: None):
                     raise ValueError('conversation_page_duplicate_analyzer')
                 cache_keys.add(signature)
         validate_summary(header, findings, len(nodes), len(edges))
-        for page in packed.pages:
-            if page.kind != 'edge':
-                continue
-            for value in json.loads(unpack_page(page.data)):
-                check()
-                if (value['properties'].get('scope') == 'conversation'
-                        or value['source_id'] not in nodes or value['target_id'] not in nodes):
-                    raise ValueError('conversation_page_endpoint_invalid')
-
+        if (header.graph_digest is not None
+                and artifact.graph.digest(check=check, node_ids=nodes, edge_ids=edges) != header.graph_digest):
+            raise ValueError('conversation_page_graph_digest_invalid')
         yield packed
 
 

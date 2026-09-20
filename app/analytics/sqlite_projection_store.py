@@ -365,6 +365,11 @@ class SQLiteAnalyticsProjectionStore:
         with self.database.transaction() as connection, json_validation_scope(
             lambda: check_cancelled(cancellation_check)
         ):
+            from app.analytics.validation_receipt import content_stamp
+            graph_source_stamp = (content_stamp(connection)
+                if getattr(self, "reuse_graph_page_receipts", True)
+                and any(getattr(p, "graph_receipt", None) is not None for p in conversation_pages)
+                else None)
             active = connection.execute(
                 """
                 SELECT generation_id, canonical_revision
@@ -442,10 +447,12 @@ class SQLiteAnalyticsProjectionStore:
             )
             insert_entries(connection, generation_id, cached, check=check)
             insert_fragments(connection, generation_id, fragments, conversation_fragments)
-            resolved_pages = resolve_page_sets(connection, self, creator_account_id,
-                                               conversation_pages, check=check)
-            insert_page_sets(connection, generation_id,
-                checked_page_sets(artifact, resolved_pages, check=check), check=check)
+            from app.analytics.database import generation_verification_cache
+            with generation_verification_cache(connection):
+                resolved_pages = resolve_page_sets(connection, self, creator_account_id,
+                    conversation_pages, check=check, source_stamp=graph_source_stamp)
+                insert_page_sets(connection, generation_id,
+                    checked_page_sets(artifact, resolved_pages, check=check), check=check)
         writer = SQLiteGraphGenerationWriter(
             self.database,
             generation_id=generation_id,

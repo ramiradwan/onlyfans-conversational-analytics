@@ -595,6 +595,7 @@
         "app/analytics/shared_graph.py",
         "app/analytics/conversation_pages.py",
         "app/analytics/conversation_page_sql.py",
+        "app/analytics/conversation_graph_sql.py",
         "app/analytics/projection_verification.py",
         "app/analytics/validation_receipt.py",
         "app/analytics/currentness.py",

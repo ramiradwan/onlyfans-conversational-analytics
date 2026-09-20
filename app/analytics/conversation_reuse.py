@@ -82,7 +82,7 @@ class ConversationBuild:
             return
         if packed.generation_id is not None:
             from app.analytics.conversation_pages import ConversationPageReference
-            self.page_sets.append(ConversationPageReference(packed.generation_id, packed.header))
+            self.page_sets.append(ConversationPageReference(packed.generation_id, packed.header, packed.graph_receipt))
         else:
             self.page_sets.append(packed)
         self.bytes_used += packed.retained_bytes
@@ -132,14 +132,14 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         packed, restored = None, None
         page_loader = getattr(loader, 'pages', None)
         if compact is not None and pipeline.reuse_conversations and reuse is not None and callable(page_loader):
-            from app.analytics.conversation_pages import restore_pages
+            from app.analytics.conversation_pages import restore_pages, record_verified_graph_read
             candidate = page_loader(ref, input_digest, config, cancellation_check=cancellation_check)
             if candidate is not None and candidate.retained_bytes <= MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used:
                 h = candidate.header
                 if h.retention_cutoff <= cutoff and h.expires_at > pipeline._retention_clock():
                     try:
                         restored = restore_pages(candidate, check)
-                        packed = candidate
+                        packed = record_verified_graph_read(candidate)
                     except (ValueError, TypeError, KeyError, RecursionError):
                         restored = None
         if restored is None and pipeline.reuse_conversations and reuse is not None and callable(loader):
@@ -215,7 +215,18 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                     input_digest=input_digest, config_digest=config, cutoff=cutoff,
                     findings=findings, metrics=counts, graph=local_graph,
                     analyzer_entries=reuse.conversation_entries(ref),
-                    max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check)
+                    max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check,
+                    graph_references=getattr(loader, "graph_reference_pages", False))
+            reference_pages = getattr(loader, "graph_reference_pages", False)
+            encoding = 'zlib-json-graph-ids.v2' if reference_pages else 'zlib-json.v1'
+            if packed is not None and packed.header.encoding != encoding:
+                from app.analytics.conversation_pages import create_pages
+                packed = create_pages(account=packed.header.account_ref, conversation=ref,
+                    input_digest=input_digest, config_digest=config, cutoff=packed.header.retention_cutoff,
+                    findings=findings, metrics=counts, graph=local_graph,
+                    analyzer_entries=(entry.model_dump_json().encode() for entry in cached),
+                    max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check,
+                    graph_references=reference_pages)
             state.retain_pages(packed)
         if fragment is not None and pipeline.reuse_conversations and reuse is not None:
             state.retain(fragment)

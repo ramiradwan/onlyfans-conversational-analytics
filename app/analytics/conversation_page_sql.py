@@ -1,10 +1,11 @@
 """Store bounded conversation pages inside witnessed analytics generations."""
 
+from dataclasses import replace
 import hashlib
 
 from app.analytics.cancellation import check_cancelled
 from app.analytics.conversation_pages import (ConversationPageHeader, ConversationPage,
-    PagedConversation, ConversationPageReference, PAGE_BYTES, MAX_PAGES)
+    PagedConversation, ConversationPageReference, GraphPageReceipt, PAGE_BYTES, MAX_PAGES)
 
 
 def supported(connection):
@@ -47,7 +48,12 @@ def load_pages(connection, generation_id, account, conversation, input_digest,
         pages.append(ConversationPage(row['kind'], raw))
     if len(pages) != header.page_count or used != header.byte_count:
         return None
-    return PagedConversation(header, tuple(pages), generation_id)
+    from app.analytics.conversation_graph_sql import graph_records
+    from app.analytics.validation_receipt import content_stamp
+    stamp = content_stamp(connection) if header.graph_digest is not None else None
+    return PagedConversation(header, tuple(pages), generation_id,
+        lambda kind, keys, check: graph_records(connection, generation_id, account, kind, keys, check),
+        graph_read_stamp=stamp, graph_stamp_reader=lambda: content_stamp(connection))
 
 
 def insert_page_sets(connection, generation_id, page_sets, *, check):
@@ -113,11 +119,13 @@ def existing_page_content(connection, account, pages, check):
     return existing
 
 
-def resolve_page_sets(connection, store, account_id, page_sets, *, check):
+def resolve_page_sets(connection, store, account_id, page_sets, *, check, source_stamp=None):
     """Resolve previously read page sets again in the staging transaction."""
 
     from app.analytics.opaque_refs import account_ref
 
+    if source_stamp is not None and not connection.in_transaction:
+        raise ValueError('conversation_graph_receipt_requires_transaction')
     account = account_ref(account_id)
     for value in page_sets:
         check()
@@ -137,4 +145,12 @@ def resolve_page_sets(connection, store, account_id, page_sets, *, check):
                             header.input_digest, header.config_digest, cancellation_check=check)
         if packed is None or packed.header != header:
             raise ValueError('conversation_page_reference_changed')
+        receipt = value.graph_receipt
+        if (source_stamp is not None and isinstance(receipt, GraphPageReceipt)
+                and receipt.stamp == source_stamp and receipt.generation_id == value.generation_id
+                and receipt.header == header):
+            # The write transaction excluded intervening writers before its own
+            # inserts. Bind the checked IDs/digest to the candidate without a
+            # second source-graph scan. Full persisted validation still follows.
+            packed = replace(packed, generation_id=None, graph_records=None)
         yield packed

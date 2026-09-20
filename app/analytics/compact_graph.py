@@ -61,13 +61,15 @@ class CompactGraph:
                     counts[json.loads(data)[field]] += 1
                     self.encoded_bytes += len(data.encode("utf-8"))
 
-    def digest(self, *, check: Callable[[], None]) -> str:
+    def digest(self, *, check: Callable[[], None],
+               node_ids: Iterable[str] | None = None,
+               edge_ids: Iterable[str] | None = None) -> str:
         digest = hashlib.sha256(b'{"edges":[')
-        for name, records in (("edges", self.edges), ("nodes", self.nodes)):
+        for name, records, selected in (("edges", self.edges, edge_ids), ("nodes", self.nodes, node_ids)):
             check()
             if name == "nodes":
                 digest.update(b'],"nodes":[')
-            for ordinal, key in enumerate(sorted(records)):
+            for ordinal, key in enumerate(sorted(records if selected is None else selected)):
                 check()
                 if ordinal:
                     digest.update(b",")

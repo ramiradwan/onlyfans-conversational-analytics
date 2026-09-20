@@ -203,7 +203,10 @@ def test_staging_rejects_changed_pages_even_with_new_checksums(fixture, monkeypa
         if kind == 'message':
             values[0]['direction'] = 'outbound'
         elif kind == 'node':
-            values[0]['properties'] = {'role':'counterpart'}
+            if isinstance(values[0], str):
+                values[0] = 'g1:' + 'f' * 64
+            else:
+                values[0]['properties'] = {'role':'counterpart'}
         else:
             values[0]['key']['conversation_ref'] = conversation_ref(ACCOUNT, 'chat-1')
         pages[index] = ConversationPage(kind, zlib.compress(json.dumps(values).encode(), 1))

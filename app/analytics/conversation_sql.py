@@ -4,6 +4,7 @@ import hashlib
 from contextlib import contextmanager
 
 from app.analytics.cancellation import check_cancelled
+from app.analytics.database import generation_verification_cache
 from app.analytics.conversation_reuse import MAX_FRAGMENT_BYTES
 from app.analytics.opaque_refs import account_ref
 
@@ -28,7 +29,7 @@ def fragment_reader(store, account_id):
     """Share one witnessed predecessor connection across a build's lookups."""
 
     partition = account_ref(account_id)
-    with store.database.read() as db:
+    with store.database.read() as db, generation_verification_cache(db):
         generation = db.execute("""SELECT * FROM projection_generations
             WHERE creator_account_id=? AND status='active' AND activated_at IS NOT NULL""",
             (partition,)).fetchone()
@@ -56,4 +57,7 @@ def fragment_reader(store, account_id):
                 return load_pages(db, generation['generation_id'], partition, conversation,
                     input_digest, config_digest, cancellation_check=cancellation_check)
             load.pages = pages
+            from app.analytics.shared_graph import supported as shared_graph_supported
+            load.graph_reference_pages = (getattr(store, "reuse_graph_content", True)
+                and getattr(store, "reuse_graph_page_references", True) and shared_graph_supported(db))
         yield load

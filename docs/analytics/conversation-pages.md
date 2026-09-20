@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql, sql/0013_shared_conversation_pages.sql, validation_receipt.py, test_conversation_pages.py and test_shared_conversation_pages.py before editing behavior or limits. -->
+<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql, sql/0013_shared_conversation_pages.sql, validation_receipt.py, test_conversation_pages.py and test_shared_conversation_pages.py, conversation_graph_sql.py, test_conversation_graph_references.py and test_conversation_graph_receipts.py before editing behavior or limits. -->
 
 # Reuse large conversation results
 
@@ -8,9 +8,19 @@ The compact SQLite path stores large conversation results in pages rather than r
 
 A page holds at most 256 records and 256 KiB. A conversation may use at most 4,096 pages. The header and pages count toward the existing 64 MiB per-build fragment limit and 4,096-conversation limit; ordinary fragments share those limits. Oversized records or exhausted capacity prevent retention, not analysis.
 
-`conversation_page_sets` holds each generation's header. Schema 13 stores immutable compressed bytes in `conversation_page_content`, keyed by account and content hash. `conversation_page_refs` selects the ordered pages for each generation. The `conversation_pages` view also reads generation-owned pages from older databases. The header covers input and configuration identity, metrics, expiry, counts and the ordered-page checksum. Pages contain findings, graph records or analyzer reuse records. They do not copy source text or native message identifiers.
+`conversation_page_sets` holds each generation's header. Schema 13 stores immutable compressed bytes in `conversation_page_content`, keyed by account and content hash. `conversation_page_refs` selects the ordered pages for each generation. The `conversation_pages` view also reads generation-owned pages from older databases. The header covers input and configuration identity, metrics, expiry, counts and the ordered-page checksum. Pages contain findings, graph records or references, and analyzer reuse records. They do not copy source text or native message identifiers.
 
 Only a completed, active generation supplies pages. Missing, malformed, misordered, incompatible or expired pages cause a source rebuild. Parsing is limited to one page at a time, but the restored conversation output and assembled account graph are still retained. These limits are not a total memory cap.
+
+## Graph references
+
+With shared graph storage, `zlib-json-graph-ids.v2` pages store node and edge IDs. Their header records the exact conversation graph digest. `zlib-json.v1` pages remain self-contained and readable. Switching the storage mode converts valid cached output without repeating source reads or analysis.
+
+Each lookup selects at most 256 IDs through the account and generation bucket, then validates the actual graph columns and content hashes. Restoration checks the complete conversation graph digest. Staging compares the records with the candidate; checksums alone cannot establish a match.
+
+Reads and page staging use a temporary 32 MiB SQLite page-cache target and restore its previous setting on exit. This is separate from the unchanged 64 MiB application cache budget and is not a total process-memory limit.
+
+A successful restore may carry a process-local graph-read receipt. It binds the exact generation and header to the storage stamp observed before and after the graph read. Staging compares that stamp inside its write transaction, before making its own changes. An exact match avoids a second source-graph read; otherwise staging rereads the rows. The page bytes, header and completed witness are always reopened and checked. The complete persisted candidate is still independently verified.
 
 ## Correctness and lifetime
 
@@ -26,7 +36,7 @@ An edit, late arrival, deletion, changed participant, model/configuration change
 
 ## Qualification
 
-Run `python -m pytest tests/test_conversation_pages.py tests/test_shared_conversation_pages.py` and the [analytics baseline](qualification.md). Tests include independent full-build comparisons, page boundaries, source mutations, configuration, missing/corrupted pages, staging tamper, budgets, cancellation, expiry and restart.
+Run `python -m pytest tests/test_conversation_pages.py tests/test_shared_conversation_pages.py tests/test_conversation_graph_references.py tests/test_conversation_graph_receipts.py` and the [analytics baseline](qualification.md). Tests include independent full-build comparisons, page boundaries, source mutations, configuration, missing/corrupted pages, staging tamper, budgets, cancellation, expiry and restart.
 
 Measure cold construction and changed-message publication separately. Count conversation-body reads, projector calls, analyzer calls, retained bytes and database writes; do not infer a speedup solely from fewer analyzer calls. Compare identical source and workloads with page reuse available and unavailable. Laptop, installer, production classification and 100,000-message update qualification remain separate gates.
 

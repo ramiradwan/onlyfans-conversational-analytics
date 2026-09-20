@@ -23,3 +23,21 @@ The change adds one disposable analytics migration, no database file, runtime pa
 See [Paged conversation reuse](../analytics/conversation-pages.md) for implementation limits and qualification.
 
 Pages use standard-library compression. Both stored bytes and decompressed output are bounded to 256 KiB. Truncated, trailing or oversized streams are rejected. The existing 64 MiB retention budget counts compressed pages and headers; decoding and assembled outputs consume additional memory.
+
+## Graph-reference encoding
+
+When immutable shared graph storage is available, new pages store graph IDs instead of a second copy of each graph record. The header binds the selected IDs to a digest of the complete conversation graph. Existing self-contained pages remain readable. Disabling shared graph storage converts reused pages back to self-contained records before staging.
+
+Restoration resolves at most 256 IDs at a time through the selected account, generation and graph bucket. It validates actual stored columns and content hashes, then checks the complete conversation graph digest. Staging compares the records with the candidate. The graph-read receipt below can avoid a second source read. A stored digest alone never authorizes reuse. Missing, changed or cross-account records cannot publish.
+
+Conversation reads and page staging use the existing 32 MiB connection-local SQLite cache target. Each scope restores the previous setting, including cancellation and failure. Application cache budgets, source-time expiry, authorization and full persisted-generation verification are unchanged. No migration or dependency is added.
+
+This encoding reduces duplicated graph payloads, not logical graph construction. It still restores the whole conversation and assembles the account graph. Reference lookups have a cost; capacity and latency require separate measurements.
+
+## Same-build graph-read receipt
+
+After a complete successful restore, the build may retain a process-local record of the exact generation, page header and tracked storage stamp. The stamp must remain unchanged across the graph read. The record contains no graph payload and is not persisted.
+
+Staging checks that stamp at the start of its write transaction, before its own inserts. An exact match permits checking the stored IDs and complete graph digest against the candidate without reading the source graph again. A missing receipt, changed stamp, schema change or unavailable tracking requires the ordinary row reads. Staging still reopens and checks the page bytes, header and active completed witness.
+
+This receipt does not authorize analysis or replace the independent check of the complete persisted candidate. Changes during the first graph read cannot produce a receipt. Changes before staging invalidate it. Source expiry, account binding, cancellation and publication ownership retain their existing checks.
