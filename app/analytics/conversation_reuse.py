@@ -21,6 +21,8 @@ from app.models.analytics import (AccountRef, ConversationRef, Sha256Digest,
 MAX_FRAGMENT_BYTES = 8 * 1024 * 1024
 MAX_FRAGMENT_TOTAL_BYTES = 64 * 1024 * 1024
 MAX_FRAGMENTS = 4096
+MAX_GRAPH_UNIT_TOTAL_BYTES = 128 * 1024 * 1024
+MAX_GRAPH_UNITS = 4096
 
 
 class ConversationFragment(CacheRecord):
@@ -75,6 +77,19 @@ class ConversationBuild:
         self.reader = None
         self.compact = False
         self.page_sets = []
+        self.graph_units = []
+        self.graph_unit_bytes = 0
+
+    def retain_graph_unit(self, unit) -> None:
+        from app.analytics.conversation_graph_units import ConversationGraphReference
+
+        if unit is None or len(self.graph_units) >= MAX_GRAPH_UNITS:
+            return
+        retained = 0 if isinstance(unit, ConversationGraphReference) else unit.retained_bytes
+        if self.graph_unit_bytes + retained > MAX_GRAPH_UNIT_TOTAL_BYTES:
+            return
+        self.graph_units.append(unit)
+        self.graph_unit_bytes += retained
 
     def retain_pages(self, packed) -> None:
         if (packed is None or len(self.entries) + len(self.page_sets) >= MAX_FRAGMENTS
@@ -124,22 +139,63 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
     check = lambda: check_cancelled(cancellation_check)
     fragments, enrichments, metrics = [], [], []
     loader = state.reader
+    incremental = bool(
+        compact is not None
+        and getattr(pipeline.projections, 'reuse_graph_content', True)
+        and getattr(loader, 'graph_unit_proof', None) is not None
+        and getattr(loader, 'graph_segment_proof', None) is not None
+        and getattr(loader, 'graph_chunks_complete', False)
+        and callable(getattr(loader, 'previous_graph_unit', None))
+        and callable(getattr(loader, 'graph_content_ids', None))
+        and callable(getattr(loader, 'graph_segment_chunk', None))
+    )
+    changed_graph = CompactGraph(account_ref(account_id)) if incremental else None
+    current_units, previous_changed_units = {}, {}
+    current_refs = set()
     for chat_id, input_digest in catalog.digests.items():
         check_cancelled(cancellation_check)
         ref = conversation_ref(account_id, chat_id)
+        current_refs.add(ref)
         fragment = None
         local_graph = None
         packed, restored = None, None
+        graph_unit = None
+        graph_unit_value = None
+        if incremental:
+            graph_unit_loader = getattr(loader, 'graph_unit_reference', None)
+            if callable(graph_unit_loader):
+                graph_unit = graph_unit_loader(ref, input_digest, config)
+            if graph_unit is not None:
+                header = graph_unit.header
+                if (header.retention_cutoff > cutoff
+                        or header.expires_at <= pipeline._retention_clock()):
+                    graph_unit = None
+                else:
+                    graph_unit_value = loader.previous_graph_unit(ref)
+                    if graph_unit_value is None:
+                        raise ValueError('conversation_graph_unit_unavailable')
         page_loader = getattr(loader, 'pages', None)
         use_pages = compact is not None and pipeline.reuse_conversations and reuse is not None and callable(page_loader)
         if use_pages:
-            from app.analytics.conversation_pages import restore_pages, record_verified_graph_read
+            from app.analytics.conversation_pages import (
+                restore_pages, restore_pages_with_graph_unit,
+                record_verified_graph_read,
+            )
+            reference_pages = getattr(loader, "graph_reference_pages", False)
+            encoding = 'zlib-json-graph-ids.v2' if reference_pages else 'zlib-json.v1'
             candidate = page_loader(ref, input_digest, config, cancellation_check=cancellation_check)
             if candidate is not None and candidate.retained_bytes <= MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used:
                 h = candidate.header
                 if h.retention_cutoff <= cutoff and h.expires_at > pipeline._retention_clock():
                     try:
-                        restored = restore_pages(candidate, check)
+                        if (graph_unit_value is not None
+                                and candidate.header.encoding == encoding):
+                            findings, counts, cached = restore_pages_with_graph_unit(
+                                candidate, graph_unit_value, check
+                            )
+                            restored = (findings, counts, None, cached)
+                        else:
+                            restored = restore_pages(candidate, check)
                         packed = record_verified_graph_read(candidate)
                     except (ValueError, TypeError, KeyError, RecursionError):
                         restored = None
@@ -202,7 +258,39 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                     expires_at=min(m.sent_at for m in findings) + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS),
                     enrichments=findings, metrics=counts, nodes=nodes, edges=edges, analyzer_entries=entries)
         if compact is not None:
-            if local_graph is not None:
+            if graph_unit is None:
+                graph_unit_loader = getattr(loader, 'graph_unit_reference', None)
+                if callable(graph_unit_loader):
+                    candidate_unit = graph_unit_loader(ref, input_digest, config)
+                    if candidate_unit is not None:
+                        header = candidate_unit.header
+                        if (header.retention_cutoff <= cutoff
+                                and header.expires_at > pipeline._retention_clock()):
+                            graph_unit = candidate_unit
+            if graph_unit is None and local_graph is not None:
+                from app.analytics.conversation_graph_units import create_graph_unit
+                graph_unit = create_graph_unit(
+                    account_ref=account_ref(account_id),
+                    conversation_ref=ref,
+                    input_digest=input_digest,
+                    config_digest=config,
+                    cutoff=cutoff,
+                    findings=findings,
+                    metrics=counts,
+                    graph=local_graph,
+                )
+            state.retain_graph_unit(graph_unit)
+            if incremental:
+                from app.analytics.conversation_graph_units import ConversationGraphReference
+                if graph_unit is not None:
+                    current_units[ref] = graph_unit
+                if local_graph is not None:
+                    changed_graph.merge(local_graph, check=check)
+                if not isinstance(graph_unit, ConversationGraphReference):
+                    previous = loader.previous_graph_unit(ref)
+                    if previous is not None:
+                        previous_changed_units[ref] = previous
+            elif local_graph is not None:
                 compact.merge(local_graph, check=check)
             else:
                 compact.add(fragment.nodes, fragment.edges, check=check)
@@ -224,8 +312,6 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                         if fragment is not None else reuse.conversation_entries(ref)),
                     max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check,
                     graph_references=getattr(loader, "graph_reference_pages", False))
-            reference_pages = getattr(loader, "graph_reference_pages", False)
-            encoding = 'zlib-json-graph-ids.v2' if reference_pages else 'zlib-json.v1'
             if packed is not None and packed.header.encoding != encoding:
                 from app.analytics.conversation_pages import create_pages
                 packed = create_pages(account=packed.header.account_ref, conversation=ref,
@@ -240,10 +326,86 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         check()
     if compact is not None:
         timeline = {}
-        pipeline.graph_projector._conversation_edges(timeline, account_ref(account_id), metrics, cancellation_check)
+        pipeline.graph_projector._conversation_edges(
+            timeline, account_ref(account_id), metrics, cancellation_check
+        )
+        if incremental:
+            from app.analytics.conversation_graph_units import (
+                ConversationGraphReference, graph_unit_ids,
+            )
+            from app.analytics.incremental_graph import build_incremental_graph
+
+            proof_headers = {
+                item.conversation_ref: item
+                for item in loader.graph_unit_proof.headers
+            }
+            for ref in set(proof_headers) - current_refs:
+                previous = loader.previous_graph_unit(ref)
+                if previous is None:
+                    raise ValueError('conversation_graph_unit_unavailable')
+                previous_changed_units[ref] = previous
+
+            old_nodes, old_edges = set(), set()
+            for unit in previous_changed_units.values():
+                nodes, edges = graph_unit_ids(unit)
+                old_nodes.update(nodes)
+                old_edges.update(edges)
+            candidate_node_removals = old_nodes - set(changed_graph.nodes)
+            candidate_edge_removals = old_edges - set(changed_graph.edges)
+
+            live_removed_nodes, live_removed_edges = set(), set()
+            if candidate_node_removals or candidate_edge_removals:
+                for ref, unit in current_units.items():
+                    check()
+                    current = (
+                        loader.previous_graph_unit(ref)
+                        if isinstance(unit, ConversationGraphReference) else unit
+                    )
+                    if current is None:
+                        continue
+                    nodes, edges = graph_unit_ids(current)
+                    if candidate_node_removals:
+                        live_removed_nodes.update(
+                            candidate_node_removals.intersection(nodes)
+                        )
+                    if candidate_edge_removals:
+                        live_removed_edges.update(
+                            candidate_edge_removals.intersection(edges)
+                        )
+            removed_nodes = candidate_node_removals - live_removed_nodes
+            removed_edges = candidate_edge_removals - live_removed_edges
+
+            previous_timeline = {}
+            pipeline.graph_projector._conversation_edges(
+                previous_timeline, account_ref(account_id),
+                loader.graph_unit_proof.headers,
+                cancellation_check,
+            )
+            removed_edges.update(set(previous_timeline) - set(timeline))
+            graph = build_incremental_graph(
+                account_ref=account_ref(account_id),
+                loader=loader,
+                current_units=current_units,
+                changed_graph=changed_graph,
+                store=pipeline.projections,
+                removed_nodes=removed_nodes,
+                removed_edges=removed_edges,
+                timeline_nodes={},
+                timeline_edges=timeline,
+                check=check,
+            )
+            if graph is None:
+                raise ValueError('incremental_graph_cache_unavailable')
+            return (
+                enrichments, metrics, graph, None,
+                graph.summary(catalog.view_revision),
+            )
+
         compact.add([], timeline.values(), check=check)
         if not compact.nodes:
-            nodes, edges, _ = pipeline.graph_projector.project(account_id, catalog.view_revision, [], [], [])
+            nodes, edges, _ = pipeline.graph_projector.project(
+                account_id, catalog.view_revision, [], [], []
+            )
             compact.add(nodes, edges, check=check)
         return enrichments, metrics, compact, None, compact.summary(catalog.view_revision)
     nodes, edges, summary = pipeline.graph_projector.compose(account_id, catalog.view_revision,

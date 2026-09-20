@@ -112,6 +112,8 @@ class SQLiteAnalyticsProjectionStore:
         self._validation_receipts = ValidationReceipts()
         self._graph_segment_proofs = OrderedDict()
         self._graph_segment_proof_lock = RLock()
+        self._conversation_graph_proofs = OrderedDict()
+        self._conversation_graph_proof_lock = RLock()
         self.reuse_validation_receipts = True
         from app.analytics.currentness import GenerationCurrentness
         self._currentness = GenerationCurrentness()
@@ -146,6 +148,61 @@ class SQLiteAnalyticsProjectionStore:
         generation_id = generation['generation_id']
         with self._graph_segment_proof_lock:
             proof = self._graph_segment_proofs.get(generation_id)
+        if (proof is None or proof.generation_id != generation_id
+                or proof.binding != generation_binding(generation)):
+            return None
+        stamp = content_stamp(connection)
+        if stamp is None or tuple(stamp[:3]) != proof.stamp_prefix:
+            return None
+        return proof
+
+    def _remember_conversation_graph_proof(
+        self, receipt, units, predecessor_proof, projection
+    ) -> None:
+        if receipt is None or not units:
+            return
+        from app.analytics.conversation_graph_units import (
+            ConversationGraphProof, ConversationGraphReference,
+        )
+        from app.analytics.validation_receipt import MAX_RECEIPTS
+
+        expected = {item.conversation_ref for item in projection.conversation_metrics}
+        headers, seen = [], set()
+        trusted = {
+            header.conversation_ref: header
+            for header in (() if predecessor_proof is None else predecessor_proof.headers)
+        }
+        for unit in units:
+            header = unit.header
+            if header.conversation_ref in seen or header.conversation_ref not in expected:
+                return
+            if isinstance(unit, ConversationGraphReference):
+                if (predecessor_proof is None
+                        or unit.generation_id != predecessor_proof.generation_id
+                        or trusted.get(header.conversation_ref) != header):
+                    return
+            seen.add(header.conversation_ref)
+            headers.append(header)
+        if seen != expected:
+            return
+        proof = ConversationGraphProof(
+            receipt.generation_id, receipt.binding, tuple(receipt.stamp[:3]),
+            tuple(sorted(headers, key=lambda item: item.conversation_ref)),
+        )
+        with self._conversation_graph_proof_lock:
+            self._conversation_graph_proofs[receipt.generation_id] = proof
+            self._conversation_graph_proofs.move_to_end(receipt.generation_id)
+            while len(self._conversation_graph_proofs) > MAX_RECEIPTS:
+                self._conversation_graph_proofs.popitem(last=False)
+
+    def _trusted_conversation_graph_proof(self, connection, generation):
+        from app.analytics.validation_receipt import content_stamp, generation_binding
+
+        if generation is None or int(connection.execute('PRAGMA user_version').fetchone()[0]) < 16:
+            return None
+        generation_id = generation['generation_id']
+        with self._conversation_graph_proof_lock:
+            proof = self._conversation_graph_proofs.get(generation_id)
         if (proof is None or proof.generation_id != generation_id
                 or proof.binding != generation_binding(generation)):
             return None
@@ -312,7 +369,9 @@ class SQLiteAnalyticsProjectionStore:
     def stage_built_artifact(self, artifact, **kwargs):
         """Validate a privately owned build without cloning its complete graph."""
 
-        return self.stage_artifact(artifact, _copy_graph=False, **kwargs)
+        return self.stage_artifact(
+            artifact, _copy_graph=False, _trusted_graph_units=True, **kwargs
+        )
 
     def stage_artifact(
         self,
@@ -325,7 +384,9 @@ class SQLiteAnalyticsProjectionStore:
         enrichment_entries: tuple[bytes, ...] = (),
         conversation_fragments: tuple[bytes, ...] = (),
         conversation_pages: tuple = (),
+        conversation_graph_units: tuple = (),
         _copy_graph: bool = True,
+        _trusted_graph_units: bool = False,
     ) -> str:
         """Persist and validate one inactive generation from one canonical snapshot."""
 
@@ -337,11 +398,19 @@ class SQLiteAnalyticsProjectionStore:
 
         from app.analytics.conversation_pages import checked_page_sets
         from app.analytics.conversation_page_sql import insert_page_sets, resolve_page_sets
-        from app.analytics.conversation_reuse import MAX_FRAGMENTS, MAX_FRAGMENT_TOTAL_BYTES
+        from app.analytics.conversation_reuse import (
+            MAX_FRAGMENTS, MAX_FRAGMENT_TOTAL_BYTES, MAX_GRAPH_UNITS,
+            MAX_GRAPH_UNIT_TOTAL_BYTES,
+        )
+        from app.analytics.conversation_graph_units import ConversationGraphReference
         if (len(conversation_fragments) + len(conversation_pages) > MAX_FRAGMENTS
                 or sum(map(len, conversation_fragments)) + sum(p.retained_bytes for p in conversation_pages)
                     > MAX_FRAGMENT_TOTAL_BYTES):
             raise ValueError('conversation_fragment_budget_invalid')
+        if (len(conversation_graph_units) > MAX_GRAPH_UNITS
+                or sum(0 if isinstance(unit, ConversationGraphReference) else unit.retained_bytes
+                       for unit in conversation_graph_units) > MAX_GRAPH_UNIT_TOTAL_BYTES):
+            raise ValueError('conversation_graph_unit_budget_invalid')
         check = lambda: check_cancelled(cancellation_check)
         fragments = iter_validated_fragments(artifact, conversation_fragments)
         cached = storage_entries(artifact, enrichment_entries, check=check)
@@ -407,12 +476,16 @@ class SQLiteAnalyticsProjectionStore:
                 else None)
             active = connection.execute(
                 """
-                SELECT generation_id, canonical_revision
+                SELECT *
                 FROM projection_generations
                 WHERE creator_account_id=? AND status='active'
                 """,
                 (partition_ref,),
             ).fetchone()
+            predecessor_graph_unit_proof = (
+                self._trusted_conversation_graph_proof(connection, active)
+                if _trusted_graph_units else None
+            )
             if active is not None and int(active["canonical_revision"]) > (
                 projection.source_revision
             ):
@@ -481,7 +554,9 @@ class SQLiteAnalyticsProjectionStore:
                 ),
             )
             from app.analytics.database import generation_verification_cache
+            from app.analytics.conversation_graph_unit_sql import insert_units
             with generation_verification_cache(connection):
+                insert_units(connection, generation_id, conversation_graph_units, check=check)
                 insert_entries(connection, generation_id, cached, check=check,
                     shared=getattr(self, "reuse_enrichment_content", True) and shared_entries_supported(connection))
                 insert_fragments(connection, generation_id, fragments, conversation_fragments)
@@ -516,6 +591,11 @@ class SQLiteAnalyticsProjectionStore:
             self._remember_graph_segment_proof(
                 receipt, getattr(writer, "validated_graph_segments", ())
             )
+            if _trusted_graph_units:
+                self._remember_conversation_graph_proof(
+                    receipt, conversation_graph_units,
+                    predecessor_graph_unit_proof, projection,
+                )
             self._validation_receipts.put(receipt)
         self._checkpoint("validated", generation_id)
         check_cancelled(cancellation_check)
@@ -1571,7 +1651,7 @@ def _validate_generation_links(connection, generation_id, account_id, check):
     if epoch is None:
         raise GraphReferentialIntegrityError("projection_epoch_absent")
     schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-    optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11, "conversation_page_refs": 13, "conversation_owned_pages": 13, "enrichment_refs": 14, "enrichment_owned_records": 14}
+    optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11, "conversation_page_refs": 13, "conversation_owned_pages": 13, "enrichment_refs": 14, "enrichment_owned_records": 14, "conversation_graph_refs": 16}
     if schema_version >= 10:
         from app.analytics.shared_graph import verify_segment_links
         verify_segment_links(connection, generation_id, account_id)
@@ -1605,10 +1685,19 @@ def _validate_generation_links(connection, generation_id, account_id, check):
             (generation_id, account_id)).fetchone()
         if missing is not None:
             raise GraphReferentialIntegrityError('enrichment_reference_invalid')
+    if schema_version >= 16:
+        missing = connection.execute("""SELECT 1 FROM conversation_graph_refs r
+            LEFT JOIN conversation_graph_units u USING(creator_account_id,unit_id)
+            WHERE r.generation_id=? AND r.creator_account_id=?
+              AND u.unit_id IS NULL LIMIT 1""",
+            (generation_id, account_id)).fetchone()
+        if missing is not None:
+            raise GraphReferentialIntegrityError('conversation_graph_reference_absent')
     for table in ("analytics_projections", "graph_nodes", "graph_edges",
                   "graph_partition_stats", "enrichment_reuse", "conversation_fragments", "conversation_page_sets", "conversation_pages",
                   "projection_query_metadata", "graph_algorithm_metrics", "generation_graph_segments",
-                  "conversation_page_refs", "conversation_owned_pages", "enrichment_refs", "enrichment_owned_records"):
+                  "conversation_page_refs", "conversation_owned_pages", "enrichment_refs", "enrichment_owned_records",
+                  "conversation_graph_refs"):
         check()
         if schema_version < optional_since.get(table, 0):
             continue

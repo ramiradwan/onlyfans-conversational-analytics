@@ -16,6 +16,9 @@ from uuid import uuid4
 from app.analytics.compact_graph import CompactGraph, _json
 
 
+MAX_SEGMENT_CHUNK_BYTES = 64 * 1024 * 1024
+
+
 @dataclass(frozen=True, slots=True)
 class SegmentPlan:
     kind: str
@@ -34,6 +37,7 @@ class VerifiedSegment:
     digest: str
     count: int
     categories: tuple[tuple[str, int], ...]
+    chunk_digest: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +76,12 @@ def supported(connection) -> bool:
     return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='generation_graph_segments'").fetchone() is not None
 
 
+def chunks_supported(connection) -> bool:
+    return connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='graph_segment_chunks'"
+    ).fetchone() is not None
+
+
 def _predecessor_segments(store, connection, partition: str) -> dict:
     generation = connection.execute("SELECT * FROM projection_generations WHERE creator_account_id=? AND status='active'", (partition,)).fetchone()
     if generation is None:
@@ -103,6 +113,53 @@ def _plans(graph: CompactGraph, existing: dict,
             previous = existing.get((kind, bucket))
             reused = previous is not None and previous[0] == signature
             yield SegmentPlan(kind, bucket, signature, previous[1] if reused else str(uuid4()), keys, reused)
+
+
+def _segment_chunk(graph, plan, check):
+    records = graph.nodes if plan.kind == 'node' else graph.edges
+    parts, used = [], 0
+    for key in plan.keys:
+        check()
+        data = records[key].encode('utf-8')
+        used += len(data) + (1 if parts else 0)
+        if used > MAX_SEGMENT_CHUNK_BYTES:
+            return None
+        parts.append(data)
+    if not parts:
+        return None
+    chunk = b','.join(parts)
+    return chunk, hashlib.sha256(chunk).hexdigest()
+
+
+def _ensure_segment_chunks(connection, graph, plans, check):
+    if not chunks_supported(connection):
+        return 0
+    written = 0
+    for plan in plans:
+        check()
+        value = _segment_chunk(graph, plan, check)
+        if value is None:
+            continue
+        chunk, digest = value
+        row = connection.execute(
+            """SELECT kind,record_count,canonical_digest
+               FROM graph_segment_chunks
+               WHERE creator_account_id=? AND segment_id=?""",
+            (graph.account_ref, plan.segment_id),
+        ).fetchone()
+        if row is not None:
+            continue
+        connection.execute(
+            """INSERT INTO graph_segment_chunks
+               (creator_account_id,segment_id,kind,record_count,canonical_bytes,canonical_digest)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                graph.account_ref, plan.segment_id, plan.kind, len(plan.keys),
+                chunk, digest,
+            ),
+        )
+        written += 1
+    return written
 
 
 def _records(graph, plan, check):
@@ -175,8 +232,11 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
                         (graph.account_ref, plan.segment_id, plan.kind, plan.bucket, plan.digest))
                 db.execute('INSERT INTO generation_graph_segments(generation_id,creator_account_id,kind,bucket,segment_id) VALUES (?,?,?,?,?)',
                     (writer._generation_id, graph.account_ref, plan.kind, plan.bucket, plan.segment_id))
+        with writer._owned_transaction() as db:
+            segment_chunks_written = _ensure_segment_chunks(db, graph, plans, check)
         statistics = {'segments_reused': sum(p.reused for p in plans),
                       'segments_written': sum(not p.reused for p in plans),
+                      'segment_chunks_written': segment_chunks_written,
                       'node_memberships_written': 0, 'edge_memberships_written': 0,
                       'node_content_written': 0, 'edge_content_written': 0, 'node_identities_written': 0}
         for kind, fields in (
@@ -241,6 +301,7 @@ def _verify_segment_rows(connection, account_id, plan, check):
         WHERE r.creator_account_id=? AND r.segment_id=?
         ORDER BY r.{relation}''', (account_id, plan.segment_id))
     count, categories = 0, Counter()
+    chunk_digest = hashlib.sha256()
     try:
         for row in rows:
             check()
@@ -251,6 +312,9 @@ def _verify_segment_rows(connection, account_id, plan, check):
             digest.update(
                 row[relation].encode() + b':' + version.encode() + b'\n'
             )
+            if count:
+                chunk_digest.update(b',')
+            chunk_digest.update(encoded)
             categories[category] += 1
             count += 1
     finally:
@@ -260,7 +324,7 @@ def _verify_segment_rows(connection, account_id, plan, check):
         raise GraphReferentialIntegrityError('graph_segment_digest_invalid')
     return VerifiedSegment(
         plan.kind, plan.bucket, plan.segment_id, plan.digest, count,
-        tuple(sorted(categories.items())),
+        tuple(sorted(categories.items())), chunk_digest.hexdigest(),
     )
 
 
@@ -320,7 +384,8 @@ def verify_shared_graph(connection, generation_id, account_id, validation, check
         if plan.reused:
             item = proven.get((plan.kind, plan.bucket))
             if (item is None or item.segment_id != plan.segment_id
-                    or item.digest != plan.digest or item.count != plan.count):
+                    or item.digest != plan.digest or item.count != plan.count
+                    or item.chunk_digest is None):
                 return None
         else:
             item = _verify_segment_rows(connection, account_id, plan, check)
@@ -330,6 +395,78 @@ def verify_shared_graph(connection, generation_id, account_id, validation, check
     return (
         validation.graph_digest, node_counts, edge_counts, tuple(verified)
     )
+
+
+def selected_content_ids(connection, generation_id: str, account_id: str,
+                         kind: str, keys, check=lambda: None) -> dict[str, str]:
+    """Return content hashes only for selected identities in one witnessed generation."""
+
+    if kind not in ('node', 'edge'):
+        raise ValueError('graph_record_kind_invalid')
+    result = {}
+    values = list(dict.fromkeys(keys))
+    for offset in range(0, len(values), 256):
+        check()
+        batch = values[offset:offset + 256]
+        if not batch:
+            continue
+        marks = ','.join('?' for _ in batch)
+        relation = kind + '_id'
+        rows = connection.execute(f'''SELECT r.{relation},r.content_id
+            FROM generation_graph_segments m
+            JOIN graph_segment_{kind}s r USING(creator_account_id,segment_id)
+            WHERE m.generation_id=? AND m.creator_account_id=? AND m.kind=?
+              AND r.{relation} IN ({marks})''',
+            (generation_id, account_id, kind, *batch))
+        for row in rows:
+            check()
+            result[row[0]] = row[1]
+    return result
+
+
+def verified_segment_chunks_complete(connection, account_id: str,
+                                     proof: GraphSegmentProof) -> bool:
+    if not chunks_supported(connection) or not proof.segments:
+        return False
+    rows = {
+        row['segment_id']: row
+        for row in connection.execute(
+            """SELECT segment_id,kind,record_count,canonical_digest
+               FROM graph_segment_chunks WHERE creator_account_id=?""",
+            (account_id,),
+        )
+    }
+    return all(
+        item.chunk_digest is not None
+        and item.segment_id in rows
+        and rows[item.segment_id]['kind'] == item.kind
+        and int(rows[item.segment_id]['record_count']) == item.count
+        and rows[item.segment_id]['canonical_digest'] == item.chunk_digest
+        for item in proof.segments
+    )
+
+
+def verified_segment_chunk(connection, account_id: str, proof: GraphSegmentProof,
+                           kind: str, bucket: str):
+    """Open one immutable canonical chunk only when it matches the live proof."""
+
+    if kind not in ('node', 'edge'):
+        raise ValueError('graph_record_kind_invalid')
+    item = next((value for value in proof.segments
+                 if value.kind == kind and value.bucket == bucket), None)
+    if item is None or item.chunk_digest is None or not chunks_supported(connection):
+        return None
+    row = connection.execute(
+        """SELECT kind,record_count,canonical_bytes,canonical_digest
+           FROM graph_segment_chunks
+           WHERE creator_account_id=? AND segment_id=?""",
+        (account_id, item.segment_id),
+    ).fetchone()
+    if (row is None or row['kind'] != kind or int(row['record_count']) != item.count
+            or row['canonical_digest'] != item.chunk_digest
+            or hashlib.sha256(row['canonical_bytes']).hexdigest() != item.chunk_digest):
+        return None
+    return item, row['canonical_bytes']
 
 
 def uses_segments(connection, generation_id: str, account_id: str) -> bool:

@@ -49,6 +49,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0038: Reuse verified immutable graph segments](0038-verified-graph-segment-reuse.md)
 
+- [ADR 0039: Reuse immutable conversation graph units](0039-incremental-conversation-graph-units.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

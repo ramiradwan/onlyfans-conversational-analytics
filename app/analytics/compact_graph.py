@@ -112,6 +112,10 @@ def write_compact_graph(writer, graph: CompactGraph, *, check=lambda: None, stor
 
     from app.analytics.sqlite_graph_store import _timestamp
 
+    if getattr(graph, "compact_graph", False) and not isinstance(graph, CompactGraph):
+        from app.analytics.incremental_graph import write_incremental_graph
+        return write_incremental_graph(writer, graph, store, check=check)
+
     if store is not None and getattr(store, "reuse_graph_content", True):
         from app.analytics.shared_graph import supported, write_shared_graph
         with writer.database.read() as connection:

@@ -28,22 +28,33 @@ def counts(fixture):
                      for table in ('graph_node_content','graph_edge_content','graph_segments'))
 
 
-def test_unchanged_graph_reuses_all_physical_records(fixture, monkeypatch):
-    import app.analytics.shared_graph as storage
-    writes = []
-    original = storage.write_shared_graph
-    def observed(*args, **kwargs):
-        result = original(*args, **kwargs)
-        writes.append(result)
-        return result
-    monkeypatch.setattr(storage, 'write_shared_graph', observed)
+def test_unchanged_graph_reuses_all_physical_records(fixture):
     first = fixture.pipeline.project_account(ACCOUNT)
     before = counts(fixture)
+    with fixture.stores.database.read() as db:
+        previous = {
+            (row['kind'], row['bucket']): row['segment_id']
+            for row in db.execute(
+                """SELECT m.kind,m.bucket,m.segment_id
+                   FROM generation_graph_segments m
+                   JOIN projection_generations g USING(generation_id,creator_account_id)
+                   WHERE g.status='active'"""
+            )
+        }
     second = fixture.pipeline.rebuild_account(ACCOUNT)
     assert second.artifact == first.artifact
     assert counts(fixture) == before
-    assert writes[-1]['segments_written'] == 0
-    assert writes[-1]['node_content_written'] == writes[-1]['edge_content_written'] == 0
+    with fixture.stores.database.read() as db:
+        current = {
+            (row['kind'], row['bucket']): row['segment_id']
+            for row in db.execute(
+                """SELECT m.kind,m.bucket,m.segment_id
+                   FROM generation_graph_segments m
+                   JOIN projection_generations g USING(generation_id,creator_account_id)
+                   WHERE g.status='active'"""
+            )
+        }
+    assert current == previous
     cold_equal(fixture, second.artifact)
 
 
@@ -150,6 +161,7 @@ def test_reused_corrupt_payload_is_rejected_before_activation(fixture):
 def test_failed_segment_write_cannot_publish(fixture, monkeypatch):
     import app.analytics.shared_graph as storage
     fixture.pipeline.project_account(ACCOUNT)
+    fixture.stores.projections._conversation_graph_proofs.clear()
     with fixture.stores.database.read() as db:
         previous = db.execute("SELECT generation_id FROM projection_generations WHERE status='active'").fetchone()[0]
     with fixture.repositories.database.transaction() as db:
@@ -270,6 +282,7 @@ def test_small_change_does_not_rewrite_unchanged_content(fixture, monkeypatch):
         return result
     monkeypatch.setattr(storage, 'write_shared_graph', record)
     first = fixture.pipeline.project_account(ACCOUNT).artifact
+    fixture.stores.projections._conversation_graph_proofs.clear()
     with fixture.repositories.database.transaction() as db:
         insert_message(db, 'chat-1', 'one-addition', NOW)
         advance(db)

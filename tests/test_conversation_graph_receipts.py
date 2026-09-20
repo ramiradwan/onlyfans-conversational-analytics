@@ -85,8 +85,17 @@ def test_storage_change_during_page_decode_forces_staging_decode(fixture, monkey
     cold_equal(fixture, fixture.pipeline.publish_candidate(candidate).artifact)
 
 
+def test_verified_graph_unit_avoids_predecessor_row_reads(fixture, monkeypatch):
+    fixture.pipeline.project_account(ACCOUNT)
+    calls = observe_reads(fixture, monkeypatch)
+    candidate = fixture.pipeline.build_candidate(ACCOUNT, force=True)
+    assert calls['build'] == 0 and calls['stage'] == 0
+    cold_equal(fixture, fixture.pipeline.publish_candidate(candidate).artifact)
+
+
 def test_verified_graph_read_avoids_second_source_scan(fixture, monkeypatch):
     fixture.pipeline.project_account(ACCOUNT)
+    fixture.stores.projections._conversation_graph_proofs.clear()
     receipts = []
     def remember(kwargs):
         receipts.extend(item.graph_receipt for item in kwargs['conversation_pages'])
@@ -102,6 +111,7 @@ def test_verified_graph_read_avoids_second_source_scan(fixture, monkeypatch):
     'account', 'header', 'changed_storage', 'tracking_removed', 'schema_changed'])
 def test_unusable_graph_receipt_rereads_actual_rows(fixture, monkeypatch, fault):
     fixture.pipeline.project_account(ACCOUNT)
+    fixture.stores.projections._conversation_graph_proofs.clear()
     def alter(kwargs):
         items = list(kwargs['conversation_pages'])
         item = items[0]
@@ -142,6 +152,7 @@ def test_unusable_graph_receipt_rereads_actual_rows(fixture, monkeypatch, fault)
 @pytest.mark.parametrize('every_read', [False, True])
 def test_change_during_read_prevents_receipt(fixture, monkeypatch, every_read):
     fixture.pipeline.project_account(ACCOUNT)
+    fixture.stores.projections._conversation_graph_proofs.clear()
     reading = conversation_graph_sql._read_graph_records
     changed = []
     staging = [False]
@@ -228,6 +239,7 @@ def test_graph_receipt_requires_a_write_transaction(fixture):
 
 def test_malformed_receipt_falls_back_without_trusting_its_attributes(fixture, monkeypatch):
     fixture.pipeline.project_account(ACCOUNT)
+    fixture.stores.projections._conversation_graph_proofs.clear()
     def alter(kwargs):
         kwargs['conversation_pages'] = tuple(replace(item, graph_receipt='not-a-receipt')
                                              for item in kwargs['conversation_pages'])

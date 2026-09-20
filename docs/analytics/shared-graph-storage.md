@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check shared_graph.py, graph_verification.py, validation_receipt.py, database.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, sql/0012_generation_content_epoch.sql, sql/0015_shared_graph_delete_guards.sql, and test_shared_graph.py before changing storage, verification or limit claims. -->
+<!-- CODE-VERIFY: Check shared_graph.py, incremental_graph.py, conversation_graph_units.py, graph_verification.py, validation_receipt.py, database.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, sql/0012_generation_content_epoch.sql, sql/0015_shared_graph_delete_guards.sql, sql/0016_incremental_graph_units.sql, test_shared_graph.py and test_incremental_graph_units.py before changing storage, verification or limit claims. -->
 
 # Reuse stored graph content
 
@@ -8,7 +8,7 @@ The built-in SQLite path selects immutable stored content for a complete generat
 
 Node content is keyed by its account and canonical record digest. Edge content includes references to the stable identities of both endpoint nodes. Foreign keys require those endpoints to exist. Property-validation triggers remain enabled.
 
-Each node or edge belongs to one of 256 identity-prefix buckets. A segment contains one kind and bucket. A generation selects at most 512 segments. The writer calculates each segment digest from the current logical graph, then reuses a matching sealed segment from a completed active predecessor. Other segments are written under the ordinary lease and durable batch transactions.
+Each node or edge belongs to one of 256 identity-prefix buckets. A segment contains one kind and bucket. A generation selects at most 512 segments. The ordinary writer calculates each segment digest from the current logical graph, then reuses a matching sealed segment from a completed active predecessor. Other segments are written under the ordinary lease and durable batch transactions. Under [ADR 0039](../adr/0039-incremental-conversation-graph-units.md), an eligible update can instead keep unchanged verified segments and rebuild only affected buckets.
 
 A covering index lets insert guards locate open segments by account, record kind, bucket, and build state. The guards remain enabled.
 
@@ -36,8 +36,10 @@ Deleting a retired generation removes its segment references. Segments still ref
 
 Existing source-time expiry and deletion behavior continue to govern generation visibility and reclamation. Partial builds cannot become readable. Restart requires the same completed canonical witness and verifies stored content through the logical views.
 
-## Remaining account-wide work
+## Incremental construction and remaining work
 
-The builder still assembles the complete logical graph. It hashes record content to choose segments, writes the projection document, and verifies the selected graph. Physical reuse does not make the full operation proportional only to the changed messages or bound total process memory.
+[ADR 0039](../adr/0039-incremental-conversation-graph-units.md) lets an eligible same-process update avoid restoring and merging unchanged graph records. Conversation-local membership units identify unchanged graph content, verified segment chunks provide canonical bytes for unchanged buckets, and only affected buckets are rebuilt. Cold builds, restart without live proofs, unsupported cache data and fallback paths still assemble the complete logical graph.
 
-The migration adds tables, indexes, views and triggers inside the encrypted analytics database. It adds no model, runtime dependency, network service or database file. Installer size and supported laptop capacity require separate measurements.
+Incremental construction does not eliminate account-wide projection metadata, analyzer-reference staging, source identity checks, endpoint verification or publication work. Its cache bounds are not a total process-memory guarantee.
+
+The migrations add tables, indexes and triggers inside the encrypted analytics database. They add no runtime dependency, network service or database file. Installer size and supported laptop capacity require separate measurements.

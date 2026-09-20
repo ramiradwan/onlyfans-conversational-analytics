@@ -58,6 +58,7 @@ def test_endpoint_must_belong_to_selected_generation(fixture, monkeypatch, endpo
     from tests.continuous_analytics_fixture import advance
 
     artifact = fixture.pipeline.project_account(ACCOUNT).artifact
+    fixture.stores.projections._conversation_graph_proofs.clear()
     absent = getattr(artifact.edges[0], endpoint)
     records = storage._records
     def omit_selected_node(graph, plan, check):

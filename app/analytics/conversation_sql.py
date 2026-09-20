@@ -60,4 +60,70 @@ def fragment_reader(store, account_id):
             from app.analytics.shared_graph import supported as shared_graph_supported
             load.graph_reference_pages = (getattr(store, "reuse_graph_content", True)
                 and getattr(store, "reuse_graph_page_references", True) and shared_graph_supported(db))
+        from app.analytics import conversation_graph_unit_sql as graph_units
+        proof_reader = getattr(store, '_trusted_conversation_graph_proof', None)
+        graph_unit_proof = (
+            proof_reader(db, generation)
+            if valid and graph_units.supported(db) and callable(proof_reader)
+            else None
+        )
+        if graph_unit_proof is not None:
+            trusted_headers = {
+                header.conversation_ref: header for header in graph_unit_proof.headers
+            }
+            def graph_unit_reference(conversation, input_digest, config_digest):
+                value = graph_units.load_reference(
+                    db, generation['generation_id'], partition, conversation,
+                    input_digest, config_digest,
+                )
+                return value if (
+                    value is not None
+                    and trusted_headers.get(conversation) == value.header
+                ) else None
+            def previous_graph_unit(conversation):
+                value = graph_units.load_unit(
+                    db, generation['generation_id'], partition, conversation,
+                )
+                return value if (
+                    value is not None
+                    and trusted_headers.get(conversation) == value.header
+                ) else None
+            def graph_unit_references():
+                values = graph_units.list_references(
+                    db, generation['generation_id'], partition,
+                )
+                return values if all(
+                    trusted_headers.get(item.header.conversation_ref) == item.header
+                    for item in values
+                ) else ()
+            load.graph_unit_reference = graph_unit_reference
+            load.previous_graph_unit = previous_graph_unit
+            load.graph_unit_references = graph_unit_references
+            load.graph_unit_proof = graph_unit_proof
+            load.graph_units_supported = True
+            load.active_generation_id = generation['generation_id']
+        segment_proof_reader = getattr(store, '_trusted_graph_segment_proof', None)
+        graph_segment_proof = (
+            segment_proof_reader(db, generation)
+            if valid and callable(segment_proof_reader) else None
+        )
+        if graph_segment_proof is not None:
+            from app.analytics.shared_graph import (
+                selected_content_ids, verified_segment_chunk,
+                verified_segment_chunks_complete,
+            )
+            def graph_content_ids(kind, keys, check=lambda: None):
+                return selected_content_ids(
+                    db, generation['generation_id'], partition, kind, keys, check
+                )
+            def graph_segment_chunk(kind, bucket):
+                return verified_segment_chunk(
+                    db, partition, graph_segment_proof, kind, bucket
+                )
+            load.graph_segment_proof = graph_segment_proof
+            load.graph_content_ids = graph_content_ids
+            load.graph_segment_chunk = graph_segment_chunk
+            load.graph_chunks_complete = verified_segment_chunks_complete(
+                db, partition, graph_segment_proof
+            )
         yield load

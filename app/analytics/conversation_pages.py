@@ -246,9 +246,13 @@ def records(packed: PagedConversation, check, *, graph=None, encoded_graph=False
                     raise ValueError('conversation_page_graph_reader_unavailable')
                 values = reader(page.kind, values, check)
             elif graph is not None:
-                target = graph.nodes if page.kind == 'node' else graph.edges
                 try:
-                    values = [json.loads(target[key]) for key in values]
+                    resolver = getattr(graph, 'resolve_records', None)
+                    if callable(resolver):
+                        values = resolver(page.kind, values, check)
+                    else:
+                        target = graph.nodes if page.kind == 'node' else graph.edges
+                        values = [json.loads(target[key]) for key in values]
                 except KeyError as error:
                     raise ValueError('conversation_page_graph_reference_absent') from error
             else:
@@ -291,6 +295,67 @@ def validate_summary(header, findings, node_count, edge_count):
         raise ValueError('conversation_pages_summary_invalid')
     if [(m.sent_at, m.source_ordinal) for m in findings] != sorted((m.sent_at, m.source_ordinal) for m in findings):
         raise ValueError('conversation_pages_order_invalid')
+
+
+def restore_pages_with_graph_unit(packed: PagedConversation, unit, check):
+    """Restore scalar outputs while checking graph IDs against a trusted unit."""
+
+    from app.analytics.conversation_graph_units import graph_unit_ids
+
+    header = packed.header
+    unit_header = unit.header
+    if (header.account_ref != unit_header.account_ref
+            or header.conversation_ref != unit_header.conversation_ref
+            or header.input_digest != unit_header.input_digest
+            or header.config_digest != unit_header.config_digest
+            or header.graph_digest != unit_header.graph_digest
+            or header.node_count != unit_header.node_count
+            or header.edge_count != unit_header.edge_count):
+        raise ValueError('conversation_graph_unit_header_invalid')
+    expected_nodes, expected_edges = graph_unit_ids(unit)
+    findings, entries, node_ids, edge_ids = [], [], [], []
+    sources, cache_keys = {}, set()
+    if (len(packed.pages) != header.page_count
+            or sum(len(p.data) for p in packed.pages) != header.byte_count
+            or page_digest(packed.pages) != header.pages_digest):
+        raise ValueError('conversation_pages_digest_invalid')
+    rank, previous = {'message': 0, 'node': 1, 'edge': 2, 'analyzer': 3}, -1
+    for page in packed.pages:
+        check()
+        if page.kind not in rank or rank[page.kind] < previous or len(page.data) > PAGE_BYTES:
+            raise ValueError('conversation_page_shape_invalid')
+        previous = rank[page.kind]
+        values = json.loads(unpack_page(page.data))
+        if not isinstance(values, list) or not 1 <= len(values) <= PAGE_RECORDS:
+            raise ValueError('conversation_page_count_invalid')
+        if page.kind == 'message':
+            for value in values:
+                check()
+                item = MessageEnrichment.model_validate(value)
+                validate_message(item, header)
+                findings.append(item); sources[item.message_ref] = item
+        elif page.kind in ('node', 'edge'):
+            if header.encoding != GRAPH_REFERENCE_ENCODING:
+                raise ValueError('conversation_graph_unit_encoding_invalid')
+            from app.analytics.graph_identity import require_graph_id
+            target = node_ids if page.kind == 'node' else edge_ids
+            for key in values:
+                check()
+                require_graph_id(key, expected_kind='edge' if page.kind == 'edge' else None)
+                target.append(key)
+        else:
+            for value in values:
+                check()
+                item = CachedEnrichment.model_validate(value)
+                validate_analyzer(item, sources.get(item.key.message_ref), header)
+                signature = item.key.digest
+                if signature in cache_keys:
+                    raise ValueError('conversation_page_duplicate_analyzer')
+                cache_keys.add(signature); entries.append(item)
+    if tuple(sorted(node_ids)) != expected_nodes or tuple(sorted(edge_ids)) != expected_edges:
+        raise ValueError('conversation_graph_unit_membership_invalid')
+    validate_summary(header, findings, len(node_ids), len(edge_ids))
+    return findings, header.metrics, entries
 
 
 def restore_pages(packed: PagedConversation, check):
@@ -369,7 +434,12 @@ def checked_page_sets(artifact, page_sets, *, check=lambda: None):
             elif kind in ('node', 'edge'):
                 key = value.get(kind + '_id')
                 target, keys = (artifact.graph.nodes, nodes) if kind == 'node' else (artifact.graph.edges, edges)
-                if key in keys or target.get(key) != _json(value):
+                matcher = getattr(artifact.graph, 'page_record_matches', None)
+                matches = (
+                    matcher(kind, key, value)
+                    if callable(matcher) else target.get(key) == _json(value)
+                )
+                if key in keys or not matches:
                     raise ValueError('conversation_pages_graph_invalid')
                 if kind == 'edge' and (value['properties'].get('scope') == 'conversation'
                         or value['source_id'] not in nodes or value['target_id'] not in nodes):

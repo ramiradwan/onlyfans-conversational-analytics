@@ -354,7 +354,10 @@ class AnalyticsPipeline:
                 try:
                     with reuse_build(self.projections, creator_account_id,
                             self._retention_clock, cancellation_check,
-                            enabled=self.reuse_enrichment) as reuse, conversation_build(self.projections, creator_account_id, compact=self.compact_graph) as conversation_state:
+                            enabled=self.reuse_enrichment) as reuse, conversation_build(
+                                self.projections, creator_account_id,
+                                compact=self.compact_graph,
+                            ) as conversation_state:
                         if cancellation_check is None:
                             artifact = self._build(
                                 creator_account_id,
@@ -391,6 +394,8 @@ class AnalyticsPipeline:
                     **({"enrichment_entries": tuple(reuse.entries.values())} if reuse else {}),
                     **({"conversation_pages": tuple(conversation_state.page_sets)}
                        if conversation_state.page_sets else {}),
+                    **({"conversation_graph_units": tuple(conversation_state.graph_units)}
+                       if conversation_state.graph_units else {}),
                     **({"conversation_fragments": tuple(conversation_state.entries)}
                        if conversation_state.entries else {}),
                 )
@@ -707,7 +712,8 @@ class AnalyticsPipeline:
             projection_generation=projection_generation,
             canonical_content_digest=snapshot_identity(account).content_digest,
             graph_digest=(nodes.digest(check=lambda: check_cancelled(cancellation_check))
-                if isinstance(nodes, CompactGraph) else graph_content_digest(nodes, edges)),
+                if isinstance(nodes, CompactGraph) or getattr(nodes, "compact_graph", False)
+                else graph_content_digest(nodes, edges)),
             analyzers=self.enrichment.provenance(enrichments),
             window=AnalyticsWindow(
                 scope=WindowScope.ALL_TIME,
@@ -730,7 +736,7 @@ class AnalyticsPipeline:
                 check=lambda: check_cancelled(cancellation_check))
         })
         check_cancelled(cancellation_check)
-        if isinstance(nodes, CompactGraph):
+        if isinstance(nodes, CompactGraph) or getattr(nodes, "compact_graph", False):
             return CompactArtifact(projection, nodes)
         return RebuildArtifact(projection=projection, nodes=nodes, edges=edges)
 

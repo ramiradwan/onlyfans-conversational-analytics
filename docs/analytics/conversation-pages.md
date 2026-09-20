@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql, sql/0013_shared_conversation_pages.sql, validation_receipt.py, test_conversation_pages.py and test_shared_conversation_pages.py, conversation_graph_sql.py, test_conversation_graph_references.py and test_conversation_graph_receipts.py, test_encoded_conversation_graph.py and test_small_conversation_pages.py before editing behavior or limits. -->
+<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql, sql/0013_shared_conversation_pages.sql, sql/0016_incremental_graph_units.sql, validation_receipt.py, test_conversation_pages.py, test_shared_conversation_pages.py, test_conversation_graph_references.py, test_conversation_graph_receipts.py, test_incremental_graph_units.py, test_encoded_conversation_graph.py and test_small_conversation_pages.py before editing behavior or limits. -->
 
 # Reuse conversation results
 
@@ -12,7 +12,7 @@ A page holds at most 256 records and 256 KiB. A conversation may use at most 4,0
 
 `conversation_page_sets` holds each generation's header. Schema 13 stores immutable compressed bytes in `conversation_page_content`, keyed by account and content hash. `conversation_page_refs` selects the ordered pages for each generation. The `conversation_pages` view also reads generation-owned pages from older databases. The header covers input and configuration identity, metrics, expiry, counts and the ordered-page checksum. Pages contain findings, graph records or references, and analyzer reuse records. They do not copy source text or native message identifiers.
 
-Only a completed, active generation supplies pages. Missing, malformed, misordered, incompatible or expired pages cause a source rebuild. Parsing is limited to one page at a time, but the restored conversation output and assembled account graph are still retained. These limits are not a total memory cap.
+Only a completed, active generation supplies pages. Missing, malformed, misordered, incompatible or expired pages cause a source rebuild. Parsing is limited to one page at a time. The ordinary path retains restored graph records for account assembly; an eligible [ADR 0039](../adr/0039-incremental-conversation-graph-units.md) update can instead validate page graph identities against a witnessed conversation graph unit and keep unchanged account graph records out of Python. These limits are not a total memory cap.
 
 ## Graph references
 
@@ -34,7 +34,7 @@ Rows are immutable after insertion. Retirement or generation deletion removes th
 
 Shared page content and references participate in the existing storage-change counter. Missing tracking or an unreviewed schema disables validation receipts, including the ADR 0037 staging shortcut. Full stored-graph verification, source-time expiry, and atomic publication remain required.
 
-An edit, late arrival, deletion, changed participant, model/configuration change, or expired source window prevents whole-conversation reuse. A successful page hit may refill the separate message-level cache, within that cache's entry and byte limits. Authorization and independent stored-content verification remain required.
+An edit, late arrival, deletion, changed participant, model/configuration change, or expired source window prevents whole-conversation reuse. A successful page hit may refill the separate message-level cache, within that cache's entry and byte limits. ADR 0039 can reuse graph membership only from the exact witnessed predecessor; changed conversations are projected normally. Authorization and independent stored-content verification remain required.
 
 ## Qualification
 
@@ -46,4 +46,4 @@ Pages use standard-library compression. Both stored bytes and decompressed outpu
 
 ## Resource use
 
-References charge their complete compressed payload against the 64 MiB cache budget. Page restoration decodes findings, graph IDs and stored properties. It reuses checked graph bytes, but the builder still assembles the complete account graph. The separate analyzer cache also retains copies of its records.
+References charge their complete compressed payload against the 64 MiB page-cache budget. Ordinary page restoration decodes findings, graph IDs and stored properties. With ADR 0039 proofs and graph-unit cache data available, unchanged graph IDs are checked against the witnessed unit without reopening predecessor graph rows, and account graph assembly reuses verified segment chunks. The separate analyzer cache remains independently bounded.

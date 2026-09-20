@@ -54,12 +54,13 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                 (generation_id, account_id)))
         current_segment = None
         segment_digest = None
+        segment_chunk_digest = None
         segment_count = 0
         segment_counts = Counter()
 
         def finish_segment() -> None:
-            nonlocal current_segment, segment_digest, segment_count, segment_counts
-            nonlocal segment_proof_valid
+            nonlocal current_segment, segment_digest, segment_chunk_digest
+            nonlocal segment_count, segment_counts, segment_proof_valid
             if current_segment is None:
                 return
             bucket, segment_id, expected_digest = current_segment
@@ -69,9 +70,11 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                 segments.append(VerifiedSegment(
                     storage_kind, bucket, segment_id, expected_digest, segment_count,
                     tuple(sorted(segment_counts.items())),
+                    segment_chunk_digest.hexdigest(),
                 ))
             current_segment = None
             segment_digest = None
+            segment_chunk_digest = None
             segment_count = 0
             segment_counts = Counter()
 
@@ -101,9 +104,13 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                         segment_digest = hashlib.sha256(
                             ("graph-segment.v1:" + storage_kind + ":" + identity[0]).encode()
                         )
+                        segment_chunk_digest = hashlib.sha256()
                     segment_digest.update(
                         row[key].encode() + b":" + version.encode() + b"\n"
                     )
+                    if segment_count:
+                        segment_chunk_digest.update(b",")
+                    segment_chunk_digest.update(encoded)
                     segment_counts[record_kind] += 1
                     segment_count += 1
                 if index:
