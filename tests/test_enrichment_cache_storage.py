@@ -73,8 +73,8 @@ def test_corrupted_serialization_is_a_miss_not_a_result(setup):
         generation.enrichment_entries = {key: b'{}' for key in generation.enrichment_entries}
     else:
         with stores.database.transaction() as db:
-            db.execute("DROP TRIGGER enrichment_reuse_update_blocked")
-            db.execute("UPDATE enrichment_reuse SET document_digest=?", ("0" * 64,))
+            db.execute("DROP TRIGGER enrichment_content_immutable")
+            db.execute("UPDATE enrichment_content SET document_json=document_json || ' '")
     assert pipeline.rebuild_account(ACCOUNT).artifact == first.artifact
     assert counts(analyzers) == [6, 6, 6]
 

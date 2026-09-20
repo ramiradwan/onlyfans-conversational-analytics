@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check enrichment.py, enrichment_cache.py, enrichment_inputs.py, enrichment_sql.py, pipeline.py, both projection stores, and sql/0005_enrichment_reuse.sql before changing behavior or limit claims. -->
+<!-- CODE-VERIFY: Check enrichment.py, enrichment_cache.py, enrichment_inputs.py, enrichment_sql.py, pipeline.py, both projection stores, sql/0005_enrichment_reuse.sql, sql/0014_shared_enrichment.sql and test_shared_enrichment.py and sql/0014_shared_enrichment.sql before changing behavior or limit claims. -->
 
 # Reuse unchanged message analysis
 
@@ -24,11 +24,11 @@ Each analyzer still receives its own input copies and an exact message-specific 
 
 ## Storage and lifetime
 
-`enrichment_reuse` is generation-scoped in `analytics-projections.sqlite3`. It contains opaque references, input/configuration digests, expiry, validated analyzer results, and a checksum. It does not copy input message text or native identifiers. Results are the same typed values already present in the projection.
+`enrichment_reuse` is a generation-scoped view in `analytics-projections.sqlite3`. It contains opaque references, input/configuration digests, expiry, validated analyzer results, and a checksum. It does not copy input message text or native identifiers. Results are the same typed values already present in the projection.
 
 Staging validates each record against its projection result. SQL allows insertion only while that generation is building and blocks updates. Records are never public query results. A lookup requires the active generation's completed canonical witness, then an exact current input key. A missing witness or malformed record gives a miss, not a substitute result.
 
-Retirement, deletion, clear, and expiry remove generation cache records. No independent durable cache, cleanup process, or backup path is added. Reopening a valid store can reuse its active generation. Retired or discarded generations cannot seed reuse, even after a restart.
+Retirement, deletion, clear, and expiry remove generation references and owned records. Shared documents are reclaimed after their last reference disappears. No independent durable cache, cleanup process, or backup path is added. Reopening a valid store can reuse its active generation. Retired or discarded generations cannot seed reuse, even after a restart.
 
 The earliest source time among the target and all context messages determines expiry. A lookup cannot restart that period. An admitted build is still required even when every analyzer call can be skipped. The cache does not grant analysis authority.
 
@@ -38,7 +38,9 @@ An unchanged conversation retains its checked serialized analyzer records withou
 
 SQLite staging validates one record at a time and prepares immutable scalar fields for insertion. It writes at most 64 records per batch inside the existing candidate transaction. Invalid input, cancellation, or an insertion failure rolls back the transaction, including earlier batches. The cache creates no separate transaction or writer. The memory backend uses the same validation rules.
 
-Batches can hold up to 4 MiB of serialized documents in addition to the existing 16 MiB retained-input budget, plus Python objects. This is not a total memory cap. Unchanged cache records are still physically copied into the new generation; this change reduces preparation and SQL-call overhead rather than introducing shared cache storage.
+Schema 14 stores immutable documents in `enrichment_content` and generation membership in `enrichment_refs`. Staging compares actual stored bytes in account-scoped groups of at most 64 documents. Matching content receives references instead of duplicate payloads. Damaged shared content uses an owned replacement, not an overwrite. The view also reads `enrichment_owned_records` for older data and compatibility writes.
+
+A batch can hold up to 4 MiB of candidate documents and 4 MiB of stored documents, plus Python objects. The 16 MiB retained-input budget is unchanged. These limits are not a total memory cap. Analyzer preparation and conversation-page processing remain separate costs.
 
 ## Limits and fallback
 
@@ -53,7 +55,7 @@ Analyzer reuse adds no optional ML dependencies or model weights. It does not qu
 ## Verification
 
 ```powershell
-python -m pytest tests/test_enrichment_input_batches.py tests/test_enrichment_staging.py tests/test_enrichment_reuse.py tests/test_enrichment_cache_storage.py tests/test_enrichment_cache_contract.py
+python -m pytest tests/test_shared_enrichment.py tests/test_enrichment_input_batches.py tests/test_enrichment_staging.py tests/test_enrichment_reuse.py tests/test_enrichment_cache_storage.py tests/test_enrichment_cache_contract.py
 ```
 
 These tests count actual analyzer invocations, compare cold and reused artifacts, reopen encrypted stores in a new process, and test account isolation, changed inputs, context dependencies, expiry, failure, corruption, size limits, and analysis admission. Run the [analytics regression baseline](qualification.md) and the architecture checks as well.

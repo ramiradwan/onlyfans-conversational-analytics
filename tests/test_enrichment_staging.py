@@ -191,13 +191,15 @@ def test_partial_cache_batch_is_rolled_back_with_candidate(tmp_path, monkeypatch
         assert len(entries) > INSERT_BATCH_SIZE
         batches = []
         original = enrichment_sql.insert_entries
-        def observe(connection, generation_id, records, *, check):
+        def observe(connection, generation_id, records, *, check, **options):
             class Connection:
+                def __getattr__(self, name):
+                    return getattr(connection, name)
                 def executemany(self, statement, parameters):
                     result = connection.executemany(statement, parameters)
                     batches.append(len(parameters))
                     return result
-            return original(Connection(), generation_id, records, check=check)
+            return original(Connection(), generation_id, records, check=check, **options)
         monkeypatch.setattr(enrichment_sql, 'insert_entries', observe)
         if failure == 'invalid':
             entries = entries[:INSERT_BATCH_SIZE] + (b'{}',)

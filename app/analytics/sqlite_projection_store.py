@@ -295,7 +295,7 @@ class SQLiteAnalyticsProjectionStore:
         """Persist and validate one inactive generation from one canonical snapshot."""
 
         from app.analytics.enrichment_cache import storage_entries
-        from app.analytics.enrichment_sql import insert_entries
+        from app.analytics.enrichment_sql import insert_entries, shared_entries_supported
 
         from app.analytics.conversation_reuse import iter_validated_fragments
         from app.analytics.conversation_sql import insert_fragments
@@ -445,7 +445,8 @@ class SQLiteAnalyticsProjectionStore:
                     projection_document(projection, check=lambda: check_cancelled(cancellation_check)),
                 ),
             )
-            insert_entries(connection, generation_id, cached, check=check)
+            insert_entries(connection, generation_id, cached, check=check,
+                shared=getattr(self, "reuse_enrichment_content", True) and shared_entries_supported(connection))
             insert_fragments(connection, generation_id, fragments, conversation_fragments)
             from app.analytics.database import generation_verification_cache
             with generation_verification_cache(connection):
@@ -1529,7 +1530,7 @@ def _validate_generation_links(connection, generation_id, account_id, check):
     if epoch is None:
         raise GraphReferentialIntegrityError("projection_epoch_absent")
     schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-    optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11, "conversation_page_refs": 13, "conversation_owned_pages": 13}
+    optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11, "conversation_page_refs": 13, "conversation_owned_pages": 13, "enrichment_refs": 14, "enrichment_owned_records": 14}
     if schema_version >= 10:
         from app.analytics.shared_graph import verify_segment_links
         verify_segment_links(connection, generation_id, account_id)
@@ -1554,10 +1555,19 @@ def _validate_generation_links(connection, generation_id, account_id, check):
             (generation_id, account_id)).fetchone()
         if missing is not None:
             raise GraphReferentialIntegrityError('conversation_page_reference_absent')
+    if schema_version >= 14:
+        missing = connection.execute("""SELECT 1 FROM enrichment_refs r
+            LEFT JOIN enrichment_content c USING(creator_account_id,content_id)
+            LEFT JOIN enrichment_owned_records o USING(generation_id,creator_account_id,cache_key)
+            WHERE r.generation_id=? AND r.creator_account_id=?
+                AND (c.content_id IS NULL OR o.cache_key IS NOT NULL) LIMIT 1""",
+            (generation_id, account_id)).fetchone()
+        if missing is not None:
+            raise GraphReferentialIntegrityError('enrichment_reference_invalid')
     for table in ("analytics_projections", "graph_nodes", "graph_edges",
                   "graph_partition_stats", "enrichment_reuse", "conversation_fragments", "conversation_page_sets", "conversation_pages",
                   "projection_query_metadata", "graph_algorithm_metrics", "generation_graph_segments",
-                  "conversation_page_refs", "conversation_owned_pages"):
+                  "conversation_page_refs", "conversation_owned_pages", "enrichment_refs", "enrichment_owned_records"):
         check()
         if schema_version < optional_since.get(table, 0):
             continue
