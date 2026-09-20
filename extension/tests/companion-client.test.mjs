@@ -13,7 +13,7 @@ const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now } = {}) {
+function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, enforcePairing = false } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait;
@@ -42,6 +42,10 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
     },
     channelFactory: async (options) => {
       stats.networks++; assert.equal(options.url, 'ws://127.0.0.1:17871/ws/agent');
+      if (enforcePairing && !paired && options.requestId === undefined) {
+        throw new Error('pairing_state_refused');
+      }
+      if (enforcePairing && options.requestId !== undefined) paired = true;
       const index = stats.networks, closeListeners = [], rpcCalls = [], documents = [];
       const challenge = { challenge_id: crypto.randomUUID(), challenge: Buffer.alloc(32, 9).toString('base64url'), session_id: crypto.randomUUID(), expires_at: '2026-09-12T12:00:00Z' };
       const channel = { identity: { ...vector.expected.identity, pairing_id: vector.offer.pairing_id, ...(wrongPin ? { creator_account_id: 'other' } : {}) }, closed: false, rpcCalls, documents,
@@ -99,6 +103,26 @@ test('current Agent proof, storage unseal, configuration and rotation use only t
   } finally { h.client.invalidate(); }
 });
 
+test('explicit confirmed pairing is not blocked by automatic reconnect cooldown', async () => {
+  let time = 1_800_000_000_000;
+  const h = harness({ enforcePairing: true, now: () => time });
+  h.unpair();
+
+  await assert.rejects(h.client.adapter.loadBrainBinding());
+  assert.equal(h.stats.networks, 1);
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 1);
+
+  const pairing = h.client.pair();
+  for (let i = 0; i < 20 && (await h.client.status()).state !== 'compare'; i += 1) await tick();
+  assert.equal((await h.client.status()).state, 'compare');
+  h.pairingResult();
+
+  await pairing;
+  assert.equal((await h.client.status()).state, 'paired');
+  assert.equal(h.client.connected, true);
+  assert.equal(h.stats.networks, 2);
+  h.client.invalidate();
+});
 test('each reconnect reconstructs authority with a new proof instead of durable credentials', async () => {
   let time = Date.now();
   const h = harness({ now: () => time });

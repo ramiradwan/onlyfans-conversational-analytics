@@ -116,7 +116,10 @@ export function createCompanionClient({
       if (generation !== version || !allowsFull?.()) throw failure();
     };
     const operation = (async () => {
-      await recovery.reserve();
+      // The persisted circuit limits automatic reconnects. A freshly confirmed
+      // pairing is already a single user-owned, deadline-bounded attempt and
+      // must not be rejected by a cooldown earned before a pin existed.
+      if (requestId === undefined) await recovery.reserve();
       current();
       const pairingStore = await store();
       const snow = await loadSnow();
