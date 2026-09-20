@@ -381,22 +381,22 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
             (segment for segment in graph.segments if not segment.reused),
             key=lambda segment: (segment.kind != "node", segment.bucket),
         )
+        statistics = {
+            "segments_reused": sum(segment.reused for segment in graph.segments),
+            "segments_written": len(changed_segments),
+            "segment_chunks_written": len(changed_segments),
+            "node_memberships_written": 0,
+            "edge_memberships_written": 0,
+            "node_content_written": 0,
+            "edge_content_written": 0,
+            "node_identities_written": 0,
+        }
+        prepared = {"node": [], "edge": []}
+        segment_members = []
         for segment in changed_segments:
             records = segment.records or {}
             kind = segment.kind
-            relation = "node_id" if kind == "node" else "edge_id"
-            fields = (
-                "node_id,kind,occurred_at,properties_json"
-                if kind == "node"
-                else "edge_id,source_id,target_id,relation,occurred_at,sequence,properties_json"
-            )
-            placeholders = ",".join("?" for _ in range(len(fields.split(",")) + 2))
-            statement = (
-                f"INSERT INTO graph_{kind}_content"
-                f"(creator_account_id,content_id,{fields}) VALUES ({placeholders}) "
-                "ON CONFLICT(creator_account_id,content_id) DO NOTHING"
-            )
-            values, members = [], []
+            members = []
             for key in sorted(records):
                 check()
                 data = records[key]
@@ -416,18 +416,51 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
                         row["target_id"], row["relation"], stamp,
                         row["sequence"], properties,
                     )
-                values.append(value)
+                prepared[kind].append(value)
                 members.append(
                     (graph.account_ref, segment.segment_id, key, content_id)
                 )
+            segment_members.append((segment, members))
+
+        # Preserve the same physical write-order contract as the full shared
+        # graph path: new immutable content is inserted globally by content ID,
+        # independent of which changed bucket selected the record.
+        for kind in ("node", "edge"):
+            values = sorted(prepared[kind], key=lambda value: value[1])
+            if not values:
+                continue
+            fields = (
+                "node_id,kind,occurred_at,properties_json"
+                if kind == "node"
+                else "edge_id,source_id,target_id,relation,occurred_at,sequence,properties_json"
+            )
+            placeholders = ",".join("?" for _ in range(len(fields.split(",")) + 2))
+            statement = (
+                f"INSERT INTO graph_{kind}_content"
+                f"(creator_account_id,content_id,{fields}) VALUES ({placeholders}) "
+                "ON CONFLICT(creator_account_id,content_id) DO NOTHING"
+            )
             with writer._owned_transaction() as db:
                 existing = _existing_ids(
                     db, f"graph_{kind}_content", "content_id", graph.account_ref,
                     [value[1] for value in values], check,
                 )
                 changed = [value for value in values if value[1] not in existing]
+                if kind == "node" and changed:
+                    identities = {value[2] for value in changed}
+                    present = _existing_ids(
+                        db, "graph_node_identities", "node_id",
+                        graph.account_ref, sorted(identities), check,
+                    )
+                    statistics["node_identities_written"] += len(identities - present)
                 if changed:
-                    db.executemany(statement, changed)
+                    cursor = db.executemany(statement, changed)
+                    statistics[kind + "_content_written"] += cursor.rowcount
+
+        for segment, members in segment_members:
+            kind = segment.kind
+            relation = "node_id" if kind == "node" else "edge_id"
+            with writer._owned_transaction() as db:
                 if members:
                     db.executemany(
                         f"""INSERT INTO graph_segment_{kind}s
@@ -435,6 +468,7 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
                             VALUES (?,?,?,?)""",
                         members,
                     )
+                    statistics[kind + "_memberships_written"] += len(members)
                 db.execute(
                     """INSERT INTO graph_segment_chunks
                        (creator_account_id,segment_id,kind,record_count,
@@ -462,3 +496,4 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
             proof=graph.predecessor_proof,
         )
         writer.refresh()
+        return statistics

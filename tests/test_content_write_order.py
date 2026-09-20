@@ -126,11 +126,13 @@ def test_existing_empty_key_set_does_not_query():
 
 def test_real_writes_are_ordered_and_skip_existing_payloads(tmp_path, monkeypatch):
     import app.analytics.shared_graph as storage
+    import app.analytics.incremental_graph as incremental
     from app.analytics.sqlite_graph_store import SQLiteGraphGenerationWriter
     from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup, insert_message, advance, cold_equal
     fixture = make_fixture(tmp_path, conversations=3, messages=30)
     original_transaction = SQLiteGraphGenerationWriter._owned_transaction
     original_write = storage.write_shared_graph
+    original_incremental_write = incremental.write_incremental_graph
     captured = {'node': [], 'edge': []}
     statistics = []
     class RecordingConnection:
@@ -152,8 +154,13 @@ def test_real_writes_are_ordered_and_skip_existing_payloads(tmp_path, monkeypatc
         result = original_write(*args, **kwargs)
         statistics.append(result)
         return result
+    def incremental_write(*args, **kwargs):
+        result = original_incremental_write(*args, **kwargs)
+        statistics.append(result)
+        return result
     monkeypatch.setattr(SQLiteGraphGenerationWriter, '_owned_transaction', transaction)
     monkeypatch.setattr(storage, 'write_shared_graph', write)
+    monkeypatch.setattr(incremental, 'write_incremental_graph', incremental_write)
     try:
         first = fixture.pipeline.project_account(ACCOUNT).artifact
         assert captured['node'] == sorted(captured['node'])
