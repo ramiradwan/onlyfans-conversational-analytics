@@ -32,7 +32,7 @@ Rows are immutable after insertion. Retirement or generation deletion removes th
 
 Shared page content and references participate in the existing storage-change counter. Missing tracking or an unreviewed schema disables validation receipts. Full stored-graph verification, source-time expiry, and atomic publication remain required.
 
-An edit, late arrival, deletion, changed participant, model/configuration change, or expired source window prevents whole-conversation reuse. Analyzer records preserved in a successful page hit remain available to the separate message-level cache on later edits. Authorization and independent stored-content verification remain required.
+An edit, late arrival, deletion, changed participant, model/configuration change, or expired source window prevents whole-conversation reuse. A successful page hit may refill the separate message-level cache, within that cache's entry and byte limits. Authorization and independent stored-content verification remain required.
 
 ## Qualification
 

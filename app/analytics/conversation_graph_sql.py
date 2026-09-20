@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import hashlib
-import json
 
 from app.analytics.conversation_pages import PAGE_RECORDS
-from app.analytics.graph_row_encoding import EncodedGraphRecord, node_bytes, edge_bytes
+from app.analytics.graph_row_encoding import EncodedGraphRecord, node_record_bytes, edge_record_bytes
 
 
-def encoded_graph_records(connection, generation_id: str, account: str, kind: str,
-                          keys: list[str], check: Callable[[], None]) -> list[EncodedGraphRecord]:
+def _read_graph_records(connection, generation_id: str, account: str, kind: str,
+                        keys: list[str], check: Callable[[], None]) -> list[tuple[dict, bytes]]:
     """Check actual row bytes and selected membership, not stored digests alone."""
 
     check()
@@ -33,19 +32,16 @@ def encoded_graph_records(connection, generation_id: str, account: str, kind: st
           AND m.bucket=q.bucket AND r.{kind}_id=q.record_id''',
         (*parameters, generation_id, account, kind))
     result = {}
-    encode = node_bytes if kind == 'node' else edge_bytes
+    encode = node_record_bytes if kind == 'node' else edge_record_bytes
     try:
         for row in rows:
             check()
-            category, data = encode(row, account)
+            record, data = encode(row, account)
             key = row[kind + '_id']
             if key in result or hashlib.sha256(data).hexdigest() != row['content_id']:
                 raise ValueError('conversation_page_graph_content_invalid')
-            result[key] = EncodedGraphRecord(
-                account, kind, key, category, data.decode('utf-8'),
-                row['source_id'] if kind == 'edge' else None,
-                row['target_id'] if kind == 'edge' else None,
-                kind == 'edge' and json.loads(row['properties_json']).get('scope') == 'conversation')
+            # Reuse the record whose bytes were just checked; do not decode it again.
+            result[key] = (record, data)
     finally:
         rows.close()
     check()
@@ -56,7 +52,21 @@ def encoded_graph_records(connection, generation_id: str, account: str, kind: st
 
 def graph_records(connection, generation_id: str, account: str, kind: str,
                   keys: list[str], check: Callable[[], None]) -> list[dict]:
-    """Compatibility view for callers that need parsed record dictionaries."""
+    """Return the checked mappings without decoding their canonical bytes."""
 
-    return [json.loads(row.data) for row in encoded_graph_records(
+    return [record for record, _ in _read_graph_records(
         connection, generation_id, account, kind, keys, check)]
+
+
+def encoded_graph_records(connection, generation_id: str, account: str, kind: str,
+                          keys: list[str], check: Callable[[], None]) -> list[EncodedGraphRecord]:
+    """Retain canonical graph bytes, not the disposable validated mappings."""
+
+    result = []
+    for record, data in _read_graph_records(connection, generation_id, account, kind, keys, check):
+        check()
+        result.append(EncodedGraphRecord(
+            account, kind, record[kind + '_id'], record['kind' if kind == 'node' else 'relation'],
+            data.decode('utf-8'), record.get('source_id'), record.get('target_id'),
+            kind == 'edge' and record['properties'].get('scope') == 'conversation'))
+    return result

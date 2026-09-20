@@ -57,16 +57,16 @@ def _encode(record: dict[str, Any]) -> bytes:
                       separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
-def node_bytes(row: StoredRow, account: str) -> tuple[str, bytes]:
+def _node_record(row: StoredRow, account: str) -> dict[str, Any]:
     record = _base(row, account)
     kind = row["kind"]
     record["properties"] = validate_node_properties(kind, record["properties"])
     record["node_id"] = require_graph_id(row["node_id"], expected_kind=kind)
     record["kind"] = kind
-    return kind, _encode(record)
+    return record
 
 
-def edge_bytes(row: StoredRow, account: str) -> tuple[str, bytes]:
+def _edge_record(row: StoredRow, account: str) -> dict[str, Any]:
     record = _base(row, account)
     relation = row["relation"]
     record["properties"] = validate_edge_properties(relation, record["properties"])
@@ -77,4 +77,28 @@ def edge_bytes(row: StoredRow, account: str) -> tuple[str, bytes]:
     if sequence is not None and (type(sequence) is not int or sequence < 0):
         raise ValueError("graph_sequence_invalid")
     record["relation"], record["sequence"] = relation, sequence
-    return relation, _encode(record)
+    return record
+
+
+def node_bytes(row: StoredRow, account: str) -> tuple[str, bytes]:
+    record = _node_record(row, account)
+    return record["kind"], _encode(record)
+
+
+def edge_bytes(row: StoredRow, account: str) -> tuple[str, bytes]:
+    record = _edge_record(row, account)
+    return record["relation"], _encode(record)
+
+
+def node_record_bytes(row: StoredRow, account: str) -> tuple[dict[str, Any], bytes]:
+    """Return the checked record and the exact bytes used for its content hash."""
+
+    record = _node_record(row, account)
+    return record, _encode(record)
+
+
+def edge_record_bytes(row: StoredRow, account: str) -> tuple[dict[str, Any], bytes]:
+    """Return the checked record and the exact bytes used for its content hash."""
+
+    record = _edge_record(row, account)
+    return record, _encode(record)

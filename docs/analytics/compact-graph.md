@@ -14,7 +14,7 @@ Merging a checked conversation graph reuses its counts and encoded byte total. O
 
 The build computes its expected graph digest before staging. SQLite staging checks that identity and projection metadata, then inserts sorted records using the existing adaptive write batches and lease session. It does not recreate all graph models or retain a complete SQL-parameter array.
 
-Property triggers, endpoint foreign keys, source identity, durable commits, and cancellation remain required. Persisted rows are independently validated and hashed at staging and activation. Changing an encoded row between input validation and storage is rejected. The small generation-reference handoff remains unchanged.
+Property triggers, endpoint foreign keys, source identity, durable commits, and cancellation remain required. Staging independently validates and hashes stored rows. Activation reuses an exact-state validation receipt or validates them again. Changing an encoded row between input validation and storage is rejected. The small generation-reference handoff remains unchanged.
 
 Compact builds retain a new full conversation fragment only when it has at most 256 messages and its encoded graph fits half the existing per-fragment byte limit. Existing stored fragments still pass their declared limits and source checks. Larger conversations may use [bounded pages](conversation-pages.md) instead of another full model-based fragment.
 

@@ -13,7 +13,7 @@ from tests.continuous_analytics_fixture import ACCOUNT, cold_equal
 
 def observe_reads(fixture, monkeypatch, change=None):
     calls = Counter()
-    reading = conversation_graph_sql.encoded_graph_records
+    reading = conversation_graph_sql._read_graph_records
     stage = fixture.stores.projections.stage_built_artifact
     phase = ['build']
     def observed(*args):
@@ -27,7 +27,7 @@ def observe_reads(fixture, monkeypatch, change=None):
             return stage(artifact, **kwargs)
         finally:
             phase[0] = 'build'
-    monkeypatch.setattr(conversation_graph_sql, 'encoded_graph_records', observed)
+    monkeypatch.setattr(conversation_graph_sql, '_read_graph_records', observed)
     monkeypatch.setattr(fixture.stores.projections, 'stage_built_artifact', staged)
     return calls
 
@@ -86,7 +86,7 @@ def test_unusable_graph_receipt_rereads_actual_rows(fixture, monkeypatch, fault)
 
 def test_change_during_read_prevents_receipt(fixture, monkeypatch):
     fixture.pipeline.project_account(ACCOUNT)
-    reading = conversation_graph_sql.encoded_graph_records
+    reading = conversation_graph_sql._read_graph_records
     changed = []
     def interleaved(*args):
         result = reading(*args)
@@ -95,7 +95,7 @@ def test_change_during_read_prevents_receipt(fixture, monkeypatch):
             with fixture.stores.database.transaction() as db:
                 db.execute('UPDATE generation_content_epoch SET value=value+1')
         return result
-    monkeypatch.setattr(conversation_graph_sql, 'encoded_graph_records', interleaved)
+    monkeypatch.setattr(conversation_graph_sql, '_read_graph_records', interleaved)
     receipts = []
     def remember(kwargs):
         receipts.extend(item.graph_receipt for item in kwargs['conversation_pages'])
