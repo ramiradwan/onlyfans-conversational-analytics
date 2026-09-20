@@ -57,3 +57,46 @@ test('losing runtime access hides the old comparison and offers recovery', async
   await expect(page.locator('#pairing-code')).toBeHidden();
   await expect(page.locator('#retry-runtime')).toBeEnabled();
 });
+
+for (const surface of ['popup', 'options']) {
+  test(`${surface} uses pause and resume commands without changing the selected mode`, async ({ page }) => {
+    await renderSurfaceState(page, { ...SURFACE_STATES.preview, surface });
+    await page.locator('#pause').click();
+    await expect(page.locator('#mode-label')).toHaveText('Analytics paused');
+    await page.locator(surface === 'popup' ? '#journey-primary' : '#pause').click();
+    await expect(page.locator('#mode-label')).toHaveText('Preview on');
+    expect((await calls(page)).filter((call) => call.type === 'ofca.ui.transition').map((call) => call.mode))
+      .toEqual(['pause', 'resume']);
+  });
+}
+
+test('setup progress names the current navigation item through agreement and mode selection', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.software_activation);
+  const current = page.locator('#setup-progress [aria-current="step"]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAttribute('data-step', 'agree');
+  await page.locator('#terms-accepted').check();
+  await page.locator('#risk-acknowledged').check();
+  await page.locator('#activate-software').click();
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAttribute('data-step', 'mode');
+  await expect(page.locator('main')).not.toHaveAttribute('aria-current');
+  await page.locator('#step-agree').click();
+  await expect(current).toHaveAttribute('data-step', 'agree');
+});
+
+test('popup readiness follows connection loss without leaving a stale ready claim', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.full_ready);
+  await expect(page.locator('#ready-details')).toBeVisible();
+  await expect(page.locator('#desktop-status')).toHaveText('Running');
+  await expect(page.locator('#delivery-status')).toHaveText('Connected');
+  await expect(page.locator('#activation-status')).toHaveText('Active');
+  await expect(page.locator('#analysis-status')).toHaveText('Ready');
+  await page.evaluate(() => {
+    window.__surfaceFixture.change({ reachable: false });
+    window.dispatchEvent(new Event('focus'));
+  });
+  await expect(page.locator('#desktop-status')).toHaveText('Not running');
+  await expect(page.locator('#delivery-status')).toHaveText('Not connected');
+  await expect(page.locator('#analysis-status')).toHaveText('Not ready');
+});

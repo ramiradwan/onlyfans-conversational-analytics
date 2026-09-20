@@ -4,6 +4,7 @@ import {
   mergeChat,
   mergeMessage,
 } from './entity-merge.mjs';
+import { inventoryChatMaterial } from './inventory-chat-normalization.mjs';
 
 import { assertDeliveryFresh, DELIVERY_RECEIPT_SCHEMA, DELIVERY_RECEIPT_RETENTION_MS } from './delivery-acceptance-core.mjs';
 
@@ -649,7 +650,13 @@ export class DurableIngestOutbox {
           }
           const appended = [];
           for (const change of changes) {
-            const item = await appendChange(tx, meta, change, 'signer', this.idFactory());
+            const prepared = job.kind === 'inventory' && change.type === 'chat.upsert'
+              ? { ...change, chat: inventoryChatMaterial(
+                materialFromEnvelope(await tx.get(INGESTION_STORES.chats, change.chat.chat_id)),
+                change.chat,
+              ) }
+              : change;
+            const item = await appendChange(tx, meta, prepared, 'signer', this.idFactory());
             if (item !== null) appended.push(item);
           }
           for (const itemEvidence of evidence) {

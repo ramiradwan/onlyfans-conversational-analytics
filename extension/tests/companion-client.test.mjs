@@ -13,7 +13,7 @@ const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null } = {}) {
+function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait;
@@ -24,6 +24,7 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
     async cancel() { stats.cancel++; }, async forget() { paired = false; stats.forget++; }, close() { stats.closedStores++; },
   };
   const client = createCompanionClient({ chromeApi: chrome, allowsFull: () => enabled, detectedAccountId: async () => account,
+    now, random: () => 0.5,
     accountDatabaseName: async (id) => `encrypted-account-${id}`, storeFactory: async () => { stats.stores++; return pairingStore; },
     loadSnow: async () => { stats.snow++; return { SnowSession: class {}, generateStaticKeypair() { return new Uint8Array(64); } }; },
     loadTrust: async () => ({}),
@@ -85,7 +86,7 @@ test('current Agent proof, storage unseal, configuration and rotation use only t
   try {
     const binding = await h.client.adapter.loadBrainBinding();
     assert.equal(binding.creatorAccountId, ACCOUNT); assert.equal(binding.storageKey, STORAGE_KEY); assert.equal(h.stats.proofValid, true);
-    assert.deepEqual(Object.keys(h.chrome.storage.local.values), ['agent_installation_id']);
+    assert.deepEqual(Object.keys(h.chrome.storage.local.values), ['companion_recovery_v1', 'agent_installation_id']);
     assert.deepEqual(Object.keys(h.chrome.storage.session.values), ['active_account_partition_v5']);
     const id = await h.client.adapter.loadAgentInstallationId();
     const context = { authTicket: 'config-ticket', creatorAccountId: ACCOUNT, agentInstallationId: id, currentEtag: null, currentConfigRevision: null, supportedSchemaVersions: ['2'] };
@@ -99,17 +100,47 @@ test('current Agent proof, storage unseal, configuration and rotation use only t
 });
 
 test('each reconnect reconstructs authority with a new proof instead of durable credentials', async () => {
-  const h = harness();
+  let time = Date.now();
+  const h = harness({ now: () => time });
   try {
     const first = await h.client.adapter.loadBrainBinding();
     h.channels[0].close();
+    await assert.rejects(h.client.adapter.loadBrainBinding(), { code: 'companion_recovery_backoff' });
+    time += 1_000;
     const second = await h.client.adapter.loadBrainBinding();
     assert.notEqual(first.authTicket, second.authTicket); assert.equal(h.stats.networks, 2);
     assert.equal(h.channels[1].rpcCalls[0].method, 'agent.challenge');
-    const restarted = harness({ chromeApi: h.chrome });
+    time += 2_000;
+    const restarted = harness({ chromeApi: h.chrome, now: () => time });
     try { await restarted.client.adapter.loadBrainBinding(); assert.equal(restarted.stats.proofValid, true); }
     finally { restarted.client.invalidate(); }
   } finally { h.client.invalidate(); }
+});
+
+test('repeated protected connection loss backs off across UI polling and worker reconstruction', async () => {
+  let time = Date.now();
+  let h = harness({ now: () => time });
+  for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 300_000]) {
+    await h.client.adapter.loadBrainBinding();
+    h.channels[0].close();
+    for (let poll = 0; poll < 20; poll += 1) {
+      await assert.rejects(h.client.adapter.loadBrainBinding(), { code: 'companion_recovery_backoff' });
+    }
+    assert.equal(h.stats.networks, 1);
+    const restarted = harness({ chromeApi: h.chrome, now: () => time });
+    await assert.rejects(restarted.client.adapter.loadBrainBinding(), { code: 'companion_recovery_backoff' });
+    time += delay - 1;
+    await assert.rejects(restarted.client.adapter.loadBrainBinding(), { code: 'companion_recovery_backoff' });
+    time += 1;
+    h = restarted;
+  }
+  await h.client.adapter.loadBrainBinding();
+  time += 60_000;
+  await h.client.adapter.loadBrainBinding();
+  h.channels[0].close();
+  await h.client.adapter.loadBrainBinding();
+  assert.equal(h.stats.networks, 2, 'a stable minute restores the initial retry budget');
+  h.client.invalidate();
 });
 
 test('account mismatch and unexpected unseal fields never publish a Full binding', async () => {

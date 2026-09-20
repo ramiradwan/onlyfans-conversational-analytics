@@ -7,6 +7,7 @@ import vm from 'node:vm';
 import { build } from 'esbuild';
 
 import { parseIdentityResponse } from '../../app/provisioning/provisioning.js';
+import { createCompanionClient } from '../runtime/companion-client.mjs';
 import {
   PROVISIONING_IDENTITY_MESSAGE_TYPE,
   PROVISIONING_IDENTITY_STORAGE_KEY,
@@ -48,6 +49,8 @@ function bridgeHarness({ register = true, allowsExternalIdentity } = {}) {
   const local = {};
   const internalListeners = [];
   const externalListeners = [];
+  const tabUpdatedListeners = [];
+  const tabMessages = [];
   const chromeApi = {
     runtime: {
       id: CONTENT_SENDER.id,
@@ -70,10 +73,14 @@ function bridgeHarness({ register = true, allowsExternalIdentity } = {}) {
       local: storageArea(local),
       session: storageArea(session),
     },
+    tabs: {
+      onUpdated: { addListener(listener) { tabUpdatedListeners.push(listener); }, removeListener() {} },
+      async sendMessage(...args) { tabMessages.push(args); },
+    },
   };
   const bridge = createProvisioningIdentityBridge({ chromeApi, currentConsent: () => CONSENT, allowsExternalIdentity });
   if (register) bridge.register();
-  return { bridge, chromeApi, externalListeners, internalListeners, local, session };
+  return { bridge, chromeApi, externalListeners, internalListeners, local, session, tabUpdatedListeners, tabMessages };
 }
 
 function dispatch(listener, message, sender) {
@@ -103,6 +110,19 @@ function update(accountId, pageEpoch = PAGE_EPOCH_A) {
     authenticated_profile: accountId === null ? null : { creator_account_id: accountId },
   };
 }
+
+test('an unknown navigation observation clears current capture authority until fresh platform evidence', async () => {
+  const h = bridgeHarness();
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+  await dispatch(h.internalListeners[0], {
+    type: 'ofca.provisioning.identity.reset', version: 1, page_epoch: PAGE_EPOCH_B,
+  }, CONTENT_SENDER);
+  assert.equal(await h.bridge.currentAccountId(), null);
+  assert.equal((await h.bridge.contextFor(CONTENT_SENDER)).observed_platform_id, null);
+  await dispatch(h.internalListeners[0], update('creator-a', PAGE_EPOCH_C), CONTENT_SENDER);
+  assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+});
 
 test('hooked identity responses bind the observed account to the current document', async () => {
   const h = bridgeHarness();
@@ -353,4 +373,42 @@ test('active Full identity capture can continue while external bootstrap queries
   assert.equal(await h.bridge.currentAccountId(), 'creator-a');
   assert.equal(parseIdentityResponse(await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER)).accountId, null);
   assert.equal(await dispatch(h.externalListeners[0], QUERY, { url: 'https://bridge.localhost:17871/' }), undefined);
+});
+
+test('a completed loading cycle requests current-document identity without reviving the old context', async () => {
+  const h = bridgeHarness();
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  h.tabUpdatedListeners[0](CONTENT_SENDER.tab.id, { status: 'loading' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(await h.bridge.currentAccountId(), null);
+
+  h.tabUpdatedListeners[0](CONTENT_SENDER.tab.id, { status: 'complete' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(h.tabMessages, [[CONTENT_SENDER.tab.id, {
+    type: 'ofca.capture.control', version: 1, action: 'refresh_identity',
+  }, { frameId: 0 }]]);
+  assert.equal(await h.bridge.currentAccountId(), null);
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+});
+
+test('unpaired bootstrap admission completes without reentering the creator identity queue', { timeout: 1000 }, async () => {
+  let companion;
+  let paired = false;
+  const h = bridgeHarness({ allowsExternalIdentity: async () => !await companion.hasSavedPairing() });
+  companion = createCompanionClient({
+    chromeApi: h.chromeApi,
+    allowsFull: () => true,
+    detectedAccountId: () => h.bridge.currentAccountId(),
+    storeFactory: async () => ({ async status() { return { paired }; } }),
+  });
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  const identity = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
+  assert.equal(parseIdentityResponse(identity).accountId, 'creator-a');
+  assert.equal((await companion.status()).state, 'unpaired');
+
+  paired = true;
+  assert.equal(parseIdentityResponse(await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER)).accountId, null);
+  assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+  assert.equal((await companion.status()).state, 'paired');
 });

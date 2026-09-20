@@ -30,7 +30,14 @@ export function installSurfaceFixture(input) {
         else if (message.type === 'ofca.legal-activation.acknowledge-risk') state.risk = true;
         else if (message.type === 'ofca.legal-activation.activate-software') { state.agreement = false; state.choice = true; }
         else if (message.type === 'ofca.legal-activation.choose-mode') { state.mode = message.mode; state.choice = false; }
-        else if (message.type === 'ofca.ui.transition') { state.resume = state.mode; state.mode = message.mode === 'resume' ? input.mode : message.mode; }
+        else if (message.type === 'ofca.ui.transition') {
+          if (message.mode === 'pause' && ['preview', 'full'].includes(state.mode)) {
+            state.resume = state.mode; state.mode = 'paused';
+          } else if (message.mode === 'resume' && state.mode === 'paused' && state.resume) {
+            state.mode = state.resume; state.resume = null;
+          } else if (message.mode === 'revoked') { state.mode = 'revoked'; state.resume = null; }
+          else return { ok: false, code: 'transition_rejected' };
+        }
         else if (message.type === 'ofca.ui.reload-tabs') state.reload = false;
         return { ok: true, status: status() };
       },

@@ -100,22 +100,28 @@ test('capture sources contain observation channels but no platform mutation chan
   assert.match(contentBridge, /isPreviewEnvelope/);
 });
 
-test('standalone preview observations contain counts-only fields', () => {
+test('preview sends only minimal transient deduplication metadata and no content', () => {
   const message = previewMessageObservation({
     id: 'message-synthetic',
     text: 'Synthetic content that must not cross the preview boundary',
     fromUser: { id: 'fan-synthetic' },
     chatUserId: 'fan-synthetic',
-  }, '2030-01-08T12:00:00Z');
-  const chat = previewChatObservation('2030-01-08T12:00:00Z');
+    createdAt: '2030-01-07T12:00:00Z',
+  }, '2030-01-08T12:00:00Z', 'creator-synthetic', 'fan-synthetic');
+  const chat = previewChatObservation({ id: 'chat-synthetic', lastMessage: { createdAt: '2030-01-07T12:00:00Z' } },
+    '2030-01-08T12:00:00Z', 'creator-synthetic');
   assert.deepEqual(message, {
     kind: 'message',
     observed_at: '2030-01-08T12:00:00.000Z',
+    activity_at: '2030-01-07T12:00:00.000Z',
+    creator_id: 'creator-synthetic', record_id: 'message-synthetic', chat_id: 'fan-synthetic',
     direction: 'inbound',
   });
   assert.deepEqual(chat, {
     kind: 'chat',
     observed_at: '2030-01-08T12:00:00.000Z',
+    activity_at: '2030-01-07T12:00:00.000Z',
+    creator_id: 'creator-synthetic', record_id: 'chat-synthetic',
   });
   assert.equal(JSON.stringify({ message, chat }).includes('Synthetic content'), false);
 });

@@ -173,6 +173,7 @@ test('deletion drains a Preview storage write already in progress before clearin
   };
   const recording = h.consent.captureScope.run(({ assertCurrent }) => h.preview.record({
     kind: 'message', direction: 'inbound', observed_at: now().toISOString(),
+    activity_at: now().toISOString(), creator_id: 'creator-synthetic', record_id: 'message-synthetic', chat_id: 'chat-synthetic',
   }, { assertCurrent }));
   const rejected = assert.rejects(recording, { code: 'delete_requested' });
   await entered.promise;
@@ -313,6 +314,26 @@ test('idempotent Full mode retry retains its document epoch and explicit reload 
   assert.equal(h.consent.captureScope.isOpen, false);
 });
 
+test('a frozen tab cannot hold setup status or pause behind its pending reload acknowledgement', async (t) => {
+  const h = harness();
+  await h.activate('full');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  h.chromeApi.tabs.reload = () => { h.flags.reloads += 1; return new Promise(() => {}); };
+  const response = deferred();
+  const sender = { id: 'synthetic', url: 'chrome-extension://synthetic/setup.html' };
+  assert.equal(h.chromeApi.runtime.onMessage.listeners.some((listener) => listener(
+    { type: UI_RELOAD_TABS_MESSAGE_TYPE }, sender, response.resolve,
+  )), true);
+  while (h.flags.reloads === 0) await new Promise((resolve) => setImmediate(resolve));
+  t.mock.timers.tick(2_000);
+  assert.equal((await response.promise).status.reload_required, false);
+  assert.equal((await h.consent.status()).consent.mode, 'full');
+  await h.consent.setMode('pause');
+  t.mock.timers.tick(60_000);
+  assert.equal(h.flags.reloads, 1, 'a slow browser acknowledgement must never schedule another reload');
+  assert.equal((await h.consent.status()).consent.mode, 'paused');
+});
+
 test('permission recovery retains consent and replaces stale script definitions without automatic reload', { timeout: 2000 }, async () => {
   const h = harness(); const first = await h.activate('full');
   h.flags.permission = false;
@@ -346,4 +367,113 @@ test('historical records without authorization scope cannot become current autho
     requestedMode: 'preview', evidenceEventId: legacy.event_id }), false);
   assert.equal(await policy.authorizeResume({ resumeMode: 'preview',
     currentState: { mode: 'paused', authorization_event_id: legacy.event_id } }), false);
+});
+
+async function restartedFullHarness({ paired = true } = {}) {
+  const h = harness();
+  await h.activate('full');
+  const timers = new Map();
+  let nextTimer = 0;
+  const messages = [];
+  let bound = false;
+  h.chromeApi.tabs.sendMessage = async (tabId, message, options) => {
+    messages.push({ tabId, message, options });
+  };
+  const restarted = new ConsentController({
+    chromeApi: h.chromeApi, runtime: h.runtime, previewMetrics: h.preview,
+    activeModeAuthorization: h.authorization, activationEvidenceStore: h.evidenceStore,
+    provisioningIdentityBridge: { register() {}, unregister() {}, async clearContexts() {} },
+    adapter: {
+      async loadBrainBinding() { if (!bound) throw new Error('companion_session_refused'); return {}; },
+      async clearBrainBinding() {},
+    },
+    hasSavedPairing: async () => paired,
+    clearLocalData: async () => {}, now,
+    scheduler: {
+      setTimeout(callback, delay) { const id = ++nextTimer; timers.set(id, { callback, delay }); return id; },
+      clearTimeout(id) { timers.delete(id); },
+    },
+  });
+  await restarted.initialize();
+  const retry = async () => {
+    const [id, timer] = timers.entries().next().value;
+    timers.delete(id);
+    await timer.callback();
+    return timer.delay;
+  };
+  return { ...h, restarted, timers, messages, retry, bind: () => { bound = true; } };
+}
+
+test('cold Full worker preserves the live bridge and recovers via a bounded identity probe without reload', async () => {
+  const h = await restartedFullHarness();
+  assert.equal(h.restarted.phase, 'identity');
+  assert.equal(h.restarted.captureScope.isOpen, false);
+  assert.deepEqual(h.scripts.map((script) => script.id), ['ofca-full-main', 'ofca-full-isolated']);
+  assert.deepEqual(h.messages, [], 'a transient refusal must not stop the document bridge');
+  h.chromeApi.tabs.sendMessage = async (tabId, message, options) => {
+    assert.equal(tabId, 1);
+    assert.equal(message.action, 'refresh_identity');
+    assert.equal(message.version, 1);
+    assert.deepEqual(options, { frameId: 0 });
+    h.bind();
+  };
+  assert.equal(await h.retry(), 500);
+  assert.equal(h.restarted.phase, 'full');
+  assert.equal(h.restarted.captureScope.isOpen, true);
+  assert.equal(h.flags.reloads, 0);
+  assert.equal(h.timers.size, 0);
+});
+
+test('identity recovery remains closed without an authenticated binding and preserves retry backoff', async () => {
+  const h = await restartedFullHarness();
+  assert.equal(await h.retry(), 500);
+  assert.equal(await h.retry(), 1000);
+  assert.equal(h.restarted.phase, 'identity');
+  assert.equal(h.restarted.captureScope.isOpen, false);
+  assert.equal(h.messages.length, 2);
+  assert.equal(h.flags.reloads, 0);
+  await h.restarted.setMode('pause');
+  assert.equal(h.restarted.phase, 'paused');
+  assert.equal(h.timers.size, 0);
+  assert.equal(h.scripts.length, 0);
+});
+
+test('recovery skips frozen and discarded documents without bypassing their lifecycle', async () => {
+  const h = await restartedFullHarness();
+  h.chromeApi.tabs.query = async () => [{ id: 1, frozen: true }, { id: 2, discarded: true }];
+  await h.retry();
+  assert.deepEqual(h.messages, []);
+  assert.equal(h.restarted.phase, 'identity');
+  assert.equal(h.flags.reloads, 0);
+  await h.restarted.setMode('pause');
+});
+
+test('unpaired Full consent still stops old Full scripts and requires explicit reload', async () => {
+  const h = await restartedFullHarness({ paired: false });
+  assert.equal(h.messages[0].message.action, 'stop');
+  assert.deepEqual(h.scripts.map((script) => script.id), ['ofca-identity-main', 'ofca-identity-isolated']);
+  assert.equal(h.restarted.reloadRequired, true);
+  assert.equal(h.timers.size, 0);
+  assert.equal(h.flags.reloads, 0);
+});
+
+test('a stalled identity reply is bounded and cannot revive Full after Pause', async () => {
+  const h = await restartedFullHarness();
+  h.chromeApi.tabs.sendMessage = async (_tabId, message) => {
+    if (message.action === 'refresh_identity') return new Promise(() => {});
+  };
+  const retrying = h.retry();
+  while (![...h.timers.values()].some((timer) => timer.delay === 2_000)) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const pausing = h.restarted.setMode('pause');
+  h.bind();
+  const timeout = [...h.timers.values()].find((timer) => timer.delay === 2_000);
+  timeout.callback();
+  await retrying;
+  await pausing;
+  assert.equal(h.restarted.phase, 'paused');
+  assert.equal(h.restarted.captureScope.isOpen, false);
+  assert.equal(h.timers.size, 0);
+  assert.equal(h.flags.reloads, 0);
 });

@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { HistorySettings } from '../src/protocol';
@@ -32,6 +32,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   useUserStore.getState().actions.setUserRole(null);
   bridgeTransportStore.reset();
 });
@@ -53,6 +54,64 @@ function connectExtension() {
 }
 
 describe('SettingsView history consent', () => {
+  it('clears the pending change once the extension applies it and stops refreshing', async () => {
+    const running: HistorySettings = {
+      ...initial, settings_revision: 2, consent_revision: 'consent-1',
+      desired_state: 'running', effective_state: 'running',
+    };
+    const pending: HistorySettings = {
+      ...running, settings_revision: 3, desired_state: 'paused',
+    };
+    const applied: HistorySettings = { ...pending, effective_state: 'paused' };
+    const api: HistorySettingsApi = {
+      get: vi.fn().mockResolvedValueOnce(running).mockResolvedValue(applied),
+      update: vi.fn().mockResolvedValue(pending),
+      revoke: vi.fn(),
+    };
+    connectExtension();
+    render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
+    await screen.findByRole('button', { name: 'Pause' });
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Pause' })); });
+    expect(screen.getByText('Pausing when the browser extension next connects.')).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(screen.queryByText('Pausing when the browser extension next connects.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
+    expect(api.get).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(api.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an earlier acknowledgement read overwrite a newer user change', async () => {
+    const running: HistorySettings = {
+      ...initial, settings_revision: 2, consent_revision: 'consent-1',
+      desired_state: 'running', effective_state: 'running',
+    };
+    const pending: HistorySettings = {
+      ...running, settings_revision: 3, desired_state: 'paused',
+    };
+    let resolveOldRead!: (value: HistorySettings) => void;
+    const oldRead = new Promise<HistorySettings>((resolve) => { resolveOldRead = resolve; });
+    const api: HistorySettingsApi = {
+      get: vi.fn().mockResolvedValueOnce(running).mockReturnValueOnce(oldRead),
+      update: vi.fn().mockResolvedValueOnce(pending)
+        .mockResolvedValueOnce({ ...running, settings_revision: 4 }),
+      revoke: vi.fn(),
+    };
+    connectExtension();
+    render(<ThemeProvider theme={theme}><SettingsView api={api} /></ThemeProvider>);
+    await screen.findByRole('button', { name: 'Pause' });
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Pause' })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(api.get).toHaveBeenCalledTimes(2);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resume' })); });
+    await act(async () => { resolveOldRead({ ...pending, effective_state: 'paused' }); });
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
+    expect(api.update).toHaveBeenLastCalledWith(3, expect.objectContaining({ desired_state: 'running' }));
+  });
+
   it('asks for consent only once the browser extension is connected', async () => {
     const api: HistorySettingsApi = {
       get: vi.fn(async () => initial),

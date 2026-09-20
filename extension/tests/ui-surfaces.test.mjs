@@ -24,7 +24,8 @@ test('page command ownership leaves legal review in setup and data management in
     assert.equal(permitted(page, 'ofca.ui.transition', 'revoked'), page === 'options');
   }
   assert.equal(permitted('popup', 'ofca.ui.transition', 'full'), false);
-  assert.equal(permitted('popup', 'ofca.ui.transition', 'paused'), true);
+  assert.equal(permitted('popup', 'ofca.ui.transition', 'pause'), true);
+  assert.equal(permitted('popup', 'ofca.ui.transition', 'paused'), false);
   assert.equal(permitted('popup', 'ofca.ui.transition', 'resume'), true);
   assert.doesNotThrow(() => permitted('setup', {}));
 });

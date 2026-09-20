@@ -205,6 +205,7 @@ const workerSource = (port) => `
     set(values) { Object.assign(state, values); },
     async openToolbarPopup() {
       const [normal] = await chrome.windows.getAll({ windowTypes: ['normal'] });
+      await chrome.windows.update(normal.id, { focused: true });
       await chrome.action.openPopup({ windowId: normal.id });
     },
   };
@@ -336,7 +337,18 @@ async function launchBrowser() {
     state: () => worker.evaluate(() => globalThis.popupLifecycle.state()),
     // The toolbar popup has no Playwright page, so it is driven over its own DevTools target.
     async openToolbarPopup() {
-      await worker.evaluate(() => globalThis.popupLifecycle.openToolbarPopup());
+      await context.pages().at(-1)?.bringToFront();
+      // Chrome can still be activating the window after a tab handoff. Retry
+      // only its transient open failure, keeping all other evaluation errors.
+      await expect.poll(async () => {
+        try {
+          await worker.evaluate(() => globalThis.popupLifecycle.openToolbarPopup());
+          return true;
+        } catch (error) {
+          if (!error.message.includes('Failed to open popup')) throw error;
+          return false;
+        }
+      }, { message: 'Chrome did not open the toolbar popup after window activation.' }).toBe(true);
       const url = `chrome-extension://${extensionId}/popup.html`;
       let target = null;
       await expect.poll(async () => {

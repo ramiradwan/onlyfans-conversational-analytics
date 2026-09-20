@@ -5,6 +5,14 @@
 
 Session amendment: [ADR 0024](0024-authenticated-companion-sessions.md) requires fresh authenticated Noise admission and identity proof before each worker unlock. Agent retains bootstrap envelopes and tickets only in memory; reconstruction uses the persisted pin and derives the same account storage key through a new encrypted session. HTTP bootstrap and key-release references below are superseded by the [session transport contract](../companion-session-transport.md).
 
+Recovery amendment (2026-09-19): installation-global `companion_recovery_v1`
+contains only the reconnect attempt count, next-attempt timestamp and schema.
+It is stored before a handshake so worker reconstruction cannot bypass backoff;
+it contains no account identity, key, ticket or signing material. Automatic
+platform-refresh reservations remain inside the encrypted account partition's
+credentials store and survive session loss and worker/browser restart. Existing
+local-data deletion clears both records.
+
 ## Decision
 
 Encrypt every account-scoped IndexedDB value written by Full mode with
@@ -40,9 +48,10 @@ complete. The pre-release plaintext database prefix is deleted only after a
 new sealed binding is verified; the Agent then obtains a clean encrypted
 snapshot. There is no plaintext fallback or in-place plaintext importer.
 
-Preview mode remains outside this boundary. Its seven-day counts-only aggregate
-and consent state continue to use `chrome.storage.local` and contain no message
-content or account authentication material.
+Preview mode remains outside this boundary. Its seven-day metrics and consent
+state use `chrome.storage.local` and contain no message content or account
+authentication material. [ADR 0026](0026-preview-keyed-deduplication.md) replaces
+the additive counts-only aggregate with a bounded local keyed deduplication index.
 
 ## Why
 

@@ -30,7 +30,7 @@ function renderProgress(model, view, journey) {
   const index = view === 'agree' ? 0 : ['mode', 'access'].includes(view) ? 1 : connected ? 3 : 2;
   show('setup-progress', ['agree', 'mode', 'access'].includes(view) || ['preview', 'full'].includes(model.status.consent.mode));
   steps.forEach((step, position) => {
-    const item = document.querySelector(`[data-step="${step}"]`);
+    const item = document.querySelector(`#setup-progress [data-step="${step}"]`);
     item.classList.toggle('hidden', position >= count);
     item.dataset.complete = String(complete || position < index);
     if (!complete && position === index) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');

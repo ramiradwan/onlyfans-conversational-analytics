@@ -38,6 +38,8 @@ comparison code, and confirmation remains in Bridge.
 A connected desktop does not imply active commercial authority or admitted analysis.
 Readiness is requested separately through the existing authenticated companion path.
 A stale, malformed, or unavailable response cannot produce a ready state.
+The paired Full popup shows desktop availability, secure connection, Full activation,
+and analysis readiness separately; connection loss clears its ready indication.
 
 ## Design details
 
@@ -49,6 +51,7 @@ which checkboxes are checked. Required disclosure text and instrument links rema
 The popup's Clear link opens the data section in Options. Connection details also
 open Options, not a popup subview. Disconnect, revocation, and deletion require a scoped confirmation.
 Desktop-stored messages are never deleted by the extension's data action.
+During comparison, opening the desktop app is the primary action and Cancel remains secondary.
 
 Loading keeps the heading and a status message visible. Lower-page navigation appears
 only once its position is known. Settings rows without an available action are hidden.
@@ -85,12 +88,65 @@ then captures actual extension, provisioning, and Bridge pages. The existing Win
 E2E suite keeps its consent, native permission, capture, and desktop-pairing checks;
 its helpers now follow setup/Options handoffs instead of retired popup controls.
 
+For a live Full-mode source test, build with both `--legal-release-bindings=<path>`
+and `--packaged-signing-rule=<reviewed-rule.json>`. A plain development build omits
+the reviewed rule and deliberately refuses history acquisition. The pinned rule
+and its verification coordinates are in `extension/qualification/signer-0.2.0.md`.
+Customer entry links also require the release-owned `app/core/customer-release.json`
+configuration; the source template has empty hosted URLs.
+
+When attaching Playwright to the dedicated debug profile, use
+`chromium.connectOverCDP('http://127.0.0.1:9222', { noDefaults: true })`.
+Default focus emulation makes background pages report themselves as visible and
+correctly trips the signer's safe-refresh refusal. Keep the real creator tab
+inactive and draft-free while verifying the permitted cold-bootstrap refresh;
+do not override the page's visibility or bypass the safeguard.
+
+### Automatic recovery limits
+
+Navigation and transient failures of a platform identity read clear capture
+authority for that document; they do not assert sign-out or tear down the
+authenticated companion. Explicit authentication refusal and a confirmed creator
+switch still invalidate the companion. New capture waits for fresh identity.
+
+Connection recovery uses exponential delays with jitter. Six unsuccessful or
+short-lived attempts trigger a five-minute cooldown. UI polling, alarms and worker
+reconstruction cannot skip that cooldown: the extension reserves each protected
+handshake in `chrome.storage.local` before networking. That record contains only a
+schema version, attempt count and next-attempt time. A connection must remain
+usable for one minute before resetting the retry budget.
+
+History cancellation on session loss also backs off (3 seconds, doubling to a
+60-second cap). A disabled wake cannot erase the failure streak. Independently,
+the signer may automatically refresh a platform tab at most once per 15 minutes
+and three times per rolling hour. The encrypted account partition records the
+reservation before calling the browser, so an interrupted wake or worker/browser
+restart cannot refund a possible refresh. Storage failure refuses the refresh.
+These limits supplement the signer's existing inactive, unfrozen, draft-free
+checks. Passive capture and previously saved data do not depend on a refresh.
+
+The explicit setup reload also waits at most two seconds for the browser's
+acknowledgement. A frozen background document cannot hold the shared setup/status
+queue indefinitely, and a late acknowledgement never schedules a second reload.
+
+Recovery regression coverage includes wake storms, short sessions, cancelled
+bootstrap, creator changes, delayed capture fencing, real encrypted IndexedDB
+worker termination, and SPA navigation through the built MV3 extension.
+
 ## Architecture impact
 
 Architecture rationale:
 Move multi-step work into extension-owned tabs. Keep capture, legal, pairing, and commercial authority in their existing controllers. Keep Bridge separate.
 
 Potentially affected invariant dispositions:
+
+capture-control-separation:
+not affected
+rationale: Preview emits only passive read metadata and has no platform mutation channel. All capture controls stay in the consent controller.
+
+consent-authorization:
+not affected
+rationale: The same trusted-sender, active-mode authorization and generation-checked capture scope admit Preview updates. Deletion still drains admitted writes before clearing local state. Legal disclosure text is unchanged.
 
 checkpoint-monotonicity:
 not affected
@@ -116,3 +172,20 @@ release-integrity: extension packaging includes the new documents and bundles. T
 
 Safety evidence:
 Extension unit tests cover sender restrictions, pairing ownership, consent, legal evidence, permissions, and recovery. Browser tests exercise the real popup, persistent setup, comparison, confirmation, deletion, and reacceptance. Deterministic artifact audits, dependency boundaries, journey validation, accessible state captures, and frontend tests cover the pages. Native Windows and release-matrix checks remain CI obligations.
+
+## Preview count correction
+
+Preview now counts unique observed activity in today and the preceding six UTC
+calendar days. Source message dates and last-message dates determine inclusion;
+loading older data does not make it recent. The popup says Active chats and explains
+that unopened history may be missing. Repeated reads, reloads and worker/browser
+restarts do not add duplicate activity. Raw IDs are used transiently to derive local
+HMAC tokens, and never retained in the Preview index. The bounded token index and
+its key are cleared by the existing data controls. See ADR 0026 for retention,
+capacity, account isolation and the amended Preview persistence boundary.
+
+Approved legal disclosure copy is unchanged for review by the legal specialists.
+For source qualification only, set `LOCAL_CUSTOMER_RELEASE_CONFIG` to an absolute
+path containing a complete validated customer-release JSON document. Both the
+secure setup link and hosted API origin come from that same document. Frozen
+customer packages ignore this source override and use their bundled configuration.

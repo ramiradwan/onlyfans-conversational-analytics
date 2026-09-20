@@ -168,7 +168,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
   try {
     context = await launchExtensionBrowser(browserProfile);
     localServiceTraffic = observeLocalServiceRequests(context);
-    const platform = new SyntheticPlatform();
+    const platform = new SyntheticPlatform({ activityDay: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10) });
     await platform.install(context);
     await blockLocalService(context);
 
@@ -178,7 +178,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
     await allowExtensionResources(context, targetExtensionId);
 
     let popup = await openPopup(context, targetExtensionId, pageErrors);
-    const platformPage = await context.newPage();
+    let platformPage = await context.newPage();
     platformPage.on('pageerror', (error) => pageErrors.push(error.message));
     await platformPage.goto('https://onlyfans.com/', { waitUntil: 'domcontentloaded' });
     expect(await context.cookies('https://onlyfans.com/')).toEqual([]);
@@ -222,7 +222,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       )).toBe('preview');
     });
 
-    await test.step('synthetic read responses produce useful rolling seven-day metrics', async () => {
+    await test.step('read responses count unique activity by its source date', async () => {
       await platformPage.evaluate(async (paths) => {
         for (const pathValue of paths) await globalThis.fixtureRead(pathValue);
       }, [IDENTITY_PATH, CHATS_PATH, MESSAGES_PATH]);
@@ -250,6 +250,39 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(snapshot.state.runtimeReady).toBe(false);
     });
 
+    await test.step('rereading and reloading existing activity does not inflate Preview', async () => {
+      const before = (await extensionState(worker)).preview;
+      for (let iteration = 0; iteration < 2; iteration += 1) {
+        await platformPage.reload();
+        await platformPage.evaluate(async (paths) => {
+          for (const pathValue of paths) await globalThis.fixtureRead(pathValue);
+        }, [IDENTITY_PATH, CHATS_PATH, MESSAGES_PATH, CHATS_PATH, MESSAGES_PATH]);
+        await expect.poll(async () => (await extensionState(worker)).preview).toEqual(before);
+      }
+    });
+
+    await test.step('a browser restart preserves tokens and does not recount the same source activity', async () => {
+      const before = (await extensionState(worker)).preview;
+      localServiceTraffic.stop();
+      expect(localServiceTraffic.requests).toEqual([]);
+      await context.close();
+      context = await launchExtensionBrowser(browserProfile);
+      localServiceTraffic = observeLocalServiceRequests(context);
+      await platform.install(context);
+      await blockLocalService(context);
+      worker = await extensionWorker(context);
+      await allowExtensionResources(context, targetExtensionId);
+      popup = await openPopup(context, targetExtensionId, pageErrors);
+      await expect(popup.locator('#mode-label')).toHaveText('Preview on');
+      expect((await extensionState(worker)).preview).toEqual(before);
+      platformPage = await context.newPage();
+      await platformPage.goto('https://onlyfans.com/');
+      await platformPage.evaluate(async (paths) => {
+        for (const pathValue of paths) await globalThis.fixtureRead(pathValue);
+      }, [IDENTITY_PATH, CHATS_PATH, MESSAGES_PATH]);
+      await expect.poll(async () => (await extensionState(worker)).preview).toEqual(before);
+    });
+
     let pausedMetrics = null;
     await test.step('pause unregisters capture and subsequent reads do not increase metrics', async () => {
       await popup.getByRole('button', { name: 'Pause analytics' }).click();
@@ -267,6 +300,22 @@ test('standalone preview survives pause, deletion, and restart without a local s
       }, [CHATS_PATH, MESSAGES_PATH]);
       await new Promise((resolve) => setTimeout(resolve, 500));
       expect((await extensionSnapshot(worker)).state.preview).toEqual(pausedMetrics);
+    });
+
+    await test.step('Popup and Options resume and pause through the real consent controller', async () => {
+      await popup.getByRole('button', { name: 'Resume analytics', exact: true }).click();
+      await expect.poll(async () => (await extensionState(worker)).capturePhase).toBe('preview');
+      const options = await openManageExtension(popup);
+      await options.locator('#pause').click();
+      await expect(options.locator('#mode-label')).toHaveText('Analytics paused');
+      expect((await extensionSnapshot(worker)).scriptIds).toEqual([]);
+      await options.locator('#pause').click();
+      await expect(options.locator('#mode-label')).toHaveText('Preview on');
+      expect((await extensionSnapshot(worker)).scriptIds).toEqual(['ofca-preview-isolated', 'ofca-preview-main']);
+      await options.locator('#pause').click();
+      await expect(options.locator('#mode-label')).toHaveText('Analytics paused');
+      await options.close();
+      await popup.bringToFront();
     });
 
     await test.step('delete all clears storage, every IndexedDB database, and optional access', async () => {

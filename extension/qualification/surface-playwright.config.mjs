@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
-  testMatch: ['customer-journey-visual.spec.mjs', 'surface-interactions.spec.mjs'],
+  testMatch: ['customer-journey-visual.spec.mjs', 'surface-interactions.spec.mjs', 'page-hook-continuity.spec.mjs'],
   workers: 2,
   retries: 0,
   timeout: 20000,

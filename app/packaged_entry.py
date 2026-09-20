@@ -9,6 +9,7 @@ from typing import Callable, Sequence
 
 from app.core.customer_release import load_customer_release_config
 from app.core.runtime_paths import runtime_configuration_file
+from app.core.runtime_paths import runtime_data_directory
 
 
 PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HANDOFF_TOKEN"
@@ -71,6 +72,11 @@ def select_brain_application(
 
     open_store = durable_authentication_store(data_directory)
     customer_release = load_customer_release_config()
+    handoff_token = os.environ.get(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE)
+    if handoff_token is not None:
+        from app.provisioning.launcher_handoff import save_launcher_handoff
+
+        save_launcher_handoff(runtime_data_directory(data_directory), token=handoff_token, pid=os.getpid())
     hosted_origin = customer_release.hosted_api_origin or os.environ.get(
         PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""
     )
@@ -103,7 +109,7 @@ def select_brain_application(
         ),
         extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""),
         hosted_onboarding_url=customer_release.hosted_onboarding_url,
-        launcher_handoff_token=os.environ.get(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE),
+        launcher_handoff_token=handoff_token,
         completion_exit=provisioning_completion_exit,
         shutdown_action=grant_refresh.stop,
     )
@@ -133,7 +139,12 @@ def run_brain() -> int:
         ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
     )
     server = uvicorn.Server(configuration)
-    server.run()
+    try:
+        server.run()
+    finally:
+        from app.provisioning.launcher_handoff import remove_launcher_handoff
+
+        remove_launcher_handoff(runtime_data_directory(), pid=os.getpid())
     return 75 if application.state.completion_requested else 0
 
 

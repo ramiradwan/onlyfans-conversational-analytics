@@ -1,3 +1,4 @@
+import { expect } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 

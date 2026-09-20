@@ -49,6 +49,27 @@ export function messageDirection(record, senderId) {
   return senderId === counterpartyId ? 'inbound' : 'outbound';
 }
 
+/**
+ * Display-name aliases in the precedence the authenticated read connector
+ * applies to full upstream conversation objects. Passive capture and signer
+ * history read the same conversations, so a different precedence here resolves
+ * a different display_name for one chat and the account merge rejects the
+ * second observation as material_conflict.
+ */
+export const CHAT_DISPLAY_NAME_ALIASES = Object.freeze([
+  ['display_name'],
+  ['displayName'],
+  ['withUser', 'displayName'],
+  ['withUser', 'name'],
+  ['withUser', 'username'],
+  ['with_user', 'displayName'],
+  ['with_user', 'name'],
+  ['with_user', 'username'],
+  ['user', 'displayName'],
+  ['user', 'name'],
+  ['user', 'username'],
+]);
+
 /** Reduce a platform chat record to the only fields allowed across the page boundary. */
 export function normalizeChatRecord(record, observedAt) {
   if (!isRecord(record)) return null;
@@ -66,17 +87,7 @@ export function normalizeChatRecord(record, observedAt) {
     ['with_user', 'id'],
     ['user', 'id'],
   ]));
-  const rawDisplayName = firstDefined(record, [
-    ['display_name'],
-    ['displayName'],
-    ['withUser', 'name'],
-    ['withUser', 'displayName'],
-    ['withUser', 'username'],
-    ['with_user', 'name'],
-    ['with_user', 'username'],
-    ['user', 'name'],
-    ['user', 'username'],
-  ]);
+  const rawDisplayName = firstDefined(record, CHAT_DISPLAY_NAME_ALIASES);
   const displayName = typeof rawDisplayName === 'string' && rawDisplayName.length > 0
     ? rawDisplayName
     : null;
@@ -148,9 +159,16 @@ export function normalizeMessageRecord(
   };
 }
 
-/** Preview observations intentionally contain no identifiers or communication text. */
-export function previewMessageObservation(record, observedAt) {
+/** Transient IDs are used only to derive local deduplication tokens; no text is emitted. */
+export function previewMessageObservation(record, observedAt, creatorId, contextChatId) {
   if (!isRecord(record) || normalizedTimestamp(observedAt) === null) return null;
+  const recordId = identifier(firstDefined(record, [['message_id'], ['messageId'], ['id']]));
+  const chatId = identifier(firstDefined(record, [['chat_id'], ['chatId'], ['chat', 'id'], ['chatUserId']]))
+    ?? identifier(contextChatId);
+  const activityAt = normalizedTimestamp(firstDefined(record, [
+    ['sent_at'], ['sentAt'], ['created_at'], ['createdAt'], ['postedAt'],
+  ]));
+  if (recordId === null || chatId === null || identifier(creatorId) === null || activityAt === null) return null;
   const senderId = identifier(firstDefined(record, [
     ['sender_platform_user_id'],
     ['senderPlatformUserId'],
@@ -163,14 +181,26 @@ export function previewMessageObservation(record, observedAt) {
   return {
     kind: 'message',
     observed_at: normalizedTimestamp(observedAt),
+    activity_at: activityAt,
+    creator_id: identifier(creatorId),
+    record_id: recordId,
+    chat_id: chatId,
     direction: messageDirection(record, senderId) ?? 'unknown',
   };
 }
 
-export function previewChatObservation(observedAt) {
+export function previewChatObservation(record, observedAt, creatorId) {
+  if (!isRecord(record)) return null;
   const normalized = normalizedTimestamp(observedAt);
-  return normalized === null ? null : {
+  const recordId = identifier(firstDefined(record, [['chat_id'], ['chatId'], ['id'], ['withUser', 'id'], ['with_user', 'id']]));
+  const activityAt = normalizedTimestamp(firstDefined(record, [
+    ['lastMessage', 'createdAt'], ['last_message', 'created_at'], ['updated_at'], ['updatedAt'], ['changedAt'],
+  ]));
+  return normalized === null || recordId === null || identifier(creatorId) === null || activityAt === null ? null : {
     kind: 'chat',
     observed_at: normalized,
+    activity_at: activityAt,
+    creator_id: identifier(creatorId),
+    record_id: recordId,
   };
 }

@@ -122,10 +122,10 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.DESKTOP_APP_NEEDED,
       tone: 'warning',
-      title: 'Desktop app needed for Full analytics',
+      title: 'Set up the desktop app for Full analytics',
       body: desktopDownloadAvailable
-        ? 'Full analytics runs in the desktop app on this computer. Install or start it, then check again.'
-        : 'Full analytics runs in the desktop app on this computer. Start it, then check again.',
+        ? 'Full analytics runs in the desktop app on this computer. Install or open it and finish its setup, then check again.'
+        : 'Full analytics runs in the desktop app on this computer. Open it and finish its setup, then check again.',
       primaryAction: desktopDownloadAvailable ? 'install_desktop' : 'retry_full',
       primaryLabel: desktopDownloadAvailable ? 'Install desktop app' : 'Check again',
       secondaryAction: desktopDownloadAvailable ? 'retry_full' : null,

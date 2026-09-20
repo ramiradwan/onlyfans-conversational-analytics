@@ -6,6 +6,7 @@ import { openCompanionChannel, openLoopbackSocket, CompanionChannelError } from 
 import { parseMessage } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { LOCAL_SERVICE_WS, LOCAL_PAIRING_WS } from '../transport/local-service-endpoints.mjs';
+import { createConnectionRecovery, CONNECTION_STABLE_MS } from './recovery-backoff.mjs';
 
 export const PAIRING_PORT_NAME = 'ofca.companion.pairing';
 const INSTALLATION_KEY = 'agent_installation_id';
@@ -42,10 +43,12 @@ export function createCompanionClient({
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
+  now = Date.now, random = Math.random,
   loadTrust = async () => loadGrantTrustSet(await (await fetch(chromeApi.runtime.getURL('companion-grant-trust.json'))).json()),
 } = {}) {
   let storePromise, trustPromise, installationPromise, connecting = null, connectingAccount = null, connectionAbort = null, active = null;
   let generation = 0, pairingAbort = null, state = { state: 'unpaired', comparison_code: null };
+  const recovery = createConnectionRecovery({ storage: chromeApi.storage.local, now, random });
   const subscribers = new Set();
   let pairingOwner = null;
   const store = () => {
@@ -90,7 +93,14 @@ export function createCompanionClient({
     const accountId = await permitted();
     controls.signal.throwIfAborted(); controls.assertCurrent?.();
     if (active && active.accountId !== accountId) invalidate();
-    if (active && !active.channel.closed && active.accountId === accountId) return active;
+    if (active && !active.channel.closed && active.accountId === accountId) {
+      if (!active.stable && now() - active.openedAt >= CONNECTION_STABLE_MS) {
+        await recovery.stable();
+        if (!active || active.channel.closed) throw failure();
+        active.stable = true;
+      }
+      return active;
+    }
     if (connecting) {
       if (connectingAccount !== accountId) { invalidate(); throw failure(); }
       const connected = await connecting;
@@ -106,6 +116,8 @@ export function createCompanionClient({
       if (generation !== version || !allowsFull?.()) throw failure();
     };
     const operation = (async () => {
+      await recovery.reserve();
+      current();
       const pairingStore = await store();
       const snow = await loadSnow();
       current(); await permitted(accountId);
@@ -137,9 +149,17 @@ export function createCompanionClient({
           || atob(unlocked.storage_key_base64).length !== 32
           || btoa(atob(unlocked.storage_key_base64)) !== unlocked.storage_key_base64) throw failure();
         current(); await permitted(accountId);
-        active = { channel, accountId, authTicket: authorized.auth_ticket, storageKey: unlocked.storage_key_base64,
+        active = { channel, accountId, openedAt: now(), stable: false,
+          authTicket: authorized.auth_ticket, storageKey: unlocked.storage_key_base64,
           storageBootstrap: authorized.storage_bootstrap, agentInstallationId };
-        channel.onClose(() => { if (active?.channel === channel) active = null; });
+        channel.onClose(() => {
+          if (active?.channel !== channel) return;
+          const wasStable = now() - active.openedAt >= CONNECTION_STABLE_MS;
+          active = null;
+          // Queue the reset before any subsequent reserve; a quiet healthy
+          // connection need not have been polled by an extension UI.
+          if (wasStable) void recovery.stable().catch(() => undefined);
+        });
         return active;
       } catch { channel.close(); throw failure(); }
     })();
@@ -148,10 +168,13 @@ export function createCompanionClient({
       if (connecting === operation) { connecting = null; connectingAccount = null; connectionAbort = null; }
     }
   }
+  async function hasSavedPairing() {
+    if (!allowsFull?.()) return false;
+    return (await (await store()).status()).paired === true;
+  }
   async function status() {
     if (!allowsFull?.()) return { state: 'unavailable', comparison_code: null };
-    const saved = await (await store()).status();
-    if (saved.paired) return { state: 'paired', comparison_code: null };
+    if (await hasSavedPairing()) return { state: 'paired', comparison_code: null };
     if (['pairing', 'compare', 'pairing_failed', 'desktop_not_ready'].includes(state.state)) return { ...state };
     let account = null;
     try { account = await detectedAccountId(); } catch {}
@@ -362,6 +385,6 @@ export function createCompanionClient({
       void status().then(notify).catch(() => notify({ state: 'unavailable', comparison_code: null }));
     });
   }
-  return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, status, analysisReadiness, registerPopup,
+  return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, hasSavedPairing, status, analysisReadiness, registerPopup,
     get connected() { return active !== null && !active.channel.closed; } });
 }

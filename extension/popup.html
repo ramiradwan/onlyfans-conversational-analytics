@@ -38,16 +38,18 @@
         <div class="section-heading">
           <div>
             <h2 id="preview-title">Observed in this browser</h2>
-            <p>Last seven days</p>
+            <p>Last seven days (UTC)</p>
           </div>
           <button id="clear-preview" class="text-button" type="button">Clear</button>
         </div>
         <div class="metrics" aria-live="polite">
           <div><strong id="messages-count">0</strong><span>Messages</span></div>
-          <div><strong id="chats-count">0</strong><span>Chats</span></div>
+          <div><strong id="chats-count">0</strong><span>Active chats</span></div>
           <div><strong id="inbound-count">0</strong><span>Received</span></div>
           <div><strong id="outbound-count">0</strong><span>Sent</span></div>
         </div>
+        <p id="preview-coverage" class="fine-print">Counts cover loaded activity for the most recently observed account. Unopened history may be missing.</p>
+        <p id="preview-limit" class="fine-print hidden" role="status">Preview has reached its counting limit. These counts are incomplete.</p>
       </section>
     <section id="journey-card" class="journey-card hidden" aria-labelledby="journey-title">
       <p id="journey-badge" class="state-badge"></p>
@@ -56,6 +58,12 @@
       <button id="journey-primary" class="primary hidden"></button>
     </section>
     <button id="pause" class="secondary hidden">Pause analytics</button>
+    <dl id="ready-details" class="connection-grid hidden" aria-label="Desktop readiness">
+      <div><dt>Desktop app</dt><dd id="desktop-status"></dd></div>
+      <div><dt>Secure connection</dt><dd id="delivery-status"></dd></div>
+      <div><dt>Full activation</dt><dd id="activation-status"></dd></div>
+      <div><dt>Analysis</dt><dd id="analysis-status"></dd></div>
+    </dl>
     <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
     <nav class="menu" aria-label="Extension">
       <button id="open-connection" class="menu-row hidden">Connection details</button>

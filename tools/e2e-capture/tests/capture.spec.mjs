@@ -116,6 +116,9 @@ async function waitForBrain(context, predicate, message, { timeoutMs = 25_000 } 
 }
 
 async function waitForSafeAlarmWindow(worker) {
+  // The independently scheduled retention alarm also legitimately wakes MV3.
+  // Isolate the reconciliation alarm for this specific recovery proof.
+  await worker.evaluate(() => chrome.alarms.clear('ofca-preview-retention'));
   let latest = null;
   await expect.poll(async () => {
     latest = await extensionState(worker);
@@ -192,6 +195,9 @@ function expectStablePersistenceProof(after, before) {
 }
 
 test('real MV3 capture proves exact ordering, durable replay, and alarm recovery', async () => {
+  // Repeated intentional worker termination can now open the real five-minute
+  // recovery circuit. Observe its expiry instead of bypassing persisted state.
+  test.setTimeout(600_000);
   test.slow();
   assertBuiltSpa();
   assertBuiltExtension();
@@ -227,6 +233,22 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
 
       const bindingPage = context.pages()[0] ?? await context.newPage();
       await establishBrowserWebAuthnSession(bindingPage, authDatabasePath);
+      const provisioningIdentity = await bindingPage.evaluate(async (targetExtensionId) => (
+        Promise.race([
+          chrome.runtime.sendMessage(targetExtensionId, {
+            type: 'provisioning.identity.query', version: 1,
+          }),
+          new Promise((_, reject) => setTimeout(
+            () => reject(new Error('The unpaired worker blocked the desktop identity query.')),
+            3_000,
+          )),
+        ])
+      ), actualExtensionId);
+      expect(provisioningIdentity).toEqual({
+        type: 'provisioning.identity.result',
+        version: 1,
+        authenticated_profile: null,
+      });
       const pairing = await requestAgentPairingTicket(context);
       expect(pairing.creatorAccountId).toBe('dev-creator-account');
       expect(pairing.extensionId).toBe(actualExtensionId);
@@ -259,6 +281,8 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         { message: 'The MAIN-world page hook did not install in full capture mode.' },
       ).toBe('full');
       await expect.poll(() => contentBridgeIsActive(worker)).toBe(true);
+      await readPlatform(platformPage, IDENTITY_PATH);
+      await waitForObservedCreatorIdentity(worker, platformDocumentToken, SYNTHETIC.creatorId);
       const state = await waitForExtensionState(
         worker,
         (candidate) => (
@@ -280,9 +304,32 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(state.outbox.pendingEntries).toBe(0);
     });
 
+    await test.step('SPA navigation fences identity without interrupting the authenticated connection', async () => {
+      const before = await readBrainSummary(context);
+      await platformPage.evaluate(() => {
+        globalThis.fixtureIdentityResets = 0;
+        window.addEventListener('message', (event) => {
+          if (event.data?.type === 'ofca.provisioning.identity.reset') globalThis.fixtureIdentityResets += 1;
+        });
+      });
+      for (let navigation = 0; navigation < 5; navigation += 1) {
+        await platformPage.evaluate((index) => history.pushState(null, '', `/my/chats?recovery=${index}`), navigation);
+        await expect.poll(async () => ({
+          resets: await platformPage.evaluate(() => globalThis.fixtureIdentityResets),
+          unknown: await worker.evaluate(async (key) => {
+          const saved = await chrome.storage.session.get([key]);
+          const tab = (await chrome.tabs.query({ url: ['https://onlyfans.com/my/chats?recovery=*'] }))[0];
+          return saved[key]?.contexts?.filter((entry) => entry.tab_id === tab?.id)
+            .every((entry) => entry.observed_platform_id === null);
+          }, PROVISIONING_IDENTITY_STORAGE_KEY),
+        })).toEqual({ resets: navigation + 1, unknown: true });
+        await readPlatform(platformPage, IDENTITY_PATH);
+        await waitForObservedCreatorIdentity(worker, platformDocumentToken, SYNTHETIC.creatorId);
+        expect((await readBrainSummary(context)).connectionToken).toBe(before.connectionToken);
+      }
+    });
+
     await test.step('produce exactly one chat and four message observations as sequence 1-6', async () => {
-      await readPlatform(platformPage, IDENTITY_PATH);
-      await waitForObservedCreatorIdentity(worker, platformDocumentToken, SYNTHETIC.creatorId);
       await readPlatform(platformPage, CHATS_PATH);
       await readPlatform(platformPage, MESSAGES_PATH);
 
@@ -495,6 +542,18 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       return page;
     });
 
+    await test.step('a stable connection resets persisted recovery history through normal UI polling', async () => {
+      const recoveryPopup = await openPopup(context, extensionId(worker), pageErrors);
+      try {
+        await expect.poll(async () => {
+          await recoveryPopup.evaluate(() => chrome.runtime.sendMessage({ type: 'ofca.ui.status' }));
+          return worker.evaluate(async () => (await chrome.storage.local.get(['companion_recovery_v1']))
+            .companion_recovery_v1?.attempts);
+        }, { timeout: 75_000, intervals: [1_000] }).toBe(0);
+      } finally { await recoveryPopup.close(); }
+      expect((await readBrainSummary(context)).connectionToken).toBe(initialConnection);
+    });
+
     let pendingEncryptedOutbox;
     await test.step('persist exact encrypted pending sequences 7-8 while Brain is unavailable', async () => {
       await brain.stop();
@@ -678,6 +737,11 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     });
 
     await test.step('hard-expire a third worker and recover only from the production alarm', async () => {
+      // Persistent setup/settings pages poll the worker. Close UI observers so
+      // this step measures only the production alarm's ability to wake it.
+      for (const page of context.pages()) {
+        if (page.url().startsWith('chrome-extension://')) await page.close();
+      }
       const before = await readBrainSummary(context);
       const oldWorker = worker;
       const alarm = await waitForSafeAlarmWindow(oldWorker);
@@ -712,6 +776,12 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         watcher.stop();
       }
 
+      const recovery = await worker.evaluate(async () => {
+        const saved = await chrome.storage.local.get(['companion_recovery_v1']);
+        return saved.companion_recovery_v1 ?? null;
+      });
+      const cooldownRemaining = Math.max(0, (recovery?.next_attempt_at ?? 0) - Date.now());
+      expect(cooldownRemaining).toBeLessThanOrEqual(300_000);
       const alarmReplacement = await waitForExtensionState(
         worker,
         (candidate) => (
@@ -723,6 +793,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
           && candidate.outbox?.pendingEntries === 0
         ),
         'The production alarm did not restore a bound, fully acknowledged Agent.',
+        { timeoutMs: Math.max(20_000, cooldownRemaining + 60_000) },
       );
       expect(alarmReplacement.workerInstanceId).not.toBe(oldWorkerInstanceId);
       const recovered = await waitForBrain(
@@ -760,7 +831,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
 
     await test.step('enforce the synthetic safety and no-reload boundary', async () => {
       expect(platform.httpReads.filter((pathValue) => pathValue === '/')).toHaveLength(1);
-      expect(platform.httpReads.filter((pathValue) => pathValue === IDENTITY_PATH)).toHaveLength(1);
+      expect(platform.httpReads.filter((pathValue) => pathValue === IDENTITY_PATH)).toHaveLength(6);
       expect(platform.httpReads.filter((pathValue) => pathValue === CHATS_PATH)).toHaveLength(1);
       expect(platform.httpReads.filter((pathValue) => pathValue === MESSAGES_PATH)).toHaveLength(1);
       expect(pageErrors).toEqual([]);
@@ -768,6 +839,45 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expectNoDrops(finalState);
       expect(finalState.outbox.lastSourceSeq).toBe(8);
       expect(finalState.outbox.acknowledgedSourceSeq).toBe(8);
+      expect(finalState.outbox.pendingEntries).toBe(0);
+      platform.assertFailClosed();
+    });
+
+    await test.step('replay a fresh page backlog larger than the protected channel queue', async () => {
+      await platformPage.reload({ waitUntil: 'domcontentloaded' });
+      await expect.poll(() => platformPage.evaluate(
+        () => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode,
+      )).toBe('full');
+      await readPlatform(platformPage, IDENTITY_PATH);
+      await waitForObservedCreatorIdentity(
+        worker, await platformPage.evaluate(() => globalThis.fixtureDocumentToken), SYNTHETIC.creatorId,
+      );
+      await platformPage.evaluate(() => globalThis.fixtureOpenSocket());
+      await brain.stop();
+      await waitForExtensionState(worker, (state) => !state.socketOpen && !state.sessionBound,
+        'Agent did not observe the desktop stopping before the burst.');
+      platform.sendReplayBurst();
+      await waitForExtensionState(worker, (state) => state.outbox?.pendingEntries === 20
+        && state.outbox?.lastSourceSeq === 28 && state.outbox?.acknowledgedSourceSeq === 8,
+      'The twenty-record backlog was not retained while the desktop was offline.');
+      await brain.start();
+      await waitForExtensionState(worker, (state) => state.socketOpen && state.sessionBound
+        && state.outbox?.pendingEntries === 0 && state.outbox?.acknowledgedSourceSeq === 28,
+      'The protected connection did not drain the backlog.', { timeoutMs: 60_000 });
+      const proof = await readSqliteProof(databasePaths);
+      expect(proof.eventSequences).toEqual(Array.from({ length: 28 }, (_, index) => index + 1));
+      expect(new Set(proof.eventIds).size).toBe(28);
+      expect(proof.canonicalMessageCount).toBe(25);
+      expect(platform.httpReads.filter((pathValue) => pathValue === '/')).toHaveLength(1);
+      expect(platform.httpReads.filter((pathValue) => pathValue === '/my/chats')).toHaveLength(1);
+      expect(platform.httpReads.filter((pathValue) => pathValue === IDENTITY_PATH)).toHaveLength(7);
+      expect(platform.httpReads.filter((pathValue) => pathValue === CHATS_PATH)).toHaveLength(1);
+      expect(platform.httpReads.filter((pathValue) => pathValue === MESSAGES_PATH)).toHaveLength(1);
+      expect(pageErrors).toEqual([]);
+      const finalState = await extensionState(worker);
+      expectNoDrops(finalState);
+      expect(finalState.outbox.lastSourceSeq).toBe(28);
+      expect(finalState.outbox.acknowledgedSourceSeq).toBe(28);
       expect(finalState.outbox.pendingEntries).toBe(0);
       platform.assertFailClosed();
     });

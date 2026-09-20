@@ -20,7 +20,7 @@ export function allowsUiMessage(sender, message, chromeApi) {
   if (typeof message?.type === 'string' && message.type.startsWith('ofca.legal-activation.')
     && message.type !== 'ofca.legal-activation.status') return surface === 'setup';
   if (message?.type === 'ofca.ui.transition') {
-    if (surface === 'popup') return ['paused', 'resume'].includes(message.mode);
+    if (surface === 'popup') return ['pause', 'resume'].includes(message.mode);
     if (message.mode === 'revoked') return surface === 'options';
   }
   return true;

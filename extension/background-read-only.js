@@ -52,7 +52,9 @@ export const provisioningIdentityBridge = createProvisioningIdentityBridge({
     && ['identity', 'full'].includes(consentController.phase),
   allowsExternalIdentity: async () => {
     if (consentController?.state.mode !== 'full' || consentController.phase !== 'identity') return false;
-    const paired = (await companionClient.status()).state === 'paired';
+    // External queries already hold the identity queue. Full UI status also
+    // reads that queue, so admission must inspect only the persisted pairing.
+    const paired = await companionClient.hasSavedPairing();
     return !paired && consentController.state.mode === 'full' && consentController.phase === 'identity';
   },
 });
@@ -103,7 +105,7 @@ function runtimeSummary() {
     captured_chats: durableMeta?.entity_counts?.chats ?? 0,
     captured_messages: durableMeta?.entity_counts?.messages ?? 0,
     startup_error_code: lastStartupErrorCode,
-    history_error_code: null,
+    history_error_code: agentRuntime.history?.historyErrorCode?.() ?? null,
     capture_drop_counts: captureDiagnostics.snapshot(),
     transport_state: transport?.session
       ? 'authenticated'
@@ -125,7 +127,7 @@ consentController = new PartitionAwareConsentController({
   controlQueue,
   activationEvidenceStore,
   runtimeSummary,
-  hasSavedPairing: async () => (await companionClient.status()).state === 'paired',
+  hasSavedPairing: () => companionClient.hasSavedPairing(),
   fetchImpl: async () => ({ ok: companionClient.connected }),
 });
 export { consentController };

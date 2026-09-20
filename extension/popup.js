@@ -1,7 +1,7 @@
 import { UI_RELOAD_TABS_MESSAGE_TYPE } from './runtime/consent-controller.mjs';
 import { createSurfaceClient, openSurface, send } from './ui/surface-client.mjs';
 import { customerJourney, isPreview, phaseLabel } from './ui/presentation.mjs';
-import { element, show, text, renderLoading, renderJourney, renderLegalLinks, createPageActions } from './ui/dom.mjs';
+import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { transition } from './ui/actions.mjs';
 
 let failed = false;
@@ -15,9 +15,14 @@ function render(model) {
   renderLoading(status, failed);
   show('journey-card', status !== null);
   show('preview-metrics', isPreview(status));
+  show('preview-limit', isPreview(status) && status?.preview?.limited === true);
   show('pause', ['preview', 'full'].includes(status?.consent.mode));
   show('open-connection', status?.consent.mode === 'full' || status?.consent.resume_mode === 'full');
   renderLegalLinks(legal);
+  const showReadiness = status?.consent.mode === 'full' && model.pairing.state === 'paired';
+  show('ready-details', showReadiness);
+  renderReadiness(model);
+  text('desktop-status', model.desktopRuntimeReachable ? 'Running' : 'Not running');
   if (!status) { text('mode-label', 'Checking status…'); return; }
   document.querySelector('main').dataset.ready = 'true';
   text('mode-label', phaseLabel(status));
@@ -43,6 +48,7 @@ function render(model) {
     label = 'Review Full analytics'; setupSection = 'full';
   } else if (journey.id === 'full_ready') {
     primaryAction = 'dashboard'; label = 'Open analysis';
+    text('journey-body', 'Insights and stored messages are in the desktop app.');
   } else if (journey.id === 'pairing_in_progress') {
     text('journey-title', 'Connection in progress');
     text('journey-body', 'Continue in the setup tab. You can close this popup.');
@@ -57,7 +63,7 @@ page.bind('journey-primary', () => {
   if (primaryAction === 'dashboard') return chrome.tabs.create({ url: client.model.config.dashboard_url });
   return openSurface('setup', setupSection);
 });
-page.bind('pause', () => transition('paused', client.model));
+page.bind('pause', () => transition('pause', client.model));
 page.bind('open-manage', () => openSurface('options'));
 page.bind('open-connection', () => openSurface('options', 'connection'));
 page.bind('clear-preview', () => openSurface('options', 'data'));

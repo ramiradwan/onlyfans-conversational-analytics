@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Annotated, Any
 from uuid import uuid4
 
@@ -17,6 +18,7 @@ from app.api.security import (
     verify_csrf_token,
 )
 from app.security.runtime_policy import RuntimePolicy
+from app.security.account_bindings import AccountResolutionRefused, eligible_account_for_policy
 from app.core.config import settings
 from app.models.history import (
     HistorySettingsResponse,
@@ -24,6 +26,7 @@ from app.models.history import (
     UpdateHistorySettingsRequest,
 )
 from app.persistence.history import ProjectionCursorStale
+from app.persistence.auth import SQLiteAuthenticationStore
 from app.services.paging_cursor import (
     InvalidMessageCursor,
     MessageCursor,
@@ -180,12 +183,22 @@ async def update_history_settings(
         if settings_request.consent_policy_version != current["consent_policy_version"]:
             raise HTTPException(status_code=422, detail="Current consent policy must be accepted")
         consent_revision = f"consent-{uuid4()}"
-        if policy.identity.platform_creator_id is None:
-            raise HTTPException(
-                status_code=403,
-                detail="A verified platform creator binding is required",
-            )
         authorized_platform_creator_id = policy.identity.platform_creator_id
+        if authorized_platform_creator_id is None:
+            # Passkeys authenticate the local session. Resolve its platform
+            # authority from the current approved account binding separately.
+            try:
+                account = eligible_account_for_policy(
+                    SQLiteAuthenticationStore(settings.auth_database_path),
+                    policy,
+                    now=datetime.now(timezone.utc),
+                )
+            except AccountResolutionRefused as error:
+                raise HTTPException(
+                    status_code=403,
+                    detail="A verified platform creator binding is required",
+                ) from error
+            authorized_platform_creator_id = account.platform_creator_id
     elif settings_request.consent_policy_version not in {None, current["consent_policy_version"]}:
         raise HTTPException(status_code=422, detail="Consent policy version is invalid")
     if settings_request.desired_state == "running" and (

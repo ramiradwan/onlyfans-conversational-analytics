@@ -88,3 +88,17 @@ def test_pyinstaller_binds_and_requires_customer_routing_for_release_artifacts()
     assert '_agent_metadata.get("signing_rule") is not None' in source
     assert '_agent_metadata.get("legal_bindings") is not None' in source
     assert '_agent_metadata.get("privacy_policy_configured") is True' in source
+
+
+def test_source_release_override_is_complete_and_ignored_by_frozen_packages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.core.customer_release as release
+
+    path = tmp_path / "customer-release.json"
+    path.write_text(json.dumps(document("https://setup.example.com/start", "https://api.example.com")), encoding="utf-8")
+    monkeypatch.setenv(release.DEVELOPMENT_CUSTOMER_RELEASE_ENV, str(path))
+    monkeypatch.setattr(release.sys, "frozen", False, raising=False)
+    assert release.load_customer_release_config().hosted_onboarding_url == "https://setup.example.com/start"
+    monkeypatch.setattr(release.sys, "frozen", True)
+    assert release.load_customer_release_config().hosted_configured is False

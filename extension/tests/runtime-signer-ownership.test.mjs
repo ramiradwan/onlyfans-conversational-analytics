@@ -18,7 +18,7 @@ const outcome = (promise) => promise.then((value) => ({ value }), (error) => ({ 
 function harness({ factory, storage = new InMemoryIngestionStorage(), expectedIdentity = () => '42' } = {}) {
   const lifetime = new AbortController();
   const chromeApi = {
-    tabs: { async query() { return [{ id: 7, active: true }]; }, async get() { return { id: 7, frozen: false }; } },
+    tabs: { async query() { return [{ id: 7, active: true, frozen: false }]; }, async get() { return { id: 7, frozen: false }; } },
     scripting: { async executeScript() { return []; } },
   };
   return {
@@ -108,6 +108,30 @@ test('installed cached provider survives cancellation of its completed initializ
   assert.equal(constructions, 1);
   assert.equal(fixture.calls.reloads, 1);
   assert.equal(fixture.calls.reads.length, 4);
+});
+
+test('installed signer cannot repeat a cold-bootstrap reload after session cancellation and reconstruction', async () => {
+  const fixture = createSignerReleaseFixture();
+  const storage = new InMemoryIngestionStorage();
+  const lifetime = new AbortController();
+  const cancelled = new AbortController();
+  const originalReload = fixture.chromeApi.tabs.reload;
+  fixture.chromeApi.tabs.reload = async function (...args) {
+    await originalReload.apply(this, args);
+    cancelled.abort('Agent session ended during reload');
+  };
+  const restart = () => createLazyAccountSigner({
+    creatorAccountId: 'application-account', storage, chromeApi: fixture.chromeApi,
+    expectedIdentity: () => EXPECTED_ID, signal: lifetime.signal,
+    factory: (options) => fixture.createProvider(options),
+  });
+  await assert.rejects(restart().read(request(cancelled.signal)));
+  assert.equal(fixture.calls.reloads, 1);
+  for (let wake = 0; wake < 10; wake += 1) {
+    const result = await outcome(restart().read(request()));
+    assert.notEqual(result.value?.success, true);
+    assert.equal(fixture.calls.reloads, 1);
+  }
 });
 
 test('a deadline during construction cannot cache a late provider or start a competing constructor', async () => {

@@ -68,7 +68,7 @@ destructive('delete-local-data', 'Delete extension data?',
 page.bind('clear-preview', () => send({ type: UI_CLEAR_PREVIEW_MESSAGE_TYPE }), 'Preview counts cleared.');
 page.bind('pause', () => {
   if (client.model.status.consent.mode === 'paused' && client.model.legal?.requires_reauthorization) return openSurface('setup');
-  return transition(client.model.status.consent.mode === 'paused' ? 'resume' : 'paused', client.model);
+  return transition(client.model.status.consent.mode === 'paused' ? 'resume' : 'pause', client.model);
 });
 page.bind('restore-access', () => restoreAccess(client.model));
 page.bind('reload-tabs', () => send({ type: UI_RELOAD_TABS_MESSAGE_TYPE }));

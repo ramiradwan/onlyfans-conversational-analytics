@@ -4,6 +4,7 @@ import { DELETE_INTENT_KEY, deletionIntent } from './deletion-state.mjs';
 import { LOCAL_SERVICE_PATTERN, LOCAL_SERVICE_HEALTH } from '../transport/local-service-endpoints.mjs';
 import {
   PAGE_CONTROL_MESSAGE_TYPE,
+  PAGE_CONTROL_VERSION,
   PREVIEW_MESSAGE_TYPE,
   isPreviewEnvelope,
 } from '../capture/envelopes.mjs';
@@ -351,10 +352,19 @@ export class ConsentController {
   async #reloadTabs(tabs) {
     await Promise.all(tabs.map(async (tab) => {
       if (!Number.isInteger(tab.id)) return;
+      let timer;
       try {
-        await this.chromeApi.tabs.reload(tab.id);
+        // Edge may freeze a background document before acknowledging reload.
+        // The user requested it once; never retry it or hold the shared setup
+        // queue until that tab is brought to the foreground.
+        await Promise.race([
+          this.chromeApi.tabs.reload(tab.id),
+          new Promise((resolve) => { timer = this.scheduler.setTimeout(resolve, 2_000); }),
+        ]);
       } catch (_error) {
         // A tab closed during the transition needs no further action.
+      } finally {
+        if (timer !== undefined) this.scheduler.clearTimeout(timer);
       }
     }));
   }
@@ -363,6 +373,15 @@ export class ConsentController {
     const desired = contentScriptsFor(mode);
     const allRegistered = await this.chromeApi.scripting.getRegisteredContentScripts();
     const owned = allRegistered.filter((entry) => entry.id.startsWith('ofca-'));
+    // A transient companion refusal must not stop the live document bridge:
+    // that bridge is how a restarted worker can re-observe account identity.
+    // Capture admission stays closed until authenticated Full startup succeeds.
+    if (mode === 'identity' && this.state.mode === 'full' && !this.documentReset
+      && sameScripts(owned, contentScriptsFor('full'))) {
+      let paired = false;
+      try { paired = await this.hasSavedPairing(); } catch { /* No confirmed pairing. */ }
+      if (paired) return;
+    }
     const definitionsChanged = !sameScripts(owned, desired);
     if (!definitionsChanged && !this.documentReset) return;
 
@@ -460,6 +479,8 @@ export class ConsentController {
       this.bindingRetryTimer = null;
       return this.controlQueue.run(async () => {
         if (generation !== this.controlGeneration) return;
+        await this.#refreshTabIdentity(generation);
+        if (generation !== this.controlGeneration) return;
         // Keep identity capture available while Brain is offline. Do not invalidate
         // the companion connection that this probe is trying to establish.
         const bound = await this.#hasBrainBinding();
@@ -468,6 +489,32 @@ export class ConsentController {
         else await this.#scheduleBindingRetry(generation);
       }).catch(() => undefined);
     }, delay);
+  }
+
+  async #refreshTabIdentity(generation) {
+    if (!await this.#hasOnlyFansPermission()) return;
+    const tabs = await this.#onlyFansTabs();
+    if (generation !== this.controlGeneration || this.state.mode !== 'full') return;
+    await Promise.all(tabs.map(async (tab) => {
+      if (!Number.isInteger(tab.id) || tab.frozen || tab.discarded) return;
+      let timer;
+      try {
+        // Request the live page's observation, never restore a cached account.
+        // An unresponsive document cannot block Pause or the next bounded retry.
+        await Promise.race([
+          this.chromeApi.tabs.sendMessage(tab.id, {
+            type: PAGE_CONTROL_MESSAGE_TYPE,
+            version: PAGE_CONTROL_VERSION,
+            action: 'refresh_identity',
+          }, { frameId: 0 }),
+          new Promise((resolve) => { timer = this.scheduler.setTimeout(resolve, 2_000); }),
+        ]);
+      } catch (_error) {
+        // A missing bridge requires the existing explicit reload action.
+      } finally {
+        if (timer !== undefined) this.scheduler.clearTimeout(timer);
+      }
+    }));
   }
 
   reconcile() {
