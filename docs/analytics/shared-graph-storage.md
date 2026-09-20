@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check shared_graph.py, database.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, and test_shared_graph.py before changing storage or limit claims. -->
+<!-- CODE-VERIFY: Check shared_graph.py, graph_verification.py, validation_receipt.py, database.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, sql/0012_generation_content_epoch.sql, sql/0015_shared_graph_delete_guards.sql, and test_shared_graph.py before changing storage, verification or limit claims. -->
 
 # Reuse stored graph content
 
@@ -12,15 +12,15 @@ Each node or edge belongs to one of 256 identity-prefix buckets. A segment conta
 
 A covering index lets insert guards locate open segments by account, record kind, bucket, and build state. The guards remain enabled.
 
-Membership rows select the exact records in a segment. SQL prevents mutation of sealed membership and content. It also prevents mixing generation-owned rows with shared segments in one generation. Schema version 10 exposes both storage layouts through the `graph_nodes` and `graph_edges` views.
+Membership rows select the exact records in a segment. SQL prevents mutation of sealed membership and content. It also prevents mixing generation-owned rows with shared segments in one generation. Schema version 10 exposes both storage layouts through the `graph_nodes` and `graph_edges` views. Schema version 15 also blocks deletion of referenced graph content and segments when foreign-key enforcement is disabled.
 
-The candidate still undergoes independent stored-content verification before validation and final activation. A supplied segment name or digest is not trusted as proof of its contents. Verification checks the actual selected graph, account scope, endpoint closure, counts and unchanged public digest format.
+The candidate still undergoes persisted-content verification before validation and final activation. Cold builds and missing proofs read and validate every selected graph row. [ADR 0038](../adr/0038-verified-graph-segment-reuse.md) permits a same-process incremental build to reuse a proof for unchanged immutable segments from the exact active predecessor. New or changed segments are validated from their actual stored rows. A supplied segment name, digest or caller-provided proof is never sufficient.
 
 ## Scoped verification reads
 
 Ordered reads start from the selected generation's manifest, then resolve its segment membership and content. They use bucket and record order directly instead of sorting a scan of every segment retained for the account.
 
-Endpoint verification compares the selected edges' endpoint identities with the selected nodes' actual stored identities. It does not accept an endpoint merely because another generation retains it. SQLite keeps a temporary set of identities for this comparison; graph properties remain streamed and independently validated.
+Endpoint verification compares the selected edges' endpoint identities with the selected nodes' actual stored identities. It does not accept an endpoint merely because another generation retains it. SQLite keeps a temporary set of identities for this comparison. Full verification streams graph properties and captures a bounded process-local segment proof in the same scan. A valid ADR 0038 proof can reuse only unchanged segment results; complete endpoint closure still runs for the selected generation.
 
 ## Physical write order
 
@@ -32,7 +32,7 @@ The content writer temporarily requests a page-cache target of 512 bytes per log
 
 ## Cleanup and recovery
 
-Deleting a retired generation removes its segment references. Segments still referenced by another generation remain. Removing the final reference reclaims the segment and content that no remaining segment or edge needs. Foreign keys preserve endpoint ordering, and an interrupted transaction rolls back cleanup.
+Deleting a retired generation removes its segment references. Segments still referenced by another generation remain. Removing the final reference reclaims the segment and content that no remaining segment or edge needs. Referenced content and segments cannot be deleted directly, even with foreign-key enforcement disabled. Foreign keys preserve endpoint ordering, and an interrupted transaction rolls back cleanup.
 
 Existing source-time expiry and deletion behavior continue to govern generation visibility and reclamation. Partial builds cannot become readable. Restart requires the same completed canonical witness and verifies stored content through the logical views.
 

@@ -6,9 +6,10 @@ import json
 import secrets
 from app.persistence import sqlite_api as sqlite3
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import RLock
 from typing import Callable
 from uuid import uuid4
 
@@ -109,6 +110,8 @@ class SQLiteAnalyticsProjectionStore:
         self.gc_batch_size = gc_batch_size
         from app.analytics.validation_receipt import ValidationReceipts
         self._validation_receipts = ValidationReceipts()
+        self._graph_segment_proofs = OrderedDict()
+        self._graph_segment_proof_lock = RLock()
         self.reuse_validation_receipts = True
         from app.analytics.currentness import GenerationCurrentness
         self._currentness = GenerationCurrentness()
@@ -118,6 +121,38 @@ class SQLiteAnalyticsProjectionStore:
         )
         if reconcile:
             self.reconcile_startup()
+
+    def _remember_graph_segment_proof(self, receipt, segments) -> None:
+        if receipt is None or not segments:
+            return
+        from app.analytics.shared_graph import GraphSegmentProof
+        from app.analytics.validation_receipt import MAX_RECEIPTS
+
+        proof = GraphSegmentProof(
+            receipt.generation_id, receipt.binding, tuple(receipt.stamp[:3]),
+            tuple(segments),
+        )
+        with self._graph_segment_proof_lock:
+            self._graph_segment_proofs[receipt.generation_id] = proof
+            self._graph_segment_proofs.move_to_end(receipt.generation_id)
+            while len(self._graph_segment_proofs) > MAX_RECEIPTS:
+                self._graph_segment_proofs.popitem(last=False)
+
+    def _trusted_graph_segment_proof(self, connection, generation):
+        from app.analytics.validation_receipt import content_stamp, generation_binding
+
+        if int(connection.execute('PRAGMA user_version').fetchone()[0]) < 15:
+            return None
+        generation_id = generation['generation_id']
+        with self._graph_segment_proof_lock:
+            proof = self._graph_segment_proofs.get(generation_id)
+        if (proof is None or proof.generation_id != generation_id
+                or proof.binding != generation_binding(generation)):
+            return None
+        stamp = content_stamp(connection)
+        if stamp is None or tuple(stamp[:3]) != proof.stamp_prefix:
+            return None
+        return proof
 
     def generation_references_supported(self) -> bool:
         with self.database.read() as connection:
@@ -463,7 +498,9 @@ class SQLiteAnalyticsProjectionStore:
         )
         with writer.lease_session():
             if compact:
-                write_compact_graph(writer, artifact.graph, check=lambda: check_cancelled(cancellation_check), store=self)
+                write_compact_graph(writer, artifact.graph,
+                    check=lambda: check_cancelled(cancellation_check), store=self,
+                    graph_digest=graph_digest)
             else:
                 writer._replace_validated_records(safe_nodes, safe_edges)
             writer.write_stats(
@@ -475,7 +512,11 @@ class SQLiteAnalyticsProjectionStore:
             self._checkpoint("built", generation_id)
             check_cancelled(cancellation_check)
             writer.validate()
-            self._validation_receipts.put(getattr(writer, "validation_receipt", None))
+            receipt = getattr(writer, "validation_receipt", None)
+            self._remember_graph_segment_proof(
+                receipt, getattr(writer, "validated_graph_segments", ())
+            )
+            self._validation_receipts.put(receipt)
         self._checkpoint("validated", generation_id)
         check_cancelled(cancellation_check)
         return generation_id
@@ -1587,13 +1628,15 @@ def recompute_generation(
     check: Callable[[], None] | None = None,
     materialize_graph: bool = False,
     materialize_projection: bool = True,
+    graph_validation=None,
 ) -> dict[str, object]:
     """Verify stored data with a connection-local page-cache target."""
 
     with generation_verification_cache(connection):
         return _recompute_generation(connection, generation_id, check=check,
                                      materialize_graph=materialize_graph,
-                                     materialize_projection=materialize_projection)
+                                     materialize_projection=materialize_projection,
+                                     graph_validation=graph_validation)
 
 
 def _recompute_generation(
@@ -1603,6 +1646,7 @@ def _recompute_generation(
     check: Callable[[], None] | None = None,
     materialize_graph: bool = False,
     materialize_projection: bool = True,
+    graph_validation=None,
 ) -> dict[str, object]:
     """Recompute all row-derived validation values; stored digest fields are ignored."""
 
@@ -1660,12 +1704,24 @@ def _recompute_generation(
         node_counts = Counter(item.kind.value for item in nodes)
         edge_counts = Counter(item.relation.value for item in edges)
     else:
-        from app.analytics.graph_verification import verify_graph_rows
+        from app.analytics.shared_graph import verify_shared_graph
 
-        verified = verify_graph_rows(connection, generation_id, account_id, check=run_check)
-        nodes, edges = verified.nodes, verified.edges
-        graph_digest = verified.digest
-        node_counts, edge_counts = verified.node_counts, verified.edge_counts
+        reused = verify_shared_graph(
+            connection, generation_id, account_id, graph_validation, run_check
+        )
+        if reused is None:
+            from app.analytics.graph_verification import verify_graph_rows
+
+            verified = verify_graph_rows(
+                connection, generation_id, account_id, check=run_check
+            )
+            nodes, edges = verified.nodes, verified.edges
+            graph_digest = verified.digest
+            node_counts, edge_counts = verified.node_counts, verified.edge_counts
+            graph_segments = verified.segments
+        else:
+            graph_digest, node_counts, edge_counts, graph_segments = reused
+            nodes, edges = [], []
     node_count, edge_count = sum(node_counts.values()), sum(edge_counts.values())
     run_check()
     if projection.graph_digest != graph_digest:
@@ -1701,6 +1757,7 @@ def _recompute_generation(
         "graph_digest": graph_digest,
         "node_count": node_count,
         "edge_count": edge_count,
+        "graph_segments": (() if materialize_graph else graph_segments),
     }
 
 

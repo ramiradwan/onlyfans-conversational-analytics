@@ -91,7 +91,8 @@
         "0011_conversation_pages.sql": "907e62ed94887fa9b6cb77cb64edc964a820b67830bbe2e2800ecce8032fbd52",
         "0012_generation_content_epoch.sql": "e1dafcd39119df600c81185aae51e50c6b88a17ba66ca03d867939e5e7c746ab",
         "0013_shared_conversation_pages.sql": "2326e76afd43f03f17096446fdfbb5a66686d4da0e490098367b8212d7e6a5b9",
-        "0014_shared_enrichment.sql": "88192ed94b9800d8f491d7567f3393c532cdb29bdb4da374f50ad75e334bbcc9"
+        "0014_shared_enrichment.sql": "88192ed94b9800d8f491d7567f3393c532cdb29bdb4da374f50ad75e334bbcc9",
+        "0015_shared_graph_delete_guards.sql": "3a8f2eb789cfd061fa7ffbcfe6b284f18639d4826a01bfdf85e2320bce53bdda"
       }
     }
   ],

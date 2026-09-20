@@ -96,6 +96,29 @@ def test_active_records_cannot_be_deleted(fixture, table):
             db.execute('DELETE FROM '+table)
 
 
+@pytest.mark.parametrize('table,error', [
+    ('graph_node_content', 'graph_content_referenced'),
+    ('graph_edge_content', 'graph_content_referenced'),
+    ('graph_segments', 'graph_segment_referenced'),
+])
+def test_referenced_shared_graph_rows_resist_delete_without_foreign_keys(
+    fixture, table, error
+):
+    fixture.pipeline.project_account(ACCOUNT)
+    connection = fixture.stores.database.connect()
+    try:
+        connection.execute('PRAGMA foreign_keys=OFF')
+        before = connection.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0]
+        assert before > 0
+        connection.execute('BEGIN IMMEDIATE')
+        with pytest.raises(sqlite3.IntegrityError, match=error):
+            connection.execute('DELETE FROM ' + table)
+        connection.rollback()
+        assert connection.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] == before
+    finally:
+        connection.close()
+
+
 def test_reclaim_keeps_current_shared_records_then_removes_everything(fixture):
     fixture.stores.projections.rollback_retention = 0
     for index in range(3):
@@ -267,3 +290,60 @@ def test_identity_catalog_disappears_after_final_generation(fixture):
     fixture.stores.projections.clear(ACCOUNT)
     with fixture.stores.database.read() as db:
         assert db.execute('SELECT COUNT(*) FROM graph_node_identities').fetchone()[0] == 0
+
+
+def test_incremental_validation_reuses_verified_segments(fixture, monkeypatch):
+    import app.analytics.graph_verification as verification
+
+    calls, original = [], verification.verify_graph_rows
+    def observed(*args, **kwargs):
+        calls.append(args[1])
+        return original(*args, **kwargs)
+    monkeypatch.setattr(verification, 'verify_graph_rows', observed)
+
+    fixture.pipeline.project_account(ACCOUNT)
+    assert len(calls) == 1
+    calls.clear()
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, 'chat-1', 'verified-segment-reuse', NOW)
+        advance(db)
+    result = fixture.pipeline.project_account(ACCOUNT)
+    assert result.changed and calls == []
+    cold_equal(fixture, result.artifact)
+
+
+def test_missing_segment_proof_falls_back_to_full_graph_validation(fixture, monkeypatch):
+    import app.analytics.graph_verification as verification
+
+    fixture.pipeline.project_account(ACCOUNT)
+    fixture.stores.projections._graph_segment_proofs.clear()
+    calls, original = [], verification.verify_graph_rows
+    def observed(*args, **kwargs):
+        calls.append(args[1])
+        return original(*args, **kwargs)
+    monkeypatch.setattr(verification, 'verify_graph_rows', observed)
+
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, 'chat-1', 'missing-segment-proof', NOW)
+        advance(db)
+    fixture.pipeline.project_account(ACCOUNT)
+    assert len(calls) == 1
+
+
+def test_schema_change_invalidates_segment_proof(fixture, monkeypatch):
+    import app.analytics.graph_verification as verification
+
+    fixture.pipeline.project_account(ACCOUNT)
+    calls, original = [], verification.verify_graph_rows
+    def observed(*args, **kwargs):
+        calls.append(args[1])
+        return original(*args, **kwargs)
+    monkeypatch.setattr(verification, 'verify_graph_rows', observed)
+
+    with fixture.stores.database.transaction() as db:
+        db.execute('DROP TRIGGER graph_node_content_referenced')
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, 'chat-1', 'schema-invalidates-proof', NOW)
+        advance(db)
+    fixture.pipeline.project_account(ACCOUNT)
+    assert len(calls) == 1

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -25,6 +26,48 @@ class SegmentPlan:
     reused: bool
 
 
+@dataclass(frozen=True, slots=True)
+class VerifiedSegment:
+    kind: str
+    bucket: str
+    segment_id: str
+    digest: str
+    count: int
+    categories: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GraphSegmentProof:
+    generation_id: str
+    binding: str
+    stamp_prefix: tuple
+    segments: tuple[VerifiedSegment, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SegmentValidation:
+    kind: str
+    bucket: str
+    segment_id: str
+    digest: str
+    count: int
+    reused: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SharedGraphValidation:
+    graph_digest: str
+    plans: tuple[SegmentValidation, ...]
+    proof: GraphSegmentProof | None
+
+
+class PredecessorSegments(dict):
+    def __init__(self, generation_id: str, values: dict, proof=None):
+        super().__init__(values)
+        self.generation_id = generation_id
+        self.proof = proof
+
+
 def supported(connection) -> bool:
     return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='generation_graph_segments'").fetchone() is not None
 
@@ -36,11 +79,14 @@ def _predecessor_segments(store, connection, partition: str) -> dict:
     witness = store.activation.get(generation['generation_id'])
     if not store._intent_matches(generation, witness, require_completed=True):
         return {}
-    return {(row['kind'], row['bucket']): (row['content_digest'], row['segment_id'])
+    values = {(row['kind'], row['bucket']): (row['content_digest'], row['segment_id'])
         for row in connection.execute("""SELECT s.* FROM generation_graph_segments m
           JOIN graph_segments s USING(creator_account_id,segment_id)
           WHERE m.generation_id=? AND m.creator_account_id=? AND s.sealed=1""",
           (generation['generation_id'], partition))}
+    proof_reader = getattr(store, '_trusted_graph_segment_proof', None)
+    proof = proof_reader(connection, generation) if callable(proof_reader) else None
+    return PredecessorSegments(generation['generation_id'], values, proof)
 
 
 def _plans(graph: CompactGraph, existing: dict,
@@ -109,7 +155,8 @@ def _existing_ids(connection, table, field, account, identities, check):
     return result
 
 
-def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None) -> dict[str, int]:
+def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None,
+                       graph_digest=None) -> dict[str, int]:
     """Write changed content only; verify the complete selected graph at publication."""
 
     from app.analytics.database import content_write_cache
@@ -168,7 +215,121 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
                     db.execute('UPDATE graph_segments SET sealed=1 WHERE creator_account_id=? AND segment_id=?',
                                (graph.account_ref, plan.segment_id))
         writer.refresh()
+        writer.shared_graph_validation = SharedGraphValidation(
+            graph_digest=graph_digest or graph.digest(check=check),
+            plans=tuple(SegmentValidation(
+                p.kind, p.bucket, p.segment_id, p.digest, len(p.keys), p.reused
+            ) for p in plans),
+            proof=(existing.proof if isinstance(existing, PredecessorSegments) else None),
+        )
         return statistics
+
+
+def _verify_segment_rows(connection, account_id, plan, check):
+    from app.analytics.graph_row_encoding import node_bytes, edge_bytes
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+
+    relation = 'node_id' if plan.kind == 'node' else 'edge_id'
+    table = 'graph_segment_nodes' if plan.kind == 'node' else 'graph_segment_edges'
+    content = 'graph_node_content' if plan.kind == 'node' else 'graph_edge_content'
+    encode = node_bytes if plan.kind == 'node' else edge_bytes
+    digest = hashlib.sha256(
+        ('graph-segment.v1:' + plan.kind + ':' + plan.bucket).encode()
+    )
+    rows = connection.execute(f'''SELECT c.* FROM {table} r
+        JOIN {content} c USING(creator_account_id,content_id,{relation})
+        WHERE r.creator_account_id=? AND r.segment_id=?
+        ORDER BY r.{relation}''', (account_id, plan.segment_id))
+    count, categories = 0, Counter()
+    try:
+        for row in rows:
+            check()
+            category, encoded = encode(row, account_id)
+            version = hashlib.sha256(encoded).hexdigest()
+            if row['content_id'] != version:
+                raise GraphReferentialIntegrityError('graph_segment_content_invalid')
+            digest.update(
+                row[relation].encode() + b':' + version.encode() + b'\n'
+            )
+            categories[category] += 1
+            count += 1
+    finally:
+        rows.close()
+    if ((plan.count >= 0 and count != plan.count)
+            or digest.hexdigest() != plan.digest):
+        raise GraphReferentialIntegrityError('graph_segment_digest_invalid')
+    return VerifiedSegment(
+        plan.kind, plan.bucket, plan.segment_id, plan.digest, count,
+        tuple(sorted(categories.items())),
+    )
+
+
+def verify_generation_segments(connection, generation_id, account_id, check):
+    """Anchor a process-local proof to actual persisted segment bytes."""
+
+    plans = [
+        SegmentValidation(
+            row['kind'], row['bucket'], row['segment_id'],
+            row['content_digest'], -1, False,
+        )
+        for row in connection.execute(
+            '''SELECT m.kind,m.bucket,m.segment_id,s.content_digest
+               FROM generation_graph_segments m
+               JOIN graph_segments s USING(creator_account_id,segment_id)
+               WHERE m.generation_id=? AND m.creator_account_id=? AND s.sealed=1
+               ORDER BY m.kind,m.bucket''',
+            (generation_id, account_id),
+        )
+    ]
+    return tuple(
+        _verify_segment_rows(connection, account_id, plan, check)
+        for plan in plans
+    )
+
+
+def verify_shared_graph(connection, generation_id, account_id, validation, check):
+    """Reuse only exact, schema-bound proofs of immutable predecessor segments."""
+
+    if validation is None or validation.proof is None:
+        return None
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+    from app.analytics.validation_receipt import content_stamp
+
+    stamp = content_stamp(connection)
+    proof = validation.proof
+    if stamp is None or tuple(stamp[:3]) != proof.stamp_prefix:
+        return None
+    expected = sorted(
+        (plan.kind, plan.bucket, plan.segment_id, plan.digest)
+        for plan in validation.plans
+    )
+    actual = [tuple(row) for row in connection.execute(
+        '''SELECT m.kind,m.bucket,m.segment_id,s.content_digest
+           FROM generation_graph_segments m
+           JOIN graph_segments s USING(creator_account_id,segment_id)
+           WHERE m.generation_id=? AND m.creator_account_id=? AND s.sealed=1
+           ORDER BY m.kind,m.bucket''',
+        (generation_id, account_id),
+    )]
+    if actual != expected:
+        raise GraphReferentialIntegrityError('graph_segment_plan_invalid')
+    proven = {(item.kind, item.bucket): item for item in proof.segments}
+    verified, node_counts, edge_counts = [], Counter(), Counter()
+    for plan in validation.plans:
+        check()
+        if plan.reused:
+            item = proven.get((plan.kind, plan.bucket))
+            if (item is None or item.segment_id != plan.segment_id
+                    or item.digest != plan.digest or item.count != plan.count):
+                return None
+        else:
+            item = _verify_segment_rows(connection, account_id, plan, check)
+        verified.append(item)
+        counts = node_counts if plan.kind == 'node' else edge_counts
+        counts.update(dict(item.categories))
+    return (
+        validation.graph_digest, node_counts, edge_counts, tuple(verified)
+    )
 
 
 def uses_segments(connection, generation_id: str, account_id: str) -> bool:
@@ -225,8 +386,14 @@ def ordered_rows(connection, generation_id: str, account_id: str, kind: str):
         raise ValueError('graph_record_kind_invalid')
     fields = ('node_id,kind,occurred_at,properties_json' if kind == 'node' else
               'edge_id,source_id,target_id,relation,occurred_at,sequence,properties_json')
-    return connection.execute(f'''SELECT m.generation_id,m.creator_account_id,{','.join('c.'+field for field in fields.split(','))}
-        FROM generation_graph_segments m CROSS JOIN graph_segment_{kind}s r USING(creator_account_id,segment_id)
+    return connection.execute(f'''SELECT m.generation_id,m.creator_account_id,
+            m.bucket AS segment_bucket,m.segment_id,
+            s.content_digest AS segment_digest,c.content_id,
+            {','.join('c.'+field for field in fields.split(','))}
+        FROM generation_graph_segments m
+        CROSS JOIN graph_segments s USING(creator_account_id,segment_id)
+        CROSS JOIN graph_segment_{kind}s r USING(creator_account_id,segment_id)
         CROSS JOIN graph_{kind}_content c USING(creator_account_id,content_id,{kind}_id)
         WHERE m.generation_id=? AND m.creator_account_id=? AND m.kind=?
+          AND s.sealed=1 AND s.kind=m.kind AND s.bucket=m.bucket
         ORDER BY m.bucket,r.{kind}_id''', (generation_id, account_id, kind))

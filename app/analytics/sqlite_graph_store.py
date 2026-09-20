@@ -2153,6 +2153,7 @@ class SQLiteGraphGenerationWriter:
         from app.analytics.validation_receipt import capture_receipt, content_stamp
 
         self.validation_receipt = None
+        self.validated_graph_segments = ()
 
         with self.lease_session():
             self._check_heartbeat()
@@ -2172,6 +2173,12 @@ class SQLiteGraphGenerationWriter:
                         connection,
                         self._generation_id,
                         check=keepalive, materialize_projection=False,
+                        graph_validation=getattr(
+                            self, 'shared_graph_validation', None
+                        ),
+                    )
+                    self.validated_graph_segments = values.get(
+                        'graph_segments', ()
                     )
                     keepalive()
                     now = _now()

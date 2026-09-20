@@ -142,7 +142,7 @@ def test_future_catalogs_do_not_reuse_an_unreviewed_receipt(fixture):
     with fixture.stores.database.read() as db:
         assert content_stamp(db) is not None
         db.execute('BEGIN IMMEDIATE')
-        db.execute('PRAGMA user_version=15')
+        db.execute('PRAGMA user_version=16')
         assert content_stamp(db) is None
         db.rollback()
         assert content_stamp(db) is not None

@@ -63,7 +63,7 @@ def test_populated_metadata_trigger_upgrade_preserves_artifact(tmp_path):
             assert db.execute('PRAGMA user_version').fetchone()[0]==7
             assert [tuple(row) for row in db.execute('SELECT * FROM projection_query_metadata')]==before
         with updated.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0]==14
+            assert db.execute('PRAGMA user_version').fetchone()[0]==15
             assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
             assert [tuple(row) for row in db.execute('SELECT * FROM projection_query_metadata')]==before
         reopened=SQLiteAnalyticsProjectionStore(updated,activation=f.repositories.projection_activation,
