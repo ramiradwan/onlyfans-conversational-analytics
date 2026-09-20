@@ -50,16 +50,28 @@ class CompactGraph:
     def merge(self, other: CompactGraph, *, check: Callable[[], None]) -> None:
         if other.account_ref != self.account_ref:
             raise ValueError("compact_graph_account_invalid")
-        for source, target, counts, field in ((other.nodes, self.nodes, self.node_counts, "kind"),
-                                            (other.edges, self.edges, self.edge_counts, "relation")):
+        check()
+        added_bytes = other.encoded_bytes
+        for source, target, counts, source_counts, field in (
+            (other.nodes, self.nodes, self.node_counts, other.node_counts, "kind"),
+            (other.edges, self.edges, self.edge_counts, other.edge_counts, "relation"),
+        ):
+            # Both graphs already count their checked records. Decode only shared
+            # identities, whose counts and bytes must not be added a second time.
+            duplicates: Counter[str] = Counter()
             for key, data in source.items():
                 check()
-                if key in target and target[key] != data:
-                    raise ValueError("graph_record_identity_collision")
-                if key not in target:
+                previous = target.get(key)
+                if previous is not None:
+                    if previous != data:
+                        raise ValueError("graph_record_identity_collision")
+                    duplicates[json.loads(data)[field]] += 1
+                    added_bytes -= len(data.encode("utf-8"))
+                else:
                     target[key] = data
-                    counts[json.loads(data)[field]] += 1
-                    self.encoded_bytes += len(data.encode("utf-8"))
+            counts.update(source_counts)
+            counts.subtract(duplicates)
+        self.encoded_bytes += added_bytes
 
     def digest(self, *, check: Callable[[], None],
                node_ids: Iterable[str] | None = None,

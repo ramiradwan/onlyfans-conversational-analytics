@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql, sql/0013_shared_conversation_pages.sql, validation_receipt.py, test_conversation_pages.py and test_shared_conversation_pages.py, conversation_graph_sql.py, test_conversation_graph_references.py and test_conversation_graph_receipts.py before editing behavior or limits. -->
+<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql, sql/0013_shared_conversation_pages.sql, validation_receipt.py, test_conversation_pages.py and test_shared_conversation_pages.py, conversation_graph_sql.py, test_conversation_graph_references.py and test_conversation_graph_receipts.py and test_encoded_conversation_graph.py before editing behavior or limits. -->
 
 # Reuse large conversation results
 
@@ -16,7 +16,7 @@ Only a completed, active generation supplies pages. Missing, malformed, misorder
 
 With shared graph storage, `zlib-json-graph-ids.v2` pages store node and edge IDs. Their header records the exact conversation graph digest. `zlib-json.v1` pages remain self-contained and readable. Switching the storage mode converts valid cached output without repeating source reads or analysis.
 
-Each lookup selects at most 256 IDs through the account and generation bucket, then validates the actual graph columns and content hashes. Restoration checks the complete conversation graph digest. Staging compares the records with the candidate; checksums alone cannot establish a match.
+Each lookup selects at most 256 IDs through the account and generation bucket, then validates the actual graph columns and content hashes. Restoration retains those checked canonical bytes without reconstructing node or edge models. It checks account scope, duplicate identities, conversation-local endpoints and the complete graph digest. Staging compares the records with the candidate; checksums alone cannot establish a match.
 
 Reads and page staging use a temporary 32 MiB SQLite page-cache target and restore its previous setting on exit. This is separate from the unchanged 64 MiB application cache budget and is not a total process-memory limit.
 
@@ -36,7 +36,7 @@ An edit, late arrival, deletion, changed participant, model/configuration change
 
 ## Qualification
 
-Run `python -m pytest tests/test_conversation_pages.py tests/test_shared_conversation_pages.py tests/test_conversation_graph_references.py tests/test_conversation_graph_receipts.py` and the [analytics baseline](qualification.md). Tests include independent full-build comparisons, page boundaries, source mutations, configuration, missing/corrupted pages, staging tamper, budgets, cancellation, expiry and restart.
+Run `python -m pytest tests/test_conversation_pages.py tests/test_shared_conversation_pages.py tests/test_conversation_graph_references.py tests/test_conversation_graph_receipts.py tests/test_encoded_conversation_graph.py` and the [analytics baseline](qualification.md). Tests include independent full-build comparisons, page boundaries, source mutations, configuration, missing/corrupted pages, staging tamper, budgets, cancellation, expiry and restart.
 
 Measure cold construction and changed-message publication separately. Count conversation-body reads, projector calls, analyzer calls, retained bytes and database writes; do not infer a speedup solely from fewer analyzer calls. Compare identical source and workloads with page reuse available and unavailable. Laptop, installer, production classification and 100,000-message update qualification remain separate gates.
 
@@ -44,4 +44,4 @@ Pages use standard-library compression. Both stored bytes and decompressed outpu
 
 ## Remaining work
 
-References still charge their complete compressed payload against the 64 MiB cache budget. This change does not increase coverage beyond that limit. Small fragments and the separate analyzer cache still copy their records. Page restoration still decodes findings and graph records, and the builder still assembles the complete account graph. Physical page sharing does not establish the 100,000-message update target or a total process-memory bound.
+References still charge their complete compressed payload against the 64 MiB cache budget. This change does not increase coverage beyond that limit. Small fragments and the separate analyzer cache still copy their records. Page restoration still decodes findings, graph IDs and stored properties. It reuses checked graph bytes, but the builder still assembles the complete account graph. Physical page sharing does not establish the 100,000-message update target or a total process-memory bound.

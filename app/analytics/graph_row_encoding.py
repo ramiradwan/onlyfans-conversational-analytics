@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from typing import Any, Protocol
@@ -9,6 +10,20 @@ from typing import Any, Protocol
 from app.analytics.graph_identity import require_graph_id
 from app.analytics.graph_schema import validate_node_properties, validate_edge_properties
 from app.analytics.opaque_refs import require_opaque_ref
+
+
+@dataclass(frozen=True, slots=True)
+class EncodedGraphRecord:
+    """Canonical bytes and columns checked by the storage row validators."""
+
+    account_ref: str
+    kind: str
+    key: str
+    category: str
+    data: str
+    source_id: str | None = None
+    target_id: str | None = None
+    conversation_edge: bool = False
 
 
 class StoredRow(Protocol):

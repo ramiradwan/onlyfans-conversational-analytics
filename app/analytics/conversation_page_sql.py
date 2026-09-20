@@ -48,12 +48,14 @@ def load_pages(connection, generation_id, account, conversation, input_digest,
         pages.append(ConversationPage(row['kind'], raw))
     if len(pages) != header.page_count or used != header.byte_count:
         return None
-    from app.analytics.conversation_graph_sql import graph_records
+    from app.analytics.conversation_graph_sql import graph_records, encoded_graph_records
     from app.analytics.validation_receipt import content_stamp
     stamp = content_stamp(connection) if header.graph_digest is not None else None
     return PagedConversation(header, tuple(pages), generation_id,
         lambda kind, keys, check: graph_records(connection, generation_id, account, kind, keys, check),
-        graph_read_stamp=stamp, graph_stamp_reader=lambda: content_stamp(connection))
+        graph_read_stamp=stamp, graph_stamp_reader=lambda: content_stamp(connection),
+        graph_encoded_records=lambda kind, keys, check: encoded_graph_records(
+            connection, generation_id, account, kind, keys, check))
 
 
 def insert_page_sets(connection, generation_id, page_sets, *, check):
@@ -152,5 +154,5 @@ def resolve_page_sets(connection, store, account_id, page_sets, *, check, source
             # The write transaction excluded intervening writers before its own
             # inserts. Bind the checked IDs/digest to the candidate without a
             # second source-graph scan. Full persisted validation still follows.
-            packed = replace(packed, generation_id=None, graph_records=None)
+            packed = replace(packed, generation_id=None, graph_records=None, graph_encoded_records=None)
         yield packed

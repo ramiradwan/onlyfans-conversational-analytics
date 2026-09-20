@@ -7,11 +7,11 @@ import hashlib
 import json
 
 from app.analytics.conversation_pages import PAGE_RECORDS
-from app.analytics.graph_row_encoding import node_bytes, edge_bytes
+from app.analytics.graph_row_encoding import EncodedGraphRecord, node_bytes, edge_bytes
 
 
-def graph_records(connection, generation_id: str, account: str, kind: str,
-                  keys: list[str], check: Callable[[], None]) -> list[dict]:
+def encoded_graph_records(connection, generation_id: str, account: str, kind: str,
+                          keys: list[str], check: Callable[[], None]) -> list[EncodedGraphRecord]:
     """Check actual row bytes and selected membership, not stored digests alone."""
 
     check()
@@ -37,14 +37,26 @@ def graph_records(connection, generation_id: str, account: str, kind: str,
     try:
         for row in rows:
             check()
-            _, data = encode(row, account)
+            category, data = encode(row, account)
             key = row[kind + '_id']
             if key in result or hashlib.sha256(data).hexdigest() != row['content_id']:
                 raise ValueError('conversation_page_graph_content_invalid')
-            result[key] = json.loads(data)
+            result[key] = EncodedGraphRecord(
+                account, kind, key, category, data.decode('utf-8'),
+                row['source_id'] if kind == 'edge' else None,
+                row['target_id'] if kind == 'edge' else None,
+                kind == 'edge' and json.loads(row['properties_json']).get('scope') == 'conversation')
     finally:
         rows.close()
     check()
     if len(result) != len(set(keys)):
         raise ValueError('conversation_page_graph_reference_absent')
     return [result[key] for key in keys]
+
+
+def graph_records(connection, generation_id: str, account: str, kind: str,
+                  keys: list[str], check: Callable[[], None]) -> list[dict]:
+    """Compatibility view for callers that need parsed record dictionaries."""
+
+    return [json.loads(row.data) for row in encoded_graph_records(
+        connection, generation_id, account, kind, keys, check)]

@@ -1,8 +1,10 @@
-<!-- CODE-VERIFY: Check compact_graph.py, conversation_reuse.py, graph_projection.py, pipeline.py, and sqlite_projection_store.py before changing representation, limits, or validation claims. -->
+<!-- CODE-VERIFY: Check compact_graph.py, conversation_reuse.py, graph_projection.py, pipeline.py, sqlite_projection_store.py, graph_row_encoding.py and test_encoded_conversation_graph.py before changing representation, limits, or validation claims. -->
 
 # Construct compact graph records
 
 The built-in SQLite pipeline encodes graph batches as canonical JSON and releases their node and edge models. A build retains the encoded records, keyed by stable graph identity. Identical shared records are deduplicated; conflicting contents fail the build.
+
+Merging a checked conversation graph reuses its counts and encoded byte total. Only duplicate identities need decoding to subtract their counts and bytes. The merge still visits every record, checks cancellation and rejects conflicting content. Staging independently verifies the stored graph and its counts.
 
 `RelationshipGraphProjector.batches` emits records after each 128 messages and at completion. The full projector collects the same batches for public artifact operations and independent full-build comparisons. Message-order edges span batch boundaries. Shared participants and topic/entity nodes remain logically unchanged.
 
@@ -14,16 +16,16 @@ The build computes its expected graph digest before staging. SQLite staging chec
 
 Property triggers, endpoint foreign keys, source identity, durable commits, and cancellation remain required. Persisted rows are independently validated and hashed at staging and activation. Changing an encoded row between input validation and storage is rejected. The small generation-reference handoff remains unchanged.
 
-Compact builds retain a new full conversation fragment only when it has at most 256 messages and its encoded graph fits half the existing per-fragment byte limit. Existing stored fragments still pass their declared limits and source checks. Larger conversations use per-message analyzer reuse instead of materializing another full graph for a fragment cache.
+Compact builds retain a new full conversation fragment only when it has at most 256 messages and its encoded graph fits half the existing per-fragment byte limit. Existing stored fragments still pass their declared limits and source checks. Larger conversations may use [bounded pages](conversation-pages.md) instead of another full model-based fragment.
 
 ## Resource limits
 
-The in-process encoded graph still grows with the account. Message enrichments, canonical conversation inputs, encoded projection JSON, and explicit artifact reads also require memory. Compact records reduce Python-object overhead; they do not make the whole pipeline constant-memory or avoid writing unchanged rows to a new generation.
+The in-process encoded graph still grows with the account. Message enrichments, canonical conversation inputs, encoded projection JSON, and explicit artifact reads also require memory. Compact records reduce Python-object overhead; they do not make whole-account construction constant-memory.
 
 No dependency, model, database, or schema migration is added. `AnalyticsPipeline(..., compact_graph=False)` retains the object-based path for comparisons without changing the semantic pipeline identity.
 
 ## Verification
 
-Run `python -m pytest tests/test_compact_graph.py tests/test_continuous_analytics.py tests/test_bounded_publication.py` and the [analytics baseline](qualification.md). Include graph identity, cancellation, tamper, retention, backup, and restart checks. Compare complete artifacts across message-batch boundaries and both graph representations.
+Run `python -m pytest tests/test_compact_graph.py tests/test_encoded_conversation_graph.py tests/test_continuous_analytics.py tests/test_bounded_publication.py` and the [analytics baseline](qualification.md). Include graph identity, cancellation, tamper, retention, backup, and restart checks. Compare complete artifacts across message-batch boundaries and both graph representations.
 
 Measure cold, forced unchanged, and one-message updates with [the workload tool](continuous-processing.md#verification-and-measurement). Report runtime, observed working-set/private memory, guarded failures, and source/graph equality separately. A completed small synthetic workload does not qualify the constrained-laptop or 100,000-message targets.

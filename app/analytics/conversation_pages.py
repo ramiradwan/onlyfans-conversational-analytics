@@ -17,6 +17,9 @@ from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 from app.models.analytics import (AccountRef, ConversationRef, Sha256Digest,
     ConversationMetrics, MessageEnrichment, GraphNode, GraphEdge)
 
+from app.analytics.graph_row_encoding import EncodedGraphRecord
+
+
 PAGE_BYTES = 256 * 1024
 PAGE_RECORDS = 256
 MAX_PAGES = 4096
@@ -73,6 +76,8 @@ class PagedConversation:
     graph_read_stamp: tuple | None = field(default=None, repr=False, compare=False)
     graph_stamp_reader: Callable[[], tuple | None] | None = field(default=None, repr=False, compare=False)
     graph_receipt: GraphPageReceipt | None = field(default=None, repr=False, compare=False)
+    graph_encoded_records: Callable[[str, list[str], Callable[[], None]], list[EncodedGraphRecord]] | None = field(
+        default=None, repr=False, compare=False)
 
     @property
     def retained_bytes(self) -> int:
@@ -167,7 +172,7 @@ def unpack_page(data: bytes) -> bytes:
     return raw
 
 
-def records(packed: PagedConversation, check, *, graph=None):
+def records(packed: PagedConversation, check, *, graph=None, encoded_graph=False):
     header = packed.header
     header.validate_graph_binding()
     if (len(packed.pages) != header.page_count
@@ -190,9 +195,11 @@ def records(packed: PagedConversation, check, *, graph=None):
                 check()
                 require_graph_id(key, expected_kind='edge' if page.kind == 'edge' else None)
             if packed.generation_id is not None:
-                if packed.graph_records is None:
+                reader = packed.graph_encoded_records if encoded_graph else None
+                reader = reader or packed.graph_records
+                if reader is None:
                     raise ValueError('conversation_page_graph_reader_unavailable')
-                values = packed.graph_records(page.kind, values, check)
+                values = reader(page.kind, values, check)
             elif graph is not None:
                 target = graph.nodes if page.kind == 'node' else graph.edges
                 try:
@@ -203,7 +210,10 @@ def records(packed: PagedConversation, check, *, graph=None):
                 raise ValueError('conversation_page_graph_reader_unavailable')
         for value in values:
             check()
-            if not isinstance(value, dict):
+            if isinstance(value, EncodedGraphRecord):
+                if not encoded_graph or value.kind != page.kind:
+                    raise ValueError('conversation_page_record_invalid')
+            elif not isinstance(value, dict):
                 raise ValueError('conversation_page_record_invalid')
             yield page.kind, value
 
@@ -244,11 +254,23 @@ def restore_pages(packed: PagedConversation, check):
     header = packed.header
     graph, findings, entries = CompactGraph(header.account_ref), [], []
     sources, cache_keys = {}, set()
-    for kind, value in records(packed, check):
+    for kind, value in records(packed, check, encoded_graph=True):
         if kind == 'message':
             item = MessageEnrichment.model_validate(value)
             validate_message(item, header)
             findings.append(item); sources[item.message_ref] = item
+        elif isinstance(value, EncodedGraphRecord):
+            # The storage reader already validated columns and actual content bytes.
+            # Keep those exact bytes rather than decode, model and encode them again.
+            target = graph.nodes if kind == 'node' else graph.edges
+            counts = graph.node_counts if kind == 'node' else graph.edge_counts
+            if value.account_ref != header.account_ref or value.key in target or value.conversation_edge:
+                raise ValueError('conversation_page_graph_invalid')
+            if kind == 'edge' and (value.source_id not in graph.nodes or value.target_id not in graph.nodes):
+                raise ValueError('conversation_page_endpoint_invalid')
+            target[value.key] = value.data
+            counts[value.category] += 1
+            graph.encoded_bytes += len(value.data.encode('utf-8'))
         elif kind in ('node', 'edge'):
             model = GraphNode if kind == 'node' else GraphEdge
             item = model.model_validate(value)
@@ -256,6 +278,8 @@ def restore_pages(packed: PagedConversation, check):
             target = graph.nodes if kind == 'node' else graph.edges
             if key in target or (kind == 'edge' and item.properties.get('scope') == 'conversation'):
                 raise ValueError('conversation_page_graph_invalid')
+            if kind == 'edge' and (item.source_id not in graph.nodes or item.target_id not in graph.nodes):
+                raise ValueError('conversation_page_endpoint_invalid')
             graph.add([item] if kind == 'node' else [], [item] if kind == 'edge' else [], check=check)
         else:
             item = CachedEnrichment.model_validate(value)
@@ -265,10 +289,6 @@ def restore_pages(packed: PagedConversation, check):
                 raise ValueError('conversation_page_duplicate_analyzer')
             cache_keys.add(signature); entries.append(item)
     validate_summary(header, findings, len(graph.nodes), len(graph.edges))
-    for data in graph.edges.values():
-        check(); edge = json.loads(data)
-        if edge['source_id'] not in graph.nodes or edge['target_id'] not in graph.nodes:
-            raise ValueError('conversation_page_endpoint_invalid')
     if header.graph_digest is not None and graph.digest(check=check) != header.graph_digest:
         raise ValueError('conversation_page_graph_digest_invalid')
     return findings, header.metrics, graph, entries
