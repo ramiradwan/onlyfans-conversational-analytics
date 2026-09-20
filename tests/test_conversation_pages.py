@@ -97,16 +97,17 @@ def test_message_cache_survives_an_intervening_page_hit(fixture):
 @pytest.mark.parametrize('fault', ['missing_page', 'corrupt_page', 'corrupt_header'])
 def test_invalid_pages_fall_back_to_current_source(fixture, fault):
     fixture.pipeline.project_account(ACCOUNT)
+    ref = conversation_ref(ACCOUNT, 'chat-0')
     fixture.source.loaded.clear()
     with fixture.stores.database.transaction() as db:
         if fault == 'missing_page':
-            db.execute('DELETE FROM conversation_pages WHERE ordinal=1')
+            db.execute('DELETE FROM conversation_pages WHERE conversation_ref=? AND ordinal=1', (ref,))
         elif fault == 'corrupt_page':
             db.execute('DROP TRIGGER conversation_page_content_immutable')
-            db.execute("UPDATE conversation_page_content SET data=CAST('[]' AS BLOB) WHERE content_id IN (SELECT content_id FROM conversation_page_refs WHERE ordinal=1)")
+            db.execute("UPDATE conversation_page_content SET data=CAST('[]' AS BLOB) WHERE content_id IN (SELECT content_id FROM conversation_page_refs WHERE conversation_ref=? AND ordinal=1)", (ref,))
         else:
             db.execute('DROP TRIGGER conversation_page_sets_update_blocked')
-            db.execute("UPDATE conversation_page_sets SET header_digest=?", ('f'*64,))
+            db.execute("UPDATE conversation_page_sets SET header_digest=? WHERE conversation_ref=?", ('f'*64, ref))
     result = fixture.pipeline.rebuild_account(ACCOUNT)
     assert fixture.source.loaded == ['chat-0']
     cold_equal(fixture, result.artifact)

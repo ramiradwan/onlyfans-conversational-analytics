@@ -13,13 +13,14 @@ from app.analytics.conversation_pages import (
     checked_page_sets, page_digest, restore_pages, unpack_page,
 )
 from app.analytics.compact_graph import CompactArtifact, CompactGraph
-from app.analytics.opaque_refs import account_ref
+from app.analytics.opaque_refs import account_ref, conversation_ref
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cold_equal, insert_message
 from tests.test_shared_conversation_pages import fixture
 
 
 def selected(db):
-    row = db.execute('SELECT * FROM conversation_page_sets').fetchone()
+    row = db.execute('SELECT * FROM conversation_page_sets WHERE conversation_ref=?',
+                     (conversation_ref(ACCOUNT, 'chat-0'),)).fetchone()
     return load_pages(db, row['generation_id'], row['creator_account_id'],
                       row['conversation_ref'], row['input_digest'], row['config_digest'])
 

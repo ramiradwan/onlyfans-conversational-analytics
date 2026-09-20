@@ -1,10 +1,12 @@
-# ADR 0035: Reuse large conversation outputs in bounded pages
+<!-- CODE-VERIFY: Check conversation_reuse.py, conversation_pages.py, conversation_page_sql.py and test_small_conversation_pages.py before editing page eligibility, conversion or limits. -->
+
+# ADR 0035: Reuse conversation outputs in bounded pages
 
 - Status: accepted
 
 ## Decision
 
-The compact SQLite pipeline can retain large conversation outputs as bounded pages. Pages contain derived message findings, canonical graph records, and reusable analyzer records. A small header binds them to the exact account, conversation input digest, pipeline configuration, metrics, order, and retained source window.
+The compact SQLite pipeline retains conversation outputs as bounded pages when storage supports them, regardless of message count. Pages contain derived message findings, canonical graph records, and reusable analyzer records. A small header binds them to the exact account, conversation input digest, pipeline configuration, metrics, order, and retained source window.
 
 Each page contains at most 256 records and 256 KiB. A conversation has at most 4,096 pages. Headers and pages share the existing 64 MiB per-build fragment budget and 4,096-conversation limit with ordinary fragments. Reaching a limit requires computation without retaining additional pages; it must not change the answer.
 
@@ -14,11 +16,11 @@ Staging compares page records with the candidate's actual findings and graph. Ch
 
 ## Consequences
 
-An unchanged large conversation can skip source loading, analyzer-input construction, metrics calculation and graph projection. Its bounded pages are decoded to rebuild the current account result. If the conversation changes, its pages cannot be reused; the independent message-analyzer cache still applies.
+An unchanged conversation can skip source loading, analyzer-input construction, metrics calculation and graph projection. Its bounded pages are decoded to rebuild the current account result. If the conversation changes, its pages cannot be reused; the independent message-analyzer cache still applies.
 
 This is whole-conversation output reuse, not within-conversation delta processing. Construction still assembles the logical account graph and message findings. Projection documents, page retention and persisted-content checks remain account-wide costs. Page bounds are not a process-memory guarantee.
 
-The change adds one disposable analytics migration, no database file, runtime package, model or download. Unsupported sources, custom adapters, memory storage and older catalogs preserve their existing paths. ADRs 0027, 0028, 0031, 0032 and 0034 retain their source, verification and publication contracts.
+Valid full fragments convert to pages without repeating source reads or analysis. Their original source cutoff and expiry remain binding. Full-model builds and stores without page support use full fragments. Unsupported sources, custom adapters and memory storage use their supported paths. ADRs 0027, 0028, 0031, 0032 and 0034 retain their source, verification and publication contracts.
 
 See [Paged conversation reuse](../analytics/conversation-pages.md) for implementation limits and qualification.
 
@@ -30,7 +32,7 @@ When immutable shared graph storage is available, new pages store graph IDs inst
 
 Restoration resolves at most 256 IDs at a time through the selected account, generation and graph bucket. It validates actual stored columns and content hashes, then checks the complete conversation graph digest. Staging compares the records with the candidate. The graph-read receipt below can avoid a second source read. A stored digest alone never authorizes reuse. Missing, changed or cross-account records cannot publish.
 
-Conversation reads and page staging use the existing 32 MiB connection-local SQLite cache target. Each scope restores the previous setting, including cancellation and failure. Application cache budgets, source-time expiry, authorization and full persisted-generation verification are unchanged. No migration or dependency is added.
+Conversation reads and page staging use the existing 32 MiB connection-local SQLite cache target. Each scope restores the previous setting, including cancellation and failure. Application cache budgets, source-time expiry, authorization and full persisted-generation verification are unchanged.
 
 This encoding reduces duplicated graph payloads, not logical graph construction. It still restores the whole conversation and assembles the account graph. Reference lookups have a cost; capacity and latency require separate measurements.
 

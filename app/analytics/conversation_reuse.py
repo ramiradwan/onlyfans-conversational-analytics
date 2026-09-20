@@ -131,7 +131,8 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         local_graph = None
         packed, restored = None, None
         page_loader = getattr(loader, 'pages', None)
-        if compact is not None and pipeline.reuse_conversations and reuse is not None and callable(page_loader):
+        use_pages = compact is not None and pipeline.reuse_conversations and reuse is not None and callable(page_loader)
+        if use_pages:
             from app.analytics.conversation_pages import restore_pages, record_verified_graph_read
             candidate = page_loader(ref, input_digest, config, cancellation_check=cancellation_check)
             if candidate is not None and candidate.retained_bytes <= MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used:
@@ -165,6 +166,10 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
             for data in fragment.analyzer_entries:
                 item = CachedEnrichment.model_validate_json(data)
                 reuse.retain_record(item)
+            if use_pages:
+                findings, counts = fragment.enrichments, fragment.metrics
+                local_graph = CompactGraph(account_ref(account_id))
+                local_graph.add(fragment.nodes, fragment.edges, check=check)
         else:
             raw = catalog.conversation(chat_id)
             parts = pipeline._canonical_conversations(
@@ -184,14 +189,14 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                         catalog.view_revision, [conversation], findings, [counts],
                         cancellation_check=cancellation_check):
                     local_graph.add(batch_nodes, batch_edges, check=check)
-                nodes, edges = (local_graph.materialize() if len(findings) <= 256
+                nodes, edges = (local_graph.materialize() if not use_pages and len(findings) <= 256
                     and local_graph.encoded_bytes <= MAX_FRAGMENT_BYTES // 2 else (None, None))
             else:
                 nodes, edges, _ = pipeline.graph_projector.project(account_id, catalog.view_revision,
                     [conversation], findings, [counts], cancellation_check=cancellation_check)
-            entries = () if reuse is None else tuple(
-                data.decode() for data in reuse.conversation_entries(ref))
             if nodes is not None:
+                entries = () if reuse is None else tuple(
+                    data.decode() for data in reuse.conversation_entries(ref))
                 fragment = ConversationFragment(account_ref=account_ref(account_id), conversation_ref=ref,
                     input_digest=input_digest, config_digest=config, retention_cutoff=cutoff,
                     expires_at=min(m.sent_at for m in findings) + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS),
@@ -208,13 +213,15 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
             fragments.append(fragment)
             enrichments.extend(fragment.enrichments)
             metrics.append(fragment.metrics)
-        if compact is not None and pipeline.reuse_conversations and reuse is not None and callable(page_loader):
-            if packed is None and fragment is None and local_graph is not None:
+        if use_pages:
+            if packed is None and local_graph is not None:
                 from app.analytics.conversation_pages import create_pages
                 packed = create_pages(account=account_ref(account_id), conversation=ref,
-                    input_digest=input_digest, config_digest=config, cutoff=cutoff,
+                    input_digest=input_digest, config_digest=config,
+                    cutoff=fragment.retention_cutoff if fragment is not None else cutoff,
                     findings=findings, metrics=counts, graph=local_graph,
-                    analyzer_entries=reuse.conversation_entries(ref),
+                    analyzer_entries=(tuple(data.encode() for data in fragment.analyzer_entries)
+                        if fragment is not None else reuse.conversation_entries(ref)),
                     max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check,
                     graph_references=getattr(loader, "graph_reference_pages", False))
             reference_pages = getattr(loader, "graph_reference_pages", False)
@@ -228,7 +235,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                     max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check,
                     graph_references=reference_pages)
             state.retain_pages(packed)
-        if fragment is not None and pipeline.reuse_conversations and reuse is not None:
+        if fragment is not None and not use_pages and pipeline.reuse_conversations and reuse is not None:
             state.retain(fragment)
         check()
     if compact is not None:

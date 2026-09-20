@@ -23,6 +23,7 @@ def rows(fixture):
 
 def test_only_completed_generations_supply_fragment_hits(tmp_path, monkeypatch):
     fixture = make_fixture(tmp_path)
+    fixture.pipeline.compact_graph = False
     try:
         candidate = fixture.pipeline.build_candidate(ACCOUNT)
         records = rows(fixture)
@@ -40,6 +41,7 @@ def test_only_completed_generations_supply_fragment_hits(tmp_path, monkeypatch):
 
 def test_retirement_removes_fragments_and_active_rows_are_immutable(tmp_path):
     fixture = make_fixture(tmp_path)
+    fixture.pipeline.compact_graph = False
     try:
         fixture.pipeline.project_account(ACCOUNT)
         old_ids = {r['generation_id'] for r in rows(fixture)}
@@ -63,6 +65,7 @@ def test_retirement_removes_fragments_and_active_rows_are_immutable(tmp_path):
 @pytest.mark.parametrize('changed', [False, True])
 def test_restart_reuses_only_a_still_valid_generation(tmp_path, changed):
     fixture = make_fixture(tmp_path)
+    fixture.pipeline.compact_graph = False
     replacement = None
     try:
         fixture.pipeline.project_account(ACCOUNT)
@@ -89,6 +92,7 @@ def test_restart_reuses_only_a_still_valid_generation(tmp_path, changed):
 
 def test_expiry_removes_optional_fragments_without_extending_source_lifetime(tmp_path):
     fixture = make_fixture(tmp_path)
+    fixture.pipeline.compact_graph = False
     try:
         fixture.pipeline.project_account(ACCOUNT)
         assert len(rows(fixture)) == 3
@@ -101,6 +105,7 @@ def test_expiry_removes_optional_fragments_without_extending_source_lifetime(tmp
 
 def test_additive_migration_preserves_the_published_graph(tmp_path):
     fixture = make_fixture(tmp_path)
+    fixture.pipeline.compact_graph = False
     try:
         catalog = tmp_path/'catalog'
         catalog.mkdir()

@@ -84,13 +84,15 @@ def test_unusable_graph_receipt_rereads_actual_rows(fixture, monkeypatch, fault)
     cold_equal(fixture, result.artifact)
 
 
-def test_change_during_read_prevents_receipt(fixture, monkeypatch):
+@pytest.mark.parametrize('every_read', [False, True])
+def test_change_during_read_prevents_receipt(fixture, monkeypatch, every_read):
     fixture.pipeline.project_account(ACCOUNT)
     reading = conversation_graph_sql._read_graph_records
     changed = []
+    staging = [False]
     def interleaved(*args):
         result = reading(*args)
-        if not changed:
+        if not staging[0] and (every_read or not changed):
             changed.append(True)
             with fixture.stores.database.transaction() as db:
                 db.execute('UPDATE generation_content_epoch SET value=value+1')
@@ -98,10 +100,16 @@ def test_change_during_read_prevents_receipt(fixture, monkeypatch):
     monkeypatch.setattr(conversation_graph_sql, '_read_graph_records', interleaved)
     receipts = []
     def remember(kwargs):
+        staging[0] = True
         receipts.extend(item.graph_receipt for item in kwargs['conversation_pages'])
     calls = observe_reads(fixture, monkeypatch, remember)
     candidate = fixture.pipeline.build_candidate(ACCOUNT, force=True)
-    assert receipts and all(item is None for item in receipts)
+    assert len(receipts) == 2
+    if every_read:
+        assert all(item is None for item in receipts)
+    else:
+        assert receipts[0] is None
+        assert receipts[1] is not None
     assert calls['build'] > 0 and calls['stage'] > 0
     cold_equal(fixture, fixture.pipeline.publish_candidate(candidate).artifact)
 

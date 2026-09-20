@@ -1,8 +1,10 @@
-<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql, sql/0013_shared_conversation_pages.sql, validation_receipt.py, test_conversation_pages.py and test_shared_conversation_pages.py, conversation_graph_sql.py, test_conversation_graph_references.py and test_conversation_graph_receipts.py and test_encoded_conversation_graph.py before editing behavior or limits. -->
+<!-- CODE-VERIFY: Check conversation_pages.py, conversation_page_sql.py, conversation_reuse.py, conversation_sql.py, sqlite_projection_store.py, sql/0011_conversation_pages.sql, sql/0013_shared_conversation_pages.sql, validation_receipt.py, test_conversation_pages.py and test_shared_conversation_pages.py, conversation_graph_sql.py, test_conversation_graph_references.py and test_conversation_graph_receipts.py, test_encoded_conversation_graph.py and test_small_conversation_pages.py before editing behavior or limits. -->
 
-# Reuse large conversation results
+# Reuse conversation results
 
-The compact SQLite path stores large conversation results in pages rather than requiring a complete model-based fragment. This avoids loading and re-projecting an unchanged large conversation during the next admitted build. It does not change public question or graph meanings.
+The compact SQLite path stores conversation results in bounded pages, regardless of message count. An unchanged conversation can reuse its pages without loading source messages or projecting its graph again. Public question and graph meanings do not change.
+
+Valid full fragments are converted to pages without repeating source reads or analysis. Their original source cutoff and expiry remain binding. Stores without page support and full-model builds use the fragment path.
 
 ## Bounds and storage
 
@@ -36,12 +38,12 @@ An edit, late arrival, deletion, changed participant, model/configuration change
 
 ## Qualification
 
-Run `python -m pytest tests/test_conversation_pages.py tests/test_shared_conversation_pages.py tests/test_conversation_graph_references.py tests/test_conversation_graph_receipts.py tests/test_encoded_conversation_graph.py` and the [analytics baseline](qualification.md). Tests include independent full-build comparisons, page boundaries, source mutations, configuration, missing/corrupted pages, staging tamper, budgets, cancellation, expiry and restart.
+Run `python -m pytest tests/test_conversation_pages.py tests/test_shared_conversation_pages.py tests/test_conversation_graph_references.py tests/test_conversation_graph_receipts.py tests/test_encoded_conversation_graph.py tests/test_small_conversation_pages.py` and the [analytics baseline](qualification.md). Tests include independent full-build comparisons, page boundaries, source mutations, configuration, missing/corrupted pages, staging tamper, budgets, cancellation, expiry and restart.
 
 Measure cold construction and changed-message publication separately. Count conversation-body reads, projector calls, analyzer calls, retained bytes and database writes; do not infer a speedup solely from fewer analyzer calls. Compare identical source and workloads with page reuse available and unavailable. Laptop, installer, production classification and 100,000-message update qualification remain separate gates.
 
 Pages use standard-library compression. Both stored bytes and decompressed output are bounded to 256 KiB. Truncated, trailing or oversized streams are rejected. The existing 64 MiB retention budget counts compressed pages and headers; decoding and assembled outputs consume additional memory.
 
-## Remaining work
+## Resource use
 
-References still charge their complete compressed payload against the 64 MiB cache budget. This change does not increase coverage beyond that limit. Small fragments and the separate analyzer cache still copy their records. Page restoration still decodes findings, graph IDs and stored properties. It reuses checked graph bytes, but the builder still assembles the complete account graph. Physical page sharing does not establish the 100,000-message update target or a total process-memory bound.
+References charge their complete compressed payload against the 64 MiB cache budget. Page restoration decodes findings, graph IDs and stored properties. It reuses checked graph bytes, but the builder still assembles the complete account graph. The separate analyzer cache also retains copies of its records.

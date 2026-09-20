@@ -16,13 +16,13 @@ The build computes its expected graph digest before staging. SQLite staging chec
 
 Property triggers, endpoint foreign keys, source identity, durable commits, and cancellation remain required. Staging independently validates and hashes stored rows. Activation reuses an exact-state validation receipt or validates them again. Changing an encoded row between input validation and storage is rejected. The small generation-reference handoff remains unchanged.
 
-Compact builds retain a new full conversation fragment only when it has at most 256 messages and its encoded graph fits half the existing per-fragment byte limit. Existing stored fragments still pass their declared limits and source checks. Larger conversations may use [bounded pages](conversation-pages.md) instead of another full model-based fragment.
+Compact builds use [bounded pages](conversation-pages.md) for all conversation sizes when storage supports them. They convert valid full fragments to pages without repeating source reads or analysis. Without page support, a compact build materializes a fragment only for at most 256 messages and half the per-fragment byte limit in graph data.
 
 ## Resource limits
 
 The in-process encoded graph still grows with the account. Message enrichments, canonical conversation inputs, encoded projection JSON, and explicit artifact reads also require memory. Compact records reduce Python-object overhead; they do not make whole-account construction constant-memory.
 
-No dependency, model, database, or schema migration is added. `AnalyticsPipeline(..., compact_graph=False)` retains the object-based path for comparisons without changing the semantic pipeline identity.
+`AnalyticsPipeline(..., compact_graph=False)` retains the object-based path for comparisons without changing the semantic pipeline identity.
 
 ## Verification
 
