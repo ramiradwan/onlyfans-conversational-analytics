@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import hashlib
-import json
 
 from app.analytics.conversation_pages import PAGE_RECORDS
-from app.analytics.graph_row_encoding import node_bytes, edge_bytes
+from app.analytics.graph_row_encoding import node_record_bytes, edge_record_bytes
 
 
 def graph_records(connection, generation_id: str, account: str, kind: str,
@@ -33,15 +32,16 @@ def graph_records(connection, generation_id: str, account: str, kind: str,
           AND m.bucket=q.bucket AND r.{kind}_id=q.record_id''',
         (*parameters, generation_id, account, kind))
     result = {}
-    encode = node_bytes if kind == 'node' else edge_bytes
+    encode = node_record_bytes if kind == 'node' else edge_record_bytes
     try:
         for row in rows:
             check()
-            _, data = encode(row, account)
+            record, data = encode(row, account)
             key = row[kind + '_id']
             if key in result or hashlib.sha256(data).hexdigest() != row['content_id']:
                 raise ValueError('conversation_page_graph_content_invalid')
-            result[key] = json.loads(data)
+            # Reuse the record whose bytes were just checked; do not decode it again.
+            result[key] = record
     finally:
         rows.close()
     check()
