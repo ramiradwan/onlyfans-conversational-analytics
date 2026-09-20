@@ -69,19 +69,55 @@ def input_document(message: MessageAnalysisInput) -> dict:
     return document
 
 
-def enrichment_key(message, slot, descriptor, policy, context) -> EnrichmentKey:
+def _key_from_digests(message, slot, context, *, input_digest, adapter_digest,
+                      context_digest) -> EnrichmentKey:
     dependencies = (message, *context)
     return EnrichmentKey(
         account_ref=account_ref(message.creator_account_id),
         conversation_ref=conversation_ref(message.creator_account_id, message.conversation_id),
         message_ref=message_ref(message.creator_account_id, message.conversation_id, message.message_id),
-        slot=slot, input_digest=fingerprint(input_document(message)),
-        adapter_digest=fingerprint({"descriptor": descriptor.model_dump(mode="json"),
-                                    "policy": policy.model_dump(mode="json")}),
-        context_digest=fingerprint([input_document(item) for item in context]),
+        slot=slot, input_digest=input_digest, adapter_digest=adapter_digest,
+        context_digest=context_digest,
         expires_at=min(item.sent_at for item in dependencies).astimezone(timezone.utc)
         + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS),
     )
+
+
+def enrichment_key(message, slot, descriptor, policy, context) -> EnrichmentKey:
+    return _key_from_digests(message, slot, context,
+        input_digest=fingerprint(input_document(message)),
+        adapter_digest=fingerprint({"descriptor": descriptor.model_dump(mode="json"),
+                                    "policy": policy.model_dump(mode="json")}),
+        context_digest=fingerprint([input_document(item) for item in context]))
+
+
+class EnrichmentKeyBatch:
+    """Share input digests within one lookup batch, never across builds."""
+
+    def __init__(self, messages: dict[int, MessageAnalysisInput]):
+        if len(messages) > CACHE_BATCH_SIZE + 64:
+            raise ValueError("enrichment_input_batch_invalid")
+        self._messages = messages
+        self._documents: dict[int, dict] = {}
+        self._inputs: dict[int, str] = {}
+        self._contexts: dict[tuple[int, ...], str] = {}
+
+    def _document(self, index: int) -> dict:
+        if index not in self._documents:
+            self._documents[index] = input_document(self._messages[index])
+        return self._documents[index]
+
+    def key(self, index: int, slot: Slot, adapter_digest: str,
+            context_indices: tuple[int, ...]) -> EnrichmentKey:
+        if index not in self._inputs:
+            self._inputs[index] = fingerprint(self._document(index))
+        if context_indices not in self._contexts:
+            self._contexts[context_indices] = fingerprint(
+                [self._document(other) for other in context_indices])
+        return _key_from_digests(self._messages[index], slot,
+            tuple(self._messages[other] for other in context_indices),
+            input_digest=self._inputs[index], adapter_digest=adapter_digest,
+            context_digest=self._contexts[context_indices])
 
 
 class CachedEnrichment(CacheRecord):

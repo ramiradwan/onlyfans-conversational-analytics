@@ -2,7 +2,8 @@
 
 from app.analytics.cancellation import check_cancelled
 from app.analytics.enrichment_cache import (
-    ACTIVE_REUSE, AnalyzerCachePolicy, CACHE_BATCH_SIZE, RESULT_TYPES, enrichment_key,
+    ACTIVE_REUSE, AnalyzerCachePolicy, CACHE_BATCH_SIZE, RESULT_TYPES,
+    EnrichmentKeyBatch, fingerprint,
 )
 from app.analytics.errors import AnalyzerConfigurationInvalid
 from app.models.analytics import AnalysisMode, MessageAnalysisInput
@@ -27,6 +28,13 @@ def analyze_messages(account_id, conversation, ordered, analyzers, descriptors, 
     reuse = ACTIVE_REUSE.get()
     policies = tuple(analyzer_policy(analyzer) for analyzer in analyzers)
     slots = tuple(RESULT_TYPES)
+    check_cancelled(cancellation)
+    adapter_digests = tuple(
+        fingerprint({"descriptor": descriptor.model_dump(mode="json"),
+                     "policy": policy.model_dump(mode="json")}) if reuse and policy else None
+        for descriptor, policy in zip(descriptors, policies, strict=True))
+    preceding = max((policy.preceding_messages for policy in policies if policy), default=0)
+    following = max((policy.following_messages for policy in policies if policy), default=0)
 
     def input_at(index):
         message = ordered[index]
@@ -38,18 +46,27 @@ def analyze_messages(account_id, conversation, ordered, analyzers, descriptors, 
 
     for offset in range(0, len(ordered), CACHE_BATCH_SIZE):
         check_cancelled(cancellation)
+        end = min(offset + CACHE_BATCH_SIZE, len(ordered))
+        messages = {}
+        for index in range(max(0, offset - preceding), min(len(ordered), end + following)):
+            check_cancelled(cancellation)
+            messages[index] = input_at(index)
+        key_batch = EnrichmentKeyBatch(messages) if reuse else None
         jobs, keys = [], []
-        for index in range(offset, min(offset + CACHE_BATCH_SIZE, len(ordered))):
-            message = input_at(index)
+        for index in range(offset, end):
+            check_cancelled(cancellation)
+            message = messages[index]
             inputs = []
-            for slot, descriptor, policy in zip(slots, descriptors, policies, strict=True):
-                context = () if policy is None else tuple(
-                    input_at(other) for other in range(
+            for slot, adapter_digest, policy in zip(slots, adapter_digests, policies, strict=True):
+                context_indices = () if policy is None else tuple(
+                    other for other in range(
                         max(0, index - policy.preceding_messages),
                         min(len(ordered), index + policy.following_messages + 1),
                     ) if other != index
                 )
-                key = enrichment_key(message, slot, descriptor, policy, context) if reuse and policy else None
+                context = tuple(messages[other] for other in context_indices)
+                key = (key_batch.key(index, slot, adapter_digest, context_indices)
+                       if key_batch is not None and adapter_digest is not None else None)
                 if key is not None:
                     keys.append(key)
                 inputs.append((slot, context, key))

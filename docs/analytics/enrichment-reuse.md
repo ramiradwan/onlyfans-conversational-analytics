@@ -16,6 +16,12 @@ Context counts are bounded to 32 messages on each side. The adapter must impleme
 
 Adapters without a policy are not cached. A model-mode adapter must declare a model digest. The adapter's configuration must include every other output-affecting input, including tokenizer, inference settings, and custom code revision. Undeclared external state is not supported.
 
+## Bounded input preparation
+
+Each lookup batch prepares up to 64 target messages and 32 context messages on each side. Within that batch, identical message inputs and ordered context windows share their digests. Adapter identities are hashed once per conversation.
+
+Each analyzer still receives its own input copies and an exact message-specific cache key. Prepared digests remain local to one batch. No input digest is reused across conversations or builds, and the source-time expiry rule is unchanged.
+
 ## Storage and lifetime
 
 `enrichment_reuse` is generation-scoped in `analytics-projections.sqlite3`. It contains opaque references, input/configuration digests, expiry, validated analyzer results, and a checksum. It does not copy input message text or native identifiers. Results are the same typed values already present in the projection.
@@ -47,7 +53,7 @@ Analyzer reuse adds no optional ML dependencies or model weights. It does not qu
 ## Verification
 
 ```powershell
-python -m pytest tests/test_enrichment_staging.py tests/test_enrichment_reuse.py tests/test_enrichment_cache_storage.py tests/test_enrichment_cache_contract.py
+python -m pytest tests/test_enrichment_input_batches.py tests/test_enrichment_staging.py tests/test_enrichment_reuse.py tests/test_enrichment_cache_storage.py tests/test_enrichment_cache_contract.py
 ```
 
 These tests count actual analyzer invocations, compare cold and reused artifacts, reopen encrypted stores in a new process, and test account isolation, changed inputs, context dependencies, expiry, failure, corruption, size limits, and analysis admission. Run the [analytics regression baseline](qualification.md) and the architecture checks as well.
