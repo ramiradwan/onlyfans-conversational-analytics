@@ -352,6 +352,29 @@ def test_incremental_validation_reuses_verified_endpoint_closure(
     cold_equal(fixture, result.artifact)
 
 
+def test_missing_graph_unit_proof_keeps_complete_shared_endpoint_scan(
+    fixture, monkeypatch
+):
+    import app.analytics.shared_graph as shared
+
+    fixture.pipeline.project_account(ACCOUNT)
+    fixture.stores.projections._conversation_graph_proofs.clear()
+    calls = []
+    original = shared._verify_all_shared_endpoints
+
+    def observed(*args, **kwargs):
+        calls.append(args[1])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(shared, '_verify_all_shared_endpoints', observed)
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, 'chat-1', 'missing-graph-unit-proof', NOW)
+        advance(db)
+    candidate = fixture.pipeline.build_candidate(ACCOUNT)
+    assert calls
+    fixture.pipeline.publish_candidate(candidate)
+
+
 def test_missing_segment_proof_falls_back_to_full_endpoint_closure(
     fixture, monkeypatch
 ):
