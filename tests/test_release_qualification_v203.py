@@ -208,6 +208,15 @@ def _qualify_source(api: QualificationApi) -> producer.QualifiedSource:
     )
 
 
+def test_extension_input_qualification_uses_manifest_package_version() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "verify-extension-release-inputs.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "Get-Content -LiteralPath extension/manifest.json -Raw | ConvertFrom-Json" in workflow
+    assert '("conversation-analytics-{0}.zip" -f $manifest.version)' in workflow
+    assert "conversation-analytics-2.0.1.zip" not in workflow
+
+
 def test_v203_release_tag_accepts_v203_packaged_agent() -> None:
     archive, digest = _actions_artifact()
     qualified = producer.qualify_downloaded_artifact(

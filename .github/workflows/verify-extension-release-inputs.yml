@@ -59,7 +59,8 @@ jobs:
         run: |
           node extension/build.mjs --package --outdir="$env:QUALIFICATION_OUTPUT" --packaged-signing-rule="$env:PACKAGED_SIGNING_RULE" --legal-release-bindings="$env:LEGAL_BINDINGS_DOCUMENT" --privacy-policy-url="$env:RELEASE_PRIVACY_POLICY_URL"
           if ($LASTEXITCODE -ne 0) { throw 'Candidate build failed' }
-          $artifact = Join-Path $env:QUALIFICATION_OUTPUT 'conversation-analytics-2.0.1.zip'
+          $manifest = Get-Content -LiteralPath extension/manifest.json -Raw | ConvertFrom-Json
+          $artifact = Join-Path $env:QUALIFICATION_OUTPUT ("conversation-analytics-{0}.zip" -f $manifest.version)
           node extension/build.mjs --audit-package --artifact="$artifact" --packaged-signing-rule="$env:PACKAGED_SIGNING_RULE" --legal-release-bindings="$env:LEGAL_BINDINGS_DOCUMENT" --privacy-policy-url="$env:RELEASE_PRIVACY_POLICY_URL"
           if ($LASTEXITCODE -ne 0) { throw 'Candidate audit failed' }
           # Publish identities only; private inputs and the candidate stay ephemeral.
