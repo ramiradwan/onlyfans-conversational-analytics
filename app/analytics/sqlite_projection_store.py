@@ -686,6 +686,7 @@ class SQLiteAnalyticsProjectionStore:
         creator_account_id: str,
         canonical_identity: CanonicalIdentity,
         cancellation_check: CancellationCheck | None = None,
+        source_identity_proof: object | None = None,
     ) -> bool:
         """Reserve, complete, then locally activate after observing the witness."""
 
@@ -744,6 +745,7 @@ class SQLiteAnalyticsProjectionStore:
             publication_epoch=generation["publication_epoch"],
             writer_owner=self.build_owner,
             publication_capability_digest=epoch["scheduler_capability_digest"],
+            source_identity_proof=source_identity_proof,
         )
         self._checkpoint("canonical_intent_reserved", generation_id)
         pending_now = _now()
@@ -779,7 +781,9 @@ class SQLiteAnalyticsProjectionStore:
             self.activation.cancel(intent.intent_id)
             self._retire(generation_id)
             raise ProjectionActivationConflict("local activation identity changed")
-        completed = self.activation.complete(intent)
+        completed = self.activation.complete(
+            intent, source_identity_proof=source_identity_proof
+        )
         if completed.state != "completed":
             raise ProjectionActivationConflict("canonical completion failed")
         self._checkpoint("canonical_completed", generation_id)

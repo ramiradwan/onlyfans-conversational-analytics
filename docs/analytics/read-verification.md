@@ -14,7 +14,7 @@ Each gateway instance keeps at most eight entries for 60 seconds. Entries contai
 
 A cache miss scans canonical content. A supplied database connection always reads its own transaction and never uses this cache. Question execution still checks for concurrent canonical changes and rechecks the publication witness before returning.
 
-After a generation publishes, the pipeline performs a fresh source scan to warm the identity cache. This prevents a long publication from consuming the cache lifetime before results are read. Failure to warm the optional cache does not undo publication; reads still require current source verification.
+A full source scan can mint a process-local HMAC proof bound to that exact identity and source token. Long build and publication paths re-read the current token before reusing the scanned digest. A matching proof refreshes the normal identity-cache entry without rescanning content; restart, missing tracking, invalid proof, or a changed token uses the existing scan or changed-source path. The optional post-publication refresh does not undo publication if it fails.
 
 The cache does not authorize a build, make a stale generation readable, or bypass source expiry. Cold requests can still exceed their limits; background verification can populate the cache without executing a question.
 

@@ -3,8 +3,10 @@
 from collections import OrderedDict
 from dataclasses import dataclass
 import hashlib
+import hmac
 import json
 import re
+import secrets
 from threading import RLock
 import time
 from typing import Callable
@@ -22,6 +24,60 @@ class SourceToken:
     schema: int
     value: str
     revision: int
+
+
+@dataclass(frozen=True, slots=True)
+class SourceIdentityProof:
+    """Process-local binding from one full canonical scan to its source token."""
+
+    account_ref: str
+    token: SourceToken
+    identity: CanonicalIdentity
+    signature: str
+
+
+_PROOF_SECRET = secrets.token_bytes(32)
+
+
+def _proof_payload(account: str, token: SourceToken, identity: CanonicalIdentity) -> bytes:
+    return json.dumps(
+        [account, token.schema, token.value, token.revision,
+         identity.revision, identity.content_digest],
+        ensure_ascii=True, separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def source_identity_proof(
+    account_id: str, token: SourceToken | None, identity: CanonicalIdentity
+) -> SourceIdentityProof | None:
+    if token is None or token.revision != identity.revision:
+        return None
+    account = account_ref(account_id)
+    signature = hmac.new(
+        _PROOF_SECRET, _proof_payload(account, token, identity), hashlib.sha256
+    ).hexdigest()
+    return SourceIdentityProof(account, token, identity, signature)
+
+
+def verify_source_identity_proof(
+    account_id: str,
+    identity: CanonicalIdentity,
+    proof: object,
+    current_token: SourceToken | None,
+) -> bool | None:
+    """Return True/False for a trusted proof, None when full scanning is required."""
+
+    if not isinstance(proof, SourceIdentityProof) or current_token is None:
+        return None
+    account = account_ref(account_id)
+    if proof.account_ref != account or proof.identity != identity:
+        return None
+    expected = hmac.new(
+        _PROOF_SECRET, _proof_payload(account, proof.token, identity), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(proof.signature, expected):
+        return None
+    return current_token == proof.token
 
 
 class SourceIdentityCache:

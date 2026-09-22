@@ -34,6 +34,7 @@ class SourceCatalog:
     digests: dict[str, str] = field(repr=False)
     load: Callable[[str], dict | None] = field(repr=False, compare=False)
     scanned_messages: int = 0
+    identity_proof: object | None = field(default=None, repr=False, compare=False)
 
     @property
     def view_revision(self) -> int:

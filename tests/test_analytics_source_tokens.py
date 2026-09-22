@@ -1,5 +1,6 @@
 """Check exact identity reuse without treating account revision as content identity."""
 
+from dataclasses import replace
 from datetime import timedelta
 from unittest.mock import Mock
 
@@ -57,6 +58,120 @@ def test_publication_bookkeeping_does_not_invalidate_source_content(fixture):
     fixture.pipeline.open_publication_epoch('synthetic-writer')
     assert fixture.source.read_identity(ACCOUNT) == identity
     assert fixture.scan.call_count == 1
+
+
+def test_process_proof_rebinds_expired_identity_without_rescanning(fixture):
+    now = [0.0]
+    fixture.source._identity_cache._clock = lambda: now[0]
+    snapshot = fixture.source.analytics_snapshot(ACCOUNT)
+    assert snapshot.identity_proof is not None and fixture.scan.call_count == 1
+    now[0] = 61.0
+    assert fixture.source.verify_identity_proof(
+        ACCOUNT, snapshot.identity, snapshot.identity_proof
+    )
+    assert fixture.source.read_identity(ACCOUNT) == snapshot.identity
+    assert fixture.scan.call_count == 1
+
+
+def test_process_proof_detects_committed_source_change_without_rescanning(fixture):
+    snapshot = fixture.source.analytics_snapshot(ACCOUNT)
+    with fixture.repositories.database.transaction() as db:
+        db.execute("UPDATE account_messages SET text='Changed after proof' WHERE message_id='m-1-1'")
+    assert fixture.source.verify_identity_proof(
+        ACCOUNT, snapshot.identity, snapshot.identity_proof
+    ) is False
+    assert fixture.scan.call_count == 1
+    assert fixture.source.read_identity(ACCOUNT) != snapshot.identity
+    assert fixture.scan.call_count == 2
+
+
+def test_forged_process_proof_falls_back_to_normal_identity_path(fixture):
+    now = [0.0]
+    fixture.source._identity_cache._clock = lambda: now[0]
+    snapshot = fixture.source.analytics_snapshot(ACCOUNT)
+    forged = replace(snapshot.identity_proof, signature='0' * 64)
+    now[0] = 61.0
+    assert fixture.source.verify_identity_proof(ACCOUNT, snapshot.identity, forged) is None
+    assert fixture.source.read_identity(ACCOUNT) == snapshot.identity
+    assert fixture.scan.call_count == 2
+
+
+def test_pipeline_process_proof_survives_cache_expiry_through_publication(
+    fixture, monkeypatch
+):
+    now = [0.0]
+    fixture.source._identity_cache._clock = lambda: now[0]
+    fixture.repositories.projection_activation._verified_sources._clock = lambda: now[0]
+    original_build = fixture.pipeline._build
+
+    def delayed_build(*args, **kwargs):
+        artifact = original_build(*args, **kwargs)
+        now[0] = 61.0
+        return artifact
+
+    monkeypatch.setattr(fixture.pipeline, '_build', delayed_build)
+    candidate = fixture.pipeline.build_candidate(ACCOUNT)
+    assert fixture.scan.call_count == 1
+
+    now[0] = 122.0
+    result = fixture.pipeline.publish_candidate(candidate)
+    assert result.changed
+    assert fixture.scan.call_count == 1
+
+
+def test_pipeline_process_proof_detects_change_before_publication(fixture):
+    candidate = fixture.pipeline.build_candidate(ACCOUNT)
+    assert fixture.scan.call_count == 1
+    with fixture.repositories.database.transaction() as db:
+        db.execute("UPDATE account_messages SET text='Changed after build' WHERE message_id='m-1-1'")
+    from app.analytics.errors import CanonicalRevisionChanged
+    with pytest.raises(CanonicalRevisionChanged):
+        fixture.pipeline.publish_candidate(candidate)
+    assert fixture.scan.call_count == 1
+
+
+def test_pipeline_proof_survives_identity_cache_expiry_during_build(
+    fixture, monkeypatch
+):
+    now = [0.0]
+    fixture.source._identity_cache._clock = lambda: now[0]
+    original = fixture.pipeline._build
+
+    def delayed(*args, **kwargs):
+        artifact = original(*args, **kwargs)
+        now[0] = 61.0
+        return artifact
+
+    monkeypatch.setattr(fixture.pipeline, '_build', delayed)
+    result = fixture.pipeline.project_account(ACCOUNT)
+    assert result.changed
+    assert fixture.scan.call_count == 1
+
+
+def test_pipeline_proof_retries_when_source_token_changes_during_build(
+    fixture, monkeypatch
+):
+    original = fixture.pipeline._build
+    changed = [False]
+
+    def mutate(*args, **kwargs):
+        artifact = original(*args, **kwargs)
+        if not changed[0]:
+            changed[0] = True
+            with fixture.repositories.database.transaction() as db:
+                db.execute(
+                    "UPDATE account_messages SET text='Changed during build' "
+                    "WHERE message_id='m-1-1'"
+                )
+        return artifact
+
+    monkeypatch.setattr(fixture.pipeline, '_build', mutate)
+    result = fixture.pipeline.project_account(ACCOUNT)
+    assert result.changed and changed[0]
+    assert fixture.scan.call_count == 2
+    assert result.artifact.projection.canonical_content_digest == (
+        canonical_identity(fixture.source.account_read_model(ACCOUNT)).content_digest
+    )
 
 
 @pytest.mark.parametrize('kind,target', [('message','m-1-1'), ('conversation','chat-1'), ('participant','synthetic-fan'), ('all',None)])

@@ -107,6 +107,7 @@ class ProjectionActivationRepository(Protocol):
         publication_epoch: str,
         writer_owner: BuildOwner,
         publication_capability_digest: str,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent: ...
 
     def get(self, generation_id: str) -> ProjectionActivationIntent | None: ...
@@ -114,7 +115,7 @@ class ProjectionActivationRepository(Protocol):
     def pending(self) -> list[ProjectionActivationIntent]: ...
 
     def complete(
-        self, expected: ProjectionActivationIntent
+        self, expected: ProjectionActivationIntent, *, source_identity_proof: object | None = None
     ) -> ProjectionActivationIntent: ...
 
     def cancel(self, intent_id: str) -> ProjectionActivationIntent: ...
@@ -214,7 +215,9 @@ class InMemoryProjectionActivationRepository:
         publication_epoch: str,
         writer_owner: BuildOwner,
         publication_capability_digest: str,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent:
+        del source_identity_proof
         with self._lock:
             expected = _identity_tuple(
                 creator_account_id=creator_account_id,
@@ -299,8 +302,10 @@ class InMemoryProjectionActivationRepository:
             )
 
     def complete(
-        self, expected_intent: ProjectionActivationIntent
+        self, expected_intent: ProjectionActivationIntent, *,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent:
+        del source_identity_proof
         with self._lock:
             current = self._required(expected_intent.intent_id)
             _require_completion_identity(current, expected_intent)
@@ -595,6 +600,7 @@ class SQLiteProjectionActivationRepository:
         publication_epoch: str,
         writer_owner: BuildOwner,
         publication_capability_digest: str,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent:
         expected = _identity_tuple(
             creator_account_id=creator_account_id,
@@ -629,7 +635,10 @@ class SQLiteProjectionActivationRepository:
                 connection, publication_epoch, publication_capability_digest
             ):
                 raise ProjectionActivationConflict("publication epoch revoked")
-            if _sqlite_identity(connection, creator_account_id, cache=self._verified_sources) != canonical_identity:
+            if not _sqlite_identity_matches(
+                connection, creator_account_id, canonical_identity,
+                cache=self._verified_sources, proof=source_identity_proof,
+            ):
                 raise ProjectionActivationConflict("canonical identity changed")
             pending = connection.execute(
                 """
@@ -745,7 +754,8 @@ class SQLiteProjectionActivationRepository:
             ]
 
     def complete(
-        self, expected_intent: ProjectionActivationIntent
+        self, expected_intent: ProjectionActivationIntent, *,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent:
         failure: str | None = None
         result: ProjectionActivationIntent | None = None
@@ -766,8 +776,9 @@ class SQLiteProjectionActivationRepository:
                 current.canonical_revision, current.canonical_content_digest
             )
             now = _now()
-            identity_changed = (
-                _sqlite_identity(connection, current.creator_account_id, cache=self._verified_sources) != expected
+            identity_changed = not _sqlite_identity_matches(
+                connection, current.creator_account_id, expected,
+                cache=self._verified_sources, proof=source_identity_proof,
             )
             epoch_revoked = not _sqlite_publication_epoch_open(
                 connection,
@@ -893,6 +904,30 @@ class SQLiteProjectionActivationRepository:
             if updated.rowcount != 1:
                 raise ProjectionActivationConflict("activation reconciliation CAS failed")
             return replace(current, state="cancelled", cancelled_at=now)
+
+
+def _sqlite_identity_matches(
+    connection: sqlite3.Connection,
+    creator_account_id: str,
+    expected: CanonicalIdentity,
+    *,
+    cache,
+    proof: object | None,
+) -> bool:
+    if proof is not None:
+        from app.analytics.source_tokens import verify_source_identity_proof
+
+        token = cache.token(connection, creator_account_id)
+        matched = verify_source_identity_proof(
+            creator_account_id, expected, proof, token
+        )
+        if matched is not None:
+            if matched:
+                cache.put(creator_account_id, token, expected)
+            return bool(matched)
+    return _sqlite_identity(
+        connection, creator_account_id, cache=cache
+    ) == expected
 
 
 def _sqlite_identity(

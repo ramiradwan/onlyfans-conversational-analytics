@@ -3,8 +3,10 @@
 from unittest.mock import Mock
 import pytest
 
+from dataclasses import replace
+
 from app.analytics.identity import canonical_identity
-from app.persistence.projection_activation import _sqlite_identity
+from app.persistence.projection_activation import _sqlite_identity, _sqlite_identity_matches
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
 
 
@@ -84,3 +86,34 @@ def test_witness_cache_does_not_accept_a_caller_supplied_digest(fixture):
         result = read(fixture, db)
     assert result == canonical_identity(fixture.source.account_read_model(ACCOUNT))
     assert fixture.scan.call_count == 2
+
+
+def test_witness_transaction_accepts_only_the_scanned_process_proof(fixture):
+    snapshot = fixture.source.analytics_snapshot(ACCOUNT)
+    cache = fixture.repositories.projection_activation._verified_sources
+    with fixture.repositories.database.transaction() as db:
+        assert _sqlite_identity_matches(
+            db, ACCOUNT, snapshot.identity, cache=cache,
+            proof=snapshot.identity_proof,
+        )
+    assert fixture.scan.call_count == 1
+
+    forged = replace(snapshot.identity_proof, signature='0' * 64)
+    cache.clear()
+    with fixture.repositories.database.transaction() as db:
+        assert _sqlite_identity_matches(
+            db, ACCOUNT, snapshot.identity, cache=cache, proof=forged,
+        )
+    assert fixture.scan.call_count == 2
+
+
+def test_witness_process_proof_rejects_a_new_transactional_source_token(fixture):
+    snapshot = fixture.source.analytics_snapshot(ACCOUNT)
+    with fixture.repositories.database.transaction() as db:
+        db.execute("UPDATE account_messages SET text='Changed witness source' WHERE message_id='m-0-0'")
+        assert not _sqlite_identity_matches(
+            db, ACCOUNT, snapshot.identity,
+            cache=fixture.repositories.projection_activation._verified_sources,
+            proof=snapshot.identity_proof,
+        )
+    assert fixture.scan.call_count == 1

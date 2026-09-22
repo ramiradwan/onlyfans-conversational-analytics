@@ -107,6 +107,7 @@ class AtomicAnalyticsProjectionStore(AnalyticsProjectionStore, Protocol):
         creator_account_id: str,
         canonical_identity: CanonicalIdentity,
         cancellation_check: CancellationCheck | None = None,
+        source_identity_proof: object | None = None,
     ) -> bool: ...
 
     def discard_generation(self, generation_id: str) -> None: ...
@@ -413,8 +414,9 @@ class InMemoryAnalyticsProjectionStore:
         creator_account_id: str,
         canonical_identity: CanonicalIdentity,
         cancellation_check=None,
+        source_identity_proof=None,
     ) -> bool:
-        del cancellation_check
+        del cancellation_check, source_identity_proof
         with self._lock:
             generation = self._generation_by_id_locked(generation_id)
             if generation.creator_account_id != creator_account_id:

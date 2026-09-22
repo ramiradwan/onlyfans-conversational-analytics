@@ -60,7 +60,7 @@ No model, runtime dependency, public protocol change, or additional database is 
 
 The canonical gateway can reuse an account catalog for the existing 60-second source-identity lifetime. The current transaction-maintained source token and identity must still match. The cache holds at most eight accounts, 4,096 conversations per account and 512 KiB of digest-key bytes in total, excluding Python overhead. It retains no message text. Returned maps are separate copies. Reads do not extend expiry.
 
-Mutation, missing tracking, schema change, restart, identity-cache clearing or expiry prevents reuse. Caller-owned canonical connections always read their own snapshot. Publication refresh ensures an unexpired identity instead of rescanning an already current one. Canonical witness transactions retain independent source checks. Their own bounded cache can reuse an identity previously scanned by the witness repository when the in-transaction source token and tracking schema are unchanged. They do not populate that cache from a worker-supplied digest.
+Mutation, missing tracking, schema change or restart prevents ordinary cache reuse. Identity-cache clearing or expiry also removes the normal cache entry. A same-process HMAC proof minted by a full scan can rebind that exact identity after cache expiry only when a later transaction reads the same source token. Caller-owned canonical connections still read their own snapshot. Canonical witness transactions retain independent source checks and accept no raw worker-supplied digest; they may consume the authenticated process proof after independently matching its token, otherwise they use the complete identity path.
 
 ## Reconciliation cost
 

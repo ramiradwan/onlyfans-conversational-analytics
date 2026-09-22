@@ -64,11 +64,33 @@ class HistoryAnalyticsSource:
                     identity, digests = cached
                     count = 0
                     check()
+                from app.analytics.source_tokens import source_identity_proof
+                proof = source_identity_proof(account_id, token, identity)
             finally:
                 if own_transaction:
                     connection.rollback()
-        return SourceCatalog(identity, digests,
-            lambda chat: self.conversation_read_model(account_id, chat, cancellation_check=cancellation_check), count)
+        return SourceCatalog(
+            identity, digests,
+            lambda chat: self.conversation_read_model(
+                account_id, chat, cancellation_check=cancellation_check
+            ),
+            count,
+            identity_proof=proof,
+        )
+
+    def verify_identity_proof(self, account_id: str, identity, proof):
+        """Rebind a scanned identity to the current token without rescanning content."""
+
+        if self.connection is not None:
+            return None
+        from app.analytics.source_tokens import verify_source_identity_proof
+
+        with self._read() as connection:
+            current = self._identity_cache.token(connection, account_id)
+        matched = verify_source_identity_proof(account_id, identity, proof, current)
+        if matched:
+            self._identity_cache.put(account_id, current, identity)
+        return matched
 
     def read_identity(self, account_id: str):
         from app.analytics.errors import CanonicalAccountNotFound

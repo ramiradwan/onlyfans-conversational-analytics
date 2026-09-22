@@ -114,6 +114,7 @@ class ProjectionCandidate:
     attempts: int
 
     reference: GenerationReference | None = None
+    source_identity_proof: object | None = field(default=None, repr=False, compare=False)
     _artifact_reader: Callable[[], RebuildArtifact] | None = field(default=None, repr=False, compare=False)
 
     def artifact(self) -> RebuildArtifact:
@@ -255,6 +256,7 @@ class AnalyticsPipeline:
         *,
         creator_account_id: str,
         canonical_snapshot: CanonicalIdentity,
+        source_identity_proof: object | None,
         publication_epoch: str | None,
         staged_generation_id: str | None,
         reset_derived: bool,
@@ -278,11 +280,22 @@ class AnalyticsPipeline:
             publication_epoch=publication_epoch,
             staged_generation_id=staged_generation_id,
             artifact_json=b"" if reference is not None else artifact.model_dump_json().encode("utf-8"),
-            reference=reference, _artifact_reader=reader,
+            reference=reference, source_identity_proof=source_identity_proof,
+            _artifact_reader=reader,
             reset_derived=reset_derived,
             requires_publication=requires_publication,
             attempts=attempts,
         )
+
+    def _source_identity_matches(
+        self, account_id: str, identity: CanonicalIdentity, proof: object | None
+    ) -> bool:
+        verify = getattr(self.source, "verify_identity_proof", None)
+        if proof is not None and callable(verify):
+            matched = verify(account_id, identity, proof)
+            if matched is not None:
+                return bool(matched)
+        return source_identity(self.source, account_id) == identity
 
     def build_candidate(
         self,
@@ -304,6 +317,7 @@ class AnalyticsPipeline:
                 check_cancelled(cancellation_check)
                 account = self._capture_source(creator_account_id, cancellation_check)
                 account_identity = snapshot_identity(account)
+                source_proof = getattr(account, "identity_proof", None)
                 check_cancelled(cancellation_check)
                 current = self.projections.get(
                     creator_account_id,
@@ -329,6 +343,7 @@ class AnalyticsPipeline:
                         self._artifact(current, creator_account_id),
                         creator_account_id=creator_account_id,
                         canonical_snapshot=account_identity,
+                        source_identity_proof=source_proof,
                         publication_epoch=publication_epoch,
                         staged_generation_id=None,
                         reset_derived=False,
@@ -374,10 +389,11 @@ class AnalyticsPipeline:
                 except CanonicalRevisionChanged:
                     continue
                 check_cancelled(cancellation_check)
-                observed_identity = source_identity(self.source, creator_account_id)
-                check_cancelled(cancellation_check)
-                if observed_identity != account_identity:
+                if not self._source_identity_matches(
+                    creator_account_id, account_identity, source_proof
+                ):
                     continue
+                check_cancelled(cancellation_check)
                 if publication_epoch is None:
                     publication_epoch = self.open_publication_epoch(
                         f"direct-pipeline-{id(self):x}"
@@ -408,6 +424,7 @@ class AnalyticsPipeline:
                     artifact,
                     creator_account_id=creator_account_id,
                     canonical_snapshot=account_identity,
+                    source_identity_proof=source_proof,
                     publication_epoch=publication_epoch,
                     staged_generation_id=staged_generation_id,
                     reset_derived=reset_derived,
@@ -452,7 +469,11 @@ class AnalyticsPipeline:
             revision=candidate.source_revision,
             content_digest=candidate.canonical_content_digest,
         )
-        if source_identity(self.source, candidate.creator_account_id) != expected_identity:
+        if not self._source_identity_matches(
+            candidate.creator_account_id,
+            expected_identity,
+            candidate.source_identity_proof,
+        ):
             raise CanonicalRevisionChanged()
 
         with self._account_lock(candidate.creator_account_id):
@@ -461,6 +482,7 @@ class AnalyticsPipeline:
                     candidate.staged_generation_id,
                     creator_account_id=candidate.creator_account_id,
                     canonical_identity=expected_identity,
+                    source_identity_proof=candidate.source_identity_proof,
                 )
                 refresh = getattr(self.source, "refresh_identity_cache", None)
                 if callable(refresh):
