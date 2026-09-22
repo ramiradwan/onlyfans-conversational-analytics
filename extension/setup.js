@@ -5,7 +5,7 @@ import { LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE,
 import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError } from './ui/surface-client.mjs';
 import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
-import { chooseMode, transition, restoreAccess } from './ui/actions.mjs';
+import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
 
 let failed = false;
 let dismissed = false;
@@ -119,7 +119,7 @@ function runJourneyAction(action) {
   if (action === 'cancel_pairing') return client.post('cancel');
   if (action === 'open_dashboard') return chrome.tabs.create({ url: client.model.config.dashboard_url });
   if (action === 'open_desktop_settings') return chrome.tabs.create({ url: client.model.config.history_settings_url });
-  if (action === 'open_creator_account') return chrome.tabs.create({ url: 'https://onlyfans.com/' });
+  if (action === 'open_creator_account') return openCreatorAccount();
   if (action === 'retry_readiness') return client.sync();
   if (action === 'resume') return transition('resume', client.model);
   if (action === 'retry_full') return transition('full', client.model);

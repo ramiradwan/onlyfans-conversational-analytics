@@ -7,11 +7,11 @@ import {
   probeDesktopRuntime,
 } from '../runtime/customer-journey.mjs';
 
-function status({ mode = 'full', phase = 'identity', transport = 'disconnected' } = {}) {
+function status({ mode = 'full', phase = 'identity', transport = 'disconnected', sleeping = false } = {}) {
   return {
     consent: { mode },
     phase,
-    delivery: { transport_state: transport },
+    delivery: { transport_state: transport, browser_tab_sleeping: sleeping },
   };
 }
 
@@ -225,6 +225,19 @@ test('commercial authority alone renders activation active but not Full-ready', 
   assert.equal(result.title, 'Analysis is not available right now');
   assert.notEqual(result.id, CUSTOMER_STATES.FULL_READY);
   assert.match(result.body, /Full analytics is activated/);
+});
+
+test('sleeping OnlyFans tab has a direct recovery action after activation', () => {
+  const result = deriveCustomerJourney({
+    status: status({ phase: 'full', transport: 'authenticated', sleeping: true }),
+    pairing: pairing('paired'),
+    desktopRuntimeReachable: true,
+    analysisReadiness: readiness('active', 'blocked'),
+  });
+  assert.equal(result.id, CUSTOMER_STATES.FULL_UNAVAILABLE);
+  assert.equal(result.title, 'Open OnlyFans to continue');
+  assert.equal(result.primaryAction, 'open_creator_account');
+  assert.equal(result.primaryLabel, 'Open OnlyFans');
 });
 
 test('Full is ready only after secure delivery, commercial authority, and analysis admission', () => {

@@ -683,11 +683,12 @@ export class ConsentController {
   }
 
   async #statusLocked() {
-    const [preview, onlyFansPermission, localServicePermission, historyPermission] = await Promise.all([
+    const [preview, onlyFansPermission, localServicePermission, historyPermission, onlyFansTabs] = await Promise.all([
       this.previewMetrics.summary(),
       this.#hasOnlyFansPermission(),
       this.#hasLocalAnalyticsPermission(),
       this.#hasHistoryPermission(),
+      this.#onlyFansTabs(),
     ]);
     const brainReachable = localServicePermission ? await this.#brainReachable() : false;
     const runtime = this.runtimeSummary() ?? {};
@@ -707,6 +708,9 @@ export class ConsentController {
           ? runtime.startup_error_code : null,
         history_error_code: ['history_unavailable', 'unsupported_browser', 'identity_required'].includes(runtime.history_error_code)
           ? runtime.history_error_code : null,
+        browser_tab_sleeping: this.phase === 'full'
+          && onlyFansTabs.some((tab) => Number.isInteger(tab?.id))
+          && onlyFansTabs.every((tab) => Object.hasOwn(tab, 'frozen') && tab.frozen === true),
         capture_drop_counts: structuredClone(runtime.capture_drop_counts ?? {}),
         transport_state: ['authenticated', 'authenticating', 'disconnected'].includes(runtime.transport_state)
           ? runtime.transport_state : 'disconnected',

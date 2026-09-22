@@ -38,7 +38,9 @@ function render(model) {
   const drops = Object.values(status.delivery?.capture_drop_counts ?? {}).reduce((sum, count) => sum + (Number.isSafeInteger(count) ? count : 0), 0);
   text('capture-health', status.delivery?.startup_error_code ? 'Full analytics could not start. Open the desktop app, then retry in setup.'
     : drops ? `${new Intl.NumberFormat().format(drops)} updates could not be recorded.` : 'No capture issues reported.');
-  text('history-health', status.delivery?.history_error_code ? 'Message history needs attention in the desktop app.' : '');
+  text('history-health', status.delivery?.browser_tab_sleeping
+    ? 'Your browser paused OnlyFans. Open the tab and history sync will resume automatically.'
+    : status.delivery?.history_error_code ? 'Message history needs attention in the desktop app.' : '');
 }
 function confirmAction(title, body, label) {
   const dialog = element('confirm-dialog');

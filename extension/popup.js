@@ -2,7 +2,7 @@ import { UI_RELOAD_TABS_MESSAGE_TYPE } from './runtime/consent-controller.mjs';
 import { createSurfaceClient, openSurface, send } from './ui/surface-client.mjs';
 import { customerJourney, isPreview, phaseLabel } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
-import { transition } from './ui/actions.mjs';
+import { transition, openCreatorAccount } from './ui/actions.mjs';
 
 let failed = false;
 let primaryAction = 'setup';
@@ -46,6 +46,8 @@ function render(model) {
     primaryAction = 'resume'; label = 'Resume analytics';
   } else if (status.consent.mode === 'preview') {
     label = 'Review Full analytics'; setupSection = 'full';
+  } else if (journey.primaryAction === 'open_creator_account') {
+    primaryAction = 'creator'; label = journey.primaryLabel;
   } else if (journey.id === 'full_ready') {
     primaryAction = 'dashboard'; label = 'Open analysis';
     text('journey-body', 'Insights and stored messages are in the desktop app.');
@@ -61,6 +63,7 @@ page.bind('journey-primary', () => {
   if (primaryAction === 'resume') return transition('resume', client.model);
   if (primaryAction === 'reload') return send({ type: UI_RELOAD_TABS_MESSAGE_TYPE });
   if (primaryAction === 'dashboard') return chrome.tabs.create({ url: client.model.config.dashboard_url });
+  if (primaryAction === 'creator') return openCreatorAccount();
   return openSurface('setup', setupSection);
 });
 page.bind('pause', () => transition('pause', client.model));

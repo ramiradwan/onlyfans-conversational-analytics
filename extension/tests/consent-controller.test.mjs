@@ -40,6 +40,7 @@ function harness({ unregisterFails = false, ...options } = {}) {
   const local = {};
   const session = {};
   const registeredScripts = [];
+  const onlyFansTabs = [{ id: 7, frozen: false }];
   const removedPermissions = [];
   const permissionState = { onlyFans: false, localService: false, history: false };
   const counters = {
@@ -92,7 +93,7 @@ function harness({ unregisterFails = false, ...options } = {}) {
       async create() {},
     },
     tabs: {
-      async query() { return [{ id: 7 }]; },
+      async query() { return structuredClone(onlyFansTabs); },
       async sendMessage() { return { ok: true }; },
       async reload() { counters.reloads += 1; },
     },
@@ -146,6 +147,7 @@ function harness({ unregisterFails = false, ...options } = {}) {
     controller,
     counters,
     local,
+    onlyFansTabs,
     permissionState,
     registeredScripts,
     removedPermissions,
@@ -212,6 +214,17 @@ test('saved preview consent enters permission-required state and can be re-grant
   status = await h.controller.status();
   assert.equal(status.phase, 'preview');
   assert.equal(h.registeredScripts.length, 2);
+});
+
+test('Full status reports when every OnlyFans tab is sleeping', async () => {
+  const h = harness();
+  h.controller.adapter.loadBrainBinding = async () => {};
+  h.permissionState.onlyFans = true;
+  await h.controller.setMode('full');
+  h.onlyFansTabs[0].frozen = true;
+  assert.equal((await h.controller.status()).delivery.browser_tab_sleeping, true);
+  h.onlyFansTabs.push({ id: 8, frozen: false });
+  assert.equal((await h.controller.status()).delivery.browser_tab_sleeping, false);
 });
 
 test('Full requires authenticated pairing without local HTTP host access', async () => {

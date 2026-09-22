@@ -226,6 +226,22 @@ export function deriveCustomerJourney({
 
   if (
     analysisReadiness.commercial_authority === 'active'
+    && status?.delivery?.browser_tab_sleeping === true
+  ) {
+    return Object.freeze({
+      id: CUSTOMER_STATES.FULL_UNAVAILABLE,
+      tone: 'warning',
+      title: 'Open OnlyFans to continue',
+      body: 'Your browser paused the OnlyFans tab. Open it and analytics will resume automatically.',
+      primaryAction: 'open_creator_account',
+      primaryLabel: 'Open OnlyFans',
+      secondaryAction: null,
+      secondaryLabel: null,
+    });
+  }
+
+  if (
+    analysisReadiness.commercial_authority === 'active'
     && analysisReadiness.analysis_admission === 'admitted'
   ) {
     return Object.freeze({
