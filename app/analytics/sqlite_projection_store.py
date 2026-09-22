@@ -1642,7 +1642,9 @@ class SQLiteAnalyticsProjectionStore:
             self.crash_hook(stage, generation_id)
 
 
-def _validate_generation_links(connection, generation_id, account_id, check):
+def _validate_generation_links(
+    connection, generation_id, account_id, check, graph_validation=None
+):
     """Check the candidate's referential closure without scanning other accounts."""
 
     check()
@@ -1658,7 +1660,10 @@ def _validate_generation_links(connection, generation_id, account_id, check):
     optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11, "conversation_page_refs": 13, "conversation_owned_pages": 13, "enrichment_refs": 14, "enrichment_owned_records": 14, "conversation_graph_refs": 16}
     if schema_version >= 10:
         from app.analytics.shared_graph import verify_segment_links
-        verify_segment_links(connection, generation_id, account_id)
+        verify_segment_links(
+            connection, generation_id, account_id,
+            validation=graph_validation, check=check,
+        )
     else:
         missing = connection.execute("""SELECT 1 FROM graph_edges AS e
             LEFT JOIN graph_nodes AS source ON source.generation_id=e.generation_id
@@ -1788,7 +1793,10 @@ def _recompute_generation(
         != generation["pipeline_identity_digest"]
     ):
         raise ProjectionValidationError("projection row digest differs")
-    _validate_generation_links(connection, generation_id, account_id, run_check)
+    _validate_generation_links(
+        connection, generation_id, account_id, run_check,
+        graph_validation=graph_validation,
+    )
     if materialize_graph:
         from app.analytics.graph_privacy import _validated_graph_digest
 

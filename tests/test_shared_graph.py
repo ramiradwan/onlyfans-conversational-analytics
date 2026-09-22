@@ -325,6 +325,101 @@ def test_incremental_validation_reuses_verified_segments(fixture, monkeypatch):
     cold_equal(fixture, result.artifact)
 
 
+def test_incremental_validation_reuses_verified_endpoint_closure(
+    fixture, monkeypatch
+):
+    import app.analytics.shared_graph as shared
+
+    calls = []
+    original = shared._verify_all_shared_endpoints
+
+    def observed(*args, **kwargs):
+        calls.append(args[1])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(shared, '_verify_all_shared_endpoints', observed)
+    fixture.pipeline.project_account(ACCOUNT)
+    assert calls
+    calls.clear()
+
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, 'chat-1', 'verified-endpoint-reuse', NOW)
+        advance(db)
+    candidate = fixture.pipeline.build_candidate(ACCOUNT)
+    result = fixture.pipeline.publish_candidate(candidate)
+    assert result.changed and calls == []
+    monkeypatch.setattr(shared, '_verify_all_shared_endpoints', original)
+    cold_equal(fixture, result.artifact)
+
+
+def test_missing_segment_proof_falls_back_to_full_endpoint_closure(
+    fixture, monkeypatch
+):
+    import app.analytics.shared_graph as shared
+
+    fixture.pipeline.project_account(ACCOUNT)
+    fixture.stores.projections._graph_segment_proofs.clear()
+    calls = []
+    original = shared._verify_all_shared_endpoints
+
+    def observed(*args, **kwargs):
+        calls.append(args[1])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(shared, '_verify_all_shared_endpoints', observed)
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, 'chat-1', 'missing-endpoint-proof', NOW)
+        advance(db)
+    candidate = fixture.pipeline.build_candidate(ACCOUNT)
+    fixture.pipeline.publish_candidate(candidate)
+    assert calls
+
+
+def test_removed_selected_node_cannot_reuse_predecessor_endpoint_closure(fixture):
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+    from app.analytics.shared_graph import (
+        SegmentValidation, SharedGraphValidation,
+        _incremental_endpoint_links_valid,
+    )
+
+    fixture.pipeline.project_account(ACCOUNT)
+    with fixture.stores.database.read() as db:
+        generation = db.execute(
+            "SELECT * FROM projection_generations WHERE status='active'"
+        ).fetchone()
+        proof = fixture.stores.projections._trusted_graph_segment_proof(
+            db, generation
+        )
+        assert proof is not None
+        removed = db.execute(
+            """SELECT e.source_id
+               FROM generation_graph_segments m
+               JOIN graph_segment_edges r USING(creator_account_id,segment_id)
+               JOIN graph_edge_content e
+                 USING(creator_account_id,content_id,edge_id)
+               WHERE m.generation_id=? AND m.creator_account_id=?
+                 AND m.kind='edge' LIMIT 1""",
+            (generation['generation_id'], generation['creator_account_id']),
+        ).fetchone()[0]
+        plans = tuple(
+            SegmentValidation(
+                item.kind, item.bucket, item.segment_id, item.digest,
+                item.count, True,
+            )
+            for item in proof.segments
+        )
+        validation = SharedGraphValidation(
+            generation['graph_digest'], plans, proof, (removed,)
+        )
+        with pytest.raises(
+            GraphReferentialIntegrityError, match='graph_endpoint_absent'
+        ):
+            _incremental_endpoint_links_valid(
+                db, generation['generation_id'],
+                generation['creator_account_id'], validation, lambda: None,
+            )
+
+
 def test_missing_segment_proof_falls_back_to_full_graph_validation(fixture, monkeypatch):
     import app.analytics.graph_verification as verification
 

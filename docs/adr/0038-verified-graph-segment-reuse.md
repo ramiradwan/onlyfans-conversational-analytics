@@ -14,7 +14,7 @@ Schema version 15 prevents deletion of referenced graph content and referenced s
 
 An incremental build still computes its complete logical graph and segment digests. The candidate manifest must exactly match the selected persisted manifest. A reused segment is accepted only when the same segment identity, digest and count appear in a proof for the exact active predecessor. New or changed segments recompute canonical row bytes, content hashes, segment digests and category counts from persisted rows.
 
-Complete endpoint closure, account scope, projection validation, persisted counts, the public graph digest, canonical witness, ownership fencing and activation checks remain required. A missing proof, restart, generation mismatch, schema change, unsupported catalog or candidate with no reusable segment uses the ordinary complete graph-row verification path. Full verification captures a replacement proof without adding another graph scan.
+Endpoint closure, account scope, projection validation, persisted counts, the public graph digest, canonical witness, ownership fencing and activation checks remain required. A same-process incremental build may reuse the predecessor's verified endpoint closure for unchanged edge segments only when the exact segment proof still matches. It must check every changed edge segment against the candidate's selected node manifest and reject any selected edge that still references a node removed from the predecessor. A missing proof, unknown removal set, restart, generation mismatch, schema change, unsupported catalog or candidate with no reusable segment uses the ordinary complete graph-row and endpoint verification path. Full verification captures a replacement proof without adding another graph scan.
 
 ## Lifetime and trust boundary
 
@@ -26,7 +26,7 @@ The database trust boundary is unchanged. A privileged process that rewrites the
 
 ## Consequences
 
-Incremental validation can avoid rereading and revalidating unchanged graph payloads. It still verifies changed segment rows and the complete selected endpoint relation.
+Incremental validation can avoid rereading and revalidating unchanged graph payloads. It still verifies changed segment rows and checks changed edge endpoints plus references to removed predecessor nodes. Fallback validation checks the complete selected endpoint relation.
 
 Cold builds, process restarts, backup verification and explicit artifact reads retain complete row validation. Logical account-graph construction is unchanged and remains account-sized work.
 

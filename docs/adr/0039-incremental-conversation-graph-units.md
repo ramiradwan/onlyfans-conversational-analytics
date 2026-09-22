@@ -14,7 +14,7 @@ A cold or fallback build still projects the complete logical graph. While shared
 
 On a later build, unchanged conversations may contribute their witnessed unit references without reopening predecessor graph rows. Changed conversations are projected normally. The builder compares changed canonical record hashes with the active predecessor, rebuilds only affected identity buckets, updates conversation-order edges from current metrics and witnessed predecessor timeline metadata, then combines rebuilt buckets with unchanged verified segment chunks.
 
-The incremental result must reproduce the ordinary canonical graph digest, per-kind counts and complete endpoint closure. Publication still uses the existing generation witness, ownership fencing, staging validation and activation receipt rules.
+The incremental result must reproduce the ordinary canonical graph digest, per-kind counts and endpoint closure. When the exact predecessor segment proof is available, unchanged edge segments can retain their previously verified closure. Changed edge buckets are checked against the current selected node manifest, and every removed predecessor node is checked for surviving selected edge references. Otherwise validation runs the complete endpoint scan. Publication still uses the existing generation witness, ownership fencing, staging validation and activation receipt rules.
 
 ## Eligibility and fallback
 
@@ -32,6 +32,6 @@ These are cache/admission bounds, not a total process-memory guarantee. Exceedin
 
 ## Consequences
 
-A small source change can avoid account-wide graph record restoration and merging. The updater still computes current conversation metrics, validates reused page/analyzer data, stages generation references, verifies changed graph buckets, checks the complete selected endpoint relation and publishes a complete generation.
+A small source change can avoid account-wide graph record restoration and merging. The updater still computes current conversation metrics, validates reused page/analyzer data, stages generation references, verifies changed graph buckets, proves endpoint closure for changed edges and removed nodes, and publishes a complete generation. Fallback validation checks the complete selected endpoint relation.
 
 Cold builds, restart without process-local proofs, explicit artifact reads and backup verification retain their complete graph paths. The optimization adds one rebuildable analytics migration and no dependency, database file, network service or writer process.

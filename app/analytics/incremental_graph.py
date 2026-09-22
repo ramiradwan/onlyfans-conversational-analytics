@@ -494,6 +494,7 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
                 for item in graph.segments
             ),
             proof=graph.predecessor_proof,
+            removed_nodes=tuple(sorted(graph._removed["node"])),
         )
         writer.refresh()
         return statistics

@@ -63,6 +63,7 @@ class SharedGraphValidation:
     graph_digest: str
     plans: tuple[SegmentValidation, ...]
     proof: GraphSegmentProof | None
+    removed_nodes: tuple[str, ...] | None = None
 
 
 class PredecessorSegments(dict):
@@ -474,32 +475,116 @@ def uses_segments(connection, generation_id: str, account_id: str) -> bool:
                               (generation_id, account_id)).fetchone() is not None
 
 
-def verify_segment_links(connection, generation_id: str, account_id: str) -> None:
-    """Check actual selected endpoints and layout independently of foreign-key settings."""
+def _incremental_endpoint_links_valid(
+    connection, generation_id, account_id, validation, check
+):
+    """Verify only endpoint closure that can change from a proven predecessor."""
 
+    if (validation is None or validation.proof is None
+            or validation.removed_nodes is None):
+        return False
     from app.analytics.graph_store import GraphReferentialIntegrityError
+    from app.analytics.validation_receipt import content_stamp
+
+    stamp = content_stamp(connection)
+    proof = validation.proof
+    if stamp is None or tuple(stamp[:3]) != proof.stamp_prefix:
+        return False
+
+    expected = sorted(
+        (plan.kind, plan.bucket, plan.segment_id, plan.digest)
+        for plan in validation.plans
+    )
+    actual = [tuple(row) for row in connection.execute(
+        '''SELECT m.kind,m.bucket,m.segment_id,s.content_digest
+           FROM generation_graph_segments m
+           JOIN graph_segments s USING(creator_account_id,segment_id)
+           WHERE m.generation_id=? AND m.creator_account_id=? AND s.sealed=1
+           ORDER BY m.kind,m.bucket''',
+        (generation_id, account_id),
+    )]
+    if actual != expected:
+        raise GraphReferentialIntegrityError('graph_segment_plan_invalid')
+
+    proven = {(item.kind, item.bucket): item for item in proof.segments}
+    for plan in validation.plans:
+        check()
+        if not plan.reused:
+            continue
+        item = proven.get((plan.kind, plan.bucket))
+        if (item is None or item.segment_id != plan.segment_id
+                or item.digest != plan.digest or item.count != plan.count
+                or item.chunk_digest is None):
+            return False
+
+    # A reused edge was already endpoint-closed in the predecessor. It can
+    # become invalid only if one of its selected node IDs disappeared.
+    removed = list(validation.removed_nodes)
+    for offset in range(0, len(removed), 128):
+        check()
+        batch = removed[offset:offset + 128]
+        if not batch:
+            continue
+        marks = ','.join('?' for _ in batch)
+        for field in ('source_id', 'target_id'):
+            referenced = connection.execute(f'''SELECT 1
+                FROM graph_edge_content e
+                JOIN graph_segment_edges r
+                  USING(creator_account_id,content_id,edge_id)
+                JOIN generation_graph_segments m
+                  USING(creator_account_id,segment_id)
+                WHERE m.generation_id=? AND m.creator_account_id=?
+                  AND m.kind='edge' AND e.{field} IN ({marks})
+                LIMIT 1''', (generation_id, account_id, *batch)).fetchone()
+            if referenced is not None:
+                raise GraphReferentialIntegrityError('graph_endpoint_absent')
+
+    # New or changed edge buckets need their current endpoints checked against
+    # the selected node manifest. Bucket routing keeps each node lookup bounded.
+    for plan in validation.plans:
+        check()
+        if plan.kind != 'edge' or plan.reused:
+            continue
+        missing = connection.execute('''SELECT 1
+            FROM graph_segment_edges r
+            JOIN graph_edge_content e
+              USING(creator_account_id,content_id,edge_id)
+            WHERE r.creator_account_id=? AND r.segment_id=?
+              AND (
+                NOT EXISTS (
+                    SELECT 1 FROM generation_graph_segments nm
+                    JOIN graph_segment_nodes n
+                      USING(creator_account_id,segment_id)
+                    WHERE nm.generation_id=? AND nm.creator_account_id=?
+                      AND nm.kind='node'
+                      AND nm.bucket=substr(e.source_id,4,2)
+                      AND n.node_id=e.source_id
+                )
+                OR NOT EXISTS (
+                    SELECT 1 FROM generation_graph_segments nm
+                    JOIN graph_segment_nodes n
+                      USING(creator_account_id,segment_id)
+                    WHERE nm.generation_id=? AND nm.creator_account_id=?
+                      AND nm.kind='node'
+                      AND nm.bucket=substr(e.target_id,4,2)
+                      AND n.node_id=e.target_id
+                )
+              )
+            LIMIT 1''', (
+                account_id, plan.segment_id,
+                generation_id, account_id,
+                generation_id, account_id,
+            )).fetchone()
+        if missing is not None:
+            raise GraphReferentialIntegrityError('graph_endpoint_absent')
+    return True
+
+
+def _verify_all_shared_endpoints(connection, generation_id, account_id):
+    """Cold/restart fallback that independently scans complete endpoint closure."""
+
     parameters = (generation_id, account_id)
-    shared = uses_segments(connection, *parameters)
-    if shared:
-        for table in ('graph_owned_nodes', 'graph_owned_edges'):
-            if connection.execute(f'SELECT 1 FROM {table} WHERE generation_id=? AND creator_account_id=? LIMIT 1', parameters).fetchone():
-                raise GraphReferentialIntegrityError('graph_generation_layout_mixed')
-        invalid = connection.execute('''SELECT 1 FROM generation_graph_segments m
-            LEFT JOIN graph_segments s USING(creator_account_id,segment_id)
-            WHERE m.generation_id=? AND m.creator_account_id=?
-              AND (s.segment_id IS NULL OR s.sealed!=1 OR s.kind!=m.kind OR s.bucket!=m.bucket) LIMIT 1''', parameters).fetchone()
-        if invalid:
-            raise GraphReferentialIntegrityError('graph_segment_invalid')
-    missing = connection.execute('''SELECT 1 FROM graph_owned_edges e
-        LEFT JOIN graph_owned_nodes source ON source.generation_id=e.generation_id AND source.creator_account_id=e.creator_account_id AND source.node_id=e.source_id
-        LEFT JOIN graph_owned_nodes target ON target.generation_id=e.generation_id AND target.creator_account_id=e.creator_account_id AND target.node_id=e.target_id
-        WHERE e.generation_id=? AND e.creator_account_id=?
-          AND (source.node_id IS NULL OR target.node_id IS NULL) LIMIT 1''', parameters).fetchone()
-    if missing:
-        raise GraphReferentialIntegrityError('graph_endpoint_absent')
-    if not shared:
-        return
-    missing = connection.execute('''WITH sides(side) AS (VALUES(0),(1)), missing AS (
+    return connection.execute('''WITH sides(side) AS (VALUES(0),(1)), missing AS (
         SELECT CASE side WHEN 0 THEN e.source_id ELSE e.target_id END AS node_id
         FROM generation_graph_segments m
         CROSS JOIN graph_segment_edges r USING(creator_account_id,segment_id)
@@ -512,7 +597,53 @@ def verify_segment_links(connection, generation_id: str, account_id: str) -> Non
         CROSS JOIN graph_node_content nc USING(creator_account_id,content_id,node_id)
         WHERE nm.generation_id=? AND nm.creator_account_id=? AND nm.kind='node')
         SELECT 1 FROM missing LIMIT 1''', parameters * 2).fetchone()
+
+
+def verify_segment_links(
+    connection, generation_id: str, account_id: str, *,
+    validation=None, check=lambda: None,
+) -> None:
+    """Check selected endpoints and layout, reusing only proven predecessor closure."""
+
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+    parameters = (generation_id, account_id)
+    shared = uses_segments(connection, *parameters)
+    if shared:
+        for table in ('graph_owned_nodes', 'graph_owned_edges'):
+            if connection.execute(
+                f'SELECT 1 FROM {table} WHERE generation_id=? '
+                'AND creator_account_id=? LIMIT 1', parameters
+            ).fetchone():
+                raise GraphReferentialIntegrityError('graph_generation_layout_mixed')
+        invalid = connection.execute('''SELECT 1 FROM generation_graph_segments m
+            LEFT JOIN graph_segments s USING(creator_account_id,segment_id)
+            WHERE m.generation_id=? AND m.creator_account_id=?
+              AND (s.segment_id IS NULL OR s.sealed!=1
+                   OR s.kind!=m.kind OR s.bucket!=m.bucket)
+            LIMIT 1''', parameters).fetchone()
+        if invalid:
+            raise GraphReferentialIntegrityError('graph_segment_invalid')
+    missing = connection.execute('''SELECT 1 FROM graph_owned_edges e
+        LEFT JOIN graph_owned_nodes source
+          ON source.generation_id=e.generation_id
+         AND source.creator_account_id=e.creator_account_id
+         AND source.node_id=e.source_id
+        LEFT JOIN graph_owned_nodes target
+          ON target.generation_id=e.generation_id
+         AND target.creator_account_id=e.creator_account_id
+         AND target.node_id=e.target_id
+        WHERE e.generation_id=? AND e.creator_account_id=?
+          AND (source.node_id IS NULL OR target.node_id IS NULL)
+        LIMIT 1''', parameters).fetchone()
     if missing:
+        raise GraphReferentialIntegrityError('graph_endpoint_absent')
+    if not shared:
+        return
+    if _incremental_endpoint_links_valid(
+        connection, generation_id, account_id, validation, check
+    ):
+        return
+    if _verify_all_shared_endpoints(connection, generation_id, account_id):
         raise GraphReferentialIntegrityError('graph_endpoint_absent')
 
 

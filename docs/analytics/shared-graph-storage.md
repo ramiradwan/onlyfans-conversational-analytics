@@ -20,7 +20,7 @@ The candidate still undergoes persisted-content verification before validation a
 
 Ordered reads start from the selected generation's manifest, then resolve its segment membership and content. They use bucket and record order directly instead of sorting a scan of every segment retained for the account.
 
-Endpoint verification compares the selected edges' endpoint identities with the selected nodes' actual stored identities. It does not accept an endpoint merely because another generation retains it. SQLite keeps a temporary set of identities for this comparison. Full verification streams graph properties and captures a bounded process-local segment proof in the same scan. A valid ADR 0038 proof can reuse only unchanged segment results; complete endpoint closure still runs for the selected generation.
+Endpoint verification compares selected edge endpoints with the candidate's selected node identities. Cold builds, restart and proof fallback run complete endpoint closure for the selected generation. A same-process ADR 0039 update with an exact ADR 0038 predecessor proof can reuse closure for unchanged edge segments. It still checks every changed edge segment against the candidate node manifest and checks indexed source/target references for every node removed from the predecessor. Missing proof or an unknown removal set uses the complete scan.
 
 ## Physical write order
 
