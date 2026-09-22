@@ -80,7 +80,8 @@ function safeRequestShape(request) {
 }
 
 export class SyntheticPlatform {
-  constructor() {
+  constructor({ activityDay = '2026-07-19' } = {}) {
+    this.activityDay = activityDay;
     this.httpReads = [];
     this.mutationAttempts = [];
     this.unexpectedRequests = [];
@@ -89,6 +90,8 @@ export class SyntheticPlatform {
   }
 
   async install(context) {
+    const extensionHosts = new Set(context.serviceWorkers().map((worker) => new URL(worker.url()))
+      .filter((url) => url.protocol === 'chrome-extension:').map((url) => url.hostname));
     await context.routeWebSocket(`${PLATFORM_SOCKET}**`, (socket) => {
       this.openSockets.add(socket);
       socket.onClose(() => this.openSockets.delete(socket));
@@ -100,7 +103,8 @@ export class SyntheticPlatform {
     await context.route('**/*', async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      if (url.origin === BRAIN_ORIGIN) {
+      if (url.origin === BRAIN_ORIGIN
+        || (url.protocol === 'chrome-extension:' && extensionHosts.has(url.hostname))) {
         await route.continue();
         return;
       }
@@ -116,7 +120,7 @@ export class SyntheticPlatform {
       }
 
       this.httpReads.push(url.pathname);
-      if (url.pathname === '/') {
+      if (url.pathname === '/' || url.pathname === '/my/chats') {
         await route.fulfill({
           status: 200,
           contentType: 'text/html; charset=utf-8',
@@ -138,7 +142,7 @@ export class SyntheticPlatform {
           list: [
             {
               withUser: { id: SYNTHETIC.chatId, name: SYNTHETIC.displayName },
-              lastMessage: { createdAt: '2026-07-19T08:02:00Z' },
+              lastMessage: { createdAt: `${this.activityDay}T08:02:00Z` },
             },
           ],
         });
@@ -152,14 +156,14 @@ export class SyntheticPlatform {
                 {
                   id: SYNTHETIC.historyMessageIds[0],
                   text: SYNTHETIC.historyTexts[0],
-                  createdAt: '2026-07-19T08:00:00Z',
+                  createdAt: `${this.activityDay}T08:00:00Z`,
                   fromUser: { id: SYNTHETIC.chatId, isMe: false },
                   chatUserId: SYNTHETIC.chatId,
                 },
                 {
                   messageId: SYNTHETIC.historyMessageIds[1],
                   body: SYNTHETIC.historyTexts[1],
-                  postedAt: '2026-07-19T08:01:00Z',
+                  postedAt: `${this.activityDay}T08:01:00Z`,
                   senderId: SYNTHETIC.creatorId,
                   isOutgoing: true,
                   chatUserId: SYNTHETIC.chatId,
@@ -167,7 +171,7 @@ export class SyntheticPlatform {
                 {
                   message_id: SYNTHETIC.historyMessageIds[2],
                   text: SYNTHETIC.historyTexts[2],
-                  sent_at: '2026-07-19T08:02:00Z',
+                  sent_at: `${this.activityDay}T08:02:00Z`,
                   sender: { id: SYNTHETIC.chatId },
                   direction: 'inbound',
                   chatUserId: SYNTHETIC.chatId,
@@ -206,6 +210,20 @@ export class SyntheticPlatform {
         chatUserId: SYNTHETIC.offlinePeerId,
       },
     });
+  }
+
+  sendReplayBurst(count = 20) {
+    for (let index = 0; index < count; index += 1) {
+      this.#sendFrame({
+        new_message: {
+          id: `fixture-replay-burst-${index}`,
+          text: `Synthetic backlog message ${index}`,
+          createdAt: '2026-07-19T08:05:00Z',
+          fromUser: { id: SYNTHETIC.offlinePeerId, isMe: false },
+          chatUserId: SYNTHETIC.offlinePeerId,
+        },
+      });
+    }
   }
 
   #sendFrame(document) {

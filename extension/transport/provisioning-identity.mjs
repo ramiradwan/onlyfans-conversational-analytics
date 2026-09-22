@@ -4,6 +4,8 @@ import {
 } from '../runtime/capture-context.mjs';
 
 import { LOCAL_SERVICE_ORIGIN } from './local-service-endpoints.mjs';
+import { PAGE_CONTROL_MESSAGE_TYPE, PAGE_CONTROL_VERSION,
+  PROVISIONING_IDENTITY_RESET_TYPE, isProvisioningIdentityEnvelope } from '../capture/envelopes.mjs';
 
 export const PROVISIONING_IDENTITY_MESSAGE_TYPE = 'ofca.provisioning.identity.update';
 export const PROVISIONING_IDENTITY_VERSION = 1;
@@ -35,6 +37,9 @@ function profileAccountId(profile) {
 }
 
 function identityUpdate(message) {
+  if (message?.type === PROVISIONING_IDENTITY_RESET_TYPE && isProvisioningIdentityEnvelope(message)) {
+    return { accountId: null, pageEpoch: message.page_epoch };
+  }
   if (
     !isRecord(message)
     || !hasExactKeys(message, ['type', 'version', 'page_epoch', 'authenticated_profile'])
@@ -205,7 +210,7 @@ export function createProvisioningIdentityBridge({
   };
 
   const internalListener = (message, sender, sendResponse) => {
-    if (message?.type !== PROVISIONING_IDENTITY_MESSAGE_TYPE) return false;
+    if (![PROVISIONING_IDENTITY_MESSAGE_TYPE, PROVISIONING_IDENTITY_RESET_TYPE].includes(message?.type)) return false;
     const update = identityUpdate(message);
     if (update === undefined) return false;
     let senderKey;
@@ -294,6 +299,21 @@ export function createProvisioningIdentityBridge({
   };
   const tabUpdated = (tabId, changeInfo) => {
     if (changeInfo.status === 'loading' || changeInfo.url !== undefined) removeTab(tabId);
+    if (changeInfo.status === 'complete') {
+      // Browser loading events can also occur without replacing the top-level
+      // document. Re-observe through its current content bridge after clearing;
+      // never restore a cached identity from a previous document.
+      void (async () => {
+        await ensureReady();
+        await contextQueue;
+        if (!allowsIdentity()) return;
+        await chromeApi.tabs?.sendMessage?.(tabId, {
+          type: PAGE_CONTROL_MESSAGE_TYPE,
+          version: PAGE_CONTROL_VERSION,
+          action: 'refresh_identity',
+        }, { frameId: 0 });
+      })().catch(() => undefined);
+    }
   };
   const resetSession = () => { void clearContexts().catch(() => undefined); };
 

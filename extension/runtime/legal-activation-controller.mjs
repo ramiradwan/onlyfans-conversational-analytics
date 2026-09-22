@@ -1,3 +1,4 @@
+import { allowsUiMessage } from './ui-surfaces.mjs';
 import { validateLegalInstrumentBindings } from './legal-instruments.mjs';
 import { SerialExecutor } from './operation-scope.mjs';
 import {
@@ -30,11 +31,7 @@ const freshFlow = ({ termsEventId = null, riskEventId = null, stage = 'pre_mode'
   completed_event_id: null,
 });
 
-function trustedUiSender(sender, chromeApi) {
-  return sender?.id === chromeApi.runtime.id
-    && typeof sender?.url === 'string'
-    && sender.url.startsWith(chromeApi.runtime.getURL(''));
-}
+
 
 function validFlow(value) {
   if (
@@ -312,7 +309,7 @@ export class LegalActivationController {
   }
 
   #onMessage(message, sender, sendResponse) {
-    if (!trustedUiSender(sender, this.chromeApi)) return false;
+    if (!allowsUiMessage(sender, message, this.chromeApi)) return false;
     const calls = new Map([
       [LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE, () => this.status()],
       [LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, () => this.acceptTerms()],

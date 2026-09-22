@@ -143,6 +143,26 @@ async function connectAndBind(h) {
   return socket;
 }
 
+for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
+  test(`${Client.name}: wake storms and short sessions cannot bypass backoff or its circuit cooldown`, async () => {
+    const h = harness({ Client });
+    let socket = await connectAndBind(h);
+    for (const delay of [500, 1_000, 2_000, 4_000, 8_000, 300_000]) {
+      socket.drop();
+      const count = h.sockets.length;
+      for (let wake = 0; wake < 100; wake += 1) h.client.reconcileConnection();
+      assert.equal(h.sockets.length, count);
+      assert.equal(h.scheduler.runNextTimeout(), delay);
+      socket = h.sockets.at(-1);
+      socket.open();
+      socket.receive(await fixture('agent.session'));
+    }
+    h.client.stop();
+    h.client.reconcileConnection();
+    assert.equal(h.sockets.length, 7, 'a routine wake cannot restart a stopped transport');
+  });
+}
+
 test('golden Agent hello/session starts validated heartbeats', async () => {
   let now = Date.parse('2026-07-18T10:05:00Z');
   const h = harness({ now: () => now });
@@ -423,6 +443,61 @@ test('all Brain-to-Agent fixtures remain accepted before client routing', async 
 
 
 for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
+  test(`${Client.name}: a large replay stays bounded and resumes on acknowledgements`, async () => {
+    const delta = (await fixture('ingest.delta')).payload;
+    const entries = Array.from({ length: 20 }, (_, index) => ({
+      ...delta,
+      source_seq: 11 + index,
+      event_id: `50000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    }));
+    let committed = 10;
+    const errors = [];
+    const h = harness({
+      Client,
+      onValidationError: (error) => errors.push(error),
+      outbox: {
+        async entriesPage(after, limit) {
+          return entries.filter((item) => item.source_seq > Math.max(after, committed)).slice(0, limit);
+        },
+        async acknowledge(sequence) {
+          committed = Math.max(committed, sequence);
+          return { snapshotAcknowledged: false };
+        },
+      },
+    });
+    const sent = (socket) => socket.sent.map((raw) => JSON.parse(raw))
+      .filter((frame) => frame.type === 'ingest.delta').map((frame) => frame.payload.source_seq);
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+    const first = await connectAndBind(h);
+    await settle();
+    await Promise.all([h.client.flushOutbox(), h.client.flushOutbox()]);
+    assert.deepEqual(sent(first), [11, 12, 13, 14]);
+
+    // A connection loss must replay unacknowledged records, without losing the window.
+    first.drop();
+    h.scheduler.runNextTimeout();
+    const replacement = h.sockets[1];
+    replacement.open();
+    replacement.receive(await fixture('agent.session'));
+    await settle();
+    assert.deepEqual(sent(replacement), [11, 12, 13, 14]);
+
+    for (let sequence = 11; sequence <= 30; sequence += 1) {
+      assert.ok(sent(replacement).includes(sequence));
+      const acknowledgement = await fixture('ingest.ack');
+      acknowledgement.payload.committed_source_seq = sequence;
+      replacement.receive(acknowledgement);
+      await settle();
+      assert.ok(sent(replacement).filter((value) => value > committed).length <= 4);
+    }
+    assert.deepEqual(sent(replacement), entries.map((item) => item.source_seq));
+    assert.equal(h.client.identity.lastAcknowledgedSourceSeq, 30);
+    assert.equal(h.client.sentSourceSeqs.size, 0);
+    assert.equal(replacement.closeCode, null);
+    assert.deepEqual(errors, []);
+    h.client.stop();
+  });
+
   test(`${Client.name}: direct construction enforces the secure endpoint and explicit version`, () => {
     assert.throws(() => harness({ Client, url: 'ws://bridge.localhost:17871/ws/agent' }), /invalid_agent_websocket_endpoint/);
     assert.throws(() => harness({ Client, url: 'wss://bridge.localhost:17871/ws/agent?ticket=secret' }), /invalid_agent_websocket_endpoint/);

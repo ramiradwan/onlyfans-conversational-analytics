@@ -3,17 +3,21 @@
     "pre-mode": {
       "start": "      <section id=\"pre-mode\"",
       "end": "      <section id=\"mode-choice\"",
-      "sha256": "d7e146aa9101922c9a6a6e9bca544b910be5ae94ea4e86bdca4e09fe923d09e7"
+      "sha256": "d7e146aa9101922c9a6a6e9bca544b910be5ae94ea4e86bdca4e09fe923d09e7",
+      "element_sha256": "d0e3daed1910eed7101979f1ac83fbed56418e132b55704488263b588fbcba9a"
     },
     "preview-disclosure": {
       "start": "        <div id=\"preview-disclosure\"",
       "end": "        <div id=\"full-disclosure\"",
-      "sha256": "9b29c7d985cdc9dd8c17191777892ca4928173903bd4b9c83f00644cd961ed44"
+      "sha256": "9b29c7d985cdc9dd8c17191777892ca4928173903bd4b9c83f00644cd961ed44",
+      "element_sha256": "464b801239868b5763dd161b6897877b4a65d1bb61e855b31d510d17846f08b4"
     },
     "full-disclosure": {
       "start": "        <div id=\"full-disclosure\"",
       "end": "      <section id=\"preview-metrics\"",
-      "sha256": "5cb67f6a007ff76a4c4aff298db396b2e016afe0830b835990d710974ef8bca8"
+      "sha256": "5cb67f6a007ff76a4c4aff298db396b2e016afe0830b835990d710974ef8bca8",
+      "element_sha256": "9ddbc476b4ee490ba95b0972b1c27331a83d2ea7a63ce8f1006c59167eeb9118"
     }
-  }
+  },
+  "element_baseline_source": "a97b311a4ca351d85182a2af91649e414fa98da5:extension/popup.html"
 }

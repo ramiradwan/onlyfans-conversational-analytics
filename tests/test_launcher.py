@@ -411,6 +411,7 @@ def test_provisioning_completion_restarts_the_same_brain_in_runtime_mode(
 )
 def test_provisioning_handoff_failure_sites_have_distinct_reason_codes(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     token: str,
     response: FakeResponse | None,
     client_class: type[FakeClient],
@@ -418,6 +419,7 @@ def test_provisioning_handoff_failure_sites_have_distinct_reason_codes(
 ) -> None:
     config = configuration(tmp_path)
     runtime_configuration_file(config.data_directory).unlink()
+    monkeypatch.setattr(launcher_module, "load_launcher_handoff", lambda *_args, **_kwargs: token)
     events: list[str] = []
     requests: list[tuple[str, dict[str, str]]] = []
     client = client_class(

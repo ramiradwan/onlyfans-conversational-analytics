@@ -63,3 +63,10 @@ To use another location, set `LOCAL_ANALYTICS_DATA_DIR` to an absolute path outs
 Uninstall through **Settings > Apps > Installed apps**, or run `unins000.exe` from the installation directory.
 
 Uninstalling removes the application files and Start Menu entry. It leaves the runtime data directory in place so that uninstalling does not delete conversation data.
+
+During bounded desktop setup the running process publishes its launcher handoff
+credential as a current-user DPAPI-protected, owner-only file in the runtime data
+directory. Relaunch first verifies the loopback listener image and user, then
+requires the saved process ID to match before requesting a new short-lived browser
+handoff. A stale, missing, corrupt, or different-process record fails closed. Normal
+setup shutdown removes that process's credential; no browser session is extended.

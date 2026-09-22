@@ -61,6 +61,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0017: Select packaged boot mode from runtime configuration](0017-configuration-selected-boot-modes.md)
 - [ADR 0024: Protect Full-mode communication with locally paired sessions](0024-authenticated-companion-sessions.md)
 
+- [ADR 0026: Deduplicate seven-day Preview activity with local keyed tokens](0026-preview-keyed-deduplication.md)
+
 ## Superseded
 
 - [ADR 0007: Use a static authentication ticket for local development](0007-stub-auth-for-dev.md) — superseded by ADR 0008.

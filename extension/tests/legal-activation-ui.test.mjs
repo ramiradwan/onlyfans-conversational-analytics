@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const html = await readFile(new URL('../popup.html', import.meta.url), 'utf8');
-const script = await readFile(new URL('../popup.js', import.meta.url), 'utf8');
+const html = await readFile(new URL('../setup.html', import.meta.url), 'utf8');
+const script = (await Promise.all(['../setup.js', '../ui/actions.mjs'].map((file) => readFile(new URL(file, import.meta.url), 'utf8')))).join('\n');
 
 function requireFragment(pattern, label) {
   const match = html.match(pattern);

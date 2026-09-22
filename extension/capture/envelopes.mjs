@@ -5,10 +5,11 @@ export const CAPTURE_PROTOCOL_VERSION = '2';
 export const CAPTURE_DELIVERY_TYPE = 'ofca.capture.delivery';
 export const CAPTURE_DELIVERY_VERSION = 1;
 export const PREVIEW_MESSAGE_TYPE = 'ofca.preview.observation';
-export const PREVIEW_PROTOCOL_VERSION = 1;
+export const PREVIEW_PROTOCOL_VERSION = 2;
 export const PAGE_CONTROL_MESSAGE_TYPE = 'ofca.capture.control';
 export const PAGE_CONTROL_VERSION = 1;
 export const PROVISIONING_IDENTITY_MESSAGE_TYPE = 'ofca.provisioning.identity.update';
+export const PROVISIONING_IDENTITY_RESET_TYPE = 'ofca.provisioning.identity.reset';
 export const PROVISIONING_IDENTITY_VERSION = 1;
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -126,12 +127,14 @@ export function isCaptureDelivery(value) {
 }
 
 export function isPreviewObservation(value) {
-  if (!isRecord(value) || !isTimestamp(value.observed_at)) return false;
+  if (!isRecord(value) || !isTimestamp(value.observed_at) || !isTimestamp(value.activity_at)
+    || !isIdentifier(value.creator_id) || !isIdentifier(value.record_id)) return false;
   if (value.kind === 'chat') {
-    return hasExactKeys(value, ['kind', 'observed_at']);
+    return hasExactKeys(value, ['kind', 'observed_at', 'activity_at', 'creator_id', 'record_id']);
   }
   return value.kind === 'message'
-    && hasExactKeys(value, ['kind', 'observed_at', 'direction'])
+    && hasExactKeys(value, ['kind', 'observed_at', 'activity_at', 'creator_id', 'record_id', 'chat_id', 'direction'])
+    && isIdentifier(value.chat_id)
     && ['inbound', 'outbound', 'unknown'].includes(value.direction);
 }
 
@@ -144,6 +147,10 @@ export function isPreviewEnvelope(value) {
 }
 
 export function isProvisioningIdentityEnvelope(value) {
+  if (isRecord(value) && value.type === PROVISIONING_IDENTITY_RESET_TYPE) {
+    return hasExactKeys(value, ['type', 'version', 'page_epoch'])
+      && value.version === PROVISIONING_IDENTITY_VERSION && isPageEpoch(value.page_epoch);
+  }
   if (
     !isRecord(value)
     || !hasExactKeys(value, ['type', 'version', 'page_epoch', 'authenticated_profile'])

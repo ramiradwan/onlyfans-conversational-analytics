@@ -1,3 +1,4 @@
+import { CHAT_DISPLAY_NAME_ALIASES } from '../capture/normalization.mjs';
 import { rawIngestChange } from '../protocol/validation.mjs';
 
 export const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
@@ -145,17 +146,7 @@ function mapChat(observation, observedAt) {
     ['with_user', 'id'],
     ['user', 'id'],
   ]));
-  const rawDisplayName = firstDefined(record, [
-    ['display_name'],
-    ['displayName'],
-    ['withUser', 'name'],
-    ['withUser', 'displayName'],
-    ['withUser', 'username'],
-    ['with_user', 'name'],
-    ['with_user', 'username'],
-    ['user', 'name'],
-    ['user', 'username'],
-  ]);
+  const rawDisplayName = firstDefined(record, CHAT_DISPLAY_NAME_ALIASES);
   const displayName = typeof rawDisplayName === 'string' && rawDisplayName.length > 0
     ? rawDisplayName
     : null;

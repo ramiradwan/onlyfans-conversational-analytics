@@ -5,9 +5,14 @@ function frozenTabError() {
 }
 
 function selectedOnlyFansTab(tabs) {
-  return (tabs ?? []).find((candidate) => candidate.active === true && Number.isInteger(candidate.id))
-    ?? (tabs ?? []).find((candidate) => Number.isInteger(candidate.id))
+  const runnable = (tabs ?? []).filter(isRunnableTab);
+  return runnable.find((candidate) => candidate.active === true)
+    ?? runnable[0]
     ?? null;
+}
+
+function isRunnableTab(tab) {
+  return Number.isInteger(tab?.id) && Object.hasOwn(tab, 'frozen') && tab.frozen === false;
 }
 
 /**
@@ -19,10 +24,14 @@ export async function assertOnlyFansTabCanRun(chromeApi, tabId = null) {
   if (!chromeApi?.tabs?.query || !chromeApi.tabs.get) throw frozenTabError();
   let resolvedTabId = tabId;
   if (!Number.isInteger(resolvedTabId)) {
-    const tab = selectedOnlyFansTab(await chromeApi.tabs.query({
+    const tabs = await chromeApi.tabs.query({
       url: ['https://onlyfans.com/*'],
-    }));
-    if (tab === null) throw new Error('No authenticated OnlyFans tab is open.');
+    });
+    const tab = selectedOnlyFansTab(tabs);
+    if (tab === null) {
+      if ((tabs ?? []).some((candidate) => Number.isInteger(candidate?.id))) throw frozenTabError();
+      throw new Error('No authenticated OnlyFans tab is open.');
+    }
     resolvedTabId = tab.id;
   }
   const tab = await chromeApi.tabs.get(resolvedTabId);
@@ -33,7 +42,25 @@ export async function assertOnlyFansTabCanRun(chromeApi, tabId = null) {
 
 /** Adds a second pre-dispatch fence in case the selected tab changes after signing starts. */
 export function guardMainWorldDispatch(chromeApi, { signal } = {}) {
-  if (!chromeApi?.scripting?.executeScript) throw frozenTabError();
+  if (!chromeApi?.scripting?.executeScript || !chromeApi?.tabs?.query) throw frozenTabError();
+  // The signer's initial read and inactive-tab refresh selection must see the
+  // same runnable candidates as preflight. A sleeping older tab must not hide
+  // an available document. Exact-target checks below still reject a tab that
+  // freezes after selection; they never switch an in-flight operation's tab.
+  const tabs = new Proxy(chromeApi.tabs, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (property === 'query') {
+        return async (query) => {
+          signal?.throwIfAborted();
+          const candidates = await value.call(target, query);
+          signal?.throwIfAborted();
+          return (candidates ?? []).filter(isRunnableTab);
+        };
+      }
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
   const scripting = new Proxy(chromeApi.scripting, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
@@ -51,7 +78,9 @@ export function guardMainWorldDispatch(chromeApi, { signal } = {}) {
   });
   return new Proxy(chromeApi, {
     get(target, property, receiver) {
-      return property === 'scripting' ? scripting : Reflect.get(target, property, receiver);
+      if (property === 'scripting') return scripting;
+      if (property === 'tabs') return tabs;
+      return Reflect.get(target, property, receiver);
     },
   });
 }

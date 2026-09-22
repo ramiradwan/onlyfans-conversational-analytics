@@ -10,9 +10,9 @@
     <title>Conversation Analytics</title>
     <link rel="stylesheet" href="popup.css">
   </head>
-  <body>
-    <main data-view="home">
-      <header>
+  <body data-surface="popup">
+  <main>
+    <header>
         <div class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 20 20" fill="none" focusable="false">
             <path d="M5 3.75h10A2.25 2.25 0 0 1 17.25 6v6A2.25 2.25 0 0 1 15 14.25h-4.4L7 16.75v-2.5H5A2.25 2.25 0 0 1 2.75 12V6A2.25 2.25 0 0 1 5 3.75Z"/>
@@ -28,153 +28,53 @@
           <p id="mode-label" class="status-line">Checking status…</p>
         </div>
       </header>
-
-      <section id="journey-card" class="journey-card" data-tone="info" aria-labelledby="journey-title">
-        <p id="journey-badge" class="state-badge hidden" aria-hidden="true">Checking</p>
-        <h2 id="journey-title" tabindex="-1" aria-live="polite" aria-atomic="true">Checking status…</h2>
-        <p id="journey-body"></p>
-        <div id="companion-pairing" class="pairing hidden">
-          <p id="pairing-status" class="visually-hidden" role="status" aria-live="polite">Connect the extension to the desktop app to continue Full setup.</p>
-          <p id="pairing-code" class="pairing-code hidden" aria-label="Connection comparison code"></p>
-          <button id="pair-companion" class="primary" type="button">Pair device</button>
-          <button id="cancel-pairing" class="secondary hidden" type="button">Cancel</button>
-        </div>
-        <div class="journey-actions">
-          <button id="journey-primary" class="primary hidden" type="button"></button>
-          <button id="journey-secondary" class="secondary hidden" type="button"></button>
-        </div>
-      </section>
-
-      <div class="access-actions">
-        <button id="reload-tabs" class="primary hidden" type="button">Reload OnlyFans tabs to apply access</button>
-        <button id="restore-access" class="primary hidden" type="button">Restore required site access</button>
-      </div>
-
-      <section id="legal-unavailable" class="warning hidden">
-        <h2>Setup is unavailable in this version</h2>
-        <p>Update the extension, then try again.</p>
-      </section>
-
-      <section id="pre-mode" class="hidden" aria-labelledby="activation-title">
-        <h2 id="activation-title">Before activating</h2>
-        <label class="check-row">
-          <input id="terms-accepted" type="checkbox">
-          <span>I agree to the <a id="terms-link" href="#">Software Terms</a>.</span>
-        </label>
-        <label class="check-row">
-          <input id="risk-acknowledged" type="checkbox">
-          <span>
-            I have read the <a id="risk-link" href="#">Creator Platform &amp; Data Risk Disclosure</a>
-            and acknowledge the platform, account, privacy, data-security, and technical risks
-            described in it.
-          </span>
-        </label>
-        <button id="activate-software" class="primary" type="button" disabled>
-          Activate Software
-        </button>
-        <p class="fine-print">
-          Activate Software only advances to mode selection. It does not enable Full analytics.
-        </p>
-      </section>
-
-      <section id="mode-choice" class="hidden">
-        <div id="preview-disclosure" class="choice" role="group" aria-labelledby="preview-choice-title">
-          <h2 id="preview-choice-title" tabindex="-1">Start with Preview</h2>
-          <p class="lead">See how many messages you send and receive each day.</p>
-          <ul class="points">
-            <li><strong>Transient inspection:</strong> generating Preview metrics can require the Extension to transiently inspect supported chat and message response information as the supported page handles it.</li>
-            <li><strong>Retained Preview data:</strong> Preview retains only identifier-free daily counts and message direction information.</li>
-            <li><strong>Seven-day retention:</strong> retained Preview metrics are automatically removed after seven days.</li>
-            <li><strong>No content or identifiers retained:</strong> Preview retains no message text or participant, message or chat identifiers.</li>
-          </ul>
-          <p class="fine-print">Read the <a class="extension-privacy-link" href="#">Extension Privacy Notice</a>.</p>
-          <button id="enable-preview" class="primary" type="button">Enable Preview</button>
-          <button id="not-now-preview" class="text-button" type="button">Not now</button>
-          <button id="review-full" class="menu-row" type="button">Review Full analytics</button>
-        </div>
-
-        <div id="full-disclosure" class="choice hidden" role="group" aria-labelledby="full-choice-title">
-          <h2 id="full-choice-title" tabindex="-1">Full analytics</h2>
-          <p class="lead">Get insights from your conversations in the desktop app.</p>
-          <p>Before choosing Full, review these points:</p>
-          <ol class="points">
-            <li><strong>Message content:</strong> Full handles and retains message text and related conversation, message and participant information.</li>
-            <li><strong>Same-computer transfer:</strong> Full information leaves the Extension but remains on the same computer. The Extension sends it to the companion analytics service running on that computer.</li>
-            <li><strong>Persistence:</strong> the Extension and companion analytics service can both retain Full information at the same time, and there is currently <strong>no general automatic age-based expiry for the main Full conversation dataset</strong>.</li>
-            <li><strong>Deletion boundary:</strong> deleting Extension data does <strong>not</strong> delete Full information already retained by the companion analytics service.</li>
-            <li><strong>Other people:</strong> Full contains subscriber and other-person information. Enabling Full is <strong>not consent on behalf of a subscriber or another person</strong>.</li>
-            <li><strong>Extension Privacy Notice:</strong> <a class="extension-privacy-link" href="#">read the complete data-handling description</a>.</li>
-          </ol>
-          <button id="enable-full" class="primary" type="button">Enable Full analytics</button>
-          <button id="full-secondary" class="text-button" type="button">Not now</button>
-        </div>
-      </section>
-
-      <section id="preview-metrics" class="hidden" aria-labelledby="preview-title">
+    <section id="runtime-unavailable" class="warning hidden" aria-labelledby="runtime-title">
+      <h2 id="runtime-title">The extension is reconnecting</h2>
+      <p>Try again to check its current status.</p>
+      <button id="retry-runtime" class="secondary">Try again</button>
+    </section>
+    <p id="loading" role="status">Checking status…</p>
+    <section id="preview-metrics" class="hidden" aria-labelledby="preview-title">
         <div class="section-heading">
           <div>
             <h2 id="preview-title">Observed in this browser</h2>
-            <p>Last seven days</p>
+            <p>Last seven days (UTC)</p>
           </div>
           <button id="clear-preview" class="text-button" type="button">Clear</button>
         </div>
         <div class="metrics" aria-live="polite">
           <div><strong id="messages-count">0</strong><span>Messages</span></div>
-          <div><strong id="chats-count">0</strong><span>Chats</span></div>
+          <div><strong id="chats-count">0</strong><span>Active chats</span></div>
           <div><strong id="inbound-count">0</strong><span>Received</span></div>
           <div><strong id="outbound-count">0</strong><span>Sent</span></div>
         </div>
+        <p id="preview-coverage" class="fine-print">Counts cover loaded activity for the most recently observed account. Unopened history may be missing.</p>
+        <p id="preview-limit" class="fine-print hidden" role="status">Preview has reached its counting limit. These counts are incomplete.</p>
       </section>
-
-      <section id="history-prompt" class="hidden" aria-labelledby="history-title">
-        <h2 id="history-title">Include earlier conversations</h2>
-        <p>Add your existing conversations to the analysis.</p>
-        <button id="history" class="secondary" type="button">Allow message history</button>
-      </section>
-
-      <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
-
-      <nav class="panel menu" aria-label="Extension settings">
-        <button id="open-connection" class="menu-row hidden" type="button">Connection details</button>
-        <button id="open-manage" class="menu-row" type="button">Manage extension</button>
-      </nav>
-
-      <div id="connection-view" class="subview" role="region" aria-labelledby="connection-title">
-        <button id="connection-back" class="back-button" type="button">Back</button>
-        <h2 id="connection-title" tabindex="-1">Connection details</h2>
-        <div class="panel">
-          <dl class="connection-grid">
-            <div><dt>Desktop app</dt><dd id="brain-status">Checking…</dd></div>
-            <div><dt>Secure connection</dt><dd id="delivery-status">Off</dd></div>
-            <div><dt>Full activation</dt><dd id="activation-status">Not checked</dd></div>
-            <div><dt>Analysis</dt><dd id="analysis-status">Not ready</dd></div>
-            <div><dt>Waiting to send</dt><dd id="pending-count">0</dd></div>
-          </dl>
-          <p id="capture-health" class="fine-print" role="status" aria-live="polite"></p>
-          <p id="history-health" class="fine-print" role="status" aria-live="polite"></p>
-          <button id="open-dashboard" class="secondary hidden" type="button">Open desktop app</button>
-        </div>
-      </div>
-
-      <div id="manage-view" class="subview" role="region" aria-labelledby="manage-title">
-        <button id="manage-back" class="back-button" type="button">Back</button>
-        <h2 id="manage-title" tabindex="-1">Manage extension</h2>
-        <div class="panel actions">
-          <button id="pause" class="secondary hidden" type="button">Pause analytics</button>
-          <button id="forget-companion" class="secondary hidden" type="button">Forget desktop app</button>
-        </div>
-        <div class="panel actions">
-          <button id="revoke" class="danger hidden" type="button">Revoke site access</button>
-          <button id="delete-local-data" class="danger" type="button">Delete all extension data</button>
-        </div>
-      </div>
-
-      <footer>
+    <section id="journey-card" class="journey-card hidden" aria-labelledby="journey-title">
+      <p id="journey-badge" class="state-badge"></p>
+      <h2 id="journey-title" tabindex="-1">Checking status…</h2>
+      <p id="journey-body"></p>
+      <button id="journey-primary" class="primary hidden"></button>
+    </section>
+    <button id="pause" class="secondary hidden">Pause analytics</button>
+    <dl id="ready-details" class="connection-grid hidden" aria-label="Desktop readiness">
+      <div><dt>Desktop app</dt><dd id="desktop-status"></dd></div>
+      <div><dt>Secure connection</dt><dd id="delivery-status"></dd></div>
+      <div><dt>Full activation</dt><dd id="activation-status"></dd></div>
+      <div><dt>Analysis</dt><dd id="analysis-status"></dd></div>
+    </dl>
+    <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+    <nav class="menu" aria-label="Extension">
+      <button id="open-connection" class="menu-row hidden">Connection details</button>
+      <button id="open-manage" class="menu-row">Extension settings</button>
+    </nav>
+    <footer>
         <span>Use only with a creator account you are authorized to analyze.</span>
         <span>Independent software. It is not affiliated with or endorsed by OnlyFans.</span>
         <a id="privacy-link" href="#" aria-disabled="true">Privacy information unavailable</a>
       </footer>
-    </main>
-    <script src="popup.js"></script>
-  </body>
+  </main>
+  <script src="popup.js"></script>
+</body>
 </html>

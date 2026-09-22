@@ -64,6 +64,35 @@ const SIGNER_VALIDATIONS = new Set(SIGNING_VALIDATION_CODES);
 const LOCAL_FAILURES = new Set(['invalid_signer_page', 'cursor_repeated', 'invalid_entity',
   'invalid_change', 'identity_conflict', 'tombstone_revive', 'material_conflict', 'history_job_conflict', 'evidence_conflict', 'identity_required', 'history_authorization_unbound']);
 
+// Failure codes that mean the creator must re-establish authority rather than
+// wait. Everything else terminal is reported as generally unavailable.
+const IDENTITY_FAILURE_CODES = new Set([
+  'identity_required',
+  'history_authorization_unbound',
+  'account_mismatch',
+]);
+
+/**
+ * Projects a durable history job onto the two failure states the extension can
+ * explain to the creator. Internal failure codes stay internal.
+ */
+function jobFailureCode(job) {
+  if (job === undefined || job === null) return null;
+  const terminal = job.phase === 'failed'
+    || (job.phase === 'closed' && job.boundary !== 'inventory_end');
+  if (!terminal || typeof job.last_error_code !== 'string') return null;
+  return IDENTITY_FAILURE_CODES.has(job.last_error_code) ? 'identity_required' : 'history_unavailable';
+}
+
+/** Rediscovery reuses the bounded exponential delay a failed page already earns. */
+function rediscoveryDelayMs(job, authorization) {
+  const retries = Math.max(1, job.retry_count ?? 1);
+  return Math.min(
+    MAX_RETRY_DELAY_MS,
+    Math.max(1_000, authorization.policy.request_interval_ms) * 2 ** (retries - 1),
+  );
+}
+
 function localCode(error) {
   try { const code = error?.code; return LOCAL_FAILURES.has(code) ? code : null; } catch { return null; }
 }
@@ -194,14 +223,21 @@ export class HistoryAcquisitionCoordinator {
     // every wake and reload the platform tab in a tight loop.
     this.backoffUntil = 0;
     this.failureStreak = 0;
+    // Projection of the newest durable inventory job, re-derived on every wake.
+    this.lastFailureCode = null;
+  }
+
+  /** Durable history health for the extension surfaces; null while healthy. */
+  historyErrorCode() {
+    return this.lastFailureCode;
   }
 
   wake() {
     if (this.stopped) return Promise.resolve({ status: 'stopped', pages: 0 });
-    if (this.running === null && this.clock() < this.backoffUntil) {
+    const authorization = this.#authorization();
+    if (authorization !== null && this.running === null && this.clock() < this.backoffUntil) {
       return Promise.resolve({ status: 'deferred', pages: 0 });
     }
-    const authorization = this.#authorization();
     const nextIdentity = authorization === null ? null : authorizationIdentity(authorization);
     if (this.running !== null) {
       if (nextIdentity !== this.runAuthorizationIdentity) {
@@ -228,9 +264,17 @@ export class HistoryAcquisitionCoordinator {
       }
     }, this.runDeadlineMs);
     const run = this.#run(authorization, controller.signal, attempt).then(
-      (result) => { this.failureStreak = 0; this.backoffUntil = 0; return result; },
+      (result) => {
+        if (result.pages > 0 || result.status === 'current') {
+          this.failureStreak = 0;
+          this.backoffUntil = 0;
+        }
+        return result;
+      },
       (error) => {
-        if (!isAbort(error, controller.signal) || isDeadlineAbort(error, controller.signal)) {
+        // Session loss during bootstrap is a failed attempt too. Otherwise the
+        // next session can immediately repeat the same disruptive refresh.
+        if (authorization !== null && !this.stopped) {
           this.failureStreak += 1;
           const ordinaryBackoff = Math.min(60_000, 3_000 * 2 ** (this.failureStreak - 1));
           this.backoffUntil = this.clock() + (error instanceof RateLimitedError
@@ -286,6 +330,7 @@ export class HistoryAcquisitionCoordinator {
     throwIfAborted(signal);
     if (authorization === null) return { status: 'disabled', pages: 0 };
     const inventories = await this.#latestInventories(authorization, signal);
+    this.lastFailureCode = jobFailureCode(inventories.open ?? inventories.closed);
     let openInventory = inventories.open;
     if (openInventory === undefined) {
       const closed = inventories.closed;
@@ -338,6 +383,12 @@ export class HistoryAcquisitionCoordinator {
         } else if (conversations.hasPending) {
           break;
         } else {
+          // A generation that never froze its inventory is still closed, so the
+          // service records blocked coverage instead of an open discovery. Its
+          // rediscovery waits out a bounded delay: without one, every wake
+          // replaces that blocked coverage with a fresh discovering generation
+          // and the desktop keeps reporting progress that is not happening.
+          const frozen = inventory.boundary === 'inventory_end';
           await this.#claimAndCommit(inventory, {
             evidence: [{
               type: 'generation.closed',
@@ -347,8 +398,12 @@ export class HistoryAcquisitionCoordinator {
             jobPatch: {
               phase: 'closed',
               retry_count: inventory.retry_count ?? 0,
+              next_attempt_at: frozen ? null : new Date(
+                this.clock() + rediscoveryDelayMs(inventory, authorization),
+              ).toISOString(),
             },
           }, authorization, signal);
+          if (!frozen) this.lastFailureCode = jobFailureCode({ ...inventory, phase: 'closed' });
           break;
         }
       }
@@ -428,6 +483,7 @@ export class HistoryAcquisitionCoordinator {
 
   async #requiresNewGeneration(closedInventory, authorization, signal) {
     if (closedInventory.authorization_revision !== authorization.policy.consent_revision) return true;
+    if (this.#deferred(closedInventory)) return false;
     const conversations = await this.#conversationSummary(
       closedInventory.generation_id,
       authorization,
@@ -638,6 +694,7 @@ export class HistoryAcquisitionCoordinator {
         jobPatch: { phase: ended ? 'conversations' : 'inventory' },
         spawnJobs,
       }, authorization, signal);
+      this.lastFailureCode = null;
     } catch (error) {
       if (isAbort(error, signal)) throw signal.aborted ? signal.reason : error;
       await this.#recordFailure(job, error, authorization, signal);

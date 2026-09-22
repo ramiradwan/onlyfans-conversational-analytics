@@ -2,26 +2,32 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import { staticFixtures } from './static-fixtures.mjs';
+import { SURFACE_STATES, surfaceDocument } from '../../extension/qualification/surface-fixtures.mjs';
 
 const { JSDOM } = createRequire(new URL('../../frontend/package.json', import.meta.url))('jsdom');
 const fixtures = await staticFixtures();
 
-test('static capture covers the existing popup matrix, both disclosure steps, and all setup stages', () => {
-  assert.equal(fixtures.filter((item) => item.surface === 'popup').length, 26);
+test('static capture covers the existing popup matrix, both disclosure steps, and all setup stages', async () => {
+  const extension = fixtures.filter((item) => item.surface !== 'provisioning');
+  assert.deepEqual(extension.map((item) => item.name).sort(), Object.keys(SURFACE_STATES).sort());
+  assert.equal(fixtures.filter((item) => item.surface === 'popup').length, 6);
+  assert.equal(fixtures.filter((item) => item.surface === 'setup').length, 25);
+  assert.equal(fixtures.filter((item) => item.surface === 'options').length, 3);
   assert.equal(fixtures.filter((item) => item.surface === 'provisioning').length, 12);
-  const secondary = { mode_choice_full: 'Not now', full_review: 'Keep Preview' };
-  for (const fixture of fixtures) {
+  for (const name of ['software_activation', 'mode_choice', 'mode_choice_full', 'full_review', 'pairing_compare']) {
+    assert.equal(fixtures.find((item) => item.name === name).surface, 'setup');
+  }
+  for (const fixture of extension) {
+    // Extension fixtures load the unchanged production document and its real bundle.
+    // Visibility is exercised by the browser, not a separately maintained fake DOM.
+    assert.equal(fixture.html, await surfaceDocument(fixture.state));
+    assert(fixture.script.length > 0);
     const dom = new JSDOM(fixture.html);
     const doc = dom.window.document;
-    assert.equal(doc.querySelectorAll('script').length, 0);
-    if (fixture.name === 'mode_choice') {
-      assert(!doc.querySelector('#preview-disclosure').classList.contains('hidden'));
-      assert(doc.querySelector('#full-disclosure').classList.contains('hidden'));
-    }
-    if (fixture.name in secondary) {
-      assert(doc.querySelector('#preview-disclosure').classList.contains('hidden'));
-      assert(!doc.querySelector('#full-disclosure').classList.contains('hidden'));
-      assert.equal(doc.querySelector('#full-secondary').textContent, secondary[fixture.name]);
+    assert.equal(doc.querySelectorAll('script').length, 1);
+    assert.equal(doc.querySelector('script').getAttribute('src'), `${fixture.surface}.js`);
+    if (fixture.surface === 'popup') {
+      assert.equal(doc.querySelector('#pre-mode, #mode-choice, #companion-pairing, #delete-local-data'), null);
     }
     dom.window.close();
   }
@@ -32,6 +38,7 @@ test('setup fixtures use real controller outcomes rather than invented status co
   for (const [name, step] of Object.entries(expected)) {
     const dom = new JSDOM(fixtures.find((item) => item.surface === 'provisioning' && item.name === name).html);
     const steps = [...dom.window.document.querySelectorAll('[data-step]')];
+    assert.equal(dom.window.document.querySelectorAll('script').length, 0);
     assert.equal(steps.findIndex((node) => node.dataset.state === 'current'), step);
     dom.window.close();
   }

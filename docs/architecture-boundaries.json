@@ -191,6 +191,9 @@
       "id": "agent-runtime",
       "path_patterns": [
         "extension/popup.*",
+        "extension/setup.*",
+        "extension/options.*",
+        "extension/ui/**",
         "extension/preview/**",
         "extension/activation/**",
         "extension/transport/**",
@@ -229,7 +232,7 @@
       "permitted_outputs": [
         "validated protocol frames toward Brain",
         "local delivery state",
-        "popup and preview presentation"
+        "extension popup, setup, options and preview presentation"
       ]
     },
     {

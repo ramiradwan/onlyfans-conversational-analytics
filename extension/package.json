@@ -4,7 +4,7 @@
   "version": "2.0.3",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "check:architecture": "depcruise --config .dependency-cruiser.cjs capture protocol transport runtime",
+    "check:architecture": "depcruise --config .dependency-cruiser.cjs capture protocol transport runtime ui popup.js setup.js options.js",
     "build": "node build.mjs",
     "audit": "node build.mjs --audit",
     "build:snow": "node crypto/snow/build.mjs",
@@ -18,7 +18,8 @@
     "verify:release": "node qualification/verify-release.mjs",
     "legal:evidence": "node ../tools/legal-evidence/generate-activation-bundle.mjs",
     "qualify:snapshot": "node --expose-gc qualification/snapshot-100k.mjs",
-    "qualify:snapshot:ci": "node --expose-gc qualification/snapshot-100k.mjs --messages=10000"
+    "qualify:snapshot:ci": "node --expose-gc qualification/snapshot-100k.mjs --messages=10000",
+    "test:browser:surfaces": "playwright test --config qualification/surface-playwright.config.mjs"
   },
   "dependencies": {
     "local-authenticated-read-connector": "file:vendor/local-authenticated-read-connector-0.2.0.tgz"

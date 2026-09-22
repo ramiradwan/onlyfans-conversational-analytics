@@ -45,7 +45,7 @@ export function validateRepositoryConsumers(repositoryRoot: string): void {
   }
   walk(path.join(repositoryRoot, 'frontend/src'));
   walk(path.join(repositoryRoot, 'frontend/.design-sync'));
-  for (const relative of ['extension/popup.css', 'app/provisioning/provisioning.html']) {
+  for (const relative of ['extension/popup.css', 'extension/setup.css', 'app/provisioning/provisioning.html']) {
     const filename = path.join(repositoryRoot, relative);
     validateConsumerSource(fs.readFileSync(filename, 'utf8'), filename);
   }

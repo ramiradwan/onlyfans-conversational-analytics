@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import subprocess
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,6 +21,7 @@ from inner_protocol_harness import inner_protocol_app
 from app.persistence.history import StreamKey
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
+from app.security.account_bindings import AccountResolutionRefused, EligibleAccount
 from app.services.agent_configuration import BOOTSTRAP_CONFIG_REVISION
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
@@ -316,6 +319,55 @@ def test_non_ceremony_state_changing_route_requires_csrf() -> None:
 
     assert response.status_code == 403
     assert response.json() == {"detail": "CSRF token is required"}
+
+
+@pytest.mark.parametrize("eligible", [True, False])
+def test_passkey_history_consent_uses_current_scoped_account_binding(
+    monkeypatch: pytest.MonkeyPatch, eligible: bool,
+) -> None:
+    history_endpoint = importlib.import_module("app.api.endpoints.history")
+    policy = RuntimePolicy(
+        identity=AuthContext(DEV_PRINCIPAL_ID, DEV_ACCOUNT_ID, "creator", session_id="passkey-session"),
+        authorization_epoch=AuthorizationEpoch(0),
+    )
+    app.dependency_overrides[get_runtime_policy] = lambda: policy
+    resolved = []
+
+    def resolve(_store, current_policy, *, now):
+        assert current_policy is policy
+        assert current_policy.identity.platform_creator_id is None
+        assert now.tzinfo is not None
+        resolved.append(current_policy.identity.creator_account_id)
+        if not eligible:
+            raise AccountResolutionRefused("no_eligible_account")
+        return EligibleAccount(DEV_ACCOUNT_ID, settings.development_platform_creator_id, "a" * 64, ())
+
+    monkeypatch.setattr(history_endpoint, "eligible_account_for_policy", resolve)
+    with TestClient(app) as client:
+        current = client.get("/api/v1/settings/history").json()
+        response = client.put(
+            "/api/v1/settings/history",
+            headers={"If-Match": str(current["settings_revision"]), "X-CSRF-Token": csrf_token(policy)},
+            json={
+                "desired_state": "running",
+                "consent_policy_version": current["consent_policy_version"],
+                "accept_consent": True,
+                **{key: current[key] for key in (
+                    "recent_window_days", "page_size", "pages_per_wake", "request_interval_ms", "retry_limit",
+                )},
+            },
+        )
+    assert resolved == [DEV_ACCOUNT_ID]
+    saved = transport_manager.history.history_settings(DEV_ACCOUNT_ID)
+    if eligible:
+        assert response.status_code == 200
+        assert saved["authorized_platform_creator_id"] == settings.development_platform_creator_id
+        assert saved["desired_state"] == "running"
+    else:
+        assert response.status_code == 403
+        assert saved["consent_revision"] is None
+        assert saved["settings_revision"] == current["settings_revision"]
+    assert policy.identity.platform_creator_id is None
 
 
 def test_account_scoped_route_refuses_a_policy_without_identity_subset() -> None:
@@ -763,3 +815,60 @@ def test_websocket_rejects_snapshot_frame_over_512_kib() -> None:
         rejected = agent.receive_json()
         assert rejected["type"] == "ingest.rejected"
         assert rejected["payload"]["code"] == "frame_too_large"
+
+
+@pytest.mark.parametrize("module", ["durable-outbox", "read-only-durable-outbox"])
+def test_inventory_label_recovery_reaches_the_frontend_message_api(module: str) -> None:
+    """Real Agent output must pass Brain's unchanged merge and REST read model."""
+    seed_projection()
+    program = """
+import { InMemoryIngestionStorage } from './extension/tests/in-memory-ingestion-storage.mjs';
+const { DurableIngestOutbox } = await import(`./extension/transport/${process.argv[2]}.mjs`);
+const outbox = new DurableIngestOutbox({
+  storage: new InMemoryIngestionStorage(), creatorAccountId: 'dev-creator-account',
+});
+const state = await outbox.initialize();
+const original = { type: 'chat.upsert', chat: {
+  chat_id: 'chat-1', record_kind: 'full', platform_user_id: 'fan-chat-1',
+  display_name: 'chat-1', updated_at: '2026-07-19T10:00:00Z',
+} };
+await outbox.enqueue(original);
+await outbox.saveHistoryJob({ job_id: 'inventory', kind: 'inventory',
+  account_epoch: state.account_epoch, lease_token: 'lease', cursor: null, committed_pages: 0 });
+await outbox.commitPage({ jobId: 'inventory', expectedAccountEpoch: state.account_epoch,
+  expectedLeaseToken: 'lease', boundary: 'inventory_end',
+  changes: [{ ...original, chat: { ...original.chat, display_name: 'Different profile label' } }],
+});
+await outbox.saveHistoryJob({ job_id: 'conversation', kind: 'conversation',
+  account_epoch: state.account_epoch, lease_token: 'lease', cursor: null, committed_pages: 0 });
+await outbox.commitPage({ jobId: 'conversation', expectedAccountEpoch: state.account_epoch,
+  expectedLeaseToken: 'lease', boundary: 'history_start',
+  changes: [{ type: 'message.upsert', message: {
+    message_id: 'recovered-history-message', chat_id: 'chat-1', sender_platform_user_id: 'fan-chat-1',
+    text: 'Synthetic recovered history', sent_at: '2026-07-19T09:00:00Z', direction: 'inbound',
+  } }],
+});
+console.log(JSON.stringify(await outbox.entries()));
+"""
+    produced = subprocess.run(
+        ["node", "--input-type=module", "-", module], input=program,
+        text=True, capture_output=True, check=True, timeout=20,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+    entries = json.loads(produced.stdout)
+    assert [entry["change"]["type"] for entry in entries] == ["chat.upsert", "message.upsert"]
+    identity = snapshot_identity(uuid4())
+    identity.pop("snapshot_id")
+    key = StreamKey(DEV_ACCOUNT_ID, INSTALLATION_ID, STREAM_ID)
+    for entry in entries:
+        payload = envelope("ingest.delta", {**identity, **entry}).payload
+        assert transport_manager.history.commit_delta(key, payload).status == "accepted"
+    transport_manager.projection.catch_up(DEV_ACCOUNT_ID)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/conversations/chat-1/messages", params={"limit": 100})
+        assert response.status_code == 200
+        recovered = [item for item in response.json()["items"]
+                     if item["message_id"] == "recovered-history-message"]
+        assert len(recovered) == 1
+        assert recovered[0]["text"] == "Synthetic recovered history"
+        assert response.json()["projection"]["status"] == "current"

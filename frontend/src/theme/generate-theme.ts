@@ -422,7 +422,7 @@ function main(): void {
       );
       if (writeIfChanged(consumerPath, updated)) console.log('Updated design tokens in ' + consumer);
     }
-    for (const [consumer, count] of [['extension/popup.html', 2], ['app/provisioning/provisioning.html', 1]] as const) {
+    for (const [consumer, count] of [['extension/popup.html', 2], ['extension/setup.html', 2], ['extension/options.html', 2], ['app/provisioning/provisioning.html', 1]] as const) {
       const consumerPath = path.join(repositoryRoot, consumer);
       writeIfChanged(consumerPath, replaceStaticFontPreloads(fs.readFileSync(consumerPath, 'utf8'), fonts, count));
     }

@@ -15,12 +15,16 @@ import {
   PREVIEW_MESSAGE_TYPE,
   PREVIEW_PROTOCOL_VERSION,
   PROVISIONING_IDENTITY_MESSAGE_TYPE,
+  PROVISIONING_IDENTITY_RESET_TYPE,
   PROVISIONING_IDENTITY_VERSION,
 } from './capture/envelopes.mjs';
 
 (function installObservationHook() {
   const mode = globalThis.__OFCA_CAPTURE_MODE__;
   if (!['identity', 'preview', 'full'].includes(mode)) return;
+  // Reinjecting the same observer must not detach listeners from sockets that
+  // the site already opened. A real mode transition still tears everything down.
+  if (globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode === mode) return;
   globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.stop?.();
 
   const MAX_PAYLOAD_WRAPPER_DEPTH = 3;
@@ -30,6 +34,11 @@ import {
   const socketListeners = new Set();
   let active = true;
   let creatorPlatformUserId = null;
+  let lastConfirmedCreatorId = null;
+  let socketAccountGeneration = 0;
+  let previewCreatorId = null;
+  let previewGeneration = 0;
+  const pendingPreview = [];
   let pageEpoch = crypto.randomUUID();
   let identityRequestSequence = 0;
   let installedFetch = null;
@@ -70,12 +79,18 @@ import {
     });
   }
 
-  function postPreview(observation) {
+  function postPreview(observation, ownership) {
     if (observation === null) return;
+    if (ownership.previewGeneration !== previewGeneration) return;
+    if (previewCreatorId === null) {
+      // Retain only bounded, reduced metadata while the page's own identity read completes.
+      if (pendingPreview.length < 1000) pendingPreview.push(observation);
+      return;
+    }
     postPageMessage({
       type: PREVIEW_MESSAGE_TYPE,
       version: PREVIEW_PROTOCOL_VERSION,
-      observation,
+      observation: { ...observation, creator_id: previewCreatorId },
     });
   }
 
@@ -122,6 +137,7 @@ import {
     return Object.freeze({
       creatorPlatformUserId,
       pageEpoch,
+      previewGeneration,
     });
   }
 
@@ -130,15 +146,35 @@ import {
       && ownership?.pageEpoch === pageEpoch;
   }
 
-  function replaceCreatorIdentity(nextId) {
+  function replaceCreatorIdentity(nextId, updatePreview = true, confirmed = true) {
     const normalized = typeof nextId === 'string' && nextId.length <= 200 ? nextId : null;
+    if (confirmed) {
+      if (normalized === null || (lastConfirmedCreatorId !== null && normalized !== lastConfirmedCreatorId)) {
+        socketAccountGeneration += 1;
+      }
+      lastConfirmedCreatorId = normalized;
+    }
+    if (updatePreview) {
+      if (normalized === null || (previewCreatorId !== null && normalized !== previewCreatorId)) {
+        previewGeneration += 1;
+        pendingPreview.length = 0;
+      }
+      previewCreatorId = normalized;
+      if (normalized !== null) {
+        for (const observation of pendingPreview.splice(0)) postPreview(observation, { previewGeneration });
+      }
+    }
     if (normalized !== creatorPlatformUserId) {
       creatorPlatformUserId = normalized;
       pageEpoch = crypto.randomUUID();
     }
-    postProvisioningIdentity(
-      normalized === null ? null : { creator_account_id: normalized },
-    );
+    if (!confirmed && ['identity', 'full'].includes(mode)) {
+      // Unknown document state fences capture without asserting account sign-out.
+      postPageMessage({ type: PROVISIONING_IDENTITY_RESET_TYPE,
+        version: PROVISIONING_IDENTITY_VERSION, page_epoch: pageEpoch });
+    } else if (confirmed) {
+      postProvisioningIdentity(normalized === null ? null : { creator_account_id: normalized });
+    }
   }
 
   function boundedPayloads(value) {
@@ -225,7 +261,8 @@ import {
     const rawId = /^\/api2\/v2\/users\/me\/?$/.test(pathname)
       ? body?.id
       : body?.user?.id;
-    replaceCreatorIdentity(identifier(rawId));
+    const accountId = identifier(rawId);
+    replaceCreatorIdentity(accountId, true, accountId !== null);
   }
 
   function emitRecords(resource, pathname, body, sourceEventType, ownership) {
@@ -241,7 +278,7 @@ import {
     const routeChatId = resource === 'messages' ? contextChatId(pathname) : null;
     for (const rawRecord of extraction.records) {
       if (resource === 'chats') {
-        postPreview(previewChatObservation(observedAt));
+        postPreview(previewChatObservation(rawRecord, observedAt, previewCreatorId ?? 'pending'), ownership);
         if (mode !== 'full') continue;
         const record = normalizeChatRecord(rawRecord, observedAt);
         if (record === null) continue;
@@ -257,7 +294,7 @@ import {
         continue;
       }
 
-      postPreview(previewMessageObservation(rawRecord, observedAt));
+      postPreview(previewMessageObservation(rawRecord, observedAt, previewCreatorId ?? 'pending', routeChatId), ownership);
       if (mode !== 'full') continue;
       const record = normalizeMessageRecord(rawRecord, { contextChatId: routeChatId });
       if (record === null) continue;
@@ -296,7 +333,9 @@ import {
         identitySequence,
       );
     } catch (_error) {
-      if (identitySequence !== null && identitySequence === identityRequestSequence) replaceCreatorIdentity(null);
+      if (identitySequence !== null && identitySequence === identityRequestSequence) {
+        replaceCreatorIdentity(null, true, response.status === 401 || response.status === 403);
+      }
       postDiagnostic('http.response', _error?.message === 'capture_response_too_large'
         ? 'capture_too_large' : 'invalid_json', url.pathname);
     }
@@ -358,10 +397,23 @@ import {
         const socket = Reflect.construct(target, argumentsList, newTarget);
         const url = resolveUrl(argumentsList[0]);
         if (url?.protocol === 'wss:' && url.hostname === 'ws2.onlyfans.com') {
-          const ownership = requestOwnership();
+          const socketGeneration = socketAccountGeneration;
+          let socketCreatorId = creatorPlatformUserId;
           const listener = (event) => {
             if (!active || typeof event.data !== 'string'
-              || (mode === 'full' && !ownershipIsCurrent(ownership))) return;
+              || socketGeneration !== socketAccountGeneration) return;
+            const currentCreator = mode === 'preview' ? previewCreatorId : creatorPlatformUserId;
+            if (currentCreator === null && mode === 'full') return;
+            if (currentCreator !== null) {
+              // A connection opened before the first identity may bind once.
+              // A confirmed sign-out/switch permanently retires its generation.
+              socketCreatorId ??= currentCreator;
+              if (socketCreatorId !== currentCreator) return;
+            }
+            // SPA navigation fences frames until fresh identity evidence, but
+            // does not retire a socket for the same verified creator. Each new
+            // frame belongs to the current document epoch, unlike an old HTTP response.
+            const ownership = requestOwnership();
             let frame;
             try {
               frame = parseBoundedJson(event.data, CAPTURE_LIMITS.responseBytes);
@@ -374,7 +426,8 @@ import {
             if (records.length === 0) return;
             const observedAt = new Date().toISOString();
             for (const rawRecord of records) {
-              postPreview(previewMessageObservation(rawRecord, observedAt));
+              postPreview(previewMessageObservation(rawRecord, observedAt, previewCreatorId ?? 'pending',
+                webSocketContextChatId(rawRecord, frame, previewCreatorId)), ownership);
               if (mode !== 'full' || ownership.creatorPlatformUserId === null) continue;
               const record = normalizeMessageRecord(rawRecord, {
                 contextChatId: webSocketContextChatId(
@@ -414,7 +467,7 @@ import {
       let response;
       try { response = await originalFetch.apply(this, args); }
       catch (error) {
-        if (identitySequence !== null && identitySequence === identityRequestSequence) replaceCreatorIdentity(null);
+        if (identitySequence !== null && identitySequence === identityRequestSequence) replaceCreatorIdentity(null, true, false);
         throw error;
       }
       if (
@@ -451,7 +504,9 @@ import {
             ? JSON.stringify(this.response) : this.responseText, CAPTURE_LIMITS.responseBytes);
           handleResponseBody(url, body, 'http.response', ownership, identitySequence);
         } catch (_error) {
-          if (identitySequence !== null && identitySequence === identityRequestSequence) replaceCreatorIdentity(null);
+          if (identitySequence !== null && identitySequence === identityRequestSequence) {
+            replaceCreatorIdentity(null, true, this.status === 401 || this.status === 403);
+          }
           postDiagnostic('http.response', _error?.message === 'capture_response_too_large'
         ? 'capture_too_large' : 'invalid_json', url.pathname);
         }
@@ -465,7 +520,7 @@ import {
   const navigationChanged = () => {
     identityRequestSequence += 1;
     pageEpoch = crypto.randomUUID();
-    replaceCreatorIdentity(null);
+    replaceCreatorIdentity(null, false, false);
   };
   const historyWrappers = [];
   for (const method of ['pushState', 'replaceState']) {
@@ -486,6 +541,8 @@ import {
   function stop() {
     if (!active) return;
     active = false;
+    pendingPreview.length = 0;
+    previewCreatorId = null;
     if (installedFetch !== null && window.fetch === installedFetch) window.fetch = originalFetch;
     if (installedWebSocket !== null && window.WebSocket === installedWebSocket) {
       window.WebSocket = originalWebSocket;
@@ -518,9 +575,14 @@ import {
       || Object.keys(message).length !== 3
       || message.type !== PAGE_CONTROL_MESSAGE_TYPE
       || message.version !== PAGE_CONTROL_VERSION
-      || message.action !== 'stop'
+      || !['stop', 'refresh_identity'].includes(message.action)
     ) return;
-    stop();
+    if (message.action === 'stop') stop();
+    // A readiness probe before the profile response is not evidence of sign-out.
+    // Navigation already removes the worker's old document context.
+    else if (creatorPlatformUserId !== null) {
+      postProvisioningIdentity({ creator_account_id: creatorPlatformUserId });
+    }
   }
 
   window.addEventListener('message', controlListener);

@@ -278,6 +278,11 @@ export function AppAppBar({
                 </Box>
               ))}
             </Box>
+            {extensionConnection(transportState.agent) !== 'connected' && (
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                In your browser, open the Conversation Analytics extension and choose Continue setup.
+              </Typography>
+            )}
             <Button
               component={RouterLink}
               onClick={() => setStatusAnchor(null)}

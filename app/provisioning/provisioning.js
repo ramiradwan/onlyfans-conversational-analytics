@@ -23,7 +23,7 @@ const DECODER_REFUSALS = Object.freeze({
 const OPERATION_REFUSALS = Object.freeze({
   binding_acquisition_unavailable: 'The connection is not approved yet. Allow it in the setup tab, then try again.',
   hosted_origin_unavailable: 'This app is missing its setup link. Return to the website where you got your code for help.',
-  hosted_unavailable: 'Check your internet connection and try again.',
+  hosted_unavailable: 'The setup service could not complete this step. Try again shortly. If it keeps happening, return to the setup tab for help.',
   installation_key_unavailable: 'This computer’s secure device protection is unavailable. Restart the desktop app and try again.',
   membership_reference_unavailable: 'Desktop setup is incomplete. Close this page, reopen the desktop app, and continue setup.',
   candidate_resolution_conflict: 'This setup changed while approval was being checked. Close this page, reopen the desktop app, and continue setup.',

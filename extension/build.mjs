@@ -76,6 +76,8 @@ const BUNDLED_SCRIPT_FILES = Object.freeze([
   'content.js',
   'page-hook.js',
   'popup.js',
+  'setup.js',
+  'options.js',
 ]);
 const MODE_SCRIPT_FILES = Object.freeze([
   'page-hook-mode-identity.js',
@@ -85,7 +87,7 @@ const MODE_SCRIPT_FILES = Object.freeze([
 const SCRIPT_FILES = Object.freeze([...BUNDLED_SCRIPT_FILES, ...MODE_SCRIPT_FILES]);
 const NOTICE_FILE = 'THIRD_PARTY_NOTICES.txt';
 const ICON_FILES = Object.freeze(['icons/icon48.png', 'icons/icon128.png']);
-const STATIC_UI_FILES = Object.freeze(['popup.html', 'popup.css']);
+const STATIC_UI_FILES = Object.freeze(['popup.html', 'popup.css', 'setup.html', 'setup.css', 'options.html']);
 const UI_FILES = Object.freeze([...STATIC_UI_FILES, 'extension-config.json']);
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
@@ -436,7 +438,7 @@ async function compileOnce(signingRule, legalBindings) {
     treeShaking: true,
     write: false,
   };
-  const [background, content, pageHook, popup] = await Promise.all([
+  const [background, content, pageHook, popup, setup, options] = await Promise.all([
     build({
       ...common,
       entryPoints: [path.join(ROOT, 'background-read-only.js')],
@@ -461,6 +463,8 @@ async function compileOnce(signingRule, legalBindings) {
       format: 'iife',
       outfile: path.join(DIST, 'popup.js'),
     }),
+    ...['setup', 'options'].map((page) => build({ ...common, entryPoints: [path.join(ROOT, `${page}.js`)],
+      format: 'iife', outfile: path.join(DIST, `${page}.js`) })),
   ]);
 
   auditReadOnlyModuleGraph(Object.keys(background.metafile.inputs));
@@ -479,6 +483,8 @@ async function compileOnce(signingRule, legalBindings) {
     ['content.js', outputBytes(content, 'content.js')],
     ['page-hook.js', outputBytes(pageHook, 'page-hook.js')],
     ['popup.js', outputBytes(popup, 'popup.js')],
+    ['setup.js', outputBytes(setup, 'setup.js')],
+    ['options.js', outputBytes(options, 'options.js')],
   ]);
 }
 
@@ -508,6 +514,7 @@ function auditManifest(manifest) {
   assert.equal(manifest.background?.type, 'module');
   assert.equal(manifest.content_scripts, undefined);
   assert.equal(manifest.action?.default_popup, 'popup.html');
+  assert.deepEqual(manifest.options_ui, { page: 'options.html', open_in_tab: true });
   const declared = new Set([
     ...(manifest.permissions ?? []),
     ...(manifest.optional_permissions ?? []),
@@ -804,7 +811,8 @@ async function auditArtifactView(view, {
 
   const popup = TEXT_DECODER.decode(await view.read('popup.html'));
   assert.match(popup, /Observed in this browser/);
-  assert.match(popup, /Preview retains no message text/);
+  assert.match(TEXT_DECODER.decode(await view.read('setup.html')), /Preview retains no message text/);
+  assert.doesNotMatch(popup, /id="(?:pre-mode|mode-choice|companion-pairing|delete-local-data)"/);
   assert.match(popup, /not affiliated with or endorsed by OnlyFans/);
 
   const extensionConfig = validateExtensionConfig(

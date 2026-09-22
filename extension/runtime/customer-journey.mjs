@@ -85,7 +85,7 @@ export function deriveCustomerJourney({
       title: pairing.state === 'compare' ? 'Confirm the connection' : 'Connecting to the desktop app',
       body: pairing.state === 'compare'
         ? 'Check that the desktop app shows the same code, then confirm there.'
-        : 'Keep this window open.',
+        : 'Keep this page open.',
       primaryAction: null,
       primaryLabel: null,
       secondaryAction: 'cancel_pairing',
@@ -111,8 +111,8 @@ export function deriveCustomerJourney({
       return Object.freeze({
         id: CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE,
         tone: 'warning',
-        title: 'Desktop app is not running',
-        body: 'Start the desktop app, then try again. Your connection is saved.',
+        title: 'Desktop app is unavailable',
+        body: 'Open the desktop app, then try again. Your connection is saved.',
         primaryAction: 'retry_full',
         primaryLabel: 'Retry connection',
         secondaryAction: null,
@@ -122,10 +122,10 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.DESKTOP_APP_NEEDED,
       tone: 'warning',
-      title: 'Desktop app needed for Full analytics',
+      title: 'Set up the desktop app for Full analytics',
       body: desktopDownloadAvailable
-        ? 'Full analytics runs in the desktop app on this computer. Install or start it, then check again.'
-        : 'Full analytics runs in the desktop app on this computer. Start it, then check again.',
+        ? 'Full analytics runs in the desktop app on this computer. Install or open it and finish its setup, then check again.'
+        : 'Full analytics runs in the desktop app on this computer. Open it and finish its setup, then check again.',
       primaryAction: desktopDownloadAvailable ? 'install_desktop' : 'retry_full',
       primaryLabel: desktopDownloadAvailable ? 'Install desktop app' : 'Check again',
       secondaryAction: desktopDownloadAvailable ? 'retry_full' : null,
@@ -221,6 +221,22 @@ export function deriveCustomerJourney({
       primaryLabel: 'Check again',
       secondaryAction: 'open_dashboard',
       secondaryLabel: 'Open desktop app',
+    });
+  }
+
+  if (
+    analysisReadiness.commercial_authority === 'active'
+    && status?.delivery?.browser_tab_sleeping === true
+  ) {
+    return Object.freeze({
+      id: CUSTOMER_STATES.FULL_UNAVAILABLE,
+      tone: 'warning',
+      title: 'Open OnlyFans to continue',
+      body: 'Your browser paused the OnlyFans tab. Open it and analytics will resume automatically.',
+      primaryAction: 'open_creator_account',
+      primaryLabel: 'Open OnlyFans',
+      secondaryAction: null,
+      secondaryLabel: null,
     });
   }
 

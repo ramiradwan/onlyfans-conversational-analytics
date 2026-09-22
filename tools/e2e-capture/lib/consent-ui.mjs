@@ -24,10 +24,30 @@ export async function openPopup(context, targetExtensionId, pageErrors) {
   return popup;
 }
 
+export async function openSetup(popup) {
+  const context = popup.context();
+  const base = new URL('setup.html', popup.url()).href;
+  let setup = context.pages().find((page) => page.url() === base || page.url().startsWith(base + '#'));
+  if (!setup) {
+    const opened = context.waitForEvent('page');
+    await popup.locator('#journey-primary').click();
+    setup = await opened;
+    await expect(setup).toHaveURL(new RegExp('/setup\\.html(?:#full)?$'));
+  }
+  await setup.bringToFront();
+  await expect(setup.locator('main')).toHaveAttribute('data-ready', 'true');
+  return setup;
+}
+
 export async function openManageExtension(popup) {
-  const manage = popup.locator('#manage-view');
-  if (!(await manage.isVisible())) await popup.getByRole('button', { name: 'Manage extension' }).click();
-  await expect(manage).toBeVisible();
+  const context = popup.context();
+  const base = new URL('options.html', popup.url()).href;
+  const existing = context.pages().find((page) => page.url() === base || page.url().startsWith(base + '#'));
+  const opened = existing ? Promise.resolve(existing) : context.waitForEvent('page');
+  await popup.locator('#open-manage').click();
+  const options = await opened;
+  await expect(options.locator('#data')).toBeVisible();
+  return options;
 }
 
 export async function browserProcessId(context) {
@@ -131,6 +151,7 @@ export async function configureSyntheticLegalBindings(worker, popup) {
 }
 
 export async function completePreModeLegalActions(popup) {
+  popup = await openSetup(popup);
   await expect(popup.locator('#pre-mode')).toBeVisible();
   await popup.locator('#terms-accepted').check();
   await expect(popup.locator('#risk-acknowledged')).toBeEnabled();
@@ -166,15 +187,17 @@ async function acceptPermissionFor(context, popup, worker, buttonName, origins) 
 }
 
 export async function enablePreviewAnalytics(context, popup, worker) {
-  await expect(popup.locator('#preview-disclosure')).toBeVisible();
-  await expect(popup.getByRole('button', { name: 'Enable Preview' })).toBeVisible();
+  const setup = await openSetup(popup);
+  await expect(setup.locator('#preview-disclosure')).toBeVisible();
+  await expect(setup.getByRole('button', { name: 'Enable Preview' })).toBeVisible();
   await acceptPermissionFor(
     context,
-    popup,
+    setup,
     worker,
     'Enable Preview',
     [ONLYFANS_ORIGIN_PATTERN],
   );
+  await popup.bringToFront();
 }
 
 export async function assertFullProminentDisclosure(popup) {
@@ -192,29 +215,20 @@ export async function assertFullProminentDisclosure(popup) {
 
 export async function upgradePreviewToFull(context, popup, worker) {
   const review = popup.locator('#journey-primary');
-  await expect(review).toHaveAttribute('data-action', 'review_full');
   await expect(review).toHaveText('Review Full analytics');
   await review.click();
-  await assertFullProminentDisclosure(popup);
-  await acceptPermissionFor(
-    context,
-    popup,
-    worker,
-    'Enable Full analytics',
-    [ONLYFANS_ORIGIN_PATTERN],
-  );
+  const setup = await openSetup(popup);
+  await assertFullProminentDisclosure(setup);
+  await acceptPermissionFor(context, setup, worker, 'Enable Full analytics', [ONLYFANS_ORIGIN_PATTERN]);
+  await popup.bringToFront();
 }
 
 export async function connectFullAnalytics(context, popup, worker) {
   await configureSyntheticLegalBindings(worker, popup);
   await completePreModeLegalActions(popup);
-  await popup.getByRole('button', { name: 'Review Full analytics' }).click();
-  await assertFullProminentDisclosure(popup);
-  await acceptPermissionFor(
-    context,
-    popup,
-    worker,
-    'Enable Full analytics',
-    [ONLYFANS_ORIGIN_PATTERN],
-  );
+  const setup = await openSetup(popup);
+  await setup.getByRole('button', { name: 'Review Full analytics' }).click();
+  await assertFullProminentDisclosure(setup);
+  await acceptPermissionFor(context, setup, worker, 'Enable Full analytics', [ONLYFANS_ORIGIN_PATTERN]);
+  await popup.bringToFront();
 }

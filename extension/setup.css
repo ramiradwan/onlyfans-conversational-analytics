@@ -1,0 +1,80 @@
+/* Full-page layout consumes the generated tokens and primitives in popup.css. */
+body[data-surface="setup"], body[data-surface="options"] {
+  width: auto; min-width: 0; max-width: none; max-height: none;
+  padding: 40px 32px; overflow-wrap: anywhere;
+}
+main { max-width: var(--dipsy-static-setup-max-width); margin: 0 auto; padding: 0; }
+header { margin-bottom: 24px; }
+header > div:not(.brand-mark) { flex: 1; min-width: 0; }
+h1 { font-size: 1.125rem; line-height: 1.3; }
+h2, .journey-card h2, .choice > h2 { font-size: 1.375rem; line-height: 1.3; }
+h3 { font-size: var(--dipsy-static-label-size); }
+p, li, label { font-size: var(--dipsy-static-label-size); line-height: 1.6; }
+.status-line { font-size: var(--dipsy-static-popup-body-size); }
+section { padding: 28px; margin-bottom: 24px; }
+.journey-card { padding: 28px; }
+button { min-height: var(--dipsy-static-large-control-height); font-size: var(--dipsy-static-label-size); }
+.header-action { flex: 0 0 auto; width: auto; min-height: 36px; margin: 0; font-size: var(--dipsy-static-popup-body-size); }
+.fine-print, footer { font-size: var(--dipsy-static-caption-size); }
+.check-row { gap: 10px; padding: 8px 0; }
+.check-row input { width: 18px; height: 18px; }
+.points { padding-left: 20px; }
+.points li { margin-bottom: 8px; }
+#setup-progress { margin-bottom: 24px; }
+#setup-progress ol { list-style: none; display: flex; gap: 6px; margin: 0; padding: 0; }
+#setup-progress li { flex: 1; min-width: 0; }
+#setup-progress button {
+  width: 100%; min-height: 44px; padding: 0; margin: 0; border: 0; border-radius: 0;
+  color: var(--dipsy-color-text-muted); background: transparent;
+  font-size: var(--dipsy-static-caption-size); font-weight: var(--dipsy-font-weight-regular);
+}
+#setup-progress button::before {
+  content: ''; display: block; height: 6px; border-radius: var(--dipsy-radius-pill);
+  background: var(--dipsy-color-divider); margin-bottom: 10px;
+}
+#setup-progress [data-complete="true"] button::before,
+#setup-progress [aria-current="step"] button::before { background: var(--dipsy-color-primary); }
+#setup-progress [aria-current="step"] button { color: var(--dipsy-color-text); font-weight: var(--dipsy-font-weight-semibold); }
+#setup-progress button:disabled { cursor: default; }
+#setup-progress button:active:not(:disabled) { transform: none; }
+#back-current { min-height: 40px; margin-bottom: 12px; }
+.pairing-code { margin: 20px 0 4px; font-family: var(--dipsy-font-family-numeric); font-size: 2.75rem; line-height: 1.25; }
+#pairing-label { text-align: center; margin: 0 0 20px; }
+.pairing-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.pairing-actions > button { flex: 1; min-width: 130px; }
+#pairing-note { margin-top: 16px; padding-top: 14px; border-top: var(--dipsy-border-thin) solid var(--dipsy-color-divider); }
+.journey-actions { gap: 8px; }
+#ready-details { margin: 16px 0; }
+.connection-grid dt, .connection-grid dd { font-size: var(--dipsy-static-label-size); }
+body[data-surface="options"] section { padding: 20px; box-shadow: var(--dipsy-shadow-raised); border: var(--dipsy-border-thin) solid var(--dipsy-intent-surface-dominant-border); }
+body[data-surface="options"] section::before { display: none; }
+body[data-surface="options"] h2 { font-size: 1rem; }
+body[data-surface="options"] #data { border-color: var(--dipsy-intent-surface-feedback-error-border); }
+.settings-row { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-top: var(--dipsy-border-thin) solid var(--dipsy-color-divider); }
+.settings-row > div { flex: 1; min-width: 0; }
+.settings-row h3, .settings-row p { margin: 0; }
+.settings-row p { font-size: var(--dipsy-static-popup-body-size); color: var(--dipsy-color-text-muted); }
+.settings-row > button { width: auto; flex: 0 0 auto; max-width: 180px; min-height: 40px; margin: 0; }
+details { margin-top: 16px; }
+summary { cursor: pointer; min-height: 36px; padding: 6px 0; color: var(--dipsy-color-primary); }
+dialog {
+  width: min(460px, calc(100vw - 32px)); padding: 24px;
+  border: var(--dipsy-border-thin) solid var(--dipsy-intent-surface-dominant-border);
+  border-radius: var(--dipsy-radius-surface); box-shadow: var(--dipsy-shadow-overlay);
+  background: var(--dipsy-color-paper); color: var(--dipsy-color-text);
+}
+dialog::backdrop { background: color-mix(in oklch, var(--dipsy-color-text) 35%, transparent); }
+@media (max-width: 600px) {
+  body[data-surface="setup"], body[data-surface="options"] { padding: 24px 16px; }
+  header { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: start; gap: 12px; }
+  .header-action { grid-column: 2; margin-left: 0; justify-self: start; }
+  section, .journey-card { padding: 20px; }
+  .settings-row { align-items: flex-start; flex-wrap: wrap; }
+  .settings-row > div { flex-basis: 65%; }
+  .pairing-code { font-size: 2.5rem; }
+}
+@media (forced-colors: active) {
+  #setup-progress button::before { border-top: 3px solid CanvasText; }
+  #setup-progress [aria-current="step"] button { text-decoration: underline; }
+  dialog { border: 1px solid CanvasText; }
+}
