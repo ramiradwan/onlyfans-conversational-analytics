@@ -116,7 +116,11 @@ def test_changed_reference_between_build_and_stage_is_rejected_atomically(fixtur
             kwargs['conversation_pages'] = (reference,)
         return stage(artifact, **kwargs)
     monkeypatch.setattr(fixture.stores.projections, 'stage_built_artifact', changed)
-    with pytest.raises(ValueError, match='conversation_page_reference_'):
+    expected = (
+        'conversation_enrichment_unit_manifest_invalid'
+        if fault == 'missing_page' else 'conversation_page_reference_'
+    )
+    with pytest.raises(ValueError, match=expected):
         fixture.pipeline.build_candidate(ACCOUNT)
     with fixture.stores.database.read() as db:
         assert db.execute('SELECT COUNT(*) FROM projection_generations').fetchone()[0] == 1
@@ -191,7 +195,7 @@ def test_legacy_pages_survive_migration_and_convert_on_next_publication(fixture,
         assert before > 0
     upgraded = ProjectionsDatabase(path)
     with upgraded.read() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 16
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 17
         assert content_stamp(db) is not None
         assert db.execute('SELECT COUNT(*) FROM conversation_owned_pages').fetchone()[0] == before
         assert db.execute('SELECT COUNT(*) FROM conversation_page_content').fetchone()[0] == 0

@@ -95,6 +95,9 @@ class EnrichmentStage:
     ) -> list[AnalyzerProvenance]:
         """Attach deterministic coverage and meaningful confidence summaries."""
 
+        aggregate = getattr(enrichments, "provenance", None)
+        if callable(aggregate):
+            return aggregate(tuple(self._descriptors))
         eligible = len(enrichments)
         confidence_sets = (
             [item.sentiment.confidence for item in enrichments],

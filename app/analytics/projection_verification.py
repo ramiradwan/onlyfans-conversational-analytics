@@ -58,6 +58,7 @@ class VerifiedProjection:
     conversation_count: int
     first_source_at: datetime | None
     streamed: bool
+    conversation_metrics_digest: str | None = None
 
 
 def _json(value) -> bytes:
@@ -65,7 +66,8 @@ def _json(value) -> bytes:
                       separators=(',', ':'), allow_nan=False).encode('utf-8')
 
 
-def _array(text: str, position: int, model, digest, check, *, source_times=False):
+def _array(text: str, position: int, model, digest, check, *, source_times=False,
+           observe=None):
     if text[position:position + 1] != '[':
         raise ValueError('projection_array_required')
     position = _SPACE(text, position + 1).end()
@@ -77,14 +79,17 @@ def _array(text: str, position: int, model, digest, check, *, source_times=False
             check()
             value, position = _DECODER.raw_decode(text, position)
             item = model.model_validate(value)
+            encoded = _json(item.model_dump(mode='json'))
             if digest is not None:
                 if count:
                     digest.update(b',')
-                digest.update(_json(item.model_dump(mode='json')))
+                digest.update(encoded)
+            if observe is not None:
+                observe(item, encoded, count)
             count += 1
             if source_times and (first_source is None or item.sent_at < first_source):
                 first_source = item.sent_at
-            del item, value
+            del item, value, encoded
             position = _SPACE(text, position).end()
             if text[position:position + 1] == ']':
                 break
@@ -97,14 +102,47 @@ def _array(text: str, position: int, model, digest, check, *, source_times=False
     return position + 1, count, first_source
 
 
-def _stream(text: str, check, *, with_digest: bool) -> VerifiedProjection:
+def _component_tuples(order, components):
+    return tuple(
+        (reference, components[reference][0], components[reference][1].hexdigest())
+        for reference in order
+    )
+
+
+def _stream(text: str, check, *, with_digest: bool,
+            enrichment_components=None) -> VerifiedProjection:
+    from app.analytics.projection_encoding import ENRICHMENT_UNIT_PIPELINE_REVISION
+
     position = _SPACE(text, 0).end()
     if text[position:position + 1] != '{':
         raise ValueError('projection_object_required')
     position = _SPACE(text, position + 1).end()
-    digest = hashlib.sha256(b'{') if with_digest else None
+    legacy = hashlib.sha256(b'{') if with_digest else None
     included = 0
     header, counts, first_source = {}, {}, None
+    component_order, components = [], {}
+    metrics_digest = hashlib.sha256()
+    metrics_count = 0
+
+    def observe_message(item, encoded, _ordinal):
+        reference = item.conversation_ref
+        state = components.get(reference)
+        if state is None:
+            state = [0, hashlib.sha256()]
+            components[reference] = state
+            component_order.append(reference)
+        if state[0]:
+            state[1].update(b'\n')
+        state[1].update(encoded)
+        state[0] += 1
+
+    def observe_metric(_item, encoded, ordinal):
+        nonlocal metrics_count
+        if ordinal:
+            metrics_digest.update(b'\n')
+        metrics_digest.update(encoded)
+        metrics_count += 1
+
     for ordinal, expected in enumerate(_FIELDS):
         check()
         if text[position:position + 1] == '}':
@@ -116,22 +154,31 @@ def _stream(text: str, check, *, with_digest: bool) -> VerifiedProjection:
         if text[position:position + 1] != ':':
             raise ValueError('projection_colon_required')
         position = _SPACE(text, position + 1).end()
-        if name != 'projection_digest' and digest is not None:
+
+        if name != 'projection_digest' and legacy is not None:
             if included:
-                digest.update(b',')
-            digest.update(_json(name) + b':')
+                legacy.update(b',')
+            legacy.update(_json(name) + b':')
             included += 1
+
         if name in _ARRAYS:
-            position, counts[name], source = _array(text, position, _ARRAYS[name], digest, check,
-                                                   source_times=name == 'message_enrichments')
+            position, counts[name], source = _array(
+                text, position, _ARRAYS[name], legacy, check,
+                source_times=name == 'message_enrichments',
+                observe=(
+                    observe_message if name == 'message_enrichments'
+                    else observe_metric
+                ),
+            )
             if source is not None:
                 first_source = source
         else:
             value, position = _DECODER.raw_decode(text, position)
             value = _ADAPTERS[name].validate_python(value)
             header[name] = value
-            if name != 'projection_digest' and digest is not None:
-                digest.update(_json(_ADAPTERS[name].dump_python(value, mode='json')))
+            if name != 'projection_digest' and legacy is not None:
+                legacy.update(_json(_ADAPTERS[name].dump_python(value, mode='json')))
+
         position = _SPACE(text, position).end()
         if ordinal + 1 < len(_FIELDS):
             if text[position:position + 1] == '}':
@@ -139,50 +186,130 @@ def _stream(text: str, check, *, with_digest: bool) -> VerifiedProjection:
             if text[position:position + 1] != ',':
                 raise ValueError('projection_separator_invalid')
             position = _SPACE(text, position + 1).end()
+
     if text[position:position + 1] != '}' or _SPACE(text, position + 1).end() != len(text):
         raise ValueError('projection_document_end_invalid')
     check()
-    if digest is not None:
-        digest.update(b'}')
-    return VerifiedProjection(ProjectionHeader.model_validate(header),
-        'sha256:' + digest.hexdigest() if digest is not None else None, counts['message_enrichments'],
-        counts['conversation_metrics'], first_source, True)
+    if legacy is not None:
+        legacy.update(b'}')
+
+    actual_components = _component_tuples(component_order, components)
+    selected_components = actual_components
+    if enrichment_components is not None:
+        supplied = tuple(enrichment_components)
+        if counts['message_enrichments'] and supplied != actual_components:
+            raise ValueError('projection_enrichment_components_mismatch')
+        selected_components = supplied
+
+    verified_header = ProjectionHeader.model_validate(header)
+    digest = None
+    if with_digest:
+        if ENRICHMENT_UNIT_PIPELINE_REVISION in verified_header.pipeline_revision:
+            unit = hashlib.sha256(
+                b'analytics-projection.enrichment-units.v1\0'
+            )
+            unit.update(_json(verified_header.model_dump(
+                mode='json', exclude={'projection_digest'}
+            )))
+            unit.update(b'\0conversation_metrics:')
+            unit.update(str(metrics_count).encode('ascii'))
+            unit.update(b':')
+            unit.update(metrics_digest.hexdigest().encode('ascii'))
+            for conversation_ref, count, content_digest in selected_components:
+                check()
+                unit.update(b'\0message_enrichment:')
+                unit.update(conversation_ref.encode('ascii'))
+                unit.update(b':')
+                unit.update(str(int(count)).encode('ascii'))
+                unit.update(b':')
+                unit.update(content_digest.encode('ascii'))
+            digest = 'sha256:' + unit.hexdigest()
+        else:
+            digest = 'sha256:' + legacy.hexdigest()
+
+    return VerifiedProjection(
+        verified_header, digest, counts['message_enrichments'],
+        counts['conversation_metrics'], first_source, True,
+        metrics_digest.hexdigest(),
+    )
+
+def _metrics_digest_from_projection(projection):
+    digest = hashlib.sha256()
+    for ordinal, item in enumerate(projection.conversation_metrics):
+        if ordinal:
+            digest.update(b'\n')
+        digest.update(_json(item.model_dump(mode='json')))
+    return digest.hexdigest()
 
 
 def _read_document(document: str, *, with_digest: bool,
-                   check: Callable[[], None]) -> VerifiedProjection:
+                   check: Callable[[], None], enrichment_components=None) -> VerifiedProjection:
     """Verify every record; return metadata rather than arrays that callers do not use."""
 
     check()
     if not isinstance(document, str):
         raise ValueError('projection_document_text_required')
     try:
-        return _stream(document, check, with_digest=with_digest)
+        return _stream(
+            document, check, with_digest=with_digest,
+            enrichment_components=enrichment_components,
+        )
     except _GeneralDocument:
         # Public inputs may omit defaults or use a different top-level order.
         # Their established model validation remains the compatibility path.
         check()
         projection = AnalyticsProjection.model_validate_json(document)
-        digest = projection_digest(projection, check=check) if with_digest else None
+        from app.analytics.projection_encoding import (
+            enrichment_digest_components, projection_digest_from_components,
+            ENRICHMENT_UNIT_PIPELINE_REVISION,
+        )
+        actual_components = enrichment_digest_components(
+            projection.message_enrichments, check=check
+        )
+        selected = actual_components
+        if enrichment_components is not None:
+            supplied = tuple(enrichment_components)
+            if projection.message_enrichments and supplied != actual_components:
+                raise ValueError('projection_enrichment_components_mismatch')
+            selected = supplied
+        if with_digest:
+            digest = (
+                projection_digest_from_components(projection, selected, check=check)
+                if ENRICHMENT_UNIT_PIPELINE_REVISION in projection.pipeline_revision
+                else projection_digest(projection, check=check)
+            )
+        else:
+            digest = None
         header = projection.model_dump(mode='python', exclude=set(_ARRAYS))
-        result = VerifiedProjection(ProjectionHeader.model_validate(header), digest,
+        result = VerifiedProjection(
+            ProjectionHeader.model_validate(header), digest,
             len(projection.message_enrichments), len(projection.conversation_metrics),
-            min((item.sent_at for item in projection.message_enrichments), default=None), False)
+            min((item.sent_at for item in projection.message_enrichments), default=None),
+            False, _metrics_digest_from_projection(projection),
+        )
         check()
         return result
 
 
 def verify_projection_document(document: str, *,
-                               check: Callable[[], None] = lambda: None) -> VerifiedProjection:
-    """Validate every stored record and calculate its canonical projection digest."""
+                               check: Callable[[], None] = lambda: None,
+                               enrichment_components=None) -> VerifiedProjection:
+    """Validate every stored record and calculate its versioned projection digest."""
 
-    result = _read_document(document, with_digest=True, check=check)
+    result = _read_document(
+        document, with_digest=True, check=check,
+        enrichment_components=enrichment_components,
+    )
     assert result.digest is not None
     return result
-
 
 def read_projection_source_time(document: str, *, check: Callable[[], None] = lambda: None) -> tuple[str, datetime | None]:
     """Validate a retention input without calculating a digest the caller does not use."""
 
     result = _read_document(document, with_digest=False, check=check)
-    return result.header.pipeline_revision, result.first_source_at
+    first = result.first_source_at
+    if first is None:
+        from app.analytics.projection_encoding import ENRICHMENT_UNIT_PIPELINE_REVISION
+        if ENRICHMENT_UNIT_PIPELINE_REVISION in result.header.pipeline_revision:
+            first = result.header.creator_metrics.active_from
+    return result.header.pipeline_revision, first

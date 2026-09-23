@@ -219,7 +219,7 @@ def _projection_retention_is_current(
     }
     for row in projection.execute(
         """
-        SELECT g.creator_account_id,g.pipeline_revision,p.document_json
+        SELECT g.generation_id,g.creator_account_id,g.pipeline_revision,p.document_json
         FROM projection_generations g
         JOIN analytics_projections p
           ON p.generation_id=g.generation_id
@@ -229,7 +229,16 @@ def _projection_retention_is_current(
     ):
         if str(row["creator_account_id"]) not in accounts:
             return False
-        document = AnalyticsProjection.model_validate_json(row["document_json"])
+        from app.analytics.sqlite_projection_store import recompute_generation
+
+        try:
+            values = recompute_generation(
+                projection, str(row["generation_id"]),
+                materialize_projection=True,
+            )
+        except Exception:
+            return False
+        document = values["projection"]
         if document.pipeline_revision != row["pipeline_revision"]:
             return False
         if document.pipeline_revision == CLEAR_PIPELINE_REVISION:

@@ -24,6 +24,8 @@ from app.models.analytics import (
 MAX_CACHE_ENTRIES = 30_000
 MAX_CACHE_BYTES = 16 * 1024 * 1024
 MAX_ENTRY_BYTES = 65_536
+MAX_CONVERSATION_CACHE_ENTRIES = 30_000
+MAX_CONVERSATION_CACHE_BYTES = 16 * 1024 * 1024
 CACHE_BATCH_SIZE = 64
 RESULT_TYPES = {"sentiment": SentimentResult, "topic_entities": TopicEntityResult,
                 "engagement": EngagementResult}
@@ -138,6 +140,11 @@ class EnrichmentReuse:
         self._batch: dict[str, bytes] = {}
         self.bytes_used = 0
         self._conversation_keys: dict[str, list[str]] = {}
+        self._local_conversation_ref: str | None = None
+        self._local_conversation_entries: dict[str, bytes] = {}
+        self._local_conversation_bytes = 0
+        self._fallback_conversation_ref: str | None = None
+        self._fallback_conversation_entries: dict[str, bytes] = {}
 
     def prefetch(self, keys: list[EnrichmentKey]) -> None:
         check_cancelled(self.cancellation)
@@ -145,6 +152,25 @@ class EnrichmentReuse:
             self.account_id, [key.digest for key in keys],
             now=self.clock(), cancellation_check=self.cancellation,
         ) if keys else {}
+        if not keys or len(self._batch) == len(keys):
+            return
+        references = {key.conversation_ref for key in keys if key.digest not in self._batch}
+        loader = getattr(self.store, "load_conversation_enrichment_entries", None)
+        if len(references) != 1 or not callable(loader):
+            return
+        reference = references.pop()
+        if self._fallback_conversation_ref != reference:
+            self._fallback_conversation_entries = loader(
+                self.account_id, reference, now=self.clock(),
+                cancellation_check=self.cancellation,
+            )
+            self._fallback_conversation_ref = reference
+        for key in keys:
+            check_cancelled(self.cancellation)
+            if key.digest not in self._batch:
+                data = self._fallback_conversation_entries.get(key.digest)
+                if data is not None:
+                    self._batch[key.digest] = data
 
     def get(self, key: EnrichmentKey):
         check_cancelled(self.cancellation)
@@ -159,7 +185,7 @@ class EnrichmentReuse:
 
     def retain(self, key: EnrichmentKey, result) -> None:
         check_cancelled(self.cancellation)
-        if key.expires_at <= self.clock() or len(self.entries) >= MAX_CACHE_ENTRIES:
+        if key.expires_at <= self.clock():
             return
         result_json = result.model_dump_json()
         if len(result_json.encode("utf-8")) > MAX_ENTRY_BYTES:
@@ -171,12 +197,25 @@ class EnrichmentReuse:
 
         check_cancelled(self.cancellation)
         key = entry.key
-        if key.expires_at <= self.clock() or len(self.entries) >= MAX_CACHE_ENTRIES:
+        if key.expires_at <= self.clock():
             return
         data = entry.model_dump_json().encode("utf-8")
-        if len(data) > MAX_ENTRY_BYTES or self.bytes_used + len(data) > MAX_CACHE_BYTES:
+        if len(data) > MAX_ENTRY_BYTES:
             return
         signature = key.digest
+        if self._local_conversation_ref != key.conversation_ref:
+            self._local_conversation_ref = key.conversation_ref
+            self._local_conversation_entries.clear()
+            self._local_conversation_bytes = 0
+        local_previous = self._local_conversation_entries.get(signature, b"")
+        local_size = self._local_conversation_bytes + len(data) - len(local_previous)
+        if (signature in self._local_conversation_entries
+                or (len(self._local_conversation_entries) < MAX_CONVERSATION_CACHE_ENTRIES
+                    and local_size <= MAX_CONVERSATION_CACHE_BYTES)):
+            self._local_conversation_entries[signature] = data
+            self._local_conversation_bytes = local_size
+        if len(self.entries) >= MAX_CACHE_ENTRIES or self.bytes_used + len(data) > MAX_CACHE_BYTES:
+            return
         previous = self.entries.get(signature, b"")
         self.bytes_used += len(data) - len(previous)
         if signature not in self.entries:
@@ -184,6 +223,8 @@ class EnrichmentReuse:
         self.entries[signature] = data
 
     def conversation_entries(self, reference: str) -> tuple[bytes, ...]:
+        if self._local_conversation_ref == reference:
+            return tuple(self._local_conversation_entries.values())
         return tuple(self.entries[key] for key in self._conversation_keys.get(reference, ()))
 
 
@@ -195,7 +236,13 @@ def _checked_entries(artifact, entries: tuple[bytes, ...], *,
     check()
     if len(entries) > MAX_CACHE_ENTRIES or sum(map(len, entries)) > MAX_CACHE_BYTES:
         raise ValueError("enrichment_cache_size_invalid")
-    messages = {message.message_ref: message for message in artifact.projection.message_enrichments}
+    source = artifact.projection.message_enrichments
+    local_messages = getattr(source, "validation_messages", None)
+    messages = (
+        local_messages()
+        if callable(local_messages)
+        else {message.message_ref: message for message in source}
+    )
     seen = set()
     earliest_expiry = min((m.sent_at for m in messages.values()), default=None)
     if earliest_expiry is not None:
@@ -233,6 +280,7 @@ def reuse_build(store, account_id, clock, cancellation, *, enabled=True):
         ACTIVE_REUSE.reset(token)
         if reuse is not None:
             reuse._batch.clear()
+            reuse._fallback_conversation_entries.clear()
 
 
 @dataclass(frozen=True, slots=True)

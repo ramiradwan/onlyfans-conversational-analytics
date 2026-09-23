@@ -90,14 +90,15 @@ def test_cancellation_inside_sql_function_propagates_without_input_text(tmp_path
         cleanup(f)
 
 
-def test_stored_header_is_derived_and_preserves_the_full_document(tmp_path):
+def test_stored_header_is_derived_from_the_compact_document(tmp_path):
     f = make_fixture(tmp_path)
     try:
         result = f.pipeline.project_account(ACCOUNT).artifact
         with f.stores.database.read() as db:
             row = db.execute('SELECT document_json,validation_header FROM analytics_projections').fetchone()
             document, header = map(json.loads, row)
-            assert document['message_enrichments']
+            assert result.projection.message_enrichments
+            assert document['message_enrichments'] == []
             assert header['message_enrichments'] == header['conversation_metrics'] == []
             assert header['creator_metrics'] == document['creator_metrics']
             assert header['projection_digest'] == result.projection.projection_digest
@@ -139,7 +140,7 @@ def test_populated_header_upgrade_keeps_bytes_backups_and_foreign_keys(tmp_path)
             assert db.execute('PRAGMA user_version').fetchone()[0] == 8
             assert db.execute('SELECT document_json FROM analytics_projections').fetchone()[0] == before
         with updated.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 16
+            assert db.execute('PRAGMA user_version').fetchone()[0] == 17
             assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert not db.execute('PRAGMA foreign_key_check').fetchall()
             assert db.execute('SELECT document_json FROM analytics_projections').fetchone()[0] == before

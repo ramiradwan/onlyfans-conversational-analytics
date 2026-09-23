@@ -17,7 +17,11 @@ from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.database import ProjectionsDatabase, generation_verification_cache
 from app.analytics.compact_graph import CompactArtifact, write_compact_graph
 from app.analytics.graph_privacy import safe_graph_records
-from app.analytics.projection_encoding import projection_document
+from app.analytics.projection_encoding import (
+    ENRICHMENT_UNIT_PIPELINE_REVISION,
+    projection_document,
+    projection_storage_document,
+)
 from app.analytics.graph_store import (
     GraphDeadlineExceeded,
     GraphReferentialIntegrityError,
@@ -114,6 +118,8 @@ class SQLiteAnalyticsProjectionStore:
         self._graph_segment_proof_lock = RLock()
         self._conversation_graph_proofs = OrderedDict()
         self._conversation_graph_proof_lock = RLock()
+        self._conversation_enrichment_proofs = OrderedDict()
+        self._conversation_enrichment_proof_lock = RLock()
         self.reuse_validation_receipts = True
         from app.analytics.currentness import GenerationCurrentness
         self._currentness = GenerationCurrentness()
@@ -211,6 +217,38 @@ class SQLiteAnalyticsProjectionStore:
             return None
         return proof
 
+    def _remember_conversation_enrichment_proof(self, receipt, headers) -> None:
+        if receipt is None or not headers:
+            return
+        from app.analytics.conversation_enrichment_units import ConversationEnrichmentProof
+        from app.analytics.validation_receipt import MAX_RECEIPTS
+
+        proof = ConversationEnrichmentProof(
+            receipt.generation_id, receipt.binding, tuple(receipt.stamp),
+            tuple(sorted(headers, key=lambda item: item.conversation_ref)),
+        )
+        with self._conversation_enrichment_proof_lock:
+            self._conversation_enrichment_proofs[receipt.generation_id] = proof
+            self._conversation_enrichment_proofs.move_to_end(receipt.generation_id)
+            while len(self._conversation_enrichment_proofs) > MAX_RECEIPTS:
+                self._conversation_enrichment_proofs.popitem(last=False)
+
+    def _trusted_conversation_enrichment_proof(self, connection, generation):
+        from app.analytics.validation_receipt import content_stamp, generation_binding
+
+        if generation is None or int(connection.execute('PRAGMA user_version').fetchone()[0]) < 17:
+            return None
+        generation_id = generation['generation_id']
+        with self._conversation_enrichment_proof_lock:
+            proof = self._conversation_enrichment_proofs.get(generation_id)
+        if (proof is None or proof.generation_id != generation_id
+                or proof.binding != generation_binding(generation)):
+            return None
+        stamp = content_stamp(connection)
+        if stamp is None or tuple(stamp) != proof.stamp:
+            return None
+        return proof
+
     def generation_references_supported(self) -> bool:
         with self.database.read() as connection:
             return int(connection.execute("PRAGMA user_version").fetchone()[0]) >= 7
@@ -239,6 +277,43 @@ class SQLiteAnalyticsProjectionStore:
         from app.analytics.enrichment_sql import load_entries
 
         return load_entries(self, account_id, keys, **kwargs)
+
+    def load_conversation_enrichment_entries(
+        self, account_id, conversation, *, now, cancellation_check=None
+    ):
+        from app.analytics.cancellation import check_cancelled
+        from app.analytics.conversation_enrichment_unit_sql import (
+            load_analyzer_entries, supported,
+        )
+
+        check_cancelled(cancellation_check)
+        account = account_ref(account_id)
+        with self.database.read() as connection:
+            if not supported(connection):
+                return {}
+            generation = connection.execute(
+                """SELECT * FROM projection_generations
+                   WHERE creator_account_id=? AND status='active'
+                     AND activated_at IS NOT NULL""",
+                (account,),
+            ).fetchone()
+            if generation is None:
+                return {}
+            witness = self.activation.get(generation["generation_id"])
+            if (not self._intent_matches(generation, witness, require_completed=True)
+                    or witness.creator_account_id != account_id):
+                return {}
+            unit = load_analyzer_entries(
+                connection, generation["generation_id"], account, conversation
+            )
+            check_cancelled(cancellation_check)
+            return unit
+
+    def load_enrichment_unit_contents(self, account, unit_ids):
+        from app.analytics.conversation_enrichment_unit_sql import load_contents
+
+        with self.database.read() as connection:
+            return load_contents(connection, account, unit_ids)
 
     def question_pricing(self, account_id, snapshot, references, budget):
         from app.analytics.query_publication import published_pricing
@@ -385,6 +460,7 @@ class SQLiteAnalyticsProjectionStore:
         conversation_fragments: tuple[bytes, ...] = (),
         conversation_pages: tuple = (),
         conversation_graph_units: tuple = (),
+        conversation_enrichment_units: tuple = (),
         _copy_graph: bool = True,
         _trusted_graph_units: bool = False,
     ) -> str:
@@ -400,9 +476,11 @@ class SQLiteAnalyticsProjectionStore:
         from app.analytics.conversation_page_sql import insert_page_sets, resolve_page_sets
         from app.analytics.conversation_reuse import (
             MAX_FRAGMENTS, MAX_FRAGMENT_TOTAL_BYTES, MAX_GRAPH_UNITS,
-            MAX_GRAPH_UNIT_TOTAL_BYTES,
+            MAX_GRAPH_UNIT_TOTAL_BYTES, MAX_ENRICHMENT_UNITS,
+            MAX_ENRICHMENT_UNIT_TOTAL_BYTES,
         )
         from app.analytics.conversation_graph_units import ConversationGraphReference
+        from app.analytics.conversation_enrichment_units import ConversationEnrichmentReference
         if (len(conversation_fragments) + len(conversation_pages) > MAX_FRAGMENTS
                 or sum(map(len, conversation_fragments)) + sum(p.retained_bytes for p in conversation_pages)
                     > MAX_FRAGMENT_TOTAL_BYTES):
@@ -411,6 +489,11 @@ class SQLiteAnalyticsProjectionStore:
                 or sum(0 if isinstance(unit, ConversationGraphReference) else unit.retained_bytes
                        for unit in conversation_graph_units) > MAX_GRAPH_UNIT_TOTAL_BYTES):
             raise ValueError('conversation_graph_unit_budget_invalid')
+        if (len(conversation_enrichment_units) > MAX_ENRICHMENT_UNITS
+                or sum(0 if isinstance(unit, ConversationEnrichmentReference) else unit.retained_bytes
+                       for unit in conversation_enrichment_units)
+                    > MAX_ENRICHMENT_UNIT_TOTAL_BYTES):
+            raise ValueError('conversation_enrichment_unit_budget_invalid')
         check = lambda: check_cancelled(cancellation_check)
         fragments = iter_validated_fragments(artifact, conversation_fragments)
         cached = storage_entries(artifact, enrichment_entries, check=check)
@@ -426,6 +509,7 @@ class SQLiteAnalyticsProjectionStore:
         if self.canonical_identity_reader(creator_account_id) != canonical_identity:
             raise ProjectionActivationConflict("canonical identity changed")
         compact = isinstance(artifact, CompactArtifact)
+        current_pipeline = None
         if compact:
             if _copy_graph:
                 raise ProjectionValidationError("compact_graph_requires_owned_build")
@@ -436,8 +520,34 @@ class SQLiteAnalyticsProjectionStore:
                     or artifact.graph.digest(check=lambda: check_cancelled(cancellation_check)) != projection.graph_digest
                     or _projection_digest(projection) != projection.projection_digest):
                 raise ProjectionValidationError("compact_graph_identity_invalid")
-            current_projection = self.get(creator_account_id, canonical_identity=canonical_identity)
-            same_content = current_projection == projection
+            with self.database.read() as connection:
+                current_row = connection.execute(
+                    """SELECT g.*,q.projection_digest
+                       FROM projection_generations g
+                       JOIN projection_query_metadata q
+                         USING(generation_id,creator_account_id)
+                       WHERE g.creator_account_id=? AND g.status='active'""",
+                    (partition_ref,),
+                ).fetchone()
+            if current_row is not None:
+                witness = self.activation.get(current_row["generation_id"])
+                if (self._intent_matches(current_row, witness, require_completed=True)
+                        and witness.creator_account_id == creator_account_id
+                        and int(current_row["canonical_revision"]) == canonical_identity.revision
+                        and current_row["canonical_content_digest"]
+                            == canonical_identity.content_digest):
+                    current_pipeline = (
+                        current_row["pipeline_revision"],
+                        current_row["pipeline_config_digest"],
+                    )
+                    same_content = (
+                        current_row["projection_digest"]
+                        == projection.projection_digest
+                    )
+                else:
+                    same_content = False
+            else:
+                same_content = False
         else:
             safe_nodes, safe_edges = (safe_graph_records(artifact.nodes, artifact.edges)
                                       if _copy_graph else (artifact.nodes, artifact.edges))
@@ -445,10 +555,14 @@ class SQLiteAnalyticsProjectionStore:
             self._validate_artifact_shape(safe_artifact, owned_graph=_copy_graph)
             current = self.get_artifact(creator_account_id, canonical_identity=canonical_identity)
             current_projection = current.projection if current is not None else None
+            current_pipeline = (
+                None if current_projection is None else
+                (current_projection.pipeline_revision,
+                 current_projection.pipeline_config_digest)
+            )
             same_content = current == safe_artifact
-        if (current_projection is not None
-                and current_projection.pipeline_revision == projection.pipeline_revision
-                and current_projection.pipeline_config_digest == projection.pipeline_config_digest
+        if (current_pipeline
+                == (projection.pipeline_revision, projection.pipeline_config_digest)
                 and not same_content):
             raise ProjectionRevisionConflict(
                 "the same canonical and pipeline identity produced different content")
@@ -485,6 +599,76 @@ class SQLiteAnalyticsProjectionStore:
             predecessor_graph_unit_proof = (
                 self._trusted_conversation_graph_proof(connection, active)
                 if _trusted_graph_units else None
+            )
+            predecessor_enrichment_proof = (
+                self._trusted_conversation_enrichment_proof(connection, active)
+                if _trusted_graph_units else None
+            )
+            enrichment_source_stamp = (
+                content_stamp(connection)
+                if predecessor_enrichment_proof is not None else None
+            )
+            from app.analytics.conversation_enrichment_units import (
+                ConversationEnrichmentReference, ConversationEnrichmentValidation,
+            )
+            enrichment_headers = tuple(
+                unit.header for unit in conversation_enrichment_units
+            )
+            expected_metrics = {
+                item.conversation_ref: item for item in projection.conversation_metrics
+            }
+            trusted_enrichment = {
+                item.conversation_ref: item
+                for item in (
+                    () if predecessor_enrichment_proof is None
+                    else predecessor_enrichment_proof.headers
+                )
+            }
+            schema_version = int(
+                connection.execute("PRAGMA user_version").fetchone()[0]
+            )
+            enrichment_complete = (
+                schema_version >= 17
+                and bool(enrichment_headers)
+                and len(enrichment_headers) == len(expected_metrics)
+                and len({item.conversation_ref for item in enrichment_headers})
+                    == len(enrichment_headers)
+                and tuple(item.metrics for item in enrichment_headers)
+                    == tuple(projection.conversation_metrics)
+                and sum(item.message_count for item in enrichment_headers)
+                    == projection.creator_metrics.message_count
+                and all(
+                    item.account_ref == partition_ref
+                    and expected_metrics.get(item.conversation_ref) == item.metrics
+                    and item.metrics.message_count == item.message_count
+                    for item in enrichment_headers
+                )
+                and all(
+                    not isinstance(unit, ConversationEnrichmentReference)
+                    or (
+                        predecessor_enrichment_proof is not None
+                        and unit.generation_id
+                            == predecessor_enrichment_proof.generation_id
+                        and trusted_enrichment.get(unit.header.conversation_ref)
+                            == unit.header
+                    )
+                    for unit in conversation_enrichment_units
+                )
+            )
+            if (
+                schema_version >= 17
+                and conversation_enrichment_units
+                and not enrichment_complete
+            ):
+                raise ValueError("conversation_enrichment_unit_manifest_invalid")
+            enrichment_validation = (
+                ConversationEnrichmentValidation(
+                    enrichment_headers, predecessor_enrichment_proof,
+                    enrichment_source_stamp,
+                )
+                if enrichment_complete
+                and ENRICHMENT_UNIT_PIPELINE_REVISION in projection.pipeline_revision
+                else None
             )
             if active is not None and int(active["canonical_revision"]) > (
                 projection.source_revision
@@ -550,13 +734,24 @@ class SQLiteAnalyticsProjectionStore:
                     projection.pipeline_revision,
                     projection.pipeline_config_digest,
                     projection.projection_digest,
-                    projection_document(projection, check=lambda: check_cancelled(cancellation_check)),
+                    projection_storage_document(
+                        projection,
+                        compact_enrichments=enrichment_validation is not None,
+                        check=lambda: check_cancelled(cancellation_check),
+                    ),
                 ),
             )
             from app.analytics.database import generation_verification_cache
             from app.analytics.conversation_graph_unit_sql import insert_units
+            from app.analytics.conversation_enrichment_unit_sql import (
+                insert_units as insert_enrichment_units,
+            )
+            enrichment_units_inserted = 0
             with generation_verification_cache(connection):
                 insert_units(connection, generation_id, conversation_graph_units, check=check)
+                enrichment_units_inserted = insert_enrichment_units(
+                    connection, generation_id, conversation_enrichment_units, check=check
+                )
                 insert_entries(connection, generation_id, cached, check=check,
                     shared=getattr(self, "reuse_enrichment_content", True) and shared_entries_supported(connection))
                 insert_fragments(connection, generation_id, fragments, conversation_fragments)
@@ -571,6 +766,7 @@ class SQLiteAnalyticsProjectionStore:
             owner=self.build_owner,
             lease_seconds=self.lease_seconds,
         )
+        writer.enrichment_validation = enrichment_validation
         with writer.lease_session():
             if compact:
                 write_compact_graph(writer, artifact.graph,
@@ -591,6 +787,17 @@ class SQLiteAnalyticsProjectionStore:
             self._remember_graph_segment_proof(
                 receipt, getattr(writer, "validated_graph_segments", ())
             )
+            validated_enrichment = getattr(
+                writer, "validated_enrichment_units", ()
+            )
+            if (
+                enrichment_complete
+                and enrichment_units_inserted == len(conversation_enrichment_units)
+                and len(validated_enrichment) == len(enrichment_headers)
+            ):
+                self._remember_conversation_enrichment_proof(
+                    receipt, validated_enrichment
+                )
             if _trusted_graph_units:
                 self._remember_conversation_graph_proof(
                     receipt, conversation_graph_units,
@@ -1657,7 +1864,7 @@ def _validate_generation_links(
     if epoch is None:
         raise GraphReferentialIntegrityError("projection_epoch_absent")
     schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-    optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11, "conversation_page_refs": 13, "conversation_owned_pages": 13, "enrichment_refs": 14, "enrichment_owned_records": 14, "conversation_graph_refs": 16}
+    optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11, "conversation_page_refs": 13, "conversation_owned_pages": 13, "enrichment_refs": 14, "enrichment_owned_records": 14, "conversation_graph_refs": 16, "conversation_enrichment_refs": 17}
     if schema_version >= 10:
         from app.analytics.shared_graph import verify_segment_links
         verify_segment_links(
@@ -1702,11 +1909,19 @@ def _validate_generation_links(
             (generation_id, account_id)).fetchone()
         if missing is not None:
             raise GraphReferentialIntegrityError('conversation_graph_reference_absent')
+    if schema_version >= 17:
+        missing = connection.execute("""SELECT 1 FROM conversation_enrichment_refs r
+            LEFT JOIN conversation_enrichment_units u USING(creator_account_id,unit_id)
+            WHERE r.generation_id=? AND r.creator_account_id=?
+              AND u.unit_id IS NULL LIMIT 1""",
+            (generation_id, account_id)).fetchone()
+        if missing is not None:
+            raise GraphReferentialIntegrityError('conversation_enrichment_reference_absent')
     for table in ("analytics_projections", "graph_nodes", "graph_edges",
                   "graph_partition_stats", "enrichment_reuse", "conversation_fragments", "conversation_page_sets", "conversation_pages",
                   "projection_query_metadata", "graph_algorithm_metrics", "generation_graph_segments",
                   "conversation_page_refs", "conversation_owned_pages", "enrichment_refs", "enrichment_owned_records",
-                  "conversation_graph_refs"):
+                  "conversation_graph_refs", "conversation_enrichment_refs"):
         check()
         if schema_version < optional_since.get(table, 0):
             continue
@@ -1727,6 +1942,7 @@ def recompute_generation(
     materialize_graph: bool = False,
     materialize_projection: bool = True,
     graph_validation=None,
+    enrichment_validation=None,
 ) -> dict[str, object]:
     """Verify stored data with a connection-local page-cache target."""
 
@@ -1734,7 +1950,8 @@ def recompute_generation(
         return _recompute_generation(connection, generation_id, check=check,
                                      materialize_graph=materialize_graph,
                                      materialize_projection=materialize_projection,
-                                     graph_validation=graph_validation)
+                                     graph_validation=graph_validation,
+                                     enrichment_validation=enrichment_validation)
 
 
 def _recompute_generation(
@@ -1745,6 +1962,7 @@ def _recompute_generation(
     materialize_graph: bool = False,
     materialize_projection: bool = True,
     graph_validation=None,
+    enrichment_validation=None,
 ) -> dict[str, object]:
     """Recompute all row-derived validation values; stored digest fields are ignored."""
 
@@ -1767,15 +1985,68 @@ def _recompute_generation(
     ).fetchone()
     if projection_row is None:
         raise ProjectionValidationError("projection document is missing")
-    if materialize_projection:
-        projection = AnalyticsProjection.model_validate_json(projection_row["document_json"])
+    if materialize_graph and not materialize_projection:
+        raise ValueError("projection_materialization_required")
+
+    from app.analytics.projection_verification import verify_projection_document
+    schema_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    unit_exists = (
+        connection.execute(
+            """SELECT 1 FROM conversation_enrichment_refs
+               WHERE generation_id=? AND creator_account_id=? LIMIT 1""",
+            (generation_id, account_id),
+        ).fetchone()
+        if schema_version >= 17 else None
+    )
+    enrichment_headers = ()
+    if unit_exists is not None:
+        from app.analytics.conversation_enrichment_unit_sql import verify_generation_units
+        from app.analytics.conversation_enrichment_units import conversation_metrics_digest
+
+        enrichment_headers, components, messages = verify_generation_units(
+            connection, generation_id, account_id, enrichment_validation,
+            check=run_check, materialize=materialize_projection,
+        )
+        verified_document = verify_projection_document(
+            projection_row["document_json"], check=run_check,
+            enrichment_components=components,
+        )
+        if (
+            ENRICHMENT_UNIT_PIPELINE_REVISION
+                not in verified_document.header.pipeline_revision
+            or verified_document.conversation_count != len(enrichment_headers)
+            or verified_document.conversation_metrics_digest
+                != conversation_metrics_digest(
+                    header.metrics for header in enrichment_headers
+                )
+            or sum(header.message_count for header in enrichment_headers)
+                != verified_document.header.creator_metrics.message_count
+            or len({header.conversation_ref for header in enrichment_headers})
+                != len(enrichment_headers)
+        ):
+            raise ProjectionValidationError(
+                "conversation enrichment coverage differs"
+            )
+        projection_digest = verified_document.digest
+        if materialize_projection:
+            compact_projection = AnalyticsProjection.model_validate_json(
+                projection_row["document_json"]
+            )
+            projection = compact_projection.model_copy(
+                update={"message_enrichments": messages}
+            )
+        else:
+            projection = verified_document.header
+    elif materialize_projection:
+        projection = AnalyticsProjection.model_validate_json(
+            projection_row["document_json"]
+        )
         run_check()
         projection_digest = _projection_digest(projection)
     else:
-        if materialize_graph:
-            raise ValueError("projection_materialization_required")
-        from app.analytics.projection_verification import verify_projection_document
-        verified_document = verify_projection_document(projection_row["document_json"], check=run_check)
+        verified_document = verify_projection_document(
+            projection_row["document_json"], check=run_check
+        )
         projection = verified_document.header
         projection_digest = verified_document.digest
     run_check()
@@ -1859,6 +2130,7 @@ def _recompute_generation(
         "node_count": node_count,
         "edge_count": edge_count,
         "graph_segments": (() if materialize_graph else graph_segments),
+        "enrichment_units": enrichment_headers,
     }
 
 

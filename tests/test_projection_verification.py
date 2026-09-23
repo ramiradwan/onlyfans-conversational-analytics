@@ -9,7 +9,9 @@ import weakref
 import pytest
 
 from app.analytics import projection_verification as module
-from app.analytics.projection_encoding import projection_document, projection_digest
+from app.analytics.projection_encoding import (
+    ENRICHMENT_UNIT_PIPELINE_REVISION, projection_document, projection_digest,
+)
 from app.analytics.errors import ProjectionBuildCancelled
 from app.models.analytics import AnalyticsProjection, MessageEnrichment, ConversationMetrics
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
@@ -29,14 +31,52 @@ def canonical(value):
                       separators=(',', ':'), allow_nan=False)
 
 
+def independent_projection_digest(data):
+    if ENRICHMENT_UNIT_PIPELINE_REVISION not in data['pipeline_revision']:
+        value = deepcopy(data)
+        value.pop('projection_digest', None)
+        return 'sha256:' + hashlib.sha256(canonical(value).encode()).hexdigest()
+
+    header = {
+        key: value for key, value in data.items()
+        if key not in {'projection_digest', 'message_enrichments', 'conversation_metrics'}
+    }
+    digest = hashlib.sha256(b'analytics-projection.enrichment-units.v1\0')
+    digest.update(canonical(header).encode())
+    metrics = hashlib.sha256()
+    for ordinal, item in enumerate(data['conversation_metrics']):
+        if ordinal:
+            metrics.update(b'\n')
+        metrics.update(canonical(item).encode())
+    digest.update(b'\0conversation_metrics:')
+    digest.update(str(len(data['conversation_metrics'])).encode('ascii'))
+    digest.update(b':')
+    digest.update(metrics.hexdigest().encode('ascii'))
+
+    order, groups = [], {}
+    for item in data['message_enrichments']:
+        reference = item['conversation_ref']
+        if reference not in groups:
+            groups[reference] = []
+            order.append(reference)
+        groups[reference].append(canonical(item).encode())
+    for reference in order:
+        content = hashlib.sha256(b'\n'.join(groups[reference])).hexdigest()
+        digest.update(b'\0message_enrichment:')
+        digest.update(reference.encode('ascii'))
+        digest.update(b':')
+        digest.update(str(len(groups[reference])).encode('ascii'))
+        digest.update(b':')
+        digest.update(content.encode('ascii'))
+    return 'sha256:' + digest.hexdigest()
+
+
 @pytest.mark.parametrize('indent', [None, 2])
 def test_streamed_projection_matches_independent_canonical_bytes(projection, indent):
     data = projection.model_dump(mode='json')
     text = json.dumps(data, sort_keys=True, indent=indent)
     result = module.verify_projection_document(text)
-    expected = deepcopy(data)
-    del expected['projection_digest']
-    assert result.digest == 'sha256:' + hashlib.sha256(canonical(expected).encode()).hexdigest()
+    assert result.digest == independent_projection_digest(data)
     assert result.digest == projection_digest(projection)
     assert result.streamed
     assert result.message_count == len(projection.message_enrichments)
@@ -204,9 +244,20 @@ def test_changed_last_record_cannot_pass_activation(tmp_path, stage):
         def corrupt(phase, generation):
             if phase == stage:
                 with fixture.stores.database.transaction() as db:
-                    db.execute('DROP TRIGGER projection_document_update_blocked')
-                    db.execute("""UPDATE analytics_projections SET document_json=json_set(document_json,
-                        '$.message_enrichments[#-1].source_ordinal',999999) WHERE generation_id=?""", (generation,))
+                    if ENRICHMENT_UNIT_PIPELINE_REVISION in fixture.pipeline.pipeline_revision:
+                        db.execute('DROP TRIGGER conversation_enrichment_units_immutable')
+                        db.execute("""UPDATE conversation_enrichment_units
+                            SET canonical_digest=?
+                            WHERE (creator_account_id,unit_id) IN (
+                                SELECT creator_account_id,unit_id
+                                FROM conversation_enrichment_refs
+                                WHERE generation_id=?
+                                ORDER BY ordinal DESC LIMIT 1
+                            )""", ('0' * 64, generation))
+                    else:
+                        db.execute('DROP TRIGGER projection_document_update_blocked')
+                        db.execute("""UPDATE analytics_projections SET document_json=json_set(document_json,
+                            '$.message_enrichments[#-1].source_ordinal',999999) WHERE generation_id=?""", (generation,))
         fixture.stores.projections.crash_hook = corrupt
         candidate = fixture.pipeline.build_candidate(ACCOUNT)
         with pytest.raises(ProjectionValidationError):

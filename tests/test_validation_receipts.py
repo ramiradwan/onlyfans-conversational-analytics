@@ -76,8 +76,12 @@ def test_changed_stored_content_never_uses_an_old_receipt(fixture, stage, target
                 db.execute('DROP TRIGGER graph_node_content_immutable')
                 db.execute("UPDATE graph_node_content SET properties_json=json_set(properties_json,'$.character_count',999) WHERE kind='message'")
             else:
-                db.execute('DROP TRIGGER projection_document_update_blocked')
-                db.execute("UPDATE analytics_projections SET document_json=json_set(document_json,'$.message_enrichments[#-1].source_ordinal',999) WHERE generation_id=?", (generation,))
+                db.execute('DROP TRIGGER conversation_enrichment_units_immutable')
+                db.execute("""UPDATE conversation_enrichment_units
+                    SET canonical_digest=? WHERE creator_account_id=(
+                        SELECT creator_account_id FROM projection_generations
+                        WHERE generation_id=?
+                    )""", ('0' * 64, generation))
     fixture.stores.projections.crash_hook = tamper
     candidate = fixture.pipeline.build_candidate(ACCOUNT)
     with pytest.raises(ProjectionValidationError):
@@ -142,7 +146,7 @@ def test_future_catalogs_do_not_reuse_an_unreviewed_receipt(fixture):
     with fixture.stores.database.read() as db:
         assert content_stamp(db) is not None
         db.execute('BEGIN IMMEDIATE')
-        db.execute('PRAGMA user_version=17')
+        db.execute('PRAGMA user_version=18')
         assert content_stamp(db) is None
         db.rollback()
         assert content_stamp(db) is not None
@@ -152,7 +156,7 @@ def test_every_tracking_trigger_is_required(fixture):
     with fixture.stores.database.read() as db:
         names = [row[0] for row in db.execute(
             "SELECT name FROM sqlite_master WHERE type='trigger' AND name GLOB 'generation_content_*'")]
-        assert len(names) == 69
+        assert len(names) == 75
         for name in names:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DROP TRIGGER ' + name)

@@ -32,7 +32,9 @@ class GenerationReference:
     @classmethod
     def from_projection(cls, projection: AnalyticsProjection, generation_id: str,
                         publication_epoch: str) -> GenerationReference:
-        first = min((item.sent_at for item in projection.message_enrichments), default=None)
+        first = getattr(projection.message_enrichments, "first_source_at", None)
+        if first is None and projection.message_enrichments:
+            first = min(item.sent_at for item in projection.message_enrichments)
         return cls(generation_id, projection.account_ref, projection.source_revision,
             projection.projection_generation, projection.canonical_content_digest,
             projection.pipeline_revision, projection.pipeline_config_digest,

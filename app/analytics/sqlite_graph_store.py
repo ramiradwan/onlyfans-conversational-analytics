@@ -2176,9 +2176,15 @@ class SQLiteGraphGenerationWriter:
                         graph_validation=getattr(
                             self, 'shared_graph_validation', None
                         ),
+                        enrichment_validation=getattr(
+                            self, 'enrichment_validation', None
+                        ),
                     )
                     self.validated_graph_segments = values.get(
                         'graph_segments', ()
+                    )
+                    self.validated_enrichment_units = values.get(
+                        'enrichment_units', ()
                     )
                     keepalive()
                     now = _now()

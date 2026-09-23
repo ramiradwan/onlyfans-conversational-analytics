@@ -23,6 +23,8 @@ MAX_FRAGMENT_TOTAL_BYTES = 64 * 1024 * 1024
 MAX_FRAGMENTS = 4096
 MAX_GRAPH_UNIT_TOTAL_BYTES = 128 * 1024 * 1024
 MAX_GRAPH_UNITS = 4096
+MAX_ENRICHMENT_UNIT_TOTAL_BYTES = 256 * 1024 * 1024
+MAX_ENRICHMENT_UNITS = 4096
 
 
 class ConversationFragment(CacheRecord):
@@ -79,6 +81,8 @@ class ConversationBuild:
         self.page_sets = []
         self.graph_units = []
         self.graph_unit_bytes = 0
+        self.enrichment_units = []
+        self.enrichment_unit_bytes = 0
 
     def retain_graph_unit(self, unit) -> None:
         from app.analytics.conversation_graph_units import ConversationGraphReference
@@ -90,6 +94,18 @@ class ConversationBuild:
             return
         self.graph_units.append(unit)
         self.graph_unit_bytes += retained
+
+    def retain_enrichment_unit(self, unit) -> bool:
+        from app.analytics.conversation_enrichment_units import ConversationEnrichmentReference
+
+        if unit is None or len(self.enrichment_units) >= MAX_ENRICHMENT_UNITS:
+            return False
+        retained = 0 if isinstance(unit, ConversationEnrichmentReference) else unit.retained_bytes
+        if self.enrichment_unit_bytes + retained > MAX_ENRICHMENT_UNIT_TOTAL_BYTES:
+            return False
+        self.enrichment_units.append(unit)
+        self.enrichment_unit_bytes += retained
+        return True
 
     def retain_pages(self, packed) -> None:
         if (packed is None or len(self.entries) + len(self.page_sets) >= MAX_FRAGMENTS
@@ -150,6 +166,9 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         and callable(getattr(loader, 'graph_segment_chunk', None))
     )
     changed_graph = CompactGraph(account_ref(account_id)) if incremental else None
+    enrichment_reference_loader = getattr(loader, 'enrichment_unit_reference', None)
+    stream_enrichments = incremental and callable(enrichment_reference_loader)
+    enrichment_parts = []
     current_units, previous_changed_units = {}, {}
     current_refs = set()
     for chat_id, input_digest in catalog.digests.items():
@@ -161,6 +180,8 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         packed, restored = None, None
         graph_unit = None
         graph_unit_value = None
+        enrichment_unit = None
+        fast_enrichment_reuse = False
         if incremental:
             graph_unit_loader = getattr(loader, 'graph_unit_reference', None)
             if callable(graph_unit_loader):
@@ -174,9 +195,39 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                     graph_unit_value = loader.previous_graph_unit(ref)
                     if graph_unit_value is None:
                         raise ValueError('conversation_graph_unit_unavailable')
+        if stream_enrichments and graph_unit_value is not None:
+            enrichment_unit = enrichment_reference_loader(ref, input_digest, config)
+            if enrichment_unit is not None:
+                header = enrichment_unit.header
+                if (header.retention_cutoff <= cutoff
+                        and header.expires_at > pipeline._retention_clock()
+                        and header.metrics.conversation_ref == ref
+                        and header.metrics.account_ref == account_ref(account_id)):
+                    counts = header.metrics
+                    findings = None
+                    fast_enrichment_reuse = True
+                    state.reused += 1
+                else:
+                    enrichment_unit = None
         page_loader = getattr(loader, 'pages', None)
         use_pages = compact is not None and pipeline.reuse_conversations and reuse is not None and callable(page_loader)
-        if use_pages:
+        if use_pages and fast_enrichment_reuse:
+            reference_loader = getattr(loader, 'enrichment_page_reference', None)
+            candidate = (
+                reference_loader(ref, input_digest, config)
+                if callable(reference_loader) else None
+            )
+            if candidate is not None:
+                h = candidate.header
+                if (
+                    h.retention_cutoff <= cutoff
+                    and h.expires_at > pipeline._retention_clock()
+                    and h.metrics == counts
+                    and h.account_ref == account_ref(account_id)
+                    and h.conversation_ref == ref
+                ):
+                    packed = candidate
+        if use_pages and not fast_enrichment_reuse:
             from app.analytics.conversation_pages import (
                 restore_pages, restore_pages_with_graph_unit,
                 record_verified_graph_read,
@@ -199,7 +250,8 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                         packed = record_verified_graph_read(candidate)
                     except (ValueError, TypeError, KeyError, RecursionError):
                         restored = None
-        if restored is None and pipeline.reuse_conversations and reuse is not None and callable(loader):
+        if (not fast_enrichment_reuse and restored is None
+                and pipeline.reuse_conversations and reuse is not None and callable(loader)):
             data = loader(ref, input_digest, config, cancellation_check=cancellation_check)
             if data is not None and len(data) <= MAX_FRAGMENT_BYTES:
                 try:
@@ -212,7 +264,9 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                         fragment = value
                 except (ValueError, TypeError):
                     pass
-        if restored is not None:
+        if fast_enrichment_reuse:
+            pass
+        elif restored is not None:
             findings, counts, local_graph, cached = restored
             state.reused += 1
             for entry in cached:
@@ -280,6 +334,21 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                     graph=local_graph,
                 )
             state.retain_graph_unit(graph_unit)
+            if enrichment_unit is None and findings is not None:
+                from app.analytics.conversation_enrichment_units import create_enrichment_unit
+                enrichment_unit = create_enrichment_unit(
+                    account_ref=account_ref(account_id), conversation_ref=ref,
+                    input_digest=input_digest, config_digest=config, cutoff=cutoff,
+                    findings=findings, metrics=counts,
+                    analyzer_entries=(() if reuse is None else reuse.conversation_entries(ref)),
+                )
+            state.retain_enrichment_unit(enrichment_unit)
+            if stream_enrichments:
+                enrichment_parts.append(
+                    enrichment_unit
+                    if enrichment_unit is not None
+                    else tuple(findings or ())
+                )
             if incremental:
                 from app.analytics.conversation_graph_units import ConversationGraphReference
                 if graph_unit is not None:
@@ -295,35 +364,64 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
             else:
                 compact.add(fragment.nodes, fragment.edges, check=check)
                 findings, counts = fragment.enrichments, fragment.metrics
-            enrichments.extend(findings)
+            if not stream_enrichments:
+                enrichments.extend(findings)
             metrics.append(counts)
         else:
             fragments.append(fragment)
             enrichments.extend(fragment.enrichments)
             metrics.append(fragment.metrics)
         if use_pages:
-            if packed is None and local_graph is not None:
-                from app.analytics.conversation_pages import create_pages
-                packed = create_pages(account=account_ref(account_id), conversation=ref,
-                    input_digest=input_digest, config_digest=config,
-                    cutoff=fragment.retention_cutoff if fragment is not None else cutoff,
-                    findings=findings, metrics=counts, graph=local_graph,
-                    analyzer_entries=(tuple(data.encode() for data in fragment.analyzer_entries)
-                        if fragment is not None else reuse.conversation_entries(ref)),
-                    max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check,
-                    graph_references=getattr(loader, "graph_reference_pages", False))
-            if packed is not None and packed.header.encoding != encoding:
-                from app.analytics.conversation_pages import create_pages
-                packed = create_pages(account=packed.header.account_ref, conversation=ref,
-                    input_digest=input_digest, config_digest=config, cutoff=packed.header.retention_cutoff,
-                    findings=findings, metrics=counts, graph=local_graph,
-                    analyzer_entries=(entry.model_dump_json().encode() for entry in cached),
-                    max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check,
-                    graph_references=reference_pages)
+            if not fast_enrichment_reuse:
+                if packed is None and local_graph is not None:
+                    from app.analytics.conversation_pages import create_pages
+                    packed = create_pages(account=account_ref(account_id), conversation=ref,
+                        input_digest=input_digest, config_digest=config,
+                        cutoff=fragment.retention_cutoff if fragment is not None else cutoff,
+                        findings=findings, metrics=counts, graph=local_graph,
+                        analyzer_entries=(tuple(data.encode() for data in fragment.analyzer_entries)
+                            if fragment is not None else reuse.conversation_entries(ref)),
+                        max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check,
+                        graph_references=getattr(loader, "graph_reference_pages", False))
+                if packed is not None and packed.header.encoding != encoding:
+                    from app.analytics.conversation_pages import create_pages
+                    packed = create_pages(account=packed.header.account_ref, conversation=ref,
+                        input_digest=input_digest, config_digest=config, cutoff=packed.header.retention_cutoff,
+                        findings=findings, metrics=counts, graph=local_graph,
+                        analyzer_entries=(entry.model_dump_json().encode() for entry in cached),
+                        max_bytes=MAX_FRAGMENT_TOTAL_BYTES - state.bytes_used, check=check,
+                        graph_references=reference_pages)
             state.retain_pages(packed)
         if fragment is not None and not use_pages and pipeline.reuse_conversations and reuse is not None:
             state.retain(fragment)
         check()
+    if stream_enrichments:
+        from app.analytics.conversation_enrichment_units import (
+            ConversationEnrichmentReference, ConversationEnrichmentUnit,
+            IncrementalMessageEnrichments,
+        )
+        if len(state.enrichment_units) == len(metrics):
+            enrichments = IncrementalMessageEnrichments(
+                account_ref(account_id), tuple(state.enrichment_units),
+                pipeline.projections,
+            )
+        else:
+            materialized = []
+            for part in enrichment_parts:
+                if isinstance(
+                    part, (ConversationEnrichmentUnit, ConversationEnrichmentReference)
+                ):
+                    materialized.extend(IncrementalMessageEnrichments(
+                        account_ref(account_id), (part,), pipeline.projections
+                    ))
+                else:
+                    materialized.extend(part)
+            enrichments = materialized
+            state.enrichment_units.clear()
+            state.enrichment_unit_bytes = 0
+    elif state.enrichment_units and len(state.enrichment_units) != len(metrics):
+        state.enrichment_units.clear()
+        state.enrichment_unit_bytes = 0
     if compact is not None:
         timeline = {}
         pipeline.graph_projector._conversation_edges(
@@ -420,6 +518,8 @@ def validate_fragments(artifact, entries: tuple[bytes, ...]):
 def iter_validated_fragments(artifact, entries: tuple[bytes, ...]):
     if len(entries) > MAX_FRAGMENTS or sum(map(len, entries)) > MAX_FRAGMENT_TOTAL_BYTES:
         raise ValueError("conversation_fragment_budget_invalid")
+    if not entries:
+        return
     messages = {m.message_ref: m for m in artifact.projection.message_enrichments}
     metrics = {m.conversation_ref: m for m in artifact.projection.conversation_metrics}
     compact = isinstance(artifact, CompactArtifact)

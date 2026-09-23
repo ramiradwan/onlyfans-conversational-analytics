@@ -12,7 +12,8 @@ TRIGGER_DIGESTS = {12: TRIGGER_DIGEST,
     13: '5fc7f7109392c4a934b6494e03c51bae6e83f36f189252449006ad69e543ea16',
     14: '09cd0953848b1457a16ddf52d9afe76cdf283bb459173baee1be4ac1db3e0a39',
     15: '09cd0953848b1457a16ddf52d9afe76cdf283bb459173baee1be4ac1db3e0a39',
-    16: '09cd0953848b1457a16ddf52d9afe76cdf283bb459173baee1be4ac1db3e0a39'}
+    16: '09cd0953848b1457a16ddf52d9afe76cdf283bb459173baee1be4ac1db3e0a39',
+    17: 'ed2aa6ac0d8643ccb76e53781fb019617bba9d7a3310742db59e2611634a437d'}
 MAX_RECEIPTS = 8
 RECEIPT_SECONDS = 60.0
 _VOLATILE = frozenset({'status', 'activation_intent_id', 'witness_sequence',

@@ -184,7 +184,8 @@ class AnalyticsPipeline:
         self.reuse_conversations = reuse_conversations
         self.compact_graph = compact_graph
         self.pipeline_revision = (
-            f"analytics.pipeline.v3+{self.enrichment.revision}+graph.relationship.v1"
+            f"analytics.pipeline.v3+{self.enrichment.revision}"
+            "+graph.relationship.v1+enrichment.units.v1"
         )
         self.pipeline_config_digest = stable_config_digest(
             name="analytics_pipeline",
@@ -225,6 +226,9 @@ class AnalyticsPipeline:
                         self._account_locks.pop(creator_account_id, None)
 
     def _expired(self, projection) -> bool:
+        first = getattr(projection.message_enrichments, "first_source_at", None)
+        if first is not None:
+            return first + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS) <= self._retention_clock()
         return any(message.sent_at + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
                    <= self._retention_clock() for message in projection.message_enrichments)
 
@@ -401,17 +405,28 @@ class AnalyticsPipeline:
                 stage = self.projections.stage_artifact
                 if type(self.graph_projector) is RelationshipGraphProjector and type(self.enrichment) is EnrichmentStage:
                     stage = getattr(self.projections, "stage_built_artifact", stage)
+                enrichment_units = tuple(conversation_state.enrichment_units)
+                enrichment_units_complete = (
+                    bool(enrichment_units)
+                    and len(enrichment_units)
+                        == len(artifact.projection.conversation_metrics)
+                    and sum(unit.header.message_count for unit in enrichment_units)
+                        == artifact.projection.creator_metrics.message_count
+                )
                 staged_generation_id = stage(
                     artifact,
                     creator_account_id=creator_account_id,
                     canonical_identity=account_identity,
                     publication_epoch=publication_epoch,
                     cancellation_check=cancellation_check,
-                    **({"enrichment_entries": tuple(reuse.entries.values())} if reuse else {}),
+                    **({"enrichment_entries": tuple(reuse.entries.values())}
+                       if reuse and not enrichment_units_complete else {}),
                     **({"conversation_pages": tuple(conversation_state.page_sets)}
                        if conversation_state.page_sets else {}),
                     **({"conversation_graph_units": tuple(conversation_state.graph_units)}
                        if conversation_state.graph_units else {}),
+                    **({"conversation_enrichment_units": enrichment_units}
+                       if enrichment_units else {}),
                     **({"conversation_fragments": tuple(conversation_state.entries)}
                        if conversation_state.entries else {}),
                 )
@@ -725,6 +740,7 @@ class AnalyticsPipeline:
                 cancellation_check=cancellation_check,
             )
         check_cancelled(cancellation_check)
+        streamed_enrichments = callable(getattr(enrichments, "iter_canonical_records", None))
         projection = AnalyticsProjection(
             pipeline_revision=self.pipeline_revision,
             pipeline_config_digest=self.pipeline_config_digest,
@@ -742,12 +758,14 @@ class AnalyticsPipeline:
                 start=creator_metrics.active_from,
                 end=creator_metrics.active_until,
             ),
-            message_enrichments=enrichments,
+            message_enrichments=[] if streamed_enrichments else enrichments,
             conversation_metrics=conversation_metrics,
             creator_metrics=creator_metrics,
             graph=graph_summary,
             projection_digest="sha256:" + "0" * 64,
         )
+        if streamed_enrichments:
+            projection = projection.model_copy(update={"message_enrichments": enrichments})
         projection = projection.model_copy(
             update={"pipeline_identity_digest": pipeline_identity_digest(projection)}
         )

@@ -10,7 +10,9 @@ import pytest
 
 from app.analytics.errors import CanonicalRevisionChanged, ProjectionBuildCancelled
 from app.analytics.graph_verification import verify_graph_rows
-from app.analytics.projection_encoding import projection_document, projection_digest
+from app.analytics.projection_encoding import (
+    ENRICHMENT_UNIT_PIPELINE_REVISION, projection_document, projection_digest,
+)
 from app.analytics.sqlite_projection_store import recompute_generation, ProjectionValidationError
 from app.models.analytics import RebuildArtifact
 from tests.continuous_analytics_fixture import ACCOUNT, cleanup, make_fixture, cold_equal
@@ -157,9 +159,15 @@ def test_streamed_projection_encoding_is_byte_identical(fixture, empty):
         projection = empty_projection(projection)
     expected = json.dumps(projection.model_dump(mode="json"), ensure_ascii=False,
                           separators=(",", ":"), sort_keys=True)
-    expected_digest = "sha256:" + hashlib.sha256(json.dumps(
-        projection.model_dump(mode="json", exclude={"projection_digest"}),
-        ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()).hexdigest()
+    if ENRICHMENT_UNIT_PIPELINE_REVISION in projection.pipeline_revision:
+        from tests.test_projection_verification import independent_projection_digest
+        expected_digest = independent_projection_digest(
+            projection.model_dump(mode="json")
+        )
+    else:
+        expected_digest = "sha256:" + hashlib.sha256(json.dumps(
+            projection.model_dump(mode="json", exclude={"projection_digest"}),
+            ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()).hexdigest()
     assert projection_document(projection) == expected
     assert projection_digest(projection) == expected_digest
 

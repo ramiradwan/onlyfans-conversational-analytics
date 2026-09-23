@@ -102,6 +102,47 @@ def fragment_reader(store, account_id):
             load.graph_unit_proof = graph_unit_proof
             load.graph_units_supported = True
             load.active_generation_id = generation['generation_id']
+            from app.analytics import conversation_enrichment_unit_sql as enrichment_units
+            enrichment_proof_reader = getattr(
+                store, '_trusted_conversation_enrichment_proof', None
+            )
+            enrichment_proof = (
+                enrichment_proof_reader(db, generation)
+                if enrichment_units.supported(db)
+                and callable(enrichment_proof_reader) else None
+            )
+            if enrichment_proof is not None:
+                enrichment_headers = {
+                    header.conversation_ref: header
+                    for header in enrichment_proof.headers
+                }
+                def enrichment_unit_reference(conversation, input_digest, config_digest):
+                    value = enrichment_units.load_reference(
+                        db, generation['generation_id'], partition, conversation,
+                        input_digest, config_digest,
+                    )
+                    return value if (
+                        value is not None
+                        and enrichment_headers.get(conversation) == value.header
+                    ) else None
+                load.enrichment_unit_reference = enrichment_unit_reference
+                from app.analytics.conversation_page_sql import load_page_header
+                from app.analytics.conversation_pages import trusted_page_reference
+                def enrichment_page_reference(conversation, input_digest, config_digest):
+                    header = load_page_header(
+                        db, generation['generation_id'], partition, conversation,
+                        input_digest, config_digest,
+                    )
+                    return (
+                        None if header is None else
+                        trusted_page_reference(
+                            generation['generation_id'], header,
+                            enrichment_proof.stamp,
+                        )
+                    )
+                load.enrichment_page_reference = enrichment_page_reference
+                load.enrichment_unit_proof = enrichment_proof
+                load.enrichment_units_supported = True
         segment_proof_reader = getattr(store, '_trusted_graph_segment_proof', None)
         graph_segment_proof = (
             segment_proof_reader(db, generation)

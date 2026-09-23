@@ -140,7 +140,10 @@ def test_sqlite_generation_expires_from_original_source_time_without_clock_reset
         ).fetchone()
     persisted = AnalyticsProjection.model_validate_json(row["document_json"])
     assert persisted.window.scope is WindowScope.ALL_TIME
-    assert min(item.sent_at for item in persisted.message_enrichments) == source_at
+    assert persisted.message_enrichments == []
+    materialized = store.get(ACCOUNT)
+    assert materialized is not None
+    assert min(item.sent_at for item in materialized.message_enrichments) == source_at
 
     clock.value = due_at
     assert store.get(ACCOUNT) is None

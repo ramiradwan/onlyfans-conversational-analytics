@@ -154,6 +154,18 @@ def record_verified_graph_read(packed: PagedConversation) -> PagedConversation:
         packed.generation_id, packed.header, packed.graph_read_stamp, proof))
 
 
+def trusted_page_reference(
+    generation_id: str, header: ConversationPageHeader, stamp: tuple
+) -> ConversationPageReference:
+    """Carry a page set proven by the exact same validated generation stamp."""
+
+    proof = _page_receipt_proof(generation_id, header, stamp)
+    return ConversationPageReference(
+        generation_id, header,
+        GraphPageReceipt(generation_id, header, stamp, proof),
+    )
+
+
 def page_digest(pages) -> str:
     digest = hashlib.sha256(b'conversation-pages.v1\0')
     for page in pages:
@@ -422,7 +434,13 @@ def checked_page_sets(artifact, page_sets, *, check=lambda: None):
             yield packed
             continue
         if sources is None:
-            sources = {m.message_ref: m for m in artifact.projection.message_enrichments}
+            values = artifact.projection.message_enrichments
+            local_messages = getattr(values, "validation_messages", None)
+            sources = (
+                local_messages()
+                if callable(local_messages)
+                else {m.message_ref: m for m in values}
+            )
         findings, nodes, edges, cache_keys = [], set(), set(), set()
         for kind, value in records(packed, check, graph=artifact.graph):
             if kind == 'message':

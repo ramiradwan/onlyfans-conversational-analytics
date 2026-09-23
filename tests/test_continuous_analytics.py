@@ -149,7 +149,11 @@ def test_fragment_capacity_does_not_limit_analysis(ready, monkeypatch):
     first = ready.pipeline.project_account(ACCOUNT)
     ready.source.loaded.clear()
     result = ready.pipeline.rebuild_account(ACCOUNT)
-    assert ready.source.loaded == ['chat-0', 'chat-1', 'chat-2']
+    if getattr(ready.stores, 'database', None) is None:
+        assert ready.source.loaded == ['chat-0', 'chat-1', 'chat-2']
+    else:
+        # Schema-17 enrichment units are independent of fragment capacity.
+        assert ready.source.loaded == []
     assert result.artifact == first.artifact
 
 
