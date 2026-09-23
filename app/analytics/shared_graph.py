@@ -17,6 +17,111 @@ from app.analytics.compact_graph import CompactGraph, _json
 
 
 MAX_SEGMENT_CHUNK_BYTES = 64 * 1024 * 1024
+GRAPH_SEGMENT_ROOT_PIPELINE_REVISION = "graph.segment-root.v1"
+_GRAPH_SEGMENT_ROOT_DOMAIN = b"analytics-graph.segment-root.v1\0"
+
+
+def _segment_fields(item):
+    if isinstance(item, tuple):
+        if len(item) != 4:
+            raise ValueError("graph_segment_root_item_invalid")
+        return item
+    count = getattr(item, "count", None)
+    if count is None:
+        keys = getattr(item, "keys", None)
+        if keys is None:
+            raise ValueError("graph_segment_root_count_missing")
+        count = len(keys)
+    return item.kind, item.bucket, item.digest, int(count)
+
+
+def segment_root_digest(segments, *, check=lambda: None) -> str:
+    """Compose a graph identity from exact deterministic segment identities."""
+
+    values = sorted(
+        (_segment_fields(item) for item in segments),
+        key=lambda item: (item[0] != "edge", item[1]),
+    )
+    seen = set()
+    digest = hashlib.sha256(_GRAPH_SEGMENT_ROOT_DOMAIN)
+    for kind, bucket, content_digest, count in values:
+        check()
+        if kind not in ("node", "edge") or len(bucket) != 2 or count < 0:
+            raise ValueError("graph_segment_root_item_invalid")
+        key = (kind, bucket)
+        if key in seen:
+            raise ValueError("graph_segment_root_duplicate")
+        seen.add(key)
+        digest.update(b"\0")
+        digest.update(kind.encode("ascii"))
+        digest.update(b":")
+        digest.update(bucket.encode("ascii"))
+        digest.update(b":")
+        digest.update(str(count).encode("ascii"))
+        digest.update(b":")
+        digest.update(content_digest.encode("ascii"))
+    check()
+    return "sha256:" + digest.hexdigest()
+
+
+def _segment_digest(kind: str, bucket: str, records, keys, check) -> str:
+    digest = hashlib.sha256(("graph-segment.v1:" + kind + ":" + bucket).encode())
+    for key in keys:
+        check()
+        version = hashlib.sha256(records[key].encode("utf-8")).hexdigest()
+        digest.update(key.encode() + b":" + version.encode() + b"\n")
+    return digest.hexdigest()
+
+
+def compact_segment_root(graph: CompactGraph, *, check=lambda: None) -> str:
+    parts = []
+    for kind, records in (("node", graph.nodes), ("edge", graph.edges)):
+        for bucket, grouped in groupby(sorted(records), key=lambda key: key[3:5]):
+            keys = list(grouped)
+            parts.append((kind, bucket, _segment_digest(kind, bucket, records, keys, check), len(keys)))
+    return segment_root_digest(parts, check=check)
+
+
+def materialized_segment_root(nodes, edges, *, check=lambda: None) -> str:
+    from app.analytics.graph_privacy import safe_graph_edge, safe_graph_node
+
+    values = {"node": {}, "edge": {}}
+    for kind, records, validator, key_name in (
+        ("node", nodes, safe_graph_node, "node_id"),
+        ("edge", edges, safe_graph_edge, "edge_id"),
+    ):
+        for item in records:
+            check()
+            item = validator(item)
+            key = getattr(item, key_name)
+            data = _json(item.model_dump(mode="json"))
+            previous = values[kind].get(key)
+            if previous is not None and previous != data:
+                raise ValueError("graph_record_identity_collision")
+            values[kind][key] = data
+    parts = []
+    for kind in ("node", "edge"):
+        records = values[kind]
+        for bucket, grouped in groupby(sorted(records), key=lambda key: key[3:5]):
+            keys = list(grouped)
+            parts.append((kind, bucket, _segment_digest(kind, bucket, records, keys, check), len(keys)))
+    return segment_root_digest(parts, check=check)
+
+
+def projection_graph_digest(pipeline_revision: str, graph, edges=None, *, check=lambda: None) -> str:
+    """Use legacy canonical bytes unless the pipeline explicitly opts into segment roots."""
+
+    if GRAPH_SEGMENT_ROOT_PIPELINE_REVISION in pipeline_revision:
+        segments = getattr(graph, "segments", None)
+        if segments is not None:
+            return segment_root_digest(segments, check=check)
+        if isinstance(graph, CompactGraph):
+            return compact_segment_root(graph, check=check)
+        return materialized_segment_root(graph, edges or (), check=check)
+    if isinstance(graph, CompactGraph) or getattr(graph, "compact_graph", False):
+        return graph.digest(check=check)
+    from app.analytics.graph_privacy import graph_content_digest
+    return graph_content_digest(graph, edges or (), check=check)
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +169,7 @@ class SharedGraphValidation:
     plans: tuple[SegmentValidation, ...]
     proof: GraphSegmentProof | None
     removed_nodes: tuple[str, ...] | None = None
+    segment_root: str | None = None
 
 
 class PredecessorSegments(dict):
@@ -105,12 +211,7 @@ def _plans(graph: CompactGraph, existing: dict,
     for kind, records in (('node', graph.nodes), ('edge', graph.edges)):
         for bucket, grouped in groupby(sorted(records), key=lambda key: key[3:5]):
             keys = list(grouped)
-            digest = hashlib.sha256(('graph-segment.v1:' + kind + ':' + bucket).encode())
-            for key in keys:
-                check()
-                version = hashlib.sha256(records[key].encode('utf-8')).hexdigest()
-                digest.update(key.encode() + b':' + version.encode() + b'\n')
-            signature = digest.hexdigest()
+            signature = _segment_digest(kind, bucket, records, keys, check)
             previous = existing.get((kind, bucket))
             reused = previous is not None and previous[0] == signature
             yield SegmentPlan(kind, bucket, signature, previous[1] if reused else str(uuid4()), keys, reused)
@@ -282,6 +383,7 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
                 p.kind, p.bucket, p.segment_id, p.digest, len(p.keys), p.reused
             ) for p in plans),
             proof=(existing.proof if isinstance(existing, PredecessorSegments) else None),
+            segment_root=segment_root_digest(plans, check=check),
         )
         return statistics
 
@@ -393,8 +495,11 @@ def verify_shared_graph(connection, generation_id, account_id, validation, check
         verified.append(item)
         counts = node_counts if plan.kind == 'node' else edge_counts
         counts.update(dict(item.categories))
+    root = segment_root_digest(verified, check=check)
+    if validation.segment_root is not None and root != validation.segment_root:
+        raise GraphReferentialIntegrityError('graph_segment_root_invalid')
     return (
-        validation.graph_digest, node_counts, edge_counts, tuple(verified)
+        validation.graph_digest, node_counts, edge_counts, tuple(verified), root
     )
 
 

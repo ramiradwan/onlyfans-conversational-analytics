@@ -9,6 +9,7 @@ import json
 from uuid import uuid4
 
 from app.analytics.compact_graph import _json
+from app.analytics.shared_graph import _segment_digest, segment_root_digest
 from app.models.analytics import GraphProjectionSummary
 
 
@@ -185,19 +186,18 @@ def _segment_value(kind, bucket, records):
     if not records:
         return None
     key_name = "kind" if kind == "node" else "relation"
-    digest = hashlib.sha256(("graph-segment.v1:" + kind + ":" + bucket).encode())
+    keys = sorted(records)
+    digest = _segment_digest(kind, bucket, records, keys, lambda: None)
     categories = Counter()
     parts = []
-    for key in sorted(records):
+    for key in keys:
         data = records[key]
-        version = hashlib.sha256(data.encode("utf-8")).hexdigest()
-        digest.update(key.encode() + b":" + version.encode() + b"\n")
         row = json.loads(data)
         categories[row[key_name]] += 1
         parts.append(data.encode("utf-8"))
     chunk = b",".join(parts)
     return (
-        digest.hexdigest(),
+        digest,
         tuple(sorted(categories.items())),
         chunk,
         hashlib.sha256(chunk).hexdigest(),
@@ -264,13 +264,11 @@ def build_incremental_graph(
         check()
         previous = base.get((kind, bucket))
         if bucket not in affected[kind] and previous is not None:
-            opened = chunk_reader(kind, bucket)
-            if opened is None:
+            if previous.chunk_digest is None:
                 return None
-            item, _ = opened
             segments.append(IncrementalSegment(
-                kind, bucket, item.digest, item.segment_id, item.count,
-                item.categories, item.chunk_digest, None, None, True,
+                kind, bucket, previous.digest, previous.segment_id, previous.count,
+                previous.categories, previous.chunk_digest, None, None, True,
             ))
             continue
 
@@ -303,31 +301,11 @@ def build_incremental_graph(
             dict(segment.categories)
         )
 
-    digest = hashlib.sha256(b'{"edges":[')
-    for kind in ("edge", "node"):
-        if kind == "node":
-            digest.update(b'],"nodes":[')
-        first = True
-        for segment in sorted(
-            (item for item in segments if item.kind == kind),
-            key=lambda item: item.bucket,
-        ):
-            check()
-            chunk = segment.chunk
-            if chunk is None:
-                opened = chunk_reader(kind, segment.bucket)
-                if opened is None:
-                    return None
-                _, chunk = opened
-            if not first:
-                digest.update(b",")
-            digest.update(chunk)
-            first = False
-    digest.update(b"]}")
+    digest = segment_root_digest(segments, check=check)
 
     return IncrementalCompactGraph(
         account_ref,
-        graph_digest="sha256:" + digest.hexdigest(),
+        graph_digest=digest,
         segments=tuple(segments),
         node_counts=node_counts,
         edge_counts=edge_counts,
@@ -495,6 +473,7 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
             ),
             proof=graph.predecessor_proof,
             removed_nodes=tuple(sorted(graph._removed["node"])),
+            segment_root=segment_root_digest(graph.segments, check=check),
         )
         writer.refresh()
         return statistics

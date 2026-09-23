@@ -20,6 +20,7 @@ class VerifiedGraph:
     nodes: list[GraphNode]
     edges: list[GraphEdge]
     segments: tuple = ()
+    segment_root: str | None = None
 
 
 def verify_graph_rows(connection, generation_id: str, account_id: str, *,
@@ -28,7 +29,7 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
     from app.analytics.sqlite_graph_store import _node, _edge
 
     from app.analytics.shared_graph import (
-        VerifiedSegment, ordered_rows, supported, uses_segments,
+        VerifiedSegment, ordered_rows, segment_root_digest, supported, uses_segments,
     )
     from app.analytics.graph_store import GraphReferentialIntegrityError
 
@@ -39,6 +40,7 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                 raise GraphReferentialIntegrityError('graph_generation_layout_mixed')
     digest = hashlib.sha256(b'{"edges":[')
     nodes, edges, segments = [], [], []
+    root_parts = []
     node_counts, edge_counts = Counter(), Counter()
     segment_proof_valid = True
     for table, key, decode, output, counts, kind, storage_kind in (
@@ -57,6 +59,20 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
         segment_chunk_digest = None
         segment_count = 0
         segment_counts = Counter()
+        root_bucket = None
+        root_digest = None
+        root_count = 0
+
+        def finish_root_segment() -> None:
+            nonlocal root_bucket, root_digest, root_count
+            if root_bucket is None:
+                return
+            root_parts.append((
+                storage_kind, root_bucket, root_digest.hexdigest(), root_count
+            ))
+            root_bucket = None
+            root_digest = None
+            root_count = 0
 
         def finish_segment() -> None:
             nonlocal current_segment, segment_digest, segment_chunk_digest
@@ -91,8 +107,19 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                     encode = edge_bytes if table == "graph_edges" else node_bytes
                     record_kind, encoded = encode(row, account_id)
                 counts[record_kind] += 1
+                version = hashlib.sha256(encoded).hexdigest()
+                bucket = row[key][3:5]
+                if root_bucket != bucket:
+                    finish_root_segment()
+                    root_bucket = bucket
+                    root_digest = hashlib.sha256(
+                        ("graph-segment.v1:" + storage_kind + ":" + bucket).encode()
+                    )
+                root_digest.update(
+                    row[key].encode() + b":" + version.encode() + b"\n"
+                )
+                root_count += 1
                 if shared:
-                    version = hashlib.sha256(encoded).hexdigest()
                     if version != row["content_id"]:
                         segment_proof_valid = False
                     identity = (
@@ -117,6 +144,7 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                     digest.update(b",")
                 digest.update(encoded)
             finish_segment()
+            finish_root_segment()
         finally:
             rows.close()
     check()
@@ -124,4 +152,5 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
     return VerifiedGraph(
         "sha256:" + digest.hexdigest(), node_counts, edge_counts,
         nodes, edges, tuple(segments) if segment_proof_valid else (),
+        segment_root_digest(root_parts, check=check),
     )

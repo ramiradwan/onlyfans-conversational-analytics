@@ -40,6 +40,37 @@ def test_compact_records_retain_strings_and_exact_digest(tmp_path):
         cleanup(f)
 
 
+def test_legacy_pipeline_graph_digest_remains_canonical_byte_digest(tmp_path):
+    from app.analytics.shared_graph import projection_graph_digest
+
+    f = make_fixture(tmp_path)
+    try:
+        artifact = f.pipeline.project_account(ACCOUNT).artifact
+        expected = graph_content_digest(artifact.nodes, artifact.edges)
+        assert projection_graph_digest(
+            "analytics.pipeline.v3+legacy.graph", artifact.nodes, artifact.edges
+        ) == expected
+
+        graph = CompactGraph(account_ref(ACCOUNT))
+        graph.add(artifact.nodes, artifact.edges, check=lambda: None)
+        assert projection_graph_digest(
+            "analytics.pipeline.v3+legacy.graph", graph
+        ) == expected
+    finally:
+        cleanup(f)
+
+
+def test_segment_root_binds_segment_digest_and_count_not_manifest_order():
+    from app.analytics.shared_graph import segment_root_digest
+
+    first = ("edge", "01", "a" * 64, 3)
+    second = ("node", "ff", "b" * 64, 5)
+    expected = segment_root_digest((first, second))
+    assert segment_root_digest((second, first)) == expected
+    assert segment_root_digest((first[:-1] + (4,), second)) != expected
+    assert segment_root_digest((("edge", "01", "c" * 64, 3), second)) != expected
+
+
 def test_compact_conflict_is_not_silently_ignored(tmp_path):
     f = make_fixture(tmp_path)
     try:

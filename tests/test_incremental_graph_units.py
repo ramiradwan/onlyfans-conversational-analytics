@@ -145,3 +145,57 @@ def test_final_generation_cleanup_reclaims_graph_units_and_chunks(fixture):
     assert state["conversation_graph_refs"] == 0
     assert state["graph_segment_chunks"] == 0
     assert state["graph_segments"] == 0
+
+
+def test_incremental_graph_root_reads_only_changed_predecessor_chunks(
+    fixture, monkeypatch
+):
+    import app.analytics.shared_graph as shared
+    from tests.continuous_analytics_fixture import cold_equal
+
+    first = fixture.pipeline.project_account(ACCOUNT)
+    with fixture.stores.database.read() as db:
+        active = db.execute(
+            "SELECT generation_id FROM projection_generations WHERE status='active'"
+        ).fetchone()[0]
+        previous = {
+            (row["kind"], row["bucket"]): row["segment_id"]
+            for row in db.execute(
+                """SELECT kind,bucket,segment_id
+                   FROM generation_graph_segments WHERE generation_id=?""",
+                (active,),
+            )
+        }
+
+    opened = []
+    original = shared.verified_segment_chunk
+
+    def observed(connection, account_id, proof, kind, bucket):
+        opened.append((kind, bucket))
+        return original(connection, account_id, proof, kind, bucket)
+
+    monkeypatch.setattr(shared, "verified_segment_chunk", observed)
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, "chat-1", "segment-root-changed-message", NOW)
+        advance(db)
+
+    candidate = fixture.pipeline.build_candidate(ACCOUNT)
+    with fixture.stores.database.read() as db:
+        current = {
+            (row["kind"], row["bucket"]): row["segment_id"]
+            for row in db.execute(
+                """SELECT kind,bucket,segment_id
+                   FROM generation_graph_segments WHERE generation_id=?""",
+                (candidate.staged_generation_id,),
+            )
+        }
+    expected = {
+        key for key, segment_id in current.items()
+        if key in previous and previous[key] != segment_id
+    }
+    assert set(opened) == expected
+    assert len(opened) == len(expected)
+
+    result = fixture.pipeline.publish_candidate(candidate)
+    cold_equal(fixture, result.artifact)
+    assert first.artifact.projection.graph_digest != result.artifact.projection.graph_digest

@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from app.analytics.cancellation import CancellationCheck
 from app.analytics.graph_privacy import graph_content_digest, safe_graph_records
+from app.analytics.shared_graph import projection_graph_digest
 from app.analytics.graph_store import GraphReader, InMemoryGraphRepository
 from app.analytics.identity import CanonicalIdentity, pipeline_identity_digest
 from app.analytics.opaque_refs import account_ref
@@ -378,7 +379,9 @@ class InMemoryAnalyticsProjectionStore:
             try:
                 writer.replace(nodes=safe_artifact.nodes, edges=safe_artifact.edges)
                 observed_graph_digest = writer.validate()
-                if observed_graph_digest != safe_artifact.projection.graph_digest:
+                if observed_graph_digest != graph_content_digest(
+                    safe_artifact.nodes, safe_artifact.edges
+                ):
                     raise ProjectionRevisionConflict("projection_graph_digest_invalid")
             except BaseException:
                 try:
@@ -738,7 +741,9 @@ class InMemoryAnalyticsProjectionStore:
             or projection.graph.node_counts_by_kind != dict(sorted(node_counts.items()))
             or projection.graph.edge_counts_by_relation
             != dict(sorted(edge_counts.items()))
-            or projection.graph_digest != graph_content_digest(nodes, edges)
+            or projection.graph_digest != projection_graph_digest(
+                projection.pipeline_revision, nodes, edges
+            )
             or projection.projection_digest != projection_content_digest(projection)
             or any(item.partition_key != projection.account_ref for item in nodes)
             or any(item.partition_key != projection.account_ref for item in edges)

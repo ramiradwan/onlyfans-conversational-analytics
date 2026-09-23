@@ -17,6 +17,11 @@ from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.database import ProjectionsDatabase, generation_verification_cache
 from app.analytics.compact_graph import CompactArtifact, write_compact_graph
 from app.analytics.graph_privacy import safe_graph_records
+from app.analytics.shared_graph import (
+    GRAPH_SEGMENT_ROOT_PIPELINE_REVISION,
+    projection_graph_digest,
+    segment_root_digest,
+)
 from app.analytics.projection_encoding import (
     ENRICHMENT_UNIT_PIPELINE_REVISION,
     projection_document,
@@ -517,7 +522,10 @@ class SQLiteAnalyticsProjectionStore:
             safe_nodes, safe_edges = artifact.graph.nodes, artifact.graph.edges
             if (artifact.graph.account_ref != partition_ref
                     or artifact.graph.summary(projection.source_revision) != projection.graph
-                    or artifact.graph.digest(check=lambda: check_cancelled(cancellation_check)) != projection.graph_digest
+                    or projection_graph_digest(
+                        projection.pipeline_revision, artifact.graph,
+                        check=lambda: check_cancelled(cancellation_check),
+                    ) != projection.graph_digest
                     or _projection_digest(projection) != projection.projection_digest):
                 raise ProjectionValidationError("compact_graph_identity_invalid")
             with self.database.read() as connection:
@@ -1838,10 +1846,10 @@ class SQLiteAnalyticsProjectionStore:
             raise GraphReferentialIntegrityError("graph endpoint is absent")
         if _projection_digest(projection) != projection.projection_digest:
             raise ProjectionValidationError("projection content digest differs")
-        from app.analytics.graph_privacy import _validated_graph_digest
-
-        digest_graph = _validated_graph_digest if owned_graph else _graph_digest
-        if projection.graph_digest != digest_graph(artifact.nodes, artifact.edges):
+        if projection.graph_digest != projection_graph_digest(
+            projection.pipeline_revision, artifact.nodes, artifact.edges,
+            check=lambda: None,
+        ):
             raise ProjectionValidationError("graph projection digest differs")
 
     def _checkpoint(self, stage: str, generation_id: str) -> None:
@@ -2069,10 +2077,10 @@ def _recompute_generation(
         graph_validation=graph_validation,
     )
     if materialize_graph:
-        from app.analytics.graph_privacy import _validated_graph_digest
-
         nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
-        graph_digest = _validated_graph_digest(nodes, edges, check=run_check)
+        graph_digest = projection_graph_digest(
+            projection.pipeline_revision, nodes, edges, check=run_check
+        )
         node_counts = Counter(item.kind.value for item in nodes)
         edge_counts = Counter(item.relation.value for item in edges)
     else:
@@ -2088,11 +2096,26 @@ def _recompute_generation(
                 connection, generation_id, account_id, check=run_check
             )
             nodes, edges = verified.nodes, verified.edges
-            graph_digest = verified.digest
+            graph_digest = (
+                verified.segment_root
+                if GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
+                    in projection.pipeline_revision
+                else verified.digest
+            )
+            if graph_digest is None:
+                raise ProjectionValidationError("graph segment root is missing")
             node_counts, edge_counts = verified.node_counts, verified.edge_counts
             graph_segments = verified.segments
         else:
-            graph_digest, node_counts, edge_counts, graph_segments = reused
+            (
+                graph_digest, node_counts, edge_counts, graph_segments,
+                verified_segment_root,
+            ) = reused
+            if (
+                GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
+                in projection.pipeline_revision
+            ):
+                graph_digest = verified_segment_root
             nodes, edges = [], []
     node_count, edge_count = sum(node_counts.values()), sum(edge_counts.values())
     run_check()

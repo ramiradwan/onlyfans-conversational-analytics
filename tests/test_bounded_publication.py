@@ -108,7 +108,14 @@ def test_streamed_graph_checks_hold_at_most_two_decoded_rows(fixture, monkeypatc
     generation = fixture.stores.database.active_generation(ACCOUNT).generation_id
     with fixture.stores.database.read() as db:
         verified = verify_graph_rows(db, generation, expected.projection.account_ref)
-    assert verified.digest == expected.projection.graph_digest
+    from app.analytics.shared_graph import GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
+    observed = (
+        verified.segment_root
+        if GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
+            in expected.projection.pipeline_revision
+        else verified.digest
+    )
+    assert observed == expected.projection.graph_digest
     assert verified.nodes == verified.edges == []
     assert sum(verified.node_counts.values()) == len(expected.nodes)
     assert sum(verified.edge_counts.values()) == len(expected.edges)

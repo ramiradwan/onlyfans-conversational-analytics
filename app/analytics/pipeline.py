@@ -41,7 +41,10 @@ from app.analytics.errors import (
     CanonicalStateInvalid,
 )
 from app.analytics.graph_projection import RelationshipGraphProjector
-from app.analytics.graph_privacy import graph_content_digest
+from app.analytics.shared_graph import (
+    GRAPH_SEGMENT_ROOT_PIPELINE_REVISION,
+    projection_graph_digest,
+)
 from app.analytics.graph_store import (
     GraphReader,
     InMemoryGraphRepository,
@@ -186,6 +189,7 @@ class AnalyticsPipeline:
         self.pipeline_revision = (
             f"analytics.pipeline.v3+{self.enrichment.revision}"
             "+graph.relationship.v1+enrichment.units.v1"
+            f"+{GRAPH_SEGMENT_ROOT_PIPELINE_REVISION}"
         )
         self.pipeline_config_digest = stable_config_digest(
             name="analytics_pipeline",
@@ -193,6 +197,7 @@ class AnalyticsPipeline:
             config={
                 "enrichment_config_digest": self.enrichment.config_digest,
                 "graph_projector": "relationship_graph.v1",
+                "graph_digest_policy": GRAPH_SEGMENT_ROOT_PIPELINE_REVISION,
                 "timestamp_policy": "aware_utc_stable_source_order",
                 "participant_retention_days": PARTICIPANT_ANALYTICS_MAX_DAYS,
                 "retention_clock": "canonical_message_sent_at",
@@ -749,9 +754,10 @@ class AnalyticsPipeline:
             source_revision=account.view_revision,
             projection_generation=projection_generation,
             canonical_content_digest=snapshot_identity(account).content_digest,
-            graph_digest=(nodes.digest(check=lambda: check_cancelled(cancellation_check))
-                if isinstance(nodes, CompactGraph) or getattr(nodes, "compact_graph", False)
-                else graph_content_digest(nodes, edges)),
+            graph_digest=projection_graph_digest(
+                self.pipeline_revision, nodes, edges,
+                check=lambda: check_cancelled(cancellation_check),
+            ),
             analyzers=self.enrichment.provenance(enrichments),
             window=AnalyticsWindow(
                 scope=WindowScope.ALL_TIME,

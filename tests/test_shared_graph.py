@@ -443,6 +443,43 @@ def test_removed_selected_node_cannot_reuse_predecessor_endpoint_closure(fixture
             )
 
 
+def test_verified_segment_manifest_rejects_wrong_candidate_root(fixture):
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+    from app.analytics.shared_graph import (
+        SegmentValidation, SharedGraphValidation, verify_shared_graph,
+    )
+
+    fixture.pipeline.project_account(ACCOUNT)
+    with fixture.stores.database.read() as db:
+        generation = db.execute(
+            "SELECT * FROM projection_generations WHERE status='active'"
+        ).fetchone()
+        proof = fixture.stores.projections._trusted_graph_segment_proof(
+            db, generation
+        )
+        assert proof is not None
+        plans = tuple(
+            SegmentValidation(
+                item.kind, item.bucket, item.segment_id, item.digest,
+                item.count, True,
+            )
+            for item in proof.segments
+        )
+        validation = SharedGraphValidation(
+            graph_digest=generation['graph_digest'],
+            plans=plans,
+            proof=proof,
+            segment_root='sha256:' + '0' * 64,
+        )
+        with pytest.raises(
+            GraphReferentialIntegrityError, match='graph_segment_root_invalid'
+        ):
+            verify_shared_graph(
+                db, generation['generation_id'],
+                generation['creator_account_id'], validation, lambda: None,
+            )
+
+
 def test_missing_segment_proof_falls_back_to_full_graph_validation(fixture, monkeypatch):
     import app.analytics.graph_verification as verification
 
