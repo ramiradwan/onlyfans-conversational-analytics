@@ -186,7 +186,7 @@ def test_valid_activation_redemption_requires_local_installation_proof() -> None
     challenge_path, challenge_body = transport.requests[0]
     assert challenge_path == "/v1/capability-license-redemption-proof-challenges"
     assert challenge_body == {
-        "profile": "urn:bridge-clean:capability-license-redemption-proof:v1",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1",
         "continuation": CONTINUATION,
         "organization_id": ORGANIZATION_ID,
         "installation_id": INSTALLATION_ID,
