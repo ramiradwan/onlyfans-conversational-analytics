@@ -1062,6 +1062,14 @@ class SQLiteAuthenticationStore:
                 ):
                     raise AuthenticationStateError("Verified grant replacement context is stale")
             self._insert_verified_grant(connection, grant)
+            connection.execute(
+                """
+                UPDATE authorized_account_binding_grants
+                SET grant_reference_id = ?
+                WHERE grant_reference_id = ?
+                """,
+                (grant.reference_id, previous_reference_id),
+            )
             self._revoke_in_transaction(
                 connection,
                 RevocationKey(
