@@ -133,6 +133,9 @@ class LazySQLiteAnalyticsProjectionStore:
     def generation_references_supported(self) -> bool:
         return self._read("generation_references_supported", None)
 
+    def conversation_enrichment_units_supported(self) -> bool:
+        return self._read("conversation_enrichment_units_supported", None)
+
     def check_generation_reference(self, account_id, reference):
         return self._read("check_generation_reference", account_id, account_id, reference)
 

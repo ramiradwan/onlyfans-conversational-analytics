@@ -51,7 +51,7 @@ def test_actual_content_tamper_invalidates_a_currentness_proof(fixture, mutation
             db.execute("UPDATE graph_node_content SET properties_json=json_set(properties_json,'$.character_count',999) WHERE kind='message'")
         else:
             db.execute('DROP TRIGGER projection_document_update_blocked')
-            db.execute("UPDATE analytics_projections SET document_json=json_set(document_json,'$.message_enrichments[#-1].source_ordinal',999)")
+            db.execute("UPDATE analytics_projections SET document_json=json_set(document_json,'$.creator_metrics.message_count',999)")
     with pytest.raises(ProjectionValidationError):
         current(fixture)
 

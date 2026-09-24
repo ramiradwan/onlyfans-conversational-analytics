@@ -35,6 +35,7 @@ def observe_reads(fixture, monkeypatch, change=None):
 def test_verified_page_read_avoids_second_page_decode(fixture, monkeypatch):
     from app.analytics import conversation_pages
 
+    fixture.stores.projections.reuse_conversation_enrichment_units = False
     fixture.pipeline.project_account(ACCOUNT)
     calls = Counter()
     unpack = conversation_pages.unpack_page
@@ -59,6 +60,7 @@ def test_verified_page_read_avoids_second_page_decode(fixture, monkeypatch):
 def test_storage_change_during_page_decode_forces_staging_decode(fixture, monkeypatch):
     from app.analytics import conversation_pages
 
+    fixture.stores.projections.reuse_conversation_enrichment_units = False
     fixture.pipeline.project_account(ACCOUNT)
     calls, changed = Counter(), []
     unpack = conversation_pages.unpack_page

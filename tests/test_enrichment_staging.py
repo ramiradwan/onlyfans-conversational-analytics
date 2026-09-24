@@ -18,6 +18,7 @@ from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, clean
 @pytest.fixture(scope='module')
 def sample(tmp_path_factory):
     value = make_fixture(tmp_path_factory.mktemp('cache-staging'), conversations=3, messages=30)
+    value.stores.projections.reuse_conversation_enrichment_units = False
     try:
         artifact = value.pipeline.project_account(ACCOUNT).artifact
         with value.stores.database.read() as db:
@@ -180,6 +181,7 @@ def test_staging_rejects_unchecked_result_retained_from_a_caller(sample):
 def test_partial_cache_batch_is_rolled_back_with_candidate(tmp_path, monkeypatch, failure):
     from app.analytics import enrichment_sql
     fixture = make_fixture(tmp_path, conversations=1, messages=30)
+    fixture.stores.projections.reuse_conversation_enrichment_units = False
     try:
         artifact = fixture.pipeline.project_account(ACCOUNT).artifact
         with fixture.stores.database.read() as db:

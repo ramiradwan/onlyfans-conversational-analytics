@@ -145,7 +145,9 @@ def test_verification_matches_materialized_graph_without_model_allocation(tmp_pa
         monkeypatch.setattr(sqlite_graph_store, "_edge", forbidden)
         with fixture.stores.database.read() as db:
             result = verify_graph_rows(db, generation, expected.projection.account_ref)
-        assert result.digest == expected.projection.graph_digest
+        from app.analytics.graph_privacy import graph_content_digest
+        assert result.digest == graph_content_digest(expected.nodes, expected.edges)
+        assert result.segment_root == expected.projection.graph_digest
         assert sum(result.node_counts.values()) == len(expected.nodes)
         assert sum(result.edge_counts.values()) == len(expected.edges)
         assert result.nodes == result.edges == []

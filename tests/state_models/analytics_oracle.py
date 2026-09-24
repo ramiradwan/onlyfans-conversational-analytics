@@ -208,14 +208,13 @@ def _assert_referential_closure(normalized: dict[str, Any]) -> None:
 
 
 def _assert_graph_digest(artifact: RebuildArtifact) -> None:
-    """Independently bind the graph digest to normalized public node/edge rows."""
+    """Independently bind the versioned graph digest to normalized public rows."""
 
-    value = {
-        "nodes": [_model(node) for node in sorted(artifact.nodes, key=lambda item: item.node_id)],
-        "edges": [_model(edge) for edge in sorted(artifact.edges, key=lambda item: item.edge_id)],
-    }
-    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    expected = "sha256:" + hashlib.sha256(encoded).hexdigest()
+    expected = _graph_digest_documents(
+        [_model(node) for node in artifact.nodes],
+        [_model(edge) for edge in artifact.edges],
+        artifact.projection.pipeline_revision,
+    )
     if artifact.projection.graph_digest != expected:
         raise AnalyticsOracleMismatch(
             f"graph digest mismatch: expected={expected!r}, observed={artifact.projection.graph_digest!r}"
@@ -930,15 +929,53 @@ def _expected_graph(
 
 
 def _graph_digest_documents(
-    nodes: list[dict[str, Any]], edges: list[dict[str, Any]]
+    nodes: list[dict[str, Any]], edges: list[dict[str, Any]],
+    pipeline_revision: str,
 ) -> str:
-    encoded = json.dumps(
-        {"nodes": sorted(nodes, key=lambda item: item["node_id"]), "edges": sorted(edges, key=lambda item: item["edge_id"])},
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+    ordered_nodes = sorted(nodes, key=lambda item: item["node_id"])
+    ordered_edges = sorted(edges, key=lambda item: item["edge_id"])
+    if "graph.segment-root.v1" not in pipeline_revision:
+        encoded = json.dumps(
+            {"nodes": ordered_nodes, "edges": ordered_edges},
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+    root = hashlib.sha256(b"analytics-graph.segment-root.v1\0")
+    for kind, values, key_name in (
+        ("edge", ordered_edges, "edge_id"),
+        ("node", ordered_nodes, "node_id"),
+    ):
+        by_bucket: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for item in values:
+            by_bucket[str(item[key_name])[3:5]].append(item)
+        for bucket in sorted(by_bucket):
+            segment = hashlib.sha256(
+                ("graph-segment.v1:" + kind + ":" + bucket).encode()
+            )
+            rows = sorted(by_bucket[bucket], key=lambda item: item[key_name])
+            for item in rows:
+                encoded = json.dumps(
+                    item, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+                ).encode("utf-8")
+                version = hashlib.sha256(encoded).hexdigest()
+                segment.update(
+                    str(item[key_name]).encode()
+                    + b":"
+                    + version.encode()
+                    + b"\n"
+                )
+            root.update(b"\0")
+            root.update(kind.encode("ascii"))
+            root.update(b":")
+            root.update(bucket.encode("ascii"))
+            root.update(b":")
+            root.update(str(len(rows)).encode("ascii"))
+            root.update(b":")
+            root.update(segment.hexdigest().encode("ascii"))
+    return "sha256:" + root.hexdigest()
 
 
 def _pipeline_identity(context: ReproducibilityContext) -> str:
@@ -1058,7 +1095,9 @@ def expected_semantic_from_canonical(
             "conversation_metrics": metrics,
             "creator_metrics": creator_metrics,
             "graph": graph,
-            "graph_digest": _graph_digest_documents(nodes, edges),
+            "graph_digest": _graph_digest_documents(
+                nodes, edges, context.pipeline_revision
+            ),
             "projection_without_lifecycle": None,
         },
         "graph": {"nodes": nodes, "edges": edges},

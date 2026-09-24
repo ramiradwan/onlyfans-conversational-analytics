@@ -69,6 +69,7 @@ def test_unchanged_small_conversations_stage_references_without_copying_payloads
 
 @pytest.mark.parametrize('legacy_mode', ['models', 'unavailable_pages'])
 def test_valid_fragments_convert_without_source_reads_or_analysis(fixture, monkeypatch, legacy_mode):
+    fixture.stores.projections.reuse_conversation_enrichment_units = False
     if legacy_mode == 'models':
         fixture.pipeline.compact_graph = False
         fixture.pipeline.project_account(ACCOUNT)

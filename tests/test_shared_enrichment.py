@@ -16,6 +16,7 @@ from tests.continuous_analytics_fixture import (
 @pytest.fixture
 def fixture(tmp_path):
     value = make_fixture(tmp_path)
+    value.stores.projections.reuse_conversation_enrichment_units = False
     yield value
     cleanup(value)
 
@@ -160,8 +161,11 @@ def test_legacy_owned_records_remain_readable_and_convert(fixture, tmp_path):
     assert pipeline.rebuild_account(ACCOUNT).artifact == first
     assert fixture.source.loaded == []
     with upgraded.read() as db:
-        assert db.execute('SELECT COUNT(*) FROM enrichment_refs').fetchone()[0] == 27
+        assert db.execute('SELECT COUNT(*) FROM enrichment_refs').fetchone()[0] == 0
         assert db.execute('SELECT COUNT(*) FROM enrichment_owned_records').fetchone()[0] == 0
+        assert db.execute(
+            'SELECT COUNT(*) FROM conversation_enrichment_refs'
+        ).fetchone()[0] == len(first.projection.conversation_metrics)
 
 
 def test_missing_shared_content_fails_independent_generation_validation(fixture):
@@ -277,6 +281,7 @@ def test_shared_lookups_are_bounded_and_use_the_account_content_key(tmp_path, mo
     from app.analytics import enrichment_sql
     from app.analytics.opaque_refs import account_ref
     value = make_fixture(tmp_path, conversations=1, messages=43)
+    value.stores.projections.reuse_conversation_enrichment_units = False
     insert, observed = enrichment_sql.insert_entries, []
     def measured(connection, generation_id, entries, **options):
         class Connection:

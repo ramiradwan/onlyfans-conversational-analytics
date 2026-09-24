@@ -45,6 +45,7 @@ def test_graph_pages_store_only_ids_and_restore_exact_records(fixture):
 @pytest.mark.parametrize('references', [False, True])
 def test_encoding_switch_reuses_without_source_or_inference(fixture, references):
     store = fixture.stores.projections
+    store.reuse_conversation_enrichment_units = False
     store.reuse_graph_page_references = not references
     fixture.pipeline.project_account(ACCOUNT)
     before = [analyzer.calls for analyzer in fixture.analyzers]
@@ -132,6 +133,7 @@ def test_reference_pages_reduce_bytes_without_raising_the_budget(fixture):
 
 @pytest.mark.parametrize('kind', ['node', 'edge'])
 def test_changed_graph_between_reuse_and_staging_cannot_publish(fixture, monkeypatch, kind):
+    fixture.stores.projections.reuse_conversation_enrichment_units = False
     fixture.pipeline.project_account(ACCOUNT)
     with fixture.repositories.database.transaction() as db:
         insert_message(db, 'chat-1', 'new', NOW, 1)

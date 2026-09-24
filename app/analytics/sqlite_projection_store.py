@@ -126,6 +126,7 @@ class SQLiteAnalyticsProjectionStore:
         self._conversation_enrichment_proofs = OrderedDict()
         self._conversation_enrichment_proof_lock = RLock()
         self.reuse_validation_receipts = True
+        self.reuse_conversation_enrichment_units = True
         from app.analytics.currentness import GenerationCurrentness
         self._currentness = GenerationCurrentness()
         self.graph = SQLiteGraphReader(
@@ -257,6 +258,12 @@ class SQLiteAnalyticsProjectionStore:
     def generation_references_supported(self) -> bool:
         with self.database.read() as connection:
             return int(connection.execute("PRAGMA user_version").fetchone()[0]) >= 7
+
+    def conversation_enrichment_units_supported(self) -> bool:
+        if not self.reuse_conversation_enrichment_units:
+            return False
+        with self.database.read() as connection:
+            return int(connection.execute("PRAGMA user_version").fetchone()[0]) >= 17
 
     def check_generation_reference(self, account_id, reference):
         from app.analytics.generation_reference import check_reference

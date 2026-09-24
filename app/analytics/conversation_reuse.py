@@ -167,7 +167,21 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
     )
     changed_graph = CompactGraph(account_ref(account_id)) if incremental else None
     enrichment_reference_loader = getattr(loader, 'enrichment_unit_reference', None)
-    stream_enrichments = incremental and callable(enrichment_reference_loader)
+    enrichment_support = getattr(
+        pipeline.projections, "conversation_enrichment_units_supported", None
+    )
+    enrichment_units_enabled = (
+        bool(enrichment_support())
+        if callable(enrichment_support)
+        else getattr(
+            pipeline.projections, "reuse_conversation_enrichment_units", True
+        )
+    )
+    stream_enrichments = (
+        incremental
+        and enrichment_units_enabled
+        and callable(enrichment_reference_loader)
+    )
     enrichment_parts = []
     current_units, previous_changed_units = {}, {}
     current_refs = set()
@@ -334,16 +348,16 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                     graph=local_graph,
                 )
             state.retain_graph_unit(graph_unit)
-            if enrichment_unit is None and findings is not None:
-                from app.analytics.conversation_enrichment_units import create_enrichment_unit
-                enrichment_unit = create_enrichment_unit(
-                    account_ref=account_ref(account_id), conversation_ref=ref,
-                    input_digest=input_digest, config_digest=config, cutoff=cutoff,
-                    findings=findings, metrics=counts,
-                    analyzer_entries=(() if reuse is None else reuse.conversation_entries(ref)),
-                )
-            state.retain_enrichment_unit(enrichment_unit)
-            if stream_enrichments:
+            if enrichment_units_enabled:
+                if enrichment_unit is None and findings is not None:
+                    from app.analytics.conversation_enrichment_units import create_enrichment_unit
+                    enrichment_unit = create_enrichment_unit(
+                        account_ref=account_ref(account_id), conversation_ref=ref,
+                        input_digest=input_digest, config_digest=config, cutoff=cutoff,
+                        findings=findings, metrics=counts,
+                        analyzer_entries=(() if reuse is None else reuse.conversation_entries(ref)),
+                    )
+                state.retain_enrichment_unit(enrichment_unit)
                 enrichment_parts.append(
                     enrichment_unit
                     if enrichment_unit is not None
