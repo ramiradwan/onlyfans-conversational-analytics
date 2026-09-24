@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import get_args
@@ -409,6 +409,44 @@ def test_an_expiring_grant_stops_resolving_as_time_passes(
 
     assert len(eligible_accounts(store, now=INSTANT)) == 1
     assert eligible_accounts(store, now=INSTANT + timedelta(hours=3)) == ()
+
+
+def test_refresh_rotates_binding_grant_reference_without_rewriting_provenance(
+    store: SQLiteAuthenticationStore,
+) -> None:
+    binding = authorize(store)
+    previous_id = next(
+        reference_id
+        for reference_id in binding.grant_reference_ids
+        if reference_id.startswith("membership_snapshot-")
+    )
+    previous = store.verified_grant(previous_id)
+    assert previous is not None
+    replacement = replace(
+        previous,
+        reference_id=f"{previous.reference_id}-refreshed",
+        grant_identifier=f"{previous.grant_identifier}-refreshed",
+        grant_digest=hashlib.sha256(b"membership-refresh").hexdigest(),
+        verified_at=INSTANT,
+    )
+
+    store.replace_verified_grant(previous_id, replacement, expected=previous)
+
+    refreshed = store.authorized_account_bindings()[0]
+    assert refreshed.creator_account_id == binding.creator_account_id
+    assert refreshed.association_request_id == binding.association_request_id
+    assert refreshed.grant_bundle_sha256 == binding.grant_bundle_sha256
+    assert refreshed.authorized_at == binding.authorized_at
+    assert previous_id not in refreshed.grant_reference_ids
+    assert replacement.reference_id in refreshed.grant_reference_ids
+    assert eligible_accounts(store, now=INSTANT) == (
+        EligibleAccount(
+            creator_account_id=ACCOUNT_A,
+            platform_creator_id=ACCOUNT_A,
+            grant_bundle_sha256=binding.grant_bundle_sha256,
+            grant_reference_ids=tuple(sorted(refreshed.grant_reference_ids)),
+        ),
+    )
 
 
 def test_a_revoked_grant_is_not_eligible(
