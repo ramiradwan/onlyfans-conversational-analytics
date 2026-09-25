@@ -148,6 +148,9 @@ def test_retired_cleanup_rolls_back_edges_when_endpoint_removal_fails(fixture, m
     class FailedConnection:
         def __init__(self, connection):
             self.connection = connection
+        @property
+        def in_transaction(self):
+            return self.connection.in_transaction
         def execute(self, sql, parameters=()):
             if sql.startswith(('DELETE FROM graph_nodes', 'DELETE FROM graph_owned_nodes')):
                 raise RuntimeError('synthetic cleanup interruption')
