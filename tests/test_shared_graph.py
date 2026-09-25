@@ -87,6 +87,70 @@ def test_changed_graph_matches_full_rebuild(fixture, mutation):
         assert shared > 0
 
 
+@pytest.mark.parametrize("kind", ["node", "edge"])
+def test_selected_content_ids_match_manifest_across_batches(fixture, kind):
+    from app.analytics.shared_graph import selected_content_ids
+
+    fixture.pipeline.project_account(ACCOUNT)
+    relation = kind + "_id"
+    with fixture.stores.database.read() as db:
+        generation = db.execute(
+            "SELECT generation_id FROM projection_generations WHERE status='active'"
+        ).fetchone()[0]
+        expected = {
+            row[0]: row[1]
+            for row in db.execute(f"""SELECT r.{relation},r.content_id
+                FROM generation_graph_segments m
+                JOIN graph_segment_{kind}s r USING(creator_account_id,segment_id)
+                WHERE m.generation_id=? AND m.creator_account_id=? AND m.kind=?""",
+                (generation, account_ref(ACCOUNT), kind))
+        }
+        assert len(expected) > 256
+        keys = [*expected, *list(expected)[:32]]
+        assert selected_content_ids(
+            db, generation, account_ref(ACCOUNT), kind, keys
+        ) == expected
+
+
+def test_selected_content_ids_select_exact_generation_version(fixture):
+    from app.analytics.shared_graph import selected_content_ids
+
+    fixture.pipeline.project_account(ACCOUNT)
+    with fixture.stores.database.read() as db:
+        previous = db.execute(
+            "SELECT generation_id FROM projection_generations WHERE status='active'"
+        ).fetchone()[0]
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, "chat-1", "generation-version-message", NOW)
+        advance(db)
+    fixture.pipeline.project_account(ACCOUNT)
+    with fixture.stores.database.read() as db:
+        current = db.execute(
+            "SELECT generation_id FROM projection_generations WHERE status='active'"
+        ).fetchone()[0]
+        changed = db.execute("""SELECT a.node_id
+            FROM graph_nodes a JOIN graph_nodes b
+              ON a.creator_account_id=b.creator_account_id
+             AND a.node_id=b.node_id
+            WHERE a.generation_id=? AND b.generation_id=?
+              AND a.kind='conversation'
+              AND a.properties_json!=b.properties_json
+            LIMIT 1""", (previous, current)).fetchone()
+        assert changed is not None
+        key = changed[0]
+        old = selected_content_ids(
+            db, previous, account_ref(ACCOUNT), "node", [key]
+        )
+        new = selected_content_ids(
+            db, current, account_ref(ACCOUNT), "node", [key]
+        )
+        assert old.keys() == new.keys() == {key}
+        assert old[key] != new[key]
+        assert selected_content_ids(
+            db, previous, account_ref("other-account"), "node", [key]
+        ) == {}
+
+
 @pytest.mark.parametrize('table,column', [('graph_node_content','properties_json'),
     ('graph_edge_content','properties_json'), ('graph_segments','content_digest'),
     ('graph_segment_nodes','content_id'), ('graph_segment_edges','content_id'),

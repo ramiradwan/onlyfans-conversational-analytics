@@ -518,12 +518,21 @@ def selected_content_ids(connection, generation_id: str, account_id: str,
             continue
         marks = ','.join('?' for _ in batch)
         relation = kind + '_id'
-        rows = connection.execute(f'''SELECT r.{relation},r.content_id
-            FROM generation_graph_segments m
-            JOIN graph_segment_{kind}s r USING(creator_account_id,segment_id)
-            WHERE m.generation_id=? AND m.creator_account_id=? AND m.kind=?
-              AND r.{relation} IN ({marks})''',
-            (generation_id, account_id, kind, *batch))
+        rows = connection.execute(f'''SELECT c.{relation},c.content_id
+            FROM graph_{kind}_content c
+            WHERE c.creator_account_id=? AND c.{relation} IN ({marks})
+              AND EXISTS (
+                SELECT 1
+                FROM generation_graph_segments m
+                JOIN graph_segment_{kind}s r
+                  USING(creator_account_id,segment_id)
+                WHERE m.generation_id=?
+                  AND m.creator_account_id=c.creator_account_id
+                  AND m.kind=? AND m.bucket=substr(c.{relation},4,2)
+                  AND r.{relation}=c.{relation}
+                  AND r.content_id=c.content_id
+              )''',
+            (account_id, *batch, generation_id, kind))
         for row in rows:
             check()
             result[row[0]] = row[1]

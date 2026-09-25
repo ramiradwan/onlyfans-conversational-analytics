@@ -522,7 +522,9 @@ def test_50000_node_stage_renews_short_writer_lease_through_validation(
         )
         for index in range(50_000)
     ]
-    graph_digest = graph_content_digest(nodes, [])
+    from app.analytics.shared_graph import projection_graph_digest
+
+    graph_digest = projection_graph_digest(base.projection.pipeline_revision, nodes, [])
     projection = base.projection.model_copy(
         update={
             "graph_digest": graph_digest,
