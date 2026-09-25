@@ -34,8 +34,6 @@ The content writer temporarily requests a page-cache target of 512 bytes per log
 
 Deleting a retired generation removes its segment references. Segments still referenced by another generation remain. Removing the final reference reclaims the segment and content that no remaining segment or edge needs. Referenced content and segments cannot be deleted directly, even with foreign-key enforcement disabled. Foreign keys preserve endpoint ordering, and an interrupted transaction rolls back cleanup.
 
-Schema version 19 checks for remaining account-scoped content references before attempting a content delete. Shared content stays untouched; the final reference still causes immediate reclamation within the same transaction.
-
 Schema version 19 checks for remaining account-scoped references before opening a content record for deletion. Shared content is left untouched. The final reference still triggers content and endpoint reclamation in the same transaction.
 
 Existing source-time expiry and deletion behavior continue to govern generation visibility and reclamation. Partial builds cannot become readable. Restart requires the same completed canonical witness and verifies stored content through the logical views.

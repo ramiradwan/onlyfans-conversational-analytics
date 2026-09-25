@@ -152,7 +152,7 @@ def test_populated_upgrade_preserves_graph_and_reclaims_final_references(tmp_pat
             retired = db.execute(
                 "SELECT COUNT(*) FROM projection_generations WHERE status='retired'"
             ).fetchone()[0]
-        assert retired > 0
+        assert retired == 2
         assert current.collect_garbage(expected.projection.account_ref) == retired
         with upgraded.read() as db:
             assert db.execute(
