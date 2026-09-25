@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
+<!-- CODE-VERIFY: Check conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, sql/0018_graph_chunk_metadata.sql, test_graph_chunk_metadata.py, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
 
 # ADR 0039: Reuse immutable conversation graph units
 
@@ -11,6 +11,8 @@ The built-in compact SQLite path may assemble an incremental account graph from 
 Schema version 16 stores one optional conversation graph unit per retained conversation. A generation reference binds that unit to the conversation input/configuration identity, retention window, participant reference, start/end times, graph digest and record counts. The unit stores only sorted opaque node and edge identities. It does not store source text or native identifiers.
 
 A cold or fallback build still projects the complete logical graph. While shared graph segments are written, the store may also retain bounded canonical segment chunks. A process-local ADR 0038 proof binds those chunks to graph rows that were already verified from persisted content.
+
+Schema version 18 adds a metadata index for chunk-availability checks. The query selects the predecessor generation and compares each chunk's identity, kind, count and digest with its proof. Opening a chunk still checks its payload hash.
 
 On a later build, unchanged conversations may contribute their witnessed unit references without reopening predecessor graph rows. Changed conversations are projected normally. The builder compares changed canonical record hashes with the active predecessor, rebuilds only affected identity buckets, updates conversation-order edges from current metrics and witnessed predecessor timeline metadata, then combines rebuilt buckets with unchanged verified segment chunks.
 

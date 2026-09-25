@@ -541,14 +541,19 @@ def selected_content_ids(connection, generation_id: str, account_id: str,
 
 def verified_segment_chunks_complete(connection, account_id: str,
                                      proof: GraphSegmentProof) -> bool:
+    """Check the selected predecessor chunk headers against its proof."""
+
     if not chunks_supported(connection) or not proof.segments:
         return False
     rows = {
         row['segment_id']: row
         for row in connection.execute(
-            """SELECT segment_id,kind,record_count,canonical_digest
-               FROM graph_segment_chunks WHERE creator_account_id=?""",
-            (account_id,),
+            """SELECT c.segment_id,c.kind,c.record_count,c.canonical_digest
+               FROM generation_graph_segments m
+               JOIN graph_segment_chunks c
+                 USING(creator_account_id,segment_id,kind)
+               WHERE m.generation_id=? AND m.creator_account_id=?""",
+            (proof.generation_id, account_id),
         )
     }
     return all(
