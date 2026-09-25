@@ -363,3 +363,43 @@ def test_an_evicted_transition_does_not_replace_a_newer_proof(fixture):
     store._conversation_enrichment_proofs[proof.generation_id] = newer
     store._install_enrichment_transition(transition, renewed)
     assert store._conversation_enrichment_proofs[proof.generation_id] is newer
+
+
+def test_activation_failure_does_not_install_a_renewed_proof(fixture, monkeypatch):
+    from unittest.mock import Mock
+    from app.analytics import sqlite_projection_store as storage
+
+    fixture.pipeline.project_account(ACCOUNT)
+    store = fixture.stores.projections
+    with fixture.stores.database.read() as db:
+        predecessor, _ = active(fixture, db)
+    append_message(fixture, 1)
+    candidate = fixture.pipeline.build_candidate(ACCOUNT)
+    proof = store._conversation_enrichment_proofs[candidate.staged_generation_id]
+    finish = storage.finish_transition
+    install = Mock(wraps=store._install_enrichment_transition)
+    monkeypatch.setattr(store, '_install_enrichment_transition', install)
+
+    def fail_before_commit(connection, transition):
+        assert transition.proof is proof
+        assert finish(connection, transition) is not None
+        raise RuntimeError('activation transaction failed')
+
+    monkeypatch.setattr(storage, 'finish_transition', fail_before_commit)
+    with pytest.raises(RuntimeError, match='activation transaction failed'):
+        fixture.pipeline.publish_candidate(candidate)
+    install.assert_not_called()
+    assert store._conversation_enrichment_proofs[candidate.staged_generation_id] is proof
+    with fixture.stores.database.read() as db:
+        current, _ = active(fixture, db)
+        assert current['generation_id'] == predecessor['generation_id']
+        failed = db.execute(
+            'SELECT * FROM projection_generations WHERE generation_id=?',
+            (candidate.staged_generation_id,),
+        ).fetchone()
+        assert failed['status'] == 'retired'
+        assert store._trusted_conversation_enrichment_proof(db, failed) is None
+        assert db.execute(
+            'SELECT COUNT(*) FROM conversation_enrichment_refs WHERE generation_id=?',
+            (candidate.staged_generation_id,),
+        ).fetchone()[0] == 0
