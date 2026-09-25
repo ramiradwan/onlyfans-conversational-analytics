@@ -603,6 +603,7 @@
         "app/analytics/conversation_graph_unit_sql.py",
         "app/analytics/conversation_enrichment_units.py",
         "app/analytics/conversation_enrichment_unit_sql.py",
+        "app/analytics/enrichment_proof_transition.py",
         "app/analytics/incremental_graph.py",
         "app/analytics/projection_verification.py",
         "app/analytics/validation_receipt.py",

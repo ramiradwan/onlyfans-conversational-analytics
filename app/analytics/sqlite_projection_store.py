@@ -14,6 +14,7 @@ from typing import Callable
 from uuid import uuid4
 
 from app.analytics.cancellation import CancellationCheck, check_cancelled
+from app.analytics.enrichment_proof_transition import capture_transition, finish_transition
 from app.analytics.database import ProjectionsDatabase, generation_verification_cache
 from app.analytics.compact_graph import CompactArtifact, write_compact_graph
 from app.analytics.graph_privacy import safe_graph_records
@@ -254,6 +255,14 @@ class SQLiteAnalyticsProjectionStore:
         if stamp is None or tuple(stamp) != proof.stamp:
             return None
         return proof
+
+    def _install_enrichment_transition(self, transition, renewed) -> None:
+        if transition is None or renewed is None:
+            return
+        proof = transition.proof
+        with self._conversation_enrichment_proof_lock:
+            if self._conversation_enrichment_proofs.get(proof.generation_id) is proof:
+                self._conversation_enrichment_proofs[proof.generation_id] = renewed
 
     def generation_references_supported(self) -> bool:
         with self.database.read() as connection:
@@ -1305,6 +1314,15 @@ class SQLiteAnalyticsProjectionStore:
                     self.rollback_retention,
                 ),
             ).fetchall()
+            active = connection.execute(
+                "SELECT * FROM projection_generations "
+                "WHERE creator_account_id=? AND status='active'",
+                (partition_ref,),
+            ).fetchone() if rows else None
+            transition = capture_transition(
+                connection, active,
+                self._trusted_conversation_enrichment_proof(connection, active),
+            )
             from app.analytics.shared_graph import supported
             graph_tables = ("graph_owned_edges", "graph_owned_nodes") if supported(connection) else ("graph_edges", "graph_nodes")
             for row in rows:
@@ -1318,7 +1336,9 @@ class SQLiteAnalyticsProjectionStore:
                     "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
                     (row[0],),
                 )
-            return len(rows)
+            renewed = finish_transition(connection, transition)
+        self._install_enrichment_transition(transition, renewed)
+        return len(rows)
 
     def _validate_and_mark_generation(self, generation_id: str) -> None:
         self._validate_persisted_generation(generation_id, allow_building=True)
@@ -1527,6 +1547,10 @@ class SQLiteAnalyticsProjectionStore:
                 raise ProjectionReconciliationError("activation witness CAS differs")
             if candidate["publication_epoch"] in self._locally_fenced_epochs:
                 raise ProjectionActivationConflict("publication epoch revoked")
+            transition = capture_transition(
+                connection, candidate,
+                self._trusted_conversation_enrichment_proof(connection, candidate),
+            )
             connection.execute(
                 """
                 UPDATE projection_generations
@@ -1569,6 +1593,8 @@ class SQLiteAnalyticsProjectionStore:
             )
             if updated.rowcount != 1:
                 raise ProjectionReconciliationError("local activation CAS failed")
+            renewed = finish_transition(connection, transition)
+        self._install_enrichment_transition(transition, renewed)
         return True
 
     def _attach_intent(

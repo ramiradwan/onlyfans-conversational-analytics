@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_enrichment_units.py, conversation_enrichment_unit_sql.py, conversation_reuse.py, enrichment_cache.py, projection_encoding.py, projection_verification.py, sqlite_projection_store.py, retention_store.py, retention_restore.py, validation_receipt.py, sql/0017_conversation_enrichment_units.sql and test_incremental_enrichment_units.py before changing reuse, fallback, digest or bounds claims. -->
+<!-- CODE-VERIFY: Check conversation_enrichment_units.py, conversation_enrichment_unit_sql.py, enrichment_proof_transition.py, conversation_reuse.py, enrichment_cache.py, projection_encoding.py, projection_verification.py, sqlite_projection_store.py, retention_store.py, retention_restore.py, validation_receipt.py, sql/0017_conversation_enrichment_units.sql and test_incremental_enrichment_units.py and test_enrichment_proof_transition.py before changing reuse, fallback, digest or bounds claims. -->
 
 # ADR 0040: Reuse immutable conversation enrichment units
 
@@ -25,6 +25,10 @@ A changed conversation may load its predecessor unit's analyzer-cache records. N
 ## Integrity
 
 New unit content is written inside the generation staging transaction. Existing content with the same unit identity must match the bytes and summary metadata exactly. Updates are blocked. Referenced content cannot be deleted even when foreign-key enforcement is disabled.
+
+The store preserves a valid enrichment proof through its activation and retired-generation cleanup transactions. Before either transition, the full content stamp must match and the database trigger definitions must match the reviewed catalog. The same write transaction must preserve the selected generation, unit references, ordering, input/configuration identities and retention bounds. Referenced payloads remain immutable.
+
+The renewed proof enters the cache only after commit, and only if the original proof is still cached. A stale proof, unknown trigger definition, schema change, changed selection or rollback prevents renewal. Writes after commit still invalidate the proof through the full content stamp.
 
 The generation reference manifest must cover the same ordered conversations and message count as the projection metrics. Reused references must come from the exact proven predecessor. Incremental validation may trust unchanged unit headers only under that exact process-local proof; changed units are decompressed and independently checked. Missing proof, restart and explicit artifact reads perform full unit validation/materialization.
 
