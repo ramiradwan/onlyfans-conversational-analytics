@@ -21,6 +21,11 @@ GUARD_NAMES = (
     'projection_generation_delete_retired_only',
 )
 GUARD_DIGEST = "256dbd8dfa5dfac13911a2683fa9cdc665bd45fa3b03f251fd1dc687465cc85b"
+GUARD_DIGESTS = {
+    17: GUARD_DIGEST,
+    18: GUARD_DIGEST,
+    19: "74e6d61917e9f0b644d2d85fcd2166689280849c7e913c7042d7556f8c6f8ba0",
+}
 
 
 def _guards_match(connection):
@@ -34,7 +39,8 @@ def _guards_match(connection):
     finally:
         rows.close()
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest() == GUARD_DIGEST
+    expected = GUARD_DIGESTS.get(connection.execute("PRAGMA user_version").fetchone()[0])
+    return expected is not None and hashlib.sha256(encoded).hexdigest() == expected
 
 
 @dataclass(frozen=True, slots=True)

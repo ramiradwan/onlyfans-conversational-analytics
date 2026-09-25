@@ -195,7 +195,7 @@ def test_legacy_pages_survive_migration_and_convert_on_next_publication(fixture,
         assert before > 0
     upgraded = ProjectionsDatabase(path)
     with upgraded.read() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 18
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 19
         assert content_stamp(db) is not None
         assert db.execute('SELECT COUNT(*) FROM conversation_owned_pages').fetchone()[0] == before
         assert db.execute('SELECT COUNT(*) FROM conversation_page_content').fetchone()[0] == 0

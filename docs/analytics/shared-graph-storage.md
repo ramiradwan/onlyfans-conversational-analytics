@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check shared_graph.py, incremental_graph.py, conversation_graph_units.py, graph_verification.py, validation_receipt.py, database.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, sql/0012_generation_content_epoch.sql, sql/0015_shared_graph_delete_guards.sql, sql/0016_incremental_graph_units.sql, test_shared_graph.py and test_incremental_graph_units.py before changing storage, verification or limit claims. -->
+<!-- CODE-VERIFY: Check shared_graph.py, incremental_graph.py, conversation_graph_units.py, graph_verification.py, validation_receipt.py, database.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, sql/0012_generation_content_epoch.sql, sql/0015_shared_graph_delete_guards.sql, sql/0016_incremental_graph_units.sql, sql/0019_graph_reclamation_guards.sql, test_graph_reclamation.py, test_shared_graph.py and test_incremental_graph_units.py before changing storage, verification or limit claims. -->
 
 # Reuse stored graph content
 
@@ -33,6 +33,10 @@ The content writer temporarily requests a page-cache target of 512 bytes per log
 ## Cleanup and recovery
 
 Deleting a retired generation removes its segment references. Segments still referenced by another generation remain. Removing the final reference reclaims the segment and content that no remaining segment or edge needs. Referenced content and segments cannot be deleted directly, even with foreign-key enforcement disabled. Foreign keys preserve endpoint ordering, and an interrupted transaction rolls back cleanup.
+
+Schema version 19 checks for remaining account-scoped content references before attempting a content delete. Shared content stays untouched; the final reference still causes immediate reclamation within the same transaction.
+
+Schema version 19 checks for remaining account-scoped references before opening a content record for deletion. Shared content is left untouched. The final reference still triggers content and endpoint reclamation in the same transaction.
 
 Existing source-time expiry and deletion behavior continue to govern generation visibility and reclamation. Partial builds cannot become readable. Restart requires the same completed canonical witness and verifies stored content through the logical views.
 
