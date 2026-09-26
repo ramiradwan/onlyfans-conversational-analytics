@@ -105,6 +105,7 @@ def test_query_to_source_round_trip(ready):
 
 def test_production_source_preserves_missing_kind_as_undetermined(ready):
     ready.resources.source = HistoryAnalyticsSource(ready.stored.history)
+    ready.resources.source.prepare_question_identity(ACCOUNT)
     response = ready.client.post("/api/v1/insights/questions", json=plan())
     assert response.status_code == 200, response.text
     page = response.json()["page"]
@@ -406,3 +407,14 @@ def test_unsupported_body_encoding_is_refused(ready, headers):
     assert response.status_code == 415
     assert response.headers["cache-control"] == "no-store"
     ready.scheduler.request_recovery.assert_not_called()
+
+
+def test_cold_question_requests_owned_preparation_before_returning_answers(ready):
+    ready.source._identity_cache.clear()
+    response = ready.client.post("/api/v1/insights/questions", json=plan())
+    assert response.status_code == 503
+    ready.scheduler.request_recovery.assert_awaited_once()
+    assert ready.pipeline.prepare_questions(ACCOUNT, ready.source.account_revision(ACCOUNT))
+    response = ready.client.post("/api/v1/insights/questions", json=plan())
+    assert response.status_code == 200, response.text
+    assert len(response.json()["page"]["rows"]) == 2

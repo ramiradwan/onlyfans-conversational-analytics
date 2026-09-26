@@ -139,6 +139,7 @@ class InProcessProjectionScheduler:
             raise ValueError("reconciliation_interval_invalid")
         self.reconciliation_interval = reconciliation_interval
         self._reconciliation_task = None
+        self._identity_preparation_task = None
         self.pipeline = pipeline
         self.worker_count = worker_count
         self.queue_capacity = queue_capacity
@@ -417,6 +418,16 @@ class InProcessProjectionScheduler:
                         self._recovery_requests.pop(account_id, None)
             for account_id, revision in requests.items():
                 try:
+                    current = await self._projection_is_current(account_id, revision)
+                except ProjectionCoordinatorClosed:
+                    return
+                except Exception:
+                    current = False
+                if current:
+                    with self._state_lock:
+                        self._record_available_locked(account_id, revision)
+                    continue
+                try:
                     await self.schedule(
                         account_id,
                         revision,
@@ -453,6 +464,11 @@ class InProcessProjectionScheduler:
         if self.reconciliation_interval and (self._reconciliation_task is None or self._reconciliation_task.done()):
             self._reconciliation_task = asyncio.create_task(self._reconcile_periodically(),
                 name="analytics-canonical-reconciliation")
+        if (self.reconciliation_interval
+                and callable(getattr(self.pipeline.source, "prepare_question_identity", None))
+                and (self._identity_preparation_task is None or self._identity_preparation_task.done())):
+            self._identity_preparation_task = asyncio.create_task(self._prepare_identities_periodically(),
+                name="analytics-question-identity-preparation")
         await self.reconcile_once()
 
     async def _reconcile_periodically(self) -> None:
@@ -463,6 +479,33 @@ class InProcessProjectionScheduler:
             except Exception:
                 # Currentness is checked on every read; the next wake retries repair.
                 continue
+
+    async def _prepare_identities_periodically(self) -> None:
+        """Keep canonical preparation independent of slow projection verification."""
+        from app.analytics.source_tokens import IDENTITY_LIFETIME_SECONDS
+
+        interval = min(self.reconciliation_interval, IDENTITY_LIFETIME_SECONDS / 2)
+        while not self.closed:
+            await asyncio.sleep(interval)
+            try:
+                revisions = await self._run_owned(self.pipeline.source.account_revisions)
+            except ProjectionCoordinatorClosed:
+                return
+            except Exception:
+                continue
+            for account_id, _ in revisions:
+                if self.closed:
+                    return
+                try:
+                    await self._run_owned(functools.partial(
+                        self.pipeline.source.prepare_question_identity, account_id,
+                        cancellation_check=self._publication_closed.is_set,
+                    ))
+                except ProjectionCoordinatorClosed:
+                    return
+                except Exception:
+                    # This task prepares identity only; it cannot report a publication ready.
+                    continue
 
     async def reconcile_once(self) -> None:
         """Recover missed notifications and expired projections through normal admission."""
@@ -566,9 +609,10 @@ class InProcessProjectionScheduler:
     ) -> bool:
         return await self._run_owned(
             functools.partial(
-                self.pipeline.projection_is_current,
+                self.pipeline.prepare_questions,
                 creator_account_id,
                 canonical_revision,
+                cancellation_check=self._publication_closed.is_set,
             )
         )
 
@@ -809,6 +853,7 @@ class InProcessProjectionScheduler:
             executor = self._executor
             recovery_task = self._recovery_task
             reconciliation_task = self._reconciliation_task
+            identity_task = self._identity_preparation_task
             epoch = self._publication_epoch
             self._publication_epoch = None
             self._publication_epoch_storage_serial = -1
@@ -834,10 +879,13 @@ class InProcessProjectionScheduler:
             self._cancel_task(recovery_task)
         if reconciliation_task is not None:
             self._cancel_task(reconciliation_task)
+        if identity_task is not None:
+            self._cancel_task(identity_task)
         joined_tasks = (
             tasks
             + ((recovery_task,) if recovery_task is not None else ())
             + ((reconciliation_task,) if reconciliation_task is not None else ())
+            + ((identity_task,) if identity_task is not None else ())
             + (storage_task,)
         )
 
@@ -888,6 +936,7 @@ class InProcessProjectionScheduler:
             executor = self._executor
             recovery_task = self._recovery_task
             reconciliation_task = self._reconciliation_task
+            identity_task = self._identity_preparation_task
             epoch = self._publication_epoch
             self._publication_epoch = None
             self._publication_epoch_storage_serial = -1
@@ -920,6 +969,10 @@ class InProcessProjectionScheduler:
             loop = reconciliation_task.get_loop()
             if loop.is_running():
                 loop.call_soon_threadsafe(reconciliation_task.cancel)
+        if identity_task is not None and not identity_task.done():
+            loop = identity_task.get_loop()
+            if loop.is_running():
+                loop.call_soon_threadsafe(identity_task.cancel)
         with self._state_lock:
             self._detached_worker_count = sum(
                 not future.done() for future in futures

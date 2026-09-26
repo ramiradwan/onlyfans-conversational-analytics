@@ -36,6 +36,8 @@ The default runtime checks canonical accounts every 30 seconds after starting it
 
 Expired source data is refused before publication. Remaining permitted messages can be rebuilt at the same canonical revision. Input and context timestamps retain their original 90-day limit. The periodic task stops when the scheduler closes or resets.
 
+An owned preparation timer uses the same bounded executor to refresh question identities before their cache lifetime ends, independently of slow projection verification. Question-triggered recovery first checks whether the current publication can be reused; preparation alone does not rerun analysis.
+
 The interval is an approximate retry cadence, not a promise that a rebuild finishes within 30 seconds. Canonical checks and full generation work can take longer on large accounts. Failed authorization produces an unavailable or failed analysis state, not an unlicensed rebuild.
 
 ## Verification and measurement

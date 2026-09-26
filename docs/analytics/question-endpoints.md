@@ -33,7 +33,7 @@ The deterministic feature cannot be advertised as a qualified no-reply list unti
 
 Question resources admit at most two concurrent reads. The question service enforces its shared record, time, pagination, and evidence limits. SQL progress handlers and lock timeouts use the remaining request budget. Cancellation propagates when a request or runtime closes.
 
-The canonical gateway streams the exact account-content digest required by publication validation. It does not assemble the full account read model. This still examines account records, including records outside the selection, and charges them to the work budget. A narrow date range does not eliminate this verification cost.
+The scheduler prepares the exact account-content digest before questions are ready. It scans canonical content outside request budgets and rechecks the account, source token, revision, and tracking schema before caching it. A cold or expired question returns the existing preparing state and requests owned recovery. Requests never substitute an unverified stored digest or start a full-account identity scan. Source selection and result construction still use the unchanged record and time limits.
 
 After identity verification, indexed account/conversation queries select candidates and follow-up messages. Memory use is bounded by the record limit and the retained page candidates. SQLite's date conversion is only a coarse candidate filter; Python applies exact timezone-aware boundaries. Each continuation reevaluates the bounded scope rather than retaining source data between requests.
 

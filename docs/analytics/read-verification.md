@@ -12,13 +12,13 @@ The gateway verifies the installed tracking-trigger definitions when the schema 
 
 Each gateway instance keeps at most eight entries for 60 seconds. Entries contain an opaque account key, token, revision, schema number, and content digest. No input text or native conversation/message identifiers are retained. Expired entries are removed on the next cache operation. Reads do not extend their lifetime.
 
-A cache miss scans canonical content. A supplied database connection always reads its own transaction and never uses this cache. Question execution still checks for concurrent canonical changes and rechecks the publication witness before returning.
+Build-time cache misses scan canonical content. Question requests require a prepared identity: a missing or expired entry returns the existing preparing state instead of scanning inside the request budget. Missing source tracking reports an error. A supplied database connection always reads its own transaction and never uses this cache. Questions still check concurrent canonical changes and recheck the publication witness before returning.
 
 A full source scan can mint a process-local HMAC proof bound to that exact identity and source token. Long build and publication paths re-read the current token before reusing the scanned digest. A matching proof refreshes the normal identity-cache entry without rescanning content; restart, missing tracking, invalid proof, or a changed token uses the existing scan or changed-source path. The optional post-publication refresh does not undo publication if it fails.
 
-The cache does not authorize a build, make a stale generation readable, or bypass source expiry. Cold requests can still exceed their limits; background verification can populate the cache without executing a question.
+The cache does not authorize a build, make a stale generation readable, or bypass source expiry. Startup, periodic upkeep, and requested recovery prepare identities through the existing bounded scheduler executor. A separate owned timer keeps preparation running while projection verification is slow; it adds no thread pool and cannot declare a publication ready. An unchanged current publication needs identity preparation, not another rebuild.
 
-Readiness checks compare canonical identity again after stored-generation verification. A changed identity prevents a ready result. An expired cache entry is refreshed through the ordinary source read outside the question request; an unexpired entry keeps its original deadline.
+Readiness checks compare canonical identity again after stored-generation verification. A changed identity prevents a ready result. Scheduler preparation independently rescans entries with at most 30 seconds remaining, leaving an unexpired identity usable while the scan runs. The new scan gets the unchanged 60-second lifetime only after cancellation checks and a fresh source-token check outside its read snapshot. Concurrent preparation is serialized, and waiting and scanning stop when the scheduler closes. Ordinary reads do not renew entries.
 
 ## Bounded reply selection
 

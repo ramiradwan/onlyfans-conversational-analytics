@@ -613,11 +613,32 @@ class AnalyticsPipeline:
     def projection_is_current(
         self, creator_account_id: str, requested_revision: int
     ) -> bool:
-        """Worker-thread currentness check used by scheduler admission."""
+        """Verify the complete publication against live canonical identity."""
+        return self._projection_currentness_with_identity(
+            creator_account_id, requested_revision,
+            lambda: source_identity(self.source, creator_account_id),
+        )
 
+    def prepare_questions(self, creator_account_id: str, requested_revision: int,
+                          *, cancellation_check=None) -> bool:
+        """Prepare identity before reporting readiness, without a question budget."""
+        prepare = getattr(self.source, "prepare_question_identity", None)
+        check_cancelled(cancellation_check)
+        if not callable(prepare):
+            return self.projection_is_current(creator_account_id, requested_revision)
+        def read():
+            check_cancelled(cancellation_check)
+            return prepare(creator_account_id, cancellation_check=cancellation_check)
+        current = self._projection_currentness_with_identity(
+            creator_account_id, requested_revision, read,
+        )
+        check_cancelled(cancellation_check)
+        return current
+
+    def _projection_currentness_with_identity(self, creator_account_id, requested_revision, read):
         if not self.source.account_exists(creator_account_id):
             return False
-        identity = source_identity(self.source, creator_account_id)
+        identity = read()
         if identity is None or identity.revision < requested_revision:
             return False
         currentness = getattr(self.projections, "projection_currentness", None)
@@ -634,9 +655,7 @@ class AnalyticsPipeline:
                 and projection.pipeline_config_digest == self.pipeline_config_digest
             )
         # Stored-state verification can outlive the source identity cache.
-        return bool(current) and self._source_identity_matches(
-            creator_account_id, identity, None
-        )
+        return bool(current) and read() == identity
 
     def project_account(
         self,

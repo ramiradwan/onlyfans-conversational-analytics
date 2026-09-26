@@ -7,6 +7,7 @@ from contextlib import contextmanager
 import json
 from app.persistence import sqlite_api as sqlite3
 from datetime import datetime
+from threading import Lock
 
 from app.analytics.evidence_contracts import (
     EvidenceLocation, EvidenceMessage, MAX_EVIDENCE_TEXT_CHARS,
@@ -29,6 +30,7 @@ class HistoryAnalyticsSource:
         self.connection = connection
         from app.analytics.source_tokens import SourceIdentityCache
         self._identity_cache = SourceIdentityCache()
+        self._question_preparation_lock = Lock()
         from app.analytics.catalog_cache import SourceCatalogCache
         self._catalog_cache = SourceCatalogCache(self._identity_cache)
 
@@ -111,6 +113,53 @@ class HistoryAnalyticsSource:
         if self.connection is None:
             self.read_identity(account_id)
 
+    def prepare_question_identity(self, account_id: str, *, cancellation_check=None):
+        """Independently prepare expiring identities on the runtime's owned worker."""
+        from app.analytics.cancellation import check_cancelled
+
+        if self.connection is not None:
+            raise ValueError("question_live_read_required")
+        check_cancelled(cancellation_check)
+        while not self._question_preparation_lock.acquire(timeout=0.05):
+            check_cancelled(cancellation_check)
+        try:
+            return self._prepare_question_identity(account_id, cancellation_check)
+        finally:
+            self._question_preparation_lock.release()
+
+    def _prepare_question_identity(self, account_id, cancellation_check):
+        from app.analytics.cancellation import check_cancelled
+        from app.analytics.errors import CanonicalRevisionChanged, ProjectionUnavailable
+        from app.analytics.source_snapshot import scan_identity, cancellable_source_read
+
+        check = lambda: check_cancelled(cancellation_check)
+        with self._read() as db, cancellable_source_read(db, cancellation_check):
+            db.execute("BEGIN")
+            try:
+                row = db.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?",
+                                 (account_id,)).fetchone()
+                if row is None:
+                    return None
+                token = self._identity_cache.token(db, account_id)
+                if token is None:
+                    raise ProjectionUnavailable(availability="error",
+                        reason_code="analytics_question_source_tracking_unavailable")
+                cached = self._identity_cache.get(account_id, token)
+                if cached is not None and not self._identity_cache.preparation_due(account_id, token):
+                    check()
+                    return cached
+                identity, digests, _ = scan_identity(db, account_id, int(row[0]), check=check)
+                check()
+            finally:
+                db.rollback()
+            # Recheck outside the scan snapshot before retaining its identity.
+            if self._identity_cache.token(db, account_id) != token:
+                raise CanonicalRevisionChanged()
+            check()
+            self._identity_cache.put(account_id, token, identity)
+            self._catalog_cache.put(account_id, token, identity, digests)
+            return identity
+
     def conversation_read_model(self, account_id: str, conversation_id: str, *, cancellation_check=None):
         from app.analytics.cancellation import check_cancelled
         from app.analytics.source_snapshot import read_conversation, cancellable_source_read
@@ -124,7 +173,6 @@ class HistoryAnalyticsSource:
         """Pin live canonical identity and bound every source read."""
 
         from app.analytics.query_canonical import CanonicalQuestionScope
-        from app.analytics.query_identity import canonical_question_identity
         from app.analytics.query_sql import bounded_sql
 
         if self.connection is not None:
@@ -135,10 +183,12 @@ class HistoryAnalyticsSource:
             token = self._identity_cache.token(connection, account_id)
             scope.identity = self._identity_cache.get(account_id, token)
             if scope.identity is None:
-                scope.identity = canonical_question_identity(connection, account_id, scope.revision, budget)
-                scope.check(budget)
-                if token == self._identity_cache.token(connection, account_id):
-                    self._identity_cache.put(account_id, token, scope.identity)
+                from app.analytics.errors import ProjectionUnavailable
+                if token is None:
+                    raise ProjectionUnavailable(availability="error",
+                        reason_code="analytics_question_source_tracking_unavailable")
+                raise ProjectionUnavailable(availability="building",
+                    reason_code="analytics_question_identity_preparing")
             scope.check(budget)
             yield scope
             scope.check(budget)

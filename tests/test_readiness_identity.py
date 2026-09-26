@@ -55,7 +55,8 @@ def test_fast_currentness_does_not_extend_the_identity_lifetime(ready):
     with pytest.raises(AnalyticsError) as error:
         with ready.source.open_question_scope(ACCOUNT, QuestionBudget(QuestionLimits(max_records=2))):
             pass
-    assert error.value.code == 'analytics_question_limit_exceeded'
+    assert error.value.code == 'analytics_projection_building'
+    assert error.value.reason_code == 'analytics_question_identity_preparing'
 
 
 def test_legacy_currentness_path_rechecks_identity(ready, monkeypatch):

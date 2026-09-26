@@ -120,6 +120,14 @@ class SourceIdentityCache:
             self._entries.move_to_end(key)
             return entry[1]
 
+    def preparation_due(self, account_id: str, token: SourceToken | None) -> bool:
+        """Refresh before expiry without removing an identity still safe for readers."""
+        with self._lock:
+            self._expire()
+            entry = self._entries.get(account_ref(account_id))
+            return (entry is None or token is None or entry[0] != token
+                    or entry[2] - self._clock() <= IDENTITY_LIFETIME_SECONDS / 2)
+
     def put(self, account_id: str, token: SourceToken | None, identity: CanonicalIdentity) -> None:
         if token is None or token.revision != identity.revision:
             return
