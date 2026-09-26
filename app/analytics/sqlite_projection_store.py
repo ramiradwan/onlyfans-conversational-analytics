@@ -779,10 +779,14 @@ class SQLiteAnalyticsProjectionStore:
                 insert_entries(connection, generation_id, cached, check=check,
                     shared=getattr(self, "reuse_enrichment_content", True) and shared_entries_supported(connection))
                 insert_fragments(connection, generation_id, fragments, conversation_fragments)
-                resolved_pages = resolve_page_sets(connection, self, creator_account_id,
-                    conversation_pages, check=check, source_stamp=graph_source_stamp)
-                insert_page_sets(connection, generation_id,
-                    checked_page_sets(artifact, resolved_pages, check=check), check=check)
+                from contextlib import nullcontext
+
+                read_scope = getattr(self.activation, 'read_scope', None)
+                with read_scope() if callable(read_scope) else nullcontext():
+                    resolved_pages = resolve_page_sets(connection, self, creator_account_id,
+                        conversation_pages, check=check, source_stamp=graph_source_stamp)
+                    insert_page_sets(connection, generation_id,
+                        checked_page_sets(artifact, resolved_pages, check=check), check=check)
         writer = SQLiteGraphGenerationWriter(
             self.database,
             generation_id=generation_id,
@@ -1891,7 +1895,7 @@ class SQLiteAnalyticsProjectionStore:
 
 
 def _validate_generation_links(
-    connection, generation_id, account_id, check, graph_validation=None
+    connection, generation_id, account_id, check, graph_validation=None, graph_rows=None
 ):
     """Check the candidate's referential closure without scanning other accounts."""
 
@@ -1910,7 +1914,7 @@ def _validate_generation_links(
         from app.analytics.shared_graph import verify_segment_links
         verify_segment_links(
             connection, generation_id, account_id,
-            validation=graph_validation, check=check,
+            validation=graph_validation, check=check, prepared=graph_rows,
         )
     else:
         missing = connection.execute("""SELECT 1 FROM graph_edges AS e
@@ -2105,9 +2109,17 @@ def _recompute_generation(
         != generation["pipeline_identity_digest"]
     ):
         raise ProjectionValidationError("projection row digest differs")
+    graph_rows = None
+    read_version = getattr(connection, 'total_changes', None)
+    if (not materialize_graph and read_version is not None
+            and getattr(connection, 'in_transaction', False)
+            and getattr(graph_validation, 'proof', None) is not None):
+        from app.analytics.shared_graph import _read_changed_segment_rows
+        changed = tuple(plan for plan in graph_validation.plans if not plan.reused)
+        graph_rows = _read_changed_segment_rows(connection, account_id, changed, run_check)
     _validate_generation_links(
         connection, generation_id, account_id, run_check,
-        graph_validation=graph_validation,
+        graph_validation=graph_validation, graph_rows=graph_rows,
     )
     if materialize_graph:
         nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
@@ -2120,7 +2132,8 @@ def _recompute_generation(
         from app.analytics.shared_graph import verify_shared_graph
 
         reused = verify_shared_graph(
-            connection, generation_id, account_id, graph_validation, run_check
+            connection, generation_id, account_id, graph_validation, run_check,
+            prepared=graph_rows,
         )
         if reused is None:
             from app.analytics.graph_verification import verify_graph_rows
@@ -2150,6 +2163,8 @@ def _recompute_generation(
             ):
                 graph_digest = verified_segment_root
             nodes, edges = [], []
+    if graph_rows is not None and connection.total_changes != read_version:
+        raise ProjectionValidationError('stored graph changed during verification')
     node_count, edge_count = sum(node_counts.values()), sum(edge_counts.values())
     run_check()
     if projection.graph_digest != graph_digest:

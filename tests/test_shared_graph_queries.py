@@ -32,7 +32,8 @@ def test_ordered_reads_start_from_generation_manifest(fixture, kind):
         assert all(row['generation_id'] == generation for row in rows)
         assert details[0].startswith('SEARCH m ')
         assert 'generation_id=?' in details[0]
-        assert any('SEARCH r ' in detail and 'segment_id=?' in detail for detail in details)
+        assert any('SEARCH p ' in detail and 'segment_id=?' in detail for detail in details)
+        assert any('SEARCH r ' in detail and 'page_id=?' in detail for detail in details)
         assert not any('TEMP B-TREE' in detail for detail in details)
 
 
@@ -46,7 +47,8 @@ def test_endpoint_checks_select_generation_before_edge_content(fixture):
             if 'graph_segment_edges r' in sql)
         details = [row[3] for row in db.execute('EXPLAIN QUERY PLAN ' + statement, parameters)]
         assert any('SEARCH m ' in detail and 'generation_id=?' in detail for detail in details)
-        assert any('SEARCH r ' in detail and 'segment_id=?' in detail for detail in details)
+        assert any('SEARCH m ' in detail and 'segment_id=?' in detail for detail in details)
+        assert any('SEARCH r ' in detail and 'page_id=?' in detail for detail in details)
         assert any('SEARCH nm ' in detail and 'generation_id=?' in detail for detail in details)
         assert not any('CORRELATED' in detail for detail in details)
 

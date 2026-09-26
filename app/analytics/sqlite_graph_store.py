@@ -51,6 +51,54 @@ from app.models.analytics import (
 ActiveGenerationResolver = Callable[..., str | None]
 
 
+def _selected_read_prefix(connection, generation_id, account_id, roots=None,
+                          direction="both"):
+    """Filter indexed content before testing exact generation membership."""
+    from app.analytics.graph_membership_pages import supported
+    from app.analytics.shared_graph import uses_segments
+
+    if not supported(connection) or not uses_segments(connection, generation_id, account_id):
+        return "", ()
+    if direction not in ("incoming", "outgoing", "both"):
+        raise ValueError("graph_direction_invalid")
+    selection = "read_selection(generation_id,account_id) AS (VALUES(?,?))"
+    arguments = [generation_id, account_id]
+    parts = [selection]
+    def selected(kind):
+        return f"""EXISTS(SELECT 1 FROM generation_graph_segments m
+            CROSS JOIN graph_segment_membership_pages p USING(creator_account_id,segment_id)
+            CROSS JOIN graph_membership_{kind}s r USING(creator_account_id,page_id)
+            WHERE m.generation_id=(SELECT generation_id FROM read_selection)
+              AND m.creator_account_id=c.creator_account_id AND m.kind='{kind}'
+              AND m.bucket=substr(c.{kind}_id,4,2) AND p.kind=m.kind
+              AND p.bucket=substr(c.{kind}_id,4,3)
+              AND r.{kind}_id=c.{kind}_id AND r.content_id=c.content_id)"""
+    parts.append(f"""graph_nodes AS NOT MATERIALIZED (
+        SELECT (SELECT generation_id FROM read_selection) AS generation_id,
+          c.creator_account_id,c.node_id,c.kind,c.occurred_at,c.properties_json
+        FROM graph_node_content c INDEXED BY graph_node_content_by_id
+        WHERE c.creator_account_id=(SELECT account_id FROM read_selection)
+          AND {selected('node')})""")
+    if roots is not None:
+        parts.append("read_roots(id) AS (SELECT value FROM json_each(?))")
+        arguments.append(_json(sorted(roots)))
+        sides = ("source",) if direction == "outgoing" else (
+            ("target",) if direction == "incoming" else ("source", "target"))
+        edges = []
+        for side in sides:
+            duplicate = ("AND c.source_id NOT IN (SELECT id FROM read_roots)"
+                         if direction == "both" and side == "target" else "")
+            edges.append(f"""SELECT (SELECT generation_id FROM read_selection) AS generation_id,
+                c.creator_account_id,c.edge_id,c.source_id,c.target_id,c.relation,
+                c.occurred_at,c.sequence,c.properties_json
+              FROM graph_edge_content c INDEXED BY graph_edge_content_by_{side}
+              WHERE c.creator_account_id=(SELECT account_id FROM read_selection)
+                AND c.{side}_id IN (SELECT id FROM read_roots) {duplicate}
+                AND {selected('edge')}""")
+        parts.append("graph_edges AS NOT MATERIALIZED (" + " UNION ALL ".join(edges) + ")")
+    return "WITH " + ",".join(parts) + " ", tuple(arguments)
+
+
 class SQLiteGraphReader:
     """Hard-bounded, account-scoped reads from witnessed active generations."""
 
@@ -368,8 +416,10 @@ class SQLiteGraphReader:
                 timeless_source = "OR s.occurred_at IS NULL" if bounds.include_timeless else ""
                 timeless_target = "OR t.occurred_at IS NULL" if bounds.include_timeless else ""
                 timeless_edge = "OR e.occurred_at IS NULL" if bounds.include_timeless else ""
+                prefix, prefix_args = _selected_read_prefix(
+                    connection, generation_id, partition_key, {node_id}, direction)
                 rows = connection.execute(
-                    f"""
+                    prefix + f"""
                     SELECT e.edge_id FROM graph_edges AS e
                     JOIN graph_nodes AS s
                       ON s.generation_id=e.generation_id
@@ -389,6 +439,7 @@ class SQLiteGraphReader:
                     ORDER BY e.edge_id LIMIT ?
                     """,
                     (
+                        *prefix_args,
                         generation_id,
                         partition_key,
                         *direction_params,
@@ -757,8 +808,10 @@ class SQLiteGraphReader:
                 # Fetch only the remaining examination budget plus one sentinel;
                 # queue/visited caps are applied while expanding distinct nodes.
                 row_limit = max(1, remaining + 1)
+                prefix, prefix_args = _selected_read_prefix(
+                    connection, generation_id, partition_key, frontier, direction)
                 rows = connection.execute(
-                    f"""
+                    prefix + f"""
                     SELECT e.* FROM graph_edges AS e
                     JOIN graph_nodes AS s
                       ON s.generation_id=e.generation_id
@@ -779,6 +832,7 @@ class SQLiteGraphReader:
                     ORDER BY e.edge_id LIMIT ?
                     """,
                     (
+                        *prefix_args,
                         generation_id,
                         partition_key,
                         *frontier_params,
@@ -906,8 +960,10 @@ class SQLiteGraphReader:
         timeless_source = "OR s.occurred_at IS NULL" if bounds.include_timeless else ""
         timeless_target = "OR t.occurred_at IS NULL" if bounds.include_timeless else ""
         timeless_edge = "OR e.occurred_at IS NULL" if bounds.include_timeless else ""
+        prefix, prefix_args = _selected_read_prefix(
+            connection, generation_id, partition_key, frontier, direction)
         row = connection.execute(
-            f"""
+            prefix + f"""
             SELECT 1 FROM graph_edges AS e
             JOIN graph_nodes AS s
               ON s.generation_id=e.generation_id
@@ -929,6 +985,7 @@ class SQLiteGraphReader:
             LIMIT 1
             """,
             (
+                *prefix_args,
                 generation_id,
                 partition_key,
                 *frontier_params,
@@ -1122,8 +1179,10 @@ class SQLiteGraphReader:
         timeless_edge = "OR e.occurred_at IS NULL" if bounds.include_timeless else ""
         frontier_json = _json(sorted(frontier))
         selected_edge_json = _json(sorted(selected_edges))
+        prefix, prefix_args = _selected_read_prefix(
+            connection, generation_id, partition_key, frontier, "both")
         row = connection.execute(
-            f"""
+            prefix + f"""
             SELECT 1 FROM graph_edges AS e
             JOIN graph_nodes AS s
               ON s.generation_id=e.generation_id
@@ -1148,6 +1207,7 @@ class SQLiteGraphReader:
             LIMIT 1
             """,
             (
+                *prefix_args,
                 generation_id,
                 partition_key,
                 frontier_json,
@@ -1251,8 +1311,10 @@ class SQLiteGraphReader:
                     break
                 frontier_json = _json(sorted(frontier))
                 selected_edge_json = _json(sorted(selected_edges))
+                prefix, prefix_args = _selected_read_prefix(
+                    connection, generation_id, partition_key, frontier, "both")
                 edge_rows = connection.execute(
-                    f"""
+                    prefix + f"""
                     SELECT e.* FROM graph_edges AS e
                     JOIN graph_nodes AS s
                       ON s.generation_id=e.generation_id
@@ -1277,6 +1339,7 @@ class SQLiteGraphReader:
                     ORDER BY e.edge_id LIMIT ?
                     """,
                     (
+                        *prefix_args,
                         generation_id,
                         partition_key,
                         frontier_json,
@@ -1307,13 +1370,13 @@ class SQLiteGraphReader:
                 }
                 endpoint_json = _json(sorted(endpoint_ids))
                 endpoint_rows = connection.execute(
-                    """
+                    prefix + """
                     SELECT * FROM graph_nodes
                     WHERE generation_id=? AND creator_account_id=?
                       AND node_id IN (SELECT value FROM json_each(?))
                     ORDER BY node_id
                     """,
-                    (generation_id, partition_key, endpoint_json),
+                    (*prefix_args, generation_id, partition_key, endpoint_json),
                 ).fetchall()
                 endpoint_nodes: dict[str, GraphNode] = {}
                 for row in endpoint_rows:
@@ -1550,14 +1613,15 @@ class SQLiteGraphReader:
             return []
         node_id_json = _json(sorted(node_ids))
         nodes: list[GraphNode] = []
+        prefix, prefix_args = _selected_read_prefix(connection, generation_id, partition_key)
         for row in connection.execute(
-            """
+            prefix + """
             SELECT * FROM graph_nodes
             WHERE generation_id=? AND creator_account_id=?
               AND node_id IN (SELECT value FROM json_each(?))
             ORDER BY node_id
             """,
-            (generation_id, partition_key, node_id_json),
+            (*prefix_args, generation_id, partition_key, node_id_json),
         ):
             cls._check_budget(deadline, cancellation_check)
             nodes.append(_node(row))

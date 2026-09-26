@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check graph_membership_pages.py, sql/0020_shared_graph_membership_pages.sql, test_shared_membership_pages.py, shared_graph.py, incremental_graph.py, conversation_graph_units.py, graph_verification.py, validation_receipt.py, database.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, sql/0012_generation_content_epoch.sql, sql/0015_shared_graph_delete_guards.sql, sql/0016_incremental_graph_units.sql, sql/0019_graph_reclamation_guards.sql, test_graph_reclamation.py, test_shared_graph.py and test_incremental_graph_units.py before changing storage, verification or limit claims. -->
+<!-- CODE-VERIFY: Check sqlite_graph_store.py, projection_activation.py, test_selected_graph_reader.py, test_activation_read_scope.py, test_changed_graph_read_order.py, test_shared_graph_queries.py, graph_membership_pages.py, sql/0020_shared_graph_membership_pages.sql, test_shared_membership_pages.py, shared_graph.py, incremental_graph.py, conversation_graph_units.py, graph_verification.py, validation_receipt.py, database.py, compact_graph.py, sqlite_projection_store.py, sql/0010_shared_graph_segments.sql, sql/0012_generation_content_epoch.sql, sql/0015_shared_graph_delete_guards.sql, sql/0016_incremental_graph_units.sql, sql/0019_graph_reclamation_guards.sql, test_graph_reclamation.py, test_shared_graph.py and test_incremental_graph_units.py before changing storage, verification or limit claims. -->
 
 # Reuse stored graph content
 
@@ -20,9 +20,15 @@ The candidate still undergoes persisted-content verification before validation a
 
 ## Scoped verification reads
 
-Ordered reads start from the selected generation's manifest, then resolve its segment membership and content. They use bucket and record order directly instead of sorting a scan of every segment retained for the account.
+Bounded degree and root-traversal reads start from indexed incident content, then check exact membership in the selected generation. Both endpoints retain the existing time and kind filters. Direction, cancellation, result limits and generation-change checks remain.
+
+Ordered reads start from the selected generation's manifest, then resolve its segment membership and content. They use segment, membership-page and record order directly instead of sorting a scan of every segment retained for the account.
 
 Endpoint verification compares selected edge endpoints with the candidate's selected node identities. Cold builds, restart and proof fallback run complete endpoint closure for the selected generation. A same-process ADR 0039 update with an exact ADR 0038 predecessor proof can reuse closure for unchanged edge segments. It still checks every changed edge segment against the candidate node manifest and checks indexed source/target references for every node removed from the predecessor. Missing proof or an unknown removal set uses the complete scan.
+
+Small changed-segment checks may read content in content-key order before verifying it in canonical graph order. Every selected row still undergoes property, identity and content-hash validation. Endpoint checks may use those same transaction-local rows, but still resolve every endpoint against the selected generation. A write on that connection invalidates the read buffer. Read-ahead stops at 32,768 rows or 32 MiB of row and membership values; larger sets use the streaming verifier. These bounds exclude Python container overhead.
+
+When staging conversation-page references, witness checks share one canonical database connection in autocommit mode. Each check issues a new query and closes its cursor. No witness result or read transaction is retained between checks. The connection closes on success, failure or cancellation. Other threads and repositories use their own connections.
 
 ## Physical write order
 

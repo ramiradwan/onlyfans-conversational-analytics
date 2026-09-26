@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from app.persistence import sqlite_api as sqlite3
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from threading import RLock
-from typing import Callable, Literal, Protocol, runtime_checkable
+from threading import RLock, get_ident
+from typing import Callable, Iterator, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
 from app.analytics.canonical_source import HistoryAnalyticsSource
@@ -391,6 +393,19 @@ class _SQLitePublicationFence:
     lock: RLock = field(default_factory=RLock)
 
 
+@dataclass(slots=True)
+class _ActivationReadScope:
+    repository: object
+    connection: sqlite3.Connection
+    owner: int
+    active: bool = True
+
+
+_ACTIVATION_READ_SCOPE: ContextVar[_ActivationReadScope | None] = ContextVar(
+    'activation_read_scope', default=None
+)
+
+
 class SQLiteProjectionActivationRepository:
     """Witness ledger committed wholly inside authoritative canonical SQLite."""
 
@@ -732,13 +747,49 @@ class SQLiteProjectionActivationRepository:
                 reserved_at=now,
             )
 
-    def get(self, generation_id: str) -> ProjectionActivationIntent | None:
+    @contextmanager
+    def read_scope(self) -> Iterator[None]:
+        """Share a connection, not a transaction or previously read witness."""
+        current = _ACTIVATION_READ_SCOPE.get()
+        owner = get_ident()
+        if (current is not None and current.active
+                and current.repository is self and current.owner == owner):
+            yield
+            return
         with self.database.read() as connection:
-            row = connection.execute(
-                "SELECT * FROM analytics_projection_activation_intents WHERE generation_id = ?",
-                (generation_id,),
-            ).fetchone()
-            return None if row is None else _intent(row)
+            if connection.in_transaction or connection.isolation_level is not None:
+                raise ValueError('activation_read_scope_requires_autocommit')
+            scope = _ActivationReadScope(self, connection, owner)
+            token = _ACTIVATION_READ_SCOPE.set(scope)
+            try:
+                yield
+            finally:
+                scope.active = False
+                _ACTIVATION_READ_SCOPE.reset(token)
+
+    def get(self, generation_id: str) -> ProjectionActivationIntent | None:
+        scope = _ACTIVATION_READ_SCOPE.get()
+        if (scope is not None and scope.active and scope.repository is self
+                and scope.owner == get_ident()):
+            if scope.connection.in_transaction:
+                raise ValueError('activation_read_scope_requires_autocommit')
+            return self._get_on_connection(scope.connection, generation_id)
+        with self.database.read() as connection:
+            return self._get_on_connection(connection, generation_id)
+
+    @staticmethod
+    def _get_on_connection(
+        connection: sqlite3.Connection, generation_id: str
+    ) -> ProjectionActivationIntent | None:
+        cursor = connection.execute(
+            "SELECT * FROM analytics_projection_activation_intents WHERE generation_id = ?",
+            (generation_id,),
+        )
+        try:
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+        return None if row is None else _intent(row)
 
     def pending(self) -> list[ProjectionActivationIntent]:
         with self.database.read() as connection:

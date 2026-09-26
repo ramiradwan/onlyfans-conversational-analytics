@@ -409,7 +409,81 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
         return statistics
 
 
-def _verify_segment_rows(connection, account_id, plan, check):
+MAX_CHANGED_VERIFICATION_ROWS = 32768
+MAX_CHANGED_VERIFICATION_BYTES = 32 * 1024 * 1024
+
+
+def _read_changed_segment_rows(connection, account_id, plans, check):
+    """Read bounded changed content by its physical key, never by cached payload."""
+    from sys import getsizeof
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+
+    if any(p.count < 0 for p in plans):
+        return None
+    if sum(p.count for p in plans) > MAX_CHANGED_VERIFICATION_ROWS:
+        return None
+    memberships, selected = {}, {'node': {}, 'edge': {}}
+    used = 0
+    for plan in plans:
+        check()
+        if plan.kind not in selected:
+            raise ValueError('graph_record_kind_invalid')
+        relation = plan.kind + '_id'
+        cursor = connection.execute(
+            f'SELECT {relation},content_id FROM graph_segment_{plan.kind}s '
+            f'WHERE creator_account_id=? AND segment_id=? ORDER BY {relation} LIMIT ?',
+            (account_id, plan.segment_id, plan.count + 1))
+        try:
+            members = []
+            for row in cursor:
+                check()
+                pair = tuple(row)
+                used += getsizeof(pair) + sum(getsizeof(value) for value in pair)
+                if used > MAX_CHANGED_VERIFICATION_BYTES:
+                    return None
+                key, content = pair
+                previous = selected[plan.kind].setdefault(content, key)
+                if previous != key:
+                    raise GraphReferentialIntegrityError('graph_segment_content_invalid')
+                members.append(pair)
+        finally:
+            cursor.close()
+        if len(members) != plan.count:
+            raise GraphReferentialIntegrityError('graph_segment_digest_invalid')
+        memberships[(plan.kind, plan.segment_id)] = members
+    content_rows = {'node': {}, 'edge': {}}
+    for kind, identities in selected.items():
+        keys = sorted(identities)
+        for offset in range(0, len(keys), 256):
+            check()
+            batch = keys[offset:offset + 256]
+            marks = ','.join('?' for _ in batch)
+            cursor = connection.execute(
+                f'SELECT * FROM graph_{kind}_content WHERE creator_account_id=? '
+                f'AND content_id IN ({marks}) ORDER BY content_id',
+                (account_id, *batch))
+            try:
+                for row in cursor:
+                    check()
+                    key, content = row[kind + '_id'], row['content_id']
+                    if identities.get(content) != key:
+                        raise GraphReferentialIntegrityError('graph_segment_content_invalid')
+                    used += getsizeof(row) + sum(getsizeof(value) for value in row)
+                    if used > MAX_CHANGED_VERIFICATION_BYTES:
+                        return None
+                    content_rows[kind][content] = row
+            finally:
+                cursor.close()
+        if len(content_rows[kind]) != len(identities):
+            raise GraphReferentialIntegrityError('graph_segment_digest_invalid')
+    check()
+    return {
+        (kind, segment): [content_rows[kind][content] for _, content in members]
+        for (kind, segment), members in memberships.items()
+    }
+
+
+def _verify_segment_rows(connection, account_id, plan, check, *, prepared=None):
     from app.analytics.graph_row_encoding import node_bytes, edge_bytes
     from app.analytics.graph_store import GraphReferentialIntegrityError
 
@@ -420,10 +494,11 @@ def _verify_segment_rows(connection, account_id, plan, check):
     digest = hashlib.sha256(
         ('graph-segment.v1:' + plan.kind + ':' + plan.bucket).encode()
     )
-    rows = connection.execute(f'''SELECT c.* FROM {table} r
+    rows = ((row for row in prepared) if prepared is not None else
+        connection.execute(f'''SELECT c.* FROM {table} r
         JOIN {content} c USING(creator_account_id,content_id,{relation})
         WHERE r.creator_account_id=? AND r.segment_id=?
-        ORDER BY r.{relation}''', (account_id, plan.segment_id))
+        ORDER BY r.{relation}''', (account_id, plan.segment_id)))
     count, categories = 0, Counter()
     chunk_digest = hashlib.sha256()
     try:
@@ -475,7 +550,7 @@ def verify_generation_segments(connection, generation_id, account_id, check):
     )
 
 
-def verify_shared_graph(connection, generation_id, account_id, validation, check):
+def verify_shared_graph(connection, generation_id, account_id, validation, check, *, prepared=None):
     """Reuse only exact, schema-bound proofs of immutable predecessor segments."""
 
     if validation is None or validation.proof is None:
@@ -512,7 +587,9 @@ def verify_shared_graph(connection, generation_id, account_id, validation, check
                     or item.chunk_digest is None):
                 return None
         else:
-            item = _verify_segment_rows(connection, account_id, plan, check)
+            item = _verify_segment_rows(
+                connection, account_id, plan, check,
+                prepared=None if prepared is None else prepared[(plan.kind, plan.segment_id)])
         verified.append(item)
         counts = node_counts if plan.kind == 'node' else edge_counts
         counts.update(dict(item.categories))
@@ -625,7 +702,7 @@ def uses_segments(connection, generation_id: str, account_id: str) -> bool:
 
 
 def _incremental_endpoint_links_valid(
-    connection, generation_id, account_id, validation, check
+    connection, generation_id, account_id, validation, check, *, prepared=None
 ):
     """Verify only endpoint closure that can change from a proven predecessor."""
 
@@ -689,6 +766,20 @@ def _incremental_endpoint_links_valid(
                 raise GraphReferentialIntegrityError('graph_endpoint_absent')
 
     from app.analytics.graph_membership_pages import supported as pages_supported
+    if prepared is not None:
+        endpoints = set()
+        for plan in validation.plans:
+            if plan.kind != 'edge' or plan.reused:
+                continue
+            for row in prepared[(plan.kind, plan.segment_id)]:
+                check()
+                endpoints.update((row['source_id'], row['target_id']))
+        present = selected_content_ids(
+            connection, generation_id, account_id, 'node', sorted(endpoints), check,
+            page_layout=pages_supported(connection))
+        if endpoints != present.keys():
+            raise GraphReferentialIntegrityError('graph_endpoint_absent')
+        return True
     node_membership = 'JOIN graph_segment_nodes n USING(creator_account_id,segment_id)'
     source_page = target_page = ''
     if pages_supported(connection):
@@ -761,7 +852,7 @@ def _verify_all_shared_endpoints(connection, generation_id, account_id):
 
 def verify_segment_links(
     connection, generation_id: str, account_id: str, *,
-    validation=None, check=lambda: None,
+    validation=None, check=lambda: None, prepared=None,
 ) -> None:
     """Check selected endpoints and layout, reusing only proven predecessor closure."""
 
@@ -800,7 +891,7 @@ def verify_segment_links(
     if not shared:
         return
     if _incremental_endpoint_links_valid(
-        connection, generation_id, account_id, validation, check
+        connection, generation_id, account_id, validation, check, prepared=prepared
     ):
         return
     if _verify_all_shared_endpoints(connection, generation_id, account_id):
@@ -814,14 +905,27 @@ def ordered_rows(connection, generation_id: str, account_id: str, kind: str):
         raise ValueError('graph_record_kind_invalid')
     fields = ('node_id,kind,occurred_at,properties_json' if kind == 'node' else
               'edge_id,source_id,target_id,relation,occurred_at,sequence,properties_json')
+    from app.analytics.graph_membership_pages import supported as pages_supported
+
+    membership = f'CROSS JOIN graph_segment_{kind}s r USING(creator_account_id,segment_id)'
+    page_order = page_filter = ''
+    if pages_supported(connection):
+        membership = (
+            'CROSS JOIN graph_segment_membership_pages p USING(creator_account_id,segment_id) '
+            f'CROSS JOIN graph_membership_{kind}s r USING(creator_account_id,page_id)'
+        )
+        page_order = 'p.bucket,'
+        page_filter = 'AND p.kind=m.kind'
+
     return connection.execute(f'''SELECT m.generation_id,m.creator_account_id,
             m.bucket AS segment_bucket,m.segment_id,
             s.content_digest AS segment_digest,c.content_id,
             {','.join('c.'+field for field in fields.split(','))}
         FROM generation_graph_segments m
         CROSS JOIN graph_segments s USING(creator_account_id,segment_id)
-        CROSS JOIN graph_segment_{kind}s r USING(creator_account_id,segment_id)
+        {membership}
         CROSS JOIN graph_{kind}_content c USING(creator_account_id,content_id,{kind}_id)
         WHERE m.generation_id=? AND m.creator_account_id=? AND m.kind=?
           AND s.sealed=1 AND s.kind=m.kind AND s.bucket=m.bucket
-        ORDER BY m.bucket,r.{kind}_id''', (generation_id, account_id, kind))
+          {page_filter}
+        ORDER BY m.bucket,{page_order}r.{kind}_id''', (generation_id, account_id, kind))
