@@ -745,6 +745,16 @@ def _incremental_endpoint_links_valid(
 
     # A reused edge was already endpoint-closed in the predecessor. It can
     # become invalid only if one of its selected node IDs disappeared.
+    from app.analytics.graph_membership_pages import supported as pages_supported
+
+    edge_membership = 'CROSS JOIN graph_segment_edges r USING(creator_account_id,segment_id)'
+    edge_page_filter = ''
+    if pages_supported(connection):
+        edge_membership = (
+            'CROSS JOIN graph_segment_membership_pages p USING(creator_account_id,segment_id) '
+            'CROSS JOIN graph_membership_edges r USING(creator_account_id,page_id)'
+        )
+        edge_page_filter = "AND p.kind=m.kind AND p.bucket=substr(e.edge_id,4,3)"
     removed = list(validation.removed_nodes)
     for offset in range(0, len(removed), 128):
         check()
@@ -754,18 +764,20 @@ def _incremental_endpoint_links_valid(
         marks = ','.join('?' for _ in batch)
         for field in ('source_id', 'target_id'):
             referenced = connection.execute(f'''SELECT 1
-                FROM graph_edge_content e
-                JOIN graph_segment_edges r
-                  USING(creator_account_id,content_id,edge_id)
-                JOIN generation_graph_segments m
-                  USING(creator_account_id,segment_id)
-                WHERE m.generation_id=? AND m.creator_account_id=?
-                  AND m.kind='edge' AND e.{field} IN ({marks})
-                LIMIT 1''', (generation_id, account_id, *batch)).fetchone()
+                FROM graph_edge_content e INDEXED BY graph_edge_content_by_{field[:-3]}
+                WHERE e.creator_account_id=? AND e.{field} IN ({marks})
+                  AND EXISTS (
+                    SELECT 1 FROM generation_graph_segments m
+                    {edge_membership}
+                    WHERE m.generation_id=? AND m.creator_account_id=e.creator_account_id
+                      AND m.kind='edge' AND m.bucket=substr(e.edge_id,4,2)
+                      {edge_page_filter}
+                      AND r.edge_id=e.edge_id AND r.content_id=e.content_id
+                  )
+                LIMIT 1''', (account_id, *batch, generation_id)).fetchone()
             if referenced is not None:
                 raise GraphReferentialIntegrityError('graph_endpoint_absent')
 
-    from app.analytics.graph_membership_pages import supported as pages_supported
     if prepared is not None:
         endpoints = set()
         for plan in validation.plans:
