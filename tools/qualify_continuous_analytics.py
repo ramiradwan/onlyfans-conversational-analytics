@@ -17,6 +17,18 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def measurement_checks_passed(report: dict) -> bool:
+    """Source diagnostics need successful questions and cleanup, not just completion."""
+    expected = ["cold", "unchanged_rebuild", "one_new_message"] if report.get(
+        "forced_unchanged_rebuild") is True else ["cold", "one_new_message"]
+    query = report.get("query", {})
+    return (report.get("complete") is True and report.get("cleanup_complete") is True
+            and report.get("clean_rebuild_equal") is True and not report.get("error_type")
+            and [phase.get("phase") for phase in report.get("phases", [])] == expected
+            and type(query.get("samples")) is int and query["samples"] > 0
+            and query.get("failures") == {} and query.get("warmup_failures") == {})
+
+
 def peak_memory_bytes():
     if sys.platform != 'win32':
         import resource
@@ -115,7 +127,8 @@ def main():
         scan_counts['messages'] += result[2]
         return result
     snapshots.scan_identity = measured_scan
-    report = {'synthetic': True, 'complete': False, 'checkout_base_revision': subprocess.check_output(
+    report = {'schema': 'analytics-continuous.v2', 'synthetic': True, 'complete': False,
+        'cleanup_complete': False, 'measurement_checks_passed': False, 'checkout_base_revision': subprocess.check_output(
         ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         'working_tree': subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True),
         'platform': platform.platform(), 'python': sys.version, 'processor': platform.processor(),
@@ -179,6 +192,7 @@ def main():
         plan = {'question': 'no_later_creator_reply.v1', 'timezone': 'UTC',
             'start': (now-timedelta(hours=48)).isoformat(), 'end': now.isoformat(), 'cutoff': now.isoformat()}
         elapsed, failures, undetermined = [], Counter(), []
+        warmup_failures = Counter()
         try:
             for index in range(args.query_samples+5):
                 started = time.perf_counter()
@@ -187,6 +201,8 @@ def main():
                     result = resources.execute(policy, plan)
                 except AnalyticsError as exception:
                     error = exception.code
+                if index < 5 and error is not None:
+                    warmup_failures[error] += 1
                 if index >= 5:
                     elapsed.append(time.perf_counter()-started)
                     if error is not None:
@@ -197,6 +213,7 @@ def main():
             resources.close()
         ordered = sorted(elapsed)
         report['query'] = {'samples': len(elapsed), 'failures': dict(failures),
+            'warmup_failures': dict(warmup_failures),
             'p95_seconds_including_failures': ordered[math.ceil(0.95*len(ordered))-1],
             'max_seconds': max(elapsed), 'undetermined_counts': sorted(set(undetermined)),
             'production_message_types_qualified': False}
@@ -229,8 +246,18 @@ def main():
         raise
     finally:
         snapshots.scan_identity = scan
-        cleanup(fixture)
-    return 0
+        try:
+            cleanup(fixture)
+        except BaseException as error:
+            report['error_type'] = type(error).__name__
+            report['cleanup_complete'] = False
+            report['measurement_checks_passed'] = False
+            save()
+            raise
+        report['cleanup_complete'] = True
+        report['measurement_checks_passed'] = measurement_checks_passed(report)
+        save()
+    return 0 if report['measurement_checks_passed'] else 1
 
 
 if __name__ == '__main__':

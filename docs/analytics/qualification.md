@@ -53,3 +53,47 @@ Before distributing an optional model, compare the same application build with a
 | Distribution | Measured base installer and optional pack closure, verification, cancellation, removal, and offline operation. | Packaging/security and testing |
 
 These gates remain requirements even when structural fixtures and regression suites pass. They do not authorize a capture redesign, customer-data upload, or a new inference runtime.
+
+## Frozen A07 closure
+
+[The acceptance manifest](acceptance-manifest.json) is the authority for closure. It fixes the two Windows profiles, fixtures, questions, repetitions, clocks, limits, and required evidence. The ten-second visibility and one-second warm-query targets apply to the 16 GiB reference profile. The 8 GiB constrained profile runs the same correctness and stability work and reports its measured latency. Bulk work and cold readiness have completion guards, not interactive latency promises.
+
+Use the existing baseline command. Each output directory belongs to one exact source, interpreter, dependency set, and manifest:
+
+```sh
+python tools/qualify_analytics_baseline.py --closure --output /path/to/new-evidence
+python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --resume --run-regressions
+python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --verify
+```
+
+The verifier returns 0 for PASS, 1 for FAIL, and 2 for BLOCKED. It recomputes the verdict from raw records; a summary marked successful is not authority. Every started attempt must have a durable result. Failures remain failures when the directory is resumed. A new source or protocol requires a new directory, not replacement of earlier records.
+
+The runner owns its process tree on Linux and Windows. Windows workers wait until assigned to a kill-on-close job. Linux workers use a process group and a parent-death pipe. Cancellation, watchdog expiry, and children left running are failures. The owner lock excludes overlapping runs using that lock. All agents on the same benchmark machine must use the same owner lock and avoid unrelated benchmark work.
+
+### Source diagnostics
+
+The matrix, visibility, and question collectors use the ordinary scheduler and query service over isolated synthetic stores. They are source diagnostics, not packaged application, UI, authorized ingestion, or laptop qualification. A successful source diagnostic cannot make a packaged gate PASS.
+
+```sh
+python tools/qualify_analytics_baseline.py --closure --output /path/to/matrix --run-source matrix --messages 100000
+python tools/qualify_analytics_baseline.py --closure --output /path/to/visibility --run-source visibility --repeat 0
+python tools/qualify_analytics_baseline.py --closure --output /path/to/questions --run-source questions --case populated --state idle --known-synthetic-kinds
+```
+
+Run the matrix at both manifest sizes. Visibility repetitions are numbered 0, 1, and 2. Each starts a new interpreter and exercises its ordinary, unchanged-rebuild, idle, and restarted cases. The restarted case uses another interpreter after the previous scheduler joins. Question cases are `populated`, `empty`, `tied_time`, and `generation_bound_pagination`; each has `fresh`, `idle`, and `mutated` states. Every question sample set has one observed runtime identity, five warm-ups, and 100 measured calls.
+
+`--known-synthetic-kinds` supplies known message kinds only to the diagnostic query fixture. It tests question mechanics without changing production unknown-kind handling or request budgets. It does not establish that ingestion supplies those kinds. Pricing stays disabled. Without this option the diagnostic retains production unknown-kind behavior and may fail the declared populated-answer expectations.
+
+`--subject-root` selects a separate Git checkout for a historical runtime control. Its full file hashes and revision are recorded independently of the runner. An older source cannot substitute for the final source. Preparation always happens inside the owned worker; there is no prepared-store shortcut.
+
+### Clocks, evidence, and closure
+
+The versioned measurement protocol records durable canonical commit, activation, first observed current question result, required publication cleanup, and backlog drain separately. The visibility interval ends only when the visible result, cleanup, and drain have all completed. Operation records are saved before independent rebuild verification; completed verification gets its own durable phase record. A killed verifier cannot erase a completed operation or qualify a missing phase.
+
+The original 1,800-second whole-worker limit remains. It includes fixture preparation, startup, independent verification, and synchronous product cleanup. Expiry does not identify an individual operation's latency. The new protocol adds observed query visibility and owned-process-tree accounting; it does not reinterpret the old interrupted matrix as passing. Windows resource records distinguish job peak private commit from Linux sampled process-group resident memory. Neither is a packaged memory receipt.
+
+The first session records infrastructure preflight. Missing guests, permissions, package inputs, or a packaged UI/ingestion adapter leave those gates BLOCKED. No guest permission is changed. Package/profile adapters must supply the same raw source, process, fixture, artifact, and phase bindings before those gates can pass; source fixture writes cannot be relabelled authorized ingestion.
+
+After reviewing an exact clean source, save a review record with `source_revision`, `source_sha256` (the digest of `source_context`), `reviewer`, and `checks`. `--run-ci --review-record /path/to/review.json` reads the six named checks through the authenticated `gh` command. It retains raw API responses, selects the latest attempt for each named check, and requires success on that exact SHA. Run this after CI has finished; pending or failed checks are not passes.
+
+A07 closes only when every mandatory gate passes for the final signed source and exact package. A material runtime change requires rerunning affected qualification. Missing package or profile evidence is qualification blocked, not engineering completion or qualified done. The five planned acceptance units do not authorize an automatic sixth optimization pass.

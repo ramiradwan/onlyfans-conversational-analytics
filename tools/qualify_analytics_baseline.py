@@ -28,6 +28,12 @@ UNIT_TESTS = [
 STATEFUL = "tests/stateful/"
 RUNS = [
     ("analytics", None, ["tests/" + name for name in UNIT_TESTS]),
+    ("questions", None, ["tests/" + name for name in (
+        "test_analytics_question_cases.py", "test_analytics_question_contracts.py",
+        "test_analytics_question_service.py", "test_analytics_query_handlers.py",
+        "test_analytics_query_endpoints.py", "test_question_route_guards.py",
+        "test_analytics_evidence.py", "test_readiness_identity.py",
+    )]),
     ("determinism", "analytics_determinism_fast", [
         STATEFUL + "test_analytics_determinism.py",
     ]),
@@ -55,22 +61,43 @@ def counts(path: Path) -> dict[str, int] | None:
         return None
     try:
         suites = list(ET.parse(path).getroot().iter("testsuite"))
-    except ET.ParseError:
+        values = [{key: int(s.get(key, "0")) for key in ("tests", "failures", "errors", "skipped")} for s in suites]
+        if any(any(v < 0 for v in row.values()) or row["failures"] + row["errors"] + row["skipped"] > row["tests"] for row in values):
+            return None
+    except (ET.ParseError, ValueError, OSError):
         return None
-    return {key: sum(int(s.get(key, "0")) for s in suites)
-            for key in ("tests", "failures", "errors", "skipped")}
+    return {key: sum(row[key] for row in values) for key in ("tests", "failures", "errors", "skipped")}
 
 
 def baseline_passed(runs: list[dict], expected_runs: int) -> bool:
-    return len(runs) == expected_runs and expected_runs > 0 and all(
-        run["exit_code"] == 0 and not run["timed_out"]
-        and run["counts"] is not None and run["counts"]["tests"] > run["counts"]["skipped"]
-        and run["counts"]["failures"] == run["counts"]["errors"] == 0
-        for run in runs
-    )
+    if type(expected_runs) is not int or expected_runs <= 0 or len(runs) != expected_runs:
+        return False
+    for run in runs:
+        if (not isinstance(run, dict) or type(run.get("exit_code")) is not int
+                or run["exit_code"] != 0 or run.get("timed_out") is not False):
+            return False
+        stats = run.get("counts")
+        if not isinstance(stats, dict) or any(type(stats.get(key)) is not int or stats[key] < 0
+                for key in ("tests", "failures", "errors", "skipped")):
+            return False
+        if not (stats["tests"] > stats["skipped"] and stats["failures"] == stats["errors"] == 0):
+            return False
+    return True
 
 
 def main() -> int:
+    if len(sys.argv) == 3 and sys.argv[1] == "--ci-worker":
+        sys.path.insert(0, str(ROOT))
+        from tools.analytics_qualification_ci import main as ci_main
+        return ci_main(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "--collector-worker":
+        sys.path.insert(0, str(ROOT))
+        from tools.analytics_qualification_worker import main as worker_main
+        return worker_main(sys.argv[2])
+    if "--closure" in sys.argv:
+        sys.path.insert(0, str(ROOT))
+        from tools.analytics_qualification_runner import main as closure_main
+        return closure_main(ROOT)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=600)
@@ -129,6 +156,10 @@ def main() -> int:
         run = {"name": name, "tests": tests, "profile": profile, "seed": 20260918,
                "exit_code": code, "timed_out": timed_out,
                "seconds": round(time.perf_counter() - start, 3), "counts": counts(junit)}
+        with (output / (name + ".result.json")).open("x", encoding="utf-8") as phase:
+            phase.write(json.dumps(run, indent=2) + "\n")
+            phase.flush()
+            os.fsync(phase.fileno())
         report["runs"].append(run)
         report["complete"] = len(report["runs"]) == report["expected_runs"]
         report["passed"] = baseline_passed(report["runs"], report["expected_runs"])
