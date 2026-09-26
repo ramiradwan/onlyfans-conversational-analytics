@@ -193,7 +193,7 @@
   },
   "status": "frozen",
   "measurement": {
-    "version": "a07-observable-scheduler.v2",
+    "version": "a07-observable-scheduler.v3",
     "previous_protocol": "Legacy whole-process mutation diagnostic, 1800 seconds including preparation and per-phase oracle work.",
     "change": "Record activation, observed question visibility, cleanup and backlog separately; persist operation and verification separately. Question fixture construction and fresh-runtime startup remain inside one 1800-second owned process-tree guard.",
     "old_failures_remain_failures": true,
@@ -203,7 +203,9 @@
     "restart": "New interpreter after scheduler join; process IDs and independent instances are recorded.",
     "fixture_kind_boundary": "Known synthetic event kinds only test query mechanics. Production unknown kinds remain unknown. Neither source fixture qualifies packaged ingestion.",
     "resource_scope": "The new supervisor samples the owned process tree, not only the main worker. Minimum available memory is 2 GiB throughout. These are new protocol records, not paired attribution of legacy timings.",
-    "visibility_poll_guard": "Poll until a current answer is observed or the whole-worker guard ends. Bulk work has no ten-second polling cutoff."
+    "visibility_poll_guard": "Poll until a current answer is observed or the whole-worker guard ends. Bulk work has no ten-second polling cutoff.",
+    "windows_shutdown": "v3 waits for owned process handles to become signaled as well as zero active job accounting. One ten-second shutdown deadline. The v2 CI shutdown failure and source diagnostic failures remain failures; they are not requalified by this correction.",
+    "reporting": "v3 validates question plans without starting the application. Reporting errors preserve worker exit, ownership, clocks, raw payload and attachments; previous malformed summaries remain failed."
   },
   "history": {
     "batches": 100,

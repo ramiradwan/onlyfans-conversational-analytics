@@ -109,3 +109,48 @@ def test_real_failed_worker_is_durable_and_resume_cannot_erase_it(command, monke
     assert receipt.read_bytes() == original
     assert len(list((output / "sessions").glob("*.json"))) == 2
     assert invoke("--verify") == 1
+
+
+def test_verifier_does_not_initialize_application_settings(tmp_path):
+    import subprocess
+    from tests.test_analytics_closure_qualification import questions, MANIFEST
+    inputs = tmp_path / "inputs.json"
+    inputs.write_bytes(q.encoded({"manifest": MANIFEST, "payload": questions()}))
+    code = ("import json,sys; from pathlib import Path; "
+            "from tools import analytics_qualification as q; "
+            "r=json.loads(Path(sys.argv[1]).read_text()); "
+            "assert not q.check_questions(r['manifest'], 'questions/reference-windows-16g/empty/fresh', r['payload']); "
+            "assert 'app.core.config' not in sys.modules; "
+            "assert 'tests.continuous_analytics_fixture' not in sys.modules")
+    completed = subprocess.run([sys.executable, "-c", code, str(inputs)], cwd=ROOT,
+                               capture_output=True, text=True, timeout=15)
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_reporting_error_retains_owned_worker_result(command, monkeypatch):
+    from types import SimpleNamespace
+    directory, invoke = command
+    assert invoke() == 2
+    context = q.read_json(directory / "context.json")
+    session = q.session(directory, context)
+    manifest = q.read_json(ROOT / "docs/analytics/acceptance-manifest.json")
+    def completed_worker(command, root, attempt, seconds, **kwargs):
+        q.write_once(attempt / "collector/payload.json", {"complete": True})
+        (attempt / "worker.log").write_text("owned worker finished")
+        return {"status": "FAIL", "worker_started": True, "worker_joined": True,
+                "process_instance": "retained-owner", "exit_code": 1, "seconds": 2,
+                "timed_out": False, "reason": "known_product_failure"}
+    def invalid_payload(*args):
+        raise ValueError("injected verifier failure")
+    monkeypatch.setattr(runner, "supervise", completed_worker)
+    monkeypatch.setattr(q, "check_payload", invalid_payload)
+    args = SimpleNamespace(run_source="questions", messages=100000, case="empty",
+                           state="fresh", repeat=0, subject_root=None, known_synthetic_kinds=True)
+    runner.run_source(ROOT, directory, context, session, manifest, args)
+    result = q.read_json(next((directory / "attempts").glob("*/result.json")))
+    assert result["status"] == "FAIL" and result["complete"] is False
+    assert result["worker_joined"] is True and result["worker_started"] is True
+    assert result["exit_code"] == 1 and result["process_instance"] == "retained-owner"
+    assert result["reason"] == "known_product_failure" and result["reporting_error"] == "ValueError"
+    assert result["payload"] == {"complete": True}
+    assert {x["name"] for x in result["attachments"]} == {"payload.json", "worker-input.json", "worker.log"}

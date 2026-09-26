@@ -68,7 +68,7 @@ python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence 
 
 The verifier returns 0 for PASS, 1 for FAIL, and 2 for BLOCKED. It recomputes the verdict from raw records; a summary marked successful is not authority. Every started attempt must have a durable result. Failures remain failures when the directory is resumed. A new source or protocol requires a new directory, not replacement of earlier records.
 
-The runner owns its process tree on Linux and Windows. Windows workers wait until assigned to a kill-on-close job. Linux workers use a process group and a parent-death pipe. Cancellation, watchdog expiry, and children left running are failures. The owner lock excludes overlapping runs using that lock. All agents on the same benchmark machine must use the same owner lock and avoid unrelated benchmark work.
+The runner owns its process tree on Linux and Windows. Windows workers wait until assigned to a kill-on-close job. Linux workers use a process group and a parent-death pipe. Cancellation, watchdog expiry, and children left running are failures. Measurement v3 also waits for Windows process objects to signal completion; a zero job counter alone is not a joined worker. The earlier v2 shutdown-test failure remains recorded. The owner lock excludes overlapping runs using that lock. All agents on the same benchmark machine must use the same owner lock and avoid unrelated benchmark work.
 
 ### Source diagnostics
 

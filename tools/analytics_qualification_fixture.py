@@ -27,7 +27,7 @@ def layout(size: int, index: int):
 
 def question_plan(manifest: dict, case: str) -> dict:
     from app.analytics.opaque_refs import conversation_ref
-    from tests.continuous_analytics_fixture import ACCOUNT
+    ACCOUNT = "synthetic-continuous-owner"
     clock = datetime.fromisoformat(manifest["fixture"]["evaluation_clock"])
     return {"question": "no_later_creator_reply.v1", "timezone": "UTC", "page_size": 50,
             "start": (clock - timedelta(hours=48)).isoformat(), "end": clock.isoformat(),

@@ -39,6 +39,7 @@ def run_regressions(root: Path, directory: Path, context: dict, session: str, ma
     attempt = q.begin_attempt(directory, context, session, "regression")
     command = [sys.executable, str(root / "tools/qualify_analytics_baseline.py"),
                "--output", str(attempt / "regression")]
+    result = {}
     try:
         result = supervise(command, root, attempt, manifest["limits"]["whole_worker_seconds"])
         if result["status"] != "BLOCKED":
@@ -55,7 +56,8 @@ def run_regressions(root: Path, directory: Path, context: dict, session: str, ma
             if payload.get("passed") is not True:
                 result["status"] = "FAIL"
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
-        result = {"status": "FAIL", "reason": type(error).__name__, "complete": False}
+        result.update(status="FAIL", complete=False, reporting_error=type(error).__name__,
+                      reason=result.get("reason") or type(error).__name__)
     finish(attempt, context, "regression", result)
 
 
@@ -76,6 +78,7 @@ def run_source(root, directory, context, session, manifest, args):
         "job": job}
     q.write_once(attempt / "worker-input.json", config)
     command = [sys.executable, config["entry_point"], "--collector-worker", str(attempt / "worker-input.json")]
+    result = {}
     try:
         result = supervise(command, root, attempt, manifest["limits"]["whole_worker_seconds"], limits=manifest["limits"])
         if result["worker_started"]:
@@ -96,7 +99,8 @@ def run_source(root, directory, context, session, manifest, args):
                 result["status"] = "FAIL"
             result["diagnostic_errors"] = q.check_payload(manifest, context, job, payload)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
-        result = {"status": "FAIL", "reason": type(error).__name__, "complete": False}
+        result.update(status="FAIL", complete=False, reporting_error=type(error).__name__,
+                      reason=result.get("reason") or type(error).__name__)
     finish(attempt, context, job, result)
 
 
@@ -106,6 +110,7 @@ def run_ci(root, directory, context, session, manifest, review_path):
         finish(attempt, context, "source-ci", {"status": "BLOCKED", "worker_started": False,
             "exit_code": None, "reason": "gh_command_unavailable"})
         return
+    result = {}
     try:
         config = {"root": str(root), "manifest": manifest, "source": context["source"],
                   "review": q.read_json(review_path), "output": str(attempt / "ci.json")}
@@ -118,7 +123,8 @@ def run_ci(root, directory, context, session, manifest, review_path):
         if payload:
             result["attachments"] = [dict(q.attach(attempt, attempt / "ci.json"), name="ci.json")]
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
-        result = {"status": "FAIL", "complete": False, "reason": type(error).__name__}
+        result.update(status="FAIL", complete=False, reporting_error=type(error).__name__,
+                      reason=result.get("reason") or type(error).__name__)
     finish(attempt, context, "source-ci", result)
 
 

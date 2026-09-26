@@ -31,6 +31,7 @@ class WindowsJob:
             _fields_ = [("Basic", Basic), ("IO", IO), ("ProcessLimit", size),
                         ("JobLimit", size), ("PeakProcess", size), ("PeakJob", size)]
         self.info_type = Extended
+        self.process_handles = {}
         self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         signatures = {
             "CreateJobObjectW": ([ctypes.c_void_p, w.LPCWSTR], w.HANDLE),
@@ -39,6 +40,9 @@ class WindowsJob:
             "AssignProcessToJobObject": ([w.HANDLE, w.HANDLE], w.BOOL),
             "TerminateJobObject": ([w.HANDLE, w.UINT], w.BOOL),
             "CloseHandle": ([w.HANDLE], w.BOOL),
+            "OpenProcess": ([w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
+            "IsProcessInJob": ([w.HANDLE, w.HANDLE, ctypes.POINTER(w.BOOL)], w.BOOL),
+            "WaitForSingleObject": ([w.HANDLE, w.DWORD], w.DWORD),
         }
         for name, (args, result) in signatures.items():
             method = getattr(self.kernel, name)
@@ -66,11 +70,57 @@ class WindowsJob:
             raise ctypes.WinError(ctypes.get_last_error())
         return int(info.PeakJob), ctypes.c_uint32.from_buffer(accounting, 40).value
 
+    def capture_process_handles(self):
+        """Pin identities from the owned job before requesting its shutdown."""
+        from ctypes import wintypes as w
+        class ProcessList(ctypes.Structure):
+            _fields_ = [("assigned", w.DWORD), ("returned", w.DWORD),
+                        ("ids", ctypes.c_size_t * 4096)]
+        values = ProcessList()
+        if not self.kernel.QueryInformationJobObject(self.handle, 3, ctypes.byref(values),
+                                                      ctypes.sizeof(values), None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if values.returned != values.assigned or values.returned > 4096:
+            raise OSError("qualification_job_process_list_limit")
+        for pid in values.ids[:values.returned]:
+            self._retain_member(pid)
+
+    def _retain_member(self, pid):
+        from ctypes import wintypes as w
+        if pid in self.process_handles:
+            return
+        handle = self.kernel.OpenProcess(0x100000 | 0x1000, False, pid)
+        if not handle:
+            if ctypes.get_last_error() == 87:
+                return  # No process object remains for this exited job member.
+            raise ctypes.WinError(ctypes.get_last_error())
+        member = w.BOOL()
+        if not self.kernel.IsProcessInJob(handle, self.handle, ctypes.byref(member)):
+            error = ctypes.get_last_error()
+            self.kernel.CloseHandle(handle)
+            raise ctypes.WinError(error)
+        if not member.value:
+            self.kernel.CloseHandle(handle)  # An unrelated process reused the ID.
+            return
+        self.process_handles[pid] = handle
+
+    def processes_signaled(self):
+        # A termination request can return before the process object is signaled.
+        states = [self.kernel.WaitForSingleObject(handle, 0)
+                  for handle in self.process_handles.values()]
+        if any(value not in (0, 258) for value in states):
+            raise OSError("qualification_process_wait_failed")
+        return all(value == 0 for value in states)
+
     def terminate(self):
+        self.capture_process_handles()
         if not self.kernel.TerminateJobObject(self.handle, 99):
             raise ctypes.WinError(ctypes.get_last_error())
 
     def close(self):
+        for handle in self.process_handles.values():
+            self.kernel.CloseHandle(handle)
+        self.process_handles.clear()
         if self.handle:
             self.kernel.CloseHandle(self.handle)
             self.handle = None
@@ -101,6 +151,11 @@ def group_sample(group: int) -> tuple[int, int]:
         except (FileNotFoundError, ProcessLookupError):
             continue
     return total, active
+
+
+def worker_tree_exited(owner, group: int) -> bool:
+    _, active = owner.sample() if owner else group_sample(group)
+    return active == 0 and (owner is None or owner.processes_signaled())
 
 
 def supervise(command: list[str], root: Path, attempt: Path, limit: float,
@@ -155,29 +210,35 @@ def supervise(command: list[str], root: Path, attempt: Path, limit: float,
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         reason = "worker_ownership_or_measurement_error:" + type(error).__name__
     finally:
-        if process is not None:
+        deadline = time.monotonic() + 10
+        try:
+            if process is not None:
+                if owner:
+                    owner.terminate()
+                    # An assignment failure leaves only our waiting launcher outside the job.
+                    if process.poll() is None:
+                        process.kill()
+                else:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                process.wait(timeout=max(0.001, deadline - time.monotonic()))
+                while time.monotonic() < deadline:
+                    if worker_tree_exited(owner, process.pid):
+                        joined = True
+                        break
+                    time.sleep(0.01)
+                if not joined:
+                    reason = reason or "worker_shutdown_not_confirmed"
+        except (OSError, subprocess.SubprocessError) as error:
+            joined = False
+            reason = "worker_shutdown_error:" + type(error).__name__
+        finally:
+            if process is not None and process.stdin is not None:
+                process.stdin.close()
             if owner:
-                owner.terminate()
-                # Assignment can fail while the launcher is still waiting for RUN.
-                # It is our child, but not yet owned by the job in that case.
-                if process.poll() is None:
-                    process.kill()
-            else:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            process.wait(timeout=10)
-            process.stdin.close()
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline:
-                _, active = owner.sample() if owner else group_sample(process.pid)
-                if active == 0:
-                    joined = True
-                    break
-                time.sleep(0.01)
-        if owner:
-            owner.close()
+                owner.close()
     return {"status": "PASS" if process and process.returncode == 0 and reason is None and joined else "FAIL",
             "reason": reason, "exit_code": process.returncode if process else None,
             "timed_out": reason == "whole_worker_watchdog_expired", "worker_joined": joined,
