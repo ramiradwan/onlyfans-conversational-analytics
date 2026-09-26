@@ -31,7 +31,7 @@ def running(pid):
     path = Path(f"/proc/{pid}/stat")
     try:
         return path.read_text().rsplit(")", 1)[1].split()[0] != "Z"
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
         return False
 
 
@@ -150,3 +150,16 @@ def test_reused_pid_outside_owned_job_is_not_retained():
         IsProcessInJob=outside, CloseHandle=lambda value: closed.append(value))
     job._retain_member(123)
     assert closed == [456] and job.process_handles == {}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Linux process filesystem observation")
+@pytest.mark.parametrize("error", [FileNotFoundError, ProcessLookupError, PermissionError, OSError])
+def test_proc_observation_only_accepts_disappearance(monkeypatch, error):
+    def failed_read(path, *args, **kwargs):
+        raise error("injected process observation")
+    monkeypatch.setattr(Path, "read_text", failed_read)
+    if error in (FileNotFoundError, ProcessLookupError):
+        assert running(123) is False
+    else:
+        with pytest.raises(error, match="injected process observation"):
+            running(123)
