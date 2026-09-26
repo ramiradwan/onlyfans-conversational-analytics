@@ -284,7 +284,7 @@ def _records(graph, plan, check):
         yield values, membership
 
 
-def _content_order(graph, plans, kind, check):
+def _content_order(graph, plans, kind, check, page_plans=None):
     """Merge bounded bucket iterators in physical content-key order."""
 
     records = graph.nodes if kind == 'node' else graph.edges
@@ -295,7 +295,11 @@ def _content_order(graph, plans, kind, check):
     for plan in plans:
         check()
         if plan.kind == kind and not plan.reused:
-            ordered = replace(plan, keys=sorted(plan.keys, key=signature))
+            keys = plan.keys
+            if page_plans is not None:
+                pages = page_plans[(kind, plan.segment_id)]
+                keys = [key for key in keys if not pages[key[3:6]].reused]
+            ordered = replace(plan, keys=sorted(keys, key=signature))
             streams.append(_records(graph, ordered, check))
     yield from merge(*streams, key=lambda item: item[0][1])
 
@@ -319,6 +323,9 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
     """Write changed content only; verify the complete selected graph at publication."""
 
     from app.analytics.database import content_write_cache
+    from app.analytics.graph_membership_pages import (
+        prepare_pages, supported as pages_supported, write_members,
+    )
 
     with writer.lease_session(), content_write_cache(
         writer._write_connection, len(graph.nodes) + len(graph.edges)
@@ -336,40 +343,54 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
                     (writer._generation_id, graph.account_ref, plan.kind, plan.bucket, plan.segment_id))
         with writer._owned_transaction() as db:
             segment_chunks_written = _ensure_segment_chunks(db, graph, plans, check)
+            page_plans = {} if pages_supported(db) else None
+            if page_plans is not None:
+                for plan in plans:
+                    check()
+                    if plan.reused:
+                        continue
+                    records = graph.nodes if plan.kind == 'node' else graph.edges
+                    previous = existing.get((plan.kind, plan.bucket))
+                    page_plans[(plan.kind, plan.segment_id)] = prepare_pages(
+                        db, graph.account_ref, plan.segment_id, plan.kind,
+                        records, plan.keys, None if previous is None else previous[1],
+                        check=check)
         statistics = {'segments_reused': sum(p.reused for p in plans),
                       'segments_written': sum(not p.reused for p in plans),
                       'segment_chunks_written': segment_chunks_written,
                       'node_memberships_written': 0, 'edge_memberships_written': 0,
                       'node_content_written': 0, 'edge_content_written': 0, 'node_identities_written': 0}
-        for kind, fields in (
-            ('node', 'node_id,kind,occurred_at,properties_json'),
-            ('edge', 'edge_id,source_id,target_id,relation,occurred_at,sequence,properties_json'),
-        ):
-            entries = _content_order(graph, plans, kind, check)
-            placeholders = ','.join('?' for _ in range(len(fields.split(',')) + 2))
-            statement = f'INSERT INTO graph_{kind}_content(creator_account_id,content_id,{fields}) VALUES ({placeholders}) ON CONFLICT(creator_account_id,content_id) DO NOTHING'
-            while True:
-                check()
-                writer._check_heartbeat()
-                batch = list(islice(entries, writer._chunk_size))
-                if not batch:
-                    break
-                started = time.monotonic()
-                with writer._owned_transaction() as db:
-                    existing_content = _existing_ids(db, f'graph_{kind}_content',
-                        'content_id', graph.account_ref, [value[1] for value, _ in batch], check)
-                    changed = [value for value, _ in batch if value[1] not in existing_content]
-                    if kind == 'node':
-                        identities = {value[2] for value in changed}
-                        present = _existing_ids(db, 'graph_node_identities', 'node_id',
-                            graph.account_ref, sorted(identities), check)
-                        statistics['node_identities_written'] += len(identities - present)
-                    cursor = db.executemany(statement, changed)
-                    statistics[kind + '_content_written'] += cursor.rowcount
-                    db.executemany(f'INSERT INTO graph_segment_{kind}s(creator_account_id,segment_id,{kind}_id,content_id) VALUES (?,?,?,?)',
-                                   [member for _, member in batch])
-                writer._record_operation_duration(time.monotonic() - started, allow_growth=True)
-                statistics[kind + '_memberships_written'] += len(batch)
+        page_count = sum(len(pages) for pages in (page_plans or {}).values())
+        with content_write_cache(connection, len(graph.nodes) + len(graph.edges),
+                                 membership_page_count=page_count):
+            for kind, fields in (
+                ('node', 'node_id,kind,occurred_at,properties_json'),
+                ('edge', 'edge_id,source_id,target_id,relation,occurred_at,sequence,properties_json'),
+            ):
+                entries = _content_order(graph, plans, kind, check, page_plans)
+                placeholders = ','.join('?' for _ in range(len(fields.split(',')) + 2))
+                statement = f'INSERT INTO graph_{kind}_content(creator_account_id,content_id,{fields}) VALUES ({placeholders}) ON CONFLICT(creator_account_id,content_id) DO NOTHING'
+                while True:
+                    check()
+                    writer._check_heartbeat()
+                    batch = list(islice(entries, writer._chunk_size))
+                    if not batch:
+                        break
+                    started = time.monotonic()
+                    with writer._owned_transaction() as db:
+                        existing_content = _existing_ids(db, f'graph_{kind}_content',
+                            'content_id', graph.account_ref, [value[1] for value, _ in batch], check)
+                        changed = [value for value, _ in batch if value[1] not in existing_content]
+                        if kind == 'node':
+                            identities = {value[2] for value in changed}
+                            present = _existing_ids(db, 'graph_node_identities', 'node_id',
+                                graph.account_ref, sorted(identities), check)
+                            statistics['node_identities_written'] += len(identities - present)
+                        cursor = db.executemany(statement, changed)
+                        statistics[kind + '_content_written'] += cursor.rowcount
+                        write_members(db, kind, [member for _, member in batch], page_plans)
+                    writer._record_operation_duration(time.monotonic() - started, allow_growth=True)
+                    statistics[kind + '_memberships_written'] += len(batch)
         with writer._owned_transaction() as db:
             for plan in plans:
                 check()
@@ -504,7 +525,8 @@ def verify_shared_graph(connection, generation_id, account_id, validation, check
 
 
 def selected_content_ids(connection, generation_id: str, account_id: str,
-                         kind: str, keys, check=lambda: None) -> dict[str, str]:
+                         kind: str, keys, check=lambda: None, *,
+                         page_layout=False) -> dict[str, str]:
     """Return content hashes only for selected identities in one witnessed generation."""
 
     if kind not in ('node', 'edge'):
@@ -518,17 +540,25 @@ def selected_content_ids(connection, generation_id: str, account_id: str,
             continue
         marks = ','.join('?' for _ in batch)
         relation = kind + '_id'
+        membership = f"JOIN graph_segment_{kind}s r USING(creator_account_id,segment_id)"
+        page_filter = ""
+        if page_layout:
+            membership = (
+                "JOIN graph_segment_membership_pages p USING(creator_account_id,segment_id) "
+                f"JOIN graph_membership_{kind}s r USING(creator_account_id,page_id)"
+            )
+            page_filter = f"AND p.kind=m.kind AND p.bucket=substr(c.{relation},4,3)"
         rows = connection.execute(f'''SELECT c.{relation},c.content_id
             FROM graph_{kind}_content c
             WHERE c.creator_account_id=? AND c.{relation} IN ({marks})
               AND EXISTS (
                 SELECT 1
                 FROM generation_graph_segments m
-                JOIN graph_segment_{kind}s r
-                  USING(creator_account_id,segment_id)
+                {membership}
                 WHERE m.generation_id=?
                   AND m.creator_account_id=c.creator_account_id
                   AND m.kind=? AND m.bucket=substr(c.{relation},4,2)
+                  {page_filter}
                   AND r.{relation}=c.{relation}
                   AND r.content_id=c.content_id
               )''',
@@ -658,13 +688,24 @@ def _incremental_endpoint_links_valid(
             if referenced is not None:
                 raise GraphReferentialIntegrityError('graph_endpoint_absent')
 
+    from app.analytics.graph_membership_pages import supported as pages_supported
+    node_membership = 'JOIN graph_segment_nodes n USING(creator_account_id,segment_id)'
+    source_page = target_page = ''
+    if pages_supported(connection):
+        node_membership = (
+            'JOIN graph_segment_membership_pages np USING(creator_account_id,segment_id) '
+            'JOIN graph_membership_nodes n USING(creator_account_id,page_id)'
+        )
+        source_page = "AND np.kind='node' AND np.bucket=substr(e.source_id,4,3)"
+        target_page = "AND np.kind='node' AND np.bucket=substr(e.target_id,4,3)"
+
     # New or changed edge buckets need their current endpoints checked against
     # the selected node manifest. Bucket routing keeps each node lookup bounded.
     for plan in validation.plans:
         check()
         if plan.kind != 'edge' or plan.reused:
             continue
-        missing = connection.execute('''SELECT 1
+        missing = connection.execute(f'''SELECT 1
             FROM graph_segment_edges r
             JOIN graph_edge_content e
               USING(creator_account_id,content_id,edge_id)
@@ -672,20 +713,20 @@ def _incremental_endpoint_links_valid(
               AND (
                 NOT EXISTS (
                     SELECT 1 FROM generation_graph_segments nm
-                    JOIN graph_segment_nodes n
-                      USING(creator_account_id,segment_id)
+                    {node_membership}
                     WHERE nm.generation_id=? AND nm.creator_account_id=?
                       AND nm.kind='node'
                       AND nm.bucket=substr(e.source_id,4,2)
+                      {source_page}
                       AND n.node_id=e.source_id
                 )
                 OR NOT EXISTS (
                     SELECT 1 FROM generation_graph_segments nm
-                    JOIN graph_segment_nodes n
-                      USING(creator_account_id,segment_id)
+                    {node_membership}
                     WHERE nm.generation_id=? AND nm.creator_account_id=?
                       AND nm.kind='node'
                       AND nm.bucket=substr(e.target_id,4,2)
+                      {target_page}
                       AND n.node_id=e.target_id
                 )
               )

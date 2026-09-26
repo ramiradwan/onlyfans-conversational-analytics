@@ -578,4 +578,6 @@ def test_schema_change_invalidates_segment_proof(fixture, monkeypatch):
         insert_message(db, 'chat-1', 'schema-invalidates-proof', NOW)
         advance(db)
     fixture.pipeline.project_account(ACCOUNT)
-    assert len(calls) == 1
+    # Missing guards also prevent a receipt from skipping activation validation.
+    assert len(calls) == 2
+    assert calls[0] == calls[1]

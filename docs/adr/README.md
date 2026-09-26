@@ -55,6 +55,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0041: Compose graph identity from verified segment digests](0041-segment-composable-graph-identity.md)
 
+- [ADR 0042: Share immutable graph membership pages](0042-shared-graph-membership-pages.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

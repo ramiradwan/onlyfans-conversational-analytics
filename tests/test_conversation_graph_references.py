@@ -197,10 +197,10 @@ def test_reference_digest_rejects_rehashed_graph_content(fixture, kind):
         new = hashlib.sha256(data).hexdigest()
         db.execute('PRAGMA defer_foreign_keys=ON')
         db.execute('DROP TRIGGER ' + table + '_immutable')
-        db.execute('DROP TRIGGER graph_segment_' + kind + 's_immutable')
+        db.execute('DROP TRIGGER graph_membership_' + kind + 's_immutable')
         db.execute(f'UPDATE {table} SET occurred_at=?,content_id=? WHERE content_id=?',
                    (row['occurred_at'], new, old))
-        db.execute(f'UPDATE graph_segment_{kind}s SET content_id=? WHERE content_id=?', (new, old))
+        db.execute(f'UPDATE graph_membership_{kind}s SET content_id=? WHERE content_id=?', (new, old))
         assert graph_records(db, packed.generation_id, packed.header.account_ref, kind, [key], lambda: None)
         with pytest.raises(ValueError, match='graph_digest_invalid'):
             restore_pages(packed, lambda: None)

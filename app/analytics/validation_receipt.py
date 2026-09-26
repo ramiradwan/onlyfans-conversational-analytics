@@ -15,7 +15,8 @@ TRIGGER_DIGESTS = {12: TRIGGER_DIGEST,
     16: '09cd0953848b1457a16ddf52d9afe76cdf283bb459173baee1be4ac1db3e0a39',
     17: 'ed2aa6ac0d8643ccb76e53781fb019617bba9d7a3310742db59e2611634a437d',
     18: 'ed2aa6ac0d8643ccb76e53781fb019617bba9d7a3310742db59e2611634a437d',
-    19: 'ed2aa6ac0d8643ccb76e53781fb019617bba9d7a3310742db59e2611634a437d'}
+    19: 'ed2aa6ac0d8643ccb76e53781fb019617bba9d7a3310742db59e2611634a437d',
+    20: 'd64fd7b1089d30a08e87b99168c9075b160f8fac77ba49fcb587f6cc682c1fcf'}
 MAX_RECEIPTS = 8
 RECEIPT_SECONDS = 60.0
 _VOLATILE = frozenset({'status', 'activation_intent_id', 'witness_sequence',
@@ -23,7 +24,12 @@ _VOLATILE = frozenset({'status', 'activation_intent_id', 'witness_sequence',
 
 
 def content_stamp(connection):
-    expected = TRIGGER_DIGESTS.get(connection.execute("PRAGMA user_version").fetchone()[0])
+    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    expected = TRIGGER_DIGESTS.get(version)
+    if version == 20:
+        from app.analytics.enrichment_proof_transition import _guards_match
+        if not _guards_match(connection):
+            return None
     if expected is None:
         return None
     table = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='generation_content_epoch'").fetchone()

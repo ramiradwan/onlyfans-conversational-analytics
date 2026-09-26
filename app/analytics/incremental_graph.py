@@ -324,6 +324,9 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
 
     from datetime import datetime
     from app.analytics.database import content_write_cache
+    from app.analytics.graph_membership_pages import (
+        prepare_pages, supported as pages_supported, write_members,
+    )
     from app.analytics.shared_graph import (
         SegmentValidation, SharedGraphValidation, _existing_ids,
     )
@@ -369,6 +372,22 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
             "edge_content_written": 0,
             "node_identities_written": 0,
         }
+        page_plans = {} if pages_supported(writer._write_connection) else None
+        if page_plans is not None:
+            previous = {(p.kind, p.bucket): p for p in graph.predecessor_proof.segments}
+            with writer._owned_transaction() as db:
+                for segment in changed_segments:
+                    check()
+                    prior = previous.get((segment.kind, segment.bucket))
+                    records = segment.records or {}
+                    page_plans[(segment.kind, segment.segment_id)] = prepare_pages(
+                        db, graph.account_ref, segment.segment_id, segment.kind,
+                        records, records, None if prior is None else prior.segment_id,
+                        check=check)
+            pages = [p for plans in page_plans.values() for p in plans.values()]
+            statistics['membership_pages_reused'] = sum(p.reused for p in pages)
+            statistics['membership_pages_written'] = sum(not p.reused for p in pages)
+            statistics['membership_page_refs_written'] = len(pages)
         prepared = {"node": [], "edge": []}
         segment_members = []
         for segment in changed_segments:
@@ -377,6 +396,8 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
             members = []
             for key in sorted(records):
                 check()
+                if page_plans is not None and page_plans[(kind, segment.segment_id)][key[3:6]].reused:
+                    continue
                 data = records[key]
                 row = json.loads(data)
                 content_id = hashlib.sha256(data.encode("utf-8")).hexdigest()
@@ -440,12 +461,7 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
             relation = "node_id" if kind == "node" else "edge_id"
             with writer._owned_transaction() as db:
                 if members:
-                    db.executemany(
-                        f"""INSERT INTO graph_segment_{kind}s
-                            (creator_account_id,segment_id,{relation},content_id)
-                            VALUES (?,?,?,?)""",
-                        members,
-                    )
+                    write_members(db, kind, members, page_plans)
                     statistics[kind + "_memberships_written"] += len(members)
                 db.execute(
                     """INSERT INTO graph_segment_chunks

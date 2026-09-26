@@ -33,19 +33,24 @@ def generation_verification_cache(connection):
             connection.execute(f"PRAGMA cache_size={previous}")
 
 
-def content_write_cache_target(record_count: int) -> int:
+def content_write_cache_target(record_count: int, *, membership_page_count: int = 0) -> int:
     if type(record_count) is not int or record_count < 0:
         raise ValueError("graph_record_count_invalid")
+    if (type(membership_page_count) is not int
+            or not 0 <= membership_page_count <= record_count):
+        raise ValueError("graph_membership_page_count_invalid")
     return max(GENERATION_WRITE_CACHE_KIB,
-               min(MAX_CONTENT_WRITE_CACHE_KIB, (record_count + 1) // 2))
+               min(MAX_CONTENT_WRITE_CACHE_KIB,
+                   (record_count + 1) // 2 + membership_page_count))
 
 
 @contextmanager
-def content_write_cache(connection, record_count: int):
+def content_write_cache(connection, record_count: int, *, membership_page_count: int = 0):
     """Keep the content writer's working set bounded and local to its connection."""
 
     previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
-    target = -content_write_cache_target(record_count)
+    target = -content_write_cache_target(
+        record_count, membership_page_count=membership_page_count)
     if previous != target:
         connection.execute(f"PRAGMA cache_size={target}")
     try:

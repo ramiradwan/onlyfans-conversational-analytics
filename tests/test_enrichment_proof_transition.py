@@ -302,11 +302,12 @@ def test_capture_rejects_a_header_outside_the_selected_manifest(fixture, field, 
 def test_foreign_key_enforcement_is_required(fixture):
     fixture.pipeline.project_account(ACCOUNT)
     with fixture.stores.database.read() as db:
+        generation, proof = active(fixture, db)
+        assert proof is not None
         db.execute('PRAGMA foreign_keys=OFF')
         db.execute('BEGIN IMMEDIATE')
         try:
-            generation, proof = active(fixture, db)
-            assert proof is not None
+            assert active(fixture, db)[1] is None
             assert capture_transition(db, generation, proof) is None
         finally:
             db.rollback()

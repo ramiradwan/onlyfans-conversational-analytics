@@ -153,9 +153,12 @@ def fragment_reader(store, account_id):
                 selected_content_ids, verified_segment_chunk,
                 verified_segment_chunks_complete,
             )
+            from app.analytics.graph_membership_pages import supported as pages_supported
+            page_layout = pages_supported(db)
             def graph_content_ids(kind, keys, check=lambda: None):
                 return selected_content_ids(
-                    db, generation['generation_id'], partition, kind, keys, check
+                    db, generation['generation_id'], partition, kind, keys, check,
+                    page_layout=page_layout,
                 )
             def graph_segment_chunk(kind, bucket):
                 return verified_segment_chunk(

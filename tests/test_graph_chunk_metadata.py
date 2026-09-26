@@ -171,7 +171,7 @@ def test_metadata_index_upgrade_preserves_the_published_graph(tmp_path):
         upgraded = ProjectionsDatabase(legacy.path)
         assert upgraded.migration_runner.last_backup_path is not None
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 19
+            assert db.execute('PRAGMA user_version').fetchone()[0] == 20
             assert content_stamp(db) is not None
             assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert not db.execute('PRAGMA foreign_key_check').fetchall()

@@ -133,7 +133,7 @@ def test_populated_upgrade_preserves_graph_and_reclaims_final_references(tmp_pat
             assert _guards_match(db) and content_stamp(db) is not None
         upgraded = ProjectionsDatabase(legacy.path)
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 19
+            assert db.execute('PRAGMA user_version').fetchone()[0] == 20
             assert _guards_match(db) and content_stamp(db) is not None
             assert [tuple(row) for row in db.execute(
                 'SELECT * FROM graph_node_content ORDER BY creator_account_id,content_id'
@@ -184,7 +184,7 @@ def test_unreviewed_catalog_does_not_renew_enrichment_proofs(tmp_path):
         assert _guards_match(db) and content_stamp(db) is not None
         db.execute('BEGIN IMMEDIATE')
         try:
-            db.execute('PRAGMA user_version=20')
+            db.execute('PRAGMA user_version=21')
             assert not _guards_match(db)
             assert content_stamp(db) is None
         finally:
