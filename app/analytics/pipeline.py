@@ -622,15 +622,20 @@ class AnalyticsPipeline:
             return False
         currentness = getattr(self.projections, "projection_currentness", None)
         if callable(currentness):
-            return currentness(creator_account_id, identity, self.pipeline_revision,
-                               self.pipeline_config_digest, self._retention_clock)
-        projection = self.projections.get(creator_account_id, canonical_identity=identity)
-        return bool(
-            projection is not None
-            and not self._expired(projection)
-            and projection.source_revision >= requested_revision
-            and projection.pipeline_revision == self.pipeline_revision
-            and projection.pipeline_config_digest == self.pipeline_config_digest
+            current = currentness(creator_account_id, identity, self.pipeline_revision,
+                                  self.pipeline_config_digest, self._retention_clock)
+        else:
+            projection = self.projections.get(creator_account_id, canonical_identity=identity)
+            current = bool(
+                projection is not None
+                and not self._expired(projection)
+                and projection.source_revision >= requested_revision
+                and projection.pipeline_revision == self.pipeline_revision
+                and projection.pipeline_config_digest == self.pipeline_config_digest
+            )
+        # Stored-state verification can outlive the source identity cache.
+        return bool(current) and self._source_identity_matches(
+            creator_account_id, identity, None
         )
 
     def project_account(

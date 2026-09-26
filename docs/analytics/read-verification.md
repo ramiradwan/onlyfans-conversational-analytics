@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check source_tokens.py, canonical_source.py, query_reply_source.py, query_publication.py, graph_privacy.py, and the source-token and query-metadata migrations before changing claims. -->
+<!-- CODE-VERIFY: Check pipeline.py, test_readiness_identity.py, source_tokens.py, canonical_source.py, query_reply_source.py, query_publication.py, graph_privacy.py, and the source-token and query-metadata migrations before changing claims. -->
 
 # Verify sources without repeating unchanged work
 
@@ -17,6 +17,8 @@ A cache miss scans canonical content. A supplied database connection always read
 A full source scan can mint a process-local HMAC proof bound to that exact identity and source token. Long build and publication paths re-read the current token before reusing the scanned digest. A matching proof refreshes the normal identity-cache entry without rescanning content; restart, missing tracking, invalid proof, or a changed token uses the existing scan or changed-source path. The optional post-publication refresh does not undo publication if it fails.
 
 The cache does not authorize a build, make a stale generation readable, or bypass source expiry. Cold requests can still exceed their limits; background verification can populate the cache without executing a question.
+
+Readiness checks compare canonical identity again after stored-generation verification. A changed identity prevents a ready result. An expired cache entry is refreshed through the ordinary source read outside the question request; an unexpired entry keeps its original deadline.
 
 ## Bounded reply selection
 
