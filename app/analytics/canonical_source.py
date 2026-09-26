@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 import json
 from app.persistence import sqlite_api as sqlite3
 from datetime import datetime
 
+from app.analytics.evidence_contracts import (
+    EvidenceLocation, EvidenceMessage, MAX_EVIDENCE_TEXT_CHARS,
+)
+from app.analytics.query_execution import QuestionBudget
 from app.canonical.read_models import AccountReadModel
 from app.persistence.history import HistoryRepository
 
@@ -22,6 +27,10 @@ class HistoryAnalyticsSource:
     ) -> None:
         self.history = history
         self.connection = connection
+        from app.analytics.source_tokens import SourceIdentityCache
+        self._identity_cache = SourceIdentityCache()
+        from app.analytics.catalog_cache import SourceCatalogCache
+        self._catalog_cache = SourceCatalogCache(self._identity_cache)
 
     def _read(self):
         if self.connection is not None:
@@ -29,6 +38,190 @@ class HistoryAnalyticsSource:
 
             return nullcontext(self.connection)
         return self.history.database.read()
+
+    def analytics_snapshot(self, account_id: str, *, cancellation_check=None):
+        from app.analytics.cancellation import check_cancelled
+        from app.analytics.source_snapshot import SourceCatalog, scan_identity, cancellable_source_read
+        from app.analytics.errors import CanonicalAccountNotFound
+
+        check = lambda: check_cancelled(cancellation_check)
+        with self._read() as connection, cancellable_source_read(connection, cancellation_check):
+            own_transaction = self.connection is None and not connection.in_transaction
+            if own_transaction:
+                connection.execute("BEGIN")
+            try:
+                row = connection.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?", (account_id,)).fetchone()
+                if row is None:
+                    raise CanonicalAccountNotFound()
+                token = self._identity_cache.token(connection, account_id) if self.connection is None else None
+                cached = self._catalog_cache.get(account_id, token) if self.connection is None else None
+                if cached is None:
+                    identity, digests, count = scan_identity(connection, account_id, int(row[0]), check=check)
+                    check()
+                    self._identity_cache.put(account_id, token, identity)
+                    self._catalog_cache.put(account_id, token, identity, digests)
+                else:
+                    identity, digests = cached
+                    count = 0
+                    check()
+                from app.analytics.source_tokens import source_identity_proof
+                proof = source_identity_proof(account_id, token, identity)
+            finally:
+                if own_transaction:
+                    connection.rollback()
+        return SourceCatalog(
+            identity, digests,
+            lambda chat: self.conversation_read_model(
+                account_id, chat, cancellation_check=cancellation_check
+            ),
+            count,
+            identity_proof=proof,
+        )
+
+    def verify_identity_proof(self, account_id: str, identity, proof):
+        """Rebind a scanned identity to the current token without rescanning content."""
+
+        if self.connection is not None:
+            return None
+        from app.analytics.source_tokens import verify_source_identity_proof
+
+        with self._read() as connection:
+            current = self._identity_cache.token(connection, account_id)
+        matched = verify_source_identity_proof(account_id, identity, proof, current)
+        if matched:
+            self._identity_cache.put(account_id, current, identity)
+        return matched
+
+    def read_identity(self, account_id: str):
+        from app.analytics.errors import CanonicalAccountNotFound
+
+        try:
+            if self.connection is None:
+                with self._read() as connection:
+                    cached = self._identity_cache.get(account_id, self._identity_cache.token(connection, account_id))
+                if cached is not None:
+                    return cached
+            return self.analytics_snapshot(account_id).identity
+        except CanonicalAccountNotFound:
+            return None
+
+    def refresh_identity_cache(self, account_id: str) -> None:
+        """Ensure an unexpired identity without extending an existing cache lifetime."""
+
+        if self.connection is None:
+            self.read_identity(account_id)
+
+    def conversation_read_model(self, account_id: str, conversation_id: str, *, cancellation_check=None):
+        from app.analytics.cancellation import check_cancelled
+        from app.analytics.source_snapshot import read_conversation, cancellable_source_read
+
+        with self._read() as connection, cancellable_source_read(connection, cancellation_check):
+            return read_conversation(connection, account_id, conversation_id,
+                check=lambda: check_cancelled(cancellation_check))
+
+    @contextmanager
+    def open_question_scope(self, account_id, budget):
+        """Pin live canonical identity and bound every source read."""
+
+        from app.analytics.query_canonical import CanonicalQuestionScope
+        from app.analytics.query_identity import canonical_question_identity
+        from app.analytics.query_sql import bounded_sql
+
+        if self.connection is not None:
+            raise ValueError("question_live_read_required")
+        with self.history.database.read() as connection, bounded_sql(connection, budget):
+            budget.consume(2)
+            scope = CanonicalQuestionScope(connection, account_id, budget)
+            token = self._identity_cache.token(connection, account_id)
+            scope.identity = self._identity_cache.get(account_id, token)
+            if scope.identity is None:
+                scope.identity = canonical_question_identity(connection, account_id, scope.revision, budget)
+                scope.check(budget)
+                if token == self._identity_cache.token(connection, account_id):
+                    self._identity_cache.put(account_id, token, scope.identity)
+            scope.check(budget)
+            yield scope
+            scope.check(budget)
+
+    def read_evidence_message(
+        self, account_id: str, location: EvidenceLocation, budget: QuestionBudget,
+    ) -> EvidenceMessage | None:
+        """Read one live, undeleted source by its indexed canonical identity."""
+
+        if self.connection is not None:
+            raise ValueError("evidence_live_read_required")
+        location = EvidenceLocation.model_validate(location)
+        budget.check()
+        with self.history.database.read() as connection:
+            budget.check()
+            timeout_ms = max(1, int(budget.remaining_seconds() * 1000))
+            connection.execute(f"PRAGMA busy_timeout={timeout_ms}")
+            connection.execute("PRAGMA query_only=ON")
+            interrupted = []
+
+            def progress() -> int:
+                try:
+                    budget.check()
+                except Exception as error:
+                    interrupted.append(error)
+                    return 1
+                return 0
+
+            connection.set_progress_handler(progress, 100)
+            try:
+                budget.consume()
+                row = connection.execute(
+                    """SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
+                              m.sender_platform_user_id,m.upstream_updated_at,
+                              m.content_hash,m.winning_stream_epoch,m.winning_source_seq
+                         FROM account_messages AS m
+                         JOIN account_heads AS h
+                           ON h.creator_account_id=m.creator_account_id
+                         JOIN account_chats AS c
+                           ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
+                        WHERE m.creator_account_id=? AND m.message_id=? AND m.chat_id=?
+                          AND m.is_deleted=0 AND c.is_deleted=0 AND length(m.text)<=?
+                          AND length(CAST(m.text AS BLOB))<=?
+                          AND NOT EXISTS (
+                              SELECT 1 FROM entity_tombstones AS t
+                               WHERE t.creator_account_id=m.creator_account_id
+                                 AND ((t.entity_kind='message' AND t.entity_id=m.message_id)
+                                   OR (t.entity_kind='chat' AND t.entity_id=m.chat_id)))
+                          AND NOT EXISTS (
+                              SELECT 1 FROM deletion_barriers AS b
+                               WHERE b.creator_account_id=m.creator_account_id
+                                 AND ((b.scope_kind='account' AND b.scope_key='*')
+                                   OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
+                                   OR (b.scope_kind='message' AND b.scope_key=m.message_id)
+                                   OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
+                          AND NOT EXISTS (
+                              SELECT 1 FROM participant_deletion_chat_scopes AS p
+                               WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id)
+                        LIMIT 1""",
+                    (account_id, location.message_id, location.conversation_id,
+                     MAX_EVIDENCE_TEXT_CHARS, MAX_EVIDENCE_TEXT_CHARS * 4),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                if interrupted:
+                    raise interrupted[0] from None
+                budget.check()
+                raise
+            finally:
+                connection.set_progress_handler(None, 0)
+        budget.check()
+        if row is None:
+            return None
+        return EvidenceMessage(
+            account_id=account_id, location=location, source_revision=row[0],
+            text=row[1], sent_at=row[2], direction=row[3], sender_id=row[4],
+            upstream_updated_at=row[5], content_hash=row[6],
+            stream_epoch=row[7], source_sequence=row[8],
+        )
+
+    def account_revision(self, account_id: str) -> int | None:
+        with self._read() as connection:
+            row = connection.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?", (account_id,)).fetchone()
+        return None if row is None else int(row[0])
 
     def account_exists(self, creator_account_id: str) -> bool:
         with self._read() as connection:

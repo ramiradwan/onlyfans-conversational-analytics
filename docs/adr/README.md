@@ -23,6 +23,40 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0022: Keep activation Legal evidence append-only in the Extension](0022-append-only-legal-activation-evidence.md)
 - [ADR 0025: Adopt CapabilityLicense delivery contracts](0025-adopt-capability-license-delivery-contracts.md)
 
+- [ADR 0026: Use bounded, source-linked analytics questions](0026-bounded-analytics-questions.md)
+
+- [ADR 0027: Reuse versioned analyzer results within analytics generations](0027-enrichment-reuse.md)
+
+- [ADR 0028: Recompute changed conversations within full analytics generations](0028-conversation-incremental-processing.md)
+
+- [ADR 0029: Bind cached source verification to database changes](0029-source-verification-tokens.md)
+
+- [ADR 0030: Separate generation validation from whole-file checks](0030-generation-validation-scope.md)
+
+- [ADR 0031: Use stored references for analytics publication](0031-bounded-publication-handoff.md)
+
+- [ADR 0032: Retain canonical graph records during SQLite construction](0032-compact-graph-construction.md)
+
+- [ADR 0033: Validate large projection documents one record at a time](0033-streamed-document-header-validation.md)
+
+- [ADR 0034: Share immutable graph content across generations](0034-shared-graph-content.md)
+
+- [ADR 0035: Reuse conversation outputs in bounded pages](0035-paged-conversation-reuse.md)
+
+- [ADR 0036: Bind activation to a verified content epoch](0036-validated-generation-receipts.md)
+
+- [ADR 0037: Reuse same-build page verification during staging](0037-same-build-page-verification.md)
+
+- [ADR 0038: Reuse verified immutable graph segments](0038-verified-graph-segment-reuse.md)
+
+- [ADR 0039: Reuse immutable conversation graph units](0039-incremental-conversation-graph-units.md)
+
+- [ADR 0040: Reuse immutable conversation enrichment units](0040-conversation-enrichment-units.md)
+
+- [ADR 0041: Compose graph identity from verified segment digests](0041-segment-composable-graph-identity.md)
+
+- [ADR 0042: Share immutable graph membership pages](0042-shared-graph-membership-pages.md)
+
 ## Proposed
 
 - [ADR 0012: Define internal Brain boundaries](0012-brain-internal-boundaries.md)

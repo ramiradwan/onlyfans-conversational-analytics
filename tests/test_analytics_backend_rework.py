@@ -362,8 +362,11 @@ def test_protected_analytics_openapi_requires_auth_and_structured_errors() -> No
         path for path in schema["paths"] if path.startswith("/api/v1/insights/")
     }
     assert protected_paths
-    for path in protected_paths:
-        operation = schema["paths"][path]["get"]
+    operations = [operation for path in protected_paths
+                  for method, operation in schema["paths"][path].items()
+                  if method in {"get", "post", "put", "patch", "delete", "head", "options"}]
+    assert operations
+    for operation in operations:
         # The account-session dependency reads a same-origin cookie directly
         # from the request; unlike the retired dev ticket seam, that is not
         # surfaced as an explicit header/query parameter in the OpenAPI
@@ -558,6 +561,7 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         projections=stores.projections,
         graph=stores.graph,
     )
+    pipeline.compact_graph = False
     scheduler = InProcessProjectionScheduler(
         pipeline, worker_count=2, queue_capacity=4
     )

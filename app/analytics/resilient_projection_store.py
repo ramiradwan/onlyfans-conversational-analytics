@@ -130,6 +130,36 @@ class LazySQLiteAnalyticsProjectionStore:
             self._next_retry_at = 0.0
             self._recovery_count += 1
 
+    def generation_references_supported(self) -> bool:
+        return self._read("generation_references_supported", None)
+
+    def conversation_enrichment_units_supported(self) -> bool:
+        return self._read("conversation_enrichment_units_supported", None)
+
+    def check_generation_reference(self, account_id, reference):
+        return self._read("check_generation_reference", account_id, account_id, reference)
+
+    def read_generation_artifact(self, account_id, reference):
+        return self._read("read_generation_artifact", account_id, account_id, reference)
+
+    def open_conversation_fragments(self, account_id):
+        return self._available_store(account_id).open_conversation_fragments(account_id)
+
+    def load_conversation_fragment(self, account_id, *args, **kwargs):
+        return self._read("load_conversation_fragment", account_id, account_id, *args, **kwargs)
+
+    def load_enrichment_entries(self, account_id, keys, **kwargs):
+        return self._read("load_enrichment_entries", account_id, account_id, keys, **kwargs)
+
+    def question_pricing(self, account_id, snapshot, references, budget):
+        return self._read("question_pricing", account_id, account_id, snapshot, references, budget)
+
+    def question_snapshot(self, account_id, canonical_identity, budget):
+        return self._read("question_snapshot", account_id, account_id, canonical_identity, budget)
+
+    def projection_currentness(self, account_id, *args):
+        return self._read("projection_currentness", account_id, account_id, *args)
+
     def get(self, creator_account_id: str, **kwargs):
         return self._read("get", creator_account_id, creator_account_id, **kwargs)
 
@@ -157,6 +187,9 @@ class LazySQLiteAnalyticsProjectionStore:
             artifact,
             **kwargs,
         )
+
+    def stage_built_artifact(self, artifact, **kwargs):
+        return self._write("stage_built_artifact", kwargs.get("creator_account_id"), artifact, **kwargs)
 
     def stage_artifact(self, artifact, **kwargs):
         account_id = kwargs.get("creator_account_id")

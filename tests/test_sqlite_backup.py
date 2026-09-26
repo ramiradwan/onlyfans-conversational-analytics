@@ -153,7 +153,7 @@ def seed_canonical_snapshot(history: HistoryRepository, fixture_name: str) -> st
     return identity["creator_account_id"]
 
 
-async def seeded_runtime(tmp_path: Path) -> Runtime:
+async def seeded_runtime(tmp_path: Path, *, compact_graph: bool = True) -> Runtime:
     canonical_path = tmp_path / "canonical.sqlite3"
     projections_path = tmp_path / "analytics-projections.sqlite3"
     repositories = create_canonical_repositories(
@@ -169,6 +169,7 @@ async def seeded_runtime(tmp_path: Path) -> Runtime:
     )
     artifact = AnalyticsPipeline(
         history_source_for(repositories),
+        compact_graph=compact_graph,
         projections=stores.projections,
         graph=stores.graph,
     ).project_account(creator_account_id).artifact
@@ -374,7 +375,7 @@ async def test_mismatched_backup_pair_exposes_no_projection_and_rebuilds(
 async def test_projection_backup_recomputes_rows_and_rejects_property_tamper(
     tmp_path: Path,
 ) -> None:
-    runtime = await seeded_runtime(tmp_path / "source")
+    runtime = await seeded_runtime(tmp_path / "source", compact_graph=False)
     assert runtime.stores.database is not None
     backup_path = tmp_path / "projections.backup.sqlite3"
     backup_projections_database(runtime.stores.database, backup_path)

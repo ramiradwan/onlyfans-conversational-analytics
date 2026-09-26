@@ -1,0 +1,599 @@
+{
+  "schema": "analytics-question-cases.v1",
+  "synthetic": true,
+  "cases": [
+    {
+      "id": "pricing-multiple-matches",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-05T12:00:00Z",
+          "role": "creator",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1",
+            "m2"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-negative",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-uncertain",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "uncertain",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [
+          "chat-a"
+        ],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-unsupported",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "unsupported",
+          "finding_version": 1,
+          "language": "fi"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [
+          "chat-a"
+        ],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-missing",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "missing",
+          "finding_version": null,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [
+          "chat-a"
+        ],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-failed",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "error",
+          "finding_version": null,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [
+          "chat-a"
+        ],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-edited-source",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 2,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [
+          "chat-a"
+        ],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-reclassified-edit",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 2,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 2,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-deleted-source",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": true,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-selection-boundaries",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-start",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-01T00:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-end",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-08T00:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-start"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-start": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-partial-classification",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-05T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "unsupported",
+          "finding_version": 1,
+          "language": "fi"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-account-isolation",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-b",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-system-event",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "system",
+          "kind": "system",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "pricing-expired-source",
+      "question": "pricing_discussions.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-06-20T00:00:00Z",
+      "end": "2026-06-21T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "partial",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-06-20T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "positive",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    }
+  ]
+}

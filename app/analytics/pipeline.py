@@ -6,8 +6,8 @@ import hashlib
 import json
 import secrets
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Callable, ContextManager, Iterator, Protocol
 
@@ -30,20 +30,28 @@ from pydantic import ValidationError
 
 from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.enrichment import EnrichmentStage
+from app.analytics.generation_reference import GenerationReference
+from app.analytics.enrichment_cache import reuse_build
+from app.analytics.compact_graph import CompactArtifact, CompactGraph
+from app.analytics.conversation_reuse import assemble, conversation_build
+from app.analytics.source_snapshot import SourceCatalog
 from app.analytics.errors import (
     CanonicalAccountNotFound,
     CanonicalRevisionChanged,
     CanonicalStateInvalid,
 )
 from app.analytics.graph_projection import RelationshipGraphProjector
-from app.analytics.graph_privacy import graph_content_digest
+from app.analytics.shared_graph import (
+    GRAPH_SEGMENT_ROOT_PIPELINE_REVISION,
+    projection_graph_digest,
+)
 from app.analytics.graph_store import (
     GraphReader,
     InMemoryGraphRepository,
 )
 from app.analytics.identity import (
     CanonicalIdentity,
-    canonical_identity,
+    canonical_identity, source_identity, snapshot_identity,
     pipeline_identity_digest,
 )
 from app.analytics.metrics import build_conversation_metrics, build_creator_metrics
@@ -76,9 +84,19 @@ class CanonicalReadModelSource(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class PipelineRun:
-    artifact: RebuildArtifact
+    _artifact: RebuildArtifact | None
     changed: bool
     attempts: int
+    reference: GenerationReference | None = field(default=None, repr=False)
+    _artifact_reader: Callable[[], RebuildArtifact] | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def artifact(self) -> RebuildArtifact:
+        if self._artifact is not None:
+            return self._artifact
+        if self._artifact_reader is None:
+            raise CanonicalRevisionChanged()
+        return self._artifact_reader()
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +116,15 @@ class ProjectionCandidate:
     requires_publication: bool
     attempts: int
 
+    reference: GenerationReference | None = None
+    source_identity_proof: object | None = field(default=None, repr=False, compare=False)
+    _artifact_reader: Callable[[], RebuildArtifact] | None = field(default=None, repr=False, compare=False)
+
     def artifact(self) -> RebuildArtifact:
+        if self.reference is not None:
+            if self._artifact_reader is None:
+                raise CanonicalRevisionChanged()
+            return self._artifact_reader()
         return RebuildArtifact.model_validate_json(self.artifact_json)
 
 
@@ -115,17 +141,16 @@ class AnalyticsPipeline:
         graph_projector: RelationshipGraphProjector | None = None,
         max_revision_retries: int = 3,
         clock: Callable[[], datetime] = utc_now,
+        reuse_enrichment: bool = True,
+        reuse_conversations: bool = True,
+        compact_graph: bool = True,
     ) -> None:
         if max_revision_retries <= 0:
             raise ValueError("max_revision_retries must be positive")
         self.source = source
         self._memory_graph_repository = None
         self.projections: AtomicAnalyticsProjectionStore
-        identity_reader = lambda account_id: (
-            canonical_identity(source.account_read_model(account_id))
-            if source.account_exists(account_id)
-            else None
-        )
+        identity_reader = lambda account_id: source_identity(source, account_id)
         if projections is None and graph is None:
             self._memory_graph_repository = InMemoryGraphRepository()
             self.projections = InMemoryAnalyticsProjectionStore(
@@ -158,8 +183,13 @@ class AnalyticsPipeline:
         self.graph_projector = graph_projector or RelationshipGraphProjector()
         self.max_revision_retries = max_revision_retries
         self._retention_clock = clock
+        self.reuse_enrichment = reuse_enrichment
+        self.reuse_conversations = reuse_conversations
+        self.compact_graph = compact_graph
         self.pipeline_revision = (
-            f"analytics.pipeline.v3+{self.enrichment.revision}+graph.relationship.v1"
+            f"analytics.pipeline.v3+{self.enrichment.revision}"
+            "+graph.relationship.v1+enrichment.units.v1"
+            f"+{GRAPH_SEGMENT_ROOT_PIPELINE_REVISION}"
         )
         self.pipeline_config_digest = stable_config_digest(
             name="analytics_pipeline",
@@ -167,6 +197,7 @@ class AnalyticsPipeline:
             config={
                 "enrichment_config_digest": self.enrichment.config_digest,
                 "graph_projector": "relationship_graph.v1",
+                "graph_digest_policy": GRAPH_SEGMENT_ROOT_PIPELINE_REVISION,
                 "timestamp_policy": "aware_utc_stable_source_order",
                 "participant_retention_days": PARTICIPANT_ANALYTICS_MAX_DAYS,
                 "retention_clock": "canonical_message_sent_at",
@@ -199,6 +230,23 @@ class AnalyticsPipeline:
                     else:
                         self._account_locks.pop(creator_account_id, None)
 
+    def _expired(self, projection) -> bool:
+        first = getattr(projection.message_enrichments, "first_source_at", None)
+        if first is not None:
+            return first + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS) <= self._retention_clock()
+        return any(message.sent_at + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
+                   <= self._retention_clock() for message in projection.message_enrichments)
+
+    def _capture_source(self, account_id, cancellation_check):
+        capture = getattr(self.source, "analytics_snapshot", None)
+        if (callable(capture) and callable(getattr(self.projections, "load_conversation_fragment", None))
+                and type(self.graph_projector) is RelationshipGraphProjector
+                and type(self.enrichment) is EnrichmentStage
+                and all(self.enrichment._input_policies)):
+            self.enrichment.validate_configuration()
+            return capture(account_id, cancellation_check=cancellation_check)
+        return self.source.account_read_model(account_id)
+
     def account_exists(self, creator_account_id: str) -> bool:
         return self.source.account_exists(creator_account_id)
 
@@ -211,12 +259,13 @@ class AnalyticsPipeline:
             raise CanonicalAccountNotFound()
         return self.source.account_read_model(creator_account_id)
 
-    @staticmethod
     def _candidate(
+        self,
         artifact: RebuildArtifact,
         *,
         creator_account_id: str,
         canonical_snapshot: CanonicalIdentity,
+        source_identity_proof: object | None,
         publication_epoch: str | None,
         staged_generation_id: str | None,
         reset_derived: bool,
@@ -224,6 +273,12 @@ class AnalyticsPipeline:
         attempts: int,
     ) -> ProjectionCandidate:
         projection = artifact.projection
+        reference = None
+        reader = None
+        if staged_generation_id is not None and getattr(self.projections, "generation_references_supported", lambda: False)():
+            reference = GenerationReference.from_projection(projection, staged_generation_id, publication_epoch)
+            self.projections.check_generation_reference(creator_account_id, reference)
+            reader = lambda: self._read_reference(creator_account_id, reference)
         return ProjectionCandidate(
             creator_account_id=creator_account_id,
             source_revision=projection.source_revision,
@@ -233,11 +288,23 @@ class AnalyticsPipeline:
             canonical_content_digest=canonical_snapshot.content_digest,
             publication_epoch=publication_epoch,
             staged_generation_id=staged_generation_id,
-            artifact_json=artifact.model_dump_json().encode("utf-8"),
+            artifact_json=b"" if reference is not None else artifact.model_dump_json().encode("utf-8"),
+            reference=reference, source_identity_proof=source_identity_proof,
+            _artifact_reader=reader,
             reset_derived=reset_derived,
             requires_publication=requires_publication,
             attempts=attempts,
         )
+
+    def _source_identity_matches(
+        self, account_id: str, identity: CanonicalIdentity, proof: object | None
+    ) -> bool:
+        verify = getattr(self.source, "verify_identity_proof", None)
+        if proof is not None and callable(verify):
+            matched = verify(account_id, identity, proof)
+            if matched is not None:
+                return bool(matched)
+        return source_identity(self.source, account_id) == identity
 
     def build_candidate(
         self,
@@ -257,13 +324,17 @@ class AnalyticsPipeline:
         with self._account_lock(creator_account_id):
             for attempt in range(1, self.max_revision_retries + 1):
                 check_cancelled(cancellation_check)
-                account = self.source.account_read_model(creator_account_id)
-                account_identity = canonical_identity(account)
+                account = self._capture_source(creator_account_id, cancellation_check)
+                account_identity = snapshot_identity(account)
+                source_proof = getattr(account, "identity_proof", None)
                 check_cancelled(cancellation_check)
                 current = self.projections.get(
                     creator_account_id,
                     canonical_identity=account_identity,
                 )
+                if current is not None and self._expired(current):
+                    self.projections.clear(creator_account_id)
+                    current = None
                 existing = self.projections.get(creator_account_id)
                 graph_revision = self.graph.partition_revision(
                     account_ref(creator_account_id)
@@ -281,6 +352,7 @@ class AnalyticsPipeline:
                         self._artifact(current, creator_account_id),
                         creator_account_id=creator_account_id,
                         canonical_snapshot=account_identity,
+                        source_identity_proof=source_proof,
                         publication_epoch=publication_epoch,
                         staged_generation_id=None,
                         reset_derived=False,
@@ -303,34 +375,65 @@ class AnalyticsPipeline:
                 )
                 if existing is None and callable(next_generation):
                     generation = next_generation(creator_account_id)
-                if cancellation_check is None:
-                    artifact = self._build(
-                        creator_account_id,
-                        account,
-                        projection_generation=generation,
-                    )
-                else:
-                    artifact = self._build(
-                        creator_account_id,
-                        account,
-                        projection_generation=generation,
-                        cancellation_check=cancellation_check,
-                    )
-                check_cancelled(cancellation_check)
-                observed = self.source.account_read_model(creator_account_id)
-                check_cancelled(cancellation_check)
-                if canonical_identity(observed) != account_identity:
+                try:
+                    with reuse_build(self.projections, creator_account_id,
+                            self._retention_clock, cancellation_check,
+                            enabled=self.reuse_enrichment) as reuse, conversation_build(
+                                self.projections, creator_account_id,
+                                compact=self.compact_graph,
+                            ) as conversation_state:
+                        if cancellation_check is None:
+                            artifact = self._build(
+                                creator_account_id,
+                                account,
+                                projection_generation=generation,
+                            )
+                        else:
+                            artifact = self._build(
+                                creator_account_id,
+                                account,
+                                projection_generation=generation,
+                                cancellation_check=cancellation_check,
+                            )
+                except CanonicalRevisionChanged:
                     continue
+                check_cancelled(cancellation_check)
+                if not self._source_identity_matches(
+                    creator_account_id, account_identity, source_proof
+                ):
+                    continue
+                check_cancelled(cancellation_check)
                 if publication_epoch is None:
                     publication_epoch = self.open_publication_epoch(
                         f"direct-pipeline-{id(self):x}"
                     )
-                staged_generation_id = self.projections.stage_artifact(
+                stage = self.projections.stage_artifact
+                if type(self.graph_projector) is RelationshipGraphProjector and type(self.enrichment) is EnrichmentStage:
+                    stage = getattr(self.projections, "stage_built_artifact", stage)
+                enrichment_units = tuple(conversation_state.enrichment_units)
+                enrichment_units_complete = (
+                    bool(enrichment_units)
+                    and len(enrichment_units)
+                        == len(artifact.projection.conversation_metrics)
+                    and sum(unit.header.message_count for unit in enrichment_units)
+                        == artifact.projection.creator_metrics.message_count
+                )
+                staged_generation_id = stage(
                     artifact,
                     creator_account_id=creator_account_id,
                     canonical_identity=account_identity,
                     publication_epoch=publication_epoch,
                     cancellation_check=cancellation_check,
+                    **({"enrichment_entries": tuple(reuse.entries.values())}
+                       if reuse and not enrichment_units_complete else {}),
+                    **({"conversation_pages": tuple(conversation_state.page_sets)}
+                       if conversation_state.page_sets else {}),
+                    **({"conversation_graph_units": tuple(conversation_state.graph_units)}
+                       if conversation_state.graph_units else {}),
+                    **({"conversation_enrichment_units": enrichment_units}
+                       if enrichment_units else {}),
+                    **({"conversation_fragments": tuple(conversation_state.entries)}
+                       if conversation_state.entries else {}),
                 )
                 try:
                     check_cancelled(cancellation_check)
@@ -341,6 +444,7 @@ class AnalyticsPipeline:
                     artifact,
                     creator_account_id=creator_account_id,
                     canonical_snapshot=account_identity,
+                    source_identity_proof=source_proof,
                     publication_epoch=publication_epoch,
                     staged_generation_id=staged_generation_id,
                     reset_derived=reset_derived,
@@ -349,13 +453,30 @@ class AnalyticsPipeline:
                 )
         raise CanonicalRevisionChanged()
 
+    def _read_reference(self, account_id, reference):
+        if reference.retention_due_at is not None and reference.retention_due_at <= self._retention_clock():
+            raise CanonicalRevisionChanged()
+        artifact = self.projections.read_generation_artifact(account_id, reference)
+        if self._expired(artifact.projection):
+            raise CanonicalRevisionChanged()
+        return artifact
+
     def publish_candidate(self, candidate: ProjectionCandidate) -> PipelineRun:
         """Perform the scheduler-approved canonical witness/CAS publication."""
 
-        artifact = candidate.artifact()
-        projection = artifact.projection
+        reference = candidate.reference
+        artifact = None if reference is not None else candidate.artifact()
+        projection = reference if reference is not None else artifact.projection
+        if reference is not None:
+            if candidate.staged_generation_id != reference.generation_id or candidate.publication_epoch != reference.publication_epoch:
+                raise CanonicalRevisionChanged()
+            self.projections.check_generation_reference(candidate.creator_account_id, reference)
+        expired = (reference.retention_due_at is not None and reference.retention_due_at <= self._retention_clock()) if reference else self._expired(projection)
+        if expired:
+            raise CanonicalRevisionChanged()
         if (
             projection.account_ref != account_ref(candidate.creator_account_id)
+            or projection.canonical_content_digest != candidate.canonical_content_digest
             or projection.source_revision != candidate.source_revision
             or projection.projection_generation != candidate.projection_generation
             or projection.pipeline_revision != candidate.pipeline_revision
@@ -368,9 +489,11 @@ class AnalyticsPipeline:
             revision=candidate.source_revision,
             content_digest=candidate.canonical_content_digest,
         )
-        if canonical_identity(
-            self.source.account_read_model(candidate.creator_account_id)
-        ) != expected_identity:
+        if not self._source_identity_matches(
+            candidate.creator_account_id,
+            expected_identity,
+            candidate.source_identity_proof,
+        ):
             raise CanonicalRevisionChanged()
 
         with self._account_lock(candidate.creator_account_id):
@@ -379,9 +502,20 @@ class AnalyticsPipeline:
                     candidate.staged_generation_id,
                     creator_account_id=candidate.creator_account_id,
                     canonical_identity=expected_identity,
+                    source_identity_proof=candidate.source_identity_proof,
                 )
+                refresh = getattr(self.source, "refresh_identity_cache", None)
+                if callable(refresh):
+                    try:
+                        refresh(candidate.creator_account_id)
+                    except Exception:
+                        # Optional cache warming cannot undo a completed publication.
+                        # Reads still verify current tokens and fail closed on a miss.
+                        pass
                 return PipelineRun(
-                    artifact=artifact,
+                    _artifact=artifact,
+                    _artifact_reader=candidate.artifact if artifact is None else None,
+                    reference=reference,
                     changed=changed,
                     attempts=candidate.attempts,
                 )
@@ -400,7 +534,9 @@ class AnalyticsPipeline:
                     and graph_revision == candidate.source_revision
                 ):
                     return PipelineRun(
-                        artifact=artifact,
+                        _artifact=artifact,
+                        _artifact_reader=candidate.artifact if artifact is None else None,
+                        reference=reference,
                         changed=False,
                         attempts=candidate.attempts,
                     )
@@ -481,15 +617,25 @@ class AnalyticsPipeline:
 
         if not self.source.account_exists(creator_account_id):
             return False
-        account = self.source.account_read_model(creator_account_id)
-        if account.view_revision < requested_revision:
+        identity = source_identity(self.source, creator_account_id)
+        if identity is None or identity.revision < requested_revision:
             return False
-        projection = self.active_projection(creator_account_id, account)
-        return bool(
-            projection is not None
-            and projection.source_revision >= requested_revision
-            and projection.pipeline_revision == self.pipeline_revision
-            and projection.pipeline_config_digest == self.pipeline_config_digest
+        currentness = getattr(self.projections, "projection_currentness", None)
+        if callable(currentness):
+            current = currentness(creator_account_id, identity, self.pipeline_revision,
+                                  self.pipeline_config_digest, self._retention_clock)
+        else:
+            projection = self.projections.get(creator_account_id, canonical_identity=identity)
+            current = bool(
+                projection is not None
+                and not self._expired(projection)
+                and projection.source_revision >= requested_revision
+                and projection.pipeline_revision == self.pipeline_revision
+                and projection.pipeline_config_digest == self.pipeline_config_digest
+            )
+        # Stored-state verification can outlive the source identity cache.
+        return bool(current) and self._source_identity_matches(
+            creator_account_id, identity, None
         )
 
     def project_account(
@@ -503,10 +649,12 @@ class AnalyticsPipeline:
         """Refresh one account iff its canonical revision is not already projected."""
 
         candidate = self.build_candidate(creator_account_id, force=force)
+        snapshot = candidate.artifact()
         with publication_lock or nullcontext():
             if publication_allowed is not None and not publication_allowed():
                 raise CanonicalRevisionChanged()
-            return self.publish_candidate(candidate)
+            run = self.publish_candidate(candidate)
+            return PipelineRun(_artifact=snapshot, changed=run.changed, attempts=run.attempts)
 
     def _next_generation(
         self,
@@ -561,42 +709,48 @@ class AnalyticsPipeline:
         cancellation_check: CancellationCheck | None = None,
     ) -> RebuildArtifact:
         check_cancelled(cancellation_check)
-        conversations = self._canonical_conversations(
-            account,
-            cancellation_check=cancellation_check,
-        )
-        enrichments = []
-        conversation_metrics = []
-        for conversation in conversations:
-            check_cancelled(cancellation_check)
-            conversation_enrichments = self.enrichment.enrich_conversation(
-                creator_account_id,
-                conversation,
+        if isinstance(account, SourceCatalog):
+            enrichments, conversation_metrics, nodes, edges, graph_summary = assemble(
+                self, creator_account_id, account, _RETENTION_CUTOFF.get(), cancellation_check)
+        else:
+            conversations = self._canonical_conversations(
+                account,
                 cancellation_check=cancellation_check,
             )
-            enrichments.extend(conversation_enrichments)
-            check_cancelled(cancellation_check)
-            conversation_metrics.append(
-                build_conversation_metrics(
+            enrichments = []
+            conversation_metrics = []
+            for conversation in conversations:
+                check_cancelled(cancellation_check)
+                conversation_enrichments = self.enrichment.enrich_conversation(
                     creator_account_id,
                     conversation,
-                    conversation_enrichments,
+                    cancellation_check=cancellation_check,
                 )
-            )
+                enrichments.extend(conversation_enrichments)
+                check_cancelled(cancellation_check)
+                conversation_metrics.append(
+                    build_conversation_metrics(
+                        creator_account_id,
+                        conversation,
+                        conversation_enrichments,
+                    )
+                )
         check_cancelled(cancellation_check)
         creator_metrics = build_creator_metrics(
             creator_account_id, conversation_metrics
         )
         check_cancelled(cancellation_check)
-        nodes, edges, graph_summary = self.graph_projector.project(
-            creator_account_id,
-            account.view_revision,
-            conversations,
-            enrichments,
-            conversation_metrics,
-            cancellation_check=cancellation_check,
-        )
+        if not isinstance(account, SourceCatalog):
+            nodes, edges, graph_summary = self.graph_projector.project(
+                creator_account_id,
+                account.view_revision,
+                conversations,
+                enrichments,
+                conversation_metrics,
+                cancellation_check=cancellation_check,
+            )
         check_cancelled(cancellation_check)
+        streamed_enrichments = callable(getattr(enrichments, "iter_canonical_records", None))
         projection = AnalyticsProjection(
             pipeline_revision=self.pipeline_revision,
             pipeline_config_digest=self.pipeline_config_digest,
@@ -604,36 +758,37 @@ class AnalyticsPipeline:
             account_ref=account_ref(creator_account_id),
             source_revision=account.view_revision,
             projection_generation=projection_generation,
-            canonical_content_digest=canonical_identity(account).content_digest,
-            graph_digest=graph_content_digest(nodes, edges),
+            canonical_content_digest=snapshot_identity(account).content_digest,
+            graph_digest=projection_graph_digest(
+                self.pipeline_revision, nodes, edges,
+                check=lambda: check_cancelled(cancellation_check),
+            ),
             analyzers=self.enrichment.provenance(enrichments),
             window=AnalyticsWindow(
                 scope=WindowScope.ALL_TIME,
                 start=creator_metrics.active_from,
                 end=creator_metrics.active_until,
             ),
-            message_enrichments=enrichments,
+            message_enrichments=[] if streamed_enrichments else enrichments,
             conversation_metrics=conversation_metrics,
             creator_metrics=creator_metrics,
             graph=graph_summary,
             projection_digest="sha256:" + "0" * 64,
         )
+        if streamed_enrichments:
+            projection = projection.model_copy(update={"message_enrichments": enrichments})
         projection = projection.model_copy(
             update={"pipeline_identity_digest": pipeline_identity_digest(projection)}
         )
-        payload = projection.model_dump(mode="json", exclude={"projection_digest"})
-        encoded = json.dumps(
-            payload,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-        projection = projection.model_copy(
-            update={
-                "projection_digest": f"sha256:{hashlib.sha256(encoded).hexdigest()}"
-            }
-        )
+        from app.analytics.projection_encoding import projection_digest
+
+        projection = projection.model_copy(update={
+            "projection_digest": projection_digest(projection,
+                check=lambda: check_cancelled(cancellation_check))
+        })
         check_cancelled(cancellation_check)
+        if isinstance(nodes, CompactGraph) or getattr(nodes, "compact_graph", False):
+            return CompactArtifact(projection, nodes)
         return RebuildArtifact(projection=projection, nodes=nodes, edges=edges)
 
     def _artifact(

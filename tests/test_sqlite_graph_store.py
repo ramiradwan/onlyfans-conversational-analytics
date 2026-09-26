@@ -963,7 +963,9 @@ def test_populated_projection_v2_metric_upgrade_discards_legacy_rows_and_restart
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 1
     with upgraded.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 20
+        assert connection.execute("SELECT COUNT(*) FROM conversation_fragments").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM enrichment_reuse").fetchone()[0] == 0
         assert connection.execute(
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 0
@@ -980,7 +982,7 @@ def test_populated_projection_v2_metric_upgrade_discards_legacy_rows_and_restart
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
-def test_populated_projection_v1_metric_upgrade_through_v4_is_restart_safe(
+def test_populated_projection_v1_metric_upgrade_through_v5_is_restart_safe(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "projections-v1.sqlite3"
@@ -1041,7 +1043,9 @@ def test_populated_projection_v1_metric_upgrade_through_v4_is_restart_safe(
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 1
     with upgraded.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 20
+        assert connection.execute("SELECT COUNT(*) FROM conversation_fragments").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM enrichment_reuse").fetchone()[0] == 0
         assert connection.execute(
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 0

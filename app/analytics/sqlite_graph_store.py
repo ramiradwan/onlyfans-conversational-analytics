@@ -51,6 +51,54 @@ from app.models.analytics import (
 ActiveGenerationResolver = Callable[..., str | None]
 
 
+def _selected_read_prefix(connection, generation_id, account_id, roots=None,
+                          direction="both"):
+    """Filter indexed content before testing exact generation membership."""
+    from app.analytics.graph_membership_pages import supported
+    from app.analytics.shared_graph import uses_segments
+
+    if not supported(connection) or not uses_segments(connection, generation_id, account_id):
+        return "", ()
+    if direction not in ("incoming", "outgoing", "both"):
+        raise ValueError("graph_direction_invalid")
+    selection = "read_selection(generation_id,account_id) AS (VALUES(?,?))"
+    arguments = [generation_id, account_id]
+    parts = [selection]
+    def selected(kind):
+        return f"""EXISTS(SELECT 1 FROM generation_graph_segments m
+            CROSS JOIN graph_segment_membership_pages p USING(creator_account_id,segment_id)
+            CROSS JOIN graph_membership_{kind}s r USING(creator_account_id,page_id)
+            WHERE m.generation_id=(SELECT generation_id FROM read_selection)
+              AND m.creator_account_id=c.creator_account_id AND m.kind='{kind}'
+              AND m.bucket=substr(c.{kind}_id,4,2) AND p.kind=m.kind
+              AND p.bucket=substr(c.{kind}_id,4,3)
+              AND r.{kind}_id=c.{kind}_id AND r.content_id=c.content_id)"""
+    parts.append(f"""graph_nodes AS NOT MATERIALIZED (
+        SELECT (SELECT generation_id FROM read_selection) AS generation_id,
+          c.creator_account_id,c.node_id,c.kind,c.occurred_at,c.properties_json
+        FROM graph_node_content c INDEXED BY graph_node_content_by_id
+        WHERE c.creator_account_id=(SELECT account_id FROM read_selection)
+          AND {selected('node')})""")
+    if roots is not None:
+        parts.append("read_roots(id) AS (SELECT value FROM json_each(?))")
+        arguments.append(_json(sorted(roots)))
+        sides = ("source",) if direction == "outgoing" else (
+            ("target",) if direction == "incoming" else ("source", "target"))
+        edges = []
+        for side in sides:
+            duplicate = ("AND c.source_id NOT IN (SELECT id FROM read_roots)"
+                         if direction == "both" and side == "target" else "")
+            edges.append(f"""SELECT (SELECT generation_id FROM read_selection) AS generation_id,
+                c.creator_account_id,c.edge_id,c.source_id,c.target_id,c.relation,
+                c.occurred_at,c.sequence,c.properties_json
+              FROM graph_edge_content c INDEXED BY graph_edge_content_by_{side}
+              WHERE c.creator_account_id=(SELECT account_id FROM read_selection)
+                AND c.{side}_id IN (SELECT id FROM read_roots) {duplicate}
+                AND {selected('edge')}""")
+        parts.append("graph_edges AS NOT MATERIALIZED (" + " UNION ALL ".join(edges) + ")")
+    return "WITH " + ",".join(parts) + " ", tuple(arguments)
+
+
 class SQLiteGraphReader:
     """Hard-bounded, account-scoped reads from witnessed active generations."""
 
@@ -368,8 +416,10 @@ class SQLiteGraphReader:
                 timeless_source = "OR s.occurred_at IS NULL" if bounds.include_timeless else ""
                 timeless_target = "OR t.occurred_at IS NULL" if bounds.include_timeless else ""
                 timeless_edge = "OR e.occurred_at IS NULL" if bounds.include_timeless else ""
+                prefix, prefix_args = _selected_read_prefix(
+                    connection, generation_id, partition_key, {node_id}, direction)
                 rows = connection.execute(
-                    f"""
+                    prefix + f"""
                     SELECT e.edge_id FROM graph_edges AS e
                     JOIN graph_nodes AS s
                       ON s.generation_id=e.generation_id
@@ -389,6 +439,7 @@ class SQLiteGraphReader:
                     ORDER BY e.edge_id LIMIT ?
                     """,
                     (
+                        *prefix_args,
                         generation_id,
                         partition_key,
                         *direction_params,
@@ -757,8 +808,10 @@ class SQLiteGraphReader:
                 # Fetch only the remaining examination budget plus one sentinel;
                 # queue/visited caps are applied while expanding distinct nodes.
                 row_limit = max(1, remaining + 1)
+                prefix, prefix_args = _selected_read_prefix(
+                    connection, generation_id, partition_key, frontier, direction)
                 rows = connection.execute(
-                    f"""
+                    prefix + f"""
                     SELECT e.* FROM graph_edges AS e
                     JOIN graph_nodes AS s
                       ON s.generation_id=e.generation_id
@@ -779,6 +832,7 @@ class SQLiteGraphReader:
                     ORDER BY e.edge_id LIMIT ?
                     """,
                     (
+                        *prefix_args,
                         generation_id,
                         partition_key,
                         *frontier_params,
@@ -906,8 +960,10 @@ class SQLiteGraphReader:
         timeless_source = "OR s.occurred_at IS NULL" if bounds.include_timeless else ""
         timeless_target = "OR t.occurred_at IS NULL" if bounds.include_timeless else ""
         timeless_edge = "OR e.occurred_at IS NULL" if bounds.include_timeless else ""
+        prefix, prefix_args = _selected_read_prefix(
+            connection, generation_id, partition_key, frontier, direction)
         row = connection.execute(
-            f"""
+            prefix + f"""
             SELECT 1 FROM graph_edges AS e
             JOIN graph_nodes AS s
               ON s.generation_id=e.generation_id
@@ -929,6 +985,7 @@ class SQLiteGraphReader:
             LIMIT 1
             """,
             (
+                *prefix_args,
                 generation_id,
                 partition_key,
                 *frontier_params,
@@ -1122,8 +1179,10 @@ class SQLiteGraphReader:
         timeless_edge = "OR e.occurred_at IS NULL" if bounds.include_timeless else ""
         frontier_json = _json(sorted(frontier))
         selected_edge_json = _json(sorted(selected_edges))
+        prefix, prefix_args = _selected_read_prefix(
+            connection, generation_id, partition_key, frontier, "both")
         row = connection.execute(
-            f"""
+            prefix + f"""
             SELECT 1 FROM graph_edges AS e
             JOIN graph_nodes AS s
               ON s.generation_id=e.generation_id
@@ -1148,6 +1207,7 @@ class SQLiteGraphReader:
             LIMIT 1
             """,
             (
+                *prefix_args,
                 generation_id,
                 partition_key,
                 frontier_json,
@@ -1251,8 +1311,10 @@ class SQLiteGraphReader:
                     break
                 frontier_json = _json(sorted(frontier))
                 selected_edge_json = _json(sorted(selected_edges))
+                prefix, prefix_args = _selected_read_prefix(
+                    connection, generation_id, partition_key, frontier, "both")
                 edge_rows = connection.execute(
-                    f"""
+                    prefix + f"""
                     SELECT e.* FROM graph_edges AS e
                     JOIN graph_nodes AS s
                       ON s.generation_id=e.generation_id
@@ -1277,6 +1339,7 @@ class SQLiteGraphReader:
                     ORDER BY e.edge_id LIMIT ?
                     """,
                     (
+                        *prefix_args,
                         generation_id,
                         partition_key,
                         frontier_json,
@@ -1307,13 +1370,13 @@ class SQLiteGraphReader:
                 }
                 endpoint_json = _json(sorted(endpoint_ids))
                 endpoint_rows = connection.execute(
-                    """
+                    prefix + """
                     SELECT * FROM graph_nodes
                     WHERE generation_id=? AND creator_account_id=?
                       AND node_id IN (SELECT value FROM json_each(?))
                     ORDER BY node_id
                     """,
-                    (generation_id, partition_key, endpoint_json),
+                    (*prefix_args, generation_id, partition_key, endpoint_json),
                 ).fetchall()
                 endpoint_nodes: dict[str, GraphNode] = {}
                 for row in endpoint_rows:
@@ -1550,14 +1613,15 @@ class SQLiteGraphReader:
             return []
         node_id_json = _json(sorted(node_ids))
         nodes: list[GraphNode] = []
+        prefix, prefix_args = _selected_read_prefix(connection, generation_id, partition_key)
         for row in connection.execute(
-            """
+            prefix + """
             SELECT * FROM graph_nodes
             WHERE generation_id=? AND creator_account_id=?
               AND node_id IN (SELECT value FROM json_each(?))
             ORDER BY node_id
             """,
-            (generation_id, partition_key, node_id_json),
+            (*prefix_args, generation_id, partition_key, node_id_json),
         ):
             cls._check_budget(deadline, cancellation_check)
             nodes.append(_node(row))
@@ -1660,13 +1724,8 @@ class SQLiteGraphReader:
 
 
 _INITIAL_GRAPH_WRITE_CHUNK = 500
-# The adaptive chunk size only ever shrinks (see _record_operation_duration).
-# Flooring it keeps a pathological run of slow writes — e.g. a Windows SQLite
-# I/O hiccup under a short test lease — from collapsing the chunk toward 1 and
-# turning a 50k-row replace() into ~50k heartbeat-gated iterations that hang for
-# minutes. The floor bounds the iteration count without touching the per-chunk
-# lease heartbeat barrier that keeps the generation fenced.
 _MIN_GRAPH_WRITE_CHUNK = 64
+_MAX_GRAPH_WRITE_CHUNK = 4_000
 
 
 class SQLiteGraphGenerationWriter:
@@ -1703,6 +1762,7 @@ class SQLiteGraphGenerationWriter:
         self._terminal_transition = False
         self._ownership_lost = False
         self._valid = True
+        self._write_connection = None
 
     @property
     def generation_id(self) -> str:
@@ -1831,13 +1891,15 @@ class SQLiteGraphGenerationWriter:
 
     def replace(self, *, nodes: list[GraphNode], edges: list[GraphEdge]) -> None:
         with self.lease_session():
+            safe_nodes, safe_edges = safe_graph_records(nodes, edges, check=self._check_heartbeat)
+            self._replace_validated_records(safe_nodes, safe_edges)
+
+    def _replace_validated_records(self, safe_nodes, safe_edges) -> None:
+        with self.lease_session():
 
             def keepalive() -> None:
                 self._check_heartbeat()
 
-            safe_nodes, safe_edges = safe_graph_records(
-                nodes, edges, check=keepalive
-            )
             node_map: dict[str, GraphNode] = {}
             for node in safe_nodes:
                 keepalive()
@@ -1900,11 +1962,11 @@ class SQLiteGraphGenerationWriter:
                         """,
                         node_parameters,
                     )
-                self._record_operation_duration(time.monotonic() - transaction_started)
+                self._record_operation_duration(time.monotonic() - transaction_started, allow_growth=True)
                 node_start += chunk_size
-                self._wait_for_heartbeat(
-                    max(0.001, min(0.1, self._lease_seconds / 5))
-                )
+                # The committed transaction renewed the lease on this thread.
+                # The next transaction rechecks ownership before writing.
+                self._check_heartbeat()
 
             edge_start = 0
             while edge_start < len(ordered_edges):
@@ -1927,19 +1989,19 @@ class SQLiteGraphGenerationWriter:
                         """,
                         edge_parameters,
                     )
-                self._record_operation_duration(time.monotonic() - transaction_started)
+                self._record_operation_duration(time.monotonic() - transaction_started, allow_growth=True)
                 edge_start += chunk_size
-                self._wait_for_heartbeat(
-                    max(0.001, min(0.1, self._lease_seconds / 5))
-                )
+                # The committed transaction renewed the lease on this thread.
+                # The next transaction rechecks ownership before writing.
+                self._check_heartbeat()
             self.refresh()
 
-    def _record_operation_duration(self, elapsed: float) -> None:
+    def _record_operation_duration(self, elapsed: float, *, allow_growth: bool = False) -> None:
         self._worst_operation_seconds = max(
             elapsed,
             self._worst_operation_seconds * 0.75,
         )
-        target_duration = self._lease_seconds / 5
+        target_duration = min(1.0, self._lease_seconds / 5)
         if elapsed > target_duration and self._chunk_size > _MIN_GRAPH_WRITE_CHUNK:
             scaled = max(
                 _MIN_GRAPH_WRITE_CHUNK,
@@ -1948,6 +2010,8 @@ class SQLiteGraphGenerationWriter:
             self._chunk_size = max(
                 _MIN_GRAPH_WRITE_CHUNK, min(self._chunk_size - 1, scaled)
             )
+        elif allow_growth and self._worst_operation_seconds < target_duration / 4:
+            self._chunk_size = min(_MAX_GRAPH_WRITE_CHUNK, self._chunk_size * 2)
 
     def _remaining_lease_seconds(self) -> float:
         with self._state_lock:
@@ -1961,19 +2025,6 @@ class SQLiteGraphGenerationWriter:
         if remaining <= 0:
             return min(0.25, max(0.01, self._lease_seconds / 2))
         return min(0.25, max(0.01, remaining / 2))
-
-    def _wait_for_heartbeat(self, interval: float) -> None:
-        thread = self._heartbeat_thread
-        if thread is None:
-            return
-        deadline = time.monotonic() + interval
-        initial = self._remaining_lease_seconds()
-        while self._remaining_lease_seconds() <= initial:
-            self._check_heartbeat()
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return
-            time.sleep(min(0.001, remaining))
 
     @contextmanager
     def lease_session(self):
@@ -2006,12 +2057,18 @@ class SQLiteGraphGenerationWriter:
             self._start_heartbeat()
             started = True
             self._check_heartbeat()
+            self._write_connection = self.database.connect()
+            from app.analytics.database import GENERATION_WRITE_CACHE_KIB
+            self._write_connection.execute(f"PRAGMA cache_size=-{GENERATION_WRITE_CACHE_KIB}")
             yield
         except BaseException as error:
             operation_error = error
             raise
         finally:
             heartbeat_error = self._stop_heartbeat() if started else None
+            connection, self._write_connection = self._write_connection, None
+            if connection is not None:
+                connection.close()
             with self._state_lock:
                 self._lease_session_depth = 0
                 self._lease_session_owner = None
@@ -2157,6 +2214,10 @@ class SQLiteGraphGenerationWriter:
 
     def validate(self) -> str:
         from app.analytics.sqlite_projection_store import recompute_generation
+        from app.analytics.validation_receipt import capture_receipt, content_stamp
+
+        self.validation_receipt = None
+        self.validated_graph_segments = ()
 
         with self.lease_session():
             self._check_heartbeat()
@@ -2171,10 +2232,23 @@ class SQLiteGraphGenerationWriter:
                     def keepalive() -> None:
                         self._check_heartbeat()
 
+                    verified_stamp = content_stamp(connection)
                     values = recompute_generation(
                         connection,
                         self._generation_id,
-                        check=keepalive,
+                        check=keepalive, materialize_projection=False,
+                        graph_validation=getattr(
+                            self, 'shared_graph_validation', None
+                        ),
+                        enrichment_validation=getattr(
+                            self, 'enrichment_validation', None
+                        ),
+                    )
+                    self.validated_graph_segments = values.get(
+                        'graph_segments', ()
+                    )
+                    self.validated_enrichment_units = values.get(
+                        'enrichment_units', ()
                     )
                     keepalive()
                     now = _now()
@@ -2207,7 +2281,9 @@ class SQLiteGraphGenerationWriter:
                     if updated.rowcount != 1:
                         self._invalidate_ownership()
                         raise GraphStoreError("graph_generation_ownership_lost")
+                    receipt = capture_receipt(connection, self._generation_id, verified_stamp=verified_stamp)
                     connection.commit()
+                    self.validation_receipt = receipt
                 except BaseException:
                     connection.rollback()
                     raise
@@ -2253,7 +2329,13 @@ class SQLiteGraphGenerationWriter:
     @contextmanager
     def _owned_transaction(self):
         self._check_heartbeat()
-        connection = self.database.connect()
+        with self._state_lock:
+            if self._write_connection is not None and self._lease_session_owner != threading.get_ident():
+                raise GraphStoreError("graph_lease_session_busy")
+            connection = self._write_connection
+        owned = connection is None
+        if owned:
+            connection = self.database.connect()
         try:
             with self._write_gate:
                 self._check_heartbeat()
@@ -2271,7 +2353,8 @@ class SQLiteGraphGenerationWriter:
                     connection.rollback()
                     raise
         finally:
-            connection.close()
+            if owned:
+                connection.close()
         self._check_heartbeat()
 
     def _renew_on_connection(

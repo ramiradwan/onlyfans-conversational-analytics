@@ -27,7 +27,9 @@
         "frontend/src/views/SettingsView.tsx",
         "frontend/src/components/dashboard/DashboardOverview.tsx",
         "frontend/src/components/CommercialActivationControls.tsx",
-        "frontend/src/components/CreatorVaultControls.tsx"
+        "frontend/src/components/CreatorVaultControls.tsx",
+        "frontend/src/components/analytics/ConversationQuestions.tsx",
+        "frontend/src/components/analytics/QuestionSourceDialog.tsx"
       ]
     },
     "extension.setup": {
@@ -68,6 +70,11 @@
       "id": "desktop-first-numbers",
       "entry_state": "desktop.passkey_sign_in",
       "success_state": "desktop.numbers_ready"
+    },
+    {
+      "id": "conversation-questions",
+      "entry_state": "questions.controls",
+      "success_state": "questions.source"
     }
   ],
   "states": [
@@ -1059,6 +1066,136 @@
           "kind": "unit",
           "file": "extension/tests/ui-surfaces.test.mjs",
           "name": "page command ownership leaves legal review in setup and data management in Options"
+        }
+      ]
+    },
+    {
+      "id": "questions.controls",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/ConversationQuestions.tsx",
+        "text": "data-journey-state=\"questions.controls\""
+      },
+      "transitions": [
+        {
+          "to": "questions.results",
+          "by": "user",
+          "action": "review-question"
+        },
+        {
+          "to": "questions.undetermined",
+          "by": "user",
+          "action": "review-question"
+        },
+        {
+          "to": "questions.unavailable",
+          "by": "user",
+          "action": "review-question"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/ConversationQuestions.test.tsx",
+          "name": "shows presets, dates and disabled pricing without bypassing availability"
+        }
+      ]
+    },
+    {
+      "id": "questions.results",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/ConversationQuestions.tsx",
+        "text": "data-journey-state=\"questions.results\""
+      },
+      "transitions": [
+        {
+          "to": "questions.source",
+          "by": "user",
+          "action": "review-question"
+        },
+        {
+          "to": "questions.controls",
+          "by": "user",
+          "action": "review-question"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/ConversationQuestions.test.tsx",
+          "name": "shows paginated results and opens source text and the saved conversation"
+        }
+      ]
+    },
+    {
+      "id": "questions.source",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/QuestionSourceDialog.tsx",
+        "text": "data-journey-state=\"questions.source\""
+      },
+      "transitions": [
+        {
+          "to": "questions.results",
+          "by": "user",
+          "action": "review-question"
+        },
+        {
+          "to": "questions.unavailable",
+          "by": "user",
+          "action": "review-question"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/ConversationQuestions.test.tsx",
+          "name": "shows paginated results and opens source text and the saved conversation"
+        }
+      ]
+    },
+    {
+      "id": "questions.undetermined",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/ConversationQuestions.tsx",
+        "text": "data-journey-state=\"questions.undetermined\""
+      },
+      "transitions": [
+        {
+          "to": "questions.controls",
+          "by": "user",
+          "action": "review-question"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/ConversationQuestions.test.tsx",
+          "name": "distinguishes unknown reply status from an empty match list"
+        }
+      ]
+    },
+    {
+      "id": "questions.unavailable",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/ConversationQuestions.tsx",
+        "text": "data-journey-state=\"questions.unavailable\""
+      },
+      "transitions": [
+        {
+          "to": "questions.controls",
+          "by": "user",
+          "action": "review-question"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/ConversationQuestions.test.tsx",
+          "name": "shows unavailable questions without old results"
         }
       ]
     }
