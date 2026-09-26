@@ -79,7 +79,7 @@ def test_six_phase_collector_has_independent_results_and_cleanup(tmp_path, monke
     config = configuration(tmp_path, "matrix")
     report = collect(config)
     assert report["complete"], report
-    assert not q.check_matrix(config["manifest"], "mutation/reference-windows-16g/1000", report), report
+    assert_matrix_recording(config["manifest"], report)
     events = list((tmp_path / "collector/events").glob("*-phase.json"))
     assert len(events) == 6
     assert all(q.read_json(path)["value"]["expected"] == q.read_json(path)["value"]["actual"] for path in events)
@@ -109,3 +109,62 @@ def test_source_change_fails_before_fixture_creation(tmp_path):
     with pytest.raises(ValueError, match="subject_source_mismatch"):
         collect(config)
     assert not Path(config["data"]).exists()
+
+
+def assert_matrix_recording(manifest, report):
+    """Check recording without requiring product latency on an unqualified host."""
+    failed_queries = []
+    for phase in report["phases"]:
+        clocks = phase["clocks"]
+        if clocks["first_valid_visible_result"] is not None:
+            continue
+        observation = phase.get("observation", {})
+        assert observation.get("error") == "analytics_question_limit_exceeded", phase
+        assert observation.get("current") is False, phase
+        # Only the missing successful observation is expected. Other clocks,
+        # canonical equality, cleanup, source counts and backlog must still pass.
+        names = ["operation_started", "activation", "required_cleanup_complete",
+                 "backlog_drained", "operation_finished"]
+        values = [clocks.get(name) for name in names]
+        assert all(q.finite(value) for value in values), phase
+        assert values == sorted(values), phase
+        if phase["phase"] not in ("cold", "unchanged_rebuild"):
+            committed = clocks.get("durable_canonical_commit")
+            assert q.finite(committed) and values[0] <= committed <= values[1], phase
+        failed_queries.append(phase["phase"])
+    errors = q.check_matrix(manifest, "mutation/reference-windows-16g/1000", report)
+    assert errors == ["missing_or_invalid_operation_clock"] * len(failed_queries), {
+        "errors": errors, "phases": [{"phase": p["phase"], "clocks": p["clocks"],
+        "observation": p.get("observation")} for p in report["phases"]]}
+    # The original report is not changed or promoted: every failed query still
+    # makes the frozen qualification verifier fail.
+    if failed_queries:
+        assert errors
+
+
+def test_recorded_query_failure_still_fails_matrix_qualification():
+    from tests.test_analytics_closure_qualification import MANIFEST, matrix
+    report = matrix(1000)
+    report["phases"][0]["clocks"]["first_valid_visible_result"] = None
+    report["phases"][0]["observation"] = {
+        "error": "analytics_question_limit_exceeded", "current": False}
+    original = deepcopy(report)
+    assert_matrix_recording(MANIFEST, report)
+    assert report == original
+    assert q.check_matrix(MANIFEST, "mutation/reference-windows-16g/1000", report)
+
+
+@pytest.mark.parametrize("fault", ["activation", "required_cleanup_complete",
+                                    "backlog_drained", "operation_finished", "unexplained_query"])
+def test_query_failure_cannot_hide_a_recording_defect(fault):
+    from tests.test_analytics_closure_qualification import MANIFEST, matrix
+    report = matrix(1000)
+    phase = report["phases"][0]
+    phase["clocks"]["first_valid_visible_result"] = None
+    phase["observation"] = {"error": "analytics_question_limit_exceeded", "current": False}
+    if fault == "unexplained_query":
+        phase["observation"]["error"] = None
+    else:
+        phase["clocks"][fault] = None
+    with pytest.raises(AssertionError):
+        assert_matrix_recording(MANIFEST, report)
