@@ -1,7 +1,6 @@
 """FastAPI application for ingestion, analytics, Agent, and Bridge traffic."""
 
 import logging
-import os
 from functools import lru_cache
 
 from fastapi import FastAPI
@@ -22,6 +21,7 @@ from app.api.endpoints import (
 from app.bootstrap import history_source, transport_manager
 from app.core.broadcast import broadcast
 from app.core.config import settings
+from app.core.customer_release import resolve_hosted_api_origin
 from app.core.resource_paths import resource_path
 from app.persistence.auth import InstallationKeyReference, SQLiteAuthenticationStore
 from app.security.activation_gate import (
@@ -35,7 +35,6 @@ from app.security.capability_license_redemption import (
     durable_capability_license_opaque_redemption,
 )
 from app.security.grant_refresh import (
-    HOSTED_ORIGIN_ENVIRONMENT_VARIABLE,
     GrantRefreshLifecycle,
     configured_grant_refresh,
 )
@@ -61,7 +60,7 @@ def _capability_license_store() -> SQLiteAuthenticationStore:
 def configure_capability_license_delivery() -> None:
     """Wire shipping CapabilityLicense delivery and opaque redemption actions."""
 
-    hosted_origin = os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, "")
+    hosted_origin = resolve_hosted_api_origin()
     capability_license.configure_capability_license_delivery(
         durable_capability_license_delivery(
             _capability_license_store,
@@ -93,7 +92,7 @@ def start_grant_refresh() -> None:
 
     _grant_refresh = configured_grant_refresh(
         open_store,
-        hosted_origin=os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""),
+        hosted_origin=resolve_hosted_api_origin(),
         transport_factory=hosted_transport,
         proof_authority_factory=installation_proof_authority,
     )
