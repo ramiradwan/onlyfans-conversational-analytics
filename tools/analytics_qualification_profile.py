@@ -19,6 +19,9 @@ FUNCTIONS = frozenset({
     '_activate_completed_generation', 'collect_garbage',
     'insert_units', 'insert_page_sets', 'resolve_page_sets',
     'load_analyzer_entries', 'verify_generation_units', '_validate_unit',
+    'try_append', '_previous_graph', 'create_pages', 'checked_page_sets',
+    'create_graph_unit', 'create_enrichment_unit', 'build_conversation_metrics',
+    '_canonical_conversations', 'load_enrichment_unit_contents',
     '_quiesce_heartbeat_for_terminal_transition', 'refresh_identity_cache',
 })
 

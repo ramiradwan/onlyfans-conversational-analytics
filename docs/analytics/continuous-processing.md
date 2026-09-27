@@ -16,6 +16,8 @@ Canonical digest calculation covers source content outside the selected period. 
 
 For a large dominant conversation, a single message appended in canonical order can reuse an unchanged canonical prefix. The full prefix digest and current-process graph/enrichment proofs must match. Message-local analyzers run only for the new message; graph construction covers the boundary and new message. Conversation metrics and the complete generation are still checked. Edits, deletions, late arrival, expired inputs and context-dependent analysis retain the full conversation path.
 
+When an append retains complete graph and enrichment units, it omits the additional conversation-page cache. Both units still undergo their normal validation. If either unit is refused by its existing size or count bound, the builder keeps the page-cache fallback.
+
 ## Graph assembly and visibility
 
 Shared participants, topics, and entities use their stable identities. Only records supplied by current conversations enter the assembled graph. A conversation with no retained messages loses its predecessor graph membership as well as its metrics. Participant conversation timelines are reconstructed from the current metrics, so deleting a middle conversation reconnects its remaining neighbors without retaining the deleted conversation.
