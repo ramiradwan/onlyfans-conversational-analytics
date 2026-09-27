@@ -149,13 +149,16 @@ def create_graph_unit(
     edge_data = _compress(_encode_ids(edges))
     if len(node_data) > MAX_GRAPH_UNIT_BYTES or len(edge_data) > MAX_GRAPH_UNIT_BYTES:
         return None
+    from app.analytics.conversation_enrichment_units import AppendedMessageEnrichments
+    first_source = (findings.first_source_at if isinstance(findings, AppendedMessageEnrichments)
+                    else min(item.sent_at for item in findings))
     header = ConversationGraphUnitHeader(
         account_ref=account_ref,
         conversation_ref=conversation_ref,
         input_digest=input_digest,
         config_digest=config_digest,
         retention_cutoff=cutoff,
-        expires_at=min(item.sent_at for item in findings)
+        expires_at=first_source
         + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS),
         participant_ref=metrics.participant_ref,
         started_at=metrics.started_at,

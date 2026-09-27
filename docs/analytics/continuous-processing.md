@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, source_snapshot.py, canonical_source.py, conversation_reuse.py, conversation_sql.py, graph_projection.py, pipeline.py, scheduling.py, runtime.py, both projection stores, and sql/0006_conversation_fragments.sql before changing behavior claims. -->
+<!-- CODE-VERIFY: Check test_append_materialization_work.py, metrics.py, conversation_graph_units.py, recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, source_snapshot.py, canonical_source.py, conversation_reuse.py, conversation_sql.py, graph_projection.py, pipeline.py, scheduling.py, runtime.py, both projection stores, and sql/0006_conversation_fragments.sql before changing behavior claims. -->
 
 # Process changed conversations
 
@@ -23,6 +23,8 @@ Verified graph chunks retain their exact canonical bytes during append assembly.
 When an append retains complete graph and enrichment units, it omits the additional conversation-page cache. Both units still undergo their normal validation. If either unit is refused by its existing size or count bound, the builder keeps the page-cache fallback.
 
 An exact append keeps all predecessor graph members. It does not enumerate them as possible deletions. Changed or removed conversations retain the ordinary removal checks. Prefix copying frames previously verified canonical bytes without decoding their property objects. Stored enrichment validation compares actual prefix bytes and checks the new message, including duplicate references with JSON escapes.
+
+An eligible append keeps verified prefix records serialized through metrics and staging. Cache-entry checks materialize only their source messages while retaining the earliest actual source time. Missing proofs, incomplete units and explicit artifact reads keep the full validation and materialization path.
 
 ## Graph assembly and visibility
 

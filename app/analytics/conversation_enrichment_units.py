@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from fractions import Fraction
 import hashlib
@@ -248,6 +249,35 @@ def analyzer_records(unit: ConversationEnrichmentUnit):
     return () if raw == b"[]" else tuple(raw.splitlines())
 
 
+class AppendedMessageEnrichments(Sequence):
+    """Keep matched prefix bytes; create old models only for explicit consumers."""
+
+    def __init__(self, rows, tail, references, first_source_at):
+        self._rows = tuple(rows)
+        self.tail = tail
+        self.prefix_references = frozenset(references)
+        self.first_source_at = first_source_at
+        self._boundary = None
+
+    def __len__(self):
+        return len(self._rows) + 1
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [self[position] for position in range(*index.indices(len(self)))]
+        if index < 0:
+            index += len(self)
+        if not 0 <= index < len(self):
+            raise IndexError(index)
+        if index == len(self._rows):
+            return self.tail
+        if index == len(self._rows) - 1:
+            if self._boundary is None:
+                self._boundary = MessageEnrichment.model_validate_json(self._rows[index])
+            return self._boundary
+        return MessageEnrichment.model_validate_json(self._rows[index])
+
+
 class IncrementalMessageEnrichments:
     """Internal sequence that streams canonical rows without retaining message models."""
 
@@ -303,6 +333,30 @@ class IncrementalMessageEnrichments:
         for raw in self.iter_canonical_records():
             yield MessageEnrichment.model_validate_json(raw)
 
+    def validation_messages_for(self, references, *, check=lambda: None):
+        """Read actual row identities and dates; model only requested cache sources."""
+        messages, first = {}, None
+        for unit in self.units:
+            if not isinstance(unit, ConversationEnrichmentUnit):
+                continue
+            for raw in message_records(unit):
+                check()
+                value = json.loads(raw)
+                item = None
+                try:
+                    at = datetime.fromisoformat(value['sent_at'])
+                    if at.tzinfo is None or at.utcoffset() is None:
+                        raise ValueError('naive_source_time')
+                except (TypeError, ValueError):
+                    item = MessageEnrichment.model_validate_json(raw)
+                    at = item.sent_at
+                first = at if first is None or at < first else first
+                if value['message_ref'] in references:
+                    item = item or MessageEnrichment.model_validate_json(raw)
+                    messages[item.message_ref] = item
+        check()
+        return messages, first
+
     def validation_messages(self):
         result = {}
         for unit in self.units:
@@ -356,7 +410,9 @@ def append_enrichment_unit(previous, *, input_digest, config_digest, cutoff,
     if (tail.account_ref != h.account_ref or tail.conversation_ref != h.conversation_ref
             or tail.participant_ref != h.metrics.participant_ref or tail.sent_at <= cutoff
             or (tail.sent_at, tail.source_ordinal) < (findings[-2].sent_at, findings[-2].source_ordinal)
-            or any(item.message_ref == tail.message_ref for item in findings[:-1])):
+            or (tail.message_ref in findings.prefix_references
+                if isinstance(findings, AppendedMessageEnrichments)
+                else any(item.message_ref == tail.message_ref for item in findings[:-1]))):
         return None
     check()
     old_rows = message_records(previous)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections import Counter
 from statistics import median
+from datetime import datetime
+from typing import NamedTuple
 
 from app.analytics.provenance import stable_config_digest
 from app.analytics.opaque_refs import account_ref, conversation_ref, participant_ref
@@ -76,12 +78,42 @@ def _ordered_counts(counter: Counter[str]) -> dict[str, int]:
     return {key: counter[key] for key in sorted(counter)}
 
 
+class ConversationMetricInput(NamedTuple):
+    """Only the values used by the unchanged conversation metric calculation."""
+    sent_at: datetime
+    source_ordinal: int
+    direction: MessageDirection
+    sentiment_label: str
+    sentiment_score: float
+    topic_ids: tuple[str, ...]
+    entity_types: tuple[str, ...]
+    engagement_state: str
+
+    @classmethod
+    def from_enrichment(cls, item):
+        return cls(item.sent_at, item.source_ordinal, item.direction,
+            item.sentiment.label.value, item.sentiment.score,
+            tuple(topic.taxonomy_id for topic in item.topic_entities.topics),
+            tuple(entity.entity_type.value for entity in item.topic_entities.entities),
+            item.engagement.state.value)
+
+
 def build_conversation_metrics(
     creator_account_id: str,
     conversation: CanonicalConversation,
     enrichments: list[MessageEnrichment],
 ) -> ConversationMetrics:
     """Aggregate one conversation without using wall-clock state."""
+    return build_conversation_metrics_from_values(creator_account_id, conversation,
+        (ConversationMetricInput.from_enrichment(item) for item in enrichments))
+
+
+def build_conversation_metrics_from_values(
+    creator_account_id: str,
+    conversation: CanonicalConversation,
+    enrichments,
+) -> ConversationMetrics:
+    """Apply the same metric rules to values from models or a verified prefix."""
 
     ordered = sorted(
         enrichments,
@@ -112,18 +144,18 @@ def build_conversation_metrics(
         max(0.0, (right.sent_at - left.sent_at).total_seconds())
         for left, right in zip(ordered, ordered[1:])
     ]
-    sentiment_counts = Counter(item.sentiment.label.value for item in ordered)
+    sentiment_counts = Counter(item.sentiment_label for item in ordered)
     topic_counts: Counter[str] = Counter()
     entity_counts: Counter[str] = Counter()
     engagement_counts: Counter[str] = Counter()
     for item in ordered:
-        topic_counts.update(topic.taxonomy_id for topic in item.topic_entities.topics)
+        topic_counts.update(item.topic_ids)
         entity_counts.update(
-            entity.entity_type.value for entity in item.topic_entities.entities
+            item.entity_types
         )
-        engagement_counts[item.engagement.state.value] += 1
+        engagement_counts[item.engagement_state] += 1
 
-    sentiment_total = sum(item.sentiment.score for item in ordered)
+    sentiment_total = sum(item.sentiment_score for item in ordered)
     average_sentiment = sentiment_total / len(ordered) if ordered else None
     started_at = ordered[0].sent_at if ordered else None
     ended_at = ordered[-1].sent_at if ordered else None

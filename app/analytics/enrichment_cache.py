@@ -8,6 +8,7 @@ from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 import hashlib
+import json
 from typing import Annotated, Callable, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictInt, StrictStr
@@ -247,15 +248,32 @@ def _checked_entries(artifact, entries: tuple[bytes, ...], *,
     check()
     if len(entries) > MAX_CACHE_ENTRIES or sum(map(len, entries)) > MAX_CACHE_BYTES:
         raise ValueError("enrichment_cache_size_invalid")
+    if not entries:
+        return
     source = artifact.projection.message_enrichments
-    local_messages = getattr(source, "validation_messages", None)
-    messages = (
-        local_messages()
-        if callable(local_messages)
-        else {message.message_ref: message for message in source}
-    )
+    select = getattr(source, "validation_messages_for", None)
+    if callable(select):
+        # These keys only select rows to read. Each entry is still fully
+        # validated below, one at a time, before it can be stored.
+        references = set()
+        for data in entries:
+            check()
+            if len(data) > MAX_ENTRY_BYTES:
+                raise ValueError("enrichment_cache_entry_invalid")
+            try:
+                reference = json.loads(data)['key']['message_ref']
+            except (KeyError, TypeError) as error:
+                raise ValueError("enrichment_cache_source_invalid") from error
+            if not isinstance(reference, str):
+                raise ValueError("enrichment_cache_source_invalid")
+            references.add(reference)
+        messages, earliest_expiry = select(references, check=check)
+    else:
+        local_messages = getattr(source, "validation_messages", None)
+        messages = (local_messages() if callable(local_messages)
+                    else {message.message_ref: message for message in source})
+        earliest_expiry = min((m.sent_at for m in messages.values()), default=None)
     seen = set()
-    earliest_expiry = min((m.sent_at for m in messages.values()), default=None)
     if earliest_expiry is not None:
         earliest_expiry += timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
     check()

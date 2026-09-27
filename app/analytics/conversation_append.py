@@ -2,22 +2,24 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 import hashlib
 import json
 import re
 
 from app.analytics.compact_graph import CompactGraph
 from app.analytics.conversation_enrichment_units import (
-    ConversationEnrichmentUnit, message_records,
+    AppendedMessageEnrichments, ConversationEnrichmentUnit, message_records,
 )
 from app.analytics.conversation_graph_units import graph_unit_ids
 from app.analytics.graph_projection import stable_node_id
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
-from app.analytics.metrics import build_conversation_metrics
+from app.analytics.metrics import (
+    ConversationMetricInput, build_conversation_metrics_from_values as build_conversation_metrics,
+)
 from app.analytics.opaque_refs import account_ref, conversation_ref, message_ref
 from app.analytics.source_snapshot import conversation_digest
-from app.models.analytics import GraphEdge, GraphNodeKind, MessageEnrichment
+from app.models.analytics import GraphEdge, GraphNodeKind
 
 MIN_APPEND_MESSAGES = 1024
 
@@ -105,21 +107,38 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
     if pair is None:
         raise ValueError('conversation_append_enrichment_missing')
     unit = ConversationEnrichmentUnit(expected, pair[0], pair[1])
-    findings = []
-    for record, message in zip(message_records(unit), ordered[:-1], strict=True):
+    rows = message_records(unit)
+    inputs, references = [], set()
+    for record, message in zip(rows, ordered[:-1], strict=True):
         check()
-        finding = MessageEnrichment.model_validate_json(record)
-        if (finding.account_ref != partition or finding.conversation_ref != ref
-                or finding.message_ref != message_ref(account, conversation.conversation_id, message.message_id)
-                or finding.source_ordinal != message.source_ordinal
-                or finding.sent_at != message.sent_at or finding.direction != message.direction):
+        value = json.loads(record)
+        if not isinstance(value['sent_at'], str):
+            return None  # Noncanonical timestamp encodings use full model validation.
+        at = datetime.fromisoformat(value['sent_at'])
+        ref_value = message_ref(account, conversation.conversation_id, message.message_id)
+        if (value['account_ref'] != partition or value['conversation_ref'] != ref
+                or value['participant_ref'] != expected.metrics.participant_ref
+                or value['message_ref'] != ref_value or ref_value in references
+                or value['source_ordinal'] != message.source_ordinal
+                or at != message.sent_at or value['direction'] != message.direction):
             raise ValueError('conversation_append_source_mismatch')
-        findings.append(finding)
+        references.add(ref_value)
+        inputs.append(ConversationMetricInput(at, value['source_ordinal'], message.direction,
+            value['sentiment']['label'], float(value['sentiment']['score']),
+            tuple(topic['taxonomy_id'] for topic in value['topic_entities']['topics']),
+            tuple(entity['entity_type'] for entity in value['topic_entities']['entities']),
+            value['engagement']['state']))
     with reuse.known_new_message(message_ref(account, conversation.conversation_id, ordered[-1].message_id)):
-        findings.extend(pipeline.enrichment.enrich_conversation(account,
+        added = pipeline.enrichment.enrich_conversation(account,
             conversation.model_copy(update={'messages': ordered[-1:]}),
-            cancellation_check=cancellation_check))
-    metrics = build_conversation_metrics(account, conversation, findings)
+            cancellation_check=cancellation_check)
+    if len(added) != 1 or added[0].message_ref in references:
+        raise ValueError('conversation_append_tail_invalid')
+    tail = added[0]
+    inputs.append(ConversationMetricInput.from_enrichment(tail))
+    metrics = build_conversation_metrics(account, conversation, inputs)
+    findings = AppendedMessageEnrichments(rows, tail, references, inputs[0].sent_at)
+    del inputs
     graph = _previous_graph(loader, old_graph, check)
     delta = CompactGraph(partition)
     boundary = conversation.model_copy(update={'messages': ordered[-2:]})
