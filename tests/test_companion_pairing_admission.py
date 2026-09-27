@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import hashlib
 import secrets
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -14,6 +15,7 @@ from app.persistence.auth import (
     AuthenticationStateError,
     AuthorizedAccountBinding,
     BridgeSessionIssue,
+    ClaimSubmission,
     InstallationKeyReference,
     InstallationKeyReservation,
     ProvisioningCandidate,
@@ -34,6 +36,7 @@ from app.persistence.companion_pairing import (
     CompanionPairingStateError,
     CompanionPin,
 )
+from app.provisioning.progress_reporting import OnboardingProgressCoordinator
 
 
 @dataclass
@@ -193,6 +196,164 @@ def _confirm(context, window):
         confirmation_session_id=session.session_id,
         confirmed_at=clock.at,
     )
+
+
+def _consume_claim(context):
+    store, _, clock, _ = context
+    store.record_claim_submission(
+        ClaimSubmission("claim", "onboarding", "organization", "brain", clock.at)
+    )
+    assert store.resolve_claim_submission(
+        "claim", outcome=None, resolved_at=clock.at
+    )
+
+
+def test_companion_confirmation_queues_exactly_one_account_fact(context):
+    _approve(context)
+    _consume_claim(context)
+    store, pairing, clock, _ = context
+    awaiting = _await(context)
+    assert store.onboarding_progress_events()[-1].milestone == "enrolled"
+    pin = _confirm(context, awaiting)
+    events = [e for e in store.onboarding_progress_events() if e.milestone == "account-bound"]
+    assert len(events) == 1
+    assert events[0].occurred_at == clock.at
+    assert pairing.companion_pin(pin.pairing_id) is not None
+    with pytest.raises(CompanionPairingCASMismatch):
+        _confirm(context, awaiting)
+    _confirm(context, _await(context, "replacement"))
+    assert [e for e in store.onboarding_progress_events() if e.milestone == "account-bound"] == events
+
+
+def test_failed_companion_confirmation_queues_no_account_fact(context, monkeypatch):
+    _approve(context)
+    _consume_claim(context)
+    store, pairing, _, _ = context
+    awaiting = _await(context)
+
+    def fail(_connection):
+        raise RuntimeError("injected admission failure")
+
+    monkeypatch.setattr(store, "_increment_authorization_epoch", fail)
+    with pytest.raises(RuntimeError, match="injected"):
+        _confirm(context, awaiting)
+    assert pairing.companion_pin(awaiting.pairing_id) is None
+    assert all(e.milestone != "account-bound" for e in store.onboarding_progress_events())
+    monkeypatch.undo()
+    _confirm(context, awaiting)
+    assert [e.milestone for e in store.onboarding_progress_events()].count("account-bound") == 1
+
+
+def test_existing_companion_pin_reconciles_missing_facts_once(context):
+    _approve(context)
+    _consume_claim(context)
+    store, pairing, clock, _ = context
+    pin = _confirm(context, _await(context))
+    session = pairing.session_authority(pin.pairing_id).binding("authenticated-session")
+    with store.database.transaction() as connection:
+        connection.execute("DELETE FROM onboarding_progress_outbox WHERE milestone = 'account-bound'")
+    assert not any(e.milestone == "account-bound" for e in store.onboarding_progress_events())
+    getattr(store, "reconcile_onboarding_progress", lambda **kwargs: None)(observed_at=clock.at)
+    assert [e.milestone for e in store.onboarding_progress_events()].count("account-bound") == 1
+    assert not any(e.milestone == "first-capture-ready" for e in store.onboarding_progress_events())
+    store.reconcile_onboarding_progress(
+        observed_at=clock.at, session=session, current_configuration=True
+    )
+    events = store.onboarding_progress_events()
+    assert [e.milestone for e in events].count("first-capture-ready") == 1
+    store.reconcile_onboarding_progress(
+        observed_at=clock.at, session=session, current_configuration=True
+    )
+    assert store.onboarding_progress_events() == events
+
+
+def test_progress_coordinator_start_reconciles_existing_pin(context):
+    _approve(context)
+    _consume_claim(context)
+    store, _, clock, _ = context
+    _confirm(context, _await(context))
+    with store.database.transaction() as connection:
+        connection.execute("DELETE FROM onboarding_progress_outbox WHERE milestone = 'account-bound'")
+    coordinator = OnboardingProgressCoordinator(
+        lambda: store, lambda _: None, clock=lambda: clock.at
+    )
+
+    async def start_and_stop():
+        await coordinator.start()
+        await coordinator.stop()
+
+    asyncio.run(start_and_stop())
+    assert [e.milestone for e in store.onboarding_progress_events()].count("account-bound") == 1
+
+
+def test_staging_window_never_counts_as_account_bound(context):
+    _approve(context)
+    _consume_claim(context)
+    store, _, clock, _ = context
+    awaiting = _await(context)
+    getattr(store, "reconcile_onboarding_progress", lambda **kwargs: None)(observed_at=clock.at)
+    assert all(e.milestone != "account-bound" for e in store.onboarding_progress_events())
+    _confirm(context, awaiting)
+    assert [e.milestone for e in store.onboarding_progress_events()].count("account-bound") == 1
+
+
+def test_reconciliation_requires_exact_installation_key(context):
+    _approve(context)
+    _consume_claim(context)
+    store, _, clock, _ = context
+    _confirm(context, _await(context))
+    assert [e.milestone for e in store.onboarding_progress_events()].count("account-bound") == 1
+    with store.database.transaction() as connection:
+        connection.execute("DELETE FROM onboarding_progress_outbox WHERE milestone = 'account-bound'")
+        connection.execute("UPDATE installation_key_reference SET installation_key_jkt = 'different'")
+    store.reconcile_onboarding_progress(observed_at=clock.at)
+    assert all(e.milestone != "account-bound" for e in store.onboarding_progress_events())
+
+
+@pytest.mark.parametrize("invalid", ["unapplied", "old-generation", "wrong-key", "revoked"])
+def test_companion_readiness_requires_current_authority_and_configuration(context, invalid):
+    _approve(context)
+    _consume_claim(context)
+    store, pairing, clock, _ = context
+    pin = _confirm(context, _await(context))
+    assert [e.milestone for e in store.onboarding_progress_events()].count("account-bound") == 1
+    session = pairing.session_authority(pin.pairing_id).binding("authenticated-session")
+    if invalid == "old-generation":
+        session = replace(session, generation=session.generation + 1)
+    elif invalid == "wrong-key":
+        with store.database.transaction() as connection:
+            connection.execute(
+                "UPDATE installation_key_reference SET installation_key_jkt = 'different'"
+            )
+    elif invalid == "revoked":
+        store.revoke(RevocationKey(RevocationScopeType.AGENT_PAIRING,
+                                   base64.urlsafe_b64encode(pin.pairing_id).decode().rstrip("=")))
+    store.reconcile_onboarding_progress(
+        observed_at=clock.at, session=session,
+        current_configuration=invalid != "unapplied",
+    )
+    assert all(e.milestone != "first-capture-ready" for e in store.onboarding_progress_events())
+
+
+@pytest.mark.parametrize("state", ["pending", "delivered", "refused"])
+def test_reconciliation_preserves_existing_outbox_state(context, state):
+    _approve(context)
+    _consume_claim(context)
+    store, pairing, clock, _ = context
+    _confirm(context, _await(context))
+    assert [e.milestone for e in store.onboarding_progress_events()].count("account-bound") == 1
+    before = next(e for e in store.onboarding_progress_events() if e.milestone == "account-bound")
+    if state == "delivered":
+        assert store.deliver_onboarding_progress(before.event_id, delivered_at=clock.at)
+    elif state == "refused":
+        assert store.refuse_onboarding_progress(before.event_id, refused_at=clock.at)
+    with store.database.read() as connection:
+        old = tuple(connection.execute("SELECT * FROM onboarding_progress_outbox WHERE milestone = 'account-bound'").fetchone())
+    store.reconcile_onboarding_progress(observed_at=clock.at)
+    store.reconcile_onboarding_progress(observed_at=clock.at)
+    with store.database.read() as connection:
+        new = tuple(connection.execute("SELECT * FROM onboarding_progress_outbox WHERE milestone = 'account-bound'").fetchone())
+    assert new == old
 
 
 def _key_equal(actual, expected):
