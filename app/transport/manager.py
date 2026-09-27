@@ -749,7 +749,41 @@ class InMemoryTransportManager:
                 self.active_agents[creator_account_id] = lease
                 self.agent_connections[lease.connection_id] = lease
         await self.broadcast_agent_state(creator_account_id)
+        await self._observe_companion_progress(
+            lease, config_record,
+            echoed_revision=applied_config_revision,
+        )
         return lease
+
+    async def _observe_companion_progress(
+        self, lease: AgentLease, record, *, echoed_revision: str | None,
+    ) -> None:
+        """Report validated configuration evidence for the current companion session."""
+        coordinator = self._onboarding_progress
+        authority = getattr(lease.websocket, "authority", None)
+        reconcile = getattr(coordinator, "reconcile", None)
+        if authority is None or reconcile is None:
+            return
+        session = authority.binding
+        if (
+            lease.principal_id != session.principal_id
+            or lease.creator_account_id != session.creator_account_id
+            or str(lease.agent_installation_id) != session.agent_installation_id
+        ):
+            return
+        current = (
+            echoed_revision is not None
+            and echoed_revision == record.required_config_revision
+            and record.applied_config_revision == echoed_revision
+            and record.last_failure is None
+            and self.is_current_fence(lease)
+        )
+        try:
+            await asyncio.to_thread(
+                reconcile, session=authority.binding, current_configuration=current
+            )
+        except Exception:
+            pass
 
     async def bind_bridge(
         self,
@@ -1003,6 +1037,9 @@ class InMemoryTransportManager:
                 )
         if changed:
             await self.broadcast_agent_state(lease.creator_account_id)
+        await self._observe_companion_progress(
+            lease, record, echoed_revision=applied_revision
+        )
 
     def required_config_document(self, account_id: str):
         return self.config_authority.required_document(account_id)
@@ -1356,7 +1393,23 @@ class InMemoryTransportManager:
                 self.history.mark_history_config_applied(
                     lease.creator_account_id, payload.config_revision
                 )
-        if (
+        if getattr(lease.websocket, "authority", None) is not None:
+            try:
+                document = self.config_authority.required_document(
+                    lease.creator_account_id
+                )
+                valid_report = (
+                    payload.outcome == "applied"
+                    and payload.config_revision == document.config_revision
+                    and payload.digest == document.digest
+                )
+            except Exception:
+                valid_report = False
+            await self._observe_companion_progress(
+                lease, record,
+                echoed_revision=payload.config_revision if valid_report else None,
+            )
+        elif (
             payload.outcome == "applied"
             and record.applied_config_revision == payload.config_revision
         ):

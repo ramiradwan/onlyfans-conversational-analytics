@@ -846,6 +846,9 @@ class CompanionPairingPersistence:
             )
             self._require_updated(deleted)
             self.authentication._increment_authorization_epoch(connection)
+            self.authentication._enqueue_companion_progress_in_transaction(
+                connection, "account-bound", now=confirmed_at, pairing_id=identifier
+            )
             return self._pin_in_transaction(connection, pairing_id)
 
     def companion_pin(self, pairing_id: bytes) -> CompanionPin | None:

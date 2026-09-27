@@ -16,6 +16,7 @@ from uuid import UUID
 from app.core.config import settings
 from app.persistence.auth import (
     AuthenticationStore,
+    CompanionSessionBinding,
     OnboardingMilestone,
     SQLiteAuthenticationStore,
 )
@@ -80,6 +81,19 @@ class OnboardingProgressCoordinator:
         except Exception:
             return
 
+    def reconcile(
+        self, *, session: CompanionSessionBinding | None = None,
+        current_configuration: bool = False,
+    ) -> None:
+        """Observe missing companion facts without changing existing outbox rows."""
+        try:
+            self._open_store().reconcile_onboarding_progress(
+                observed_at=self._now(), session=session,
+                current_configuration=current_configuration,
+            )
+        except Exception:
+            return
+
     def flush(self) -> None:
         """Attempt every due event once, preserving fixed retry semantics."""
 
@@ -132,6 +146,7 @@ class OnboardingProgressCoordinator:
                 continue
 
     async def start(self) -> None:
+        await asyncio.to_thread(self.reconcile)
         if self._retry_task is None or self._retry_task.done():
             self._retry_task = asyncio.create_task(
                 self._retry_loop(), name="onboarding-progress-outbox"
