@@ -22,6 +22,15 @@ export function modeRecordAuthorizes(record, mode, bindings) {
   }
 }
 
+export async function persistedModeRecordAuthorizes(record, mode, bindings, evidenceStore) {
+  if (!modeRecordAuthorizes(record, mode, bindings)) return false;
+  const [terms, risk] = await Promise.all([
+    evidenceStore.event(record.terms_event_id),
+    evidenceStore.event(record.risk_event_id),
+  ]);
+  return terms !== null && risk !== null;
+}
+
 export class LegalConsentAuthorization {
   constructor({ evidenceStore, bindings = legalReleaseBindings }) {
     if (typeof evidenceStore?.event !== 'function' || typeof bindings !== 'function') {
@@ -35,7 +44,8 @@ export class LegalConsentAuthorization {
     if (typeof eventId !== 'string') return false;
     try {
       const record = await this.evidenceStore.event(eventId);
-      return record?.event_id === eventId && modeRecordAuthorizes(record, mode, this.bindings());
+      return record?.event_id === eventId
+        && await persistedModeRecordAuthorizes(record, mode, this.bindings(), this.evidenceStore);
     } catch {
       return false;
     }
