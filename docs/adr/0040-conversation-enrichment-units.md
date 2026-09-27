@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_enrichment_units.py, conversation_enrichment_unit_sql.py, enrichment_proof_transition.py, conversation_reuse.py, enrichment_cache.py, projection_encoding.py, projection_verification.py, sqlite_projection_store.py, retention_store.py, retention_restore.py, validation_receipt.py, sql/0017_conversation_enrichment_units.sql and test_incremental_enrichment_units.py and test_enrichment_proof_transition.py before changing reuse, fallback, digest or bounds claims. -->
+<!-- CODE-VERIFY: Check recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, conversation_enrichment_units.py, conversation_enrichment_unit_sql.py, enrichment_proof_transition.py, conversation_reuse.py, enrichment_cache.py, projection_encoding.py, projection_verification.py, sqlite_projection_store.py, retention_store.py, retention_restore.py, validation_receipt.py, sql/0017_conversation_enrichment_units.sql and test_incremental_enrichment_units.py and test_enrichment_proof_transition.py before changing reuse, fallback, digest or bounds claims. -->
 
 # ADR 0040: Reuse immutable conversation enrichment units
 
@@ -44,6 +44,6 @@ Exceeding a bound disables optional unit reuse for the affected build rather tha
 
 A small source change can keep message-enrichment model reconstruction, analyzer-cache recovery and enrichment-unit validation proportional to changed conversations rather than total account messages. Unchanged units contribute only bounded metadata/digest components during the hot build and validation path.
 
-Cold builds populate the optional unit cache and therefore perform additional bounded writes. Restart without process-local proof uses the existing materialized reuse path until a newly validated generation establishes another proof. Explicit reads and backup/restore validation can materialize the complete message-enrichment set from units.
+Cold builds populate the optional unit cache and therefore perform additional bounded writes. Restart without process-local proof uses full validation. The scheduler may then establish fresh reuse metadata under the independently checked preparation rules in ADR 0039; a persisted digest alone is not proof. Explicit reads and backup/restore validation can materialize the complete message-enrichment set from units.
 
 The change adds one rebuildable analytics migration and no external service, dependency, database file or writer process.

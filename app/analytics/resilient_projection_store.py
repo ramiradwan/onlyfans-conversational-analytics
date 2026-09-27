@@ -151,11 +151,21 @@ class LazySQLiteAnalyticsProjectionStore:
     def load_enrichment_entries(self, account_id, keys, **kwargs):
         return self._read("load_enrichment_entries", account_id, account_id, keys, **kwargs)
 
+    def load_conversation_enrichment_entries(self, account_id, *args, **kwargs):
+        return self._read("load_conversation_enrichment_entries", account_id,
+                          account_id, *args, **kwargs)
+
+    def load_enrichment_unit_contents(self, account, unit_ids):
+        return self._read("load_enrichment_unit_contents", None, account, unit_ids)
+
     def question_pricing(self, account_id, snapshot, references, budget):
         return self._read("question_pricing", account_id, account_id, snapshot, references, budget)
 
     def question_snapshot(self, account_id, canonical_identity, budget):
         return self._read("question_snapshot", account_id, account_id, canonical_identity, budget)
+
+    def prepare_update_reuse(self, account, *args):
+        return self._read("prepare_update_reuse", account, account, *args)
 
     def projection_currentness(self, account_id, *args):
         return self._read("projection_currentness", account_id, account_id, *args)

@@ -209,18 +209,28 @@ class AnalyticsPipeline:
         self._direct_publication_capability = secrets.token_hex(32)
 
     @contextmanager
-    def _account_lock(self, creator_account_id: str) -> Iterator[None]:
+    def _account_lock(self, creator_account_id: str, *,
+                      cancellation_check: CancellationCheck | None = None) -> Iterator[None]:
         """Serialize one account while releasing its lock record when idle."""
 
         with self._account_locks_guard:
             existing = self._account_locks.get(creator_account_id)
             lock, users = existing if existing is not None else (RLock(), 0)
             self._account_locks[creator_account_id] = (lock, users + 1)
-        lock.acquire()
+        acquired = False
         try:
+            if cancellation_check is None:
+                lock.acquire()
+                acquired = True
+            else:
+                while not acquired:
+                    check_cancelled(cancellation_check)
+                    acquired = lock.acquire(timeout=0.05)
+                check_cancelled(cancellation_check)
             yield
         finally:
-            lock.release()
+            if acquired:
+                lock.release()
             with self._account_locks_guard:
                 current = self._account_locks.get(creator_account_id)
                 if current is not None and current[0] is lock:
@@ -335,10 +345,13 @@ class AnalyticsPipeline:
                 if current is not None and self._expired(current):
                     self.projections.clear(creator_account_id)
                     current = None
-                existing = self.projections.get(creator_account_id)
-                graph_revision = self.graph.partition_revision(
+                # A forced build cannot take the no-op path. Keep one checked
+                # projection, rather than holding two complete copies of it.
+                existing = (current if force and current is not None
+                            else self.projections.get(creator_account_id))
+                graph_revision = (None if force else self.graph.partition_revision(
                     account_ref(creator_account_id)
-                )
+                ))
                 if (
                     not force
                     and current is not None
@@ -621,6 +634,13 @@ class AnalyticsPipeline:
 
     def prepare_questions(self, creator_account_id: str, requested_revision: int,
                           *, cancellation_check=None) -> bool:
+        """Share preparation for an account without holding a request open."""
+        with self._account_lock(creator_account_id, cancellation_check=cancellation_check):
+            return self._prepare_questions(creator_account_id, requested_revision,
+                                           cancellation_check=cancellation_check)
+
+    def _prepare_questions(self, creator_account_id: str, requested_revision: int,
+                           *, cancellation_check=None) -> bool:
         """Prepare identity before reporting readiness, without a question budget."""
         prepare = getattr(self.source, "prepare_question_identity", None)
         check_cancelled(cancellation_check)
@@ -632,6 +652,20 @@ class AnalyticsPipeline:
         current = self._projection_currentness_with_identity(
             creator_account_id, requested_revision, read,
         )
+        restore = getattr(self.projections, "prepare_update_reuse", None)
+        snapshot = getattr(self.source, "analytics_snapshot", None)
+        from app.analytics.graph_projection import RelationshipGraphProjector
+        if (current and self.reuse_conversations and self.reuse_enrichment
+                and type(self.graph_projector) is RelationshipGraphProjector
+                and callable(restore) and callable(snapshot)):
+            from app.analytics.recovered_reuse import expected_units
+            catalog = snapshot(creator_account_id, cancellation_check=cancellation_check)
+            check = lambda: check_cancelled(cancellation_check)
+            prepared = restore(creator_account_id, catalog,
+                lambda projection, refs: expected_units(self, creator_account_id, catalog,
+                    projection, refs, cancellation_check), check,
+                lambda projection: not self._expired(projection) and read() == catalog.identity)
+            current = prepared is not False and read() == catalog.identity
         check_cancelled(cancellation_check)
         return current
 

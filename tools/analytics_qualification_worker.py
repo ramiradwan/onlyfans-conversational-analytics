@@ -51,7 +51,7 @@ async def visibility(work, journal, config, instance, *, restarted=False):
         if not restarted:
             await direct(work, journal, resources, "cold")
         resources.start()
-        await scheduler.start(recover=restarted)
+        await scheduler.start(recover=True)
         if restarted:
             state = await scheduler.wait(work.account)
             if state.availability != AvailabilityStatus.AVAILABLE:
@@ -102,6 +102,9 @@ def collect(config):
             reopen=mode in {"questions-child", "visibility-restarted"},
             question_case=config["case"] if mode in {"questions", "questions-child"} else None,
             known_kinds=config["known_kinds"])
+        if config.get("profile_updates"):
+            from tools.analytics_qualification_profile import install
+            install(work, output)
         q.write_once(output / "fixture.json", {"definition": manifest["fixture"],
             "manifest_sha256": q.digest(manifest), "source_counts": work.counts(),
             "kind_adapter": "known_synthetic_kinds" if config["known_kinds"] else "production_unknown_kinds",
@@ -142,7 +145,7 @@ def collect(config):
     finally:
         if work is not None:
             work.close()
-        report.update(execution="source_diagnostic", supervisor_instance=process["supervisor_instance"],
+        report.update(execution="source_diagnostic", profiling=config.get("profile_updates", False), supervisor_instance=process["supervisor_instance"],
             collector_process=process, subject_sha256=config["subject_sha256"],
             subject_unchanged=subject_matches(config), manifest_sha256=q.digest(manifest),
             fixture_mode="known_synthetic_kinds" if config["known_kinds"] else "production_unknown_kinds",

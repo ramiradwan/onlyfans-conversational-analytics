@@ -348,6 +348,11 @@ class SQLiteAnalyticsProjectionStore:
 
         return published_snapshot(self, account_id, canonical_identity, budget)
 
+    def prepare_update_reuse(self, account, catalog, build_expected, check, source_current):
+        from app.analytics.recovered_reuse import restore
+
+        return restore(self, account, catalog, build_expected, check, source_current)
+
     def projection_currentness(self, account_id, identity, revision, config, retention_clock):
         return self._currentness.matches(self, account_id, identity, revision, config, retention_clock)
 
@@ -1416,29 +1421,7 @@ class SQLiteAnalyticsProjectionStore:
                     check=check, materialize_graph=materialize_graph,
                     materialize_projection=materialize_projection,
                 )
-                projection = values["projection"]
-                if (
-                    projection.account_ref != generation["creator_account_id"]
-                    or projection.source_revision != int(generation["canonical_revision"])
-                    or projection.pipeline_revision != generation["pipeline_revision"]
-                    or projection.pipeline_config_digest
-                    != generation["pipeline_config_digest"]
-                    or projection.canonical_content_digest
-                    != generation["canonical_content_digest"]
-                    or projection.graph_digest != values["graph_digest"]
-                    or pipeline_identity_digest(projection)
-                    != generation["pipeline_identity_digest"]
-                    or projection.pipeline_identity_digest
-                    != generation["pipeline_identity_digest"]
-                ):
-                    raise ProjectionValidationError("projection_identity_invalid")
-                if generation["status"] != "building" and (
-                    values["projection_digest"] != generation["projection_digest"]
-                    or values["graph_digest"] != generation["graph_digest"]
-                    or values["node_count"] != int(generation["node_count"])
-                    or values["edge_count"] != int(generation["edge_count"])
-                ):
-                    raise ProjectionValidationError("projection_digest_invalid")
+                verify_generation_values(generation, values)
                 check()
                 return values
         except GraphDeadlineExceeded:
@@ -1977,6 +1960,33 @@ def _validate_generation_links(
             ).fetchone()
             if foreign is not None:
                 raise GraphReferentialIntegrityError("projection_account_mismatch")
+
+
+def verify_generation_values(generation, values):
+    """Check recomputed values against their exact persisted generation identity."""
+    projection = values["projection"]
+    if (
+        projection.account_ref != generation["creator_account_id"]
+        or projection.source_revision != int(generation["canonical_revision"])
+        or projection.pipeline_revision != generation["pipeline_revision"]
+        or projection.pipeline_config_digest
+        != generation["pipeline_config_digest"]
+        or projection.canonical_content_digest
+        != generation["canonical_content_digest"]
+        or projection.graph_digest != values["graph_digest"]
+        or pipeline_identity_digest(projection)
+        != generation["pipeline_identity_digest"]
+        or projection.pipeline_identity_digest
+        != generation["pipeline_identity_digest"]
+    ):
+        raise ProjectionValidationError("projection_identity_invalid")
+    if generation["status"] != "building" and (
+        values["projection_digest"] != generation["projection_digest"]
+        or values["graph_digest"] != generation["graph_digest"]
+        or values["node_count"] != int(generation["node_count"])
+        or values["edge_count"] != int(generation["edge_count"])
+    ):
+        raise ProjectionValidationError("projection_digest_invalid")
 
 
 def recompute_generation(

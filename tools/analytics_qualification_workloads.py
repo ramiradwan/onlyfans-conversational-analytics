@@ -53,6 +53,7 @@ async def direct(work, journal, resources, name):
                             result["at"] if result["current"] else None, time.monotonic(),
                             observation=result)
     journal.save("operation", item)
+    work.profile_phase = None
     verified_at = time.monotonic()
     item.update(await asyncio.to_thread(work.verify))
     item["independent_verification_seconds"] = time.monotonic() - verified_at
@@ -63,6 +64,7 @@ async def direct(work, journal, resources, name):
 async def scheduled(work, journal, resources, scheduler, name, mutation, *, case=None):
     from app.analytics.errors import CanonicalRevisionChanged
     from app.models.analytics import AvailabilityStatus
+    work.profile_phase = case or name
     before, previous, started = work.counts(), work.last, time.monotonic()
     backlog_before = scheduler.retained_account_count
     work.observe_activation()
@@ -110,6 +112,7 @@ async def scheduled(work, journal, resources, scheduler, name, mutation, *, case
     if case:
         item["case"] = case
     journal.save("operation", item)
+    work.profile_phase = None
     verified_at = time.monotonic()
     item.update(await asyncio.to_thread(work.verify))
     item["independent_verification_seconds"] = time.monotonic() - verified_at
@@ -160,6 +163,7 @@ async def historical(work, journal, resources, scheduler):
         backlog_after=scheduler.retained_account_count, observation=observation,
         cleanup_included=True, historical_messages=work.manifest["history"]["batches"] * work.manifest["history"]["messages_per_batch"], live_messages=work.manifest["history"]["batches"])
     journal.save("operation", item)
+    work.profile_phase = None
     verified_at = time.monotonic()
     item.update(await asyncio.to_thread(work.verify))
     item["independent_verification_seconds"] = time.monotonic() - verified_at

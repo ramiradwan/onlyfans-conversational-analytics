@@ -73,7 +73,7 @@ def run_source(root, directory, context, session, manifest, args):
         "subject_sha256": q.digest(subject), "subject": subject,
         "manifest": manifest, "mode": kind, "messages": args.messages,
         "case": args.case, "state": args.state, "repeat": args.repeat,
-        "known_kinds": args.known_synthetic_kinds, "output": str(attempt / "collector"),
+        "known_kinds": args.known_synthetic_kinds, "profile_updates": getattr(args, "profile_updates", False), "output": str(attempt / "collector"),
         "data": str(attempt / "collector/data"), "entry_point": str(root / "tools/qualify_analytics_baseline.py"),
         "job": job}
     q.write_once(attempt / "worker-input.json", config)
@@ -145,6 +145,7 @@ def main(root: Path) -> int:
     parser.add_argument("--state", choices=("fresh", "idle", "mutated"), default="fresh")
     parser.add_argument("--repeat", type=int, choices=(0, 1, 2), default=0)
     parser.add_argument("--known-synthetic-kinds", action="store_true")
+    parser.add_argument("--profile-updates", action="store_true", help="Attribute source updates; this run cannot qualify latency")
     parser.add_argument("--owner-lock", type=Path)
     args = parser.parse_args()
     if args.run_ci and args.review_record is None:

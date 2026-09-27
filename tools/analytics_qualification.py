@@ -367,6 +367,8 @@ def check_package(manifest: dict, job: str, data: dict) -> list[str]:
 
 
 def check_payload(manifest: dict, context: dict, job: str, data: dict) -> list[str]:
+    if data.get("profiling") is True:
+        return ["instrumented_run_is_diagnostic_only"]
     if job == "source-ci":
         jobs = data.get("checks", [])
         expected = set(manifest["ci_jobs"])
@@ -550,6 +552,12 @@ def check_collector_evidence(attempt: Path, result: dict, manifest: dict) -> lis
     def read(name):
         return read_json(attempt / names[name]["path"])
     config, payload = read("worker-input.json"), result["payload"]
+    profiled = config.get("profile_updates", False)
+    claimed = payload.get("profiling", False)
+    if type(profiled) is not bool or type(claimed) is not bool or profiled != claimed:
+        return ["collector_profiling_flag_mismatch"]
+    if profiled:
+        return ["instrumented_run_is_diagnostic_only"]
     if digest(read("payload.json")) != digest(payload):
         return ["collector_payload_differs_from_raw_record"]
     if (digest(config["manifest"]) != digest(manifest) or config["subject_sha256"] != digest(result["subject"])

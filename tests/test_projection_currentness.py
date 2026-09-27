@@ -14,6 +14,11 @@ from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
 def fixture(tmp_path, monkeypatch):
     value = make_fixture(tmp_path)
     value.pipeline.project_account(ACCOUNT)
+    # Isolate the positive-currentness cache's full-read fallback. The independent
+    # immutable-content proof path is covered in test_proven_currentness.py.
+    value.stores.projections._graph_segment_proofs.clear()
+    value.stores.projections._conversation_graph_proofs.clear()
+    value.stores.projections._conversation_enrichment_proofs.clear()
     value.reads = Mock(wraps=value.stores.projections.get)
     monkeypatch.setattr(value.stores.projections, 'get', value.reads)
     yield value

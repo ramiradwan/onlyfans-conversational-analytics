@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, sql/0018_graph_chunk_metadata.sql, test_graph_chunk_metadata.py, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
+<!-- CODE-VERIFY: Check recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, sql/0018_graph_chunk_metadata.sql, test_graph_chunk_metadata.py, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
 
 # ADR 0039: Reuse immutable conversation graph units
 
@@ -22,9 +22,17 @@ The incremental result must reproduce the ordinary canonical graph digest, per-k
 
 Incremental assembly is available only when the exact completed active predecessor has both a process-local conversation-unit proof and an ADR 0038 graph-segment proof, and every referenced segment has a verified canonical chunk. The reviewed schema/store identity must still match.
 
-Missing, malformed, expired or over-budget conversation units, unavailable segment chunks, restart, unsupported schema, changed configuration, failed proof checks or any cache inconsistency falls back to the existing full graph construction or rejects the optional cache without weakening publication. Public projection currentness is not relaxed; stale predecessor data is used only inside the private rebuild path.
+Missing, malformed, expired or over-budget conversation units, unavailable segment chunks, restart without freshly established proofs, unsupported schema, changed configuration, failed proof checks or any cache inconsistency falls back to the existing full graph construction or rejects the optional cache without weakening publication. Public projection currentness is not relaxed; stale predecessor data is used only inside the private rebuild path.
 
 Conversation graph units and segment chunks are immutable while referenced. Direct deletion is blocked even when foreign-key enforcement is disabled. Retirement removes generation references and reclaims optional cache content after its final reference disappears.
+
+## Verified preparation and append reuse
+
+Restart still discards process-local proofs. Normal scheduler preparation may establish new proofs after complete persisted generation validation. It independently reconstructs each conversation's graph from current canonical records and the validated stored enrichment. Exact unit membership and every selected stored graph record must match. The store stamp, completed witness, source identity and retention are rechecked before retaining metadata. No classifier runs and no new generation is published during this read-only preparation.
+
+For a large dominant conversation, one message appended in canonical order may reuse a verified unchanged prefix. The complete canonical prefix digest, account, configuration, source times and predecessor proofs must match. Only message-local analyzers qualify. Equal timestamps are permitted only when the complete canonical prefix still matches; query uncertainty for tied events is unchanged. The builder reads verified prefix graph bytes, constructs the boundary and new-message graph, recalculates conversation metrics and stages the ordinary complete generation. An edit, deletion, late arrival, context-dependent analyzer, custom projector or missing proof uses the existing full path. This adds no graph representation or storage format.
+
+Periodic currentness checks may use these same complete-content proofs after rechecking every generation binding, the full enrichment stamp, source identity, completed witness and retention. This avoids rematerializing immutable records after the positive-currentness cache expires. Its 60-second lifetime is unchanged; missing proofs require full verification.
 
 ## Bounds
 

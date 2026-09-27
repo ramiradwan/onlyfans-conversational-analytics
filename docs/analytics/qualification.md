@@ -86,9 +86,13 @@ Run the matrix at both manifest sizes. Visibility repetitions are numbered 0, 1,
 
 `--subject-root` selects a separate Git checkout for a historical runtime control. Its full file hashes and revision are recorded independently of the runner. An older source cannot substitute for the final source. Preparation always happens inside the owned worker; there is no prepared-store shortcut.
 
+`--profile-updates` adds thread-local call timing to source visibility or mutation diagnostics. It records no message content. Instrumented input and output flags are checked together, and the verifier rejects these runs as latency qualification. Run without that flag for acceptance measurements. The numerical limits and whole-worker guard are unchanged.
+
 ### Clocks, evidence, and closure
 
 The versioned measurement protocol records durable canonical commit, activation, first observed current question result, required publication cleanup, and backlog drain separately. The visibility interval ends only when the visible result, cleanup, and drain have all completed. Operation records are saved before independent rebuild verification; completed verification gets its own durable phase record. A killed verifier cannot erase a completed operation or qualify a missing phase.
+
+Measurement v4 starts normal recovery and periodic reconciliation in the initial visibility process as well as the restarted one. Earlier v3 source visibility runs did not enable that timer initially. They remain separate historical controls and cannot establish the corrected idle path.
 
 The original 1,800-second whole-worker limit remains. It includes fixture preparation, startup, independent verification, and synchronous product cleanup. Expiry does not identify an individual operation's latency. The new protocol adds observed query visibility and owned-process-tree accounting; it does not reinterpret the old interrupted matrix as passing. Windows resource records distinguish job peak private commit from Linux sampled process-group resident memory. Neither is a packaged memory receipt.
 

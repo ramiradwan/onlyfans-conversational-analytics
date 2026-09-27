@@ -191,6 +191,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         current_refs.add(ref)
         fragment = None
         local_graph = None
+        append_delta = None
         packed, restored = None, None
         graph_unit = None
         graph_unit_value = None
@@ -300,24 +301,36 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 AccountReadModel(view_revision=catalog.view_revision, conversations={chat_id: raw}),
                 cancellation_check=cancellation_check)
             if not parts:
+                # A canonical chat with no retained messages must also lose its
+                # predecessor graph membership, not only its metrics.
+                current_refs.discard(ref)
                 continue
             conversation = parts[0]
             state.recomputed += 1
-            findings = pipeline.enrichment.enrich_conversation(account_id, conversation,
-                cancellation_check=cancellation_check)
-            counts = build_conversation_metrics(account_id, conversation, findings)
-            local_graph = None
-            if compact is not None:
-                local_graph = CompactGraph(account_ref(account_id))
-                for batch_nodes, batch_edges in pipeline.graph_projector.batches(account_id,
-                        catalog.view_revision, [conversation], findings, [counts],
-                        cancellation_check=cancellation_check):
-                    local_graph.add(batch_nodes, batch_edges, check=check)
-                nodes, edges = (local_graph.materialize() if not use_pages and len(findings) <= 256
-                    and local_graph.encoded_bytes <= MAX_FRAGMENT_BYTES // 2 else (None, None))
+            appended = None
+            if incremental and stream_enrichments:
+                from app.analytics.conversation_append import try_append
+                appended = try_append(pipeline, account_id, catalog.view_revision,
+                    conversation, raw, loader, reuse, config, cutoff, check, cancellation_check)
+            if appended is not None:
+                findings, counts, local_graph, append_delta = appended
+                nodes, edges = None, None
             else:
-                nodes, edges, _ = pipeline.graph_projector.project(account_id, catalog.view_revision,
-                    [conversation], findings, [counts], cancellation_check=cancellation_check)
+                findings = pipeline.enrichment.enrich_conversation(account_id, conversation,
+                    cancellation_check=cancellation_check)
+                counts = build_conversation_metrics(account_id, conversation, findings)
+                local_graph = None
+                if compact is not None:
+                    local_graph = CompactGraph(account_ref(account_id))
+                    for batch_nodes, batch_edges in pipeline.graph_projector.batches(account_id,
+                            catalog.view_revision, [conversation], findings, [counts],
+                            cancellation_check=cancellation_check):
+                        local_graph.add(batch_nodes, batch_edges, check=check)
+                    nodes, edges = (local_graph.materialize() if not use_pages and len(findings) <= 256
+                        and local_graph.encoded_bytes <= MAX_FRAGMENT_BYTES // 2 else (None, None))
+                else:
+                    nodes, edges, _ = pipeline.graph_projector.project(account_id, catalog.view_revision,
+                        [conversation], findings, [counts], cancellation_check=cancellation_check)
             if nodes is not None:
                 entries = () if reuse is None else tuple(
                     data.decode() for data in reuse.conversation_entries(ref))
@@ -368,7 +381,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 if graph_unit is not None:
                     current_units[ref] = graph_unit
                 if local_graph is not None:
-                    changed_graph.merge(local_graph, check=check)
+                    changed_graph.merge(append_delta if append_delta is not None else local_graph, check=check)
                 if not isinstance(graph_unit, ConversationGraphReference):
                     previous = loader.previous_graph_unit(ref)
                     if previous is not None:

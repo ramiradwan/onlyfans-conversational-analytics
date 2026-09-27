@@ -193,7 +193,7 @@
   },
   "status": "frozen",
   "measurement": {
-    "version": "a07-observable-scheduler.v3",
+    "version": "a07-observable-scheduler.v4",
     "previous_protocol": "Legacy whole-process mutation diagnostic, 1800 seconds including preparation and per-phase oracle work.",
     "change": "Record activation, observed question visibility, cleanup and backlog separately; persist operation and verification separately. Question fixture construction and fresh-runtime startup remain inside one 1800-second owned process-tree guard.",
     "old_failures_remain_failures": true,
@@ -205,7 +205,8 @@
     "resource_scope": "The new supervisor samples the owned process tree, not only the main worker. Minimum available memory is 2 GiB throughout. These are new protocol records, not paired attribution of legacy timings.",
     "visibility_poll_guard": "Poll until a current answer is observed or the whole-worker guard ends. Bulk work has no ten-second polling cutoff.",
     "windows_shutdown": "v3 waits for owned process handles to become signaled as well as zero active job accounting. One ten-second shutdown deadline. The v2 CI shutdown failure and source diagnostic failures remain failures; they are not requalified by this correction.",
-    "reporting": "v3 validates question plans without starting the application. Reporting errors preserve worker exit, ownership, clocks, raw payload and attachments; previous malformed summaries remain failed."
+    "reporting": "v3 validates question plans without starting the application. Reporting errors preserve worker exit, ownership, clocks, raw payload and attachments; previous malformed summaries remain failed.",
+    "visibility_maintenance": "v4 starts recovery and the declared 30-second reconciliation in both initial and restarted visibility processes. The v3 initial process disabled this timer. Prior runs remain historical controls, not evidence for the corrected maintenance path. Preparation, independent verification and product cleanup stay inside the unchanged 1800-second whole-worker guard."
   },
   "history": {
     "batches": 100,

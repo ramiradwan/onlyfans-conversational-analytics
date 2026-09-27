@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check source_snapshot.py, canonical_source.py, conversation_reuse.py, conversation_sql.py, graph_projection.py, pipeline.py, scheduling.py, runtime.py, both projection stores, and sql/0006_conversation_fragments.sql before changing behavior claims. -->
+<!-- CODE-VERIFY: Check recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, source_snapshot.py, canonical_source.py, conversation_reuse.py, conversation_sql.py, graph_projection.py, pipeline.py, scheduling.py, runtime.py, both projection stores, and sql/0006_conversation_fragments.sql before changing behavior claims. -->
 
 # Process changed conversations
 
@@ -14,9 +14,11 @@ An unchanged conversation supplies its message enrichments, metrics, and local g
 
 Canonical digest calculation covers source content outside the selected period. [Source verification tokens](read-verification.md) allow bounded reuse of an unchanged identity; cache misses still scan content. Post-commit scheduling reads only the account revision; it does not load message bodies.
 
+For a large dominant conversation, a single message appended in canonical order can reuse an unchanged canonical prefix. The full prefix digest and current-process graph/enrichment proofs must match. Message-local analyzers run only for the new message; graph construction covers the boundary and new message. Conversation metrics and the complete generation are still checked. Edits, deletions, late arrival, expired inputs and context-dependent analysis retain the full conversation path.
+
 ## Graph assembly and visibility
 
-Shared participants, topics, and entities use their stable identities. Only records supplied by current conversations enter the assembled graph. Participant conversation timelines are reconstructed from the current metrics, so deleting a middle conversation reconnects its remaining neighbors without retaining the deleted conversation.
+Shared participants, topics, and entities use their stable identities. Only records supplied by current conversations enter the assembled graph. A conversation with no retained messages loses its predecessor graph membership as well as its metrics. Participant conversation timelines are reconstructed from the current metrics, so deleting a middle conversation reconnects its remaining neighbors without retaining the deleted conversation.
 
 Account aggregates are recalculated from current conversation metrics. Node and edge conflicts fail validation. The full generation retains the existing source-identity, publication-witness, and atomic activation checks. No reader sees updated edges paired with old metrics.
 
@@ -37,6 +39,8 @@ The default runtime checks canonical accounts every 30 seconds after starting it
 Expired source data is refused before publication. Remaining permitted messages can be rebuilt at the same canonical revision. Input and context timestamps retain their original 90-day limit. The periodic task stops when the scheduler closes or resets.
 
 An owned preparation timer uses the same bounded executor to refresh question identities before their cache lifetime ends, independently of slow projection verification. Question-triggered recovery first checks whether the current publication can be reused; preparation alone does not rerun analysis.
+
+After restart, scheduler preparation can recover reuse metadata by fully validating stored content and independently matching conversation graphs to canonical records and checked enrichment. It rechecks the completed witness, store stamp, source identity and expiry before retaining proofs. No classifier runs during this preparation. This cost belongs to readiness, not a question request. Missing optional units retain the normal fallback path.
 
 The interval is an approximate retry cadence, not a promise that a rebuild finishes within 30 seconds. Canonical checks and full generation work can take longer on large accounts. Failed authorization produces an unavailable or failed analysis state, not an unlicensed rebuild.
 
@@ -68,7 +72,7 @@ Mutation, missing tracking, schema change or restart prevents ordinary cache reu
 
 A successful complete currentness check can be reused for 60 seconds while its generation, source identity, pipeline and storage-change stamp remain identical. Each reuse still checks the completed witness and source expiry. This bounded metadata cache avoids repeatedly reading an unchanged graph during adjacent scheduler polls. It is separate from activation receipts and never grants analysis authority.
 
-A cold check, expired proof or changed storage stamp still requires a complete validated projection read. This is not a constant-time guarantee for cold reconciliation or changed conversations.
+When the positive-result cache expires, reconciliation rechecks source, witness, generation, storage stamp and retention. Existing complete graph, conversation and enrichment proofs can establish unchanged stored content without materializing it again. All proof bindings and the full enrichment content stamp must match. Missing or invalid content proofs require a complete validated projection read. A process restart discards these proofs and therefore requires full verification before reuse. The 60-second positive-result lifetime does not change.
 
 For capacity measurements that need cold build followed directly by a real update, pass `--skip-unchanged-rebuild`. The report records that omission explicitly. It does not qualify forced unchanged rebuilds or make incomplete oracle verification a passing run. Keep the default workload for diagnosing repeated full-generation rebuild cost.
 

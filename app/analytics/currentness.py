@@ -45,6 +45,28 @@ class GenerationCurrentness:
             stamp = content_stamp(db)
             return row['generation_id'], generation_binding(row), stamp
 
+    def _verified_source_due(self, store, snapshot):
+        """Recheck existing complete-content proofs under their original bindings."""
+        if snapshot[2] is None:
+            return False, None
+        methods = tuple(getattr(store, name, None) for name in (
+            "_trusted_graph_segment_proof", "_trusted_conversation_graph_proof",
+            "_trusted_conversation_enrichment_proof"))
+        if not all(callable(method) for method in methods):
+            return False, None
+        with store.database.read() as db:
+            db.execute('BEGIN')
+            row = db.execute('SELECT * FROM projection_generations WHERE generation_id=?',
+                             (snapshot[0],)).fetchone()
+            if (row is None or row['status'] != 'active' or row['activated_at'] is None
+                    or generation_binding(row) != snapshot[1] or content_stamp(db) != snapshot[2]):
+                return False, None
+            graph, conversations, enrichment = (method(db, row) for method in methods)
+            if (graph is None or conversations is None or enrichment is None
+                    or enrichment.stamp != snapshot[2] or not enrichment.headers):
+                return False, None
+            return True, min(header.expires_at for header in enrichment.headers)
+
     def matches(self, store, account: str, identity: CanonicalIdentity, revision: str,
                 config: str, retention_clock: Callable[[], datetime]) -> bool:
         """Reuse a checked positive result only while its actual storage stamp matches."""
@@ -66,15 +88,17 @@ class GenerationCurrentness:
                 self.entries.move_to_end(key)
                 return True
             self.entries.pop(key, None)
-        projection = store.get(account, canonical_identity=identity)
-        if (projection is None or projection.account_ref != account_ref(account)
-                or projection.canonical_content_digest != identity.content_digest
-                or projection.source_revision != identity.revision
-                or projection.pipeline_revision != revision
-                or projection.pipeline_config_digest != config):
-            return False
-        first = min((m.sent_at for m in projection.message_enrichments), default=None)
-        due = first + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS) if first else None
+        verified, due = self._verified_source_due(store, snapshot)
+        if not verified:
+            projection = store.get(account, canonical_identity=identity)
+            if (projection is None or projection.account_ref != account_ref(account)
+                    or projection.canonical_content_digest != identity.content_digest
+                    or projection.source_revision != identity.revision
+                    or projection.pipeline_revision != revision
+                    or projection.pipeline_config_digest != config):
+                return False
+            first = min((m.sent_at for m in projection.message_enrichments), default=None)
+            due = first + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS) if first else None
         if due is not None and due <= retention_clock():
             return False
         after = self._snapshot(store, account, identity, revision, config)

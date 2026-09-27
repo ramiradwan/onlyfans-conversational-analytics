@@ -8,7 +8,7 @@
 
 `PipelineRun.artifact` explicitly reads the referenced artifact when the result is deferred. It checks the exact generation, source identity, digests, and expiry. It never substitutes the latest generation. Changed source data, expiry, discard, retirement, or a missing generation prevents that read.
 
-The direct `project_account` and rebuild helpers materialize the staged artifact before publication, preserving their snapshot behavior even when sources change immediately afterward. Memory stores and projection catalogs without query metadata use inline artifacts.
+The direct `project_account` and rebuild helpers materialize the staged artifact before publication, preserving their snapshot behavior even when sources change immediately afterward. A forced rebuild retains one checked current projection and skips only the graph-revision read used by the unchanged no-op path. It does not skip staging or publication validation. Memory stores and projection catalogs without query metadata use inline artifacts.
 
 The deferred result contains a reference and a reader callback, not cached message or graph objects. Requesting its artifact is account-sized work. Callers that need only publication success should not request the artifact.
 
