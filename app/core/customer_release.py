@@ -15,6 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 CUSTOMER_RELEASE_SCHEMA = "ofca-customer-release/v1"
 CUSTOMER_RELEASE_PATH = Path(__file__).with_name("customer-release.json")
 DEVELOPMENT_CUSTOMER_RELEASE_ENV = "LOCAL_CUSTOMER_RELEASE_CONFIG"
+HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
 
 
 class CustomerReleaseConfigurationError(ValueError):
@@ -106,6 +107,13 @@ def load_customer_release_config(
             "customer release configuration is unavailable"
         ) from error
     return validate_customer_release_document(document, require_hosted=require_hosted)
+
+
+def resolve_hosted_api_origin(config: CustomerReleaseConfig | None = None) -> str:
+    """Resolve the release origin with a local environment fallback."""
+    if config is None:
+        config = load_customer_release_config()
+    return config.hosted_api_origin or os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, "")
 
 
 def main() -> int:

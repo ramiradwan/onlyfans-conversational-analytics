@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import secrets
 import threading
 from collections.abc import Callable
@@ -14,6 +13,10 @@ from typing import Protocol
 from uuid import UUID
 
 from app.core.config import settings
+from app.core.customer_release import (
+    HOSTED_ORIGIN_ENVIRONMENT_VARIABLE,
+    resolve_hosted_api_origin,
+)
 from app.persistence.auth import (
     AuthenticationStore,
     CompanionSessionBinding,
@@ -31,7 +34,6 @@ from app.security.installation_key import (
 )
 
 
-HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
 _RETRY_INTERVAL_SECONDS = 30
 _MAX_RETRY_DELAY_SECONDS = 3_600
 
@@ -202,7 +204,7 @@ def configured_runtime_onboarding_progress() -> OnboardingProgressCoordinator:
 
     return durable_onboarding_progress(
         open_store,
-        hosted_origin=os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""),
+        hosted_origin=resolve_hosted_api_origin(),
     )
 
 

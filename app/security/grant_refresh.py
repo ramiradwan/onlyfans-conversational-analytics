@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Iterator
 
+from app.core.customer_release import HOSTED_ORIGIN_ENVIRONMENT_VARIABLE
 from app.persistence.auth import AuthenticationStore, ProvisioningCandidateState, VerifiedGrantReference
 from app.security.grant_types import LICENSE_ENTITLEMENT
 from app.security.hosted_grants import (
@@ -22,7 +23,6 @@ from app.security.hosted_grants import (
 logger = logging.getLogger(__name__)
 MAX_REFRESH_REFERENCES = 128
 ATTEMPT_SECONDS = 25.0
-HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
 
 
 @dataclass(frozen=True, slots=True)
