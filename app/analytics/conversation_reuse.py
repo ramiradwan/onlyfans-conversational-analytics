@@ -314,7 +314,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 appended = try_append(pipeline, account_id, catalog.view_revision,
                     conversation, raw, loader, reuse, config, cutoff, check, cancellation_check)
             if appended is not None:
-                findings, counts, local_graph, append_delta, append_previous = appended
+                findings, counts, local_graph, append_delta, append_previous, graph_unit = appended
                 nodes, edges = None, None
             else:
                 findings = pipeline.enrichment.enrich_conversation(account_id, conversation,
@@ -388,8 +388,10 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 from app.analytics.conversation_graph_units import ConversationGraphReference
                 if graph_unit is not None:
                     current_units[ref] = graph_unit
-                if local_graph is not None:
-                    changed_graph.merge(append_delta if append_delta is not None else local_graph, check=check)
+                if append_delta is not None:
+                    changed_graph.merge(append_delta, check=check)
+                elif local_graph is not None:
+                    changed_graph.merge(local_graph, check=check)
                 # A verified append retains every predecessor member.
                 if (not isinstance(graph_unit, ConversationGraphReference)
                         and (append_delta is None or graph_unit is None)):
@@ -417,6 +419,15 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         # Do not write a second optional cache of the same data. If either unit
         # was refused by its existing bound, keep the ordinary page fallback.
         if use_pages and not append_units_retained:
+            if append_delta is not None and local_graph is None:
+                from app.analytics.conversation_append import _previous_graph, _merge_append_delta
+                from app.analytics.graph_projection import stable_node_id
+                from app.models.analytics import GraphNodeKind
+                old_unit = loader.previous_graph_unit(ref)
+                if old_unit is None:
+                    raise ValueError('conversation_append_chunk_missing')
+                local_graph = _merge_append_delta(_previous_graph(loader, old_unit, check),
+                    append_delta, stable_node_id(account_ref(account_id), GraphNodeKind.CONVERSATION, ref), check)
             if not fast_enrichment_reuse:
                 if packed is None and local_graph is not None:
                     from app.analytics.conversation_pages import create_pages

@@ -145,6 +145,16 @@ def create_graph_unit(
     ):
         return None
     digest = graph_digest or graph.digest(check=lambda: None)
+    return create_membership_unit(account_ref=account_ref, conversation_ref=conversation_ref,
+        input_digest=input_digest, config_digest=config_digest, cutoff=cutoff,
+        findings=findings, metrics=metrics, nodes=nodes, edges=edges, digest=digest)
+
+
+def create_membership_unit(*, account_ref, conversation_ref, input_digest, config_digest,
+                           cutoff, findings, metrics, nodes, edges, digest):
+    """Encode the existing unit after checking its canonical graph bytes."""
+    if not nodes or max(len(nodes), len(edges)) > MAX_GRAPH_UNIT_RECORDS:
+        return None
     node_data = _compress(_encode_ids(nodes))
     edge_data = _compress(_encode_ids(edges))
     if len(node_data) > MAX_GRAPH_UNIT_BYTES or len(edge_data) > MAX_GRAPH_UNIT_BYTES:

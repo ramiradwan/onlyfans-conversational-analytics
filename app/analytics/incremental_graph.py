@@ -182,7 +182,20 @@ def _records_from_chunk(kind: str, chunk: bytes) -> dict[str, str]:
     return result
 
 
-def _segment_value(kind, bucket, records):
+def _records_from_verified_chunk(segment, chunk, account, check):
+    from app.analytics.conversation_append import _checked_record_spans
+    records, categories = {}, {}
+    previous = None
+    for key, category, data in _checked_record_spans(segment, chunk, account, check):
+        if key[3:5] != segment.bucket or (previous is not None and key <= previous):
+            raise ValueError('graph_segment_chunk_invalid')
+        previous = key
+        records[key] = data
+        categories[key] = category
+    return records, categories
+
+
+def _segment_value(kind, bucket, records, *, categories_by_key=None):
     if not records:
         return None
     key_name = "kind" if kind == "node" else "relation"
@@ -192,8 +205,8 @@ def _segment_value(kind, bucket, records):
     parts = []
     for key in keys:
         data = records[key]
-        row = json.loads(data)
-        categories[row[key_name]] += 1
+        category = (json.loads(data)[key_name] if categories_by_key is None else categories_by_key[key])
+        categories[category] += 1
         parts.append(data.encode("utf-8"))
     chunk = b",".join(parts)
     return (
@@ -272,21 +285,25 @@ def build_incremental_graph(
             ))
             continue
 
-        records = {}
+        records, record_categories = {}, {}
         if previous is not None:
             opened = chunk_reader(kind, bucket)
             if opened is None:
                 return None
-            _, chunk = opened
-            records = _records_from_chunk(kind, chunk)
+            selected, chunk = opened
+            if selected != previous:
+                raise ValueError('graph_segment_chunk_invalid')
+            records, record_categories = _records_from_verified_chunk(previous, chunk, account_ref, check)
         removals = removed_nodes if kind == "node" else removed_edges
         for key in tuple(records):
             if key in removals:
                 records.pop(key)
+                record_categories.pop(key)
         for key, data in changes[kind].items():
             if key[3:5] == bucket:
                 records[key] = data
-        value = _segment_value(kind, bucket, records)
+                record_categories[key] = json.loads(data)['kind' if kind == 'node' else 'relation']
+        value = _segment_value(kind, bucket, records, categories_by_key=record_categories)
         if value is None:
             continue
         digest, categories, chunk, chunk_digest = value
@@ -317,6 +334,20 @@ def build_incremental_graph(
         removed_nodes=removed_nodes,
         removed_edges=removed_edges,
     )
+
+
+def _content_parameters(kind, account, content_id, key, data):
+    """Decode only new immutable content; existing selected rows are checked on validation."""
+    from datetime import datetime
+    from app.analytics.sqlite_graph_store import _timestamp
+    row = json.loads(data)
+    occurred = row["occurred_at"]
+    stamp = _timestamp(datetime.fromisoformat(occurred)) if occurred else None
+    properties = _json(row["properties"])
+    if kind == "node":
+        return account, content_id, key, row["kind"], stamp, properties
+    return (account, content_id, key, row["source_id"], row["target_id"],
+            row["relation"], stamp, row["sequence"], properties)
 
 
 def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, check=lambda: None):
@@ -399,23 +430,8 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
                 if page_plans is not None and page_plans[(kind, segment.segment_id)][key[3:6]].reused:
                     continue
                 data = records[key]
-                row = json.loads(data)
                 content_id = hashlib.sha256(data.encode("utf-8")).hexdigest()
-                occurred = row["occurred_at"]
-                stamp = _timestamp(datetime.fromisoformat(occurred)) if occurred else None
-                properties = _json(row["properties"])
-                if kind == "node":
-                    value = (
-                        graph.account_ref, content_id, key, row["kind"],
-                        stamp, properties,
-                    )
-                else:
-                    value = (
-                        graph.account_ref, content_id, key, row["source_id"],
-                        row["target_id"], row["relation"], stamp,
-                        row["sequence"], properties,
-                    )
-                prepared[kind].append(value)
+                prepared[kind].append((graph.account_ref, content_id, key, data))
                 members.append(
                     (graph.account_ref, segment.segment_id, key, content_id)
                 )
@@ -453,7 +469,11 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
                     )
                     statistics["node_identities_written"] += len(identities - present)
                 if changed:
-                    cursor = db.executemany(statement, changed)
+                    parameters = []
+                    for value in changed:
+                        check()
+                        parameters.append(_content_parameters(kind, *value))
+                    cursor = db.executemany(statement, parameters)
                     statistics[kind + "_content_written"] += cursor.rowcount
 
         for segment, members in segment_members:

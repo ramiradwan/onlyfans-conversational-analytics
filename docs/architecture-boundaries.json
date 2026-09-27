@@ -591,6 +591,7 @@
         "app/analytics/source_snapshot.py",
         "app/analytics/conversation_reuse.py",
         "app/analytics/conversation_append.py",
+        "app/analytics/conversation_graph_stream.py",
         "app/analytics/recovered_reuse.py",
         "app/analytics/conversation_sql.py",
         "app/analytics/source_tokens.py",
@@ -1415,6 +1416,7 @@
         "path_patterns": [
           "app/analytics/identity.py",
           "app/analytics/conversation_append.py",
+          "app/analytics/conversation_graph_stream.py",
           "app/analytics/recovered_reuse.py",
           "app/analytics/graph_*.py",
           "app/analytics/*graph_store.py",

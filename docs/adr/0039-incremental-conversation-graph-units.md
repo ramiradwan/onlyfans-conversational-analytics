@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, sql/0018_graph_chunk_metadata.sql, test_graph_chunk_metadata.py, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
+<!-- CODE-VERIFY: Check conversation_graph_stream.py, test_predecessor_graph_handoff.py, recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, sql/0018_graph_chunk_metadata.sql, test_graph_chunk_metadata.py, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
 
 # ADR 0039: Reuse immutable conversation graph units
 
@@ -35,6 +35,8 @@ For a large dominant conversation, one message appended in canonical order may r
 Periodic currentness checks may use these same complete-content proofs after rechecking every generation binding, the full enrichment stamp, source identity, completed witness and retention. This avoids rematerializing immutable records after the positive-currentness cache expires. Its 60-second lifetime is unchanged; missing proofs require full verification.
 
 The append reader may frame already verified canonical graph bytes without rebuilding property dictionaries. The actual chunk hash must match the live complete-content proof. Record scope, identities, counts, categories and the selected conversation digest are rechecked. A missing proof or mismatch prevents this reuse; the stored format is unchanged.
+
+An eligible append streams the selected predecessor members instead of retaining a complete conversation graph. The same pass verifies the old canonical digest and computes the new canonical digest. Unit membership, digest encoding and stored format are unchanged. Only the boundary records enter changed-graph assembly; a refused optional unit keeps the complete graph/page fallback.
 
 ## Bounds
 

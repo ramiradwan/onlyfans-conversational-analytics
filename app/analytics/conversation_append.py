@@ -139,7 +139,6 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
     metrics = build_conversation_metrics(account, conversation, inputs)
     findings = AppendedMessageEnrichments(rows, tail, references, inputs[0].sent_at)
     del inputs
-    graph = _previous_graph(loader, old_graph, check)
     delta = CompactGraph(partition)
     boundary = conversation.model_copy(update={'messages': ordered[-2:]})
     shift = len(ordered) - 2
@@ -153,6 +152,18 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
             corrected.append(edge)
         delta.add(nodes, corrected, check=check)
     conversation_node = stable_node_id(partition, GraphNodeKind.CONVERSATION, ref)
+    from app.analytics.conversation_graph_stream import append_unit
+    graph_unit = append_unit(loader, old_graph, delta, conversation_node=conversation_node,
+        input_digest=conversation_digest(raw), config_digest=config, cutoff=cutoff,
+        findings=findings, metrics=metrics, check=check)
+    graph = None
+    if graph_unit is None:
+        graph = _merge_append_delta(_previous_graph(loader, old_graph, check), delta, conversation_node, check)
+    return findings, metrics, graph, delta if graph_unit is not None else None, unit, graph_unit
+
+
+def _merge_append_delta(graph, delta, conversation_node, check):
+    """Materialized fallback when the existing optional-unit bounds refuse an append."""
     for kind, records, target, counts in (
         ('node', delta.nodes, graph.nodes, graph.node_counts),
         ('edge', delta.edges, graph.edges, graph.edge_counts),
@@ -166,7 +177,7 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
                 counts[json.loads(data)['kind' if kind == 'node' else 'relation']] += 1
             target[key] = data
             graph.encoded_bytes += len(data.encode('utf-8')) - (len(previous.encode('utf-8')) if previous else 0)
-    return findings, metrics, graph, delta, unit
+    return graph
 
 
 # Canonical graph records have fixed leading fields. Their complete bytes have
