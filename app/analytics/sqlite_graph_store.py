@@ -2243,6 +2243,7 @@ class SQLiteGraphGenerationWriter:
                         enrichment_validation=getattr(
                             self, 'enrichment_validation', None
                         ),
+                        conversation_validation=getattr(self, 'conversation_graph_validation', None),
                     )
                     self.validated_graph_segments = values.get(
                         'graph_segments', ()

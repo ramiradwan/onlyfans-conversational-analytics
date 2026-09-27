@@ -261,6 +261,9 @@ class LazySQLiteAnalyticsProjectionStore:
     def clear(self, creator_account_id: str) -> None:
         self._write("clear", creator_account_id, creator_account_id)
 
+    def integrity_upgrade_required(self, account_id):
+        return self._read("integrity_upgrade_required", account_id, account_id)
+
     def close(self) -> None:
         with self._lock:
             self._closed = True

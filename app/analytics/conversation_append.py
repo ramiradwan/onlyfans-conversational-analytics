@@ -52,7 +52,12 @@ def _previous_graph(loader, unit, check):
                     graph.encoded_bytes += len(data.encode('utf-8'))
         if set(target) != set(keys):
             raise ValueError('conversation_append_membership_missing')
-    if graph.digest(check=check) != unit.header.graph_digest:
+    if unit.header.checksum_version == 2:
+        from app.analytics.conversation_integrity import from_graph
+        digest, _ = from_graph(graph.account_ref, unit.header.conversation_ref, graph, check)
+    else:
+        digest = graph.digest(check=check)
+    if digest != unit.header.graph_digest:
         raise ValueError('conversation_append_graph_digest_invalid')
     return graph
 
@@ -92,6 +97,8 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
     if old_graph is None:
         return None
     h = old_graph.header
+    if getattr(loader, 'integrity_checksum_version', 1) == 2 and h.checksum_version == 1:
+        return None  # Upgrade through complete ordinary construction, never relabel a digest.
     if (h.account_ref != partition or h.conversation_ref != ref
             or h.input_digest != expected.input_digest or h.config_digest != config
             or h.retention_cutoff > cutoff or h.expires_at <= pipeline._retention_clock()):

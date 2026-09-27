@@ -207,11 +207,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 if (header.retention_cutoff > cutoff
                         or header.expires_at <= pipeline._retention_clock()):
                     graph_unit = None
-                else:
-                    graph_unit_value = loader.previous_graph_unit(ref)
-                    if graph_unit_value is None:
-                        raise ValueError('conversation_graph_unit_unavailable')
-        if stream_enrichments and graph_unit_value is not None:
+        if stream_enrichments and graph_unit is not None:
             enrichment_unit = enrichment_reference_loader(ref, input_digest, config)
             if enrichment_unit is not None:
                 header = enrichment_unit.header
@@ -255,8 +251,12 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 h = candidate.header
                 if h.retention_cutoff <= cutoff and h.expires_at > pipeline._retention_clock():
                     try:
-                        if (graph_unit_value is not None
+                        if (graph_unit is not None
+                                and graph_unit.header.checksum_version == 1
                                 and candidate.header.encoding == encoding):
+                            graph_unit_value = loader.previous_graph_unit(ref)
+                            if graph_unit_value is None:
+                                raise ValueError('conversation_graph_unit_unavailable')
                             findings, counts, cached = restore_pages_with_graph_unit(
                                 candidate, graph_unit_value, check
                             )
@@ -360,6 +360,8 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                     findings=findings,
                     metrics=counts,
                     graph=local_graph,
+                    checksum_version=getattr(loader, "integrity_checksum_version", 1),
+                    check=check,
                 )
             state.retain_graph_unit(graph_unit)
             if enrichment_units_enabled:

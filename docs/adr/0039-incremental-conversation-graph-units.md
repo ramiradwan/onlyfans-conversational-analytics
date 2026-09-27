@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_graph_stream.py, test_predecessor_graph_handoff.py, recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, sql/0018_graph_chunk_metadata.sql, test_graph_chunk_metadata.py, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
+<!-- CODE-VERIFY: Check conversation_integrity.py, conversation_integrity_store.py, test_incremental_conversation_integrity.py, sql/0021_conversation_integrity.sql, conversation_graph_stream.py, test_predecessor_graph_handoff.py, recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, sql/0018_graph_chunk_metadata.sql, test_graph_chunk_metadata.py, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
 
 # ADR 0039: Reuse immutable conversation graph units
 
@@ -36,7 +36,21 @@ Periodic currentness checks may use these same complete-content proofs after rec
 
 The append reader may frame already verified canonical graph bytes without rebuilding property dictionaries. The actual chunk hash must match the live complete-content proof. Record scope, identities, counts, categories and the selected conversation digest are rechecked. A missing proof or mismatch prevents this reuse; the stored format is unchanged.
 
-An eligible append streams the selected predecessor members instead of retaining a complete conversation graph. The same pass verifies the old canonical digest and computes the new canonical digest. Unit membership, digest encoding and stored format are unchanged. Only the boundary records enter changed-graph assembly; a refused optional unit keeps the complete graph/page fallback.
+A version-1 append streams the selected predecessor members instead of retaining a complete conversation graph. The same pass verifies the old canonical digest and computes the new canonical digest. Unit membership, digest encoding and stored format are unchanged. Only the boundary records enter changed-graph assembly; a refused optional unit keeps the complete graph/page fallback.
+
+## Internal checksum version 2
+
+Schema 21 adds an explicit checksum version and bounded integrity metadata to optional conversation graph units. Version 1 keeps its canonical-payload checksum. Version 2 binds the account, conversation, ordered node/edge identities and exact content hashes through stable two-hex-digit groups. Each group holds at most 16,384 identities. The canonical metadata is limited to 256 KiB and counts against the existing aggregate unit budget. A refused optional group uses the complete fallback.
+
+Assembly reads only the witnessed headers of unchanged units. Membership payloads remain available for independent stored verification, deletion handling and full fallback.
+
+Only the optional unit checksum changes. Public graph identities, graph records, query semantics, pipeline graph digests and source retention do not change. Legacy units remain readable. On schema 21, normal startup preparation requests an ordinary authorized build when active legacy units remain. That build replaces them with version 2, or omits optional units that exceed their bounds. It never relabels a legacy checksum or changes a published generation in place. The next readiness check does not request another upgrade. Restart preparation reconstructs the version declared by each unit. An older binary rejects the newer migration ledger rather than misreading version-2 metadata. Migration backups retain the previous schema.
+
+An eligible append reads exact predecessor content-version metadata for touched groups, compares their summaries with the verified predecessor, and derives replacement groups. It does not reopen unchanged graph payload buckets. The existing canonical-prefix, account, configuration, source-time and proof checks still apply. Changing a previously selected record is allowed only for the conversation boundary record; other prefix changes fail closed.
+
+Generation validation checks version-2 summaries against the selected persisted content after ordinary graph-byte and endpoint verification. A group can retain prior verification only when both its summary and its independently verified generation segment remain unchanged under the exact predecessor binding. Other groups are checked against exact selected content versions. The temporary metadata cache stays within the existing 32,768-row and 32 MiB verification bounds and lives only within that verification operation. A stored digest alone never establishes readiness or authority.
+
+Restart, invalidated proof, changed schema or changed selection requires independent verification. Activation and cleanup keep their existing fenced, synchronous paths. No proof lifetime, request limit or retention period is extended.
 
 ## Bounds
 
@@ -49,3 +63,5 @@ These are cache/admission bounds, not a total process-memory guarantee. Exceedin
 A small source change can avoid account-wide graph record restoration and merging. The updater still computes current conversation metrics, validates reused page/analyzer data, stages generation references, verifies changed graph buckets, proves endpoint closure for changed edges and removed nodes, and publishes a complete generation. Fallback validation checks the complete selected endpoint relation.
 
 Cold builds, restart without process-local proofs, explicit artifact reads and backup verification retain their complete graph paths. The optimization adds one rebuildable analytics migration and no dependency, database file, network service or writer process.
+
+When shared graph storage is disabled, construction retains version-1 optional units and does not request an integrity upgrade. Page-cache fallback still validates its canonical-payload checksum through the complete page reader; a version-2 integrity root is never compared as though it were that checksum.

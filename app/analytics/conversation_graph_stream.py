@@ -8,6 +8,14 @@ from app.analytics.conversation_graph_units import graph_unit_ids, create_member
 
 def append_unit(loader, previous, delta, *, conversation_node, input_digest,
                 config_digest, cutoff, findings, metrics, check):
+    if previous.header.checksum_version == 2:
+        from app.analytics.conversation_integrity import append_unit as append_v2, IntegrityCapacity
+        try:
+            return append_v2(loader, previous, delta, conversation_node=conversation_node,
+                input_digest=input_digest, config_digest=config_digest, cutoff=cutoff,
+                findings=findings, metrics=metrics, check=check)
+        except IntegrityCapacity:
+            return None
     from app.analytics.conversation_append import _checked_record_spans
     account = previous.header.account_ref
     if delta.account_ref != account:

@@ -31,6 +31,7 @@ class ConversationGraphUnitHeader:
     node_count: int
     edge_count: int
     unit_id: str
+    checksum_version: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,10 +39,11 @@ class ConversationGraphUnit:
     header: ConversationGraphUnitHeader
     node_ids: bytes
     edge_ids: bytes
+    integrity_metadata: bytes | None = None
 
     @property
     def retained_bytes(self) -> int:
-        return len(self.node_ids) + len(self.edge_ids)
+        return len(self.node_ids) + len(self.edge_ids) + len(self.integrity_metadata or b'')
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,8 +116,11 @@ def unit_id(
     graph_digest: str,
     node_ids: tuple[str, ...],
     edge_ids: tuple[str, ...],
+    *, checksum_version: int = 1,
 ) -> str:
-    digest = hashlib.sha256(b"conversation-graph-unit.v1\0")
+    if type(checksum_version) is not int or checksum_version not in (1, 2):
+        raise ValueError("conversation_integrity_version_invalid")
+    digest = hashlib.sha256(f"conversation-graph-unit.v{checksum_version}\0".encode())
     digest.update(graph_digest.encode("ascii") + b"\0")
     for kind, values in ((b"node", node_ids), (b"edge", edge_ids)):
         digest.update(kind + b"\0")
@@ -135,6 +140,8 @@ def create_graph_unit(
     metrics,
     graph,
     graph_digest: str | None = None,
+    checksum_version: int = 1,
+    check=lambda: None,
 ) -> ConversationGraphUnit | None:
     nodes = tuple(sorted(graph.nodes))
     edges = tuple(sorted(graph.edges))
@@ -144,14 +151,24 @@ def create_graph_unit(
         or len(edges) > MAX_GRAPH_UNIT_RECORDS
     ):
         return None
-    digest = graph_digest or graph.digest(check=lambda: None)
+    metadata = None
+    if checksum_version == 2:
+        from app.analytics.conversation_integrity import from_graph, IntegrityCapacity
+        try:
+            digest, metadata = from_graph(account_ref, conversation_ref, graph, check)
+        except IntegrityCapacity:
+            return None
+    else:
+        digest = graph_digest or graph.digest(check=lambda: None)
     return create_membership_unit(account_ref=account_ref, conversation_ref=conversation_ref,
         input_digest=input_digest, config_digest=config_digest, cutoff=cutoff,
-        findings=findings, metrics=metrics, nodes=nodes, edges=edges, digest=digest)
+        findings=findings, metrics=metrics, nodes=nodes, edges=edges, digest=digest,
+        checksum_version=checksum_version, integrity_metadata=metadata)
 
 
 def create_membership_unit(*, account_ref, conversation_ref, input_digest, config_digest,
-                           cutoff, findings, metrics, nodes, edges, digest):
+                           cutoff, findings, metrics, nodes, edges, digest,
+                           checksum_version=1, integrity_metadata=None):
     """Encode the existing unit after checking its canonical graph bytes."""
     if not nodes or max(len(nodes), len(edges)) > MAX_GRAPH_UNIT_RECORDS:
         return None
@@ -176,15 +193,25 @@ def create_membership_unit(*, account_ref, conversation_ref, input_digest, confi
         graph_digest=digest,
         node_count=len(nodes),
         edge_count=len(edges),
-        unit_id=unit_id(digest, nodes, edges),
+        unit_id=unit_id(digest, nodes, edges, checksum_version=checksum_version),
+        checksum_version=checksum_version,
     )
-    return ConversationGraphUnit(header, node_data, edge_data)
+    result = ConversationGraphUnit(header, node_data, edge_data, integrity_metadata)
+    if checksum_version == 2:
+        from app.analytics.conversation_integrity import decode_manifest
+        decode_manifest(result)
+    elif integrity_metadata is not None:
+        raise ValueError("conversation_integrity_version_invalid")
+    return result
 
 
 def graph_unit_ids(unit: ConversationGraphUnit) -> tuple[tuple[str, ...], tuple[str, ...]]:
     header = unit.header
+    if header.checksum_version == 2:
+        from app.analytics.conversation_integrity import decode_manifest
+        decode_manifest(unit)
     nodes = _unpack(unit.node_ids, expected_count=header.node_count, kind="node")
     edges = _unpack(unit.edge_ids, expected_count=header.edge_count, kind="edge")
-    if unit_id(header.graph_digest, nodes, edges) != header.unit_id:
+    if unit_id(header.graph_digest, nodes, edges, checksum_version=header.checksum_version) != header.unit_id:
         raise ValueError("conversation_graph_unit_digest_invalid")
     return nodes, edges

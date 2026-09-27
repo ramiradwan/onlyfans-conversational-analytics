@@ -25,6 +25,8 @@ FUNCTIONS = frozenset({
     'append_enrichment_unit', 'from_values', '_checked_entries', 'validation_messages',
     '_available_store', '_identity_matches_unlocked', 'store_identity',
     'retain_record', 'prefetch',
+    'verify_generation_integrity', 'groups_for_members', 'summarize_group',
+    'append_unit', 'integrity_upgrade_required',
     '_quiesce_heartbeat_for_terminal_transition', 'refresh_identity_cache',
 })
 

@@ -65,7 +65,7 @@ def expected_units(pipeline, account, catalog, projection, references, cancellat
         unit = create_graph_unit(account_ref=projection.account_ref,
             conversation_ref=h.conversation_ref, input_digest=h.input_digest,
             config_digest=config, cutoff=h.retention_cutoff, findings=findings,
-            metrics=expected_metrics, graph=graph)
+            metrics=expected_metrics, graph=graph, checksum_version=h.checksum_version, check=check)
         if unit is None or unit.header != h:
             raise ValueError('recovered_reuse_graph_header_invalid')
         yield unit, graph
@@ -89,6 +89,10 @@ def restore(store, account, catalog, build_expected, check, source_current):
             "AND status='active'", (account_ref(account),)).fetchone()
         if row is None or not units.supported(db):
             return None
+        from app.analytics.shared_graph import uses_segments
+        if (not getattr(store, 'reuse_graph_content', True)
+                or not uses_segments(db, row['generation_id'], row['creator_account_id'])):
+            return None  # Ordinary currentness still verifies the complete fallback graph.
         intent = store.activation.get(row['generation_id'])
         if (not store._intent_matches(row, intent, require_completed=True)
                 or intent.creator_account_id != account

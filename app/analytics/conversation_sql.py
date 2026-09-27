@@ -49,6 +49,8 @@ def fragment_reader(store, account_id):
                 return None
             data = row['document_json'].encode()
             return data if len(data) <= MAX_FRAGMENT_BYTES and hashlib.sha256(data).hexdigest() == row['document_digest'] else None
+        load.integrity_checksum_version = (2 if db.execute("PRAGMA user_version").fetchone()[0] >= 21
+            and getattr(store, "reuse_graph_content", True) else 1)
         from app.analytics.conversation_page_sql import supported, load_pages
         if supported(db):
             def pages(conversation, input_digest, config_digest, *, cancellation_check=None):
@@ -79,6 +81,7 @@ def fragment_reader(store, account_id):
                 return value if (
                     value is not None
                     and trusted_headers.get(conversation) == value.header
+                    and value.header.checksum_version == load.integrity_checksum_version
                 ) else None
             def previous_graph_unit(conversation):
                 value = graph_units.load_unit(

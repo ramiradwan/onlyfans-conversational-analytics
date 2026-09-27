@@ -353,6 +353,31 @@ class SQLiteAnalyticsProjectionStore:
 
         return restore(self, account, catalog, build_expected, check, source_current)
 
+    def integrity_upgrade_required(self, account_id):
+        """Request ordinary publication for legacy optional units, not an in-place rewrite."""
+        from app.analytics.conversation_graph_unit_sql import integrity_supported
+        if not getattr(self, "reuse_graph_content", True):
+            return False
+        with self.database.read() as connection:
+            if not integrity_supported(connection):
+                return False
+            generation = connection.execute(
+                "SELECT * FROM projection_generations WHERE creator_account_id=? "
+                "AND status='active'", (account_ref(account_id),)
+            ).fetchone()
+            if generation is None:
+                return False
+            proof = self._trusted_conversation_graph_proof(connection, generation)
+            if proof is not None:
+                return any(header.checksum_version == 1 for header in proof.headers)
+            return connection.execute(
+                "SELECT 1 FROM conversation_graph_refs r "
+                "JOIN conversation_graph_units u USING(creator_account_id,unit_id) "
+                "WHERE r.generation_id=? AND r.creator_account_id=? "
+                "AND u.checksum_version=1 LIMIT 1",
+                (generation['generation_id'], generation['creator_account_id'])
+            ).fetchone() is not None
+
     def projection_currentness(self, account_id, identity, revision, config, retention_clock):
         return self._currentness.matches(self, account_id, identity, revision, config, retention_clock)
 
@@ -800,6 +825,7 @@ class SQLiteAnalyticsProjectionStore:
             lease_seconds=self.lease_seconds,
         )
         writer.enrichment_validation = enrichment_validation
+        writer.conversation_graph_validation = predecessor_graph_unit_proof
         with writer.lease_session():
             if compact:
                 write_compact_graph(writer, artifact.graph,
@@ -1998,6 +2024,7 @@ def recompute_generation(
     materialize_projection: bool = True,
     graph_validation=None,
     enrichment_validation=None,
+    conversation_validation=None,
 ) -> dict[str, object]:
     """Verify stored data with a connection-local page-cache target."""
 
@@ -2006,7 +2033,8 @@ def recompute_generation(
                                      materialize_graph=materialize_graph,
                                      materialize_projection=materialize_projection,
                                      graph_validation=graph_validation,
-                                     enrichment_validation=enrichment_validation)
+                                     enrichment_validation=enrichment_validation,
+                                     conversation_validation=conversation_validation)
 
 
 def _recompute_generation(
@@ -2018,6 +2046,7 @@ def _recompute_generation(
     materialize_projection: bool = True,
     graph_validation=None,
     enrichment_validation=None,
+    conversation_validation=None,
 ) -> dict[str, object]:
     """Recompute all row-derived validation values; stored digest fields are ignored."""
 
@@ -2202,6 +2231,10 @@ def _recompute_generation(
         raise ProjectionValidationError("node-kind coverage differs")
     if projection.graph.edge_counts_by_relation != dict(sorted(edge_counts.items())):
         raise ProjectionValidationError("edge-kind coverage differs")
+    from app.analytics.conversation_integrity_store import verify_generation_integrity
+    verify_generation_integrity(connection, generation, account_id, proof=conversation_validation,
+        graph_validation=graph_validation, segments=(() if materialize_graph else graph_segments),
+        prepared=graph_rows, check=run_check)
     return {
         "projection": projection,
         "nodes": nodes,

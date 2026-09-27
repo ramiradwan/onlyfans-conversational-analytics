@@ -332,6 +332,7 @@ class AnalyticsPipeline:
         if not self.account_exists(creator_account_id):
             raise CanonicalAccountNotFound()
         with self._account_lock(creator_account_id):
+            force = force or self._requires_integrity_upgrade(creator_account_id)
             for attempt in range(1, self.max_revision_retries + 1):
                 check_cancelled(cancellation_check)
                 account = self._capture_source(creator_account_id, cancellation_check)
@@ -632,6 +633,13 @@ class AnalyticsPipeline:
             lambda: source_identity(self.source, creator_account_id),
         )
 
+    def _requires_integrity_upgrade(self, creator_account_id):
+        required = getattr(self.projections, "integrity_upgrade_required", None)
+        return bool(self.compact_graph and self.reuse_conversations and self.reuse_enrichment
+            and type(self.graph_projector) is RelationshipGraphProjector
+            and type(self.enrichment) is EnrichmentStage
+            and callable(required) and required(creator_account_id))
+
     def prepare_questions(self, creator_account_id: str, requested_revision: int,
                           *, cancellation_check=None) -> bool:
         """Share preparation for an account without holding a request open."""
@@ -667,7 +675,9 @@ class AnalyticsPipeline:
                 lambda projection: not self._expired(projection) and read() == catalog.identity)
             current = prepared is not False and read() == catalog.identity
         check_cancelled(cancellation_check)
-        return current
+        # Preparation does not write or bypass licensed build admission. The
+        # scheduler requests the existing owned build/publication path instead.
+        return current and not self._requires_integrity_upgrade(creator_account_id)
 
     def _projection_currentness_with_identity(self, creator_account_id, requested_revision, read):
         if not self.source.account_exists(creator_account_id):

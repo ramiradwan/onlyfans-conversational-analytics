@@ -42,7 +42,7 @@ def test_cold_build_persists_complete_conversation_graph_units(fixture):
             "SELECT generation_id FROM projection_generations WHERE status='active'"
         ).fetchone()[0]
         rows = db.execute(
-            """SELECT r.*,u.graph_digest,u.node_count,u.edge_count,u.node_ids,u.edge_ids
+            """SELECT r.*,u.graph_digest,u.node_count,u.edge_count,u.node_ids,u.edge_ids,u.checksum_version,u.integrity_metadata
                FROM conversation_graph_refs r
                JOIN conversation_graph_units u USING(creator_account_id,unit_id)
                WHERE r.generation_id=? ORDER BY r.conversation_ref""",
@@ -53,7 +53,7 @@ def test_cold_build_persists_complete_conversation_graph_units(fixture):
             from app.analytics.conversation_graph_units import ConversationGraphUnit
             header = _header(row)
             nodes, edges = graph_unit_ids(
-                ConversationGraphUnit(header, row["node_ids"], row["edge_ids"])
+                ConversationGraphUnit(header, row["node_ids"], row["edge_ids"], row["integrity_metadata"])
             )
             source = metrics[header.conversation_ref]
             assert header.participant_ref == source.participant_ref

@@ -97,7 +97,8 @@
         "0017_conversation_enrichment_units.sql": "0edd4e23cb400ead36ac1b2ee116d16c8c6c2f172f37cc0324972c8d2b3a7c0a",
         "0018_graph_chunk_metadata.sql": "7f42a478e6c088e3385264ba0e4a2272e8fa3d4fdc9037b11bd8ad9c2625f575",
         "0019_graph_reclamation_guards.sql": "ca8218c8fae6c0f2fc21c44e664442dac7eabe1a2052059b12df8193079531de",
-        "0020_shared_graph_membership_pages.sql": "daba57e827654300624294bfcf987d89b6a67b507aa0334f66edd598c752b042"
+        "0020_shared_graph_membership_pages.sql": "daba57e827654300624294bfcf987d89b6a67b507aa0334f66edd598c752b042",
+        "0021_conversation_integrity.sql": "a1ccad51720c9548bf006797c2043d770fe12003ffec109375afb1fb1d4950ce"
       }
     }
   ],
