@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import hashlib
 import importlib.metadata
 import json
+import re
 import math
 import os
 from pathlib import Path
@@ -247,6 +248,17 @@ def check_visibility(manifest: dict, job: str, data: dict) -> list[str]:
                 or type(probe.get("backlog_after")) is not int or probe["backlog_after"] != 0
                 or probe.get("valid_current_result") is not True or probe.get("cleanup_complete") is not True):
             errors.append("visibility_not_valid_current_and_drained")
+        if probe.get("stale_reference_rejected") is not True:
+            errors.append("visibility_stale_reference_not_rejected:" + str(probe.get("case")))
+        expected_digests = probe.get("expected")
+        if (probe.get("independent_rebuild_equal") is not True
+                or probe.get("persisted_content_revalidated") is not True
+                or not isinstance(expected_digests, dict)
+                or set(expected_digests) != {"projection_digest", "graph_digest", "canonical_content_digest"}
+                or expected_digests != probe.get("actual")
+                or any(not isinstance(v, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', v) is None
+                       for v in expected_digests.values())):
+            errors.append("visibility_independent_verification_missing_or_invalid:" + str(probe.get("case")))
         marks = probe.get("clocks", {})
         if not clock_errors and manifest["profiles"][profile]["numeric_latency_gates"]:
             elapsed = max(marks[k] for k in ("first_valid_visible_result", "required_cleanup_complete", "backlog_drained")) - marks["durable_canonical_commit"]
@@ -428,8 +440,11 @@ def inspect_attempt(path: Path, manifest: dict, context: dict) -> tuple[str, dic
             or result.get("complete") is not True):
         reason = result.get("reason") or "worker_failed_killed_or_incomplete"
         return job, verdict("FAIL", str(reason), *result.get("diagnostic_errors", [])), result
-    if (not finite(result.get("seconds")) or result["seconds"] > manifest["limits"]["whole_worker_seconds"]
-            or result.get("maximum_seconds") != manifest["limits"]["whole_worker_seconds"]):
+    worker_limit = (manifest["visibility_execution"]["maximum_worker_seconds"]
+                    if job.startswith("visibility/") and "visibility_execution" in manifest
+                    else manifest["limits"]["whole_worker_seconds"])
+    if (not finite(result.get("seconds")) or result["seconds"] > worker_limit
+            or result.get("maximum_seconds") != worker_limit):
         return job, verdict("FAIL", "worker_guard_not_satisfied"), result
     if result.get("source_after_sha256") != digest(context["source"]):
         return job, verdict("FAIL", "source_changed_during_worker"), result
@@ -575,8 +590,10 @@ def check_collector_evidence(attempt: Path, result: dict, manifest: dict) -> lis
     if payload.get("complete") is not True or read("fixture.json").get("manifest_sha256") != digest(manifest):
         return ["collector_incomplete_or_fixture_manifest_mismatch"]
     events = [read(name) for name in names if "/events/" in "/" + name]
+    completed_phases = [read(name) for name in names if name.endswith("-phase.json")]
     phase_values = [event["value"] for name in names if name.endswith("-phase.json") for event in [read(name)]]
-    errors = []
+    from tools.analytics_qualification_execution import check_evidence
+    errors = check_evidence(manifest, config, result, names, read, events)
     for phase in payload.get("phases", []):
         if sum(digest(value) == digest(phase) for value in phase_values) != 1:
             errors.append("durable_phase_record_missing_or_duplicate")
@@ -587,7 +604,7 @@ def check_collector_evidence(attempt: Path, result: dict, manifest: dict) -> lis
     for probe in payload.get("probes", []):
         if probe.get("process_instance") not in instances:
             errors.append("visibility_runtime_process_not_observed")
-        matching = [event for event in events if event["value"].get("case") == probe.get("case")
+        matching = [event for event in completed_phases if event["value"].get("case") == probe.get("case")
                     and digest(dict(event["value"], process_instance=event["process_instance"])) == digest(probe)]
         if len(matching) != 1:
             errors.append("durable_visibility_phase_missing_or_duplicate")
@@ -597,6 +614,13 @@ def check_collector_evidence(attempt: Path, result: dict, manifest: dict) -> lis
             errors.append("visibility_restart_process_set_invalid")
         elif any(p.get("process_instance") != observed[1 if p.get("case", "").startswith("restarted/") else 0] for p in payload["probes"]):
             errors.append("visibility_restart_case_used_wrong_process")
+        restart_references = [read(name) for name in names if name.endswith("-restart-reference.json")]
+        restarted = [probe for probe in payload["probes"] if probe.get("case", "").startswith("restarted/")]
+        if (len(restart_references) != 1 or len(restarted) != 1
+                or restart_references[0]["process_instance"] != restarted[0].get("process_instance")
+                or restart_references[0]["value"].get("checked_current") is not True
+                or restart_references[0]["value"].get("source_revision") != restarted[0].get("source_before", {}).get("revision")):
+            errors.append("restart_current_reference_not_observed")
     if "calls" in payload:
         if payload.get("process_instance") not in instances or payload["process_instance"] == read("process.json")["instance"]:
             errors.append("question_runtime_not_a_fresh_observed_process")

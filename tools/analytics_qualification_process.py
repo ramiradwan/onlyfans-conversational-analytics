@@ -160,13 +160,16 @@ def worker_tree_exited(owner, group: int) -> bool:
 
 def supervise(command: list[str], root: Path, attempt: Path, limit: float,
               *, limits: dict | None = None, environment: dict | None = None,
-              cancel_event=None) -> dict:
+              cancel_event=None, execution_schedule: dict | None = None) -> dict:
     """The watchdog includes preparation, oracle work and synchronous cleanup."""
     token = uuid4().hex
     env = dict(os.environ, OFCA_QUALIFICATION_PROCESS=token, PYTHONUNBUFFERED="1")
     env.update(environment or {})
     started = time.monotonic()
     owner, process, reason, joined = None, None, None, False
+    from tools.analytics_qualification_execution import StateBudget
+    state_budget = StateBudget(execution_schedule, started=started, token=token) if execution_schedule else None
+    execution_ended = None
     peak, minimum_free, minimum_memory = 0, shutil.disk_usage(attempt).free, available_memory()
     if limits and (minimum_free < limits["minimum_free_disk_bytes"] or
                    minimum_memory < limits["minimum_available_memory_bytes"]):
@@ -198,9 +201,24 @@ def supervise(command: list[str], root: Path, attempt: Path, limit: float,
                     reason = "free_disk_limit"
                 elif limits and minimum_memory < limits["minimum_available_memory_bytes"]:
                     reason = "available_memory_limit"
+                if reason is None and state_budget is not None:
+                    try:
+                        state_budget.poll(time.monotonic())
+                    except TimeoutError:
+                        reason = "execution_state_watchdog_expired"
+                    except ValueError as error:
+                        reason = str(error)
                 if reason:
                     break
                 time.sleep(min(0.1, max(0.001, limit / 10)))
+            execution_ended = time.monotonic()
+            if reason is None and state_budget is not None:
+                try:
+                    state_budget.poll(execution_ended, finished=True)
+                except TimeoutError:
+                    reason = "execution_state_watchdog_expired"
+                except ValueError as error:
+                    reason = str(error)
             if reason is None:
                 _, active = owner.sample() if owner else group_sample(process.pid)
                 if active:
@@ -241,10 +259,11 @@ def supervise(command: list[str], root: Path, attempt: Path, limit: float,
                 owner.close()
     return {"status": "PASS" if process and process.returncode == 0 and reason is None and joined else "FAIL",
             "reason": reason, "exit_code": process.returncode if process else None,
-            "timed_out": reason == "whole_worker_watchdog_expired", "worker_joined": joined,
+            "timed_out": reason in {"whole_worker_watchdog_expired", "execution_state_watchdog_expired"}, "worker_joined": joined,
             "worker_started": process is not None, "process_instance": token,
             "pid": process.pid if process else None, "seconds": time.monotonic() - started,
             "command": command, "maximum_seconds": limit,
+            "execution": state_budget.report(execution_ended or time.monotonic()) if state_budget else None,
             "resource_measurements": {"process_tree_peak_bytes": peak,
                 "memory_measure": "job_peak_private_commit" if os.name == "nt" else "sampled_group_rss",
                 "sample_seconds": 0.1, "minimum_free_disk_bytes": minimum_free,

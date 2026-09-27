@@ -15,6 +15,7 @@ from tools import analytics_qualification as q
 from tools.analytics_qualification_fixture import Journal, Workload
 from tools.analytics_qualification_workloads import direct, matrix, scheduled
 from tools.analytics_qualification_questions import questions
+from tools.analytics_qualification_execution import mark_state
 
 
 def subject_matches(config):
@@ -41,7 +42,7 @@ async def visibility(work, journal, config, instance, *, restarted=False):
     from app.analytics.query_runtime import QuestionResources
     from app.analytics.scheduling import InProcessProjectionScheduler
     from app.models.analytics import AvailabilityStatus
-    resources = QuestionResources(work.f.source, work.f.pipeline, clock=lambda: work.clock)
+    resources = QuestionResources(work.f.source, work.f.pipeline)
     scheduler = InProcessProjectionScheduler(work.f.pipeline, worker_count=1, queue_capacity=64,
                                             reconciliation_interval=30)
     report = {"initial_messages": work.size, "probes": [], "complete": False,
@@ -56,8 +57,12 @@ async def visibility(work, journal, config, instance, *, restarted=False):
             state = await scheduler.wait(work.account)
             if state.availability != AvailabilityStatus.AVAILABLE:
                 raise ValueError("restart_not_ready")
+            reference = await asyncio.to_thread(work.capture_current_reference)
+            journal.save("restart-reference", reference)
         for case in cases[-1:] if restarted else cases[:-1]:
             state, thread = case.split("/")
+            if not restarted:
+                mark_state(config, state, instance)
             if state == "rebuilt":
                 await direct(work, journal, resources, "unchanged_rebuild")
             if state == "idle":
@@ -94,6 +99,8 @@ def collect(config):
     sys.path.insert(0, config["subject_directory"])
     import tests.conftest  # Only isolated synthetic stores and test keys.
     mode = config["mode"]
+    if mode == "visibility":
+        mark_state(config, "cold", instance)
     data = Path(config["data"])
     report = {"complete": False, "initial_messages": config["messages"]}
     work = None
@@ -130,6 +137,7 @@ def collect(config):
             if mode == "visibility":
                 if not report["scheduler_closed"] or report["detached_workers"]:
                     raise ValueError("cannot_restart_with_live_workers")
+                mark_state(config, "restarted", instance)
                 restarted = child(config, output / "restarted-process", "visibility-restarted")
                 report["probes"].extend(restarted["probes"])
                 report["runtime_processes"].extend(restarted["runtime_processes"])

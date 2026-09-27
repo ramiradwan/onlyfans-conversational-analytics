@@ -334,3 +334,74 @@ class IncrementalMessageEnrichments:
                 "unavailable_reason": None if eligible else "no_eligible_samples",
             }))
         return result
+
+
+def append_enrichment_unit(previous, *, input_digest, config_digest, cutoff,
+                           findings, metrics, analyzer_entries, check=lambda: None):
+    """Copy an already verified prefix; normal stored-unit validation still follows."""
+    from app.analytics.enrichment_cache import (
+        CachedEnrichment, MAX_CONVERSATION_CACHE_BYTES, MAX_CONVERSATION_CACHE_ENTRIES,
+    )
+    h = previous.header
+    if (len(findings) != h.message_count + 1
+            or len(findings) > MAX_ENRICHMENT_UNIT_RECORDS
+            or metrics.account_ref != h.account_ref
+            or metrics.conversation_ref != h.conversation_ref
+            or metrics.participant_ref != h.metrics.participant_ref
+            or metrics.message_count != len(findings)
+            or config_digest != h.config_digest
+            or h.retention_cutoff > cutoff or h.first_source_at <= cutoff):
+        return None
+    tail = findings[-1]
+    if (tail.account_ref != h.account_ref or tail.conversation_ref != h.conversation_ref
+            or tail.participant_ref != h.metrics.participant_ref or tail.sent_at <= cutoff
+            or (tail.sent_at, tail.source_ordinal) < (findings[-2].sent_at, findings[-2].source_ordinal)
+            or any(item.message_ref == tail.message_ref for item in findings[:-1])):
+        return None
+    check()
+    old_rows = message_records(previous)
+    old_analyzers = analyzer_records(previous)
+    message_raw = b'\n'.join((*old_rows, _canonical(tail.model_dump(mode='json'))))
+    analyzer_rows = list(old_analyzers)
+    analyzer_size = sum(map(len, analyzer_rows))
+    added_keys = set()
+    for raw in analyzer_entries:
+        check()
+        entry = CachedEnrichment.model_validate_json(raw)
+        key = entry.key
+        if (key.account_ref != h.account_ref or key.conversation_ref != h.conversation_ref
+                or key.message_ref != tail.message_ref or key.digest in added_keys
+                or not h.expires_at <= key.expires_at <= tail.sent_at + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
+                or entry.result() != getattr(tail, key.slot)):
+            raise ValueError('conversation_enrichment_append_analyzer_invalid')
+        added_keys.add(key.digest)
+        encoded = _canonical(entry.model_dump(mode='json'))
+        if (len(analyzer_rows) < MAX_CONVERSATION_CACHE_ENTRIES
+                and analyzer_size + len(encoded) <= MAX_CONVERSATION_CACHE_BYTES):
+            analyzer_rows.append(encoded)
+            analyzer_size += len(encoded)
+    check()
+    analyzer_raw = b'\n'.join(analyzer_rows) if analyzer_rows else b'[]'
+    messages, analyzers = _compress(message_raw), _compress(analyzer_raw)
+    if max(len(messages), len(analyzers)) > MAX_ENRICHMENT_UNIT_BYTES:
+        return None
+    message_digest = hashlib.sha256(message_raw).hexdigest()
+    analyzer_digest = hashlib.sha256(analyzer_raw).hexdigest()
+    metrics_digest = hashlib.sha256(_canonical(metrics.model_dump(mode='json'))).hexdigest()
+    def total(previous_total, values):
+        extra = ConfidenceTotal.from_values(values)
+        value = previous_total.fraction() + extra.fraction()
+        return ConfidenceTotal(previous_total.count + extra.count, str(value.numerator), str(value.denominator))
+    header = ConversationEnrichmentUnitHeader(
+        account_ref=h.account_ref, conversation_ref=h.conversation_ref,
+        input_digest=input_digest, config_digest=config_digest, retention_cutoff=cutoff,
+        expires_at=h.expires_at, message_count=h.message_count + 1,
+        first_source_at=h.first_source_at, last_source_at=tail.sent_at, metrics=metrics,
+        sentiment=total(h.sentiment, [tail.sentiment.confidence]),
+        topics=total(h.topics, [item.confidence for item in tail.topic_entities.topics]),
+        engagement=total(h.engagement, [tail.engagement.confidence]),
+        canonical_digest=message_digest, analyzer_digest=analyzer_digest,
+        unit_id=_unit_id(message_digest, analyzer_digest, metrics_digest, h.message_count + 1),
+    )
+    check()
+    return ConversationEnrichmentUnit(header, messages, analyzers)

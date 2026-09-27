@@ -92,15 +92,26 @@ def test_six_phase_collector_has_independent_results_and_cleanup(tmp_path, monke
 
 def test_visibility_restarts_the_interpreter_not_only_backend_objects(tmp_path, monkeypatch):
     monkeypatch.setenv("OFCA_QUALIFICATION_PROCESS", "test-owner")
+    import time
+    from tools.analytics_qualification_execution import StateBudget
     config = configuration(tmp_path, "visibility")
+    config["execution_schedule"] = dict(config["manifest"]["visibility_execution"],
+        directory=str(Path(config["output"]) / "execution"))
+    budget = StateBudget(config["execution_schedule"], started=time.monotonic(), token="test-owner")
     report = collect(config)
+    ended = time.monotonic()
+    budget.poll(ended, finished=True)
     assert report["complete"], report
     assert len(set(report["runtime_processes"])) == 2
     assert report["probes"][-1]["process_instance"] != report["probes"][0]["process_instance"]
     assert not q.check_visibility(config["manifest"], "visibility/reference-windows-16g/0", report), report
     assert report["restart_scheduler_closed"] and report["restart_detached_workers"] == 0
     attempt, raw = raw_result(tmp_path, config, report)
+    raw.update(execution=budget.report(ended), seconds=ended-budget.started,
+               maximum_seconds=config["execution_schedule"]["maximum_worker_seconds"])
     assert not q.check_collector_evidence(attempt, raw, config["manifest"])
+    raw["execution"]["intervals"][1]["ended"] = raw["execution"]["intervals"][1]["started"]
+    assert q.check_collector_evidence(attempt, raw, config["manifest"])
 
 
 def test_source_change_fails_before_fixture_creation(tmp_path):

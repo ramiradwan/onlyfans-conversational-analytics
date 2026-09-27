@@ -102,6 +102,32 @@ class Workload:
                     yield scope
             self.f.source.open_question_scope = known
 
+    def capture_current_reference(self):
+        """Record the validated active handle before testing rejection after restart."""
+        from app.analytics.generation_reference import GenerationReference
+        from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
+        from app.analytics.opaque_refs import account_ref
+        from app.analytics.query_contracts import utc_instant
+        store = getattr(self.f.stores.projections, "_store", None) or self.f.stores.projections
+        with store.database.read() as db:
+            row = db.execute("SELECT g.*,q.projection_generation,q.first_source FROM projection_generations g "
+                "JOIN projection_query_metadata q USING(generation_id,creator_account_id) "
+                "WHERE g.creator_account_id=? AND g.status='active'", (account_ref(self.account),)).fetchone()
+        if row is None:
+            raise ValueError("restart_active_reference_missing")
+        reference = GenerationReference(row['generation_id'], row['creator_account_id'],
+            row['canonical_revision'], row['projection_generation'], row['canonical_content_digest'],
+            row['pipeline_revision'], row['pipeline_config_digest'], row['pipeline_identity_digest'],
+            row['projection_digest'], row['graph_digest'], row['publication_epoch'],
+            utc_instant(row['first_source']) + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
+            if row['first_source'] else None)
+        store.check_generation_reference(self.account, reference)
+        if not self.f.pipeline.projection_is_current(self.account, reference.source_revision):
+            raise ValueError("restart_active_reference_not_current")
+        self.last = reference
+        return {'generation_id': reference.generation_id, 'source_revision': reference.source_revision,
+                'checked_current': True}
+
     def observe_activation(self):
         store = getattr(self.f.stores.projections, "_store", None) or self.f.stores.projections
         store.crash_hook = lambda stage, generation: self.events.append(

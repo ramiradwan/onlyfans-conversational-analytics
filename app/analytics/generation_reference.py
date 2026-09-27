@@ -81,6 +81,11 @@ def read_referenced_artifact(store, account_id: str, reference: GenerationRefere
     from app.models.analytics import RebuildArtifact
 
     check_reference(store, account_id, reference)
+    # Only reject on a live revision mismatch. Matching revisions still require
+    # the exact content identity, persisted verification and final checks below.
+    revision = getattr(store.activation, "source_revision", None)
+    if callable(revision) and revision(account_id) != reference.source_revision:
+        raise CanonicalRevisionChanged()
     if store.canonical_identity_reader(account_id) != reference.canonical_identity:
         raise CanonicalRevisionChanged()
     values = store._validate_persisted_generation(reference.generation_id, materialize_graph=True)

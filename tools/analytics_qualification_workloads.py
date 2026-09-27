@@ -82,11 +82,16 @@ async def scheduled(work, journal, resources, scheduler, name, mutation, *, case
     after = work.counts()
     await scheduler.schedule(work.account, after["revision"])
     observations = []
+    recorded_outcomes = set()
     async def visible_result():
         deadline = time.monotonic() + work.manifest["limits"]["whole_worker_seconds"]
         while time.monotonic() < deadline:
             result = await asyncio.to_thread(observed_question, work, resources)
             observations.append(result)
+            outcome = (result["error"], result["current"])
+            if outcome not in recorded_outcomes and (len(recorded_outcomes) < 16 or result["current"]):
+                journal.save("visibility-observation", dict(result, phase=name, case=case))
+                recorded_outcomes.add(outcome)
             if result["current"]:
                 return result["at"]
             await asyncio.sleep(work.manifest["measurement"]["visibility_poll_seconds"])
@@ -174,7 +179,7 @@ async def historical(work, journal, resources, scheduler):
 async def matrix(work, journal):
     from app.analytics.query_runtime import QuestionResources
     from app.analytics.scheduling import InProcessProjectionScheduler
-    resources = QuestionResources(work.f.source, work.f.pipeline, clock=lambda: work.clock)
+    resources = QuestionResources(work.f.source, work.f.pipeline)
     scheduler = InProcessProjectionScheduler(work.f.pipeline, worker_count=1, queue_capacity=64)
     report = {"phases": [], "complete": False}
     try:

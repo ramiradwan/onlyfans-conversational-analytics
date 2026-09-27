@@ -76,11 +76,19 @@ def run_source(root, directory, context, session, manifest, args):
         "known_kinds": args.known_synthetic_kinds, "profile_updates": getattr(args, "profile_updates", False), "output": str(attempt / "collector"),
         "data": str(attempt / "collector/data"), "entry_point": str(root / "tools/qualify_analytics_baseline.py"),
         "job": job}
+    execution_schedule = None
+    worker_limit = manifest["limits"]["whole_worker_seconds"]
+    if kind == "visibility" and "visibility_execution" in manifest:
+        execution_schedule = dict(manifest["visibility_execution"],
+                                  directory=str(attempt / "collector/execution"))
+        config["execution_schedule"] = execution_schedule
+        worker_limit = manifest["visibility_execution"]["maximum_worker_seconds"]
     q.write_once(attempt / "worker-input.json", config)
     command = [sys.executable, config["entry_point"], "--collector-worker", str(attempt / "worker-input.json")]
     result = {}
     try:
-        result = supervise(command, root, attempt, manifest["limits"]["whole_worker_seconds"], limits=manifest["limits"])
+        result = supervise(command, root, attempt, worker_limit, limits=manifest["limits"],
+                           execution_schedule=execution_schedule)
         if result["worker_started"]:
             payload_path = attempt / "collector/payload.json"
             payload = q.read_json(payload_path) if payload_path.exists() else {"complete": False}

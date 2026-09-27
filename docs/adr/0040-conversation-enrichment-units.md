@@ -32,6 +32,8 @@ The renewed proof enters the cache only after commit, and only if the original p
 
 The generation reference manifest must cover the same ordered conversations and message count as the projection metrics. Reused references must come from the exact proven predecessor. Incremental validation may trust unchanged unit headers only under that exact process-local proof; changed units are decompressed and independently checked. Missing proof, restart and explicit artifact reads perform full unit validation/materialization.
 
+For a single-message append, validation may compare the actual decompressed prefix bytes with a completely verified predecessor instead of recreating its message models. Both stored payloads are hashed again. Every prefix message and analyzer record must match exactly. The new message, added analyzer records, ordering, uniqueness, scope, retention and exact confidence totals are checked independently. Changed prefixes or missing proofs use full validation. Explicit artifact reads still materialize and validate every record. No proof lifetime, record limit or storage format changes.
+
 The compact projection document is streamed through the normal projection verifier. Its versioned digest is recomputed from the verified document metadata, the ordered conversation-metrics digest and the verified schema-17 enrichment components. Publication, canonical witness checks, graph validation, activation receipts and clean-rebuild equivalence remain required.
 
 ## Bounds

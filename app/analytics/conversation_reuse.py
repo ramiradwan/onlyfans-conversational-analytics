@@ -192,6 +192,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         fragment = None
         local_graph = None
         append_delta = None
+        append_previous = None
         packed, restored = None, None
         graph_unit = None
         graph_unit_value = None
@@ -313,7 +314,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 appended = try_append(pipeline, account_id, catalog.view_revision,
                     conversation, raw, loader, reuse, config, cutoff, check, cancellation_check)
             if appended is not None:
-                findings, counts, local_graph, append_delta = appended
+                findings, counts, local_graph, append_delta, append_previous = appended
                 nodes, edges = None, None
             else:
                 findings = pipeline.enrichment.enrich_conversation(account_id, conversation,
@@ -362,6 +363,13 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 )
             state.retain_graph_unit(graph_unit)
             if enrichment_units_enabled:
+                if append_previous is not None:
+                    from app.analytics.conversation_enrichment_units import append_enrichment_unit
+                    enrichment_unit = append_enrichment_unit(
+                        append_previous, input_digest=input_digest, config_digest=config, cutoff=cutoff,
+                        findings=findings, metrics=counts,
+                        analyzer_entries=reuse.conversation_entries(ref), check=check,
+                    )
                 if enrichment_unit is None and findings is not None:
                     from app.analytics.conversation_enrichment_units import create_enrichment_unit
                     enrichment_unit = create_enrichment_unit(
@@ -382,7 +390,9 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                     current_units[ref] = graph_unit
                 if local_graph is not None:
                     changed_graph.merge(append_delta if append_delta is not None else local_graph, check=check)
-                if not isinstance(graph_unit, ConversationGraphReference):
+                # A verified append retains every predecessor member.
+                if (not isinstance(graph_unit, ConversationGraphReference)
+                        and (append_delta is None or graph_unit is None)):
                     previous = loader.previous_graph_unit(ref)
                     if previous is not None:
                         previous_changed_units[ref] = previous

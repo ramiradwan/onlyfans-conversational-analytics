@@ -53,3 +53,5 @@ Capacity runs can use `--verification-mode digests` to compare newly rebuilt pro
 ## Live validation receipts
 
 [ADR 0036](../adr/0036-validated-generation-receipts.md) defines the single-use receipt. The exact trigger contract, store identity, schema cookie, monotonic content epoch and generation fields must match inside the activation write transaction. Receipts expire after 60 seconds and are bounded to eight. A missing or invalid receipt requires full validation. Explicit reads and backups retain their complete checks.
+
+A referenced read rejects a mismatched live canonical revision before scanning content. A matching revision is not sufficient: exact canonical identity, stored content, generation bindings and final checks still apply. Missing revision support keeps the full read path.

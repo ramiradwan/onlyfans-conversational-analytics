@@ -16,7 +16,13 @@ Canonical digest calculation covers source content outside the selected period. 
 
 For a large dominant conversation, a single message appended in canonical order can reuse an unchanged canonical prefix. The full prefix digest and current-process graph/enrichment proofs must match. Message-local analyzers run only for the new message; graph construction covers the boundary and new message. Conversation metrics and the complete generation are still checked. Edits, deletions, late arrival, expired inputs and context-dependent analysis retain the full conversation path.
 
+A verified append copies the predecessor's serialized enrichment records and adds only the new message. It does not import the old analyzer cache into staging again. Stored-unit verification hashes both payloads and compares every prefix record before validating the tail. Missing proofs or changed bytes retain full validation.
+
+Verified graph chunks retain their exact canonical bytes during append assembly. Their hashes, account, record identities, categories and conversation digest are rechecked without decoding property objects again. No graph representation or retention limit changes.
+
 When an append retains complete graph and enrichment units, it omits the additional conversation-page cache. Both units still undergo their normal validation. If either unit is refused by its existing size or count bound, the builder keeps the page-cache fallback.
+
+An exact append keeps all predecessor graph members. It does not enumerate them as possible deletions. Changed or removed conversations retain the ordinary removal checks. Prefix copying frames previously verified canonical bytes without decoding their property objects. Stored enrichment validation compares actual prefix bytes and checks the new message, including duplicate references with JSON escapes.
 
 ## Graph assembly and visibility
 

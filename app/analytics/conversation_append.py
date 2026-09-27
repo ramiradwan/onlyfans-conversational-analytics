@@ -1,16 +1,17 @@
 """Reuse an independently matched prefix within the existing graph representation."""
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import timedelta
+import hashlib
 import json
+import re
 
 from app.analytics.compact_graph import CompactGraph
 from app.analytics.conversation_enrichment_units import (
-    ConversationEnrichmentUnit, message_records, analyzer_records,
+    ConversationEnrichmentUnit, message_records,
 )
 from app.analytics.conversation_graph_units import graph_unit_ids
-from app.analytics.enrichment_cache import CachedEnrichment
 from app.analytics.graph_projection import stable_node_id
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 from app.analytics.metrics import build_conversation_metrics
@@ -25,7 +26,6 @@ def _previous_graph(loader, unit, check):
     """Read exact canonical bytes from verified chunks, not stored digest claims."""
     graph = CompactGraph(unit.header.account_ref)
     node_ids, edge_ids = graph_unit_ids(unit)
-    decoder = json.JSONDecoder()
     for kind, keys, target, counts in (
         ('node', node_ids, graph.nodes, graph.node_counts),
         ('edge', edge_ids, graph.edges, graph.edge_counts),
@@ -38,24 +38,16 @@ def _previous_graph(loader, unit, check):
             chunk = loader.graph_segment_chunk(kind, bucket)
             if chunk is None:
                 raise ValueError('conversation_append_chunk_missing')
-            _, encoded = chunk
-            text, position = encoded.decode('utf-8'), 0
-            while position < len(text):
-                check()
-                start = position
-                row, position = decoder.raw_decode(text, position)
-                key = row[kind + '_id']
+            segment, encoded = chunk
+            if segment.kind != kind or segment.bucket != bucket:
+                raise ValueError('conversation_append_chunk_invalid')
+            for key, category, data in _checked_record_spans(segment, encoded, graph.account_ref, check):
                 if key in selected:
-                    if key in target or row['account_ref'] != graph.account_ref:
+                    if key in target:
                         raise ValueError('conversation_append_graph_invalid')
-                    data = text[start:position]
                     target[key] = data
-                    counts[row['kind' if kind == 'node' else 'relation']] += 1
+                    counts[category] += 1
                     graph.encoded_bytes += len(data.encode('utf-8'))
-                if position < len(text):
-                    if text[position] != ',':
-                        raise ValueError('conversation_append_chunk_invalid')
-                    position += 1
         if set(target) != set(keys):
             raise ValueError('conversation_append_membership_missing')
     if graph.digest(check=check) != unit.header.graph_digest:
@@ -123,12 +115,10 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
                 or finding.sent_at != message.sent_at or finding.direction != message.direction):
             raise ValueError('conversation_append_source_mismatch')
         findings.append(finding)
-    for record in analyzer_records(unit):
-        check()
-        reuse.retain_record(CachedEnrichment.model_validate_json(record))
-    findings.extend(pipeline.enrichment.enrich_conversation(account,
-        conversation.model_copy(update={'messages': ordered[-1:]}),
-        cancellation_check=cancellation_check))
+    with reuse.known_new_message(message_ref(account, conversation.conversation_id, ordered[-1].message_id)):
+        findings.extend(pipeline.enrichment.enrich_conversation(account,
+            conversation.model_copy(update={'messages': ordered[-1:]}),
+            cancellation_check=cancellation_check))
     metrics = build_conversation_metrics(account, conversation, findings)
     graph = _previous_graph(loader, old_graph, check)
     delta = CompactGraph(partition)
@@ -157,4 +147,55 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
                 counts[json.loads(data)['kind' if kind == 'node' else 'relation']] += 1
             target[key] = data
             graph.encoded_bytes += len(data.encode('utf-8')) - (len(previous.encode('utf-8')) if previous else 0)
-    return findings, metrics, graph, delta
+    return findings, metrics, graph, delta, unit
+
+
+# Canonical graph records have fixed leading fields. Their complete bytes have
+# already been validated by the generation proof; this is framing, not validation
+# of arbitrary JSON. Recheck the actual chunk digest and all record metadata.
+_RECORD_START = re.compile(
+    r'(?:^|,)(?P<record>\{"account_ref":"(?P<account>[^"\\]+)",'
+    r'(?:"kind":"(?P<category>[^"\\]+)","node_id":"(?P<node>[^"\\]+)"'
+    r'|"edge_id":"(?P<edge>[^"\\]+)"))'
+)
+
+
+def _checked_record_spans(segment, encoded, account, check):
+    """Frame only the exact bytes bound to a complete-content segment proof."""
+    if (segment.kind not in ('node', 'edge') or segment.chunk_digest is None
+            or hashlib.sha256(encoded).hexdigest() != segment.chunk_digest):
+        raise ValueError('conversation_append_chunk_invalid')
+    text = encoded.decode('utf-8')
+    if not text:
+        raise ValueError('conversation_append_chunk_invalid')
+    count, categories, position = 0, Counter(), 0
+    while position < len(text):
+        check()
+        previous = _RECORD_START.match(text, position - 1 if position else 0)
+        if previous is None or previous.start('record') != position:
+            raise ValueError('conversation_append_chunk_invalid')
+        end = text.find(',{"account_ref":', position + 1)
+        if end < 0:
+            end = len(text)
+        data = text[position:end]
+        key = previous.group(segment.kind)
+        if previous.group('account') != account or key is None or not data.endswith('}'):
+            raise ValueError('conversation_append_chunk_invalid')
+        category = previous.group('category')
+        if segment.kind == 'edge':
+            marker = ',"relation":"'
+            start = data.rfind(marker)
+            if start < 0:
+                raise ValueError('conversation_append_chunk_invalid')
+            start += len(marker)
+            finish = data.find('"', start)
+            if not data[finish:].startswith('","sequence":'):
+                raise ValueError('conversation_append_chunk_invalid')
+            category = data[start:finish]
+        count += 1
+        categories[category] += 1
+        yield key, category, data
+        position = end + 1
+    if count != segment.count or tuple(sorted(categories.items())) != segment.categories:
+        raise ValueError('conversation_append_chunk_invalid')
+    check()

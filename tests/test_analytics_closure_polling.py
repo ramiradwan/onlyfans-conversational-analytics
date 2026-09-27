@@ -25,7 +25,7 @@ async def test_bulk_observer_survives_the_old_sample_cutoff(monkeypatch):
         state["revision"] = 2
         return time.monotonic()
     def observe(*args):
-        return {"current": state["ready"], "at": time.monotonic(), "error": None}
+        return {"current": state["ready"], "at": time.monotonic(), "error": None if state["ready"] else "analytics_question_limit_exceeded"}
     class Scheduler:
         retained_account_count = 0
         async def schedule(self, *args):
@@ -43,3 +43,8 @@ async def test_bulk_observer_survives_the_old_sample_cutoff(monkeypatch):
     assert result["valid_current_result"]
     assert result["clocks"]["first_valid_visible_result"] >= result["clocks"]["activation"]
     assert any(label == "backlog-drained" for label, _ in events)
+
+    observations = [value for label, value in events if label == "visibility-observation"]
+    assert observations[0]["error"] == "analytics_question_limit_exceeded"
+    assert observations[-1]["current"] is True
+    assert len(observations) == 2

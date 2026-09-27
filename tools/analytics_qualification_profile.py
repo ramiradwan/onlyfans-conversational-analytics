@@ -22,6 +22,9 @@ FUNCTIONS = frozenset({
     'try_append', '_previous_graph', 'create_pages', 'checked_page_sets',
     'create_graph_unit', 'create_enrichment_unit', 'build_conversation_metrics',
     '_canonical_conversations', 'load_enrichment_unit_contents',
+    'append_enrichment_unit', 'from_values', '_checked_entries', 'validation_messages',
+    '_available_store', '_identity_matches_unlocked', 'store_identity',
+    'retain_record', 'prefetch',
     '_quiesce_heartbeat_for_terminal_transition', 'refresh_identity_cache',
 })
 

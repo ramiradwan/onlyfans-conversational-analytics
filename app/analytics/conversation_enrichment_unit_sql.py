@@ -348,7 +348,95 @@ def verify_generation_units(
         unit = ConversationEnrichmentUnit(
             header, content["message_bytes"], content["analyzer_bytes"]
         )
+        if (not materialize and trusted and _validate_appended_unit(
+                connection, validation.proof.generation_id,
+                trusted.get(header.conversation_ref), unit, check=check)):
+            continue
         messages.extend(
             _validate_unit(unit, check=check, materialize=materialize)
         )
     return headers, tuple(components), messages
+
+
+def _validate_appended_unit(connection, previous_generation, previous, unit, *, check):
+    """Verify an actual stored append against an independently checked predecessor."""
+    from datetime import timedelta
+    import hashlib
+    from app.analytics.conversation_enrichment_units import message_records, _canonical, _unit_id
+    from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
+    from app.models.analytics import MessageEnrichment
+    h = unit.header
+    if (previous is None or previous.message_count < 128
+            or h.message_count != previous.message_count + 1
+            or h.account_ref != previous.account_ref
+            or h.conversation_ref != previous.conversation_ref
+            or h.config_digest != previous.config_digest
+            or h.retention_cutoff < previous.retention_cutoff
+            or h.first_source_at <= h.retention_cutoff
+            or h.first_source_at != previous.first_source_at
+            or h.expires_at != previous.expires_at
+            or h.metrics.account_ref != h.account_ref
+            or h.metrics.conversation_ref != h.conversation_ref
+            or h.metrics.message_count != h.message_count
+            or h.metrics.participant_ref != previous.metrics.participant_ref):
+        return False
+    check()
+    old = load_unit(connection, previous_generation, h.account_ref, h.conversation_ref)
+    if old is None or old.header != previous:
+        return False
+    old_rows, new_rows = message_records(old), message_records(unit)
+    if len(new_rows) != len(old_rows) + 1:
+        return False
+    tail = MessageEnrichment.model_validate_json(new_rows[-1])
+    last = MessageEnrichment.model_validate_json(old_rows[-1])
+    if (tail.account_ref != h.account_ref or tail.conversation_ref != h.conversation_ref
+            or tail.participant_ref != h.metrics.participant_ref
+            or (tail.sent_at, tail.source_ordinal) < (last.sent_at, last.source_ordinal)
+            or tail.sent_at != h.last_source_at
+            or tail.sent_at <= h.retention_cutoff):
+        return False
+    import json
+    tail_reference = tail.message_ref.encode("utf-8")
+    for expected, actual in zip(old_rows, new_rows):
+        check()
+        # A previously validated row may have legal whitespace or JSON escapes.
+        # Compare the decoded identity, not a spelling of its serialized field.
+        if expected != actual:
+            return False
+        # An equal decoded reference is literal UTF-8 or contains a JSON escape.
+        # Parse possible matches, including noncanonical escaping; never infer uniqueness.
+        if ((tail_reference in expected or b"\\" in expected)
+                and json.loads(expected)["message_ref"] == tail.message_ref):
+            return False
+    del old_rows, new_rows
+    old_analyzers, new_analyzers = analyzer_records(old), analyzer_records(unit)
+    if not len(old_analyzers) <= len(new_analyzers) <= len(old_analyzers) + 3:
+        return False
+    for expected, actual in zip(old_analyzers, new_analyzers):
+        check()
+        if expected != actual:
+            return False
+    seen = set()
+    for raw in new_analyzers[len(old_analyzers):]:
+        check()
+        entry = CachedEnrichment.model_validate_json(raw)
+        key = entry.key
+        if (key.message_ref != tail.message_ref or key.account_ref != h.account_ref
+                or key.conversation_ref != h.conversation_ref or key.digest in seen
+                or not h.expires_at <= key.expires_at <= tail.sent_at + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
+                or entry.result() != getattr(tail, key.slot)):
+            return False
+        seen.add(key.digest)
+    def increased(total, values):
+        addition = ConfidenceTotal.from_values(values)
+        value = total.fraction() + addition.fraction()
+        return ConfidenceTotal(total.count + addition.count, str(value.numerator), str(value.denominator))
+    if (increased(previous.sentiment, [tail.sentiment.confidence]) != h.sentiment
+            or increased(previous.topics, [v.confidence for v in tail.topic_entities.topics]) != h.topics
+            or increased(previous.engagement, [tail.engagement.confidence]) != h.engagement):
+        return False
+    metrics_digest = hashlib.sha256(_canonical(h.metrics.model_dump(mode='json'))).hexdigest()
+    if _unit_id(h.canonical_digest, h.analyzer_digest, metrics_digest, h.message_count) != h.unit_id:
+        return False
+    check()
+    return True

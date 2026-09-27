@@ -34,6 +34,8 @@ For a large dominant conversation, one message appended in canonical order may r
 
 Periodic currentness checks may use these same complete-content proofs after rechecking every generation binding, the full enrichment stamp, source identity, completed witness and retention. This avoids rematerializing immutable records after the positive-currentness cache expires. Its 60-second lifetime is unchanged; missing proofs require full verification.
 
+The append reader may frame already verified canonical graph bytes without rebuilding property dictionaries. The actual chunk hash must match the live complete-content proof. Record scope, identities, counts, categories and the selected conversation digest are rechecked. A missing proof or mismatch prevents this reuse; the stored format is unchanged.
+
 ## Bounds
 
 At most 4,096 conversation graph units are retained per build. Newly stored unit payloads are bounded to 128 MiB in aggregate. Each compressed node-ID or edge-ID payload is bounded to 64 MiB and four million identities. A canonical segment chunk is bounded to 64 MiB.

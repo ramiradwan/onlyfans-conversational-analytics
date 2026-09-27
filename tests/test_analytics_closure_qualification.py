@@ -60,9 +60,13 @@ def test_records_cannot_be_overwritten(tmp_path):
 
 
 def visibility(profile="reference-windows-16g"):
+    digests = {key: "sha256:" + "a" * 64 for key in
+               ("projection_digest", "graph_digest", "canonical_content_digest")}
     return {"initial_messages": 100000, "scheduler_closed": True, "restart_scheduler_closed": True,
             "detached_workers": 0, "restart_detached_workers": 0, "backlog": 0, "restart_backlog": 0, "probes": [{"case": case, "clocks": clocks(), "backlog_before": 0,
-             "backlog_after": 0, "valid_current_result": True, "cleanup_complete": True}
+             "backlog_after": 0, "valid_current_result": True, "cleanup_complete": True,
+             "stale_reference_rejected": True, "independent_rebuild_equal": True,
+             "persisted_content_revalidated": True, "expected": dict(digests), "actual": dict(digests)}
              for case in MANIFEST["visibility"]["process_cases"][0]]}
 
 

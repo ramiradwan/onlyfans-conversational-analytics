@@ -112,6 +112,8 @@ class ProjectionActivationRepository(Protocol):
         source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent: ...
 
+    def source_revision(self, creator_account_id: str) -> int | None: ...
+
     def get(self, generation_id: str) -> ProjectionActivationIntent | None: ...
 
     def pending(self) -> list[ProjectionActivationIntent]: ...
@@ -290,6 +292,11 @@ class InMemoryProjectionActivationRepository:
             self._intents[intent.intent_id] = intent
             self._by_generation[generation_id] = intent.intent_id
             return intent
+
+    def source_revision(self, creator_account_id: str) -> int | None:
+        """A mismatch may reject a reference; equality never authorizes a read."""
+        identity = self._identity(creator_account_id)
+        return None if identity is None else identity.revision
 
     def get(self, generation_id: str) -> ProjectionActivationIntent | None:
         with self._lock:
@@ -766,6 +773,15 @@ class SQLiteProjectionActivationRepository:
             finally:
                 scope.active = False
                 _ACTIVATION_READ_SCOPE.reset(token)
+
+    def source_revision(self, creator_account_id: str) -> int | None:
+        """Read the live account head for early rejection, not content validation."""
+        with self.database.read() as connection:
+            row = connection.execute(
+                "SELECT canonical_revision FROM account_heads WHERE creator_account_id=?",
+                (creator_account_id,),
+            ).fetchone()
+        return None if row is None else int(row[0])
 
     def get(self, generation_id: str) -> ProjectionActivationIntent | None:
         scope = _ACTIVATION_READ_SCOPE.get()

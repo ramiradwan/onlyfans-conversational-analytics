@@ -145,6 +145,16 @@ class EnrichmentReuse:
         self._local_conversation_bytes = 0
         self._fallback_conversation_ref: str | None = None
         self._fallback_conversation_entries: dict[str, bytes] = {}
+        self._known_new_message: str | None = None
+
+    @contextmanager
+    def known_new_message(self, reference: str):
+        """Skip predecessor lookup only for a verified new tail message."""
+        previous, self._known_new_message = self._known_new_message, reference
+        try:
+            yield
+        finally:
+            self._known_new_message = previous
 
     def prefetch(self, keys: list[EnrichmentKey]) -> None:
         check_cancelled(self.cancellation)
@@ -154,7 +164,8 @@ class EnrichmentReuse:
         ) if keys else {}
         if not keys or len(self._batch) == len(keys):
             return
-        references = {key.conversation_ref for key in keys if key.digest not in self._batch}
+        references = {key.conversation_ref for key in keys
+                      if key.digest not in self._batch and key.message_ref != self._known_new_message}
         loader = getattr(self.store, "load_conversation_enrichment_entries", None)
         if len(references) != 1 or not callable(loader):
             return
