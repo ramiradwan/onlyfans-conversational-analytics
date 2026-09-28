@@ -287,6 +287,7 @@ export class ConsentController {
         assertCurrent,
         signal: AbortSignal.any([lease.signal, this.controlAbort.signal]),
         status: () => this.#statusLocked(),
+        reconcile: () => this.#reconcileLocked(generation),
         setMode: (mode, options) => this.#setModeLocked(mode, options, generation),
       });
     })));

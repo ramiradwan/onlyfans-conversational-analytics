@@ -23,6 +23,18 @@ function storageArea(values) {
   };
 }
 
+const prerequisiteStore = new ActivationEvidenceStore({
+  indexedDb: new FakeIndexedDb(),
+  softwareVersion: '2.0.1',
+  now: () => new Date('2026-08-30T10:02:00.000Z'),
+});
+const termsRecord = await prerequisiteStore.recordTermsAcceptance({
+  transactionId: '50000000-0000-4000-8000-000000000098', bindings,
+});
+const riskRecord = await prerequisiteStore.recordRiskAcknowledgment({
+  transactionId: '50000000-0000-4000-8000-000000000098', bindings,
+});
+
 function modeRecord(mode, presentedBindings = bindings) {
   const occurredAt = '2026-08-30T10:02:00.000Z';
   return {
@@ -30,6 +42,8 @@ function modeRecord(mode, presentedBindings = bindings) {
     authorization_scope: authorizationScope(presentedBindings, mode),
     record_type: 'mode_envelope',
     event_id: '50000000-0000-4000-8000-000000000099',
+    terms_event_id: termsRecord.event_id,
+    risk_event_id: riskRecord.event_id,
     envelope: {
       schema_version: '2.0',
       event_id: '50000000-0000-4000-8000-000000000099',
@@ -52,7 +66,10 @@ function modeRecord(mode, presentedBindings = bindings) {
 }
 
 function policyHarness() {
-  const records = new Map();
+  const records = new Map([
+    [termsRecord.event_id, structuredClone(termsRecord)],
+    [riskRecord.event_id, structuredClone(riskRecord)],
+  ]);
   const stored = {};
   const bindingRef = { current: structuredClone(bindings) };
   const evidenceStore = {

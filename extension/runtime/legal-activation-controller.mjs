@@ -4,6 +4,7 @@ import { SerialExecutor } from './operation-scope.mjs';
 import {
   authorizationScope,
   modeRecordAuthorizes,
+  persistedModeRecordAuthorizes,
 } from './legal-consent-authorization.mjs';
 
 export const LEGAL_ACTIVATION_STATUS_MESSAGE_TYPE = 'ofca.legal-activation.status';
@@ -117,13 +118,17 @@ export class LegalActivationController {
     const flow = await this.#storedFlow();
     if (binding === null) return flow;
     const scope = authorizationScope(binding, 'preview');
-    if (flow.binding_scope === scope) return flow;
     const [terms, risk] = await Promise.all([
       flow.terms_event_id === null ? null : this.evidenceStore.event(flow.terms_event_id),
       flow.risk_event_id === null ? null : this.evidenceStore.event(flow.risk_event_id),
     ]);
     const termsCurrent = preModeEventMatches(terms, 'terms', binding.instruments.terms_of_service);
     const riskCurrent = preModeEventMatches(risk, 'risk_disclosure', binding.instruments.risk_disclosure);
+    if (
+      flow.binding_scope === scope
+      && (flow.terms_event_id === null || termsCurrent)
+      && (flow.risk_event_id === null || riskCurrent)
+    ) return flow;
     return this.#saveFlow(freshFlow({
       termsEventId: termsCurrent ? flow.terms_event_id : null,
       riskEventId: riskCurrent ? flow.risk_event_id : null,
@@ -144,6 +149,7 @@ export class LegalActivationController {
     }
     return this.queue.run(() => work({
       status: () => this.consentController.status(),
+      reconcile: () => this.consentController.reconcile(),
       setMode: (mode, options) => this.consentController.setMode(mode, options),
       assertCurrent: () => {},
     }));
@@ -158,12 +164,31 @@ export class LegalActivationController {
 
   async #statusLocked(context) {
     const binding = this.#binding();
-    const flow = await this.#flow(binding);
-    const consent = await context.status();
+    let consent = await context.status();
+    const currentMode = ACTIVE_MODES.has(consent.consent.mode) ? consent.consent.mode : null;
     const resumeMode = consent.consent.mode === 'paused'
       && ACTIVE_MODES.has(consent.consent.resume_mode)
       ? consent.consent.resume_mode
       : null;
+    const authorizationMode = currentMode ?? resumeMode;
+    let flow;
+    let requiresReauthorization;
+    try {
+      flow = await this.#flow(binding);
+      requiresReauthorization = authorizationMode !== null
+        && !await persistedModeRecordAuthorizes(
+          consent.consent.authorization_event_id
+            ? await this.evidenceStore.event(consent.consent.authorization_event_id) : null,
+          authorizationMode, binding, this.evidenceStore,
+        );
+    } catch (error) {
+      if (currentMode !== null) await context.reconcile();
+      throw error;
+    }
+    if (currentMode !== null && requiresReauthorization) {
+      await context.reconcile();
+      consent = await context.status();
+    }
     return {
       schema: 'ofca-legal-activation-status/v1',
       configured: binding !== null,
@@ -173,12 +198,7 @@ export class LegalActivationController {
       },
       flow,
       consent_mode: consent.consent.mode,
-      requires_reauthorization: resumeMode !== null
-        && !modeRecordAuthorizes(
-          consent.consent.authorization_event_id
-            ? await this.evidenceStore.event(consent.consent.authorization_event_id) : null,
-          resumeMode, binding,
-        ),
+      requires_reauthorization: requiresReauthorization,
     };
   }
 

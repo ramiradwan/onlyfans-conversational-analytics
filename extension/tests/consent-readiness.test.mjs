@@ -1,18 +1,79 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { ActivationEvidenceStore } from '../runtime/activation-evidence.mjs';
+import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
+import { build } from 'esbuild';
+import { ACTIVATION_EVIDENCE_DATABASE_NAME, ACTIVATION_EVIDENCE_STORE, ActivationEvidenceStore } from '../runtime/activation-evidence.mjs';
 import { CONSENT_STORAGE_KEY, ConsentController, UI_RELOAD_TABS_MESSAGE_TYPE } from '../runtime/consent-controller.mjs';
 import { DELETE_INTENT_KEY } from '../runtime/deletion-state.mjs';
-import { LegalActivationController } from '../runtime/legal-activation-controller.mjs';
+import { LEGAL_ACTIVATION_FLOW_STORAGE_KEY, LegalActivationController } from '../runtime/legal-activation-controller.mjs';
 import { LegalConsentAuthorization, authorizationScope } from '../runtime/legal-consent-authorization.mjs';
 import { clearExtensionLocalData } from '../runtime/local-data.mjs';
 import { PreviewMetricsStore, PREVIEW_METRICS_STORAGE_KEY } from '../runtime/preview-metrics.mjs';
 import { AgentRuntime } from '../transport/agent-runtime-core.mjs';
 import { FakeIndexedDb } from './fake-indexeddb.mjs';
+import { modeChoiceAvailable, needsAgreement } from '../ui/presentation.mjs';
 
 const bindings = JSON.parse(await readFile(new URL('./fixtures/legal-instrument-bindings.synthetic.json', import.meta.url)));
 const now = () => new Date('2030-01-08T12:00:00.000Z');
+const surfaceBundles = Object.fromEntries(await Promise.all(['setup', 'popup'].map(async (surface) => {
+  const result = await build({ entryPoints: [fileURLToPath(new URL(`../${surface}.js`, import.meta.url))],
+    bundle: true, write: false, format: 'iife' });
+  return [surface, result.outputFiles[0].text];
+})));
+
+// Execute the real page, surface client, presentation and action locking without a browser.
+async function renderSurface(surface, model) {
+  const nodes = new Map();
+  const node = (id) => {
+    if (!nodes.has(id)) {
+      const classes = new Set();
+      nodes.set(id, { dataset: {}, disabled: false, checked: false, textContent: '',
+        classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
+          contains: (name) => classes.has(name) },
+        setAttribute() {}, removeAttribute() {}, addEventListener() {} });
+    }
+    return nodes.get(id);
+  };
+  const messages = [];
+  const chrome = { runtime: {
+    getURL: (path) => `chrome-extension://synthetic/${path}`,
+    connect: () => ({ onMessage: event(), onDisconnect: event(), postMessage() {}, disconnect() {} }),
+    async sendMessage(message) {
+      messages.push(message.type);
+      if (message.type === 'ofca.ui.status') return { ok: true, status: model.status };
+      if (message.type === 'ofca.legal-activation.status') return { ok: true, result: model.legal };
+      throw new Error(`Unexpected surface message: ${message.type}`);
+    },
+  }, storage: { onChanged: event() } };
+  runInNewContext(surfaceBundles[surface], {
+    chrome, URL, TextEncoder, AbortController, setTimeout, clearTimeout, setInterval: () => 0, clearInterval() {},
+    location: { hash: '' }, sessionStorage: { getItem: () => null },
+    window: { addEventListener() {}, removeEventListener() {} },
+    document: { getElementById: node, querySelector: node, querySelectorAll: () => [],
+      addEventListener() {}, removeEventListener() {} },
+    fetch: async () => ({ json: async () => ({}) }),
+  });
+  for (let attempt = 0; attempt < 30 && node('main').dataset.ready !== 'true'; attempt += 1) {
+    await new Promise(setImmediate);
+  }
+  assert.equal(node('main').dataset.ready, 'true', `${surface} renders the status response`);
+  assert.deepEqual(messages, ['ofca.ui.status', 'ofca.legal-activation.status']);
+  return node;
+}
+
+async function losePrerequisites(h, lost) {
+  await h.evidenceStore.close();
+  const records = h.indexedDb.databases.get(ACTIVATION_EVIDENCE_DATABASE_NAME)
+    .stores.get(ACTIVATION_EVIDENCE_STORE).records;
+  for (const [key, record] of records) {
+    if (record.record_type === 'pre_mode'
+      && (lost === 'both' || record.legal_meaning === (lost === 'terms' ? 'terms' : 'risk_disclosure'))) {
+      records.delete(key);
+    }
+  }
+}
 const deferred = () => {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
@@ -123,6 +184,381 @@ function harness({ local = {}, indexedDb = evidenceDatabase(), bindingRef = { cu
   };
   return { local, session, indexedDb, bindingRef, flags, chromeApi, evidenceStore, authorization, preview, runtime, consent, legal, activate, scripts };
 }
+
+for (const mode of ['preview', 'full']) for (const paused of [false, true]) for (const lost of ['terms', 'risk', 'both']) {
+  test(`F1 surviving ${mode}, paused=${paused}, missing=${lost}`, async () => {
+    const h = harness({ indexedDb: new FakeIndexedDb() });
+    const first = await h.activate(mode);
+    if (paused) await h.consent.setMode('pause');
+    const before = (await h.legal.status()).flow;
+    await losePrerequisites(h, lost);
+    const surviving = await h.evidenceStore.exportAuditTrail();
+    const legal = await h.legal.status();
+    const model = { legal, status: await h.consent.status() };
+    assert.equal(legal.flow.stage, 'pre_mode');
+    assert.equal(legal.requires_reauthorization, true, 'surviving mode evidence cannot authorize missing prerequisites');
+    assert.equal(needsAgreement(model), true);
+    const setup = await renderSurface('setup', model);
+    assert.equal(setup('main').dataset.step, 'agree');
+    assert.equal(setup('terms-accepted').disabled, lost === 'risk');
+    assert.equal(setup('risk-acknowledged').disabled, lost === 'terms');
+    assert.equal(setup('activate-software').disabled, true);
+    assert.equal(setup('activate-software').classList.contains('hidden'), false);
+    const popup = await renderSurface('popup', model);
+    assert.equal(popup('journey-primary').textContent, 'Review changes');
+    assert.equal(legal.flow.terms_event_id, lost === 'risk' ? before.terms_event_id : null);
+    assert.equal(legal.flow.risk_event_id, lost === 'terms' ? before.risk_event_id : null);
+    await h.consent.reconcile();
+    assert.equal((await h.consent.status()).consent.mode, 'paused');
+    assert.equal(h.consent.captureScope.isOpen, false);
+    assert.equal(h.scripts.length, 0);
+    assert.equal(await h.authorization.recordAuthorizes(first.evidence.event_id, mode), false);
+    await assert.rejects(h.consent.setMode('resume'));
+    assert.equal((await h.legal.status()).requires_reauthorization, true);
+    assert.deepEqual(await h.evidenceStore.exportAuditTrail(), surviving, 'polling and reconciliation never create evidence');
+    assert.ok(await h.evidenceStore.event(first.evidence.event_id), 'mode record survives');
+  });
+}
+
+for (const mode of ['preview', 'full']) for (const lost of ['terms', 'risk', 'both']) {
+  test(`F3 active ${mode} recovery through surfaces, missing=${lost}`, { timeout: 3000 }, async () => {
+    const h = harness({ indexedDb: new FakeIndexedDb() });
+    const first = await h.activate(mode);
+    const original = await h.evidenceStore.event(first.evidence.event_id);
+    await losePrerequisites(h, lost);
+    const surviving = await h.evidenceStore.exportAuditTrail();
+    const model = { legal: await h.legal.status(), status: await h.consent.status() };
+    assert.equal(model.legal.consent_mode, 'paused', 'status must reconcile the unsupported active mode');
+    assert.equal(model.status.consent.mode, 'paused');
+    assert.equal(h.consent.captureScope.isOpen, false);
+    assert.equal(h.consent.allowsFullCapture(), false);
+    assert.equal(h.scripts.length, 0);
+    assert.deepEqual(await h.evidenceStore.exportAuditTrail(), surviving);
+    assert.equal((await renderSurface('popup', model))('journey-primary').textContent, 'Review changes');
+    const setup = await renderSurface('setup', model);
+    assert.equal(setup('main').dataset.step, 'agree');
+    assert.equal(setup('activate-software').disabled, true);
+    h.evidenceStore.now = () => new Date('2030-01-09T12:00:00.000Z');
+    for (const [id, action, needed] of [
+      ['terms-accepted', 'acceptTerms', lost !== 'risk'],
+      ['risk-acknowledged', 'acknowledgeRisk', lost !== 'terms'],
+    ]) {
+      assert.equal(setup(id).disabled, !needed);
+      if (needed) await h.legal[action]();
+    }
+    const agreed = { legal: await h.legal.status(), status: await h.consent.status() };
+    assert.equal((await renderSurface('setup', agreed))('activate-software').disabled, false);
+    await h.legal.activateSoftware();
+    const selection = { legal: await h.legal.status(), status: await h.consent.status() };
+    assert.equal(modeChoiceAvailable(selection), true);
+    const choice = await renderSurface('setup', selection);
+    assert.equal(choice('main').dataset.step, 'mode');
+    assert.equal(choice('mode-choice').classList.contains('hidden'), false);
+    assert.equal(choice('enable-full').classList.contains('hidden'), false);
+    assert.equal(choice('enable-full').disabled, false);
+    assert.equal(h.consent.captureScope.isOpen, false);
+    const recovered = await h.legal.chooseMode('full');
+    const record = await h.evidenceStore.event(recovered.evidence.event_id);
+    assert.equal(recovered.status.consent.mode, 'full');
+    for (const [field, action, replaced] of [
+      ['terms_event_id', 'terms', lost !== 'risk'],
+      ['risk_event_id', 'risk_disclosure', lost !== 'terms'],
+    ]) {
+      assert.equal(record[field], selection.legal.flow[field]);
+      assert.equal(record[field] !== original[field], replaced);
+      const prerequisite = await h.evidenceStore.event(record[field]);
+      assert.equal(prerequisite.occurred_at, replaced ? '2030-01-09T12:00:00.000Z' : now().toISOString());
+      assert.equal(record.envelope.actions[action].timestamp, prerequisite.occurred_at);
+    }
+    assert.deepEqual(await h.evidenceStore.event(original.event_id), original);
+    assert.equal((await h.legal.status()).requires_reauthorization, false);
+    assert.equal(h.consent.captureScope.isOpen, true);
+  });
+}
+
+for (const first of ['status', 'agreement']) {
+  test(`F3 status races agreement with ${first} admitted first`, { timeout: 3000 }, async () => {
+    const h = harness({ indexedDb: new FakeIndexedDb() });
+    await h.activate('full');
+    await losePrerequisites(h, 'terms');
+    const lookup = h.evidenceStore.event.bind(h.evidenceStore);
+    const entered = deferred(); const release = deferred();
+    let held = false;
+    h.evidenceStore.event = async (id) => {
+      if (!held) { held = true; entered.resolve(); await release.promise; }
+      return lookup(id);
+    };
+    const leading = first === 'status' ? h.legal.status() : h.legal.acceptTerms();
+    await entered.promise;
+    const trailing = first === 'status' ? h.legal.acceptTerms() : h.legal.status();
+    release.resolve();
+    const results = await Promise.all([leading, trailing]);
+    assert.ok(results.every((result) => result.consent_mode === 'paused'));
+    assert.equal(results[0].flow.transaction_id, results[1].flow.transaction_id);
+    assert.equal(h.consent.captureScope.isOpen, false);
+    const current = await h.legal.status();
+    assert.ok(current.flow.terms_event_id);
+    assert.equal(current.requires_reauthorization, true);
+    await h.legal.activateSoftware();
+    assert.equal(modeChoiceAvailable({ legal: await h.legal.status(), status: await h.consent.status() }), true);
+    assert.equal((await h.legal.chooseMode('full')).status.consent.mode, 'full');
+    assert.equal((await h.evidenceStore.exportAuditTrail()).length, 4);
+  });
+}
+
+test('F3 fallback operation queue delegates reconciliation before status returns', async () => {
+  const h = harness({ indexedDb: new FakeIndexedDb() }); await h.activate('preview');
+  await losePrerequisites(h, 'risk');
+  const controller = new LegalActivationController({
+    chromeApi: h.chromeApi, evidenceStore: h.evidenceStore, bindings: () => h.bindingRef.current,
+    consentController: {
+      status: () => h.consent.status(),
+      setMode: (...args) => h.consent.setMode(...args),
+      reconcile: () => h.consent.reconcile(),
+    },
+  });
+  assert.equal((await controller.status()).consent_mode, 'paused');
+  assert.equal(h.consent.captureScope.isOpen, false);
+});
+
+for (const site of ['flow', 'mode', 'prerequisite']) for (const persistent of [false, true]) {
+  test(`F3 status ${site} read failure, persistent=${persistent}`, { timeout: 3000 }, async () => {
+    const h = harness(); await h.activate('full');
+    const before = structuredClone(h.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY]);
+    const audit = await h.evidenceStore.exportAuditTrail();
+    const lookup = h.evidenceStore.event.bind(h.evidenceStore);
+    const reconcile = h.authorization.reconcileActiveMode.bind(h.authorization);
+    let reconciliations = 0; let reads = 0;
+    h.authorization.reconcileActiveMode = async (options) => { reconciliations += 1; return reconcile(options); };
+    const failAt = { flow: 1, mode: 3, prerequisite: 4 }[site];
+    h.evidenceStore.event = async (id) => {
+      reads += 1;
+      if (reads === failAt || (persistent && reads > failAt)) throw new Error('F3 injected evidence read failure');
+      return lookup(id);
+    };
+    await assert.rejects(h.legal.status(), /F3 injected evidence read failure/);
+    assert.equal(reconciliations, 1, 'failed status read must hand active mode to reconciliation');
+    assert.equal(h.consent.state.mode, persistent ? 'paused' : 'full');
+    assert.equal(h.consent.captureScope.isOpen, !persistent, 'reconciliation owns read-failure policy');
+    assert.deepEqual(h.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY], before);
+    h.evidenceStore.event = lookup;
+    assert.deepEqual(await h.evidenceStore.exportAuditTrail(), audit);
+    assert.equal((await h.legal.status()).requires_reauthorization, false);
+    if (persistent) await h.consent.setMode('resume');
+    assert.equal(h.consent.captureScope.isOpen, true);
+  });
+}
+
+for (const mode of ['preview', 'full']) {
+  test(`F3 all-present ${mode} status polls do not reconcile or write`, async () => {
+    const h = harness(); await h.activate(mode);
+    const before = structuredClone(h.local);
+    const audit = await h.evidenceStore.exportAuditTrail();
+    h.authorization.reconcileActiveMode = async () => assert.fail('unexpected reconciliation');
+    h.consent.captureScope.close = () => assert.fail('unexpected capture closure');
+    h.chromeApi.storage.local.set = async () => assert.fail('unexpected local write');
+    const database = await h.evidenceStore.databasePromise;
+    const transaction = database.transaction.bind(database);
+    database.transaction = (stores, access) => {
+      assert.equal(access, 'readonly', 'polling must not write evidence');
+      return transaction(stores, access);
+    };
+    for (let i = 0; i < 5; i += 1) {
+      const [status, legal] = await Promise.all([h.consent.status(), h.legal.status()]);
+      assert.equal(status.consent.mode, mode);
+      assert.equal(legal.consent_mode, mode);
+      assert.equal(legal.requires_reauthorization, false);
+      assert.equal(h.consent.captureScope.isOpen, true);
+    }
+    assert.deepEqual(h.local, before);
+    assert.deepEqual(await h.evidenceStore.exportAuditTrail(), audit);
+  });
+}
+
+test('F1 later Full choice uses replacement prerequisites while the prior mode record survives', async () => {
+  const h = harness({ indexedDb: new FakeIndexedDb() });
+  const first = await h.activate('full');
+  const original = await h.evidenceStore.event(first.evidence.event_id);
+  await losePrerequisites(h, 'both');
+  await h.consent.reconcile();
+  assert.equal((await h.legal.status()).requires_reauthorization, true);
+  h.evidenceStore.now = () => new Date('2030-01-09T12:00:00.000Z');
+  await h.legal.acceptTerms();
+  await h.legal.acknowledgeRisk();
+  const legal = await h.legal.status();
+  assert.equal(legal.requires_reauthorization, true, 'replacement actions do not authorize the old mode record');
+  const setup = await renderSurface('setup', { legal, status: await h.consent.status() });
+  assert.equal(setup('activate-software').disabled, false);
+  await h.legal.activateSoftware();
+  const selection = { legal: await h.legal.status(), status: await h.consent.status() };
+  assert.equal(modeChoiceAvailable(selection), true);
+  assert.equal((await renderSurface('setup', selection))('main').dataset.step, 'mode');
+  const recovered = await h.legal.chooseMode('full');
+  const record = await h.evidenceStore.event(recovered.evidence.event_id);
+  assert.notEqual(record.event_id, original.event_id);
+  for (const [field, action] of [['terms_event_id', 'terms'], ['risk_event_id', 'risk_disclosure']]) {
+    assert.equal(record[field], legal.flow[field]);
+    assert.notEqual(record[field], original[field]);
+    const replacement = await h.evidenceStore.event(record[field]);
+    assert.equal(replacement.occurred_at, '2030-01-09T12:00:00.000Z');
+    assert.equal(record.envelope.actions[action].timestamp, replacement.occurred_at);
+  }
+  assert.deepEqual(await h.evidenceStore.event(original.event_id), original);
+  assert.equal((await h.legal.status()).requires_reauthorization, false);
+  assert.equal(recovered.status.consent.mode, 'full');
+  assert.equal(h.consent.captureScope.isOpen, true);
+});
+
+test('F1 all-present active modes keep agreement and its actions unchanged', async () => {
+  for (const mode of ['preview', 'full']) {
+    const h = harness();
+    await h.activate(mode);
+    const model = { legal: await h.legal.status(), status: await h.consent.status() };
+    assert.equal(model.legal.requires_reauthorization, false);
+    assert.equal(needsAgreement(model), false);
+    const setup = await renderSurface('setup', model);
+    assert.notEqual(setup('main').dataset.step, 'agree');
+    for (const id of ['terms-accepted', 'risk-acknowledged', 'activate-software']) assert.equal(setup(id).disabled, true);
+    assert.equal(setup('activate-software').classList.contains('hidden'), true);
+    assert.notEqual((await renderSurface('popup', model))('journey-primary').textContent, 'Review changes');
+    assert.equal(h.consent.captureScope.isOpen, true);
+  }
+});
+
+for (const [prior, lost] of ['initial setup', 'paused Full'].flatMap(
+  (prior) => ['terms', 'risk', 'both'].map((lost) => [prior, lost]),
+)) {
+  test(`setup recovery returns to agreement after losing ${lost} records during ${prior}`, async () => {
+    const indexedDb = new FakeIndexedDb();
+    const h = harness({ indexedDb });
+    await h.legal.acceptTerms();
+    await h.legal.acknowledgeRisk();
+    await h.legal.activateSoftware();
+    const first = prior === 'paused Full' ? await h.legal.chooseMode('full') : null;
+    const before = (await h.legal.status()).flow;
+    const original = await h.evidenceStore.exportAuditTrail();
+    await h.evidenceStore.close();
+    if (lost === 'both') {
+      // Recreate an empty evidence database while extension storage survives.
+      indexedDb.databases.delete(ACTIVATION_EVIDENCE_DATABASE_NAME);
+    } else {
+      const records = indexedDb.databases.get(ACTIVATION_EVIDENCE_DATABASE_NAME)
+        .stores.get(ACTIVATION_EVIDENCE_STORE).records;
+      for (const record of original) {
+        if (record.record_type === 'mode_envelope'
+          || record.legal_meaning === (lost === 'terms' ? 'terms' : 'risk_disclosure')) {
+          records.delete(record.record_key);
+        }
+      }
+    }
+    const surviving = await h.evidenceStore.exportAuditTrail();
+    await h.consent.reconcile();
+    assert.equal((await h.consent.status()).consent.mode, first ? 'paused' : 'off');
+    // Reopening setup must repair storage even though the binding scope is unchanged.
+    const reopened = new LegalActivationController({ chromeApi: h.chromeApi, consentController: h.consent,
+      evidenceStore: h.evidenceStore, bindings: () => h.bindingRef.current });
+    const legal = await reopened.status();
+    const model = { legal, status: await h.consent.status() };
+    assert.equal(legal.requires_reauthorization, first !== null);
+    assert.equal(needsAgreement(model), true, 'setup must show the Terms and Risk step');
+    assert.equal(modeChoiceAvailable(model), false);
+    assert.equal(legal.flow.stage, 'pre_mode');
+    assert.equal(legal.flow.binding_scope, before.binding_scope);
+    assert.notEqual(legal.flow.transaction_id, before.transaction_id);
+    assert.equal(legal.flow.terms_event_id, lost === 'risk' ? before.terms_event_id : null);
+    assert.equal(legal.flow.risk_event_id, lost === 'terms' ? before.risk_event_id : null);
+    assert.equal(legal.flow.completed_mode, null);
+    assert.equal(legal.flow.completed_event_id, null);
+    assert.equal(legal.flow.pending_mode, null);
+    assert.equal(legal.flow.pending_event_type, null);
+    assert.deepEqual(h.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY], legal.flow);
+    assert.deepEqual((await reopened.status()).flow, legal.flow, 'status polling preserves the repair');
+    assert.deepEqual(await h.evidenceStore.exportAuditTrail(), surviving, 'status never creates evidence');
+    await assert.rejects(reopened.chooseMode('full'), /Activate Software must complete/);
+    await assert.rejects(reopened.activateSoftware(), /Terms and risk actions must be completed/);
+
+    h.evidenceStore.now = () => new Date('2030-01-09T12:00:00.000Z');
+    if (legal.flow.terms_event_id === null) await reopened.acceptTerms();
+    if (legal.flow.risk_event_id === null) await reopened.acknowledgeRisk();
+    const accepted = await reopened.status();
+    assert.equal(accepted.flow.stage, 'pre_mode', 'acceptance does not skip Activate Software');
+    assert.equal(modeChoiceAvailable({ legal: accepted, status: model.status }), false);
+    await reopened.activateSoftware();
+    assert.equal(modeChoiceAvailable({ legal: await reopened.status(), status: model.status }), true);
+    const recovered = await reopened.chooseMode('full');
+    assert.equal(recovered.status.consent.mode, 'full');
+    if (first) assert.notEqual(recovered.evidence.event_id, first.evidence.event_id);
+    const full = await h.evidenceStore.event(recovered.evidence.event_id);
+    for (const [field, action] of [['terms_event_id', 'terms'], ['risk_event_id', 'risk_disclosure']]) {
+      const record = await h.evidenceStore.event(accepted.flow[field]);
+      assert.equal(full[field], record.event_id);
+      assert.equal(full.envelope.actions[action].timestamp, record.occurred_at);
+      if (legal.flow[field] === null) {
+        assert.notEqual(record.event_id, before[field]);
+        assert.equal(record.occurred_at, '2030-01-09T12:00:00.000Z');
+      }
+    }
+    for (const record of surviving) assert.deepEqual(await h.evidenceStore.event(record.event_id), record);
+    assert.equal((await h.evidenceStore.exportAuditTrail()).length, 3);
+  });
+}
+
+test('setup recovery preserves the flow and retry when all records are present', async () => {
+  const h = harness();
+  const first = await h.activate('full');
+  const before = (await h.legal.status()).flow;
+  const audit = await h.evidenceStore.exportAuditTrail();
+  assert.deepEqual((await h.legal.status()).flow, before);
+  const retry = await h.legal.chooseMode('full');
+  assert.equal(retry.retried, true);
+  assert.deepEqual(retry.evidence, first.evidence);
+  await h.consent.setMode('pause');
+  const legal = await h.legal.status();
+  const model = { legal, status: await h.consent.status() };
+  assert.equal(legal.requires_reauthorization, false);
+  assert.equal(needsAgreement(model), false);
+  assert.equal(modeChoiceAvailable(model), false);
+  assert.deepEqual(legal.flow, before);
+  assert.deepEqual(await h.evidenceStore.exportAuditTrail(), audit);
+});
+
+test('setup recovery preserves incomplete steps and pending Full retry state', async () => {
+  const h = harness();
+  const initial = await h.legal.status();
+  assert.deepEqual((await h.legal.status()).flow, initial.flow);
+  const terms = await h.legal.acceptTerms();
+  assert.equal(terms.flow.transaction_id, initial.flow.transaction_id);
+  assert.deepEqual((await h.legal.status()).flow, terms.flow);
+  const risk = await h.legal.acknowledgeRisk();
+  assert.equal(risk.flow.transaction_id, initial.flow.transaction_id);
+  assert.equal(risk.flow.stage, 'pre_mode');
+  await h.legal.activateSoftware();
+  const recordModeChoice = h.evidenceStore.recordModeChoice.bind(h.evidenceStore);
+  h.evidenceStore.recordModeChoice = async () => { throw new Error('synthetic interrupted write'); };
+  await assert.rejects(h.legal.chooseMode('full'), /synthetic interrupted write/);
+  const pending = structuredClone(h.local[LEGAL_ACTIVATION_FLOW_STORAGE_KEY]);
+  assert.equal(pending.pending_mode, 'full');
+  assert.deepEqual((await h.legal.status()).flow, pending);
+  h.evidenceStore.recordModeChoice = recordModeChoice;
+  assert.equal((await h.legal.chooseMode('full')).status.consent.mode, 'full');
+});
+
+test('setup recovery keeps the Full evidence guard when records vanish after flow validation', async () => {
+  const indexedDb = new FakeIndexedDb();
+  const h = harness({ indexedDb });
+  await h.legal.acceptTerms();
+  await h.legal.acknowledgeRisk();
+  await h.legal.activateSoftware();
+  const recordModeChoice = h.evidenceStore.recordModeChoice.bind(h.evidenceStore);
+  h.evidenceStore.recordModeChoice = async (options) => {
+    await h.evidenceStore.close();
+    indexedDb.databases.delete(ACTIVATION_EVIDENCE_DATABASE_NAME);
+    return recordModeChoice(options);
+  };
+  await assert.rejects(h.legal.chooseMode('full'), /Mode evidence requires persisted Terms and risk events/);
+  assert.equal((await h.consent.status()).consent.mode, 'off');
+  assert.deepEqual(await h.evidenceStore.exportAuditTrail(), []);
+});
 
 test('native legal mode choice completes without queue recursion and reactivates after same-worker deletion', { timeout: 2000 }, async () => {
   const h = harness();
