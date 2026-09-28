@@ -115,6 +115,16 @@ def build_conversation_metrics_from_values(
 ) -> ConversationMetrics:
     """Apply the same metric rules to values from models or a verified prefix."""
 
+    return build_conversation_metrics_from_bound_values(
+        account_ref(creator_account_id),
+        conversation_ref(creator_account_id, conversation.conversation_id),
+        participant_ref(creator_account_id, conversation.platform_user_id),
+        conversation.unread_count, enrichments,
+    )
+
+
+def build_conversation_metrics_from_bound_values(account, conversation, participant, unread_count, enrichments):
+    """Apply the same metric rules to an already account-bound stored selection."""
     ordered = sorted(
         enrichments,
         key=lambda item: (item.sent_at, item.source_ordinal),
@@ -174,14 +184,10 @@ def build_conversation_metrics_from_values(
     if not silence_seconds:
         unavailable_reasons["maximum_silence_seconds"] = "insufficient_messages"
     return ConversationMetrics(
-        account_ref=account_ref(creator_account_id),
-        conversation_ref=conversation_ref(
-            creator_account_id, conversation.conversation_id
-        ),
-        participant_ref=participant_ref(
-            creator_account_id, conversation.platform_user_id
-        ),
-        unread_count=conversation.unread_count,
+        account_ref=account,
+        conversation_ref=conversation,
+        participant_ref=participant,
+        unread_count=unread_count,
         started_at=started_at,
         ended_at=ended_at,
         duration_seconds=round(duration, 6),

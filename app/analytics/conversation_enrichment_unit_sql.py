@@ -352,6 +352,11 @@ def verify_generation_units(
                 connection, validation.proof.generation_id,
                 trusted.get(header.conversation_ref), unit, check=check)):
             continue
+        if not materialize and trusted:
+            from app.analytics.conversation_enrichment_insertion import validate_inserted_unit
+            if validate_inserted_unit(connection, validation.proof.generation_id,
+                    trusted.get(header.conversation_ref), unit, check=check):
+                continue
         messages.extend(
             _validate_unit(unit, check=check, materialize=materialize)
         )

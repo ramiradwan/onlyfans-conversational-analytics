@@ -183,8 +183,8 @@ def create_membership_unit(*, account_ref, conversation_ref, input_digest, confi
     if (node_data is None or edge_data is None
             or len(node_data) > MAX_GRAPH_UNIT_BYTES or len(edge_data) > MAX_GRAPH_UNIT_BYTES):
         return None
-    from app.analytics.conversation_enrichment_units import AppendedMessageEnrichments
-    first_source = (findings.first_source_at if isinstance(findings, AppendedMessageEnrichments)
+    from app.analytics.conversation_enrichment_units import AppendedMessageEnrichments, InsertedMessageEnrichments
+    first_source = (findings.first_source_at if isinstance(findings, (AppendedMessageEnrichments, InsertedMessageEnrichments))
                     else min(item.sent_at for item in findings))
     header = ConversationGraphUnitHeader(
         account_ref=account_ref,

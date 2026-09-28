@@ -9,6 +9,8 @@ from tools import analytics_qualification as q
 
 # Coarse call boundaries avoid retaining source values or tracing every record.
 FUNCTIONS = frozenset({
+    'try_insert', 'match_inserted_source', 'suffix_graph', 'replace_suffix',
+    'pack_insertion', 'validate_inserted_unit', 'build_conversation_metrics_from_bound_values',
     'build_candidate', 'publish_candidate', 'stage_artifact', 'stage_built_artifact',
     'scan_identity', '_build_inner', 'assemble', 'enrich_conversation',
     'write_compact_graph', 'write_incremental_graph', 'write_shared_graph',

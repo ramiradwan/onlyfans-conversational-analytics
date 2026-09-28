@@ -279,6 +279,30 @@ class AppendedMessageEnrichments(Sequence):
         return MessageEnrichment.model_validate_json(self._rows[index])
 
 
+class InsertedMessageEnrichments(Sequence):
+    """Keep verified rows and materialize only explicitly requested suffix models."""
+
+    def __init__(self, rows, inserted, index, first_source_at):
+        self.rows = tuple(rows)
+        self.inserted = inserted
+        self.index = index
+        self.first_source_at = first_source_at
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [self[i] for i in range(*index.indices(len(self)))]
+        if index < 0:
+            index += len(self)
+        if not 0 <= index < len(self):
+            raise IndexError(index)
+        if index == self.index:
+            return self.inserted
+        return MessageEnrichment.model_validate_json(self.rows[index])
+
+
 class IncrementalMessageEnrichments:
     """Internal sequence that streams canonical rows without retaining message models."""
 
