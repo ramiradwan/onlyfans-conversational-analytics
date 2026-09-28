@@ -61,7 +61,7 @@ async function reconnectSameClient(fence, committed) {
   if (!socket || socket.readyState !== 0) throw new Error('Scheduled reconnect did not open a socket');
   socket.open(); socket.receive(session(fence, committed ?? outbox.identityState().acknowledged_source_seq));
   await tick(); await client.flushOutbox();
-  transport={connected:client.session!==null,fence,sync_required:client.syncRequired,replay:socket.sent.filter((x)=>x.type==='ingest.delta').map((x)=>x.payload.source_seq),frames:observedFrames(),connection_id:client.session?.connection_id ?? null,scheduled_callbacks:scheduledCallbacks.filter((item)=>item===client.reconnectTimer).length};
+  transport={connected:client.session!==null,fence,sync_required:client.syncRequired,replay:socket.sent.filter((x)=>x.type==='ingest.delta').map((x)=>x.payload.source_seq),frames:observedFrames(),connection_id:client.session?.connection_id ?? null,scheduled_callbacks:scheduledCallbacks.filter((item)=>item===callback).length};
   return transport;
 }
 
