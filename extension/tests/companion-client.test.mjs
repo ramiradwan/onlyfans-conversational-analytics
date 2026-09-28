@@ -13,7 +13,7 @@ const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, enforcePairing = false } = {}) {
+function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait;
@@ -24,7 +24,7 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
     async cancel() { stats.cancel++; }, async forget() { paired = false; stats.forget++; }, close() { stats.closedStores++; },
   };
   const client = createCompanionClient({ chromeApi: chrome, allowsFull: () => enabled, detectedAccountId: async () => account,
-    now, random: () => 0.5,
+    now, scheduler, random: () => 0.5,
     accountDatabaseName: async (id) => `encrypted-account-${id}`, storeFactory: async () => { stats.stores++; return pairingStore; },
     loadSnow: async () => { stats.snow++; return { SnowSession: class {}, generateStaticKeypair() { return new Uint8Array(64); } }; },
     loadTrust: async () => ({}),
@@ -77,6 +77,71 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
   return { client, stats, channels, chrome, setFull(value) { enabled = value; }, setAccount(value) { account = value; client.invalidate(); },
     unpair() { paired = false; }, pairingResult() { pairingWait.resolve(JSON.stringify(vector.result)); } };
 }
+
+test('six admitted 15-second sessions durably reset the circuit before worker loss', async () => {
+  let time = 1_800_000_000_000;
+  const timers = new Set();
+  const scheduler = {
+    setTimeout(handler, delay) { const timer = { handler, due: time + delay }; timers.add(timer); return timer; },
+    clearTimeout(timer) { timers.delete(timer); },
+    advance(delay) {
+      time += delay;
+      for (const timer of [...timers]) if (timer.due <= time) { timers.delete(timer); timer.handler(); }
+    },
+  };
+  let h = harness({ now: () => time, scheduler });
+  for (let session = 0; session < 6; session += 1) {
+    await h.client.adapter.loadBrainBinding();
+    scheduler.advance(15_000);
+    await tick();
+    assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 0);
+    const previous = h;
+    h = harness({ chromeApi: previous.chrome, now: () => time, scheduler });
+  }
+  await h.client.adapter.loadBrainBinding();
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 1);
+  h.client.invalidate();
+});
+
+test('protocol facade reports the persisted retry time after a short session closes', async () => {
+  let time = 1_800_000_000_000;
+  const h = harness({ now: () => time });
+  await h.client.adapter.loadBrainBinding();
+  assert.equal(await h.client.webSocketFactory.retryAfterMs(), 0);
+  const socket = h.client.webSocketFactory();
+  for (let poll = 0; poll < 20 && socket.readyState !== 1; poll += 1) await tick();
+  assert.equal(socket.readyState, 1);
+  h.channels[0].close();
+  for (let poll = 0; poll < 20 && socket.readyState !== 3; poll += 1) await tick();
+  assert.equal(socket.readyState, 3);
+  await tick();
+  assert.equal(socket.retryAfterMs, 1_000);
+  assert.equal(await h.client.webSocketFactory.retryAfterMs(), 1_000);
+  h.client.invalidate();
+});
+
+test('a stable channel close permits an immediate reconnect when the service is ready', async () => {
+  let time = 1_800_000_000_000;
+  const timers = new Set();
+  const scheduler = {
+    setTimeout(handler, delay) { const timer = { handler, due: time + delay }; timers.add(timer); return timer; },
+    clearTimeout(timer) { timers.delete(timer); },
+  };
+  const h = harness({ now: () => time, scheduler });
+  await h.client.adapter.loadBrainBinding();
+  time += 10_000;
+  for (const timer of [...timers]) if (timer.due <= time) { timers.delete(timer); timer.handler(); }
+  await tick();
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 0);
+  h.channels[0].close();
+  await tick();
+  assert.equal(await h.client.webSocketFactory.retryAfterMs(), 0);
+  const next = await h.client.adapter.loadBrainBinding();
+  assert.ok(next);
+  assert.equal(h.channels.length, 2);
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 1);
+  h.client.invalidate();
+});
 
 test('Preview and unavailable modes never initialize companion storage, crypto or networking', async () => {
   const h = harness({ full: false });

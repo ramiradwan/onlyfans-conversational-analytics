@@ -528,6 +528,7 @@ def test_ag07_sync_required_receive_path_and_ag08_reconnect_fence() -> None:
         # the controllable scheduler runs it, then the new fenced session replays.
         reconnect = driver.same_client_reconnect("fence-2", committed=0)
         assert reconnect["state"]["transport"]["fence"] == "fence-2"
+        # The scheduler may retain a heartbeat, but no reconnect may remain queued.
         assert reconnect["state"]["transport"]["scheduled_callbacks"] == 0
     finally:
         driver.close()
