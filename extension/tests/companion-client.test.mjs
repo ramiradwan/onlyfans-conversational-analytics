@@ -107,6 +107,7 @@ test('protocol facade reports the persisted retry time after a short session clo
   let time = 1_800_000_000_000;
   const h = harness({ now: () => time });
   await h.client.adapter.loadBrainBinding();
+  assert.equal(await h.client.webSocketFactory.retryAfterMs(), 0);
   const socket = h.client.webSocketFactory();
   for (let poll = 0; poll < 20 && socket.readyState !== 1; poll += 1) await tick();
   assert.equal(socket.readyState, 1);
@@ -115,6 +116,30 @@ test('protocol facade reports the persisted retry time after a short session clo
   assert.equal(socket.readyState, 3);
   await tick();
   assert.equal(socket.retryAfterMs, 1_000);
+  assert.equal(await h.client.webSocketFactory.retryAfterMs(), 1_000);
+  h.client.invalidate();
+});
+
+test('a stable channel close permits an immediate reconnect when the service is ready', async () => {
+  let time = 1_800_000_000_000;
+  const timers = new Set();
+  const scheduler = {
+    setTimeout(handler, delay) { const timer = { handler, due: time + delay }; timers.add(timer); return timer; },
+    clearTimeout(timer) { timers.delete(timer); },
+  };
+  const h = harness({ now: () => time, scheduler });
+  await h.client.adapter.loadBrainBinding();
+  time += 10_000;
+  for (const timer of [...timers]) if (timer.due <= time) { timers.delete(timer); timer.handler(); }
+  await tick();
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 0);
+  h.channels[0].close();
+  await tick();
+  assert.equal(await h.client.webSocketFactory.retryAfterMs(), 0);
+  const next = await h.client.adapter.loadBrainBinding();
+  assert.ok(next);
+  assert.equal(h.channels.length, 2);
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 1);
   h.client.invalidate();
 });
 

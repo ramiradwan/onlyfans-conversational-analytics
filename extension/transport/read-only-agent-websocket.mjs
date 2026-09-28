@@ -120,7 +120,19 @@ export class ReadOnlyAgentWebSocketClient {
 
   ensureConnected() {
     this.signal?.throwIfAborted();
-    if (this.stopped || !this.reconnectAllowed || this.reconnectTimer !== null) return;
+    if (this.stopped || !this.reconnectAllowed) return;
+    if (this.reconnectTimer !== null) {
+      const timer = this.reconnectTimer;
+      if (typeof this.webSocketFactory.retryAfterMs === 'function') {
+        void Promise.resolve().then(() => this.webSocketFactory.retryAfterMs()).then((delay) => {
+          if (delay !== 0 || this.reconnectTimer !== timer || this.stopped || !this.reconnectAllowed) return;
+          if (this.socket && [CONNECTING, OPEN].includes(this.socket.readyState)) return;
+          this.clearReconnect();
+          this.openSocket();
+        }).catch(() => undefined);
+      }
+      return;
+    }
     if (this.socket && [CONNECTING, OPEN].includes(this.socket.readyState)) return;
     this.clearReconnect();
     this.openSocket();

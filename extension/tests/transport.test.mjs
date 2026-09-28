@@ -609,3 +609,55 @@ for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
     h.client.stop();
   });
 }
+
+for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
+  for (const [label, retryDelay, wakeAt, admittedChannel] of [
+    ['paired channel while circuit cools', 300_000, 1_000, true],
+    ['expired circuit on an early timer wake', 16_000, 16_001, false],
+    ['expired circuit on a late timer wake', 300_000, 301_000, false],
+  ]) {
+    test(`${Client.name}: ${label} admits within two seconds of wake`, async () => {
+      let time = 0;
+      let channelAdmitted = false;
+      const tasks = new Set();
+      const scheduler = {
+        setTimeout(handler, delay) {
+          const task = { handler, due: time + delay };
+          tasks.add(task);
+          return task;
+        },
+        clearTimeout(task) { tasks.delete(task); },
+      };
+      const sockets = [];
+      const factory = (url) => {
+        const socket = new MockSocket(url);
+        sockets.push({ socket, openedAt: time });
+        return socket;
+      };
+      factory.retryAfterMs = async () => (channelAdmitted ? 0 : Math.max(0, retryDelay - time));
+      const h = harness({ Client, scheduler, webSocketFactory: factory,
+        reconnectAuthTicket: 'stored-ticket', monotonicNow: () => time });
+      h.client.start();
+      const first = sockets[0].socket;
+      first.open();
+      first.receive(await fixture('agent.session'));
+      first.retryAfterMs = retryDelay;
+      first.drop();
+      time = Math.min(retryDelay, wakeAt) - 1;
+      h.client.reconcileConnection();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(sockets.length, 1, 'no attempt before the circuit deadline');
+      time = wakeAt;
+      channelAdmitted = admittedChannel;
+      h.client.reconcileConnection();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(sockets.length, 2, 'the wake opens the socket');
+      sockets[1].socket.open();
+      sockets[1].socket.receive(await fixture('agent.session'));
+      assert.notEqual(h.client.session, null, 'the new socket binds a session');
+      assert.ok(sockets[1].openedAt - wakeAt <= 2_000);
+      assert.ok([...tasks].every((task) => task.due !== retryDelay), 'old reconnect timer is cleared');
+      h.client.stop();
+    });
+  }
+}

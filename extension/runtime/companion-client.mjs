@@ -285,6 +285,8 @@ export function createCompanionClient({
     }).catch(() => facade.close());
     return facade;
   }
+  webSocketFactory.retryAfterMs = () => active !== null && !active.channel.closed
+    ? Promise.resolve(0) : recovery.retryAfterMs();
   const adapter = Object.freeze({
     invalidate,
     loadAgentInstallationId: installationId,
