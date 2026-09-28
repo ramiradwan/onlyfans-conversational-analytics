@@ -14,7 +14,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 const chat = { id: 'chat-a', withUser: { id: 'fan-a', name: 'Synthetic' }, updatedAt: '2030-01-01T00:00:00Z' };
 const message = { id: 'message-a', text: 'Synthetic', fromUser: { id: 'fan-a' },
   chatUserId: 'fan-a', chat_id: 'chat-a', createdAt: '2030-01-01T00:00:00Z' };
-function harness(mode = 'full') {
+function harness(mode = 'full', confirmed = true) {
   const posts = [];
   const listeners = new Map();
   let next = () => Promise.resolve(new Response('{}'));
@@ -47,6 +47,9 @@ function harness(mode = 'full') {
     __OFCA_CAPTURE_MODE__: mode,
   });
   vm.runInContext(bundle, context);
+  posts.length = 0;
+  if (confirmed) listeners.get('message')?.({ source: window, origin: window.location.origin,
+    data: { type: 'ofca.capture.control', version: 1, action: 'resume' } });
   async function respond(path, body, status = 200) {
     next = () => Promise.resolve(new Response(JSON.stringify(body), { status }));
     await window.fetch(path); await flush();
@@ -55,9 +58,47 @@ function harness(mode = 'full') {
     reinstall() { context.__OFCA_CAPTURE_MODE__ = mode; vm.runInContext(bundle, context); },
     control(action) { listeners.get('message')?.({ source: window, origin: window.location.origin,
       data: { type: 'ofca.capture.control', version: 1, action } }); },
+    rawControl(data) { listeners.get('message')?.({ source: window, origin: window.location.origin, data }); },
     captures: () => posts.filter((post) => post.observation?.record),
   };
 }
+
+test('soft pause drops delayed HTTP responses and paused socket frames across resume', async () => {
+  const h = harness();
+  await h.respond('/api2/v2/users/me', { id: 'creator-a' });
+  let release;
+  h.setFetch(() => new Promise((resolve) => { release = resolve; }));
+  const pending = h.window.fetch('/api2/v2/chats');
+  const socket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
+  h.control('pause');
+  const count = h.posts.length;
+  const xhr = new h.Xhr(); xhr.open('GET', '/api2/v2/chats'); xhr.send();
+  socket.emit({ type: 'new_message', data: message });
+  await h.respond('/api2/v2/chats', { list: [chat] });
+  assert.equal(h.posts.length, count);
+  h.control('resume');
+  release(new Response(JSON.stringify({ list: [chat] })));
+  xhr.complete({ list: [chat] });
+  await pending; await flush();
+  assert.equal(h.captures().length, 0);
+  socket.emit({ type: 'new_message', data: message });
+  assert.equal(h.captures().length, 1);
+});
+
+test('new Full documents stay closed until confirmation and controls retain exact keys', async () => {
+  const h = harness('full', false);
+  await h.respond('/api2/v2/users/me', { id: 'creator-a' });
+  const socket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
+  socket.readyState = 1;
+  h.rawControl({ type: 'ofca.capture.control', version: 1, action: 'resume', extra: true });
+  socket.emit({ type: 'new_message', data: message });
+  assert.equal(h.posts.length, 0);
+  h.control('status');
+  assert.deepEqual(h.posts.at(-1).status, { mode: 'full', active: true, forwarding: false, ws2_socket_open: true });
+  h.control('resume');
+  socket.emit({ type: 'new_message', data: message });
+  assert.equal(h.captures().length, 1);
+});
 
 test('identity refresh reports only the current document observation and stops with the hook', async () => {
   const h = harness('identity');

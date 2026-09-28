@@ -32,6 +32,7 @@ const SYNTHETIC_PAGE = `<!doctype html>
     <script>
       (() => {
         globalThis.fixtureDocumentToken = crypto.randomUUID();
+        globalThis.fixtureSocketFrames = 0;
         const allowedReads = new Set([
           '/api2/v2/users/me',
           '/api2/v2/chats',
@@ -55,6 +56,7 @@ const SYNTHETIC_PAGE = `<!doctype html>
           }
           const socket = new WebSocket('${PLATFORM_SOCKET}');
           globalThis.fixtureSocket = socket;
+          socket.addEventListener('message', () => { globalThis.fixtureSocketFrames += 1; });
           socket.addEventListener('open', () => resolve(true), { once: true });
           socket.addEventListener('error', () => reject(new Error('Synthetic socket failed')), {
             once: true,
@@ -198,6 +200,13 @@ export class SyntheticPlatform {
         chatUserId: SYNTHETIC.messageOnlyPeerId,
       },
     });
+  }
+
+  sendPauseProbe(id) {
+    this.#sendFrame({ new_message: {
+      id, text: 'Synthetic pause probe', createdAt: `${this.activityDay}T08:06:00Z`,
+      fromUser: { id: SYNTHETIC.chatId }, chatUserId: SYNTHETIC.chatId,
+    } });
   }
 
   sendOfflineMessageOnlyPeer() {

@@ -5,6 +5,7 @@ import { LOCAL_SERVICE_PATTERN, LOCAL_SERVICE_HEALTH } from '../transport/local-
 import {
   PAGE_CONTROL_MESSAGE_TYPE,
   PAGE_CONTROL_VERSION,
+  CAPTURE_STATE_QUERY_TYPE,
   PREVIEW_MESSAGE_TYPE,
   isPreviewEnvelope,
 } from '../capture/envelopes.mjs';
@@ -188,8 +189,9 @@ export class ConsentController {
     this.controlAbort = new AbortController();
     this.loaded = false;
     this.deletionPending = false;
-    this.reloadRequired = false;
     this.documentReset = false;
+    this.scriptMode = null;
+    this.identityRefreshPending = false;
     this.state = defaultConsentState();
     this.phase = 'booting';
     this.initialization = null;
@@ -337,15 +339,28 @@ export class ConsentController {
   }
 
   async #stopTabs(tabs) {
+    return this.#controlTabs(tabs, 'stop');
+  }
+
+  async #controlTabs(tabs, action) {
     await Promise.all(tabs.map(async (tab) => {
       if (!Number.isInteger(tab.id)) return;
+      let timer;
+      const expired = Symbol('control_timeout');
       try {
-        await this.chromeApi.tabs.sendMessage(tab.id, {
-          type: PAGE_CONTROL_MESSAGE_TYPE,
-          action: 'stop',
-        });
+        const response = await Promise.race([
+          this.chromeApi.tabs.sendMessage(tab.id, {
+            type: PAGE_CONTROL_MESSAGE_TYPE, version: PAGE_CONTROL_VERSION, action,
+          }, { frameId: 0 }),
+          new Promise((resolve) => { timer = this.scheduler.setTimeout(() => resolve(expired), 1_000); }),
+        ]);
+        if (action === 'pause' && response !== expired && response?.ok !== true) {
+          await this.#controlTabs([tab], 'stop');
+        }
       } catch (_error) {
-        // A tab without the content bridge is already stopped.
+        if (action === 'pause') await this.#controlTabs([tab], 'stop');
+      } finally {
+        if (timer !== undefined) this.scheduler.clearTimeout(timer);
       }
     }));
   }
@@ -371,7 +386,10 @@ export class ConsentController {
   }
 
   async #syncContentScripts(mode) {
+    if (this.state.mode === 'paused' && this.state.resume_mode === 'full'
+      && await this.#hasOnlyFansPermission()) mode = 'full';
     const desired = contentScriptsFor(mode);
+    this.scriptMode = mode;
     const allRegistered = await this.chromeApi.scripting.getRegisteredContentScripts();
     const owned = allRegistered.filter((entry) => entry.id.startsWith('ofca-'));
     // A transient companion refusal must not stop the live document bridge:
@@ -381,10 +399,23 @@ export class ConsentController {
       && sameScripts(owned, contentScriptsFor('full'))) {
       let paired = false;
       try { paired = await this.hasSavedPairing(); } catch { /* No confirmed pairing. */ }
-      if (paired) return;
+      if (paired || this.identityRefreshPending) {
+        this.scriptMode = 'full';
+        if (this.identityRefreshPending) {
+          await this.#controlTabs(await this.#onlyFansTabs(), 'resume');
+          this.identityRefreshPending = false;
+        }
+        return;
+      }
     }
     const definitionsChanged = !sameScripts(owned, desired);
-    if (!definitionsChanged && !this.documentReset) return;
+    if (!definitionsChanged && !this.documentReset) {
+      if (mode === 'full') {
+        await this.#controlTabs(await this.#onlyFansTabs(), this.state.mode === 'paused' ? 'pause' : 'resume');
+      }
+      this.identityRefreshPending = false;
+      return;
+    }
 
     const tabs = await this.#onlyFansTabs();
     await this.#stopTabs(tabs);
@@ -396,8 +427,28 @@ export class ConsentController {
     if (definitionsChanged && desired.length > 0) {
       await this.chromeApi.scripting.registerContentScripts(desired);
     }
-    this.reloadRequired = desired.length > 0 && tabs.length > 0;
     this.documentReset = false;
+  }
+
+  async #tabNeedsReload(tab) {
+    if (!Number.isInteger(tab.id) || this.scriptMode === null) return false;
+    let timer;
+    try {
+      const status = await Promise.race([
+        this.chromeApi.tabs.sendMessage(tab.id, {
+          type: PAGE_CONTROL_MESSAGE_TYPE, version: PAGE_CONTROL_VERSION, action: 'status',
+        }, { frameId: 0 }),
+        new Promise((resolve) => { timer = this.scheduler.setTimeout(() => resolve(null), 1_000); }),
+      ]);
+      return !status || Object.keys(status).length !== 4
+        || status.mode !== this.scriptMode || status.active !== true
+        || typeof status.ws2_socket_open !== 'boolean'
+        || status.forwarding !== (this.state.mode !== 'paused');
+    } catch {
+      return true;
+    } finally {
+      if (timer !== undefined) this.scheduler.clearTimeout(timer);
+    }
   }
 
   async #suspendRuntime() {
@@ -595,11 +646,15 @@ export class ConsentController {
     };
     await this.chromeApi.storage.local.set({ [CONSENT_STORAGE_KEY]: this.state });
     if (epochChanged) {
-      this.documentReset = true;
+      const fullFamily = (state) => state.mode === 'full'
+        || (state.mode === 'paused' && state.resume_mode === 'full');
+      this.documentReset ||= !(fullFamily(currentState) && fullFamily(this.state));
+      this.identityRefreshPending = !this.documentReset && nextMode === 'full';
       await this.provisioningIdentityBridge.clearContexts?.();
     }
     try {
       await this.#reconcileLocked(generation);
+      if (epochChanged && nextMode === 'full') await this.#refreshTabIdentity(generation);
     } finally {
       if (nextMode === 'revoked') await this.#removePermissions();
     }
@@ -697,7 +752,7 @@ export class ConsentController {
       schema: 'ofca-popup-status/v1',
       consent: structuredClone(this.state),
       phase: this.phase,
-      reload_required: this.reloadRequired,
+      reload_required: (await Promise.all(onlyFansTabs.map((tab) => this.#tabNeedsReload(tab)))).some(Boolean),
       onlyfans_permission: onlyFansPermission,
       local_service_permission: localServicePermission,
       history_permission: historyPermission,
@@ -732,11 +787,20 @@ export class ConsentController {
 
   #onStorageChanged(changes, areaName) {
     if (areaName === 'session' && Object.hasOwn(changes, 'active_account_partition_v5')) {
+      this.documentReset = true;
       void this.reconcile().catch(() => undefined);
     }
   }
 
   #onMessage(message, sender, sendResponse) {
+    if (message?.type === CAPTURE_STATE_QUERY_TYPE && Object.keys(message).length === 1) {
+      if (!trustedContentSender(sender, this.chromeApi)) return false;
+      const ready = this.loaded && this.phase !== 'booting' ? Promise.resolve() : this.initialize();
+      void ready.then(() => sendResponse({
+        ok: true, mode: this.state.mode, consent_epoch: this.state.consent_epoch,
+      }), () => sendResponse({ ok: false }));
+      return true;
+    }
     if (message?.type === PREVIEW_MESSAGE_TYPE) {
       if (!trustedContentSender(sender, this.chromeApi)) return false;
       const generation = this.controlGeneration;
@@ -758,9 +822,8 @@ export class ConsentController {
     if (message?.type === UI_RELOAD_TABS_MESSAGE_TYPE && Object.keys(message).length === 1) {
       void this.runLegalOperation(async ({ assertCurrent, status }) => {
         assertCurrent();
-        if (SCRIPT_MODES.includes(this.phase)) {
+        if (SCRIPT_MODES.includes(this.scriptMode)) {
           await this.#reloadTabs(await this.#onlyFansTabs());
-          this.reloadRequired = false;
         }
         return status();
       }).then(
