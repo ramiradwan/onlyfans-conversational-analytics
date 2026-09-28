@@ -81,11 +81,23 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
             cache_bytes += used
         return {key: mapping[key] for key in selected if key in mapping}
 
+    from app.analytics.conversation_membership_validation import (
+        changed_predecessor_members, predecessor_manifest_matches, proven_unit_is_unchanged,
+    )
+    complete_predecessor = bool(trusted) and predecessor_manifest_matches(
+        connection, old_generation, account, prior_graph.segments, check)
+    changes = (changed_predecessor_members(connection, account, old_segments, current, prepared, check)
+               if complete_predecessor else None)
     headers = []
     for reference in references:
         check()
         h = reference.header
         if h.checksum_version == 1:
+            continue
+        predecessor = trusted.get(h.conversation_ref)
+        if (changes is not None and predecessor == h
+                and proven_unit_is_unchanged(connection, generation['generation_id'], account, h, changes, check)):
+            headers.append(h)
             continue
         unit = units.load_unit(connection, generation['generation_id'], account, h.conversation_ref)
         if unit is None or unit.header != h:
@@ -95,7 +107,7 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
         if predecessor == h:
             old_summaries = summaries
         else:
-            previous = None if predecessor is None else units.load_unit(
+            previous = None if predecessor is None else units.load_integrity_metadata(
                 connection, old_generation, account, h.conversation_ref)
             old_summaries = (decode_manifest(previous) if previous is not None
                 and previous.header == predecessor and predecessor.checksum_version == 2 else {})

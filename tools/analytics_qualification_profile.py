@@ -27,6 +27,10 @@ FUNCTIONS = frozenset({
     'retain_record', 'prefetch',
     'verify_generation_integrity', 'groups_for_members', 'summarize_group',
     'append_unit', 'integrity_upgrade_required',
+    'changed_predecessor_members', 'proven_unit_is_unchanged', 'contains_changed_member',
+    'load_integrity_metadata', 'predecessor_manifest_matches',
+    '_remember_conversation_graph_proof', '_remember_conversation_enrichment_proof',
+    '_owned_transaction', 'take',
     '_quiesce_heartbeat_for_terminal_transition', 'refresh_identity_cache',
 })
 

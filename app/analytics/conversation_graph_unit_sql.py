@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.analytics.conversation_graph_units import (
@@ -96,6 +97,28 @@ def load_unit(
     if row is None:
         return None
     return ConversationGraphUnit(_header(row), row["node_ids"], row["edge_ids"], row["integrity_metadata"])
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationIntegrityMetadata:
+    """A checksum carrier, not a membership or publication proof."""
+    header: ConversationGraphUnitHeader
+    integrity_metadata: bytes | None
+
+
+def load_integrity_metadata(connection, generation_id, account, conversation):
+    """Read selected metadata without membership arrays or proof authority."""
+    row = connection.execute(
+        f"""SELECT r.*,u.graph_digest,u.node_count,u.edge_count,
+                   {_version_column(connection)},{_metadata_column(connection)}
+           FROM conversation_graph_refs r
+           JOIN conversation_graph_units u USING(creator_account_id,unit_id)
+           WHERE r.generation_id=? AND r.creator_account_id=? AND r.conversation_ref=?""",
+        (generation_id, account, conversation),
+    ).fetchone()
+    if row is None:
+        return None
+    return ConversationIntegrityMetadata(_header(row), row['integrity_metadata'])
 
 
 def list_references(
