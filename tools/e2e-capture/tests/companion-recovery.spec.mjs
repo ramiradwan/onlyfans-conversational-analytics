@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -105,6 +106,12 @@ test('companion recovers after worker stops and seven stable restart cycles', as
       }, { timeout: 75_000 }).toBeGreaterThan(5_000);
       expect(previousState.reconcileAlarm?.periodInMinutes).toBe(1);
       expect(previousState.reconcileAlarm.scheduledTime - Date.now()).toBeLessThanOrEqual(60_000);
+      await previous.evaluate(() => chrome.alarms.clear('ofca-preview-retention'));
+      const realmMarker = randomUUID();
+      expect(await previous.evaluate((marker) => {
+        globalThis.__OFCA_RECOVERY_REALM_MARKER__ = marker;
+        return globalThis.__OFCA_RECOVERY_REALM_MARKER__;
+      }, realmMarker)).toBe(realmMarker);
       const previousToken = admitted.connectionToken;
       const deadline = Date.now() + 90_000;
       const stopped = await terminateExtensionWorker(context, previous);
@@ -116,7 +123,10 @@ test('companion recovers after worker stops and seven stable restart cycles', as
           timeoutMs: Math.max(1, deadline - Date.now()),
         });
         worker = replacement.worker;
-        expect(replacement.targetId).not.toBe(stopped.targetId);
+        expect(replacement.createdAt).toBeGreaterThanOrEqual(
+          previousState.reconcileAlarm.scheduledTime - 1_500,
+        );
+        expect(await worker.evaluate(() => globalThis.__OFCA_RECOVERY_REALM_MARKER__ ?? null)).toBeNull();
         expect((await extensionState(worker)).workerInstanceId).not.toBe(previousState.workerInstanceId);
         admitted = await waitForAdmission(context, worker, previousToken,
           Math.max(1, deadline - Date.now()));
