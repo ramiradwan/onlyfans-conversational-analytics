@@ -298,21 +298,20 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 local_graph.add(fragment.nodes, fragment.edges, check=check)
         else:
             raw = catalog.conversation(chat_id)
-            parts = pipeline._canonical_conversations(
-                AccountReadModel(view_revision=catalog.view_revision, conversations={chat_id: raw}),
-                cancellation_check=cancellation_check)
-            if not parts:
-                # A canonical chat with no retained messages must also lose its
-                # predecessor graph membership, not only its metrics.
-                current_refs.discard(ref)
-                continue
-            conversation = parts[0]
-            state.recomputed += 1
             appended = None
             if incremental and stream_enrichments:
                 from app.analytics.conversation_append import try_append
                 appended = try_append(pipeline, account_id, catalog.view_revision,
-                    conversation, raw, loader, reuse, config, cutoff, check, cancellation_check)
+                    None, raw, loader, reuse, config, cutoff, check, cancellation_check)
+            if appended is None:
+                parts = pipeline._canonical_conversations(
+                    AccountReadModel(view_revision=catalog.view_revision, conversations={chat_id: raw}),
+                    cancellation_check=cancellation_check)
+                if not parts:
+                    current_refs.discard(ref)
+                    continue
+                conversation = parts[0]
+            state.recomputed += 1
             if appended is not None:
                 findings, counts, local_graph, append_delta, append_previous, graph_unit = appended
                 nodes, edges = None, None

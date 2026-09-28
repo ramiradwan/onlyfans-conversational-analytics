@@ -22,6 +22,7 @@ class PricingNotQualified(AnalyticsError):
 class QuestionResources:
     def __init__(self, source, pipeline, *, clock=lambda: datetime.now(timezone.utc)):
         self.source, self.pipeline, self.clock = source, pipeline, clock
+        self._pending_questions = getattr(pipeline, '_pending_questions', None)
         self.secret = secrets.token_bytes(32)
         self.evidence = EvidenceResolver(source, clock=clock, request_refresh=self._request_refresh)
         self._policies = OrderedDict()
@@ -76,7 +77,8 @@ class QuestionResources:
         if not callable(getattr(self.source, "open_question_scope", None)):
             raise ProjectionUnavailable(reason_code="analytics_question_source_unavailable")
         reader = PublishedQuestionReader(self.source, self.pipeline.projections, account,
-            policy, self.evidence, self.pipeline.pipeline_revision, self.pipeline.pipeline_config_digest)
+            policy, self.evidence, self.pipeline.pipeline_revision, self.pipeline.pipeline_config_digest,
+            preparing=self._pending_questions.is_pending if self._pending_questions is not None else None)
         service = AnalyticsQuestionService(reader,
             [RegisteredQuestion("no_later_creator_reply.v1", "canonical.v1", no_later_creator_reply)],
             cursor_secret=self.secret, clock=self.clock)

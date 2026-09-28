@@ -124,8 +124,13 @@ def unit_id(
     digest.update(graph_digest.encode("ascii") + b"\0")
     for kind, values in ((b"node", node_ids), (b"edge", edge_ids)):
         digest.update(kind + b"\0")
-        for value in values:
-            digest.update(value.encode("ascii") + b"\n")
+        from app.analytics.conversation_id_frames import IdGroups
+        if isinstance(values, IdGroups):
+            for block in values.lines():
+                digest.update(block)
+        else:
+            for value in values:
+                digest.update(value.encode("ascii") + b"\n")
     return digest.hexdigest()
 
 
@@ -172,9 +177,11 @@ def create_membership_unit(*, account_ref, conversation_ref, input_digest, confi
     """Encode the existing unit after checking its canonical graph bytes."""
     if not nodes or max(len(nodes), len(edges)) > MAX_GRAPH_UNIT_RECORDS:
         return None
-    node_data = _compress(_encode_ids(nodes))
-    edge_data = _compress(_encode_ids(edges))
-    if len(node_data) > MAX_GRAPH_UNIT_BYTES or len(edge_data) > MAX_GRAPH_UNIT_BYTES:
+    from app.analytics.conversation_id_frames import IdGroups
+    node_data = nodes.pack(MAX_GRAPH_UNIT_BYTES) if isinstance(nodes, IdGroups) else _compress(_encode_ids(nodes))
+    edge_data = edges.pack(MAX_GRAPH_UNIT_BYTES) if isinstance(edges, IdGroups) else _compress(_encode_ids(edges))
+    if (node_data is None or edge_data is None
+            or len(node_data) > MAX_GRAPH_UNIT_BYTES or len(edge_data) > MAX_GRAPH_UNIT_BYTES):
         return None
     from app.analytics.conversation_enrichment_units import AppendedMessageEnrichments
     first_source = (findings.first_source_at if isinstance(findings, AppendedMessageEnrichments)

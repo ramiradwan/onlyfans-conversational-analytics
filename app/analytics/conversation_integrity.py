@@ -99,6 +99,10 @@ def decode_manifest(unit):
 def groups_for_members(unit, check=lambda: None):
     from app.analytics.conversation_graph_units import graph_unit_ids
     summaries = decode_manifest(unit)
+    from app.analytics.conversation_id_frames import canonical_groups
+    framed = canonical_groups(unit, summaries, check)
+    if framed is not None:
+        return summaries, framed
     result = {}
     for kind, keys in zip(('node', 'edge'), graph_unit_ids(unit), strict=True):
         for bucket, values in groupby(keys, key=lambda key: key[3:5]):
@@ -160,11 +164,12 @@ def append_unit(loader, previous, delta, *, conversation_node, input_digest,
             members[(kind, bucket)] = tuple(sorted(versions))
         for (group_kind, bucket), keys in sorted(members.items()):
             if group_kind == kind:
-                final[kind].extend(keys)
+                final[kind].append(keys)
     root, metadata = encode_manifest(header.account_ref, header.conversation_ref,
                                     [summaries[k] for k in sorted(summaries)])
+    from app.analytics.conversation_id_frames import IdGroups
     return create_membership_unit(account_ref=header.account_ref,
         conversation_ref=header.conversation_ref, input_digest=input_digest,
         config_digest=config_digest, cutoff=cutoff, findings=findings, metrics=metrics,
-        nodes=tuple(final['node']), edges=tuple(final['edge']), digest=root,
+        nodes=IdGroups(final['node']), edges=IdGroups(final['edge']), digest=root,
         checksum_version=VERSION, integrity_metadata=metadata)

@@ -252,12 +252,13 @@ def analyzer_records(unit: ConversationEnrichmentUnit):
 class AppendedMessageEnrichments(Sequence):
     """Keep matched prefix bytes; create old models only for explicit consumers."""
 
-    def __init__(self, rows, tail, references, first_source_at):
+    def __init__(self, rows, tail, references, first_source_at, *, previous=None):
         self._rows = tuple(rows)
         self.tail = tail
         self.prefix_references = frozenset(references)
         self.first_source_at = first_source_at
         self._boundary = None
+        self._previous = previous
 
     def __len__(self):
         return len(self._rows) + 1
@@ -415,7 +416,8 @@ def append_enrichment_unit(previous, *, input_digest, config_digest, cutoff,
                 else any(item.message_ref == tail.message_ref for item in findings[:-1]))):
         return None
     check()
-    old_rows = message_records(previous)
+    old_rows = (findings._rows if isinstance(findings, AppendedMessageEnrichments)
+                and findings._previous is previous else message_records(previous))
     old_analyzers = analyzer_records(previous)
     message_raw = b'\n'.join((*old_rows, _canonical(tail.model_dump(mode='json'))))
     analyzer_rows = list(old_analyzers)

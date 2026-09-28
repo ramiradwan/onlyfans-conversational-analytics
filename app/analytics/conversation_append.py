@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 import hashlib
 import json
 import re
@@ -78,20 +79,43 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
     enrichment_proof = getattr(loader, 'enrichment_unit_proof', None)
     if graph_proof is None or enrichment_proof is None:
         return None
-    partition, ref = account_ref(account), conversation_ref(account, conversation.conversation_id)
+    raw_mode = conversation is None
+    chat_id = raw['conversation_id'] if raw_mode else conversation.conversation_id
+    partition, ref = account_ref(account), conversation_ref(account, chat_id)
     expected = next((h for h in enrichment_proof.headers if h.conversation_ref == ref), None)
     if (expected is None or expected.message_count < MIN_APPEND_MESSAGES
             or expected.account_ref != partition or expected.config_digest != config
             or expected.retention_cutoff > cutoff or expected.expires_at <= cutoff + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)):
         return None
     messages = raw['messages']
-    ordered = sorted(conversation.messages, key=lambda m: (m.sent_at, m.source_ordinal))
-    if (len(messages) != expected.message_count + 1 or len(ordered) != len(messages)
-            or ordered[-1].message_id != messages[-1]['message_id']
-            or ordered[-1].sent_at < expected.last_source_at):
+    if len(messages) != expected.message_count + 1:
         return None
     prefix = dict(raw, messages=messages[:-1], last_message_at=messages[-2]['sent_at'])
     if conversation_digest(prefix) != expected.input_digest:
+        return None
+    if raw_mode:
+        # The exact prefix was already independently prepared and validated.
+        # Validate new/boundary models, not another full copy of that prefix.
+        from app.models.analytics import CanonicalConversation
+        conversation = CanonicalConversation.model_validate(dict(raw, messages=messages[-2:]))
+        ordered = [m.model_copy(update={'sent_at':pipeline._utc(m.sent_at)}) for m in conversation.messages]
+        conversation = conversation.model_copy(update={'messages':ordered})
+        if ordered[-1].source_ordinal != expected.message_count:
+            return None
+        def prefix_messages():
+            for message in messages[:-1]:
+                check()
+                yield SimpleNamespace(message_id=message['message_id'],
+                    sent_at=pipeline._utc(datetime.fromisoformat(message['sent_at'])),
+                    source_ordinal=message['source_ordinal'], direction=message['direction'])
+        prefix_values = prefix_messages()
+    else:
+        ordered = sorted(conversation.messages, key=lambda m: (m.sent_at, m.source_ordinal))
+        if len(ordered) != len(messages):
+            return None
+        prefix_values = ordered[:-1]
+    if (ordered[-1].message_id != messages[-1]['message_id']
+            or ordered[-1].sent_at < expected.last_source_at):
         return None
     old_graph = loader.previous_graph_unit(ref)
     if old_graph is None:
@@ -116,7 +140,7 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
     unit = ConversationEnrichmentUnit(expected, pair[0], pair[1])
     rows = message_records(unit)
     inputs, references = [], set()
-    for record, message in zip(rows, ordered[:-1], strict=True):
+    for record, message in zip(rows, prefix_values, strict=True):
         check()
         value = json.loads(record)
         if not isinstance(value['sent_at'], str):
@@ -144,11 +168,11 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
     tail = added[0]
     inputs.append(ConversationMetricInput.from_enrichment(tail))
     metrics = build_conversation_metrics(account, conversation, inputs)
-    findings = AppendedMessageEnrichments(rows, tail, references, inputs[0].sent_at)
+    findings = AppendedMessageEnrichments(rows, tail, references, inputs[0].sent_at, previous=unit)
     del inputs
     delta = CompactGraph(partition)
     boundary = conversation.model_copy(update={'messages': ordered[-2:]})
-    shift = len(ordered) - 2
+    shift = len(messages) - 2
     for nodes, edges in pipeline.graph_projector.batches(account, source_revision,
             [boundary], findings[-2:], [metrics], cancellation_check=cancellation_check):
         corrected = []

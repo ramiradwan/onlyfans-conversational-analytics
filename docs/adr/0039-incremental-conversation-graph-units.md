@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check conversation_membership_validation.py, test_persisted_membership_handoff.py, test_membership_validation_bounds.py, conversation_integrity.py, conversation_integrity_store.py, test_incremental_conversation_integrity.py, sql/0021_conversation_integrity.sql, conversation_graph_stream.py, test_predecessor_graph_handoff.py, recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, sql/0018_graph_chunk_metadata.sql, test_graph_chunk_metadata.py, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
+<!-- CODE-VERIFY: Check conversation_id_frames.py, pending_questions.py, query_reader.py, scheduling.py, test_conversation_frames_safety.py, test_pending_question_safety.py, conversation_membership_validation.py, test_persisted_membership_handoff.py, test_membership_validation_bounds.py, conversation_integrity.py, conversation_integrity_store.py, test_incremental_conversation_integrity.py, sql/0021_conversation_integrity.sql, conversation_graph_stream.py, test_predecessor_graph_handoff.py, recovered_reuse.py, conversation_append.py, test_recovered_update_reuse.py, test_dominant_append_reuse.py, conversation_reuse.py, conversation_graph_units.py, conversation_graph_unit_sql.py, incremental_graph.py, shared_graph.py, compact_graph.py, sqlite_projection_store.py, sql/0016_incremental_graph_units.sql, sql/0018_graph_chunk_metadata.sql, test_graph_chunk_metadata.py, test_incremental_graph_units.py, test_shared_graph.py and test_conversation_graph_receipts.py before changing reuse or fallback claims. -->
 
 # ADR 0039: Reuse immutable conversation graph units
 
@@ -59,6 +59,16 @@ For a changed unit, comparing the old checksum reads only the old header and int
 This result exists only inside the current validation transaction. It is not a persisted receipt, does not extend any proof lifetime, and cannot authorize activation. Explicit full artifact reads and independent rebuild checks keep complete verification. Activation and required synchronous cleanup retain their existing checks.
 
 Restart, invalidated proof, changed schema or changed selection requires independent verification. Activation and cleanup keep their existing fenced, synchronous paths. No proof lifetime, request limit or retention period is extended.
+
+## Operation-local frames and pending reads
+
+An eligible dominant append first checks the exact canonical prefix digest and the independently prepared predecessor proofs. It validates the new and boundary message models without constructing the full old conversation again. The necessary per-message identity, ordering, direction and retention checks still run before reuse. Ineligible updates retain the complete model and metric path.
+
+Canonical graph identity arrays may be held as checked fixed-width byte frames for one operation. Counts, ordering, uniqueness, membership summaries and the existing unit identifier are checked from the actual bytes. Only changed groups need decoded identity strings. A new unit streams the same JSON-array bytes into the same compression format; no stored format or digest meaning changes. Noncanonical but legal encodings use the existing decoder. Persisted candidate validation reads and checks the stored frames independently.
+
+While an owned scheduler attempt is active, an authenticated and validated question may receive the existing building response before opening databases. This notice is account-scoped and bound to a live scheduler owner, publication epoch and attempted revision. Cancellation, failure, completion and shutdown remove the notice. Weak bounded registrations cannot hold obsolete schedulers alive. Missing or uncertain state uses the ordinary reader.
+
+The notice never establishes currentness or authorizes data. Actual answers retain the full canonical, publication, expiry and cursor checks. Polling cadence and synchronous cleanup are unchanged.
 
 ## Bounds
 

@@ -207,6 +207,8 @@ class AnalyticsPipeline:
         self._account_locks: dict[str, tuple[RLock, int]] = {}
         self._account_locks_guard = RLock()
         self._direct_publication_capability = secrets.token_hex(32)
+        from app.analytics.pending_questions import PendingQuestions
+        self._pending_questions = PendingQuestions()
 
     @contextmanager
     def _account_lock(self, creator_account_id: str, *,

@@ -182,6 +182,21 @@ class InProcessProjectionScheduler:
         self.pipeline.set_projection_failure_callback(
             self._projection_storage_failed
         )
+        pending = getattr(pipeline, '_pending_questions', None)
+        if pending is not None:
+            pending.register(self._pending_question_state)
+
+    def _pending_question_state(self, account):
+        """A refusal hint bound to the currently owned attempt, not a ready result."""
+        with self._state_lock:
+            work = self._work.get(account)
+            if (self._closed or self._publication_closed.is_set()
+                    or self._publication_epoch is None or work is None
+                    or work.attempted_revision is None or work.cancellation is None
+                    or work.cancellation.cancelled()):
+                return None
+            return self._scheduler_owner_id, self._publication_epoch, work.attempted_revision
+
 
     @property
     def closed(self) -> bool:
