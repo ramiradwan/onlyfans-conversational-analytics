@@ -18,6 +18,7 @@ import {
   extensionState,
   extensionWorker,
   launchExtensionBrowser,
+  restartedExtensionWorker,
   terminateExtensionWorker,
 } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
@@ -84,26 +85,39 @@ test('companion recovers after worker stops and seven stable restart cycles', as
         (entry) => entry.observed_platform_id === 'dev-creator-account',
       );
     }, { key: PROVISIONING_IDENTITY_STORAGE_KEY, schema: PROVISIONING_IDENTITY_STORAGE_SCHEMA })).toBe(true);
+    let admitted = await waitForAdmission(context, worker);
     await platformPage.evaluate(() => globalThis.fixtureRead('/api2/v2/chats'));
     await platformPage.evaluate((pathname) => globalThis.fixtureRead(pathname),
       `/api2/v2/chats/${SYNTHETIC.chatId}/messages`);
     await platformPage.evaluate(() => globalThis.fixtureOpenSocket());
     await expect.poll(async () => (await extensionState(worker)).outbox?.acknowledgedSourceSeq).toBe(4);
-    let admitted = await waitForAdmission(context, worker);
 
     async function restartAfterStableSession() {
       await sleep(12_000);
       const previous = worker;
+      await expect.poll(async () => previous.evaluate(async () => (
+        (await chrome.storage.local.get(['companion_recovery_v1'])).companion_recovery_v1?.attempts
+      ))).toBe(0);
+      let previousState = null;
+      await expect.poll(async () => {
+        previousState = await extensionState(previous);
+        return (previousState.reconcileAlarm?.scheduledTime ?? 0) - Date.now();
+      }, { timeout: 75_000 }).toBeGreaterThan(5_000);
+      expect(previousState.reconcileAlarm?.periodInMinutes).toBe(1);
+      expect(previousState.reconcileAlarm.scheduledTime - Date.now()).toBeLessThanOrEqual(60_000);
       const previousToken = admitted.connectionToken;
       const deadline = Date.now() + 90_000;
       const stopped = await terminateExtensionWorker(context, previous);
       try {
         expect(stopped.stoppedNormally).toBe(true);
         expect(stopped.stopMethod).toBe('stopWorker');
-        worker = await extensionWorker(context, {
-          differentFrom: previous, timeoutMs: Math.max(1, deadline - Date.now()),
+        const replacement = await restartedExtensionWorker(context, {
+          previousTargetId: stopped.targetId,
+          timeoutMs: Math.max(1, deadline - Date.now()),
         });
-        expect(worker).not.toBe(previous);
+        worker = replacement.worker;
+        expect(replacement.targetId).not.toBe(stopped.targetId);
+        expect((await extensionState(worker)).workerInstanceId).not.toBe(previousState.workerInstanceId);
         admitted = await waitForAdmission(context, worker, previousToken,
           Math.max(1, deadline - Date.now()));
         const circuit = await worker.evaluate(async () => (
