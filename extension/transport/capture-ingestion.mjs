@@ -35,6 +35,7 @@ const KNOWN_DROP_REASONS = new Set([
   'delivery_expired',
   'delivery_id_conflict',
   'enqueue_failed',
+  'companion_recovery_backoff',
   'hook_invalid_json',
   'hook_unrecognized_payload',
   'invalid_bridge_message',
@@ -382,6 +383,10 @@ export class CaptureIngestionService {
 
     try {
       const transport = await this.runtime.wake();
+      if (transport?.retryAfterMs !== undefined) {
+        this.diagnostics.record('companion_recovery_backoff', mapped.eventType);
+        return { ok: false, code: 'companion_recovery_backoff', retryable: true };
+      }
       if (!captureIsEnabled(
         this.runtime.configuration?.activeDocument,
         mapped.resource,
@@ -410,9 +415,11 @@ export class CaptureIngestionService {
         source_seq: item?.source_seq ?? null,
         material_transition: item !== null,
       };
-    } catch (_error) {
-      this.diagnostics.record('enqueue_failed', mapped.eventType);
-      return { ok: false, code: 'enqueue_failed', retryable: true };
+    } catch (error) {
+      const code = error?.code === 'companion_recovery_backoff'
+        ? 'companion_recovery_backoff' : 'enqueue_failed';
+      this.diagnostics.record(code, mapped.eventType);
+      return { ok: false, code, retryable: true };
     }
   }
 }

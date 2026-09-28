@@ -24,6 +24,7 @@ const dispatch = (listener, message) => new Promise((resolve) => {
 for (const prefix of ['', 'read-only-']) {
   const { DurableIngestOutbox } = await import(`../transport/${prefix}durable-outbox.mjs`);
   const { DeliveryCaptureIngestionService } = await import(`../transport/${prefix}delivery-capture-ingestion.mjs`);
+  const { CaptureIngestionService } = await import(`../transport/${prefix}capture-ingestion.mjs`);
   async function harness() {
     const session = {};
     const listeners = [];
@@ -54,9 +55,28 @@ for (const prefix of ['', 'read-only-']) {
       provisioningIdentityBridge: provisioning, operationScope, currentConsent: () => consent,
       allowsCapture: () => consent.mode === 'full',
     });
-    return { storage, outbox, bridge, configuration,
+    return { storage, outbox, bridge, configuration, runtime, ingestion,
       switchIdentity: () => dispatch(listeners[0], identity('platform-b')) };
   }
+
+  test(`${prefix || 'authoring-'}capture retries companion cooldown with its original delivery`, async () => {
+    const h = await harness();
+    h.runtime.wake = async () => { throw Object.assign(new Error('cooldown'),
+      { code: 'companion_recovery_backoff', retryAfterMs: 42_000 }); };
+    const message = delivery();
+    const { page_epoch: _pageEpoch, ...observation } = message.observation;
+    const result = await h.ingestion.ingest(observation, { delivery: message });
+    assert.deepEqual({ code: result.code, retryable: result.retryable },
+      { code: 'companion_recovery_backoff', retryable: true });
+    const raw = await new CaptureIngestionService({ runtime: h.runtime }).ingest(observation);
+    assert.deepEqual({ code: raw.code, retryable: raw.retryable },
+      { code: 'companion_recovery_backoff', retryable: true });
+    h.runtime.wake = async () => ({ retryAfterMs: 42_000 });
+    const quiet = await h.ingestion.ingest(observation, { delivery: message });
+    assert.deepEqual({ code: quiet.code, retryable: quiet.retryable },
+      { code: 'companion_recovery_backoff', retryable: true });
+    assert.equal(h.storage.stores.get('delivery_receipts').size, 0);
+  });
 
   test(`${prefix || 'authoring-'}integrated local ACK succeeds while companion flush is offline`, async () => {
     const h = await harness(); const message = delivery();

@@ -1,6 +1,6 @@
 export const CONNECTION_RECOVERY_KEY = 'companion_recovery_v1';
 const SCHEMA = 'ofca-connection-recovery/v1';
-export const CONNECTION_STABLE_MS = 60_000;
+export const CONNECTION_STABLE_MS = 10_000;
 export const CONNECTION_COOLDOWN_MS = 300_000;
 export const CONNECTION_ATTEMPT_LIMIT = 6;
 
@@ -19,6 +19,12 @@ export function createConnectionRecovery({ storage, now = Date.now, random = Mat
     return operation;
   };
   return Object.freeze({
+    retryAfterMs() {
+      return serialize(async () => {
+        const saved = (await storage.get([CONNECTION_RECOVERY_KEY]))[CONNECTION_RECOVERY_KEY];
+        return Math.max(0, (saved?.next_attempt_at ?? 0) - now());
+      });
+    },
     reserve() {
       return serialize(async () => {
         const saved = (await storage.get([CONNECTION_RECOVERY_KEY]))[CONNECTION_RECOVERY_KEY];

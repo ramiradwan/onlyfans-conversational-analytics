@@ -251,6 +251,9 @@ export class AgentRuntime {
           await this.onBindingMatched?.(this.transport, resolution);
           signal?.throwIfAborted();
           return this.#reconcileTransport();
+        }).catch((error) => {
+          if (error?.code === 'companion_recovery_backoff') return { retryAfterMs: error.retryAfterMs };
+          throw error;
         });
         this.bindingResolution = attempt;
         void attempt.finally(() => {
@@ -328,6 +331,7 @@ export class AgentRuntime {
       const cancelled = controller.signal.aborted;
       controller.abort(error);
       await components?.drain?.();
+      if (error?.code === 'companion_recovery_backoff') return { retryAfterMs: error.retryAfterMs };
       if (!cancelled) this.onStartupError(error);
       throw error;
     }

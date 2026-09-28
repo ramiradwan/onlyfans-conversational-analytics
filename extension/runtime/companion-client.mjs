@@ -43,12 +43,13 @@ export function createCompanionClient({
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
-  now = Date.now, random = Math.random,
+  now = Date.now, random = Math.random, scheduler = null,
   loadTrust = async () => loadGrantTrustSet(await (await fetch(chromeApi.runtime.getURL('companion-grant-trust.json'))).json()),
 } = {}) {
   let storePromise, trustPromise, installationPromise, connecting = null, connectingAccount = null, connectionAbort = null, active = null;
   let generation = 0, pairingAbort = null, state = { state: 'unpaired', comparison_code: null };
   const recovery = createConnectionRecovery({ storage: chromeApi.storage.local, now, random });
+  const timers = scheduler ?? globalThis;
   const subscribers = new Set();
   let pairingOwner = null;
   const store = () => {
@@ -72,6 +73,7 @@ export function createCompanionClient({
     generation++;
     pairingAbort?.abort();
     connectionAbort?.abort();
+    if (active && active.stableTimer !== null) timers.clearTimeout(active.stableTimer);
     active?.channel.close(); active = null;
     connecting = null;
   }
@@ -94,11 +96,6 @@ export function createCompanionClient({
     controls.signal.throwIfAborted(); controls.assertCurrent?.();
     if (active && active.accountId !== accountId) invalidate();
     if (active && !active.channel.closed && active.accountId === accountId) {
-      if (!active.stable && now() - active.openedAt >= CONNECTION_STABLE_MS) {
-        await recovery.stable();
-        if (!active || active.channel.closed) throw failure();
-        active.stable = true;
-      }
       return active;
     }
     if (connecting) {
@@ -152,12 +149,19 @@ export function createCompanionClient({
           || atob(unlocked.storage_key_base64).length !== 32
           || btoa(atob(unlocked.storage_key_base64)) !== unlocked.storage_key_base64) throw failure();
         current(); await permitted(accountId);
-        active = { channel, accountId, openedAt: now(), stable: false,
+        active = { channel, accountId, openedAt: now(), stableTimer: null,
           authTicket: authorized.auth_ticket, storageKey: unlocked.storage_key_base64,
           storageBootstrap: authorized.storage_bootstrap, agentInstallationId };
+        const admitted = active;
+        admitted.stableTimer = timers.setTimeout(() => {
+          admitted.stableTimer = null;
+          if (active !== admitted || channel.closed) return;
+          void recovery.stable().catch(() => undefined);
+        }, CONNECTION_STABLE_MS);
         channel.onClose(() => {
           if (active?.channel !== channel) return;
           const wasStable = now() - active.openedAt >= CONNECTION_STABLE_MS;
+          if (active.stableTimer !== null) timers.clearTimeout(active.stableTimer);
           active = null;
           // Queue the reset before any subsequent reserve; a quiet healthy
           // connection need not have been polled by an extension UI.
@@ -252,7 +256,8 @@ export function createCompanionClient({
     announce({ state: 'unpaired', comparison_code: null });
   }
   function webSocketFactory() {
-    const facade = { readyState: 0, onopen: null, onmessage: null, onclose: null, onerror: null, authTicket: null };
+    const facade = { readyState: 0, onopen: null, onmessage: null, onclose: null,
+      onerror: null, authTicket: null, retryAfterMs: 0 };
     const controller = new AbortController();
     let channel = null, stopped = false, unsubscribe;
     facade.close = () => {
@@ -260,7 +265,9 @@ export function createCompanionClient({
       stopped = true; facade.readyState = 3;
       controller.abort();
       unsubscribe?.(); channel?.close();
-      queueMicrotask(() => facade.onclose?.({ code: 4008 }));
+      void recovery.retryAfterMs().then((delay) => { facade.retryAfterMs = delay; })
+        .catch(() => { facade.retryAfterMs = 60_000; })
+        .finally(() => facade.onclose?.({ code: 4008 }));
     };
     facade.send = (text) => {
       if (stopped || facade.readyState !== 1 || channel === null) throw failure();
