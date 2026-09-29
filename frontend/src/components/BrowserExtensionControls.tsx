@@ -21,7 +21,7 @@ type Notice = 'unreachable' | 'failed' | 'no_response' | null;
 
 /**
  * Bridge owns day-to-day extension controls while an extension session is open
- * (ADR 0027). State shown here is only what the extension pushed; a click never
+ * (ADR 0045). State shown here is only what the extension pushed; a click never
  * changes it locally. Permission prompts open the extension's own page, because
  * the browser requires the click there.
  */

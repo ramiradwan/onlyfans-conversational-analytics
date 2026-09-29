@@ -1,6 +1,6 @@
 <!-- CODE-VERIFY: extension/runtime/desktop-port.mjs extension/runtime/ui-surfaces.mjs extension/runtime/companion-client.mjs extension/background.js extension/setup.js extension/ui/surface-client.mjs frontend/src/services/extensionPort.ts frontend/src/components/CompanionPairingControls.tsx app/security/companion_pairing.py app/api/endpoints/companion_pairing.py app/transport/manager.py app/persistence/auth_sql/0018_companion_confirmation_method.sql app/provisioning/provisioning.js app/api/endpoints/companion_session.py extension/transport/companion-channel.mjs extension/runtime/browser-surface.mjs extension/popup.js extension/options.js frontend/src/components/BrowserExtensionControls.tsx -->
 
-# ADR 0027: Let the desktop app lead extension setup and controls with pushed state
+# ADR 0045: Let the desktop app lead extension setup and controls with pushed state
 
 - Status: Proposed
 - Date: 2026-09-29

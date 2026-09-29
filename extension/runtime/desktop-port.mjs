@@ -2,7 +2,7 @@
 //
 // Chrome routes the port by extension ID and reports the page origin, so the
 // desktop app gets pushed setup state without polling and without loopback
-// traffic before pairing (ADR 0024, ADR 0027). The port carries no authority:
+// traffic before pairing (ADR 0024, ADR 0045). The port carries no authority:
 // it can read a coarse stage, open an extension-owned page, and start or cancel
 // a pairing attempt that the port itself owns. Every state change still goes
 // through the consent, legal, and companion controllers.

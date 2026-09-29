@@ -238,6 +238,13 @@ const previewAgent: AgentStatePayload = {
   applied_history_settings_revision: 7,
   last_heartbeat_at: '2026-07-18T12:00:00.000Z',
   degraded_reason: null,
+  browser: {
+    capture: 'active',
+    site_access: 'granted',
+    history_permission: 'granted',
+    legal_review_required: false,
+    reported_at: '2026-07-18T12:00:00.000Z',
+  },
 };
 
 const metric = (value: number): AnalyticsMetric => ({

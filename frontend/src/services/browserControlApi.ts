@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Ask the creator's open extension sessions to pause or resume capture (ADR 0027).
+ * Ask the creator's open extension sessions to pause or resume capture (ADR 0045).
  *
  * The response only says whether an extension session took the request. The
  * extension applies it through its own consent controller, with its usual

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getConfig } from '../config/fastapiConfig';
 
 /**
- * Browser-local port to the Agent extension (ADR 0027).
+ * Browser-local port to the Agent extension (ADR 0045).
  *
  * Chrome routes it by extension ID, so this page learns the extension's setup
  * stage as soon as it changes, without polling and without loopback traffic

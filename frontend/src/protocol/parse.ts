@@ -1,4 +1,5 @@
 import type {
+  CaptureStateReportRequest, CaptureStateReportResponse, HistoryCheckBeginRequest, HistoryCheckBeginResponse,
   AgentConfigDocumentResponse,
   AgentConfigGetRequest,
   AgentToBrainMessage,
@@ -8,6 +9,8 @@ import type {
 } from './types';
 import {
   ProtocolValidationError,
+  captureStateReportRequest, captureStateReportResponse, historyCheckBeginRequest, historyCheckBeginResponse,
+  catchupFreshness,
   analyticsView,
   array,
   boolean,
@@ -39,6 +42,7 @@ const agentCapability = literal(
   'capture.messages',
   'capture.presence',
   'history.sync',
+  'history.catchup.v1',
   'command.message.send',
 );
 const bridgeCapability = literal(
@@ -46,6 +50,7 @@ const bridgeCapability = literal(
   'state.delta',
   'presence.state',
   'message.page',
+  'state.catchup_freshness',
 );
 
 const healthSummary = object({
@@ -236,7 +241,7 @@ const messagePayloadValidators: Record<string, Validator> = {
     source_seq: integer(1),
     acquisition_origin: literal('passive', 'signer'),
     change: rawIngestChange,
-  }),
+  }, {check_id: nullable(uuid)}),
   'ingest.ack': object({
     connection_id: uuid,
     creator_account_id: nonEmptyString,
@@ -278,7 +283,7 @@ const messagePayloadValidators: Record<string, Validator> = {
     coverage: historicalCoverage,
     projection: projectionState,
     live_freshness: liveFreshness,
-  }),
+  }, {catchup_freshness: catchupFreshness}),
   'state.delta': object({
     creator_account_id: nonEmptyString,
     view_revision: integer(1),
@@ -475,8 +480,16 @@ export const parseBrainToAgentMessage = (value: unknown): BrainToAgentMessage =>
   parseDirectional(value, brainToAgentTypes);
 export const parseBridgeToBrainMessage = (value: unknown): BridgeToBrainMessage =>
   parseDirectional(value, bridgeToBrainTypes);
-export const parseBrainToBridgeMessage = (value: unknown): BrainToBridgeMessage =>
-  parseDirectional(value, brainToBridgeTypes);
+export function parseBrainToBridgeMessage<Catchup extends boolean = false>(
+  value: unknown, options?: {catchupFreshness?: Catchup},
+): BrainToBridgeMessage<Catchup> {
+  const parsed = parseDirectional<BrainToBridgeMessage<true>>(value, brainToBridgeTypes);
+  if (!options?.catchupFreshness && (
+    (parsed.type === 'state.snapshot' && parsed.payload.catchup_freshness !== undefined) ||
+    (parsed.type === 'state.delta' && parsed.payload.changes.some(change => change.type === 'catchup_freshness.replace'))
+  )) throw new ProtocolValidationError('$.payload', 'catch-up freshness requires negotiation');
+  return parsed as BrainToBridgeMessage<Catchup>;
+}
 
 export const isAgentToBrainMessage = (value: unknown): value is AgentToBrainMessage =>
   isParsedBy(parseAgentToBrainMessage, value);
@@ -561,3 +574,23 @@ export const isAgentConfigDocumentResponse = (
   value: unknown,
 ): value is AgentConfigDocumentResponse =>
   isParsedBy(parseAgentConfigDocumentResponse, value);
+
+export function parseCaptureStateReportRequest(value: unknown): CaptureStateReportRequest {
+  captureStateReportRequest(value, '$');
+  return value as CaptureStateReportRequest;
+}
+
+export function parseCaptureStateReportResponse(value: unknown): CaptureStateReportResponse {
+  captureStateReportResponse(value, '$');
+  return value as CaptureStateReportResponse;
+}
+
+export function parseHistoryCheckBeginRequest(value: unknown): HistoryCheckBeginRequest {
+  historyCheckBeginRequest(value, '$');
+  return value as HistoryCheckBeginRequest;
+}
+
+export function parseHistoryCheckBeginResponse(value: unknown): HistoryCheckBeginResponse {
+  historyCheckBeginResponse(value, '$');
+  return value as HistoryCheckBeginResponse;
+}

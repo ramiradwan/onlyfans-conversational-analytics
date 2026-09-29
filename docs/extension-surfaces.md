@@ -11,7 +11,7 @@ Integrated upstream recovery fix: `e70f634a1cbf4cbccae3e895978bea8e28572da2`.
 | `extension/popup.html` | Status, Preview counts, Pause/Resume while Bridge cannot reach the extension, and contextual links. |
 | `extension/setup.html` | Legal review, mode choice, browser access, extension-side pairing, and continuation. |
 | `extension/options.html` | Extension access, connection details, local data controls, and links to desktop settings. Forget appears only while Bridge cannot reach the extension. |
-| Bridge | Starts extension setup and pairing through the desktop port, confirms pairing, owns desktop settings, and owns pause, resume, and disconnect while it can reach the extension. See [ADR 0027](adr/0027-desktop-led-extension-setup.md). |
+| Bridge | Starts extension setup and pairing through the desktop port, confirms pairing, owns desktop settings, and owns pause, resume, and disconnect while it can reach the extension. See [ADR 0045](adr/0045-desktop-led-extension-setup.md). |
 
 Setup and Options are packaged extension pages. They do not import Bridge views,
 stores, sessions, or API clients. Bridge reaches them only through the desktop

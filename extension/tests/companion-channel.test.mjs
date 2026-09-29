@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import initialize, { SnowSession } from '../vendor/companion-snow/ofca_snow_wasm.js';
-import { openCompanionChannel, openLoopbackSocket } from '../transport/companion-channel.mjs';
+import { openCompanionChannel, openLoopbackSocket, safeCompanionCloseReason } from '../transport/companion-channel.mjs';
 import { createFragmentReceiver, fragmentMessage } from '../transport/companion-fragments.mjs';
 import { key32 } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
@@ -134,13 +134,34 @@ test('raw socket keeps a well-formed peer close reason and ignores malformed one
   refused.socket.onclose({ code: 1008, reason: 'pairing_state_refused' });
   assert.equal(refused.wire.closed, true);
   assert.equal(refused.wire.closeReason, 'pairing_state_refused');
+  assert.equal(refused.wire.closeCode, 1008);
   const malformed = await open();
   malformed.socket.onclose({ code: 1008, reason: 'Pairing refused!' });
-  assert.equal(malformed.wire.closeReason, null);
+  assert.equal(malformed.wire.closeReason, 'other');
   const local = await open();
   local.wire.close();
   local.socket.onclose({ code: 4008, reason: 'companion_session_closed' });
   assert.equal(local.wire.closeReason, null);
+  assert.equal(local.wire.closeCode, null);
+});
+
+test('raw socket never keeps unknown peer close text', async () => {
+  let socket;
+  const wire = await openLoopbackSocket('ws://127.0.0.1:17871/ws/agent/pairing', { text: true, webSocketFactory() {
+    socket = { readyState: 1, bufferedAmount: 0, close() {} };
+    queueMicrotask(() => socket.onopen());
+    return socket;
+  } });
+  socket.onclose({ code: 1008, reason: 'private_note' });
+  assert.equal(wire.closeReason, 'other');
+  assert.equal(JSON.stringify(wire).includes('private_note'), false);
+});
+
+test('known service close reasons retain fixed diagnostic codes', () => {
+  assert.equal(safeCompanionCloseReason('unsupported_version'), 'unsupported_version');
+  assert.equal(safeCompanionCloseReason('Agent heartbeat lease expired'), 'heartbeat_lease_expired');
+  assert.equal(safeCompanionCloseReason(safeCompanionCloseReason('Agent heartbeat lease expired')), 'heartbeat_lease_expired');
+  assert.equal(safeCompanionCloseReason('private_note'), 'other');
 });
 
 test('a silent peer holding a partial encrypted document is closed at its assembly deadline', async (t) => {

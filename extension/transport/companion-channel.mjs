@@ -8,11 +8,24 @@ export class CompanionChannelError extends Error {
 const refused = () => new CompanionChannelError();
 const MAX_BUFFERED = 128 * 1024;
 export const SESSION_CONTROLS = Object.freeze(new Set(['capture.pause', 'capture.resume', 'companion.revoked']));
+const CLOSE_REASONS = new Set([
+  'pairing_account_refused', 'pairing_generation_refused', 'pairing_grant_refused',
+  'pairing_key_refused', 'pairing_message_invalid', 'pairing_nonce_refused',
+  'pairing_proof_refused', 'pairing_state_refused', 'pairing_storage_refused',
+  'session_refused', 'wrong_role', 'validation_failed', 'unsupported_version',
+  'pre_handshake', 'unauthorized', 'identity_conflict',
+  'companion_session_closed', 'companion_session_refused', 'heartbeat_lease_expired',
+]);
+
+export function safeCompanionCloseReason(reason) {
+  if (reason === 'Agent heartbeat lease expired') return 'heartbeat_lease_expired';
+  return reason === null || reason === undefined ? null : CLOSE_REASONS.has(reason) ? reason : 'other';
+}
 
 export async function openLoopbackSocket(url, { webSocketFactory = (value) => new WebSocket(value), signal, text = false } = {}) {
   const socket = webSocketFactory(url);
   socket.binaryType = 'arraybuffer';
-  let pending = null, stopped = false, closeReason = null;
+  let pending = null, stopped = false, closeReason = null, closeCode = null;
   const queue = [];
   const listeners = new Set();
   let openedResolve, openedReject;
@@ -34,7 +47,8 @@ export async function openLoopbackSocket(url, { webSocketFactory = (value) => ne
   socket.onerror = close;
   // Keeps the peer's refusal code when the peer ends the connection first.
   socket.onclose = (event) => {
-    if (!stopped && typeof event?.reason === 'string' && /^[a-z_]{1,64}$/u.test(event.reason)) closeReason = event.reason;
+    if (!stopped && Number.isInteger(event?.code)) closeCode = event.code;
+    if (!stopped) closeReason = safeCompanionCloseReason(event?.reason);
     close();
   };
   socket.onmessage = ({ data }) => {
@@ -57,6 +71,7 @@ export async function openLoopbackSocket(url, { webSocketFactory = (value) => ne
   return Object.freeze({
     get closed() { return stopped; },
     get closeReason() { return closeReason; },
+    get closeCode() { return closeCode; },
     close,
     onClose(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     async send(value, deadline = performance.now() + 10_000) {
@@ -96,6 +111,11 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
     session.readConfirmation(await wire.receive(2_000));
     const identity = await session.authorize(await wire.receive(2_000));
     const pending = new Map();
+    const abandoned = new Map();
+    const discardAbandoned = (id) => {
+      clearTimeout(abandoned.get(id)?.timer);
+      abandoned.delete(id);
+    };
     const observers = new Set();
     const controlObservers = new Set();
     const closedObservers = new Set();
@@ -108,6 +128,7 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
       session.close(); wire.close();
       for (const item of pending.values()) item.reject(refused());
       pending.clear();
+      for (const id of abandoned.keys()) discardAbandoned(id);
       for (const listener of closedObservers) listener();
     }
     wire.onClose(close);
@@ -124,24 +145,32 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
       return operation.finally(() => queued--);
     };
     async function rpc(method, params = {}, controls = {}) {
-      if (stopped || pending.size >= 8 || controls.signal?.aborted) throw refused();
+      if (stopped || pending.size >= 8 || pending.size + abandoned.size >= 64 || controls.signal?.aborted) throw refused();
       controls.assertCurrent?.();
       const id = crypto.randomUUID();
+      const deadline = performance.now() + 10_000;
       let timer, abort;
       const result = new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject });
-        abort = () => { pending.delete(id); close(); reject(refused()); };
-        timer = setTimeout(abort, 10_000);
+        abort = () => {
+          if (!pending.delete(id)) return;
+          abandoned.set(id, { timer, deadline });
+          reject(refused());
+        };
+        timer = setTimeout(() => {
+          if (abandoned.delete(id)) return;
+          close(); reject(refused());
+        }, 10_000);
         controls.signal?.addEventListener('abort', abort, { once: true });
       });
       void result.catch(() => undefined);
       try {
-        await send({ type: 'rpc.request', id, method, params });
-        const value = await result;
+        const [, value] = await Promise.all([send({ type: 'rpc.request', id, method, params }), result]);
         controls.signal?.throwIfAborted(); controls.assertCurrent?.();
         return value;
       } finally {
-        clearTimeout(timer); controls.signal?.removeEventListener('abort', abort); pending.delete(id);
+        if (!abandoned.has(id)) clearTimeout(timer);
+        controls.signal?.removeEventListener('abort', abort); pending.delete(id);
       }
     }
     void (async () => {
@@ -153,11 +182,18 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
             const keys = Object.keys(document);
             const success = keys.length === 3 && keys.includes('result');
             const failure = keys.length === 3 && keys.includes('error') && typeof document.error === 'string' && /^[a-z_]{1,64}$/u.test(document.error);
-            if (!keys.includes('id') || (!success && !failure) || !pending.has(document.id)) throw refused();
+            if (!keys.includes('id') || (!success && !failure)) throw refused();
+            if (abandoned.has(document.id)) {
+              const expired = performance.now() >= abandoned.get(document.id).deadline;
+              discardAbandoned(document.id);
+              if (expired) throw refused();
+              continue;
+            }
+            if (!pending.has(document.id)) throw refused();
             const item = pending.get(document.id); pending.delete(document.id);
             if (failure) item.reject(new CompanionChannelError(document.error)); else item.resolve(document.result);
           } else if (document.type === 'session.control') {
-            // A session-level control from Brain (ADR 0027). It is closed and
+            // A session-level control from Brain (ADR 0045). It is closed and
             // carries no data; the receiver applies it through its own controllers.
             const keys = Object.keys(document);
             if (keys.length !== 3 || typeof document.id !== 'string'
@@ -174,6 +210,8 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
     return Object.freeze({
       identity: Object.freeze({ ...identity, pairing_id: session.pairingId }),
       get closed() { return stopped; },
+      get closeReason() { return wire.closeReason; },
+      get closeCode() { return wire.closeCode; },
       rpc, send, close,
       onMessage(listener) { if (observers.size) throw refused(); observers.add(listener); return () => observers.delete(listener); },
       onControl(listener) { controlObservers.add(listener); return () => controlObservers.delete(listener); },

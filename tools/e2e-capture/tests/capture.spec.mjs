@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
+import playwrightExpect from '../node_modules/playwright/lib/matchers/expect.js';
 
 import {
   PROVISIONING_IDENTITY_STORAGE_KEY,
@@ -31,7 +32,7 @@ import {
 } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 import { readSqliteProof } from '../lib/sqlite-proof.mjs';
-
+import { buildStableConnectionDiagnostic, redactStableConnectionAssertionError, withoutReportedExpectStep } from '../lib/stable-connection-diagnostic.mjs';
 const IDENTITY_PATH = '/api2/v2/users/me';
 const CHATS_PATH = '/api2/v2/chats';
 const MESSAGES_PATH = `/api2/v2/chats/${SYNTHETIC.chatId}/messages`;
@@ -543,15 +544,51 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     });
 
     await test.step('a stable connection resets persisted recovery history through normal UI polling', async () => {
+      const watcher = watchExtensionWorkers(context);
+      let statusPolls = 0;
+      let lastStatusPollAt = null;
+      let popupClosedAt = null;
+      let summary = null;
       const recoveryPopup = await openPopup(context, extensionId(worker), pageErrors);
       try {
-        await expect.poll(async () => {
-          await recoveryPopup.evaluate(() => chrome.runtime.sendMessage({ type: 'ofca.ui.status' }));
-          return worker.evaluate(async () => (await chrome.storage.local.get(['companion_recovery_v1']))
-            .companion_recovery_v1?.attempts);
-        }, { timeout: 75_000, intervals: [1_000] }).toBe(0);
-      } finally { await recoveryPopup.close(); }
-      expect((await readBrainSummary(context)).connectionToken).toBe(initialConnection);
+        try {
+          await expect.poll(async () => {
+            statusPolls++;
+            lastStatusPollAt = Date.now();
+            await recoveryPopup.evaluate(() => chrome.runtime.sendMessage({ type: 'ofca.ui.status' }));
+            return worker.evaluate(async () => (await chrome.storage.local.get(['companion_recovery_v1']))
+              .companion_recovery_v1?.attempts);
+          }, { timeout: 75_000, intervals: [1_000] }).toBe(0);
+        } finally {
+          await recoveryPopup.close();
+          popupClosedAt = Date.now();
+        }
+        summary = await readBrainSummary(context);
+        withoutReportedExpectStep(() => expect(summary.connectionToken).toBe(initialConnection), playwrightExpect);
+      } catch (error) {
+        redactStableConnectionAssertionError(error, summary?.connectionToken, initialConnection);
+        const liveWorker = context.serviceWorkers().find((candidate) =>
+          candidate.url().endsWith('/background.js'));
+        let state = null;
+        let stateError = null;
+        try { state = liveWorker ? await extensionState(liveWorker) : null; }
+        catch (failure) { stateError = failure; }
+        const diagnostic = JSON.stringify(buildStableConnectionDiagnostic({
+          at: Date.now(), statusPolls, lastStatusPollAt, popupClosedAt,
+          workerStartsDuringStep: watcher.creations.length,
+          originalWorkerAlive: liveWorker === worker,
+          brain: summary === null ? null : {
+            status: summary.agentStatus,
+            lastHeartbeatAt: summary.lastHeartbeatAt,
+            connectionPresent: summary.connectionToken !== null,
+          },
+          extension: state,
+          stateError,
+        }));
+        console.error(`stable-connection-diagnostic: ${diagnostic}`);
+        await test.info().attach('stable-connection-diagnostic', { contentType: 'application/json', body: diagnostic });
+        throw error;
+      } finally { watcher.stop(); }
     });
 
     let pendingEncryptedOutbox;

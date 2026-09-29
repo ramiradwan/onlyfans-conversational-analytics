@@ -16,7 +16,7 @@ Conversation Analytics is a Chromium MV3 extension for creator-visible OnlyFans 
 
 Full analytics mode requires a separate permission for the loopback analytics service. Captured records are kept in an IndexedDB outbox until that service acknowledges them. Account binding, configuration, schema, and command checks are enforced by the command-capable product runtime.
 
-The desktop app's page can open a browser port to the extension. It receives a coarse setup stage, can open the extension's own setup or Options page, and can start a pairing attempt it owns. It cannot accept terms, change mode, or grant permissions. After pairing, the desktop app can pause or resume collection and disconnect through the authenticated session; the extension applies these through its consent and companion controllers. While paused from Full, the extension keeps a control-only session that carries no activity. See [ADR 0027](../docs/adr/0027-desktop-led-extension-setup.md).
+The desktop app's page can open a browser port to the extension. It receives a coarse setup stage, can open the extension's own setup or Options page, and can start a pairing attempt it owns. It cannot accept terms, change mode, or grant permissions. After pairing, the desktop app can pause or resume collection and disconnect through the authenticated session; the extension applies these through its consent and companion controllers. While paused from Full, the extension keeps a control-only session that carries no activity. See [ADR 0045](../docs/adr/0045-desktop-led-extension-setup.md).
 
 ## Data flow
 

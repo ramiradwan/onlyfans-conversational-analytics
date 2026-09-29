@@ -44,7 +44,7 @@ Responses contain exactly `type`, the same `id`, and either `result` or a fixed 
 
 ## Session controls
 
-Brain sends a control as a routine document with exactly `type` `session.control`, a canonical UUID `id`, and an `action` of `capture.pause`, `capture.resume`, or `companion.revoked` ([ADR 0027](adr/0027-desktop-led-extension-setup.md)). Agent refuses any other shape by closing the session, ignores a repeated `id`, and applies pause and resume through its consent controller. Brain sends controls only to sessions that have reported browser state, and `companion.revoked` only to sessions of the pin being revoked.
+Brain sends a control as a routine document with exactly `type` `session.control`, a canonical UUID `id`, and an `action` of `capture.pause`, `capture.resume`, or `companion.revoked` ([ADR 0045](adr/0045-desktop-led-extension-setup.md)). Agent refuses any other shape by closing the session, ignores a repeated `id`, and applies pause and resume through its consent controller. Brain sends controls only to sessions that have reported browser state, and `companion.revoked` only to sessions of the pin being revoked.
 
 While consent is paused from Full, Agent keeps a control-only session. It runs `agent.challenge`, `agent.authenticate`, and `agent.surface.report`, and never `agent.storage.unseal` or `agent.hello`.
 

@@ -33,6 +33,8 @@ from app.services.command_execution import (
 from app.persistence.auth import SQLiteAuthenticationStore
 from app.persistence.factory import CanonicalRepositories
 from app.persistence.history import IngestResult, InvariantViolation, StreamKey
+from app.persistence.catchup import CatchupPolicy
+from app.persistence.catchup_events import subscribe_authority_changes
 from app.provisioning.progress_reporting import (
     OnboardingProgressCoordinator,
 )
@@ -115,6 +117,8 @@ class BridgeBinding:
     creator_account_id: str
     connection_id: UUID
     bridge_session_id: UUID
+    capabilities: tuple[str, ...] = ()
+    view_revision: int | None = None
 
 
 BROWSER_CONTROL_ACTIONS = frozenset({"capture.pause", "capture.resume", "companion.revoked"})
@@ -181,6 +185,11 @@ class InMemoryTransportManager:
         self._agent_pairing_grants: dict[str, AgentPairingGrant] = {}
         self._agent_config_grants: dict[str, AgentConfigGrant] = {}
         self.history = repositories.history
+        self.catchup = self.history.catchup
+        self.catchup.policy = CatchupPolicy(**{
+            name: getattr(settings, name) for name in CatchupPolicy.__dataclass_fields__
+        })
+        self._catchup_states: dict[str, str] = {}
         self.projection = repositories.projection
         self.projection_activation = repositories.projection_activation
         self.config_authority = AgentConfigurationAuthority(
@@ -203,6 +212,16 @@ class InMemoryTransportManager:
         # Authenticated extension sessions that accept session controls, by account.
         self._browser_sessions: dict[str, dict[int, BrowserSession]] = {}
         self._browser_session_ids = 0
+        self._catchup_auth_path = Path(settings.auth_database_path).resolve()
+        subscribe_authority_changes(self._capture_authority_changed)
+
+    def _capture_authority_changed(self, path, at):
+        if Path(path).resolve() != self._catchup_auth_path:
+            return
+        with self.canonical_database.transaction() as connection:
+            accounts = connection.execute("SELECT creator_account_id FROM message_catchup").fetchall()
+            for account, in accounts:
+                self.catchup.epoch_changed(account, now=at, connection=connection)
 
     def _development_stub_allowed(self) -> bool:
         auth_mode = settings.websocket_auth_mode
@@ -652,6 +671,7 @@ class InMemoryTransportManager:
 
     async def start(self) -> None:
         self.validate_auth_configuration()
+        self.catchup.restart(now=utc_now())
         if self._onboarding_progress is not None:
             try:
                 await self._onboarding_progress.start()
@@ -692,6 +712,7 @@ class InMemoryTransportManager:
         self.agent_connections.clear()
         self.bridges.clear()
         self.presence.clear()
+        self._catchup_states.clear()
         self._agent_pairing_grants.clear()
         self._agent_config_grants.clear()
         self._companion_revisions.clear()
@@ -729,6 +750,7 @@ class InMemoryTransportManager:
         agent_stream_id: UUID,
         config_auth_ticket: str = DEV_AGENT_AUTH_TICKET,
         applied_config_revision: str | None,
+        capabilities: list[str] | tuple[str, ...] = (),
         now: datetime | None = None,
     ) -> AgentLease:
         with agent_authorization(websocket):
@@ -744,6 +766,36 @@ class InMemoryTransportManager:
                     settings_revision=int(history_settings["settings_revision"]),
                     config_revision=config_record.required_config_revision,
                 )
+            elif (
+                history_settings["required_config_revision"]
+                != config_record.required_config_revision
+                and (
+                    history_settings["effective_config_revision"]
+                    != history_settings["required_config_revision"]
+                    or history_settings["effective_settings_revision"]
+                    != history_settings["settings_revision"]
+                )
+            ):
+                bound_document = self.config_authority.repository.document(
+                    creator_account_id, history_settings["required_config_revision"],
+                )
+                required_document = self.config_authority.repository.document(
+                    creator_account_id, config_record.required_config_revision,
+                )
+                if bound_document is not None and required_document is not None:
+                    bound_history = bound_document.history_acquisition.model_dump(mode="json")
+                    required_history = required_document.history_acquisition.model_dump(mode="json")
+                    if bound_history["authorized_platform_creator_id"] is None:
+                        bound_history["authorized_platform_creator_id"] = required_history[
+                            "authorized_platform_creator_id"
+                        ]
+                    if bound_history == required_history:
+                        self.history.move_pending_history_config(
+                            creator_account_id,
+                            settings_revision=int(history_settings["settings_revision"]),
+                            old_config_revision=history_settings["required_config_revision"],
+                            config_revision=config_record.required_config_revision,
+                        )
             if (
                 config_record.applied_config_revision
                 == config_record.required_config_revision
@@ -771,7 +823,11 @@ class InMemoryTransportManager:
                     previous.status = "disconnected"
                 self.active_agents[creator_account_id] = lease
                 self.agent_connections[lease.connection_id] = lease
+                self.catchup.admit(creator_account_id, installation=str(agent_installation_id),
+                    stream=str(agent_stream_id), supported="history.catchup.v1" in capabilities,
+                    now=lease.last_heartbeat_at)
         await self.broadcast_agent_state(creator_account_id)
+        await self.broadcast_catchup(creator_account_id)
         await self._observe_companion_progress(
             lease, config_record,
             echoed_revision=applied_config_revision,
@@ -815,6 +871,7 @@ class InMemoryTransportManager:
         principal_id: str,
         creator_account_id: str,
         bridge_session_id: UUID,
+        capabilities: list[str] | tuple[str, ...] = (),
     ) -> BridgeBinding:
         binding = BridgeBinding(
             websocket=websocket,
@@ -822,6 +879,7 @@ class InMemoryTransportManager:
             creator_account_id=creator_account_id,
             connection_id=uuid4(),
             bridge_session_id=bridge_session_id,
+            capabilities=tuple(capabilities),
         )
         self.bridges[binding.connection_id] = binding
         return binding
@@ -835,9 +893,11 @@ class InMemoryTransportManager:
             active = self.active_agents.get(lease.creator_account_id)
             if active is lease:
                 lease.status = "disconnected"
+                self.catchup.disconnect(lease.creator_account_id, now=utc_now())
                 should_broadcast = True
         if should_broadcast:
             await self.broadcast_agent_state(lease.creator_account_id)
+            await self.broadcast_catchup(lease.creator_account_id)
 
     async def disconnect_bridge(self, connection_id: UUID) -> None:
         binding = self.bridges.pop(connection_id, None)
@@ -1039,6 +1099,7 @@ class InMemoryTransportManager:
             if not self.is_current_fence(lease):
                 raise AuthorizationError("Agent connection is no longer current")
             lease.last_heartbeat_at = now or utc_now()
+            self.catchup.heartbeat(lease.creator_account_id, now=lease.last_heartbeat_at)
             previous_record = self.config_authority.installation(
                 lease.creator_account_id, lease.agent_installation_id
             )
@@ -1060,6 +1121,7 @@ class InMemoryTransportManager:
                 )
         if changed:
             await self.broadcast_agent_state(lease.creator_account_id)
+        await self.broadcast_catchup(lease.creator_account_id)
         await self._observe_companion_progress(
             lease, record, echoed_revision=applied_revision
         )
@@ -1110,6 +1172,7 @@ class InMemoryTransportManager:
 
     async def expire(self, now: datetime) -> None:
         self.commands.expire(now)
+        self.catchup.expire(now=now)
         expired_leases: list[tuple[str, AgentLease]] = []
         for account_id, lease in list(self.active_agents.items()):
             age = (now - lease.last_heartbeat_at).total_seconds()
@@ -1158,6 +1221,8 @@ class InMemoryTransportManager:
                 record.freshness = "unknown"
                 record.online_platform_user_ids = []
                 await self.broadcast_presence_state(account_id)
+        for account_id in {binding.creator_account_id for binding in self.bridges.values()}:
+            await self.broadcast_catchup(account_id, now=now)
 
     def agent_state_payload(self, account_id: str) -> dict[str, Any]:
         """Return Agent state for one bound account."""
@@ -1248,6 +1313,50 @@ class InMemoryTransportManager:
     def state_snapshot_payload(self, account_id: str) -> dict[str, Any]:
         return self.projection.snapshot(account_id)
 
+    def capture_state_report(self, request):
+        lease = self._catchup_rpc_lease(request)
+        with agent_authorization(lease.websocket):
+            return self.catchup.report(lease.creator_account_id, request.model_dump(mode="json"), now=utc_now())
+
+    def history_check_begin(self, request):
+        lease = self._catchup_rpc_lease(request)
+        with agent_authorization(lease.websocket):
+            required_revision = self.optional_required_config_revision(lease.creator_account_id)
+            if (required_revision is None or request.config_revision != required_revision
+                or lease.applied_config_revision != required_revision):
+                return {"result": "deferred", "retry_after_seconds": 60, "reason": "not_runnable"}
+            return self.catchup.begin(lease.creator_account_id, request.model_dump(mode="json"),
+                                      now=utc_now(), required_config_revision=required_revision)
+
+    def _catchup_rpc_lease(self, request):
+        lease = self.active_agents.get(request.creator_account_id)
+        if (lease is None or not self.is_current_fence(lease)
+            or lease.agent_installation_id != request.agent_installation_id
+            or lease.config_auth_ticket != request.auth_ticket):
+            raise AuthorizationError("Catch-up requires the current Agent session")
+        return lease
+
+    async def broadcast_catchup(self, account_id, *, now=None):
+        interested = any(b.creator_account_id == account_id and "state.catchup_freshness" in b.capabilities
+                         for b in self.bridges.values())
+        if not interested and not self.catchup.supported(account_id):
+            return
+        value = self.catchup.state(account_id, now=now or utc_now())
+        signature = json.dumps({k: v for k, v in value.items() if k != "evaluated_at"}, sort_keys=True)
+        previous = self._catchup_states.get(account_id)
+        self._catchup_states[account_id] = signature
+        if previous == signature:
+            return
+        payload = self.state_snapshot_payload(account_id)
+        await self._broadcast_bridge(account_id, "state.delta", {
+            "creator_account_id": account_id, "view_revision": max(1, payload["view_revision"]),
+            "committed_at": value["evaluated_at"], "changes": [
+                {"type": "live_freshness.replace", "live_freshness": payload["live_freshness"]},
+                {"type": "catchup_freshness.replace", "catchup_freshness": value},
+            ],
+        })
+        await self.broadcast_system_state(account_id)
+
     def system_state_payload(self, account_id: str) -> dict[str, Any]:
         coverage = self.history.coverage(account_id)
         projection = self.projection.state(account_id)
@@ -1318,6 +1427,23 @@ class InMemoryTransportManager:
         *,
         correlation_id: UUID | str | None = None,
     ) -> dict[str, Any]:
+        binding = next((b for b in self.bridges.values() if b.websocket is websocket), None)
+        negotiated = binding is not None and "state.catchup_freshness" in binding.capabilities
+        payload = dict(payload)
+        if message_type == "state.snapshot":
+            payload.pop("catchup_freshness", None)
+            if negotiated:
+                payload["catchup_freshness"] = self.catchup.state(binding.creator_account_id, now=utc_now())
+        elif message_type == "state.delta":
+            payload["changes"] = [change for change in payload["changes"]
+                if negotiated or change["type"] != "catchup_freshness.replace"]
+            if not payload["changes"]:
+                return {}
+        if (binding is not None and (negotiated or self.catchup.supported(binding.creator_account_id))
+            and message_type in {"state.snapshot", "state.delta"}):
+            if binding.view_revision is not None:
+                payload["view_revision"] = max(payload["view_revision"], binding.view_revision + 1)
+            binding.view_revision = payload["view_revision"]
         return await self._send(
             websocket, BRAIN_TO_BRIDGE_ADAPTER, message_type, payload, correlation_id=correlation_id
         )
@@ -1340,8 +1466,11 @@ class InMemoryTransportManager:
         if correlation_id is not None:
             document["correlation_id"] = str(correlation_id)
         model = adapter.validate_json(json.dumps(document))
-        await websocket.send_text(model.model_dump_json())
-        return json.loads(model.model_dump_json())
+        exclude = ({"payload": {"catchup_freshness"}}
+                   if message_type == "state.snapshot" and "catchup_freshness" not in payload else None)
+        serialized = model.model_dump_json(exclude=exclude)
+        await websocket.send_text(serialized)
+        return json.loads(serialized)
 
     async def broadcast_agent_state(self, account_id: str) -> None:
         await self._broadcast_bridge(account_id, "agent.state", self.agent_state_payload(account_id))

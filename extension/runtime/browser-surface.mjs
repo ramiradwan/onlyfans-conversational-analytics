@@ -1,5 +1,5 @@
 // The extension's own state as reported to Brain over an authenticated
-// companion session (ADR 0027). It names no account, count, or identifier.
+// companion session (ADR 0045). It names no account, count, or identifier.
 export const BROWSER_SURFACE_SCHEMA = 'ofca-browser-surface/v1';
 
 export function browserSurface({ consent, legal }) {

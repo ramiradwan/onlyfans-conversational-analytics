@@ -1,4 +1,4 @@
-"""Browser status reports and controls ride authenticated companion sessions (ADR 0027)."""
+"""Browser status reports and controls ride authenticated companion sessions (ADR 0045)."""
 
 from __future__ import annotations
 

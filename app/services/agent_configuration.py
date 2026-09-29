@@ -16,8 +16,9 @@ from app.protocol import AgentConfigDocumentResponse
 
 
 DEVELOPMENT_BOOTSTRAP_ACCOUNT_ID = "dev-creator-account"
-BOOTSTRAP_CONFIG_REVISION = "config-10"
-BOOTSTRAP_ISSUED_AT = datetime(2026, 9, 15, 11, 30, tzinfo=timezone.utc)
+BOOTSTRAP_CONFIG_REVISION = "config-11"
+BOOTSTRAP_ISSUED_AT = datetime(2026, 9, 29, tzinfo=timezone.utc)
+LEGACY_ACCOUNT_POLICY_REVISION = "config-10"
 BOOTSTRAP_CAPTURE_POLICY = {
     "observation_interval_seconds": 30,
     "rules": [
@@ -39,6 +40,11 @@ BOOTSTRAP_CAPTURE_POLICY = {
         {
             "resource": "messages",
             "url_pattern": "/ws3",
+            "enabled": True,
+        },
+        {
+            "resource": "messages",
+            "url_pattern": "/ws3/*",
             "enabled": True,
         },
     ],
@@ -439,12 +445,18 @@ class AgentConfigurationAuthority:
         self,
         account_id: str,
         current: AgentConfigDocumentResponse,
+        *,
+        capture_policy: dict[str, Any] | None = None,
     ) -> AgentConfigDocumentResponse:
         document = build_config_document(
             creator_account_id=account_id,
             config_revision=self.repository.next_revision(account_id),
             issued_at=datetime.now(timezone.utc),
-            capture_policy=current.capture_policy.model_dump(mode="json"),
+            capture_policy=(
+                capture_policy
+                if capture_policy is not None
+                else current.capture_policy.model_dump(mode="json")
+            ),
             command_policy=current.command_policy.model_dump(mode="json"),
             history_acquisition=self._bind_platform_identity(
                 account_id,
@@ -455,6 +467,34 @@ class AgentConfigurationAuthority:
         self._publish_required_document(document)
         return document
 
+    @staticmethod
+    def _live_socket_upgrade_required(document: AgentConfigDocumentResponse) -> bool:
+        rules = document.capture_policy.rules
+        return any(
+            rule.resource == "messages" and rule.url_pattern == "/ws3" and rule.enabled
+            for rule in rules
+        ) and not any(
+            rule.resource == "messages" and rule.url_pattern == "/ws3/*"
+            for rule in rules
+        )
+
+    def _publish_live_socket_upgrade(
+        self, account_id: str, current: AgentConfigDocumentResponse
+    ) -> AgentConfigDocumentResponse:
+        capture_policy = current.capture_policy.model_dump(mode="json")
+        rules = capture_policy["rules"]
+        index = next(
+            index for index, rule in enumerate(rules)
+            if rule["resource"] == "messages" and rule["url_pattern"] == "/ws3"
+            and rule["enabled"]
+        )
+        rules.insert(index + 1, {
+            "resource": "messages", "url_pattern": "/ws3/*", "enabled": True,
+        })
+        return self._publish_identity_upgrade(
+            account_id, current, capture_policy=capture_policy
+        )
+
     def bootstrap(self) -> None:
         account_id = self.bootstrap_account_id
         if account_id is None:
@@ -462,14 +502,12 @@ class AgentConfigurationAuthority:
         self.bootstrap_account(account_id)
 
     def bootstrap_account(self, account_id: str) -> None:
-        """Require current bootstrap policy and platform identity without collisions.
+        """Require current capture policy and platform identity without collisions.
 
-        A document older than the current bootstrap revision advances to the
-        current bootstrap policy (or the next free monotonic revision when that
-        number is already occupied). A current/newer dynamic document that only
-        lacks the durable platform identity keeps its policies and advances one
-        revision. Fixed bootstrap content remains immutable and is refused if
-        its bytes change without a bootstrap revision change.
+        Legacy config-10 documents retain account policies during this upgrade.
+        Other older revisions advance to the current bootstrap. Policy copies
+        add the platform's live socket path or missing identity once.
+        Fixed bootstrap content remains immutable at the same revision.
         """
 
         try:
@@ -479,10 +517,14 @@ class AgentConfigurationAuthority:
 
         if required is not None:
             self._validate_current_bootstrap_integrity(account_id, required)
-            if _config_revision_sequence(required.config_revision) < _config_revision_sequence(
-                BOOTSTRAP_CONFIG_REVISION
+            if (
+                required.config_revision != LEGACY_ACCOUNT_POLICY_REVISION
+                and _config_revision_sequence(required.config_revision)
+                < _config_revision_sequence(BOOTSTRAP_CONFIG_REVISION)
             ):
                 self._publish_bootstrap_revision_upgrade(account_id)
+            elif self._live_socket_upgrade_required(required):
+                self._publish_live_socket_upgrade(account_id, required)
             elif self._identity_upgrade_required(account_id, required):
                 self._publish_identity_upgrade(account_id, required)
             return

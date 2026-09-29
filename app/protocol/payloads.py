@@ -14,13 +14,13 @@ from .common import (
     LiveFreshness, MAX_SNAPSHOT_FRAME_BYTES, MAX_SNAPSHOT_RECORD_BYTES,
     MAX_SNAPSHOT_RECORDS_PER_CHUNK, NonEmptyString, NonNegativeInt, ProjectionState,
     RawIngestChange, SnapshotChatRecord, SnapshotMessageRecordUnion, StateChange,
-    StrictModel, Timestamp,
+    StrictModel, Timestamp, CatchupFreshness,
 )
 
 AgentCapability = Literal[
-    "capture.chats", "capture.messages", "capture.presence", "history.sync", "command.message.send"
+    "capture.chats", "capture.messages", "capture.presence", "history.sync", "history.catchup.v1", "command.message.send"
 ]
-BridgeCapability = Literal["state.snapshot", "state.delta", "presence.state", "message.page"]
+BridgeCapability = Literal["state.snapshot", "state.delta", "presence.state", "message.page", "state.catchup_freshness"]
 
 
 class AgentHelloPayload(StrictModel):
@@ -143,7 +143,7 @@ class IngestSnapshotChunkPayload(SnapshotIdentity):
         # The records arrive as JSON. Validate in JSON mode so strict timestamp
         # fields can parse their RFC 3339 representation before UTC normalization.
         validated = adapter.validate_json(json.dumps(self.records))
-        normalized = [item.model_dump(mode="json") for item in validated]
+        normalized = [item.model_dump(mode="json", exclude_unset=True) for item in validated]
         for record in normalized:
             size = len(json.dumps(record, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8"))
             if size > MAX_SNAPSHOT_RECORD_BYTES:
@@ -173,6 +173,7 @@ class IngestDeltaPayload(StrictModel):
     source_seq: Annotated[int, Field(gt=0)]
     acquisition_origin: Literal["passive", "signer"]
     change: RawIngestChange
+    check_id: UUID | None = None
 
 
 class SnapshotProgress(StrictModel):
@@ -212,6 +213,7 @@ class StateSnapshotPayload(StrictModel):
     coverage: HistoricalCoverage
     projection: ProjectionState
     live_freshness: LiveFreshness
+    catchup_freshness: CatchupFreshness | None = None
 
 
 class StateDeltaPayload(StrictModel):
