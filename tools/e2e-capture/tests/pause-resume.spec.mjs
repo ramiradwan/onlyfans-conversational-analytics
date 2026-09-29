@@ -13,12 +13,32 @@ import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function consent(worker, mode = null) {
-  return worker.evaluate(async (next) => {
-    const { consentController } = await import(chrome.runtime.getURL('background.js'));
-    const status = next === null ? await consentController.status() : await consentController.setMode(next);
-    return { mode: status.consent.mode, reload: status.reload_required };
-  }, mode);
+async function clickPopup(popup, selector, step) {
+  try {
+    await popup.locator(selector).click({ timeout: 8_000 });
+  } catch (error) {
+    throw new Error(`${step}: popup click failed`, { cause: error });
+  }
+}
+
+async function popupConsent(popup, step) {
+  return popup.evaluate(async (stepName) => {
+    let timer;
+    try {
+      const reply = await Promise.race([
+        chrome.runtime.sendMessage({ type: 'ofca.ui.status' }),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${stepName}: status request timed out`)), 6_000);
+        }),
+      ]);
+      if (reply?.ok !== true) throw new Error(`${stepName}: status request failed`);
+      return { mode: reply.status.consent.mode, reload: reply.status.reload_required };
+    } catch (error) {
+      throw new Error(`${stepName}: popup status read failed`, { cause: error });
+    } finally {
+      clearTimeout(timer);
+    }
+  }, step);
 }
 
 async function admitted(context, worker, previousToken = null) {
@@ -126,17 +146,31 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     const documentToken = await page.evaluate(() => globalThis.fixtureDocumentToken);
     const previousInstance = (await extensionState(worker)).workerInstanceId;
     expect(previousInstance).not.toBeNull();
-    expect(await consent(worker, 'pause')).toEqual({ mode: 'paused', reload: false });
+    let controls = await openPopup(context, id, errors);
+    await clickPopup(controls, '#pause', 'click Pause analytics');
+    await expect(controls.locator('#journey-primary'), 'wait for Resume analytics after pause')
+      .toHaveText('Resume analytics', { timeout: 8_000 });
+    expect(await popupConsent(controls, 'read paused consent')).toEqual({ mode: 'paused', reload: false });
     platform.sendPauseProbe('paused-probe');
     await expect.poll(() => page.evaluate(() => globalThis.fixtureSocketFrames),
       { timeout: 12_000, message: 'wait for paused socket frame' }).toBe(1);
     expect((await readBrainSummary(context)).messageCount).toBe(3);
     expect(await probeDelivery(binding)).toEqual({ paused: false, resumed: false, count: 3 });
 
+    await controls.close();
     worker = await stopAndObserveReplacement(context, page, worker);
-    expect(await consent(worker)).toEqual({ mode: 'paused', reload: false });
+    controls = await openPopup(context, id, errors);
+    await expect(controls.locator('main'), 'wait for popup after worker replacement')
+      .toHaveAttribute('data-ready', 'true', { timeout: 8_000 });
+    await expect(controls.locator('#journey-primary'), 'wait for Resume analytics after worker replacement')
+      .toHaveText('Resume analytics', { timeout: 8_000 });
+    expect(await popupConsent(controls, 'read paused consent after worker replacement'))
+      .toEqual({ mode: 'paused', reload: false });
     expect((await readBrainSummary(context)).messageCount).toBe(3);
-    expect(await consent(worker, 'resume')).toEqual({ mode: 'full', reload: false });
+    await clickPopup(controls, '#journey-primary', 'click Resume analytics');
+    await expect.poll(() => popupConsent(controls, 'read resumed consent'),
+      { timeout: 8_000, message: 'wait for Full consent after resume' })
+      .toEqual({ mode: 'full', reload: false });
     await admitted(context, worker, before.connectionToken);
     expect((await extensionState(worker)).workerInstanceId).not.toBe(previousInstance);
     expect((await extensionState(worker)).workerInstanceId).not.toBeNull();
@@ -149,7 +183,7 @@ test('soft pause survives worker replacement and resumes the existing socket wit
       { timeout: 30_000, message: 'wait for delivered resumed record' })
       .toEqual({ paused: false, resumed: true, count: 4 });
     expect((await readBrainSummary(context)).messageCount).toBe(4);
-    expect(await consent(worker)).toEqual({ mode: 'full', reload: false });
+    expect(await popupConsent(controls, 'read final Full consent')).toEqual({ mode: 'full', reload: false });
     expect(await page.evaluate(() => globalThis.fixtureDocumentToken)).toBe(documentToken);
     expect(await page.evaluate(() => globalThis.fixtureSocketFrames)).toBe(2);
     expect(errors).toEqual([]);
