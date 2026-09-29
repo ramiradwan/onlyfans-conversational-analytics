@@ -41,6 +41,7 @@ PresenceObservedMessage = _message("PresenceObservedMessage", "presence.observed
 PresenceStateMessage = _message("PresenceStateMessage", "presence.state", PresenceStatePayload)
 AgentStateMessage = _message("AgentStateMessage", "agent.state", AgentStatePayload)
 SystemStateMessage = _message("SystemStateMessage", "system.state", SystemStatePayload)
+CompanionStateMessage = _message("CompanionStateMessage", "companion.state", CompanionStatePayload)
 ProtocolErrorMessage = _message("ProtocolErrorMessage", "protocol.error", ProtocolErrorPayload)
 ConfigAvailableMessage = _message("ConfigAvailableMessage", "config.available", ConfigAvailablePayload)
 ConfigAppliedMessage = _message("ConfigAppliedMessage", "config.applied", ConfigAppliedPayload)
@@ -59,7 +60,7 @@ BrainToAgentMessage: TypeAlias = Annotated[Union[
 BridgeToBrainMessage: TypeAlias = Annotated[Union[BridgeHelloMessage, StateResyncMessage], Field(discriminator="type")]
 BrainToBridgeMessage: TypeAlias = Annotated[Union[
     BridgeSessionMessage, StateSnapshotMessage, StateDeltaMessage, PresenceStateMessage,
-    AgentStateMessage, SystemStateMessage, ProtocolErrorMessage,
+    AgentStateMessage, SystemStateMessage, CompanionStateMessage, ProtocolErrorMessage,
 ], Field(discriminator="type")]
 
 AGENT_TO_BRAIN_ADAPTER = TypeAdapter(AgentToBrainMessage)

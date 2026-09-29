@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createProvisioningController, parseIdentityResponse } from './provisioning.js';
+import {
+  createChromeExtensionPort,
+  createProvisioningController,
+  parseExtensionState,
+  parseIdentityResponse,
+} from './provisioning.js';
 
 const EXTENSION_ID = 'lfiompogjmmgnbkacdnikbfoihmlloda';
 const VALID_PACKAGE = 'cGFzdGVkLXBhY2thZ2U';
@@ -572,4 +577,102 @@ test('reload after intermediate success returns to the server-reported ready ste
   assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.match(elements.identityStatus.textContent, /Connect this computer/);
+});
+
+
+function fakePortRuntime() {
+  const ports = [];
+  const runtime = {
+    lastError: undefined,
+    connect(extensionId, options) {
+      const listeners = { message: [], disconnect: [] };
+      const port = {
+        extensionId, options, sent: [],
+        onMessage: { addListener(fn) { listeners.message.push(fn); } },
+        onDisconnect: { addListener(fn) { listeners.disconnect.push(fn); } },
+        postMessage(message) { this.sent.push(message); },
+        disconnect() {},
+        deliver(message) { for (const fn of listeners.message) fn(message); },
+        drop() { for (const fn of listeners.disconnect) fn(); },
+      };
+      ports.push(port);
+      return port;
+    },
+  };
+  return { runtime, ports };
+}
+
+test('only well-formed extension stage pushes are accepted', () => {
+  assert.equal(parseExtensionState({ type: 'state', version: 1, stage: 'needs_full', attempt: null }), 'needs_full');
+  for (const message of [
+    { type: 'state', version: 1, stage: 'needs_full' },
+    { type: 'state', version: 2, stage: 'needs_full', attempt: null },
+    { type: 'state', version: 1, stage: 'granted', attempt: null },
+    { type: 'status', version: 1, stage: 'paired', attempt: null },
+    null,
+  ]) assert.equal(parseExtensionState(message), null);
+});
+
+test('the extension port reconnects after an idle worker drop and reports absence once it stops answering', () => {
+  const { runtime, ports } = fakePortRuntime();
+  const stages = [];
+  const handle = createChromeExtensionPort(runtime)(EXTENSION_ID, (stage) => stages.push(stage));
+  assert.deepEqual(ports[0].options, { name: 'ofca.desktop' });
+  ports[0].deliver({ type: 'state', version: 1, stage: 'needs_terms', attempt: null });
+  ports[0].drop();
+  assert.equal(ports.length, 2, 'a port that delivered state reconnects');
+  ports[1].drop();
+  assert.equal(ports.length, 2, 'a reconnect that never answers is not retried in a loop');
+  assert.deepEqual(stages, ['needs_terms', null]);
+  handle.open('setup');
+  assert.equal(createChromeExtensionPort({})(EXTENSION_ID, () => {}), null);
+});
+
+test('extension stage pushes refresh identity guidance and offer the extension setup window', async () => {
+  const { runtime, ports } = fakePortRuntime();
+  const main = { dataset: { provisioningCsrf: 'csrf-token', provisioningExtensionId: EXTENSION_ID } };
+  const elements = Object.fromEntries([
+    'status', 'identityStatus', 'claimForm', 'claimPackage', 'claimPackageValidation', 'claimPackageCount',
+    'claimSubmit', 'claimActionHelp', 'detectedIdentity', 'refreshIdentity', 'confirmIdentity',
+    'identityConfirmHelp', 'acquireAssociation', 'bindingActionHelp', 'finalizeProvisioning',
+    'finalizeActionHelp', 'claimStep', 'identityStep', 'bindingStep', 'finalizeStep', 'claimStepState',
+    'identityStepState', 'bindingStepState', 'finalizeStepState', 'openExtensionSetup',
+  ].map((name) => [name, element()]));
+  let identity = { type: 'provisioning.identity.result', version: 1, authenticated_profile: null };
+  let queries = 0;
+  const controller = createProvisioningController({
+    fetch: async () => response(200, {}),
+    sendExtensionMessage: async () => { queries += 1; return identity; },
+    connectExtension: createChromeExtensionPort(runtime),
+    document: { hidden: false, querySelector: (selector) => (selector === 'main' ? main : null), addEventListener() {} },
+    elements,
+  });
+  await controller.start();
+  const before = queries;
+  ports[0].deliver({ type: 'state', version: 1, stage: 'needs_full', attempt: null });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(queries, before + 1, 'a stage push re-reads identity without a timer');
+  assert.match(elements.identityStatus.textContent, /extension window/);
+  assert.equal(elements.openExtensionSetup.hidden, false);
+  elements.openExtensionSetup.dispatch('click');
+  assert.deepEqual(ports[0].sent, [{ type: 'open', version: 1, step: 'setup' }]);
+  assert.equal(elements.refreshIdentity.hidden, true, 'pushed stages make a manual re-check redundant');
+  identity = signedInIdentity();
+  ports[0].deliver({ type: 'state', version: 1, stage: 'ready_to_pair', attempt: null });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(elements.openExtensionSetup.hidden, true);
+  ports[0].drop();
+  ports[1].drop();
+  assert.equal(elements.refreshIdentity.hidden, false, 'without an answering extension, the re-check returns');
+});
+
+test('a first connection that drops before answering is retried once', () => {
+  const { runtime, ports } = fakePortRuntime();
+  const stages = [];
+  createChromeExtensionPort(runtime)(EXTENSION_ID, (stage) => stages.push(stage));
+  ports[0].drop();
+  assert.equal(ports.length, 2);
+  ports[1].drop();
+  assert.equal(ports.length, 2);
+  assert.deepEqual(stages, [null]);
 });

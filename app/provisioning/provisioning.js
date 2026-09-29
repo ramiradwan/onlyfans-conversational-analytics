@@ -159,7 +159,53 @@ export function createChromeExtensionMessenger(chromeRuntime = globalThis.chrome
   });
 }
 
-export function createProvisioningController({ fetch, sendExtensionMessage, document, elements }) {
+const DESKTOP_PORT_NAME = 'ofca.desktop';
+const EXTENSION_STAGES = new Set([
+  'unavailable', 'needs_terms', 'paused', 'needs_full', 'needs_site_access',
+  'needs_account', 'ready_to_pair', 'pairing', 'paired',
+]);
+const EXTENSION_SETUP_STAGES = new Set(['needs_terms', 'paused', 'needs_full', 'needs_site_access']);
+
+export function parseExtensionState(message) {
+  if (!isRecord(message) || !hasOnlyKeys(message, ['type', 'version', 'stage', 'attempt'])
+    || message.type !== 'state' || message.version !== 1 || !EXTENSION_STAGES.has(message.stage)) return null;
+  return message.stage;
+}
+
+// The extension pushes its setup stage over a browser port, so this page reacts
+// when the extension changes instead of asking the creator to check again.
+export function createChromeExtensionPort(chromeRuntime = globalThis.chrome?.runtime) {
+  return (extensionId, onStage) => {
+    if (typeof chromeRuntime?.connect !== 'function') return null;
+    let port = null;
+    let closed = false;
+    const connect = (retry) => {
+      let delivered = false;
+      try { port = chromeRuntime.connect(extensionId, { name: DESKTOP_PORT_NAME }); } catch { onStage(null); return; }
+      port.onMessage.addListener((message) => {
+        const stage = parseExtensionState(message);
+        if (stage === null) return;
+        delivered = true;
+        onStage(stage);
+      });
+      port.onDisconnect.addListener(() => {
+        void chromeRuntime.lastError;
+        port = null;
+        if (closed) return;
+        // A worker that went idle drops the port; reconnecting wakes it.
+        if (delivered || retry) connect(false);
+        else onStage(null);
+      });
+    };
+    connect(true);
+    return {
+      open(step) { try { port?.postMessage({ type: 'open', version: 1, step }); } catch {} },
+      close() { closed = true; try { port?.disconnect(); } catch {} },
+    };
+  };
+}
+
+export function createProvisioningController({ fetch, sendExtensionMessage, connectExtension, document, elements }) {
   const csrf = document.querySelector('main')?.dataset.provisioningCsrf ?? '';
   const extensionId = document.querySelector('main')?.dataset.provisioningExtensionId ?? '';
   let detectedAccountId = null;
@@ -170,6 +216,8 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
   let mutationInFlight = false;
   let configurationComplete = false;
   let recoveryRequired = false;
+  let extensionStage = null;
+  let extensionPort = null;
 
   const setStatus = (message, error = false) => {
     elements.status.textContent = message;
@@ -177,6 +225,17 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
     placeFeedback();
   };
   const setIdentityStatus = (message) => { elements.identityStatus.textContent = message; };
+  const renderExtensionSetup = () => {
+    if (elements.openExtensionSetup) {
+      elements.openExtensionSetup.hidden = detectedAccountId !== null || !EXTENSION_SETUP_STAGES.has(extensionStage);
+    }
+  };
+  // With a live extension stage, name the one thing still missing.
+  const missingExtensionStep = () => {
+    if (EXTENSION_SETUP_STAGES.has(extensionStage)) return 'Finish Full analytics setup in the extension window.';
+    if (extensionStage === 'needs_account') return 'Sign in to your creator account on OnlyFans in this browser.';
+    return null;
+  };
 
   function setStepState(step, stateOutput, state) {
     step.dataset.state = state;
@@ -316,24 +375,27 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
 
     renderState();
     if (!EXTENSION_ID_PATTERN.test(extensionId)) {
-      setIdentityStatus('Enable the Conversation Analytics extension, then check again.'); return;
+      setIdentityStatus('Enable the Conversation Analytics extension, then check again.'); renderExtensionSetup(); return;
     }
     try {
       const identity = parseIdentityResponse(await sendExtensionMessage(extensionId, IDENTITY_QUERY));
       if (identity === null) {
-        setIdentityStatus('The extension could not find your account. Sign in on OnlyFans, then check again.'); return;
+        setIdentityStatus(missingExtensionStep() ?? 'The extension could not find your account. Sign in on OnlyFans, then check again.');
+        renderExtensionSetup(); return;
       }
       if (identity.accountId === null) {
-        setIdentityStatus('Sign in to your creator account on OnlyFans, then check again.'); return;
+        setIdentityStatus(missingExtensionStep() ?? 'Sign in to your creator account on OnlyFans, then check again.');
+        renderExtensionSetup(); return;
       }
       detectedAccountId = identity.accountId;
 
       setIdentityStatus(installationRegistered
         ? 'Check the account signed in on your OnlyFans tab before continuing.'
         : 'Connect this computer first.');
-      renderState();
+      renderState(); renderExtensionSetup();
     } catch {
-      setIdentityStatus('Enable the Conversation Analytics extension, then check again.');
+      setIdentityStatus(missingExtensionStep() ?? 'Enable the Conversation Analytics extension, then check again.');
+      renderExtensionSetup();
     }
   }
 
@@ -415,6 +477,17 @@ export function createProvisioningController({ fetch, sendExtensionMessage, docu
     elements.finalizeProvisioning.addEventListener('click', finalizeProvisioning);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshIdentity(); });
     globalThis.addEventListener?.('focus', () => { void refreshIdentity(); });
+    elements.openExtensionSetup?.addEventListener('click', () => extensionPort?.open('setup'));
+    if (EXTENSION_ID_PATTERN.test(extensionId) && typeof connectExtension === 'function') {
+      extensionPort = connectExtension(extensionId, (stage) => {
+        extensionStage = stage;
+        // Pushed stages keep this step current, so a manual re-check is only
+        // offered when no extension answers in this browser.
+        elements.refreshIdentity.hidden = stage !== null;
+        if (!configurationComplete && !recoveryRequired && associationRequestId === null) void refreshIdentity();
+        else renderExtensionSetup();
+      });
+    }
     updatePackageGuidance(false); renderState();
     await checkStatus();
     if (!configurationComplete && !recoveryRequired && associationRequestId === null) await refreshIdentity();
@@ -430,6 +503,7 @@ if (typeof document !== 'undefined') {
     const controller = createProvisioningController({
       fetch: globalThis.fetch.bind(globalThis),
       sendExtensionMessage: createChromeExtensionMessenger(),
+      connectExtension: createChromeExtensionPort(),
       document,
       elements: {
         status: byId('provisioning-status'), identityStatus: byId('identity-status'), claimForm: byId('claim-form'),
@@ -437,6 +511,7 @@ if (typeof document !== 'undefined') {
         claimPackageCount: byId('claim-package-count'), claimSubmit: byId('claim-submit'),
         claimActionHelp: byId('claim-step-description'),
         refreshIdentity: byId('refresh-identity'), confirmIdentity: byId('confirm-identity'),
+        openExtensionSetup: byId('open-extension-setup'),
         identityConfirmHelp: byId('identity-step-description'), acquireAssociation: byId('acquire-association'),
         bindingActionHelp: byId('binding-step-description'), finalizeProvisioning: byId('finalize-provisioning'),
         finalizeActionHelp: byId('finalize-step-description'), claimStep: byId('claim-step'), identityStep: byId('identity-step'),

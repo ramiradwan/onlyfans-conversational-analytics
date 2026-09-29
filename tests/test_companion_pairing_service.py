@@ -304,3 +304,57 @@ def test_malformed_request_is_refused(local, mutation):
         request["agent_nonce"] = "short"
     with pytest.raises(CompanionPairingError):
         local.service.offer(claimed, request)
+
+
+def _confirmation_method(local, pairing_id):
+    with local.service.persistence.database.read() as connection:
+        return connection.execute(
+            "SELECT companion_confirmation_method FROM agent_pairings WHERE pairing_id = ?",
+            (encode_pairing_id(pairing_id),),
+        ).fetchone()[0]
+
+
+def test_browser_verified_confirmation_records_its_method(local):
+    pairing_id, awaiting = _awaiting(local)
+    approved = local.service.confirm(
+        local.policy,
+        awaiting["pairing_id"],
+        awaiting["version"],
+        agent_comparison_code=awaiting["comparison_code"],
+    )
+    assert approved["state"] == "admitted"
+    assert _confirmation_method(local, pairing_id) == "browser_verified"
+
+
+def test_operator_confirmation_records_its_method(local):
+    pairing_id, awaiting = _awaiting(local)
+    local.service.confirm(local.policy, awaiting["pairing_id"], awaiting["version"])
+    assert _confirmation_method(local, pairing_id) == "operator_compared"
+
+
+def test_mismatched_browser_code_declines_without_a_pin(local):
+    pairing_id, awaiting = _awaiting(local)
+    wrong = f"{(int(awaiting['comparison_code']) + 1) % 1_000_000:06d}"
+    with pytest.raises(CompanionPairingError) as refused:
+        local.service.confirm(
+            local.policy,
+            awaiting["pairing_id"],
+            awaiting["version"],
+            agent_comparison_code=wrong,
+        )
+    assert refused.value.code == "pairing_proof_refused"
+    assert local.service.persistence.companion_pin(pairing_id) is None
+    assert local.service.outcome(pairing_id) == "declined"
+
+
+@pytest.mark.parametrize("code", ["12345", "1234567", "abcdef", 123456])
+def test_malformed_browser_code_is_refused_without_ending_the_attempt(local, code):
+    pairing_id, awaiting = _awaiting(local)
+    with pytest.raises(CompanionPairingError):
+        local.service.confirm(
+            local.policy,
+            awaiting["pairing_id"],
+            awaiting["version"],
+            agent_comparison_code=code,
+        )
+    assert local.service.outcome(pairing_id) is None

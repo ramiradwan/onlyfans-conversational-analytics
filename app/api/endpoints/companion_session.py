@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.persistence.auth import SQLiteAuthenticationStore
 from app.security.analysis_authorization import current_analysis_readiness
 from app.security.companion_noise import create_noise_responder
+from app.security.companion_pairing import encode_pairing_id
 from app.security.extension_storage import (
     UNLOCK_SCHEMA,
     extension_storage_key_base64,
@@ -268,12 +269,78 @@ class SessionRPC:
         raise CompanionRecordError()
 
 
+_SURFACE_FIELDS = (
+    "schema",
+    "capture",
+    "site_access",
+    "history_permission",
+    "legal_review_required",
+)
+SURFACE_SCHEMA = "ofca-browser-surface/v1"
+
+
+def browser_surface(params) -> dict:
+    """Validate one closed, identifier-free browser state report."""
+    _exact(params, _SURFACE_FIELDS)
+    if (
+        params["schema"] != SURFACE_SCHEMA
+        or params["capture"] not in {"active", "paused", "off"}
+        or params["site_access"] not in {"granted", "needs_approval", "reload_required"}
+        or params["history_permission"] not in {"granted", "missing"}
+        or type(params["legal_review_required"]) is not bool
+    ):
+        raise CompanionRecordError()
+    return {key: params[key] for key in _SURFACE_FIELDS if key != "schema"}
+
+
+class BrowserSessionLink:
+    """Admit an authenticated session for browser status reports and controls."""
+
+    def __init__(self, channel, rpc, pin, manager=None):
+        self.channel, self.rpc, self.pin = channel, rpc, pin
+        self.manager = manager or transport_manager
+        self.token = None
+
+    async def report(self, params):
+        # Only an authenticated Agent identity for this pin may report or be controlled.
+        if self.rpc.auth_ticket is None:
+            raise CompanionRecordError()
+        identity = (
+            await asyncio.to_thread(self.channel.authority.current_policy)
+        ).identity
+        if (
+            identity is None
+            or identity.role != "agent"
+            or identity.creator_account_id != self.pin.creator_account_id
+        ):
+            raise CompanionRecordError()
+        surface = browser_surface(params)
+        if self.token is None:
+            self.token = self.manager.register_browser_session(
+                self.pin.creator_account_id,
+                encode_pairing_id(self.pin.pairing_id),
+                self.channel.send,
+            )
+        await self.manager.record_browser_surface(
+            self.pin.creator_account_id, self.token, surface
+        )
+        return {}
+
+    async def close(self):
+        if self.token is not None:
+            token, self.token = self.token, None
+            await self.manager.unregister_browser_session(
+                self.pin.creator_account_id, token
+            )
+
+
 async def _serve(channel, pin):
     from app.api.endpoints.transport_ws import _agent_socket
 
     socket = ProtectedSocket(channel)
     rpc = SessionRPC(channel.authority, pin)
     inbound = asyncio.Queue(maxsize=8)
+    browser = BrowserSessionLink(channel, rpc, pin)
 
     async def read():
         while True:
@@ -298,9 +365,12 @@ async def _serve(channel, pin):
             identifiers.add(value["id"])
             try:
                 async with asyncio.timeout(10):
-                    result = await asyncio.to_thread(
-                        rpc.call, value["method"], value["params"]
-                    )
+                    if value["method"] == "agent.surface.report":
+                        result = await browser.report(value["params"])
+                    else:
+                        result = await asyncio.to_thread(
+                            rpc.call, value["method"], value["params"]
+                        )
             except Exception:
                 # Diagnostics and wire errors never contain the request or provider failure.
                 await channel.send(
@@ -329,6 +399,8 @@ async def _serve(channel, pin):
             task.result()
     finally:
         try:
+            with suppress(Exception):
+                await browser.close()
             await channel.close(1008)
         finally:
             for task in tasks:

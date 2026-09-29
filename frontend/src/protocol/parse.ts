@@ -324,6 +324,13 @@ const messagePayloadValidators: Record<string, Validator> = {
     applied_history_settings_revision: nullable(integer(0)),
     last_heartbeat_at: nullable(isoDateTime),
     degraded_reason: nullable(string),
+    browser: nullable(object({
+      capture: literal('active', 'paused', 'off'),
+      site_access: literal('granted', 'needs_approval', 'reload_required'),
+      history_permission: literal('granted', 'missing'),
+      legal_review_required: boolean,
+      reported_at: isoDateTime,
+    })),
   }),
   'system.state': object({
     creator_account_id: nonEmptyString,
@@ -331,6 +338,11 @@ const messagePayloadValidators: Record<string, Validator> = {
     readiness: literal('ready', 'degraded', 'unavailable'),
     updated_at: isoDateTime,
     detail: nullable(string),
+  }),
+  'companion.state': object({
+    creator_account_id: nonEmptyString,
+    revision: integer(0),
+    changed_at: isoDateTime,
   }),
   'protocol.error': object({
     code: literal(
@@ -418,6 +430,7 @@ const brainToBridgeTypes = new Set([
   'presence.state',
   'agent.state',
   'system.state',
+  'companion.state',
   'protocol.error',
 ]);
 

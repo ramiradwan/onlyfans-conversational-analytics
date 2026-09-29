@@ -179,6 +179,11 @@ export const SCREENS = [
     ready: (page) => page.getByRole('dialog').filter({ hasText: 'Delete all messages?' }),
   },
   {
+    // Pushed browser state and its controls stack under their text at narrow widths.
+    workspace: 'settings', state: 'populated', variant: 'browser-controls', viewports: ['narrow'], modes: ['light', 'dark'],
+    ready: text('Collecting in the browser.'),
+  },
+  {
     workspace: 'settings', state: 'loading', variant: 'linked-reconnecting', viewports: ['narrow'], modes: ['light'],
     ready: (page) => page.getByText('Extension linked to this app', { exact: true }),
   },

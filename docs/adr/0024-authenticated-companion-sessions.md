@@ -5,6 +5,7 @@
 - Status: Accepted
 - Date: 2026-09-12
 - Amends: [ADR 0008](0008-production-authentication.md), in the sections named under "Amendments to ADR 0008"; Agent transport placement in [ADR 0005](0005-agent-configuration-versioning.md), [ADR 0006](0006-canonical-communication-matrix.md), and [ADR 0009](0009-local-first-topology-and-persistence.md); bootstrap credential persistence in [ADR 0021](0021-encrypted-extension-persistence.md).
+- Amended by: [ADR 0045](0045-desktop-led-extension-setup.md), which adds browser-verified confirmation to steps 5 and 6 and a desktop port for extension setup.
 - Scope: Agent-to-Brain Full-mode communication. Bridge and browser-to-Brain security are outside this decision.
 
 ## Context

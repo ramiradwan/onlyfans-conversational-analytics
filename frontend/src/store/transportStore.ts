@@ -1,6 +1,7 @@
 import type {
   AgentStatePayload,
   AnalyticsView,
+  CompanionStatePayload,
   BridgeSessionPayload,
   ConversationCoverage,
   ConversationRecord,
@@ -75,6 +76,7 @@ export interface BridgeTransportState {
   presence: PresenceStatePayload | null;
   agent: AgentStatePayload | null;
   system: SystemStatePayload | null;
+  companion: CompanionStatePayload | null;
   protocolError: ProtocolErrorPayload | null;
 }
 
@@ -101,6 +103,7 @@ export interface BridgeTransportStore {
   expirePresence(expectedExpiresAt: string): void;
   setAgent(agent: AgentStatePayload): void;
   setSystem(system: SystemStatePayload): void;
+  setCompanion(companion: CompanionStatePayload): void;
   setProtocolError(error: ProtocolErrorPayload): void;
   markDisconnected(): void;
   reset(): void;
@@ -246,6 +249,7 @@ function initialState(): BridgeTransportState {
     presence: null,
     agent: null,
     system: null,
+    companion: null,
     protocolError: null,
   };
 }
@@ -648,6 +652,10 @@ export function createBridgeTransportStore(): BridgeTransportStore {
     setSystem(system) {
       assertAccount(system.creator_account_id);
       publish({ system: { ...system } });
+    },
+    setCompanion(companion) {
+      assertAccount(companion.creator_account_id);
+      publish({ companion: { ...companion } });
     },
     setProtocolError(error) {
       publish({

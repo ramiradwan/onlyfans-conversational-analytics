@@ -150,6 +150,13 @@ const connectedAgent: AgentStatePayload = {
   applied_history_settings_revision: 1,
   last_heartbeat_at: AS_OF,
   degraded_reason: null,
+  browser: {
+    capture: 'active',
+    site_access: 'granted',
+    history_permission: 'granted',
+    legal_review_required: false,
+    reported_at: AS_OF,
+  },
 };
 
 function seedStores(journey: StoryJourneyName) {
@@ -233,15 +240,27 @@ function pairingApi(journey: StoryJourneyName): CompanionPairingApi {
     comparison_code: '482731',
     agent_identity_thumbprint: 'T'.repeat(43),
   };
+  let revision = 0;
+  // Brain pushes a change notice once the extension answers the window.
+  const announce = () => bridgeTransportStore.setCompanion({
+    creator_account_id: ACCOUNT, revision: (revision += 1), changed_at: new Date().toISOString(),
+  });
   return {
     pins: async () => pins,
-    open: async () => open,
+    open: async () => {
+      setTimeout(announce, 0);
+      return open;
+    },
     get: async () => awaiting,
     change: async (_pairingId, action) => {
       if (action === 'confirm') bridgeTransportStore.setAgent(connectedAgent);
       return action === 'confirm'
         ? { ...awaiting, state: 'confirmed' as const, version: 2 }
         : { ...open, state: 'cancelled' as const, version: 2 };
+    },
+    confirmVerified: async () => {
+      bridgeTransportStore.setAgent(connectedAgent);
+      return { ...awaiting, state: 'confirmed' as const, version: 2 };
     },
     revoke: async () => ({ ...pin(), state: 'revoked' as const }),
   };

@@ -701,9 +701,12 @@ class CompanionPairingPersistence:
         confirmation_principal_id: str,
         confirmation_session_id: str,
         confirmed_at: datetime,
+        confirmation_method: str = "operator_compared",
     ) -> CompanionPin:
         """Commit the confirmed pin and erase staging in one authority transaction."""
         _require_bytes32(pairing_id, name="pairing_id")
+        if confirmation_method not in {"operator_compared", "browser_verified"}:
+            raise CompanionPairingStateError("Companion confirmation method is invalid")
         _require_version(expected_version)
         _time_text(confirmed_at)
         with self.database.transaction() as connection:
@@ -803,8 +806,9 @@ class CompanionPairingPersistence:
                     confirmation_principal_id, confirmation_session_id, confirmed_at,
                     companion_organization_id, companion_installation_key_id,
                     companion_installation_key_jkt, companion_grant_digest,
-                    companion_window_version, companion_window_expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    companion_window_version, companion_window_expires_at,
+                    companion_confirmation_method
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     identifier,
                     identifier,
@@ -831,6 +835,7 @@ class CompanionPairingPersistence:
                     row["grant_digest"],
                     expected_version + 1,
                     row["expires_at"],
+                    confirmation_method,
                 ),
             )
             connection.executemany(

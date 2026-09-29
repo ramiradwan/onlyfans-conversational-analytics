@@ -434,6 +434,16 @@ export interface AgentStatePayload {
   applied_history_settings_revision: number | null;
   last_heartbeat_at: IsoDateTime | null;
   degraded_reason: string | null;
+  /** The extension's own state from its open session; null while none is open. */
+  browser: BrowserSurfacePayload | null;
+}
+
+export interface BrowserSurfacePayload {
+  capture: 'active' | 'paused' | 'off';
+  site_access: 'granted' | 'needs_approval' | 'reload_required';
+  history_permission: 'granted' | 'missing';
+  legal_review_required: boolean;
+  reported_at: IsoDateTime;
 }
 
 export interface SystemStatePayload {
@@ -442,6 +452,13 @@ export interface SystemStatePayload {
   readiness: 'ready' | 'degraded' | 'unavailable';
   updated_at: IsoDateTime;
   detail: string | null;
+}
+
+/** Change notice only; pairing details are read through the authenticated pairing API. */
+export interface CompanionStatePayload {
+  creator_account_id: string;
+  revision: number;
+  changed_at: IsoDateTime;
 }
 
 export interface ProtocolErrorPayload {
@@ -524,6 +541,7 @@ export type PresenceObservedMessage = Envelope<'presence.observed', PresenceObse
 export type PresenceStateMessage = Envelope<'presence.state', PresenceStatePayload>;
 export type AgentStateMessage = Envelope<'agent.state', AgentStatePayload>;
 export type SystemStateMessage = Envelope<'system.state', SystemStatePayload>;
+export type CompanionStateMessage = Envelope<'companion.state', CompanionStatePayload>;
 export type ProtocolErrorMessage = Envelope<'protocol.error', ProtocolErrorPayload>;
 export type ConfigAvailableMessage = Envelope<'config.available', ConfigAvailablePayload>;
 export type ConfigAppliedMessage = Envelope<'config.applied', ConfigAppliedPayload>;
@@ -534,7 +552,7 @@ export type CommandResultAckMessage = Envelope<'command.result.ack', CommandResu
 export type AgentToBrainMessage = AgentHelloMessage | AgentHeartbeatMessage | IngestSnapshotMessage | IngestDeltaMessage | PresenceObservedMessage | ConfigAppliedMessage | CommandResultMessage;
 export type BrainToAgentMessage = AgentSessionMessage | SyncRequiredMessage | IngestAckMessage | IngestRejectedMessage | ProtocolErrorMessage | ConfigAvailableMessage | CommandExecuteMessage | CommandResultAckMessage;
 export type BridgeToBrainMessage = BridgeHelloMessage | StateResyncMessage;
-export type BrainToBridgeMessage<Catchup extends boolean = false> = BridgeSessionMessage | StateSnapshotMessage | StateDeltaMessage<Catchup> | PresenceStateMessage | AgentStateMessage | SystemStateMessage | ProtocolErrorMessage;
+export type BrainToBridgeMessage<Catchup extends boolean = false> = BridgeSessionMessage | StateSnapshotMessage | StateDeltaMessage<Catchup> | PresenceStateMessage | AgentStateMessage | SystemStateMessage | CompanionStateMessage | ProtocolErrorMessage;
 
 export interface AgentConfigGetRequest {
   operation: 'agent.config.get';
