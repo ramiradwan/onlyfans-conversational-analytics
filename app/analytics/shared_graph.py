@@ -529,13 +529,38 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check):
     removed = {'node': set(), 'edge': set()}
     changed_endpoints = set()
 
-    def old_records(item):
-        opened = verified_segment_chunk(
-            connection, account_id, validation.proof, item.kind, item.bucket
+    def old_members(item):
+        # The predecessor segment is sealed and its membership content hashes are
+        # already the segment-digest inputs. Recheck that exact persisted mapping
+        # against the predecessor proof instead of reopening/parsing its canonical
+        # chunk a second time after construction already consumed that chunk.
+        relation = item.kind + '_id'
+        table = 'graph_segment_' + item.kind + 's'
+        rows = connection.execute(
+            f'SELECT {relation},content_id FROM {table} '
+            f'WHERE creator_account_id=? AND segment_id=? ORDER BY {relation}',
+            (account_id, item.segment_id),
         )
-        if opened is None or opened[0] != item:
-            raise GraphReferentialIntegrityError('graph_segment_chunk_invalid')
-        return _checked_record_spans(item, opened[1], account_id, check)
+        digest = hashlib.sha256(
+            ('graph-segment.v1:' + item.kind + ':' + item.bucket).encode()
+        )
+        count = 0
+        previous = None
+        try:
+            for row in rows:
+                check()
+                key, content_id = row
+                if (key[3:5] != item.bucket
+                        or (previous is not None and key <= previous)):
+                    raise GraphReferentialIntegrityError('graph_segment_membership_invalid')
+                previous = key
+                digest.update(key.encode() + b':' + content_id.encode() + b'\n')
+                count += 1
+                yield key, content_id
+        finally:
+            rows.close()
+        if count != item.count or digest.hexdigest() != item.digest:
+            raise GraphReferentialIntegrityError('graph_segment_digest_invalid')
 
     def current_chunk(plan):
         row = connection.execute(
@@ -553,7 +578,7 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check):
 
     def compare_delta(plan, encoded):
         prior = proven.get((plan.kind, plan.bucket))
-        before = iter(()) if prior is None else iter(old_records(prior))
+        before = iter(()) if prior is None else iter(old_members(prior))
         after = iter(_checked_record_spans(plan, encoded, account_id, check))
         left = next(before, None)
         right = next(after, None)
@@ -568,7 +593,8 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check):
                 detected.add(right[0])
                 right = next(after, None)
             else:
-                if left[2] != right[2]:
+                current_content = hashlib.sha256(right[2].encode('utf-8')).hexdigest()
+                if left[1] != current_content:
                     invalidated[plan.kind].add(left[0])
                     detected.add(right[0])
                 left = next(before, None)
@@ -645,7 +671,7 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check):
     for key, item in proven.items():
         if key in current_keys:
             continue
-        for identity, _category, _data in old_records(item):
+        for identity, _content_id in old_members(item):
             check()
             invalidated[item.kind].add(identity)
             removed[item.kind].add(identity)

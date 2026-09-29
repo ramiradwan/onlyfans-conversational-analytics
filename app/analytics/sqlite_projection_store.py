@@ -2421,10 +2421,17 @@ def _recompute_generation(
             _read_changed_segment_rows, _verified_changed_segment_chunks,
         )
         changed = tuple(plan for plan in graph_validation.plans if not plan.reused)
-        graph_rows = _read_changed_segment_rows(connection, account_id, changed, run_check)
-        if graph_rows is None:
-            graph_changes = _verified_changed_segment_chunks(
-                connection, account_id, graph_validation, run_check
+        # Prefer the bounded persisted changed-set proof. It verifies immutable
+        # predecessor/current chunks plus exact changed content, and lets the
+        # downstream graph, endpoint and conversation-integrity validators share
+        # one independently checked delta. Broad changed-segment row materialization
+        # remains the compatibility fallback when chunk proof metadata is absent.
+        graph_changes = _verified_changed_segment_chunks(
+            connection, account_id, graph_validation, run_check
+        )
+        if graph_changes is None:
+            graph_rows = _read_changed_segment_rows(
+                connection, account_id, changed, run_check
             )
     _validate_generation_links(
         connection, generation_id, account_id, run_check,
@@ -2473,7 +2480,8 @@ def _recompute_generation(
             ):
                 graph_digest = verified_segment_root
             nodes, edges = [], []
-    if graph_rows is not None and connection.total_changes != read_version:
+    if (graph_rows is not None or graph_changes is not None) \
+            and connection.total_changes != read_version:
         raise ProjectionValidationError('stored graph changed during verification')
     node_count, edge_count = sum(node_counts.values()), sum(edge_counts.values())
     run_check()
