@@ -36,7 +36,7 @@ export function openSurface(surface, section = '') {
 // Only presentation lives here. Credentials, evidence and capture stay in the worker.
 export function createSurfaceClient(onChange, onError) {
   const model = {
-    status: null, legal: null, pairing: { state: 'unpaired', comparison_code: null, owns_attempt: false, desktop_attempt: false },
+    status: null, legal: null, pairing: { state: 'unpaired', comparison_code: null, owns_attempt: false, desktop_attempt: false, desktop_control: false },
     desktopRuntimeReachable: false, desktopLinked: false, analysisReadiness: unknownReadiness(),
     config: { dashboard_url: `${LOCAL_SERVICE_ORIGIN}/`, history_settings_url: `${LOCAL_SERVICE_ORIGIN}/settings`,
       desktop_app_download_url: customerReleaseConfig.desktop_app_download_url },
@@ -88,6 +88,8 @@ export function createSurfaceClient(onChange, onError) {
       } else if (typeof value?.state === 'string') {
         model.pairing = { state: value.state, owns_attempt: value.owns_attempt === true,
           desktop_attempt: value.desktop_attempt === true,
+          // True while the desktop app can control this browser over an open session.
+          desktop_control: value.desktop_control === true,
           comparison_code: /^\d{6}$/u.test(value.comparison_code ?? '') ? value.comparison_code : null };
         if (value.state !== 'paired') resetReadiness();
         else requestReadiness();
@@ -97,7 +99,7 @@ export function createSurfaceClient(onChange, onError) {
     connected.onDisconnect.addListener(() => {
       if (port !== connected || stopped) return;
       port = null; resetReadiness(); cancelPendingCommand();
-      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false };
+      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false, desktop_control: false };
       model.desktopRuntimeReachable = false;
       emit(); reconnectTimer = setTimeout(() => { connectPort(); void refresh(); }, 1000);
     });
@@ -142,7 +144,7 @@ export function createSurfaceClient(onChange, onError) {
       requestReadiness(); emit();
     } catch (error) {
       model.status = null; model.legal = null; resetReadiness();
-      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false };
+      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false, desktop_control: false };
       emit(); if (!stopped) onError(error);
     }
   }

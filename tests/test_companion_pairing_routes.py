@@ -820,3 +820,30 @@ def test_browser_verified_code_is_strict(application, suffix, body):
         )
     assert response.status_code == 400
     assert service.calls == []
+
+
+def test_revocation_notifies_the_pin_sessions_before_it_commits(application, monkeypatch):
+    app, service = application
+    order = []
+
+    async def notify(account, action, **options):
+        order.append(("notice", account, action, options))
+        return 1
+
+    def revoke(policy, pairing_id, version):
+        order.append(("revoke", pairing_id, version))
+        return {**service.public(), "state": "revoked"}
+
+    monkeypatch.setattr(routes.transport_manager, "send_browser_control", notify)
+    monkeypatch.setattr(service, "revoke", revoke, raising=False)
+    with client_for(app) as client:
+        response = client.post(
+            f"/api/v1/companion/pins/{PAIRING_ID}/revoke",
+            json={"version": 4},
+            headers=http_headers(),
+        )
+    assert response.status_code == 200
+    assert order == [
+        ("notice", "account", "companion.revoked", {"pairing_id": PAIRING_ID}),
+        ("revoke", PAIRING_ID, 4),
+    ]

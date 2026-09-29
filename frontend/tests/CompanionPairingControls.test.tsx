@@ -97,6 +97,24 @@ describe('companion pairing controls', () => {
     expect(screen.queryByRole('button', { name: 'Disconnect browser extension 1' })).toBeNull();
   });
 
+  it('shows the linked browser state pushed through Brain, with controls only for the creator', async () => {
+    const pin = { ...awaiting, state: 'admitted' as const, version: 4, comparison_code: null };
+    const api = makeApi({ pins: vi.fn(async () => [pin]) });
+    await act(async () => bridgeTransportStore.setAgent({
+      creator_account_id: 'creator-1', status: 'connected', agent_installation_id: null, connection_id: null,
+      required_config_revision: null, applied_config_revision: null, required_history_settings_revision: 0,
+      applied_history_settings_revision: null, last_heartbeat_at: null, degraded_reason: null,
+      browser: { capture: 'paused', site_access: 'granted', history_permission: 'granted', legal_review_required: false, reported_at: now.toISOString() },
+    }));
+    mount(api);
+    await act(async () => {});
+    expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
+    await act(async () => useUserStore.getState().actions.setUserRole('creator-ceo'));
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
+    expect(screen.queryByText(/managed in the extension/)).toBeNull();
+  });
+
   it('refuses a connection list from another account', async () => {
     const api = makeApi({ pins: vi.fn(async () => [{ ...awaiting, state: 'admitted', creator_account_id: 'other' }]) });
     mount(api);

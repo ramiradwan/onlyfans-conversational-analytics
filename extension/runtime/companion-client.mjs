@@ -40,6 +40,8 @@ function validatedAnalysisReadiness(value) {
 
 export function createCompanionClient({
   chromeApi = globalThis.chrome, allowsFull, detectedAccountId,
+  // Paused Full keeps a control-only session so the desktop app can resume it.
+  allowsControl = () => false, onControl = async () => {},
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
@@ -71,6 +73,7 @@ export function createCompanionClient({
   function announce(next) { state = next; for (const notify of subscribers) notify({ ...state }); }
   function invalidate() {
     generation++;
+    closeControl();
     pairingAbort?.abort();
     connectionAbort?.abort();
     if (active && active.stableTimer !== null) timers.clearTimeout(active.stableTimer);
@@ -129,17 +132,8 @@ export function createCompanionClient({
         current(); await permitted(accountId);
         if (channel.identity.creator_account_id !== accountId) throw failure();
         const agentInstallationId = await installationId();
-        const challenge = await channel.rpc('agent.challenge', {}, controls);
-        if (!exact(challenge, ['challenge_id', 'challenge', 'session_id', 'expires_at'])
-          || typeof challenge.challenge_id !== 'string' || challenge.challenge_id.length > 128
-          || typeof challenge.expires_at !== 'string' || challenge.expires_at.length > 40
-          || !Number.isFinite(Date.parse(challenge.expires_at))) throw failure();
-        const signature = await signAgentSessionProof(await pairingStore.identity(), challenge, channel.identity, agentInstallationId);
-        current(); await permitted(accountId);
-        const authorized = await channel.rpc('agent.authenticate', { challenge_id: challenge.challenge_id, signature }, controls);
-        if (!exact(authorized, ['creator_account_id', 'auth_ticket', 'storage_bootstrap'])
-          || authorized.creator_account_id !== accountId || !secret(authorized.auth_ticket)
-          || !secret(authorized.storage_bootstrap)) throw failure();
+        const authorized = await authenticateChannel(channel, pairingStore, accountId, agentInstallationId, controls,
+          async () => { current(); await permitted(accountId); });
         const unlocked = await channel.rpc('agent.storage.unseal', { storage_bootstrap: authorized.storage_bootstrap }, controls);
         if (!exact(unlocked, ['schema', 'creator_account_id', 'credential_kind', 'auth_ticket', 'storage_key_base64'])
           || unlocked.schema !== 'ofca-extension-storage-unlock/v1' || unlocked.creator_account_id !== accountId
@@ -153,6 +147,10 @@ export function createCompanionClient({
           authTicket: authorized.auth_ticket, storageKey: unlocked.storage_key_base64,
           storageBootstrap: authorized.storage_bootstrap, agentInstallationId };
         const admitted = active;
+        closeControl();
+        attachControls(channel);
+        notifySurfaces();
+        void sendSurface();
         admitted.stableTimer = timers.setTimeout(() => {
           admitted.stableTimer = null;
           if (active !== admitted || channel.closed) return;
@@ -163,6 +161,7 @@ export function createCompanionClient({
           const wasStable = now() - active.openedAt >= CONNECTION_STABLE_MS;
           if (active.stableTimer !== null) timers.clearTimeout(active.stableTimer);
           active = null;
+          notifySurfaces();
           // Queue the reset before any subsequent reserve; a quiet healthy
           // connection need not have been polled by an extension UI.
           if (wasStable) void recovery.stable().catch(() => undefined);
@@ -174,6 +173,116 @@ export function createCompanionClient({
     try { return await operation; } finally {
       if (connecting === operation) { connecting = null; connectingAccount = null; connectionAbort = null; }
     }
+  }
+  // Prove the pinned Agent identity to Brain on a newly opened channel.
+  async function authenticateChannel(channel, pairingStore, accountId, agentInstallationId, controls = {}, check = async () => {}) {
+    const challenge = await channel.rpc('agent.challenge', {}, controls);
+    if (!exact(challenge, ['challenge_id', 'challenge', 'session_id', 'expires_at'])
+      || typeof challenge.challenge_id !== 'string' || challenge.challenge_id.length > 128
+      || typeof challenge.expires_at !== 'string' || challenge.expires_at.length > 40
+      || !Number.isFinite(Date.parse(challenge.expires_at))) throw failure();
+    const signature = await signAgentSessionProof(await pairingStore.identity(), challenge, channel.identity, agentInstallationId);
+    await check();
+    const authorized = await channel.rpc('agent.authenticate', { challenge_id: challenge.challenge_id, signature }, controls);
+    if (!exact(authorized, ['creator_account_id', 'auth_ticket', 'storage_bootstrap'])
+      || authorized.creator_account_id !== accountId || !secret(authorized.auth_ticket)
+      || !secret(authorized.storage_bootstrap)) throw failure();
+    return authorized;
+  }
+  // Session controls and browser state reports (ADR 0027). Controls change
+  // nothing here: the consent and companion controllers apply them.
+  const seenControls = new Set();
+  let lastSurface = null;
+  function attachControls(channel) {
+    channel.onControl?.(({ id, action }) => {
+      if (seenControls.has(id)) return;
+      seenControls.add(id);
+      if (seenControls.size > 256) seenControls.delete(seenControls.values().next().value);
+      if (action === 'companion.revoked') { void confirmRevocation(channel); return; }
+      void Promise.resolve().then(() => onControl(action)).catch(() => undefined);
+    });
+  }
+  // Brain announces a revocation just before committing it. Forget the pin
+  // only if Brain then closes this session; a failed revocation keeps both sides paired.
+  async function confirmRevocation(channel) {
+    const closed = channel.closed || await new Promise((resolve) => {
+      const timer = timers.setTimeout(() => { stop(); resolve(false); }, 3_000);
+      const stop = channel.onClose(() => { timers.clearTimeout(timer); stop(); resolve(true); });
+    });
+    if (!closed) return;
+    await forget(); await revocationListener();
+  }
+  let revocationListener = async () => {};
+  function controlChannel() {
+    if (active && !active.channel.closed) return active.channel;
+    if (control && !control.channel.closed) return control.channel;
+    return null;
+  }
+  function controlReady() { return controlChannel() !== null; }
+  async function sendSurface() {
+    const channel = controlChannel();
+    if (channel === null || lastSurface === null) return;
+    await channel.rpc('agent.surface.report', lastSurface).catch(() => undefined);
+  }
+  function reportSurface(surface) {
+    if (JSON.stringify(surface) === JSON.stringify(lastSurface)) return;
+    lastSurface = surface;
+    void sendSurface();
+  }
+  let control = null, controlOpening = null, controlRetryTimer = null;
+  function closeControl() {
+    if (controlRetryTimer !== null) { timers.clearTimeout(controlRetryTimer); controlRetryTimer = null; }
+    const current = control; control = null;
+    current?.controller.abort(); current?.channel.close();
+  }
+  function scheduleControl(delay) {
+    if (controlRetryTimer !== null) return;
+    controlRetryTimer = timers.setTimeout(() => { controlRetryTimer = null; void ensureControl(); }, Math.max(1_000, delay));
+  }
+  // While paused from Full, hold a control-only session: it authenticates the
+  // pinned identity, reports browser state, and accepts controls. It unlocks no
+  // storage, starts no runtime, and carries no activity.
+  function ensureControl() {
+    if (!allowsControl() || allowsFull?.()) { closeControl(); return Promise.resolve(); }
+    if (control || controlOpening || controlRetryTimer !== null) return controlOpening ?? Promise.resolve();
+    const version = generation;
+    const controller = new AbortController();
+    const opening = (async () => {
+      const pairingStore = await store();
+      const saved = await pairingStore.status();
+      const accountId = saved.identity?.creator_account_id;
+      if (!saved.paired || typeof accountId !== 'string' || !accountId) return;
+      await recovery.reserve();
+      const current = () => { if (generation !== version || !allowsControl() || allowsFull?.()) throw failure(); };
+      current();
+      const snow = await loadSnow();
+      const channel = await channelFactory({ url: LOCAL_SERVICE_WS, store: pairingStore, SnowSession: snow.SnowSession,
+        accountId, trust: await trust(), signal: controller.signal });
+      try {
+        current();
+        if (channel.identity.creator_account_id !== accountId) throw failure();
+        await authenticateChannel(channel, pairingStore, accountId, await installationId(), { signal: controller.signal }, async () => current());
+        current();
+      } catch { channel.close(); throw failure(); }
+      const opened = { channel, controller, openedAt: now() };
+      control = opened;
+      attachControls(channel);
+      channel.onClose(() => {
+        if (control !== opened) return;
+        control = null;
+        if (now() - opened.openedAt >= CONNECTION_STABLE_MS) void recovery.stable().catch(() => undefined);
+        notifySurfaces();
+        if (allowsControl() && !allowsFull?.()) void recovery.retryAfterMs().then(scheduleControl, () => scheduleControl(60_000));
+      });
+      notifySurfaces();
+      await sendSurface();
+    })().catch(async (error) => {
+      controller.abort();
+      if (!allowsControl() || allowsFull?.() || generation !== version) return;
+      scheduleControl(error?.retryAfterMs ?? await recovery.retryAfterMs().catch(() => 60_000));
+    }).finally(() => { if (controlOpening === opening) controlOpening = null; });
+    controlOpening = opening;
+    return opening;
   }
   async function hasSavedPairing() {
     if (!allowsFull?.()) return false;
@@ -367,6 +476,7 @@ export function createCompanionClient({
           comparison_code: surface === 'setup' ? value.comparison_code : null,
           owns_attempt: surface === 'setup' && owns(port),
           desktop_attempt: pairingOwner?.desktop === true,
+          desktop_control: controlReady(),
         } : value;
         try { port.postMessage(projection); } catch {}
       };
@@ -410,6 +520,7 @@ export function createCompanionClient({
     });
   }
   return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, hasSavedPairing, status, analysisReadiness, registerPopup,
-    pairFor, cancelFor, owns, subscribe, notifySurfaces,
+    pairFor, cancelFor, owns, subscribe, notifySurfaces, reportSurface, ensureControl, controlReady,
+    onRevoked(listener) { revocationListener = listener; },
     get connected() { return active !== null && !active.channel.closed; } });
 }

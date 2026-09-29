@@ -302,20 +302,18 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect((await extensionSnapshot(worker)).state.preview).toEqual(pausedMetrics);
     });
 
-    await test.step('Popup and Options resume and pause through the real consent controller', async () => {
+    await test.step('the popup resumes and pauses through the real consent controller; Options has no second Pause', async () => {
       await popup.getByRole('button', { name: 'Resume analytics', exact: true }).click();
       await expect.poll(async () => (await extensionState(worker)).capturePhase).toBe('preview');
+      await expect.poll(async () => (await extensionSnapshot(worker)).scriptIds)
+        .toEqual(['ofca-preview-isolated', 'ofca-preview-main']);
       const options = await openManageExtension(popup);
-      await options.locator('#pause').click();
-      await expect(options.locator('#mode-label')).toHaveText('Analytics paused');
-      expect((await extensionSnapshot(worker)).scriptIds).toEqual([]);
-      await options.locator('#pause').click();
-      await expect(options.locator('#mode-label')).toHaveText('Preview on');
-      expect((await extensionSnapshot(worker)).scriptIds).toEqual(['ofca-preview-isolated', 'ofca-preview-main']);
-      await options.locator('#pause').click();
-      await expect(options.locator('#mode-label')).toHaveText('Analytics paused');
+      await expect(options.locator('#pause')).toHaveCount(0);
       await options.close();
       await popup.bringToFront();
+      await popup.getByRole('button', { name: 'Pause analytics' }).click();
+      await expect(popup.locator('#mode-label')).toHaveText('Analytics paused');
+      expect((await extensionSnapshot(worker)).scriptIds).toEqual([]);
     });
 
     await test.step('delete all clears storage, every IndexedDB database, and optional access', async () => {

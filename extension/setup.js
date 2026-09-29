@@ -6,7 +6,7 @@ import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError 
 import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
-import { DESKTOP_HANDOFF_STORAGE_KEY } from './runtime/ui-surfaces.mjs';
+import { createHandoffFinisher, returnToDesktop } from './ui/handoff.mjs';
 
 let failed = false;
 let dismissed = false;
@@ -14,7 +14,6 @@ let reviewStep = null;
 // '#desktop' is the compact window the desktop app opens. It is presentation
 // only: every action on this page keeps its usual authorization.
 let handoff = location.hash === '#desktop';
-let handoffFinishing = false;
 let fullReviewRequested = location.hash === '#full' || handoff;
 try { fullReviewRequested ||= sessionStorage.getItem('full-review') === 'true'; } catch {}
 const client = createSurfaceClient((model) => { if (model.status) failed = false; render(model); }, () => { failed = true; render(client.model); });
@@ -121,30 +120,7 @@ function renderHandoff(model, view, journey) {
   show('journey-secondary', false);
   if (model.desktopLinked) void finishHandoff();
 }
-async function returnToDesktop() {
-  let anchor = null;
-  try { anchor = (await chrome.storage.session.get([DESKTOP_HANDOFF_STORAGE_KEY]))[DESKTOP_HANDOFF_STORAGE_KEY] ?? null; } catch {}
-  if (Number.isInteger(anchor?.tab_id) && Number.isInteger(anchor?.window_id)) {
-    try {
-      await chrome.tabs.update(anchor.tab_id, { active: true });
-      await chrome.windows.update(anchor.window_id, { focused: true });
-      return true;
-    } catch {}
-  }
-  await chrome.tabs.create({ url: client.model.config.dashboard_url });
-  return false;
-}
-// Only a compact window opened for the desktop app closes itself.
-async function finishHandoff() {
-  if (handoffFinishing) return;
-  handoffFinishing = true;
-  try {
-    const current = await chrome.windows.getCurrent();
-    if (current?.type !== 'popup') return;
-    await returnToDesktop();
-    await chrome.windows.remove(current.id);
-  } catch { handoffFinishing = false; }
-}
+const finishHandoff = createHandoffFinisher(() => client.model.config.dashboard_url);
 function renderPairing(model, journey) {
   const pending = ['pairing', 'compare'].includes(model.pairing.state);
   // While the desktop app is open in this browser, it owns starting a pairing.
@@ -170,7 +146,7 @@ function runJourneyAction(action) {
   }
   if (action === 'pair') return client.post('pair');
   if (action === 'cancel_pairing') return client.post('cancel');
-  if (action === 'return_to_desktop') return returnToDesktop();
+  if (action === 'return_to_desktop') return returnToDesktop(client.model.config.dashboard_url);
   if (action === 'open_dashboard') return chrome.tabs.create({ url: client.model.config.dashboard_url });
   if (action === 'open_desktop_settings') return chrome.tabs.create({ url: client.model.config.history_settings_url });
   if (action === 'open_creator_account') return openCreatorAccount();

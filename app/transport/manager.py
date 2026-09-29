@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID, uuid4
 
 from fastapi import WebSocket
@@ -117,6 +117,18 @@ class BridgeBinding:
     bridge_session_id: UUID
 
 
+BROWSER_CONTROL_ACTIONS = frozenset({"capture.pause", "capture.resume", "companion.revoked"})
+
+
+@dataclass(slots=True)
+class BrowserSession:
+    """One authenticated companion session that reports browser state and accepts controls."""
+
+    pairing_id: str
+    send: Callable[[dict[str, Any]], Awaitable[None]]
+    surface: dict[str, Any] | None = None
+
+
 @dataclass(slots=True)
 class PresenceRecord:
     creator_account_id: str
@@ -188,6 +200,9 @@ class InMemoryTransportManager:
         self._onboarding_progress = onboarding_progress
         self._companion_revisions: dict[str, tuple[int, datetime]] = {}
         self._companion_tasks: set[asyncio.Task[None]] = set()
+        # Authenticated extension sessions that accept session controls, by account.
+        self._browser_sessions: dict[str, dict[int, BrowserSession]] = {}
+        self._browser_session_ids = 0
 
     def _development_stub_allowed(self) -> bool:
         auth_mode = settings.websocket_auth_mode
@@ -680,6 +695,7 @@ class InMemoryTransportManager:
         self._agent_pairing_grants.clear()
         self._agent_config_grants.clear()
         self._companion_revisions.clear()
+        self._browser_sessions.clear()
         for task in self._companion_tasks:
             if not task.done() and not task.get_loop().is_closed():
                 task.cancel()
@@ -1165,6 +1181,7 @@ class InMemoryTransportManager:
                     if required_config_revision is not None
                     else "No Agent configuration is required for this account"
                 ),
+                "browser": self.browser_surface(account_id),
             }
         config_record = self.config_authority.installation(
             account_id, lease.agent_installation_id
@@ -1202,6 +1219,7 @@ class InMemoryTransportManager:
             "applied_history_settings_revision": history_settings["effective_settings_revision"],
             "last_heartbeat_at": lease.last_heartbeat_at.isoformat(),
             "degraded_reason": reason,
+            "browser": self.browser_surface(account_id),
         }
 
     def presence_state_payload(self, account_id: str) -> dict[str, Any]:
@@ -1327,6 +1345,78 @@ class InMemoryTransportManager:
 
     async def broadcast_agent_state(self, account_id: str) -> None:
         await self._broadcast_bridge(account_id, "agent.state", self.agent_state_payload(account_id))
+
+    def register_browser_session(
+        self,
+        account_id: str,
+        pairing_id: str,
+        send: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> int:
+        """Admit one authenticated companion session for browser status and controls."""
+        self._browser_session_ids += 1
+        token = self._browser_session_ids
+        self._browser_sessions.setdefault(account_id, {})[token] = BrowserSession(
+            pairing_id=pairing_id, send=send
+        )
+        return token
+
+    async def record_browser_surface(
+        self, account_id: str, token: int, surface: dict[str, Any]
+    ) -> None:
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        if session is None:
+            return
+        previous = self.browser_surface(account_id)
+        session.surface = {**surface, "reported_at": utc_now().isoformat()}
+        # Keep the newest report last so it is the account's current state.
+        sessions = self._browser_sessions[account_id]
+        sessions[token] = sessions.pop(token)
+        current = self.browser_surface(account_id)
+        if previous is None or current is None or any(
+            previous[key] != current[key] for key in surface
+        ):
+            await self.broadcast_agent_state(account_id)
+
+    async def unregister_browser_session(self, account_id: str, token: int) -> None:
+        sessions = self._browser_sessions.get(account_id)
+        if not sessions or sessions.pop(token, None) is None:
+            return
+        if not sessions:
+            self._browser_sessions.pop(account_id, None)
+        await self.broadcast_agent_state(account_id)
+
+    def browser_surface(self, account_id: str) -> dict[str, Any] | None:
+        """Return the newest report from an open session, or `None` if none is open."""
+        for session in reversed(self._browser_sessions.get(account_id, {}).values()):
+            if session.surface is not None:
+                return dict(session.surface)
+        return None
+
+    async def send_browser_control(
+        self, account_id: str, action: str, *, pairing_id: str | None = None
+    ) -> int:
+        """Deliver one control to the account's open sessions; return how many took it.
+
+        The effect is never inferred from delivery. The extension applies the
+        control through its own consent or companion controller and reports its
+        new state, which reaches Bridge in `agent.state`.
+        """
+        if action not in BROWSER_CONTROL_ACTIONS:
+            raise ValueError("Unknown browser control")
+        delivered = 0
+        for session in list(self._browser_sessions.get(account_id, {}).values()):
+            if pairing_id is not None and session.pairing_id != pairing_id:
+                continue
+            if action != "companion.revoked" and session.surface is None:
+                continue
+            try:
+                await session.send(
+                    {"type": "session.control", "id": str(uuid4()), "action": action}
+                )
+                delivered += 1
+            except Exception:
+                continue
+        return delivered
 
     def companion_state_payload(self, account_id: str) -> dict[str, Any]:
         """Return the current companion change notice for one bound account."""

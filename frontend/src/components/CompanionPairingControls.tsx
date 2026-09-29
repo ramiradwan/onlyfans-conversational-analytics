@@ -4,8 +4,10 @@ import {
 } from '@mui/material';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
+import { BrowserExtensionControls } from './BrowserExtensionControls';
 import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
 import { usePermissions } from '../hooks/usePermissions';
+import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
 import {
   companionPairingApi,
   type CompanionPairingAction,
@@ -47,8 +49,9 @@ function remainingLabel(seconds: number): string {
   return `${minutes}:${remainder}`;
 }
 
-function PairingAttemptControls({ api, port, connection, creatorAccountId }: {
+function PairingAttemptControls({ api, browserApi, port, connection, creatorAccountId }: {
   api: CompanionPairingApi;
+  browserApi: BrowserControlApi;
   port: ExtensionPort;
   connection: ExtensionConnection;
   creatorAccountId: string;
@@ -283,6 +286,8 @@ function PairingAttemptControls({ api, port, connection, creatorAccountId }: {
       />
       <AdmittedPairings
         api={api}
+        browserApi={browserApi}
+        port={port}
         connection={connection}
         creatorAccountId={creatorAccountId}
         onCount={setConnectedCount}
@@ -426,8 +431,10 @@ function PairingAttemptControls({ api, port, connection, creatorAccountId }: {
   );
 }
 
-function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh }: {
+function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId, onCount, refresh }: {
   api: CompanionPairingApi;
+  browserApi: BrowserControlApi;
+  port: ExtensionPort;
   connection: ExtensionConnection;
   creatorAccountId: string;
   onCount: (count: number | null) => void;
@@ -440,6 +447,12 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
   const [confirming, setConfirming] = useState<CompanionPairingStatus | null>(null);
   const [checked, setChecked] = useState(false);
   const operation = useRef<AbortController | null>(null);
+  const { isCreator } = usePermissions();
+  const browser = useSyncExternalStore(
+    bridgeTransportStore.subscribe,
+    () => bridgeTransportStore.getState().agent?.browser ?? null,
+    () => bridgeTransportStore.getState().agent?.browser ?? null,
+  );
   useRevealHold(!checked);
   useEffect(() => {
     const controller = new AbortController();
@@ -486,10 +499,10 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
     <Stack spacing={1.5}>
       {pins.length > 0 && (
         <>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            {issue ? `${issue.detail} ` : ''}
-            Browser site access is managed in the extension. Message history syncing is managed below.
-          </Typography>
+          {issue && (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>{issue.detail}</Typography>
+          )}
+          <BrowserExtensionControls api={browserApi} browser={browser} canManage={isCreator} port={port} />
           {pins.map((pin, index) => (
             <Stack
               key={pin.pairing_id}
@@ -548,8 +561,9 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
 }
 
 /** Browser extension section of Settings: connection status, pairing, and disconnect. */
-export function CompanionPairingControls({ api = companionPairingApi, port }: {
+export function CompanionPairingControls({ api = companionPairingApi, browserApi = browserControlApi, port }: {
   api?: CompanionPairingApi;
+  browserApi?: BrowserControlApi;
   port?: ExtensionPort;
 }) {
   const extensionPort = port ?? defaultExtensionPort();
@@ -565,6 +579,7 @@ export function CompanionPairingControls({ api = companionPairingApi, port }: {
         <PairingAttemptControls
           key={creatorAccountId}
           api={api}
+          browserApi={browserApi}
           port={extensionPort}
           connection={extensionConnection(agent)}
           creatorAccountId={creatorAccountId}

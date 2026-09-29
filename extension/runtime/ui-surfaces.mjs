@@ -27,7 +27,7 @@ export function allowsUiMessage(sender, message, chromeApi) {
 }
 
 export const DESKTOP_HANDOFF_STORAGE_KEY = 'desktop_handoff_v1';
-const SECTIONS = Object.freeze({ setup: ['', 'full', 'desktop'], options: ['', 'connection', 'data'] });
+const SECTIONS = Object.freeze({ setup: ['', 'full', 'desktop'], options: ['', 'connection', 'data', 'history'] });
 const WINDOW_SIZE = Object.freeze({ width: 480, height: 760 });
 
 async function centredOn(chromeApi, windowId) {

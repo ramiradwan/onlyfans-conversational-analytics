@@ -150,6 +150,7 @@ const connectedAgent: AgentStatePayload = {
   applied_history_settings_revision: 1,
   last_heartbeat_at: AS_OF,
   degraded_reason: null,
+  browser: null,
 };
 
 function seedStores(journey: StoryJourneyName) {

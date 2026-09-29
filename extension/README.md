@@ -9,14 +9,14 @@ Conversation Analytics is a Chromium MV3 extension for creator-visible OnlyFans 
 - Collection is off until the user enables it and grants access to OnlyFans.
 - Preview mode records aggregate activity observations without storing message text or platform identifiers.
 - The popup shows rolling seven-day metrics labelled “Observed in this browser.”
-- Collection can be paused, and all extension data and optional permissions can be deleted from the popup.
+- Collection can be paused from the popup, and all extension data and optional permissions can be deleted from the extension's settings page.
 - The preview remains functional when the optional local analytics service is not installed.
 
 ## Optional local integration
 
 Full analytics mode requires a separate permission for the loopback analytics service. Captured records are kept in an IndexedDB outbox until that service acknowledges them. Account binding, configuration, schema, and command checks are enforced by the command-capable product runtime.
 
-The desktop app's page can open a browser port to the extension. It receives a coarse setup stage, can open the extension's own setup or Options page, and can start a pairing attempt it owns. It cannot accept terms, change mode, or grant permissions. See [ADR 0027](../docs/adr/0027-desktop-led-extension-setup.md).
+The desktop app's page can open a browser port to the extension. It receives a coarse setup stage, can open the extension's own setup or Options page, and can start a pairing attempt it owns. It cannot accept terms, change mode, or grant permissions. After pairing, the desktop app can pause or resume collection and disconnect through the authenticated session; the extension applies these through its consent and companion controllers. While paused from Full, the extension keeps a control-only session that carries no activity. See [ADR 0027](../docs/adr/0027-desktop-led-extension-setup.md).
 
 ## Data flow
 

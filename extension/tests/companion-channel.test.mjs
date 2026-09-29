@@ -194,3 +194,31 @@ test('the commit callback checks monotonic expiry even before a delayed timer fi
   elapsed += 2001; release(); await rejected;
   assert.equal(peer.pinned, false); assert.equal(peer.commitSignal.aborted, true);
 });
+
+test('encrypted session controls reach control listeners without a protocol observer', async () => {
+  const peer = fixture(), channel = await peer.open();
+  try {
+    const controls = [];
+    channel.onControl((value) => controls.push(value));
+    const id = crypto.randomUUID();
+    peer.application({ type: 'session.control', id, action: 'capture.pause' });
+    await waitFor(() => controls.length === 1);
+    assert.deepEqual(controls, [{ id, action: 'capture.pause' }]);
+    assert.equal(channel.closed, false);
+  } finally { channel.close(); }
+});
+
+test('a malformed or unknown session control closes the channel', async () => {
+  for (const control of [
+    { type: 'session.control', id: crypto.randomUUID(), action: 'consent.full' },
+    { type: 'session.control', id: 'not-a-uuid', action: 'capture.pause' },
+    { type: 'session.control', id: crypto.randomUUID(), action: 'capture.pause', extra: true },
+  ]) {
+    const peer = fixture(), channel = await peer.open();
+    const controls = [];
+    channel.onControl((value) => controls.push(value));
+    peer.application(control);
+    await waitFor(() => channel.closed);
+    assert.deepEqual(controls, [], JSON.stringify(control));
+  }
+});

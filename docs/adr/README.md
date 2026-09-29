@@ -34,7 +34,7 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0024: Protect Full-mode communication with locally paired sessions](0024-authenticated-companion-sessions.md)
 
 - [ADR 0026: Deduplicate seven-day Preview activity with local keyed tokens](0026-preview-keyed-deduplication.md)
-- [ADR 0027: Let the desktop app lead extension setup with pushed state](0027-desktop-led-extension-setup.md)
+- [ADR 0027: Let the desktop app lead extension setup and controls with pushed state](0027-desktop-led-extension-setup.md)
 
 ## Superseded
 

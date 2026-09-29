@@ -60,6 +60,8 @@ test('the stage follows the extension-owned prerequisites in order', () => {
 test('port messages have closed schemas', () => {
   assert.equal(isDesktopMessage({ type: 'open', version: 1, step: 'setup' }), true);
   assert.equal(isDesktopMessage({ type: 'open', version: 1, step: 'connection' }), true);
+  assert.equal(isDesktopMessage({ type: 'open', version: 1, step: 'access' }), true);
+  assert.equal(isDesktopMessage({ type: 'open', version: 1, step: 'history' }), true);
   assert.equal(isDesktopMessage({ type: 'pair', version: 1 }), true);
   assert.equal(isDesktopMessage({ type: 'cancel', version: 1 }), true);
   for (const message of [

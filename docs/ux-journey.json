@@ -27,7 +27,8 @@
         "frontend/src/views/SettingsView.tsx",
         "frontend/src/components/dashboard/DashboardOverview.tsx",
         "frontend/src/components/CommercialActivationControls.tsx",
-        "frontend/src/components/CreatorVaultControls.tsx"
+        "frontend/src/components/CreatorVaultControls.tsx",
+        "frontend/src/components/BrowserExtensionControls.tsx"
       ]
     },
     "extension.setup": {
@@ -253,6 +254,11 @@
           "kind": "visual",
           "file": "extension/qualification/surface-fixtures.mjs",
           "name": "paused"
+        },
+        {
+          "kind": "browser",
+          "file": "extension/qualification/surface-interactions.spec.mjs",
+          "name": "while the desktop app controls a paused browser, resume points to the desktop app"
         }
       ]
     },
@@ -887,6 +893,10 @@
           "to": "desktop.extension_handoff",
           "by": "user",
           "action": "connect-extension"
+        },
+        {
+          "to": "desktop.browser_controls",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -940,6 +950,53 @@
           "kind": "unit",
           "file": "extension/tests/desktop-port.test.mjs",
           "name": "the stage follows the extension-owned prerequisites in order"
+        }
+      ]
+    },
+    {
+      "id": "desktop.browser_controls",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/BrowserExtensionControls.tsx",
+        "text": "data-journey-state=\"desktop.browser_controls\""
+      },
+      "transitions": [
+        {
+          "to": "extension.paused",
+          "by": "user",
+          "action": "pause"
+        },
+        {
+          "to": "extension.full_ready",
+          "by": "user",
+          "action": "resume"
+        },
+        {
+          "to": "extension.software_activation",
+          "by": "user",
+          "action": "review"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "shows only pushed state and settles a pause when the extension reports it"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "sends resume to the extension review instead when the terms changed"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/companion-control.test.mjs",
+          "name": "controls are applied once through the consent callback and revocation waits for Brain to close"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_companion_browser_controls.py",
+          "name": "test_capture_controls_are_creator_only_and_report_unreachable_browsers"
         }
       ]
     },

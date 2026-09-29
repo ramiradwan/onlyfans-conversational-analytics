@@ -1,6 +1,7 @@
 import { createSurfaceOpener, registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
 import { registerDesktopPort } from './runtime/desktop-port.mjs';
 import { probeDesktopRuntime } from './runtime/customer-journey.mjs';
+import { applyControl, createSurfaceReporter } from './runtime/browser-surface.mjs';
 import { createAgentRuntime } from './transport/agent-runtime.mjs';
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
 import { AgentWebSocketClient } from './transport/agent-websocket.mjs';
@@ -30,6 +31,8 @@ const signalDeliveryProgress = () => {
 export const companionClient = createCompanionClient({
   accountDatabaseName,
   allowsFull: () => consentController?.state.mode === 'full',
+  allowsControl: () => consentController?.state.mode === 'paused' && consentController.state.resume_mode === 'full',
+  onControl: (action) => applyControl(consentController, action),
   detectedAccountId: () => provisioningIdentityBridge.currentAccountId(),
 });
 export const chromeAdapter = companionClient.adapter;
@@ -211,12 +214,26 @@ companionClient.registerPopup({
   onPaired: () => consentController.reconcile(),
   onForget: () => consentController.reconcile(),
 });
+companionClient.onRevoked(() => consentController.reconcile());
 void consentController.initialize().catch(() => undefined);
 
 const openSurface = createSurfaceOpener(chrome);
 registerSurfaceNavigation(chrome, openSurface);
 
-const signalSurfaces = () => companionClient.notifySurfaces();
+// The same change events feed open pages, the desktop port, and the browser
+// state that Brain shows in the desktop app.
+const surfaceReporter = createSurfaceReporter({
+  companion: companionClient,
+  relevant: () => consentController?.state.mode === 'full'
+    || (consentController?.state.mode === 'paused' && consentController.state.resume_mode === 'full'),
+  readState: async () => ({
+    consent: await consentController.status(),
+    legal: await legalActivationController.status(),
+  }),
+});
+const signalSurfaces = () => { companionClient.notifySurfaces(); surfaceReporter.changed(); };
+chrome.storage.onChanged.addListener((_changes, area) => { if (area === 'local') surfaceReporter.changed(); });
+void consentController.initialize().then(() => surfaceReporter.changed(), () => undefined);
 chrome.permissions?.onAdded?.addListener(signalSurfaces);
 chrome.permissions?.onRemoved?.addListener(signalSurfaces);
 provisioningIdentityBridge.onAccountChange(signalSurfaces);
@@ -229,9 +246,11 @@ export const desktopPort = registerDesktopPort({
     legal: await legalActivationController.status(),
     pairing: await companionClient.status(),
   }),
-  openStep: (step, { anchorTab }) => openSurface(step === 'setup'
+  // Each step opens the one extension page that owns it. Site access and the
+  // history permission need a click there because Chrome requires the gesture.
+  openStep: (step, { anchorTab }) => openSurface(['setup', 'access'].includes(step)
     ? { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab }
-    : { surface: 'options', section: 'connection', presentation: 'window', anchorTab }),
+    : { surface: 'options', section: step === 'history' ? 'history' : 'connection', presentation: 'window', anchorTab }),
   onPaired: () => consentController.reconcile(),
   changeSources: [
     (changed) => {

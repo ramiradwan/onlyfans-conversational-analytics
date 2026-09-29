@@ -284,7 +284,7 @@ test('setup pairing is restricted to its packaged page and disconnect cancels co
   for (let i = 0; i < 10 && !states.some((state) => state.state === 'compare'); i++) await tick();
   assert.equal(states.find((state) => state.state === 'compare').comparison_code, vector.expected.comparison_code);
   port.onDisconnect.listeners[0](); await tick(); assert.equal(h.stats.cancel, 1); assert.equal(h.stats.networks, 0);
-  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,desktop_attempt,owns_attempt,state'));
+  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,desktop_attempt,desktop_control,owns_attempt,state'));
 });
 
 test('the transient toolbar popup can inspect status but cannot start a comparison', async () => {

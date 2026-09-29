@@ -11,7 +11,7 @@ import { LOCAL_SERVICE_ORIGIN } from '../transport/local-service-endpoints.mjs';
 export const DESKTOP_PORT_NAME = 'ofca.desktop';
 export const DESKTOP_PORT_VERSION = 1;
 export const DESKTOP_LINK_STORAGE_KEY = 'desktop_link_v1';
-export const DESKTOP_STEPS = Object.freeze(['setup', 'connection']);
+export const DESKTOP_STEPS = Object.freeze(['setup', 'access', 'history', 'connection']);
 export const DESKTOP_STAGES = Object.freeze([
   'unavailable', 'needs_terms', 'paused', 'needs_full', 'needs_site_access',
   'needs_account', 'ready_to_pair', 'pairing', 'paired',

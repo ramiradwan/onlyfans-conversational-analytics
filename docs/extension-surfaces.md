@@ -8,10 +8,10 @@ Integrated upstream recovery fix: `e70f634a1cbf4cbccae3e895978bea8e28572da2`.
 
 | Surface | Responsibilities |
 | --- | --- |
-| `extension/popup.html` | Status, Preview counts, Pause/Resume, and contextual links. |
+| `extension/popup.html` | Status, Preview counts, Pause/Resume while Bridge cannot reach the extension, and contextual links. |
 | `extension/setup.html` | Legal review, mode choice, browser access, extension-side pairing, and continuation. |
-| `extension/options.html` | Extension access, connection details, local data controls, and links to desktop settings. |
-| Bridge | Starts extension setup and pairing through the desktop port, confirms pairing, and owns desktop settings. See [ADR 0027](adr/0027-desktop-led-extension-setup.md). |
+| `extension/options.html` | Extension access, connection details, local data controls, and links to desktop settings. Forget appears only while Bridge cannot reach the extension. |
+| Bridge | Starts extension setup and pairing through the desktop port, confirms pairing, owns desktop settings, and owns pause, resume, and disconnect while it can reach the extension. See [ADR 0027](adr/0027-desktop-led-extension-setup.md). |
 
 Setup and Options are packaged extension pages. They do not import Bridge views,
 stores, sessions, or API clients. Bridge reaches them only through the desktop
@@ -24,7 +24,9 @@ origins, or network policy are added to make the full pages work.
 `extension/runtime/ui-surfaces.mjs` admits only named top-level extension documents.
 Setup owns legal acceptance and pairing requests. Options owns deletion, revocation,
 and forgetting a connection. The popup may pause or resume but cannot accept terms,
-choose Full, delete data, or start a pairing attempt.
+choose Full, delete data, or start a pairing attempt. While the worker reports that
+Bridge can reach the extension (`desktop_control`), the popup and Options hide pause,
+resume, and Forget, and Bridge owns them.
 
 The existing consent and legal controllers still authorize transitions. The existing
 companion client owns pairing and readiness. Pages submit actions and render those

@@ -243,6 +243,12 @@ async def _http_operation(
                         raise _Refusal()
                 body = {}
             service = await asyncio.to_thread(companion_pairing_service)
+            if operation == "revoke" and account_id:
+                # The extension forgets its own pin only if Brain then closes the
+                # session, so a revocation that fails leaves both sides paired.
+                await transport_manager.send_browser_control(
+                    account_id, "companion.revoked", pairing_id=pairing_id
+                )
             if operation == "open":
                 call = lambda: service.open(policy, body["creator_account_id"])
             elif operation == "status":
@@ -410,6 +416,42 @@ async def cancel_pairing(request: Request, pairing_id: str):
 @router.post("/api/v1/companion/pairings/{pairing_id}/decline")
 async def decline_pairing(request: Request, pairing_id: str):
     return await _http_operation(request, "decline", pairing_id)
+
+
+_CAPTURE_ACTIONS = {"pause": "capture.pause", "resume": "capture.resume"}
+
+
+@router.post("/api/v1/companion/browser/capture")
+async def browser_capture(request: Request):
+    """Ask the account's open extension sessions to pause or resume capture.
+
+    Only the creator may do this. The extension applies it through its own
+    consent controller, with its usual Legal checks, and reports the result.
+    """
+    try:
+        async with asyncio.timeout(STEP_TIMEOUT_SECONDS):
+            policy = await asyncio.to_thread(_bridge_policy, request, mutation=True)
+            identity = policy.identity
+            if identity is None or identity.role != "creator":
+                raise _Refusal("pairing_account_refused", 403)
+            body = await _body(request, "action")
+            action = _CAPTURE_ACTIONS.get(body["action"])
+            if action is None:
+                raise _Refusal()
+            delivered = await transport_manager.send_browser_control(
+                identity.creator_account_id, action
+            )
+        if delivered == 0:
+            return _response({"detail": "browser_unreachable"}, 409)
+        return _response({"delivered": delivered}, 202)
+    except _Refusal as error:
+        return _response({"detail": error.code}, error.status)
+    except HTTPException as error:
+        return _response({"detail": "pairing_account_refused"}, error.status_code)
+    except TimeoutError:
+        return _response({"detail": "pairing_state_refused"}, 408)
+    except Exception:
+        return _response({"detail": "pairing_storage_refused"}, 503)
 
 
 def _socket_origin(websocket: WebSocket) -> None:

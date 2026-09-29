@@ -7,6 +7,7 @@ export class CompanionChannelError extends Error {
 }
 const refused = () => new CompanionChannelError();
 const MAX_BUFFERED = 128 * 1024;
+export const SESSION_CONTROLS = Object.freeze(new Set(['capture.pause', 'capture.resume', 'companion.revoked']));
 
 export async function openLoopbackSocket(url, { webSocketFactory = (value) => new WebSocket(value), signal, text = false } = {}) {
   const socket = webSocketFactory(url);
@@ -96,6 +97,7 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
     const identity = await session.authorize(await wire.receive(2_000));
     const pending = new Map();
     const observers = new Set();
+    const controlObservers = new Set();
     const closedObservers = new Set();
     const fragments = createFragmentReceiver();
     let sending = Promise.resolve(), queued = 0, stopped = false;
@@ -154,6 +156,14 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
             if (!keys.includes('id') || (!success && !failure) || !pending.has(document.id)) throw refused();
             const item = pending.get(document.id); pending.delete(document.id);
             if (failure) item.reject(new CompanionChannelError(document.error)); else item.resolve(document.result);
+          } else if (document.type === 'session.control') {
+            // A session-level control from Brain (ADR 0027). It is closed and
+            // carries no data; the receiver applies it through its own controllers.
+            const keys = Object.keys(document);
+            if (keys.length !== 3 || typeof document.id !== 'string'
+              || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(document.id)
+              || !SESSION_CONTROLS.has(document.action)) throw refused();
+            for (const listener of controlObservers) listener({ id: document.id, action: document.action });
           } else {
             if (document.protocol_version !== '2' || observers.size !== 1) throw refused();
             for (const listener of observers) listener(document);
@@ -166,6 +176,7 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
       get closed() { return stopped; },
       rpc, send, close,
       onMessage(listener) { if (observers.size) throw refused(); observers.add(listener); return () => observers.delete(listener); },
+      onControl(listener) { controlObservers.add(listener); return () => controlObservers.delete(listener); },
       onClose(listener) { closedObservers.add(listener); return () => closedObservers.delete(listener); },
     });
   } catch {

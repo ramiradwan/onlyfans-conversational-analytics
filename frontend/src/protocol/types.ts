@@ -430,6 +430,16 @@ export interface AgentStatePayload {
   applied_history_settings_revision: number | null;
   last_heartbeat_at: IsoDateTime | null;
   degraded_reason: string | null;
+  /** The extension's own state from its open session; null while none is open. */
+  browser: BrowserSurfacePayload | null;
+}
+
+export interface BrowserSurfacePayload {
+  capture: 'active' | 'paused' | 'off';
+  site_access: 'granted' | 'needs_approval' | 'reload_required';
+  history_permission: 'granted' | 'missing';
+  legal_review_required: boolean;
+  reported_at: IsoDateTime;
 }
 
 export interface SystemStatePayload {
