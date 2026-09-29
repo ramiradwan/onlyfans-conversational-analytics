@@ -186,10 +186,43 @@ def create_membership_unit(*, account_ref, conversation_ref, input_digest, confi
     if not nodes or max(len(nodes), len(edges)) > MAX_GRAPH_UNIT_RECORDS:
         return None
     from app.analytics.conversation_id_frames import IdGroups
-    node_data = nodes.pack(MAX_GRAPH_UNIT_BYTES) if isinstance(nodes, IdGroups) else _compress(_encode_ids(nodes))
-    edge_data = edges.pack(MAX_GRAPH_UNIT_BYTES) if isinstance(edges, IdGroups) else _compress(_encode_ids(edges))
+    fused = isinstance(nodes, IdGroups) and isinstance(edges, IdGroups)
+    if fused:
+        contract = hashlib.sha256(
+            f'conversation-graph-unit.v{checksum_version}\0'.encode()
+        )
+        contract.update(digest.encode('ascii') + b'\0')
+        packed_nodes = nodes.pack_contract(
+            MAX_GRAPH_UNIT_BYTES, contract, 'node'
+        )
+        packed_edges = edges.pack_contract(
+            MAX_GRAPH_UNIT_BYTES, contract, 'edge'
+        )
+        if packed_nodes is None or packed_edges is None:
+            return None
+        node_data, node_prefix = packed_nodes
+        edge_data, edge_prefix = packed_edges
+        encoded_unit_id = contract.hexdigest()
+        prefixes = (node_prefix, edge_prefix)
+    else:
+        node_data = (
+            nodes.pack(MAX_GRAPH_UNIT_BYTES)
+            if isinstance(nodes, IdGroups)
+            else _compress(_encode_ids(nodes))
+        )
+        edge_data = (
+            edges.pack(MAX_GRAPH_UNIT_BYTES)
+            if isinstance(edges, IdGroups)
+            else _compress(_encode_ids(edges))
+        )
+        encoded_unit_id = unit_id(
+            digest, nodes, edges, checksum_version=checksum_version
+        )
+        from app.analytics.membership_prefixes import bitmap
+        prefixes = (bitmap(nodes), bitmap(edges))
     if (node_data is None or edge_data is None
-            or len(node_data) > MAX_GRAPH_UNIT_BYTES or len(edge_data) > MAX_GRAPH_UNIT_BYTES):
+            or len(node_data) > MAX_GRAPH_UNIT_BYTES
+            or len(edge_data) > MAX_GRAPH_UNIT_BYTES):
         return None
     from app.analytics.conversation_enrichment_units import AppendedMessageEnrichments, InsertedMessageEnrichments
     first_source = (findings.first_source_at if isinstance(findings, (AppendedMessageEnrichments, InsertedMessageEnrichments))
@@ -208,11 +241,9 @@ def create_membership_unit(*, account_ref, conversation_ref, input_digest, confi
         graph_digest=digest,
         node_count=len(nodes),
         edge_count=len(edges),
-        unit_id=unit_id(digest, nodes, edges, checksum_version=checksum_version),
+        unit_id=encoded_unit_id,
         checksum_version=checksum_version,
     )
-    from app.analytics.membership_prefixes import bitmap
-    prefixes = (bitmap(nodes), bitmap(edges))
     result = ConversationGraphUnit(
         header, node_data, edge_data, integrity_metadata, prefixes
     )

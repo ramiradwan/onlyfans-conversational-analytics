@@ -151,7 +151,13 @@ def append_unit(loader, previous, delta, *, conversation_node, input_digest,
         for bucket in sorted({key[3:5] for key in changes}):
             check()
             selected = members.get((kind, bucket), ())
-            versions = loader.graph_content_ids(kind, list(selected), check=check) if selected else {}
+            content_ids = (
+                getattr(loader, 'append_graph_content_ids', None)
+                if trusted_predecessor else None
+            )
+            if content_ids is None:
+                content_ids = loader.graph_content_ids
+            versions = content_ids(kind, list(selected), check=check) if selected else {}
             if len(versions) != len(selected):
                 raise ValueError('conversation_integrity_membership_missing')
             if selected and summarize_group(header.account_ref, header.conversation_ref,

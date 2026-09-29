@@ -37,9 +37,70 @@ def test_frame_identity_digest_and_compression_match_existing_contract(count):
         sequence=IdGroups(selected)
         assert tuple(sequence)==keys
         assert zlib.decompress(sequence.pack(64*1024*1024))==json.dumps(keys,separators=(',',':')).encode()
-    assert unit_id(unit.header.graph_digest,IdGroups([groups['node','00']]),
-        IdGroups([groups['edge','00']]) if edges else IdGroups([]),checksum_version=2)==unit.header.unit_id
+    node_groups = IdGroups([groups['node','00']])
+    edge_groups = IdGroups([groups['edge','00']]) if edges else IdGroups([])
+    assert unit_id(unit.header.graph_digest,node_groups,edge_groups,checksum_version=2)==unit.header.unit_id
+    contract = hashlib.sha256(b'conversation-graph-unit.v2\0')
+    contract.update(unit.header.graph_digest.encode('ascii') + b'\0')
+    packed_nodes, node_prefix = node_groups.pack_contract(64*1024*1024, contract, 'node')
+    packed_edges, edge_prefix = edge_groups.pack_contract(64*1024*1024, contract, 'edge')
+    from app.analytics.membership_prefixes import bitmap
+    assert packed_nodes == node_groups.pack(64*1024*1024)
+    assert packed_edges == edge_groups.pack(64*1024*1024)
+    assert node_prefix == bitmap(node_groups)
+    assert edge_prefix == bitmap(edge_groups)
+    assert contract.hexdigest() == unit.header.unit_id
     assert graph_unit_ids(unit)==(nodes,edges)
+
+
+def test_fused_contract_matches_legacy_across_multiple_buckets():
+    from app.analytics.membership_prefixes import bitmap
+    nodes = IdGroups([
+        ('g1:00' + '1' * 62, 'g1:00' + '2' * 62),
+        ('g1:7f' + '1' * 62,),
+        ('g1:ff' + '1' * 62, 'g1:ff' + '2' * 62),
+    ])
+    edges = IdGroups([
+        ('e1:10' + '1' * 62,),
+        ('e1:aa' + '1' * 62, 'e1:aa' + '2' * 62),
+    ])
+    graph_digest = 'sha256:' + 'd' * 64
+    contract = hashlib.sha256(b'conversation-graph-unit.v2\0')
+    contract.update(graph_digest.encode('ascii') + b'\0')
+    node_data, node_prefix = nodes.pack_contract(64*1024*1024, contract, 'node')
+    edge_data, edge_prefix = edges.pack_contract(64*1024*1024, contract, 'edge')
+    assert node_data == nodes.pack(64*1024*1024)
+    assert edge_data == edges.pack(64*1024*1024)
+    assert node_prefix == bitmap(nodes)
+    assert edge_prefix == bitmap(edges)
+    assert contract.hexdigest() == unit_id(
+        graph_digest, nodes, edges, checksum_version=2
+    )
+
+
+def test_fused_contract_encoder_matches_multi_bucket_legacy_contract():
+    from app.analytics.conversation_id_frames import IdGroups
+    from app.analytics.membership_prefixes import bitmap
+    values = tuple(
+        'g1:' + prefix + format(index, '060x')
+        for index, prefix in enumerate(('0000', '00ff', '1234', 'abcd', 'ffff'))
+    )
+    groups = IdGroups((values[:2], values[2:4], values[4:]))
+    graph_digest = 'sha256:' + 'd' * 64
+    contract = hashlib.sha256(b'conversation-graph-unit.v2\0')
+    contract.update(graph_digest.encode('ascii') + b'\0')
+    packed, summary = groups.pack_contract(64 * 1024 * 1024, contract, 'node')
+    empty_edges = IdGroups(())
+    edge_packed, edge_summary = empty_edges.pack_contract(
+        64 * 1024 * 1024, contract, 'edge'
+    )
+    assert packed == groups.pack(64 * 1024 * 1024)
+    assert edge_packed == empty_edges.pack(64 * 1024 * 1024)
+    assert summary == bitmap(groups)
+    assert edge_summary == bitmap(empty_edges)
+    assert contract.hexdigest() == unit_id(
+        graph_digest, groups, empty_edges, checksum_version=2
+    )
 
 
 @pytest.mark.parametrize('fault',['duplicate','order','count','scope','trailing','concatenated','digest','kind','truncated'])

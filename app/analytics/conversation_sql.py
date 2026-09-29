@@ -158,17 +158,47 @@ def fragment_reader(store, account_id):
             )
             from app.analytics.graph_membership_pages import supported as pages_supported
             page_layout = pages_supported(db)
+            chunk_cache = {}
+            def graph_segment_chunk(kind, bucket):
+                key = (kind, bucket)
+                if key not in chunk_cache:
+                    chunk_cache[key] = verified_segment_chunk(
+                        db, partition, graph_segment_proof, kind, bucket
+                    )
+                return chunk_cache[key]
             def graph_content_ids(kind, keys, check=lambda: None):
+                # Generic/insertion verification retains the independently
+                # selected persisted-content lookup.
                 return selected_content_ids(
                     db, generation['generation_id'], partition, kind, keys, check,
                     page_layout=page_layout,
                 )
-            def graph_segment_chunk(kind, bucket):
-                return verified_segment_chunk(
-                    db, partition, graph_segment_proof, kind, bucket
+            def append_graph_content_ids(kind, keys, check=lambda: None):
+                # Append construction may consume the same canonical chunks that
+                # were just matched to the live predecessor segment proof.
+                if kind not in ('node', 'edge'):
+                    raise ValueError('graph_record_kind_invalid')
+                from collections import defaultdict
+                from app.analytics.conversation_append import (
+                    verified_chunk_content_ids,
                 )
+                grouped = defaultdict(list)
+                for key in dict.fromkeys(keys):
+                    grouped[key[3:5]].append(key)
+                result = {}
+                for bucket, selected in sorted(grouped.items()):
+                    check()
+                    opened = graph_segment_chunk(kind, bucket)
+                    if opened is None:
+                        return {}
+                    segment, encoded = opened
+                    result.update(verified_chunk_content_ids(
+                        segment, encoded, partition, selected, check
+                    ))
+                return result
             load.graph_segment_proof = graph_segment_proof
             load.graph_content_ids = graph_content_ids
+            load.append_graph_content_ids = append_graph_content_ids
             load.graph_segment_chunk = graph_segment_chunk
             load.graph_chunks_complete = verified_segment_chunks_complete(
                 db, partition, graph_segment_proof

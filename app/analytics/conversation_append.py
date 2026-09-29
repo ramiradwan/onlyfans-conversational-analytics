@@ -229,6 +229,25 @@ def try_append(pipeline, account, source_revision, conversation, raw, input_dige
     return findings, metrics, graph, delta if graph_unit is not None else None, unit, graph_unit
 
 
+def verified_chunk_content_ids(segment, encoded, account, keys, check):
+    """Derive selected content IDs from one proof-bound canonical chunk.
+
+    ``verified_segment_chunk`` has already matched these bytes to the live
+    predecessor segment proof. This construction-only helper still frames the
+    complete chunk and rechecks its digest/count/category metadata before any
+    selected content hash is reused. Persisted candidate validation is separate.
+    """
+    selected = set(keys)
+    if not selected:
+        return {}
+    result = {}
+    for key, _category, data in _checked_record_spans(
+            segment, encoded, account, check):
+        if key in selected:
+            result[key] = hashlib.sha256(data.encode('utf-8')).hexdigest()
+    return result
+
+
 def _merge_append_delta(graph, delta, conversation_node, check):
     """Materialized fallback when the existing optional-unit bounds refuse an append."""
     for kind, records, target, counts in (

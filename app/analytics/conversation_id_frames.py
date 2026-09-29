@@ -98,6 +98,57 @@ class IdGroups(Sequence):
             return None
         return b''.join(pieces)
 
+    def pack_contract(self, maximum, digest, kind):
+        """Encode, hash and summarize canonical IDs in one traversal.
+
+        The compressed JSON, unit-digest input and prefix bitmap are byte-for-byte
+        compatible with ``pack()``, ``unit_id()`` and ``membership_prefixes.bitmap``.
+        This is construction-only; persisted candidate validation still decodes and
+        checks the stored unit independently.
+        """
+        from app.analytics.membership_prefixes import PREFIX_BYTES
+        if kind not in ('node', 'edge'):
+            raise ValueError('graph_record_kind_invalid')
+        expected = b'g1:' if kind == 'node' else b'e1:'
+        compressor = zlib.compressobj(1)
+        pieces, size = [], 0
+        summary = bytearray(PREFIX_BYTES)
+        tail = b'['
+        digest.update(kind.encode('ascii') + b'\0')
+        for block in self.frames():
+            if not block or len(block) % _FRAME:
+                raise ValueError('graph_identity_invalid')
+            encoded = compressor.compress(tail + block[:-1])
+            tail = block[-1:]
+            if encoded:
+                pieces.append(encoded)
+                size += len(encoded)
+                if size > maximum:
+                    return None
+            digest.update(block.translate(_TRANSLATE, b'"'))
+            for offset in range(0, len(block), _FRAME):
+                frame = block[offset:offset + _FRAME]
+                if (frame[:1] != b'"' or frame[1:4] != expected
+                        or frame[-2:] != b'",'):
+                    raise ValueError('graph_identity_invalid')
+                try:
+                    prefix = int(frame[4:8], 16)
+                except ValueError as error:
+                    raise ValueError('graph_identity_invalid') from error
+                summary[prefix >> 3] |= 1 << (prefix & 7)
+        final = (compressor.compress(tail[:-1] + b']')
+                 if len(self) else compressor.compress(b'[]'))
+        if final:
+            pieces.append(final)
+            size += len(final)
+        flushed = compressor.flush()
+        if flushed:
+            pieces.append(flushed)
+            size += len(flushed)
+        if size > maximum:
+            return None
+        return b''.join(pieces), bytes(summary)
+
 
 def canonical_groups(unit, summaries, check):
     """Verify actual bytes, counts, ordering and both unchanged hash contracts."""

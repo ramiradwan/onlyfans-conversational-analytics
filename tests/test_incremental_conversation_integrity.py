@@ -78,6 +78,76 @@ def test_append_group_reuse_survives_runtime_preparation(tmp_path, monkeypatch, 
         cleanup(f)
 
 
+
+
+def test_append_content_versions_come_from_verified_chunks(tmp_path, monkeypatch):
+    """Construction must not reopen graph content through selected-content SQL."""
+    from app.analytics import shared_graph
+    from app.analytics.conversation_graph_units import graph_unit_ids
+    from app.analytics.opaque_refs import conversation_ref
+    f = dominant_fixture(tmp_path)
+    try:
+        f.pipeline.project_account(ACCOUNT)
+        ref = conversation_ref(ACCOUNT, 'chat-0')
+        with f.stores.projections.open_conversation_fragments(ACCOUNT) as load:
+            unit = load.previous_graph_unit(ref)
+            nodes, _edges = graph_unit_ids(unit)
+            selected = nodes[:32]
+            expected = load.graph_content_ids('node', selected)
+        active = {'append': False}
+        from app.analytics import conversation_append
+        original_append = conversation_append.try_append
+        original_selected = shared_graph.selected_content_ids
+        def observed_append(*args, **kwargs):
+            active['append'] = True
+            try:
+                return original_append(*args, **kwargs)
+            finally:
+                active['append'] = False
+        def observed_selected(*args, **kwargs):
+            if active['append']:
+                raise AssertionError('selected_content_ids SQL path reopened during append')
+            return original_selected(*args, **kwargs)
+        monkeypatch.setattr(conversation_append, 'try_append', observed_append)
+        monkeypatch.setattr(shared_graph, 'selected_content_ids', observed_selected)
+        with f.stores.projections.open_conversation_fragments(ACCOUNT) as load:
+            actual = load.append_graph_content_ids('node', selected)
+        assert actual == expected
+        assert len(actual) == len(selected)
+        with f.repositories.database.transaction() as db:
+            insert_message(db, 'chat-0', 'chunk-derived-tail', NOW, 2)
+            advance(db)
+        candidate = f.pipeline.build_candidate(ACCOUNT)
+        f.pipeline.publish_candidate(candidate)
+        cold_equal(f, candidate.artifact())
+    finally:
+        cleanup(f)
+
+
+def test_append_chunk_reuse_rechecks_canonical_chunk_digest(tmp_path, monkeypatch):
+    """A proof does not authorize construction from changed chunk bytes."""
+    from app.analytics import shared_graph
+    f = dominant_fixture(tmp_path)
+    try:
+        f.pipeline.project_account(ACCOUNT)
+        before = f.stores.database.active_generation(ACCOUNT).generation_id
+        original = shared_graph.verified_segment_chunk
+        def corrupted(*args, **kwargs):
+            value = original(*args, **kwargs)
+            if value is None:
+                return None
+            segment, encoded = value
+            return segment, encoded + b'changed'
+        monkeypatch.setattr(shared_graph, 'verified_segment_chunk', corrupted)
+        with f.repositories.database.transaction() as db:
+            insert_message(db, 'chat-0', 'corrupt-proof-tail', NOW, 2)
+            advance(db)
+        with pytest.raises(ValueError, match='conversation_append_chunk_invalid'):
+            f.pipeline.build_candidate(ACCOUNT)
+        assert f.stores.database.active_generation(ACCOUNT).generation_id == before
+    finally:
+        cleanup(f)
+
 def test_group_root_binds_scope_membership_and_content():
     from app.analytics.conversation_integrity import summarize_group, encode_manifest
     from app.analytics.opaque_refs import account_ref, conversation_ref
