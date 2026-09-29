@@ -269,6 +269,8 @@ export class ReadOnlyAgentWebSocketClient {
     if (sent) {
       this.lastHeartbeatSentAt = this.monotonicNow();
       this.scheduleHeartbeat();
+      // History pages can commit without a passive capture event to trigger delivery.
+      void this.flushOutbox().catch((error) => this.onValidationError(error));
     }
     return sent;
   }

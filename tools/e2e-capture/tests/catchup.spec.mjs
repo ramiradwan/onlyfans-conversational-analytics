@@ -10,6 +10,7 @@ import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
 import { bindAgentFromBridgePage, extensionId, extensionWorker, launchExtensionBrowser,
   terminateExtensionWorker } from '../lib/extension-browser.mjs';
 import { EXTENSION_DIST, assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
+import { installCatchupShim, withCatchupDiagnostics } from '../lib/catchup-diagnostics.mjs';
 
 async function syntheticExtension(directory) {
   await cp(EXTENSION_DIST, directory, { recursive: true });
@@ -26,27 +27,8 @@ async function syntheticExtension(directory) {
   const original = await readFile(path.join(directory, 'background.js'), 'utf8');
   await writeFile(path.join(directory, 'production-background.mjs'), original);
   await writeFile(path.join(directory, 'background.js'), `
-import { agentRuntime } from './production-background.mjs';
-const initialize = agentRuntime.initialize;
-agentRuntime.initialize = async (...args) => {
-  const components = await initialize(...args);
-  const signer = category => ({ async read(request) {
-    request.signal?.throwIfAborted();
-    const tabs = await chrome.tabs.query({ url: ['https://onlyfans.com/*'] });
-    const tab = tabs.find(tab => tab.frozen === false && !tab.discarded);
-    if (!tab) throw new Error('Synthetic tab unavailable');
-    const kind = request.operation === 'identity' ? 'identity'
-      : request.operation === 'conversations' ? category + '_list' : category + '_messages';
-    const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN',
-      func: (request, kind) => globalThis.syntheticCatchupRead(request, kind),
-      args: [{ operation: request.operation, parameters: request.parameters }, kind] });
-    request.signal?.throwIfAborted();
-    return results[0].result;
-  } });
-  components.history.initial.signer = signer('history');
-  components.history.catchup.signer = signer('catchup');
-  return components;
-};
+import { agentRuntime, consentController } from './production-background.mjs';
+(${installCatchupShim.toString()})(agentRuntime, chrome, globalThis, () => consentController.status());
 `);
 }
 
@@ -115,21 +97,26 @@ for (const enabled of [true, false]) {
       platform.seedCatchup('102', 'initial102', old);
       await platform.install(context);
       await context.exposeBinding('syntheticCatchupRead', (source, request, category) => platform.readCatchupPage(request, category));
+      let lastSummary = null;
+      const summary = async () => (lastSummary = await readBrainSummary(context, { catchup: true }));
+      const poll = (read, expected, timeout = 180_000) => withCatchupDiagnostics(
+        () => expect.poll(read, { timeout }).toBe(expected),
+        { summary: () => lastSummary ?? summary(), platform, context },
+      );
       const reopen = async () => {
         const page = await context.newPage();
         await page.goto('https://onlyfans.com/');
-        await expect.poll(() => page.evaluate(() => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode), { timeout: 30_000 }).toBe('full');
+        await poll(() => page.evaluate(() => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode), 'full', 30_000);
         await page.evaluate(() => globalThis.fixtureRead('/api2/v2/users/me'));
         await page.evaluate(() => globalThis.fixtureOpenSocket());
         return page;
       };
       let page = await reopen();
       expect(await enableHistory(bridge)).toBe(200);
-      const summary = () => readBrainSummary(context, { catchup: true });
-      await expect.poll(async () => (await summary()).coverage.status, { timeout: 180_000 }).toBe('complete');
-      if (enabled) await expect.poll(async () => (await summary()).catchupFreshness.status, { timeout: 180_000 }).toBe('current');
+      await poll(async () => (await summary()).coverage.status, 'complete');
+      if (enabled) await poll(async () => (await summary()).catchupFreshness?.status, 'current');
       await observeFreshness(bridge, await readServedRuntimeConfig(context));
-      await expect.poll(() => bridge.evaluate(() => globalThis.catchupStates.length)).toBeGreaterThan(0);
+      await poll(() => bridge.evaluate(() => globalThis.catchupStates.length > 0), true, 12_000);
       const before = structuredClone(platform.requestCounts);
       await page.close();
       await terminateExtensionWorker(context, worker);
@@ -139,13 +126,13 @@ for (const enabled of [true, false]) {
       platform.seedCatchup('103', 'missing103', now);
       page = await reopen();
       if (enabled) {
-        await expect.poll(async () => (await summary()).messageCount, { timeout: 240_000 }).toBe(5);
-        await expect.poll(async () => bridge.evaluate(() => {
+        await poll(async () => (await summary()).messageCount, 5, 240_000);
+        await poll(async () => bridge.evaluate(() => {
           const states = globalThis.catchupStates;
           const behind = states.indexOf('behind');
           const checking = states.indexOf('checking', behind + 1);
           return behind >= 0 && checking > behind && states.indexOf('current', checking + 1) > checking;
-        }), { timeout: 180_000 }).toBe(true);
+        }), true);
         expect(platform.requestCounts.catchup_list - before.catchup_list).toBe(Math.ceil(3 / 100));
         expect(platform.requestCounts.catchup_messages - before.catchup_messages).toBe(3);
         for (const chat of ['101', '102', '103']) {
@@ -154,7 +141,7 @@ for (const enabled of [true, false]) {
           expect(ids).toContain('missing' + chat);
         }
       } else {
-        await expect.poll(async () => (await summary()).agentStatus, { timeout: 90_000 }).toBe('connected');
+        await poll(async () => (await summary()).agentStatus, 'connected', 90_000);
         await page.waitForTimeout(70_000);
         expect((await summary()).messageCount).toBe(2);
         expect((await summary()).catchupFreshness.status).not.toBe('current');
