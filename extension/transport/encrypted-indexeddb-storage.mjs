@@ -140,6 +140,9 @@ function historyJobRoute(key) {
   if (typeof key !== 'string' || key.length === 0) {
     throw new Error('Encrypted history job routing key is invalid');
   }
+  if (key === 'catchup:active' || key === 'catchup:control') {
+    return { generationId: 'catchup', kindOrder: '2', rangeStart: false };
+  }
   const conversationIndex = key.indexOf(HISTORY_JOB_CONVERSATION_MARKER);
   if (conversationIndex > 0) {
     const generationId = key.slice(0, conversationIndex);

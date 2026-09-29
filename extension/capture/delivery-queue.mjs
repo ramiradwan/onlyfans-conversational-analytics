@@ -1,6 +1,16 @@
 import { CAPTURE_LIMITS, utf8Bytes } from './limits.mjs';
 export { CAPTURE_LIMITS, fitsUtf8, utf8Bytes } from './limits.mjs';
 
+const dropState = globalThis[Symbol.for('ofca.capture.queue.drops')] ??= {
+  counts: { document: globalThis.crypto?.randomUUID?.() ?? 'document', expired: 0, rejected: 0 },
+  reporting: false,
+};
+const queueDrops = dropState.counts;
+function reportDrop(reason) {
+  queueDrops[reason]++;
+  try { void globalThis.chrome?.runtime?.sendMessage({ type: 'ofca.capture.queue.changed' })?.catch(() => {}); } catch {}
+}
+
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
     signal.throwIfAborted();
@@ -15,9 +25,17 @@ export class CaptureDeliveryQueue {
   constructor({ send, now = Date.now, random = Math.random,
     maxEntries = CAPTURE_LIMITS.queueEntries, maxBytes = CAPTURE_LIMITS.queueBytes,
     attemptTimeoutMs = 5_000,
+    onDrop = reportDrop,
   }) {
     if (typeof send !== 'function') throw new TypeError('Capture delivery sender is required');
     Object.assign(this, { send, now, random, maxEntries, maxBytes, attemptTimeoutMs });
+    this.onDrop = onDrop;
+    if (!dropState.reporting && globalThis.chrome?.runtime?.onMessage) {
+      dropState.reporting = true;
+      chrome.runtime.onMessage.addListener((request, sender, respond) => {
+        if (request?.type === 'ofca.capture.queue.status') respond({ ...queueDrops });
+      });
+    }
     this.entries = [];
     this.bytes = 0;
     this.processing = null;
@@ -28,9 +46,11 @@ export class CaptureDeliveryQueue {
     this.controller.signal.throwIfAborted();
     const bytes = utf8Bytes(JSON.stringify(delivery));
     if (bytes > CAPTURE_LIMITS.envelopeBytes) {
+      this.onDrop('rejected');
       throw Object.assign(new Error('capture_delivery_too_large'), { code: 'capture_delivery_too_large' });
     }
     if (this.entries.length >= this.maxEntries || this.bytes + bytes > this.maxBytes) {
+      this.onDrop('rejected');
       throw Object.assign(new Error('delivery_queue_full'), { code: 'delivery_queue_full' });
     }
     const result = new Promise((resolve, reject) => {
@@ -53,7 +73,10 @@ export class CaptureDeliveryQueue {
     while (this.entries.length > 0 && !this.controller.signal.aborted) {
       const item = this.entries[0];
       try { item.resolve(await this.#deliver(item.delivery, this.controller.signal)); }
-      catch (error) { item.reject(error); }
+      catch (error) {
+        if (!this.controller.signal.aborted) this.onDrop(error?.code === 'delivery_expired' ? 'expired' : 'rejected');
+        item.reject(error);
+      }
       finally {
         if (this.entries[0] === item) {
           this.entries.shift();

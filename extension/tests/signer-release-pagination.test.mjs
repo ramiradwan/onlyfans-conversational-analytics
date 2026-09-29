@@ -41,10 +41,10 @@ for (const [name, Coordinator, Outbox, storageFactory] of variants) {
         return provider.read(request);
       } }, configuration: () => traversalConfiguration(),
       session: () => ({ creator_account_id: TRAVERSAL_ACCOUNT, applied_config_revision: 'synthetic-config-v1' }),
-      now: () => TRAVERSAL_TIME });
+      now: () => TRAVERSAL_TIME, clock: () => Date.parse(TRAVERSAL_TIME) + wake * 60_000 });
       const result = await coordinator.wake();
       assert.equal(result.status, 'progressed');
-      finalJobs = await outbox.historyJobs();
+      finalJobs = await outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'));
       const inventory = finalJobs.find((job) => job.kind === 'inventory');
       generationId ??= inventory.generation_id;
       assert.equal(inventory.generation_id, generationId);
@@ -88,9 +88,12 @@ async function releaseHarness(variant, policy = {}, { wrapStorage = (value) => v
   const f = createSignerReleaseFixture(); f.persistence = createAccountSigningPersistence(storage, TRAVERSAL_ACCOUNT);
   const provider = await f.createProvider();
   const configuration = traversalConfiguration(policy);
+  let clock = Date.parse(TRAVERSAL_TIME);
   const coordinator = new Coordinator({ outbox, signer: provider, configuration: () => configuration,
     session: () => ({ creator_account_id: TRAVERSAL_ACCOUNT, applied_config_revision: 'synthetic-config-v1' }),
-    now: () => TRAVERSAL_TIME });
+    now: () => TRAVERSAL_TIME, clock: () => clock });
+  const wake = coordinator.wake.bind(coordinator);
+  coordinator.wake = () => { clock += 60_000; return wake(); };
   return { f, provider, coordinator, outbox, storage, configuration };
 }
 
@@ -103,7 +106,7 @@ for (const variant of variants) {
         : { list: Array.from({ length: size }, (_, index) => ({ id: String(index + 1),
           withUser: { id: String(index + 1) }, lastMessage: null })), hasMore: false });
       await h.coordinator.wake(); h.coordinator.stop();
-      const jobs = await h.outbox.historyJobs();
+      const jobs = await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'));
       const inventory = jobs.find((job) => job.kind === 'inventory');
       assert.equal(inventory.boundary, 'inventory_end');
       assert.equal(inventory.cursor, null);
@@ -120,7 +123,7 @@ for (const variant of variants) {
         : h.f.response({ error: 'synthetic-upstream-private-message' }, status, { retryAfterMs: 45_000 });
       if (status === 429) await h.coordinator.wake();
       else await assert.rejects(h.coordinator.wake(), { code });
-      const inventory = (await h.outbox.historyJobs()).find((job) => job.kind === 'inventory');
+      const inventory = (await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((job) => job.kind === 'inventory');
       assert.equal(inventory.last_error_code, code);
       assert.equal(inventory.retry_count, 1);
       assert.equal(inventory.cursor, null);
@@ -138,7 +141,7 @@ for (const variant of variants) {
         : { list: [message('899'), message('900')], hasMore: true });
     await h.coordinator.wake();
     await assert.rejects(h.coordinator.wake(), { code: 'invalid_response' });
-    const job = (await h.outbox.historyJobs()).find((item) => item.kind === 'conversation');
+    const job = (await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((item) => item.kind === 'conversation');
     assert.equal(job.last_error_code, 'invalid_response');
     assert.equal(job.last_validation_error, 'invalid_continuation');
     assert.equal(job.cursor, null); assert.equal(job.boundary, null);
@@ -154,7 +157,7 @@ for (const variant of variants) {
     await h.coordinator.wake(); await h.coordinator.wake();
     const before = h.outbox.identityState().entity_counts.messages;
     await assert.rejects(h.coordinator.wake(), { code: 'cursor_repeated' });
-    const job = (await h.outbox.historyJobs()).find((item) => item.kind === 'conversation');
+    const job = (await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((item) => item.kind === 'conversation');
     assert.equal(job.cursor, 'msg1.101.900'); assert.equal(job.boundary, null);
     assert.equal(job.last_error_code, 'cursor_repeated');
     assert.equal(h.outbox.identityState().entity_counts.messages, before);
@@ -166,7 +169,7 @@ for (const variant of variants) {
     h.f.reply = (request) => h.f.response(request.operation === 'identity' ? { id: TRAVERSAL_CREATOR }
       : { list: [{ id: '102', withUser: { id: '102' } }], hasMore: false });
     await h.coordinator.wake();
-    const job = (await h.outbox.historyJobs()).find((item) => item.kind === 'conversation');
+    const job = (await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((item) => item.kind === 'conversation');
     await h.outbox.saveHistoryJob({ ...job, cursor: 'msg1.101.900' });
     const requests = h.f.calls.reads.length;
     await assert.rejects(h.coordinator.wake(), { name: 'IntentValidationError' });
@@ -194,7 +197,7 @@ for (const variant of variants) {
     finish.resolve();
     await new Promise((resolve) => setImmediate(resolve));
     await h.f.persistence.drain();
-    assert.equal((await h.outbox.historyJobs()).length, 0);
+    assert.equal((await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).length, 0);
     assert.equal(h.outbox.identityState().last_source_seq, 0);
     assert.equal(h.f.calls.reloads, 1);
     assert.equal(h.f.calls.reads.filter((read) => read.operation !== 'identity').length, 0);
@@ -224,7 +227,7 @@ for (const variant of variants) {
       h.coordinator.cancelCurrent(reason); await rejected;
       finish.resolve(); await h.f.persistence.drain();
       await new Promise((resolve) => setImmediate(resolve));
-      assert.equal((await h.outbox.historyJobs()).length, 0);
+      assert.equal((await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).length, 0);
       assert.equal(h.outbox.identityState().last_source_seq, 0);
       const signingState = await h.f.persistence.load();
       assert.ok(signingState, 'an entered signing save may finish; it does not authorize captured pages');
@@ -250,7 +253,7 @@ for (const variant of variants) {
       }) });
       armed = true;
       await assert.rejects(h.coordinator.wake(), (error) => error === reason);
-      const jobs = await h.outbox.historyJobs();
+      const jobs = await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'));
       if (stage === 'job-save') assert.equal(jobs.length, 0);
       else assert.equal(jobs.find((job) => job.kind === 'inventory').phase, 'start');
       assert.equal(h.outbox.identityState().last_source_seq, 0);
@@ -273,7 +276,7 @@ for (const variant of variants) {
     };
     await assert.rejects(h.coordinator.wake(), { code: 'history_run_deadline' });
     assert.equal(timerFired, false);
-    const inventory = (await h.outbox.historyJobs()).find((job) => job.kind === 'inventory');
+    const inventory = (await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((job) => job.kind === 'inventory');
     assert.equal(inventory.phase, 'inventory');
     assert.equal(inventory.boundary, null);
     assert.equal(inventory.retry_count, 0);
@@ -310,10 +313,10 @@ for (const variant of variants) {
         await h.coordinator.wake();
         if (phase === 'closed') {
           for (let wake = 0; wake < 10; wake += 1) {
-            if ((await h.outbox.historyJobs()).find((job) => job.kind === 'inventory').phase === 'closed') break;
+            if ((await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((job) => job.kind === 'inventory').phase === 'closed') break;
             await h.coordinator.wake();
           }
-          assert.equal((await h.outbox.historyJobs()).find((job) => job.kind === 'inventory').phase, 'closed');
+          assert.equal((await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((job) => job.kind === 'inventory').phase, 'closed');
         }
         h.coordinator.stop();
         if (incompatible === 'changed mapping') {
@@ -326,7 +329,7 @@ for (const variant of variants) {
             await tx.put('history_jobs', inventory);
           });
         }
-        const jobsBefore = await h.outbox.historyJobs();
+        const jobsBefore = await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'));
         const stateBefore = h.outbox.identityState();
         const signingBefore = await h.f.persistence.load();
         const replacement = createSignerReleaseFixture({
@@ -343,7 +346,7 @@ for (const variant of variants) {
         });
         assert.equal(replacement.calls.reads.length, 0, 'incompatible durable authorization blocks before any signer request');
         assert.equal(replacement.calls.reloads, 0);
-        assert.deepEqual(await h.outbox.historyJobs(), jobsBefore, 'old cursor and generation remain retained');
+        assert.deepEqual(await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control')), jobsBefore, 'old cursor and generation remain retained');
         assert.deepEqual(h.outbox.identityState(), stateBefore);
         assert.deepEqual(await replacement.persistence.load(), signingBefore, 'retained signing state is never reset to adopt a mapping');
         if (incompatible === 'changed mapping') {
@@ -361,7 +364,7 @@ for (const variant of variants) {
       : request.operation === 'conversations' ? { list: [{ id: '101', withUser: { id: '101' } }], hasMore: false }
         : { list: [], hasMore: false });
     await h.coordinator.wake(); await h.coordinator.wake(); await h.coordinator.wake();
-    const jobs = await h.outbox.historyJobs();
+    const jobs = await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'));
     assert.equal(jobs.find((job) => job.kind === 'inventory').phase, 'closed');
     await h.storage.runTransaction('readwrite', ['history_jobs'], async (tx) => {
       const conversation = jobs.find((job) => job.kind === 'conversation');
@@ -378,7 +381,7 @@ for (const variant of variants) {
     const h = await releaseHarness(variant);
     h.f.reply = (request) => h.f.response(nativeTraversalBody(request));
     await h.coordinator.wake();
-    const previous = (await h.outbox.historyJobs()).find((job) => job.kind === 'inventory');
+    const previous = (await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((job) => job.kind === 'inventory');
     assert.equal(previous.cursor, '2');
     const reads = h.f.calls.reads.length;
     h.configuration.history_acquisition.consent_revision = 'synthetic-consent-v2';
@@ -386,7 +389,7 @@ for (const variant of variants) {
     const newReads = h.f.calls.reads.slice(reads);
     assert.deepEqual(newReads.map((request) => request.operation), ['identity', 'conversations']);
     assert.equal(new URL(newReads[1].url).searchParams.get('offset'), null);
-    const inventories = (await h.outbox.historyJobs()).filter((job) => job.kind === 'inventory');
+    const inventories = (await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).filter((job) => job.kind === 'inventory');
     assert.equal(inventories.length, 2);
     assert.deepEqual(inventories.find((job) => job.job_id === previous.job_id), previous);
     const current = inventories.find((job) => job.job_id !== previous.job_id);
@@ -399,14 +402,14 @@ for (const variant of variants) {
     const h = await releaseHarness(variant);
     h.f.reply = (request) => h.f.response(nativeTraversalBody(request));
     await h.coordinator.wake();
-    const jobs = await h.outbox.historyJobs();
+    const jobs = await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'));
     const inventory = jobs.find((job) => job.kind === 'inventory');
     const conversation = jobs.find((job) => job.kind === 'conversation');
     await assert.rejects(h.outbox.commitPage({ jobId: inventory.job_id,
       expectedAccountEpoch: inventory.account_epoch, expectedLeaseToken: inventory.lease_token,
       nextCursor: '4', spawnJobs: [{ ...conversation, authorized_platform_creator_id: '9002' }],
     }), { code: 'history_job_conflict' });
-    assert.deepEqual(await h.outbox.historyJobs(), jobs, 'a conflicting spawn rolls back its enclosing cursor transaction');
+    assert.deepEqual(await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control')), jobs, 'a conflicting spawn rolls back its enclosing cursor transaction');
     h.coordinator.stop();
   });
 
@@ -415,7 +418,7 @@ for (const variant of variants) {
     const h = await releaseHarness(variant);
     h.f.reply = (request) => h.f.response(nativeTraversalBody(request));
     await h.coordinator.wake(); h.coordinator.stop();
-    const previous = (await h.outbox.historyJobs()).find((job) => job.kind === 'inventory');
+    const previous = (await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((job) => job.kind === 'inventory');
     await h.outbox.invalidateAccountEpoch();
     const outbox = new Outbox({ storage: h.storage, creatorAccountId: TRAVERSAL_ACCOUNT });
     await outbox.initialize();
@@ -423,12 +426,12 @@ for (const variant of variants) {
     const reads = h.f.calls.reads.length;
     const coordinator = new Coordinator({ outbox, signer: provider, configuration: () => h.configuration,
       session: () => ({ creator_account_id: TRAVERSAL_ACCOUNT, applied_config_revision: h.configuration.config_revision }),
-      now: () => TRAVERSAL_TIME });
+      now: () => TRAVERSAL_TIME, clock: () => Date.parse(TRAVERSAL_TIME) + 120_000 });
     await coordinator.wake();
     const newReads = h.f.calls.reads.slice(reads);
     assert.deepEqual(newReads.map((request) => request.operation), ['identity', 'conversations']);
     assert.equal(new URL(newReads[1].url).searchParams.get('offset'), null);
-    const inventories = (await outbox.historyJobs()).filter((job) => job.kind === 'inventory');
+    const inventories = (await outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).filter((job) => job.kind === 'inventory');
     assert.equal(inventories.length, 2);
     assert.deepEqual(inventories.find((job) => job.job_id === previous.job_id), previous);
     assert.equal(inventories.find((job) => job.job_id !== previous.job_id).account_epoch, previous.account_epoch + 1);
@@ -445,7 +448,7 @@ for (const variant of variants) {
       throw hostile;
     } };
     await assert.rejects(h.coordinator.wake(), (error) => error === hostile);
-    const inventory = (await h.outbox.historyJobs()).find((job) => job.kind === 'inventory');
+    const inventory = (await h.outbox.historyJobs().then(jobs => jobs.filter(job => job.kind !== 'catchup_control'))).find((job) => job.kind === 'inventory');
     assert.equal(inventory.last_error_code, 'signing_failed');
     assert.equal(inventory.last_validation_error, null);
     assert.equal(JSON.stringify(inventory).includes('synthetic-private-getter'), false);

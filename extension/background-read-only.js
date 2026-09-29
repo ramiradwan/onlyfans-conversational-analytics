@@ -33,6 +33,8 @@ export const agentRuntime = createReadOnlyAgentRuntime({
   chromeAdapter,
   chromeApi: chrome,
   configHttpFactory: () => companionClient.configAdapter,
+  catchupRpc: (...args) => companionClient.configAdapter.catchupRpc(...args),
+  captureState: () => consentController.captureState(),
   transportFactory: (options) => new ReadOnlyAgentWebSocketClient({ ...options, webSocketFactory: companionClient.webSocketFactory }),
   signerFactory: (options) => createChromeBrowserSigningProvider(options),
   onStartupError: () => {

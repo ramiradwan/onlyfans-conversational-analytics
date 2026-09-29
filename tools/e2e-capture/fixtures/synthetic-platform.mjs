@@ -91,6 +91,29 @@ export class SyntheticPlatform {
     this.unexpectedRequests = [];
     this.openSockets = new Set();
     this.websocketFramesSent = 0;
+    this.requestCounts = { history_list: 0, history_messages: 0, catchup_list: 0,
+      catchup_messages: 0, canary_list: 0, identity: 0 };
+    this.catchupChats = new Map();
+  }
+
+  seedCatchup(chatId, messageId, sentAt) {
+    const items = this.catchupChats.get(chatId) ?? [];
+    items.unshift({ id: messageId, chat_id: chatId, sender_platform_user_id: chatId,
+      text: 'Synthetic catch-up message', sent_at: sentAt, direction: 'inbound' });
+    this.catchupChats.set(chatId, items);
+  }
+
+  readCatchupPage(request, category) {
+    if (!Object.hasOwn(this.requestCounts, category)) throw new Error('Unknown synthetic request class');
+    this.requestCounts[category]++;
+    if (request.operation === 'identity') return { success: true, operation: 'identity', data: { id: SYNTHETIC.creatorId } };
+    const inventory = request.operation === 'conversations';
+    if (!inventory && request.operation !== 'message-page') throw new Error('Unexpected synthetic operation');
+    const items = inventory ? [...this.catchupChats].map(([id, messages]) => ({ id, platform_user_id: id,
+      display_name: null, updated_at: messages[0].sent_at })) : this.catchupChats.get(request.parameters.conversationId);
+    if (!items || request.parameters.query.cursor !== null) throw new Error('Unexpected synthetic continuation');
+    return { success: true, operation: request.operation, data: { items: structuredClone(items),
+      continuation: null, boundary: inventory ? 'inventory_end' : 'history_start' } };
   }
 
   async install(context) {

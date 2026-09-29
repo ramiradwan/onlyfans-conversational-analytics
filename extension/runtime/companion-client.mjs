@@ -334,7 +334,8 @@ export function createCompanionClient({
       (await store()).close(); storePromise = null; installationPromise = null;
     },
     onWake(listener) {
-      const events = [chromeApi.runtime.onStartup, chromeApi.runtime.onInstalled, chromeApi.runtime.onMessage, chromeApi.tabs?.onUpdated].filter(Boolean);
+      const events = [chromeApi.runtime.onStartup, chromeApi.runtime.onInstalled, chromeApi.runtime.onMessage,
+        chromeApi.tabs?.onUpdated, chromeApi.tabs?.onCreated, chromeApi.tabs?.onRemoved].filter(Boolean);
       for (const event of events) event.addListener(listener);
       const alarm = (value) => { if (value?.name === RECONCILE_ALARM) listener(); };
       chromeApi.alarms?.onAlarm?.addListener(alarm);
@@ -343,6 +344,10 @@ export function createCompanionClient({
     },
   });
   const configAdapter = {
+    async catchupRpc(operation, payload, controls = {}) {
+      if (!active || active.channel.closed || active.accountId !== payload.creator_account_id) throw failure();
+      return active.channel.rpc(operation, payload, controls);
+    },
     async fetchConfig(context) {
       if (!active || active.channel.closed || active.accountId !== context.creatorAccountId) throw failure();
       return active.channel.rpc('agent.config.get', {

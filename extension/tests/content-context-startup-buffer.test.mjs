@@ -101,7 +101,7 @@ function harness() {
   return {
     delivered,
     dispatch,
-    pause() { controls[0]({ type: 'ofca.capture.control', version: 1, action: 'pause' }, {}, () => {}); },
+    pause() { for (const control of controls) control({ type: 'ofca.capture.control', version: 1, action: 'pause' }, {}, () => {}); },
     resolveContext(response) {
       assert.equal(typeof contextCallback, 'function');
       const callback = contextCallback;

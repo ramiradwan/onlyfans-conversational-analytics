@@ -11,7 +11,7 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-export async function launchExtensionBrowser(userDataDir) {
+export async function launchExtensionBrowser(userDataDir, extensionDirectory = EXTENSION_DIST) {
   const executablePath = process.env.OFCA_E2E_BROWSER_EXECUTABLE;
   return chromium.launchPersistentContext(userDataDir, {
     ...(executablePath ? { executablePath } : {}),
@@ -19,8 +19,8 @@ export async function launchExtensionBrowser(userDataDir) {
     viewport: { width: 1280, height: 800 },
     serviceWorkers: 'allow',
     args: [
-      `--disable-extensions-except=${EXTENSION_DIST}`,
-      `--load-extension=${EXTENSION_DIST}`,
+      `--disable-extensions-except=${extensionDirectory}`,
+      `--load-extension=${extensionDirectory}`,
       '--host-resolver-rules=MAP bridge.localhost 127.0.0.1',
       '--disable-background-networking',
       '--disable-component-update',

@@ -32,6 +32,8 @@ export const agentRuntime = createAgentRuntime({
   chromeAdapter,
   chromeApi: chrome,
   configHttpFactory: () => companionClient.configAdapter,
+  catchupRpc: (...args) => companionClient.configAdapter.catchupRpc(...args),
+  captureState: () => consentController.captureState(),
   transportFactory: (options) => new AgentWebSocketClient({ ...options, webSocketFactory: companionClient.webSocketFactory }),
   signerFactory: (options) => createChromeBrowserSigningProvider(options),
   onStartupError: () => {

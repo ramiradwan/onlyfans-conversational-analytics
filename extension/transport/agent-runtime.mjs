@@ -1,3 +1,4 @@
+import { CatchupCoordinator, coordinateAcquisition } from './catchup-coordinator.mjs';
 import {
   AgentConfigClient,
   AtomicConfigActivator,
@@ -11,6 +12,7 @@ import { AgentRuntime, createLazyAccountSigner } from './agent-runtime-core.mjs'
 export { AgentRuntime, createAccountSigningPersistence } from './agent-runtime-core.mjs';
 
 export function createAgentRuntime(options = {}) {
+  const workerInstanceId = crypto.randomUUID();
   const chromeApi = options.chromeApi ?? globalThis.chrome;
   const extensionVersion = options.extensionVersion ?? chromeApi.runtime.getManifest().version;
   const chromeAdapter = options.chromeAdapter;
@@ -80,7 +82,7 @@ export function createAgentRuntime(options = {}) {
         reportApplied: (report) => {
           if (signal.aborted) return false;
           const sent = transport?.sendConfigApplied(report) ?? false;
-          void history?.wake().catch(() => undefined);
+          void history?.wake('observing').catch(() => undefined);
           return sent;
         },
         onUnauthorized: () => transport?.stop(),
@@ -103,9 +105,19 @@ export function createAgentRuntime(options = {}) {
           session: () => transport?.session == null ? null : { ...transport.session, applied_config_revision: identity.appliedConfigRevision },
         });
       }
+      if (history && options.catchupRpc && options.captureState) {
+        history = coordinateAcquisition(history, new CatchupCoordinator({
+          outbox: durableOutbox, signer: history.signer,
+          configuration: () => configuration.activeDocument,
+          session: () => transport?.session == null ? null : { ...transport.session,
+            agent_installation_id: agentInstallationId, applied_config_revision: identity.appliedConfigRevision },
+          rpc: options.catchupRpc, captureState: options.captureState, workerInstanceId,
+        }));
+      }
       signal.throwIfAborted();
       transport = transportFactory({
         identity,
+        capabilities: ['capture.chats', 'capture.messages', 'capture.presence', 'history.sync', 'command.message.send', 'history.catchup.v1'],
         creatorAccountId,
         authTicket,
         reconnectAuthTicket,
@@ -119,7 +131,7 @@ export function createAgentRuntime(options = {}) {
         outbox: durableOutbox,
         configClient: configuration,
         health: () => configuration.healthSummary(),
-        onSession: () => { if (!signal.aborted) void history?.wake().catch(() => undefined); },
+        onSession: () => { if (!signal.aborted) void history?.wake('admission').catch(() => undefined); },
         onSessionLost: () => history?.cancelCurrent?.('Agent session ended'),
       });
       signal.throwIfAborted();

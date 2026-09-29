@@ -14,6 +14,7 @@ function normalizeSummary(snapshot, agent) {
     coverage: snapshot.coverage,
     projection: snapshot.projection,
     liveFreshness: snapshot.live_freshness,
+    ...(snapshot.catchup_freshness ? { catchupFreshness: snapshot.catchup_freshness } : {}),
     summaryOnly: snapshot.conversations.every((conversation) => (
       !Object.hasOwn(conversation, 'messages')
     )),
@@ -46,14 +47,14 @@ async function summaryProbePage(context, timeoutMs) {
   return page;
 }
 
-export async function readBrainSummary(context, { timeoutMs = 10_000 } = {}) {
+export async function readBrainSummary(context, { timeoutMs = 10_000, catchup = false } = {}) {
   const config = await readServedRuntimeConfig(context);
   // Keep one already-loaded Bridge-origin page per browser context. Creating or
   // navigating a tab emits chrome.tabs.onUpdated, which is itself a production
   // Agent wake source; reusing this page lets hard-expiry tests observe Brain
   // without accidentally recreating the MV3 worker they just terminated.
   const page = await summaryProbePage(context, timeoutMs);
-  const state = await page.evaluate(({ authTicket, creatorAccountId, timeout }) => (
+  const state = await page.evaluate(({ authTicket, creatorAccountId, timeout, catchup }) => (
     new Promise((resolve, reject) => {
       const socket = new WebSocket('ws://bridge.localhost:17871/ws/bridge');
       const bridgeSessionId = crypto.randomUUID();
@@ -81,7 +82,8 @@ export async function readBrainSummary(context, { timeoutMs = 10_000 } = {}) {
             auth_ticket: authTicket,
             bridge_session_id: bridgeSessionId,
             requested_creator_account_id: creatorAccountId,
-            capabilities: ['state.snapshot', 'state.delta', 'presence.state', 'message.page'],
+            capabilities: ['state.snapshot', 'state.delta', 'presence.state', 'message.page',
+              ...(catchup ? ['state.catchup_freshness'] : [])],
             client_version: 'e2e-capture-2',
             last_view_revision: null,
           },
@@ -116,6 +118,7 @@ export async function readBrainSummary(context, { timeoutMs = 10_000 } = {}) {
     authTicket: config.BRIDGE_AUTH_TICKET,
     creatorAccountId: config.CREATOR_ID,
     timeout: timeoutMs,
+    catchup,
   });
   return normalizeSummary(state.snapshot, state.agent);
 }

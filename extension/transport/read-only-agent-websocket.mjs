@@ -233,6 +233,7 @@ export class ReadOnlyAgentWebSocketClient {
             event_id: item.event_id,
             source_seq: item.source_seq,
             acquisition_origin: item.acquisition_origin ?? 'passive',
+            ...(item.check_id === undefined ? {} : { check_id: item.check_id }),
             change: item.change,
             agent_installation_id: this.identity.agentInstallationId,
             agent_stream_id: this.identity.agentStreamId,
