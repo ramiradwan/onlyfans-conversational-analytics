@@ -445,6 +445,8 @@ import {
                   frame,
                   ownership.creatorPlatformUserId,
                 ),
+                ownEchoCreatorId: socketCreatorId === ownership.creatorPlatformUserId
+                  ? socketCreatorId : null,
               });
               if (record === null) continue;
               postObservation({
