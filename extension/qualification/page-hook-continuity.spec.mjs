@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { SyntheticPlatform } from '../../tools/e2e-capture/fixtures/synthetic-platform.mjs';
+import { confirmFullDocument } from '../../tools/visual-capture/page-hook-control-fixture.mjs';
 
 test('the built observer retains one original socket across reinjection and same-account navigation', async ({ context, page }) => {
   const platform = new SyntheticPlatform();
@@ -9,9 +10,17 @@ test('the built observer retains one original socket across reinjection and same
   await context.addInitScript({ content: `
     globalThis.__OFCA_CAPTURE_MODE__ = 'full';
     globalThis.fixtureCaptures = [];
+    globalThis.fixtureIdentities = [];
+    globalThis.fixtureStatuses = [];
     window.addEventListener('message', event => {
       if (event.source === window && event.data?.observation?.record) {
         fixtureCaptures.push(event.data.observation);
+      }
+      if (event.source === window && event.data?.type === 'ofca.provisioning.identity.update') {
+        fixtureIdentities.push(event.data);
+      }
+      if (event.source === window && event.data?.type === 'ofca.capture.control.status') {
+        fixtureStatuses.push(event.data.status);
       }
     });
     ${hook}
@@ -20,6 +29,12 @@ test('the built observer retains one original socket across reinjection and same
   const documentToken = await page.evaluate(() => globalThis.fixtureDocumentToken);
   const count = () => page.evaluate(() => fixtureCaptures.length);
   const identify = () => page.evaluate(() => fixtureRead('/api2/v2/users/me'));
+  await expect.poll(() => page.evaluate(() => fixtureStatuses.at(-1)?.forwarding)).toBe(false);
+  await identify();
+  expect(await page.evaluate(() => fixtureIdentities.length)).toBe(0);
+  expect(await count()).toBe(0);
+  await confirmFullDocument(page);
+  await expect.poll(() => page.evaluate(() => fixtureIdentities.length)).toBe(1);
   const capturedIdentity = () => page.evaluate(() => {
     return new Promise(resolve => {
       const listener = event => {
