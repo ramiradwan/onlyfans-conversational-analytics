@@ -143,7 +143,7 @@ test('stable connection report contains only derived facts', () => {
       runtimeReady: true, socketOpen: false, sessionBound: false,
       lastHeartbeatSentAt: 80, reconnectTimerPresent: true, recoveryAttempts: 2,
       connectionEvents: [{ at: 85, event: 'channel-close', code: 1008, reason: 'private_note', wasStable: true },
-        { at: 75, event: 'connect-start' }],
+        { at: 75, event: 'connect-start' }, { at: 90, event: 'facade-close' }],
       preview: 'private_preview',
     },
     stateError: new Error('private_error_text'),
@@ -151,7 +151,7 @@ test('stable connection report contains only derived facts', () => {
   assert.equal(report.workerChangedDuringStep, true);
   assert.equal(report.stateError, 'Error');
   assert.equal(report.extension.connectionEvents[0].reason, 'other');
-  assert.deepEqual(report.extension.connectionEvents.map((entry) => entry.event), ['channel-close', 'connect-start']);
+  assert.deepEqual(report.extension.connectionEvents.map((entry) => entry.event), ['channel-close', 'connect-start', 'facade-close']);
   assert.equal(JSON.stringify(report).includes('private_'), false);
   assert.equal(Object.hasOwn(report.extension, 'workerInstanceId'), false);
 });
