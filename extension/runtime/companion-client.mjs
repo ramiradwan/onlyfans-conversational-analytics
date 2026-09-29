@@ -216,7 +216,7 @@ export function createCompanionClient({
   // Session controls and browser state reports (ADR 0045). Controls change
   // nothing here: the consent and companion controllers apply them.
   const seenControls = new Set();
-  let lastSurface = null;
+  let lastSurface = null, lastSurfaceEncoded = null, reportedSurfaceChannel = null;
   function attachControls(channel) {
     channel.onControl?.(({ id, action }) => {
       if (seenControls.has(id)) return;
@@ -245,12 +245,24 @@ export function createCompanionClient({
   function controlReady() { return controlChannel() !== null; }
   async function sendSurface() {
     const channel = controlChannel();
-    if (channel === null || lastSurface === null) return;
-    await channel.rpc('agent.surface.report', lastSurface).catch(() => undefined);
+    if (channel === null || lastSurface === null) return false;
+    const surface = lastSurface, encoded = lastSurfaceEncoded;
+    try {
+      await channel.rpc('agent.surface.report', surface);
+      if (channel === controlChannel() && encoded === lastSurfaceEncoded) reportedSurfaceChannel = channel;
+      return true;
+    } catch {
+      if (reportedSurfaceChannel === channel) reportedSurfaceChannel = null;
+      return false;
+    }
   }
   function reportSurface(surface) {
-    if (JSON.stringify(surface) === JSON.stringify(lastSurface)) return;
-    lastSurface = surface;
+    const encoded = JSON.stringify(surface);
+    const changed = encoded !== lastSurfaceEncoded;
+    lastSurface = surface; lastSurfaceEncoded = encoded;
+    const channel = controlChannel();
+    if (changed) reportedSurfaceChannel = null;
+    if (!changed && channel !== null && reportedSurfaceChannel === channel) return;
     void sendSurface();
   }
   let control = null, controlOpening = null, controlRetryTimer = null;
