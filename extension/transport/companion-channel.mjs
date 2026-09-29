@@ -7,6 +7,19 @@ export class CompanionChannelError extends Error {
 }
 const refused = () => new CompanionChannelError();
 const MAX_BUFFERED = 128 * 1024;
+const CLOSE_REASONS = new Set([
+  'pairing_account_refused', 'pairing_generation_refused', 'pairing_grant_refused',
+  'pairing_key_refused', 'pairing_message_invalid', 'pairing_nonce_refused',
+  'pairing_proof_refused', 'pairing_state_refused', 'pairing_storage_refused',
+  'session_refused', 'wrong_role', 'validation_failed', 'unsupported_version',
+  'pre_handshake', 'unauthorized', 'identity_conflict',
+  'companion_session_closed', 'companion_session_refused', 'heartbeat_lease_expired',
+]);
+
+export function safeCompanionCloseReason(reason) {
+  if (reason === 'Agent heartbeat lease expired') return 'heartbeat_lease_expired';
+  return reason === null || reason === undefined ? null : CLOSE_REASONS.has(reason) ? reason : 'other';
+}
 
 export async function openLoopbackSocket(url, { webSocketFactory = (value) => new WebSocket(value), signal, text = false } = {}) {
   const socket = webSocketFactory(url);
@@ -34,7 +47,7 @@ export async function openLoopbackSocket(url, { webSocketFactory = (value) => ne
   // Keeps the peer's refusal code when the peer ends the connection first.
   socket.onclose = (event) => {
     if (!stopped && Number.isInteger(event?.code)) closeCode = event.code;
-    if (!stopped && typeof event?.reason === 'string' && /^[a-z_]{1,64}$/u.test(event.reason)) closeReason = event.reason;
+    if (!stopped) closeReason = safeCompanionCloseReason(event?.reason);
     close();
   };
   socket.onmessage = ({ data }) => {

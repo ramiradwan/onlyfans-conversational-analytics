@@ -2,7 +2,7 @@ import { uiSurface } from './ui-surfaces.mjs';
 import { openPairingStore } from './companion-pairing-store.mjs';
 import { loadPackagedSnow } from './packaged-snow.mjs';
 import { signAgentSessionProof, snowKeypairGenerator } from './companion-agent-identity.mjs';
-import { openCompanionChannel, openLoopbackSocket, CompanionChannelError } from '../transport/companion-channel.mjs';
+import { openCompanionChannel, openLoopbackSocket, CompanionChannelError, safeCompanionCloseReason } from '../transport/companion-channel.mjs';
 import { parseMessage } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { LOCAL_SERVICE_WS, LOCAL_PAIRING_WS } from '../transport/local-service-endpoints.mjs';
@@ -172,7 +172,7 @@ export function createCompanionClient({
           const wasStable = now() - active.openedAt >= CONNECTION_STABLE_MS;
           const resetOnClose = wasStable && active.stableTimer !== null;
           record('channel-close', { code: channel.closeCode ?? null,
-            reason: channel.closeReason ?? null, wasStable });
+            reason: safeCompanionCloseReason(channel.closeReason), wasStable });
           if (active.stableTimer !== null) timers.clearTimeout(active.stableTimer);
           active = null;
           // Queue the reset before any subsequent reserve; a quiet healthy

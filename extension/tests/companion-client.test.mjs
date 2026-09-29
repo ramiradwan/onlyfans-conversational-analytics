@@ -13,7 +13,7 @@ const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false } = {}) {
+function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait;
@@ -49,6 +49,7 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
       const index = stats.networks, closeListeners = [], rpcCalls = [], documents = [];
       const challenge = { challenge_id: crypto.randomUUID(), challenge: Buffer.alloc(32, 9).toString('base64url'), session_id: crypto.randomUUID(), expires_at: '2026-09-12T12:00:00Z' };
       const channel = { identity: { ...vector.expected.identity, pairing_id: vector.offer.pairing_id, ...(wrongPin ? { creator_account_id: 'other' } : {}) }, closed: false, rpcCalls, documents,
+        closeReason: channelCloseReason,
         close() { if (this.closed) return; this.closed = true; for (const fn of closeListeners) fn(); },
         onClose(fn) { closeListeners.push(fn); }, onMessage(fn) { this.message = fn; return () => { this.message = null; }; },
         async send(document) { documents.push(document); },
@@ -159,6 +160,15 @@ test('diagnostics retain the stable reset and channel close sequence', async () 
   assert.deepEqual(h.client.diagnosticEvents.map((entry) => entry.event),
     ['connect-start', 'connect-admitted', 'circuit-reset', 'channel-close']);
   assert.equal(h.client.diagnosticEvents.at(-1).at, time);
+  h.client.invalidate();
+});
+
+test('channel diagnostics never record unknown peer close text', async () => {
+  const h = harness({ channelCloseReason: 'private_note' });
+  await h.client.adapter.loadBrainBinding();
+  h.channels[0].close();
+  assert.equal(h.client.diagnosticEvents.at(-1).reason, 'other');
+  assert.equal(JSON.stringify(h.client.diagnosticEvents).includes('private_note'), false);
   h.client.invalidate();
 });
 

@@ -31,6 +31,7 @@ import {
 } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 import { readSqliteProof } from '../lib/sqlite-proof.mjs';
+import { buildStableConnectionDiagnostic } from '../lib/stable-connection-diagnostic.mjs';
 
 const IDENTITY_PATH = '/api2/v2/users/me';
 const CHATS_PATH = '/api2/v2/chats';
@@ -563,15 +564,15 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
           popupClosedAt = Date.now();
         }
         summary = await readBrainSummary(context);
-        expect(summary.connectionToken === initialConnection).toBe(true);
+        expect(summary.connectionToken).toBe(initialConnection);
       } catch (error) {
         const liveWorker = context.serviceWorkers().find((candidate) =>
           candidate.url().endsWith('/background.js'));
         let state = null;
         let stateError = null;
         try { state = liveWorker ? await extensionState(liveWorker) : null; }
-        catch (failure) { stateError = failure instanceof Error ? failure.message : String(failure); }
-        throw new Error(`Stable connection diagnostic: ${JSON.stringify({
+        catch (failure) { stateError = failure; }
+        await test.info().attach('stable-connection-diagnostic', { contentType: 'application/json', body: JSON.stringify(buildStableConnectionDiagnostic({
           at: Date.now(), statusPolls, lastStatusPollAt, popupClosedAt,
           workerStartsDuringStep: watcher.creations.length,
           originalWorkerAlive: liveWorker === worker,
@@ -582,7 +583,8 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
           },
           extension: state,
           stateError,
-        })}`, { cause: error });
+        })) });
+        throw error;
       } finally { watcher.stop(); }
     });
 
