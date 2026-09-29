@@ -139,7 +139,7 @@ export class ProvisioningHost {
         GRANT_AUTHORITY,
         '--data-directory', this.dataDirectory,
         '--extension-id', this.extensionId,
-        '--handoff-token', this.handoffToken,
+        `--handoff-token=${this.handoffToken}`,
       ],
       {
         cwd: PRODUCT_ROOT,

@@ -2,7 +2,7 @@ import { uiSurface } from './ui-surfaces.mjs';
 import { openPairingStore } from './companion-pairing-store.mjs';
 import { loadPackagedSnow } from './packaged-snow.mjs';
 import { signAgentSessionProof, snowKeypairGenerator } from './companion-agent-identity.mjs';
-import { openCompanionChannel, openLoopbackSocket, CompanionChannelError } from '../transport/companion-channel.mjs';
+import { openCompanionChannel, openLoopbackSocket, CompanionChannelError, safeCompanionCloseReason } from '../transport/companion-channel.mjs';
 import { parseMessage } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { LOCAL_SERVICE_WS, LOCAL_PAIRING_WS } from '../transport/local-service-endpoints.mjs';
@@ -51,6 +51,11 @@ export function createCompanionClient({
   const recovery = createConnectionRecovery({ storage: chromeApi.storage.local, now, random });
   const timers = scheduler ?? globalThis;
   const subscribers = new Set();
+  const diagnosticEvents = [];
+  const record = (event, detail = {}) => {
+    diagnosticEvents.push({ at: now(), event, ...detail });
+    if (diagnosticEvents.length > 24) diagnosticEvents.shift();
+  };
   let pairingOwner = null;
   const store = () => {
     if (!storePromise) {
@@ -70,6 +75,7 @@ export function createCompanionClient({
   })();
   function announce(next) { state = next; for (const notify of subscribers) notify({ ...state }); }
   function invalidate() {
+    record('invalidate');
     generation++;
     pairingAbort?.abort();
     connectionAbort?.abort();
@@ -113,6 +119,7 @@ export function createCompanionClient({
       if (generation !== version || !allowsFull?.()) throw failure();
     };
     const operation = (async () => {
+      record('connect-start');
       // The persisted circuit limits automatic reconnects. A freshly confirmed
       // pairing is already a single user-owned, deadline-bounded attempt and
       // must not be rejected by a cooldown earned before a pin existed.
@@ -153,19 +160,27 @@ export function createCompanionClient({
           authTicket: authorized.auth_ticket, storageKey: unlocked.storage_key_base64,
           storageBootstrap: authorized.storage_bootstrap, agentInstallationId };
         const admitted = active;
+        record('connect-admitted');
         admitted.stableTimer = timers.setTimeout(() => {
           admitted.stableTimer = null;
           if (active !== admitted || channel.closed) return;
+          record('circuit-reset');
           void recovery.stable().catch(() => undefined);
         }, CONNECTION_STABLE_MS);
         channel.onClose(() => {
           if (active?.channel !== channel) return;
           const wasStable = now() - active.openedAt >= CONNECTION_STABLE_MS;
+          const resetOnClose = wasStable && active.stableTimer !== null;
+          record('channel-close', { code: channel.closeCode ?? null,
+            reason: safeCompanionCloseReason(channel.closeReason), wasStable });
           if (active.stableTimer !== null) timers.clearTimeout(active.stableTimer);
           active = null;
           // Queue the reset before any subsequent reserve; a quiet healthy
           // connection need not have been polled by an extension UI.
-          if (wasStable) void recovery.stable().catch(() => undefined);
+          if (wasStable) {
+            if (resetOnClose) record('circuit-reset');
+            void recovery.stable().catch(() => undefined);
+          }
         });
         return active;
       } catch { channel.close(); throw failure(); }
@@ -262,6 +277,7 @@ export function createCompanionClient({
     let channel = null, stopped = false, unsubscribe;
     facade.close = () => {
       if (stopped) return;
+      record('facade-close');
       stopped = true; facade.readyState = 3;
       controller.abort();
       unsubscribe?.(); channel?.close();
@@ -398,5 +414,6 @@ export function createCompanionClient({
     });
   }
   return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, hasSavedPairing, status, analysisReadiness, registerPopup,
+    get diagnosticEvents() { return diagnosticEvents.map((entry) => ({ ...entry })); },
     get connected() { return active !== null && !active.channel.closed; } });
 }

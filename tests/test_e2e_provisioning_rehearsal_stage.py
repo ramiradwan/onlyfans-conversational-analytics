@@ -9,6 +9,7 @@ nothing.
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -75,3 +76,16 @@ def test_the_stage_drives_registration_and_local_authentication() -> None:
             f"`{STAGE_SPEC_NAME}` no longer uses `{symbol}`, so the stage stops "
             f"covering the step it names"
         )
+
+
+def test_handoff_token_starting_with_dash_is_one_option_value() -> None:
+    source = (E2E_ROOT / "lib" / "provisioning-host.mjs").read_text(encoding="utf-8")
+    token = "-sample_base64url_token"
+    if "`--handoff-token=${this.handoffToken}`" in source:
+        argv = [f"--handoff-token={token}"]
+    else:
+        assert "'--handoff-token', this.handoffToken" in source
+        argv = ["--handoff-token", token]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--handoff-token", required=True)
+    assert parser.parse_args(argv).handoff_token == token
