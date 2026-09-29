@@ -1,6 +1,6 @@
 # ADR 0044: Message catch-up and freshness
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
@@ -16,7 +16,7 @@ The authenticated companion channel accepts `capture.state.report` and `history.
 
 Catch-up completion is accepted only for the active check after its final source sequence and reconciled inventory commit. A blind check never closes a gap. An intervening epoch leaves the gap open at the pending boundary. Snapshot evidence replay has no effect on check completion or the ledger.
 
-An hourly canary evaluates stored heads and newly inserted probe messages, excluding heads newer than two minutes before its grant. Optional `ingest.delta.check_id` attributes inserts only to the named account's active check. Missing, unknown, finished and foreign check identities never prevent canonical ingestion and never attribute inserts to a canary. Overlapping canonical messages remain no-ops.
+An hourly canary evaluates stored heads and newly inserted probe messages, excluding heads newer than two minutes before its grant. A mismatch reopens the gap at its last closure. Optional `ingest.delta.check_id` attributes inserts only to the named account's active check. Missing, unknown, finished and foreign check identities never prevent canonical ingestion and never attribute inserts to a canary. Overlapping canonical messages remain no-ops.
 
 The status precedence is paused, checking, never checked, behind and current. Current requires a closed gap and live observation without a time expiry. Only bridges advertising `state.catchup_freshness` receive its snapshot field and replacement delta. Session and heartbeat shapes remain unchanged. The existing live freshness and readiness signals use this status only for accounts whose latest agent advertises `history.catchup.v1`.
 
