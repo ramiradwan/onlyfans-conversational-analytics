@@ -4,9 +4,71 @@ import { readFile } from 'node:fs/promises';
 import { expect } from '@playwright/test';
 import playwrightUtil from '../node_modules/playwright/lib/util.js';
 import playwrightExpect from '../node_modules/playwright/lib/matchers/expect.js';
+import { base as reporter } from 'playwright/lib/runner';
 import { buildStableConnectionDiagnostic, redactStableConnectionAssertionError, withoutReportedExpectStep } from '../../tools/e2e-capture/lib/stable-connection-diagnostic.mjs';
 
 const { serializeError } = playwrightUtil;
+
+async function renderStableFailure(actual = null) {
+  const source = await readFile(new URL('../../tools/e2e-capture/tests/capture.spec.mjs', import.meta.url), 'utf8');
+  const step = source.split("test.step('a stable connection resets persisted recovery history through normal UI polling'")[1];
+  const handler = step.split('} catch (error) {')[1].split('} finally { watcher.stop(); }')[0];
+  const initialConnection = 'synthetic_expected_token';
+  let error;
+  try { expect(actual).toBe(initialConnection); } catch (failure) { error = failure; }
+  const worker = { url: () => '/background.js' };
+  const attachments = [];
+  const output = [];
+  const dependencies = {
+    error, initialConnection, worker,
+    summary: { connectionToken: actual, lastHeartbeatAt: '2026-01-01T00:00:00Z', agentStatus: 'private_status' },
+    context: { serviceWorkers: () => [worker] },
+    statusPolls: 2, lastStatusPollAt: 90, popupClosedAt: 95,
+    watcher: { creations: [] },
+    extensionState: async () => ({
+      connectionToken: initialConnection, workerInstanceId: 'private_worker',
+      runtimeReady: true, socketOpen: false, sessionBound: false,
+      connectionEvents: Array.from({ length: 24 }, (_, at) => ({
+        at, event: 'channel-close', code: 4001, reason: 'private_reason', wasStable: true,
+      })),
+    }),
+    test: { info: () => ({ attach: async (name, options) => {
+      attachments.push({ name, ...options, body: Buffer.from(options.body) });
+    } }) },
+    console: { error: (...values) => output.push(values.join(' ')) },
+    buildStableConnectionDiagnostic, redactStableConnectionAssertionError,
+  };
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  await assert.rejects(new AsyncFunction(...Object.keys(dependencies), handler)(...Object.values(dependencies)),
+    (failure) => failure === error);
+  const result = { status: 'failed', retry: 0, errors: [serializeError(error)], attachments, steps: [] };
+  const testCase = {
+    expectedStatus: 'passed', results: [result], tags: [],
+    location: { file: new URL(import.meta.url).pathname, line: 1, column: 1 },
+    titlePath: () => ['', '', '', 'stable connection'],
+  };
+  const formatted = reporter.formatFailure(reporter.nonTerminalScreen, { rootDir: '.', tags: [] }, testCase, 1);
+  return { printed: [...output, formatted].join('\n'), output, attachments };
+}
+
+test('stable failure prints the complete safe report beyond the reporter attachment limit', async () => {
+  const { printed, attachments } = await renderStableFailure();
+  const report = attachments[0].body.toString();
+  assert.ok(report.length > 300);
+  assert.ok(printed.includes(report), 'The complete safe report must reach the job log');
+  assert.equal(JSON.parse(report).extension.connectionEvents.length, 24);
+});
+
+test('stable failure printed text excludes tokens and unallowlisted fields', async () => {
+  for (const actual of [null, 'synthetic_actual_token']) {
+    const { printed, output } = await renderStableFailure(actual);
+    assert.ok(output.length > 0, 'Exercise the diagnostic log output');
+    assert.doesNotMatch(printed, /synthetic_(?:actual|expected)_token|private_/u);
+    assert.match(printed, /\[redacted\]/u);
+    assert.match(printed, /"connectionPresent":(?:true|false)/u);
+    assert.match(printed, /"reason":"other"/u);
+  }
+});
 
 test('stable token assertion creates no early runner step with raw values', () => {
   const actual = 'synthetic_step_actual_token';

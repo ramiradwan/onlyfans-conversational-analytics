@@ -22,6 +22,8 @@ export const SYNTHETIC = Object.freeze({
   offlinePeerId: 'fixture-peer-offline',
   offlineMessageId: 'fixture-message-offline',
   offlineText: 'Synthetic offline peer observation',
+  ownEchoMessageId: 'fixture-own-echo',
+  ownEchoText: 'Synthetic own reply',
 });
 
 const SYNTHETIC_PAGE = `<!doctype html>
@@ -198,6 +200,21 @@ export class SyntheticPlatform {
         createdAt: '2026-07-19T08:03:00Z',
         fromUser: { id: SYNTHETIC.messageOnlyPeerId, isMe: false },
         chatUserId: SYNTHETIC.messageOnlyPeerId,
+      },
+    });
+  }
+
+  sendOwnMessageEcho() {
+    this.#sendFrame({
+      api2_chat_message: {
+        id: SYNTHETIC.ownEchoMessageId,
+        text: SYNTHETIC.ownEchoText,
+        createdAt: `${this.activityDay}T08:07:00Z`,
+        toUser: { id: SYNTHETIC.chatId },
+        responseType: 'message',
+        giphyId: null, lockedText: false, isFree: true, price: 0, isMediaReady: true,
+        mediaCount: 0, media: [], previews: [], isTip: false, isReportedByMe: false,
+        isCouplePeopleMedia: false, queueId: null,
       },
     });
   }
