@@ -29,7 +29,7 @@ function simulateWsMessage() {
     type: FORWARD_TYPE,  
     payload: {  
       event: "ws_message",  
-      url: "wss://ws2.onlyfans.com/ws3/",  
+      url: "wss://ws2.onlyfans.com/ws3/17",
       data: { online: [101, 102, 103] }  
     }  
   }, "*");  
