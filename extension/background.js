@@ -1,4 +1,6 @@
-import { registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
+import { createSurfaceOpener, registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
+import { registerDesktopPort } from './runtime/desktop-port.mjs';
+import { probeDesktopRuntime } from './runtime/customer-journey.mjs';
 import { createAgentRuntime } from './transport/agent-runtime.mjs';
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
 import { AgentWebSocketClient } from './transport/agent-websocket.mjs';
@@ -19,6 +21,12 @@ import { LegalConsentAuthorization } from './runtime/legal-consent-authorization
 import { legalReleaseBindings } from './runtime/legal-release-bindings.mjs';
 
 let lastStartupErrorCode = null;
+// Delivery progress changes often; open pages re-read at most once a second.
+let deliverySignalTimer = null;
+const signalDeliveryProgress = () => {
+  if (deliverySignalTimer !== null) return;
+  deliverySignalTimer = setTimeout(() => { deliverySignalTimer = null; companionClient.notifySurfaces(); }, 1_000);
+};
 export const companionClient = createCompanionClient({
   accountDatabaseName,
   allowsFull: () => consentController?.state.mode === 'full',
@@ -32,7 +40,15 @@ export const agentRuntime = createAgentRuntime({
   chromeAdapter,
   chromeApi: chrome,
   configHttpFactory: () => companionClient.configAdapter,
-  transportFactory: (options) => new AgentWebSocketClient({ ...options, webSocketFactory: companionClient.webSocketFactory }),
+  // Session changes are pushed to open extension pages and the desktop port.
+  transportFactory: (options) => new AgentWebSocketClient({
+    ...options,
+    webSocketFactory: companionClient.webSocketFactory,
+    onSession: (...values) => { options.onSession?.(...values); companionClient.notifySurfaces(); },
+    onSessionLost: (...values) => { options.onSessionLost?.(...values); companionClient.notifySurfaces(); },
+    onIngestAcknowledged: (...values) => { options.onIngestAcknowledged?.(...values); signalDeliveryProgress(); },
+    onIngestRejected: (...values) => { options.onIngestRejected?.(...values); signalDeliveryProgress(); },
+  }),
   signerFactory: (options) => createChromeBrowserSigningProvider(options),
   onStartupError: () => {
     lastStartupErrorCode = 'startup_failed';
@@ -197,4 +213,42 @@ companionClient.registerPopup({
 });
 void consentController.initialize().catch(() => undefined);
 
-registerSurfaceNavigation();
+const openSurface = createSurfaceOpener(chrome);
+registerSurfaceNavigation(chrome, openSurface);
+
+const signalSurfaces = () => companionClient.notifySurfaces();
+chrome.permissions?.onAdded?.addListener(signalSurfaces);
+chrome.permissions?.onRemoved?.addListener(signalSurfaces);
+provisioningIdentityBridge.onAccountChange(signalSurfaces);
+
+export const desktopPort = registerDesktopPort({
+  chromeApi: chrome,
+  companion: companionClient,
+  readState: async () => ({
+    consent: await consentController.status(),
+    legal: await legalActivationController.status(),
+    pairing: await companionClient.status(),
+  }),
+  openStep: (step, { anchorTab }) => openSurface(step === 'setup'
+    ? { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab }
+    : { surface: 'options', section: 'connection', presentation: 'window', anchorTab }),
+  onPaired: () => consentController.reconcile(),
+  changeSources: [
+    (changed) => {
+      const listener = (_changes, area) => { if (area === 'local') changed(); };
+      chrome.storage.onChanged.addListener(listener);
+      return () => chrome.storage.onChanged.removeListener(listener);
+    },
+  ],
+});
+desktopPort.register();
+
+// Installed after the desktop app: open setup on the desktop-guided path. It
+// still asks for every choice; it only skips the Preview-first framing.
+chrome.runtime.onInstalled?.addListener(({ reason } = {}) => {
+  if (reason !== 'install') return;
+  void probeDesktopRuntime().then((present) => {
+    if (present) return openSurface({ surface: 'setup', section: 'desktop' });
+    return undefined;
+  }).catch(() => undefined);
+});

@@ -337,6 +337,25 @@ export function createCompanionClient({
       }, context);
     },
   };
+  // One attempt at a time. Its owner is a setup page port or a desktop port;
+  // closing the owner cancels the attempt it started.
+  async function pairFor(owner, { signal, onPaired = async () => {} } = {}) {
+    if (pairingOwner !== null) return false;
+    pairingOwner = owner;
+    try {
+      const existing = await status();
+      if (existing.state === 'paired') return true;
+      await pair({ signal }); await onPaired();
+      return true;
+    } finally {
+      if (pairingOwner === owner) pairingOwner = null;
+    }
+  }
+  function cancelFor(owner) { if (pairingOwner !== null && pairingOwner === owner) pairingAbort?.abort(); }
+  function owns(owner) { return pairingOwner !== null && pairingOwner === owner; }
+  function subscribe(notify) { subscribers.add(notify); return () => { subscribers.delete(notify); }; }
+  // Tell every open surface to re-read its state. It carries no state itself.
+  function notifySurfaces() { for (const notify of subscribers) notify({ type: 'surface_changed' }); }
   function registerPopup({ onPaired = async () => {}, onForget = async () => {} } = {}) {
     chromeApi.runtime.onConnect.addListener((port) => {
       const surface = uiSurface(port.sender, chromeApi);
@@ -346,7 +365,8 @@ export function createCompanionClient({
         const projection = value?.state ? {
           ...value,
           comparison_code: surface === 'setup' ? value.comparison_code : null,
-          owns_attempt: surface === 'setup' && pairingOwner === port,
+          owns_attempt: surface === 'setup' && owns(port),
+          desktop_attempt: pairingOwner?.desktop === true,
         } : value;
         try { port.postMessage(projection); } catch {}
       };
@@ -359,15 +379,7 @@ export function createCompanionClient({
         void (async () => {
           if (message.type === 'pair') {
             if (surface !== 'setup') return;
-            if (pairingOwner !== null) { notify(await status()); return; }
-            pairingOwner = port;
-            try {
-              const existing = await status();
-              if (existing.state === 'paired') { notify(existing); return; }
-              await pair({ signal: controller.signal }); await onPaired();
-            } finally {
-              if (pairingOwner === port) pairingOwner = null;
-            }
+            if (!await pairFor(port, { signal: controller.signal, onPaired })) { notify(await status()); return; }
           }
           else if (message.type === 'forget') {
             if (surface !== 'options') return;
@@ -375,7 +387,7 @@ export function createCompanionClient({
             notify({ type: 'pairing_command_result', command: 'forget', ok: true });
           }
           else if (message.type === 'cancel') {
-            if (surface === 'setup' && pairingOwner === port) pairingAbort?.abort();
+            if (surface === 'setup') cancelFor(port);
           }
           else if (message.type === 'readiness') {
             notifyReadiness(await analysisReadiness({ signal: controller.signal }));
@@ -398,5 +410,6 @@ export function createCompanionClient({
     });
   }
   return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, hasSavedPairing, status, analysisReadiness, registerPopup,
+    pairFor, cancelFor, owns, subscribe, notifySurfaces,
     get connected() { return active !== null && !active.channel.closed; } });
 }

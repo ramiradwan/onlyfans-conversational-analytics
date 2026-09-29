@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CompanionPairingControls } from '../src/components/CompanionPairingControls';
 import type { CompanionPairingApi, CompanionPairingStatus } from '../src/services/companionPairingApi';
+import type { ExtensionPort, ExtensionPortState } from '../src/services/extensionPort';
 import { bridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
@@ -29,12 +30,41 @@ function makeApi(overrides: Partial<CompanionPairingApi> = {}): CompanionPairing
       ...awaiting, state: action === 'confirm' ? 'admitted' : action === 'decline' ? 'declined' : 'cancelled',
       version: 4,
     })),
+    confirmVerified: vi.fn(async () => ({ ...awaiting, state: 'admitted' as const, version: 4 })),
     ...overrides,
   };
 }
 
-function mount(api: CompanionPairingApi) {
-  return render(<ThemeProvider theme={theme}><CompanionPairingControls api={api} /></ThemeProvider>);
+// A port whose state the test pushes, as the extension would.
+function makePort(initial: ExtensionPortState = { status: 'absent', stage: null, attempt: null }) {
+  let state = initial;
+  const listeners = new Set<() => void>();
+  const port = {
+    getState: () => state,
+    subscribe: vi.fn((listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); }),
+    open: vi.fn(() => true),
+    pair: vi.fn(() => true),
+    cancel: vi.fn(() => true),
+    retry: vi.fn(),
+  } satisfies ExtensionPort;
+  const push = (next: Partial<ExtensionPortState>) => {
+    state = { ...state, ...next };
+    listeners.forEach((listener) => listener());
+  };
+  return { port, push };
+}
+
+let revision = 0;
+// Brain's change notice over the Bridge WebSocket.
+async function brainNotice() {
+  revision += 1;
+  await act(async () => bridgeTransportStore.setCompanion({
+    creator_account_id: 'creator-1', revision, changed_at: now.toISOString(),
+  }));
+}
+
+function mount(api: CompanionPairingApi, port: ExtensionPort = makePort().port) {
+  return render(<ThemeProvider theme={theme}><CompanionPairingControls api={api} port={port} /></ThemeProvider>);
 }
 
 async function click(name: string) {
@@ -42,6 +72,7 @@ async function click(name: string) {
 }
 
 beforeEach(() => {
+  bridgeTransportStore.reset();
   vi.useFakeTimers();
   vi.setSystemTime(now);
   useUserStore.getState().actions.setUserRole('operator');
@@ -82,6 +113,8 @@ describe('companion pairing controls', () => {
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     expect(screen.getByText(/Connection window expires in 5:00/)).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(api.get).not.toHaveBeenCalled();
+    await brainNotice();
     expect(screen.getByLabelText('Connection comparison code').textContent).toBe('012 345');
     expect(screen.getByText(/Code expires in 4:59/)).toBeTruthy();
     expect(screen.queryByText(awaiting.agent_identity_thumbprint!)).toBeNull();
@@ -93,6 +126,7 @@ describe('companion pairing controls', () => {
     expect(screen.getByText(/Extension connected/)).toBeTruthy();
     expect(screen.getByText(/Continue with Message history below/)).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(300_000));
+    await brainNotice();
     expect(api.get).toHaveBeenCalledTimes(1);
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
   });
@@ -106,7 +140,7 @@ describe('companion pairing controls', () => {
     expect(screen.getByText(/codes didn't match, so nothing was connected/)).toBeTruthy();
   });
 
-  it('preserves comparison acceptance across unchanged polls and resets it when the code changes', async () => {
+  it('preserves comparison acceptance across unchanged notices and resets it when the code changes', async () => {
     const get = vi.fn()
       .mockResolvedValueOnce({ ...awaiting })
       .mockResolvedValueOnce({ ...awaiting, comparison_code: '987654' });
@@ -114,21 +148,21 @@ describe('companion pairing controls', () => {
     mount(api);
     await click('Connect extension');
     fireEvent.click(screen.getByRole('checkbox'));
-    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    await brainNotice();
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
     expect((screen.getByRole('button', { name: 'Confirm connection' }) as HTMLButtonElement).disabled).toBe(false);
-    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    await brainNotice();
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
     expect((screen.getByRole('button', { name: 'Confirm connection' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('cancels a pending window and stops polling', async () => {
+  it('cancels a pending window and ignores later notices', async () => {
     const api = makeApi();
     mount(api);
     await click('Connect extension');
     await click('Cancel');
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'cancel', 0, expect.any(AbortSignal));
-    await act(async () => vi.advanceTimersByTimeAsync(300_000));
+    await brainNotice();
     expect(api.get).not.toHaveBeenCalled();
   });
 
@@ -144,8 +178,9 @@ describe('companion pairing controls', () => {
     });
     mount(api);
     await click('Connect extension');
+    await brainNotice();
     await act(async () => vi.advanceTimersByTimeAsync(2000));
-    expect(screen.getByText('Time ran out before the codes were confirmed. Try again.')).toBeTruthy();
+    expect(screen.getByText('Time ran out before the connection finished. Try again.')).toBeTruthy();
     expect(signal?.aborted).toBe(true);
     await act(async () => resolve(awaiting));
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
@@ -160,7 +195,7 @@ describe('companion pairing controls', () => {
     }) });
     mount(api);
     await click('Connect extension');
-    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    await brainNotice();
     await act(async () => bridgeTransportStore.bindAccount('creator-2'));
     expect(signal?.aborted).toBe(true);
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'cancel', 0);
@@ -191,22 +226,22 @@ describe('companion pairing controls', () => {
     mount(api);
     await click('Connect extension');
     fireEvent.click(screen.getByRole('checkbox'));
-    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    await brainNotice();
     expect(screen.getByRole('alert').textContent).toContain("The connection couldn't be checked");
     expect(screen.queryByText('untrusted error body')).toBeNull();
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
-    await act(async () => vi.advanceTimersByTimeAsync(2000));
+    await brainNotice();
     expect(get).toHaveBeenCalledTimes(1);
     await click('Try again');
     expect(screen.getByLabelText('Connection comparison code')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Confirm connection' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('rejects polling responses for another account before showing their code', async () => {
+  it('rejects status reads for another account before showing their code', async () => {
     const api = makeApi({ get: vi.fn(async () => ({ ...awaiting, creator_account_id: 'other-account' })) });
     mount(api);
     await click('Connect extension');
-    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    await brainNotice();
     expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     expect(screen.getByRole('alert')).toBeTruthy();
   });
@@ -217,5 +252,74 @@ describe('companion pairing controls', () => {
     mount(api);
     expect(screen.queryByRole('button', { name: 'Connect extension' })).toBeNull();
     expect(api.open).not.toHaveBeenCalled();
+  });
+
+  describe('when the extension answers in this browser', () => {
+    const ready: ExtensionPortState = { status: 'connected', stage: 'ready_to_pair', attempt: null };
+
+    it('pairs with one click: Brain opens first, then the extension, and Brain checks the reported code', async () => {
+      const { port, push } = makePort(ready);
+      const api = makeApi();
+      mount(api, port);
+      await click('Connect extension');
+      expect(api.open).toHaveBeenCalledWith('creator-1', expect.any(AbortSignal));
+      expect(port.pair).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(api.open).mock.invocationCallOrder[0])
+        .toBeLessThan(port.pair.mock.invocationCallOrder[0]);
+      expect(screen.getByText('Connecting the extension in this browser…')).toBeTruthy();
+      await act(async () => push({ stage: 'pairing', attempt: { state: 'compare', comparison_code: '012345' } }));
+      expect(api.confirmVerified).not.toHaveBeenCalled();
+      await brainNotice();
+      expect(api.confirmVerified).toHaveBeenCalledWith(open.pairing_id, 3, '012345', expect.any(AbortSignal));
+      expect(api.confirmVerified).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/Extension connected/)).toBeTruthy();
+      expect(screen.queryByRole('checkbox')).toBeNull();
+      expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
+    });
+
+    it('opens the extension window for unfinished steps and continues as soon as they are done', async () => {
+      const { port, push } = makePort({ status: 'connected', stage: 'needs_full', attempt: null });
+      const api = makeApi();
+      mount(api, port);
+      await click('Connect extension');
+      expect(port.open).toHaveBeenCalledWith('setup');
+      expect(api.open).not.toHaveBeenCalled();
+      expect(screen.getByText(/Turn on Full analytics in the extension window/)).toBeTruthy();
+      await act(async () => push({ stage: 'needs_site_access' }));
+      expect(screen.getByText(/Allow site access in the extension window/)).toBeTruthy();
+      await act(async () => push({ stage: 'ready_to_pair' }));
+      expect(api.open).toHaveBeenCalledTimes(1);
+      expect(port.pair).toHaveBeenCalledTimes(1);
+    });
+
+    it('ends Brain\'s window when the extension stops its attempt', async () => {
+      const { port, push } = makePort(ready);
+      const api = makeApi();
+      mount(api, port);
+      await click('Connect extension');
+      await act(async () => push({ attempt: { state: 'failed', comparison_code: null } }));
+      expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'cancel', 0, expect.any(AbortSignal));
+      expect(screen.getByText('The extension stopped the connection. Try again.')).toBeTruthy();
+    });
+
+    it('cancels both sides and closes nothing it did not open', async () => {
+      const { port } = makePort({ status: 'connected', stage: 'needs_terms', attempt: null });
+      const api = makeApi();
+      mount(api, port);
+      await click('Connect extension');
+      await click('Cancel');
+      expect(port.cancel).toHaveBeenCalled();
+      expect(api.change).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Connect extension' })).toBeTruthy();
+    });
+  });
+
+  it('falls back to comparing codes by eye when no extension answers in this browser', async () => {
+    const { port } = makePort();
+    const api = makeApi();
+    mount(api, port);
+    await click('Connect extension');
+    expect(port.pair).not.toHaveBeenCalled();
+    expect(screen.getByText(/Open the browser extension where it's installed/)).toBeTruthy();
   });
 });

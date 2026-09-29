@@ -42,6 +42,7 @@ BRAIN_TO_BRIDGE = {
     "presence.state",
     "agent.state",
     "system.state",
+    "companion.state",
 }
 
 
@@ -68,7 +69,7 @@ VALID_FIXTURES = sorted(path for path in FIXTURE_ROOT.glob("*.json"))
 
 @pytest.mark.parametrize("fixture", VALID_FIXTURES, ids=lambda path: path.stem)
 def test_every_operation_has_a_valid_golden_fixture(fixture: Path) -> None:
-    assert len(VALID_FIXTURES) == 25
+    assert len(VALID_FIXTURES) == 26
     assert parse_valid_fixture(fixture) is not None
 
 

@@ -4,6 +4,7 @@ import { UI_OPEN_SURFACE_MESSAGE_TYPE } from '../runtime/ui-surfaces.mjs';
 import { customerReleaseConfig } from '../runtime/customer-release-config.mjs';
 import { probeDesktopRuntime } from '../runtime/customer-journey.mjs';
 import { LOCAL_SERVICE_ORIGIN, assertLocalServiceUrl } from '../transport/local-service-endpoints.mjs';
+import { DESKTOP_LINK_STORAGE_KEY } from '../runtime/desktop-port.mjs';
 
 const unknownReadiness = () => ({ commercial_authority: 'unknown', analysis_admission: 'blocked' });
 export class NoticeError extends Error {}
@@ -35,13 +36,13 @@ export function openSurface(surface, section = '') {
 // Only presentation lives here. Credentials, evidence and capture stay in the worker.
 export function createSurfaceClient(onChange, onError) {
   const model = {
-    status: null, legal: null, pairing: { state: 'unpaired', comparison_code: null, owns_attempt: false },
-    desktopRuntimeReachable: false, analysisReadiness: unknownReadiness(),
+    status: null, legal: null, pairing: { state: 'unpaired', comparison_code: null, owns_attempt: false, desktop_attempt: false },
+    desktopRuntimeReachable: false, desktopLinked: false, analysisReadiness: unknownReadiness(),
     config: { dashboard_url: `${LOCAL_SERVICE_ORIGIN}/`, history_settings_url: `${LOCAL_SERVICE_ORIGIN}/settings`,
       desktop_app_download_url: customerReleaseConfig.desktop_app_download_url },
   };
   let port = null, stopped = false, refreshPromise = null, readinessTimer = null;
-  let interval = null, reconnectTimer = null, readinessPending = false;
+  let reconnectTimer = null, readinessPending = false;
   let pendingCommand = null;
   const emit = () => { if (!stopped) onChange(model); };
   function resetReadiness() {
@@ -74,6 +75,7 @@ export function createSurfaceClient(onChange, onError) {
         }
         return;
       }
+      if (value?.type === 'surface_changed') { void refresh(); return; }
       if (value?.type === 'analysis_readiness') {
         if (!readinessPending) return;
         clearTimeout(readinessTimer); readinessPending = false;
@@ -85,6 +87,7 @@ export function createSurfaceClient(onChange, onError) {
           : { commercial_authority: 'unavailable', analysis_admission: 'blocked' };
       } else if (typeof value?.state === 'string') {
         model.pairing = { state: value.state, owns_attempt: value.owns_attempt === true,
+          desktop_attempt: value.desktop_attempt === true,
           comparison_code: /^\d{6}$/u.test(value.comparison_code ?? '') ? value.comparison_code : null };
         if (value.state !== 'paired') resetReadiness();
         else requestReadiness();
@@ -94,7 +97,7 @@ export function createSurfaceClient(onChange, onError) {
     connected.onDisconnect.addListener(() => {
       if (port !== connected || stopped) return;
       port = null; resetReadiness(); cancelPendingCommand();
-      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false };
+      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false };
       model.desktopRuntimeReachable = false;
       emit(); reconnectTimer = setTimeout(() => { connectPort(); void refresh(); }, 1000);
     });
@@ -129,13 +132,17 @@ export function createSurfaceClient(onChange, onError) {
       if (status?.consent?.mode !== 'full' || status.consent.consent_epoch !== model.status?.consent?.consent_epoch
         || status.delivery?.transport_state !== 'authenticated') resetReadiness();
       model.status = status; model.legal = legal;
-      model.desktopRuntimeReachable = status.consent.mode === 'full' ? await probeDesktopRuntime() : false;
+      model.desktopLinked = await desktopLinked();
+      // An open desktop page proves the desktop app is running; otherwise probe
+      // once for this refresh. Refreshes are event-driven, never on a timer.
+      model.desktopRuntimeReachable = status.consent.mode === 'full'
+        ? model.desktopLinked || await probeDesktopRuntime() : false;
       if (!model.desktopRuntimeReachable) resetReadiness();
       if (port && status.consent.mode === 'full') post('status');
       requestReadiness(); emit();
     } catch (error) {
       model.status = null; model.legal = null; resetReadiness();
-      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false };
+      model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false };
       emit(); if (!stopped) onError(error);
     }
   }
@@ -146,7 +153,15 @@ export function createSurfaceClient(onChange, onError) {
   }
   async function sync() { await refreshPromise; return refresh(); }
   const visible = () => { if (document.visibilityState === 'visible') void refresh(); };
-  const changed = (_changes, area) => { if (area === 'local') visible(); };
+  const changed = (changes, area) => {
+    if (area === 'local' || (area === 'session' && Object.hasOwn(changes, DESKTOP_LINK_STORAGE_KEY))) visible();
+  };
+  async function desktopLinked() {
+    try {
+      const stored = await chrome.storage.session.get([DESKTOP_LINK_STORAGE_KEY]);
+      return Number.isSafeInteger(stored?.[DESKTOP_LINK_STORAGE_KEY]) && stored[DESKTOP_LINK_STORAGE_KEY] > 0;
+    } catch { return false; }
+  }
   async function start() {
     try {
       const value = await (await fetch(chrome.runtime.getURL('extension-config.json'))).json();
@@ -161,11 +176,10 @@ export function createSurfaceClient(onChange, onError) {
     document.addEventListener('visibilitychange', visible);
     window.addEventListener('focus', visible);
     chrome.storage.onChanged.addListener(changed);
-    interval = setInterval(visible, 3000);
     window.addEventListener('pagehide', stop, { once: true });
   }
   function stop() {
-    stopped = true; clearInterval(interval); clearTimeout(reconnectTimer); clearTimeout(readinessTimer);
+    stopped = true; clearTimeout(reconnectTimer); clearTimeout(readinessTimer);
     port?.disconnect(); port = null; cancelPendingCommand();
     document.removeEventListener('visibilitychange', visible); window.removeEventListener('focus', visible);
     chrome.storage.onChanged.removeListener(changed);

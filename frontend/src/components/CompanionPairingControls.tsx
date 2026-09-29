@@ -12,6 +12,11 @@ import {
   type CompanionPairingApi,
   type CompanionPairingStatus,
 } from '../services/companionPairingApi';
+import {
+  defaultExtensionPort,
+  type ExtensionPort,
+  type ExtensionStage,
+} from '../services/extensionPort';
 import { bridgeTransportStore } from '../store/transportStore';
 import {
   extensionConnection,
@@ -21,10 +26,20 @@ import {
 } from '../utils/statusCopy';
 
 const WINDOW_LIMIT_MS = 300_000;
-const POLL_INTERVAL_MS = 1_000;
 const terminal = (status: CompanionPairingStatus) => (
   ['confirmed', 'admitted', 'declined', 'cancelled', 'expired', 'revoked'].includes(status.state)
 );
+// Extension-side steps that must finish before this browser can pair.
+const EXTENSION_SETUP_STAGES: ReadonlySet<ExtensionStage> = new Set([
+  'needs_terms', 'paused', 'needs_full', 'needs_site_access', 'needs_account',
+]);
+const EXTENSION_STAGE_COPY: Partial<Record<ExtensionStage, string>> = {
+  needs_terms: 'Review the terms in the extension window.',
+  paused: 'Resume analytics in the extension window.',
+  needs_full: 'Turn on Full analytics in the extension window.',
+  needs_site_access: 'Allow site access in the extension window.',
+  needs_account: 'Sign in to your creator account on OnlyFans in this browser.',
+};
 
 function remainingLabel(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -32,8 +47,9 @@ function remainingLabel(seconds: number): string {
   return `${minutes}:${remainder}`;
 }
 
-function PairingAttemptControls({ api, connection, creatorAccountId }: {
+function PairingAttemptControls({ api, port, connection, creatorAccountId }: {
   api: CompanionPairingApi;
+  port: ExtensionPort;
   connection: ExtensionConnection;
   creatorAccountId: string;
 }) {
@@ -43,10 +59,22 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
   const [codesMatch, setCodesMatch] = useState(false);
   const [connectedCount, setConnectedCount] = useState<number | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  // Same-browser flow: the extension finishes its own steps, then pairs through the port.
+  const [waitingForExtension, setWaitingForExtension] = useState(false);
+  const [browserPairing, setBrowserPairing] = useState(false);
+  const [extensionRefused, setExtensionRefused] = useState(false);
   const current = useRef<CompanionPairingStatus | null>(null);
   const deadline = useRef(0);
   const operation = useRef<AbortController | null>(null);
   const epoch = useRef(0);
+  const verifiedVersion = useRef<string | null>(null);
+  const extension = useSyncExternalStore(port.subscribe, port.getState, port.getState);
+  const notice = useSyncExternalStore(
+    bridgeTransportStore.subscribe,
+    () => bridgeTransportStore.getState().companion,
+    () => bridgeTransportStore.getState().companion,
+  );
+  const sameBrowser = extension.status === 'connected';
 
   useEffect(() => () => {
     epoch.current += 1;
@@ -56,7 +84,15 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
       // Best effort only: the server deadline remains authoritative if navigation interrupts this.
       void api.change(pending.pairing_id, 'cancel', pending.version).catch(() => undefined);
     }
-  }, [api]);
+    port.cancel();
+  }, [api, port]);
+
+  // An extension that was absent may have been installed or enabled since.
+  useEffect(() => {
+    const retry = () => port.retry();
+    globalThis.addEventListener?.('focus', retry);
+    return () => globalThis.removeEventListener?.('focus', retry);
+  }, [port]);
 
   const acceptStatus = (next: CompanionPairingStatus) => {
     const previous = current.current;
@@ -75,7 +111,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
     setStatus(next);
   };
 
-  const run = async (action: 'open' | 'get' | CompanionPairingAction) => {
+  const run = async (action: 'open' | 'get' | CompanionPairingAction | 'verified', code?: string) => {
     const previous = current.current;
     if (action !== 'open' && previous === null) return;
     if (action === 'confirm' && (!codesMatch || previous?.state !== 'awaiting_confirmation')) return;
@@ -96,16 +132,91 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
         ? await api.open(creatorAccountId, controller.signal)
         : action === 'get'
           ? await api.get(previous!.pairing_id, controller.signal)
-          : await api.change(previous!.pairing_id, action, previous!.version, controller.signal);
-      if (controller.signal.aborted || epoch.current !== version) return;
+          : action === 'verified'
+            ? await api.confirmVerified(previous!.pairing_id, previous!.version, code!, controller.signal)
+            : await api.change(previous!.pairing_id, action, previous!.version, controller.signal);
+      if (controller.signal.aborted || epoch.current !== version) return false;
       deadline.current = Math.min(deadline.current, Date.parse(next.expires_at));
       acceptStatus(next);
+      return true;
     } catch {
       if (!controller.signal.aborted && epoch.current === version) setFailed(true);
+      return false;
     } finally {
       if (!controller.signal.aborted && epoch.current === version) setBusy(false);
     }
   };
+
+  const startPairing = async () => {
+    setExtensionRefused(false);
+    verifiedVersion.current = null;
+    const viaBrowser = port.getState().status === 'connected';
+    setBrowserPairing(viaBrowser);
+    // Brain's window opens first, so the extension never races a closed window.
+    if (await run('open') && viaBrowser && !port.pair()) setBrowserPairing(false);
+  };
+
+  const connect = () => {
+    const stage = port.getState().stage;
+    if (sameBrowser && stage !== null && EXTENSION_SETUP_STAGES.has(stage)) {
+      setWaitingForExtension(true);
+      port.open('setup');
+      return;
+    }
+    void startPairing();
+  };
+
+  // The extension pushes its stage; continue as soon as its steps are done.
+  useEffect(() => {
+    if (!waitingForExtension) return;
+    if (extension.status !== 'connected') { setWaitingForExtension(false); return; }
+    if (extension.stage === 'ready_to_pair' || extension.stage === 'paired') {
+      setWaitingForExtension(false);
+      void startPairing();
+    }
+    // startPairing reads only refs and stable callbacks.
+  }, [waitingForExtension, extension.status, extension.stage]);
+
+  // Brain pushes a change notice; re-read the attempt only then, never on a timer.
+  useEffect(() => {
+    const pending = current.current;
+    if (!notice || !pending || terminal(pending) || busy || failed) return;
+    const controller = new AbortController();
+    // The window deadline aborts this read like any other pending operation.
+    operation.current = controller;
+    const version = epoch.current;
+    void api.get(pending.pairing_id, controller.signal).then((next) => {
+      if (controller.signal.aborted || epoch.current !== version) return;
+      deadline.current = Math.min(deadline.current, Date.parse(next.expires_at));
+      acceptStatus(next);
+    }).catch(() => {
+      if (!controller.signal.aborted && epoch.current === version) setFailed(true);
+    });
+    return () => controller.abort();
+    // acceptStatus is recreated each render but only touches refs and setters.
+  }, [api, notice]);
+
+  // Same browser: confirm with the code the extension reported. Brain compares it.
+  const extensionCode = browserPairing && extension.attempt?.state === 'compare'
+    ? extension.attempt.comparison_code : null;
+  useEffect(() => {
+    if (!status || status.state !== 'awaiting_confirmation' || extensionCode === null || busy || failed) return;
+    const key = `${status.pairing_id}:${status.version}`;
+    if (verifiedVersion.current === key) return;
+    verifiedVersion.current = key;
+    void run('verified', extensionCode);
+    // run is recreated each render but reads the current attempt from refs.
+  }, [status, extensionCode, busy, failed]);
+
+  // The extension ended its side of the attempt; end Brain's window too.
+  const extensionAttempt = browserPairing ? extension.attempt?.state ?? null : null;
+  useEffect(() => {
+    if (!extensionAttempt || !['failed', 'not_ready', 'cancelled'].includes(extensionAttempt)) return;
+    const pending = current.current;
+    if (!pending || terminal(pending)) return;
+    setExtensionRefused(true);
+    void run('cancel');
+  }, [extensionAttempt]);
 
   useEffect(() => {
     if (!status || terminal(status)) return;
@@ -126,29 +237,11 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
     return () => clearTimeout(expiryTimer);
   }, [status]);
 
-  useEffect(() => {
-    if (!status || terminal(status) || busy || failed) return;
-    const controller = new AbortController();
-    const version = epoch.current;
-    const timer = setTimeout(() => {
-      void api.get(status.pairing_id, controller.signal).then((next) => {
-        if (controller.signal.aborted || epoch.current !== version) return;
-        deadline.current = Math.min(deadline.current, Date.parse(next.expires_at));
-        acceptStatus(next);
-      }).catch(() => {
-        if (!controller.signal.aborted && epoch.current === version) setFailed(true);
-      });
-    }, POLL_INTERVAL_MS);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [api, status, busy, failed]);
-
   const approved = status?.state === 'confirmed' || status?.state === 'admitted';
   const active = status !== null && !terminal(status);
   const awaiting = active && !failed && status.state === 'awaiting_confirmation';
   const connected = approved || (connectedCount !== null && connectedCount > 0);
+  const verifying = active && browserPairing && !failed;
 
   useEffect(() => {
     if (!active) {
@@ -159,6 +252,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
       setRemainingSeconds(Math.max(0, Math.ceil((deadline.current - Date.now()) / 1000)));
     };
     update();
+    // A local countdown for display; it never reads remote state.
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
   }, [active, status?.pairing_id]);
@@ -174,10 +268,15 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
       : { label: 'Not connected', tone: 'default' };
 
   return (
-    <Stack data-journey-state="desktop.extension_pairing" data-pairing-active={active ? 'true' : undefined} spacing={2}>
+    <Stack
+      data-journey-state="desktop.extension_pairing"
+      data-pairing-active={active || waitingForExtension ? 'true' : undefined}
+      data-pairing-path={sameBrowser ? 'browser-verified' : 'operator-compared'}
+      spacing={2}
+    >
       <SectionHeader
         status={sectionStatus}
-        summary={connectedCount === 0 && status === null
+        summary={connectedCount === 0 && status === null && !waitingForExtension
           ? 'Connect the browser extension so your messages reach this app.'
           : undefined}
         title="Browser extension"
@@ -187,7 +286,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
         connection={connection}
         creatorAccountId={creatorAccountId}
         onCount={setConnectedCount}
-        refresh={status?.version ?? -1}
+        refresh={`${status?.version ?? -1}:${notice?.revision ?? -1}:${notice?.changed_at ?? ''}`}
       />
       {failed && (
         <Alert severity="error" role="alert">
@@ -201,16 +300,35 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
       )}
       {status && terminal(status) && !approved && (
         <Alert severity="info" role="status">
-          {status.state === 'expired' ? 'Time ran out before the codes were confirmed. Try again.'
-            : status.state === 'revoked' ? 'This browser extension was disconnected.'
-              : status.state === 'declined' ? "The codes didn't match, so nothing was connected. Try again."
-                : 'Connection cancelled.'}
+          {extensionRefused ? 'The extension stopped the connection. Try again.'
+            : status.state === 'expired' ? 'Time ran out before the connection finished. Try again.'
+              : status.state === 'revoked' ? 'This browser extension was disconnected.'
+                : status.state === 'declined' ? "The codes didn't match, so nothing was connected. Try again."
+                  : 'Connection cancelled.'}
         </Alert>
       )}
-      {active && !awaiting && !failed && (
+      {waitingForExtension && (
+        <Stack data-journey-state="desktop.extension_handoff" spacing={0.5}>
+          <Typography role="status">
+            {(extension.stage && EXTENSION_STAGE_COPY[extension.stage]) ?? 'Finish setup in the extension window.'}
+            {' '}This continues here automatically.
+          </Typography>
+        </Stack>
+      )}
+      {verifying && (
+        <Stack spacing={0.5}>
+          <Typography role="status">Connecting the extension in this browser…</Typography>
+          {remainingSeconds !== null && (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Keep this page open. Time left: {remainingLabel(remainingSeconds)}.
+            </Typography>
+          )}
+        </Stack>
+      )}
+      {active && !browserPairing && !awaiting && !failed && (
         <Stack spacing={0.5}>
           <Typography role="status">
-            Open the browser extension and choose Continue setup. In the setup tab, choose Pair device. Keep this page open.
+            Open the browser extension where it&apos;s installed, choose Continue setup, then Pair device. Keep this page open.
           </Typography>
           {remainingSeconds !== null && (
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -219,7 +337,7 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
           )}
         </Stack>
       )}
-      {awaiting && (
+      {awaiting && !browserPairing && (
         <Stack spacing={1.5}>
           <Typography component="h3" variant="subtitle1">Check the code</Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>Desktop code</Typography>
@@ -270,10 +388,10 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
         </Stack>
       )}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: 'flex-start' }} useFlexGap>
-        {!active && (
+        {!active && !waitingForExtension && (
           <Button
             disabled={busy}
-            onClick={() => void run('open')}
+            onClick={connect}
             size={connected ? 'small' : 'medium'}
             sx={connected ? { ml: -1 } : undefined}
             variant={connected ? 'text' : 'contained'}
@@ -281,13 +399,25 @@ function PairingAttemptControls({ api, connection, creatorAccountId }: {
             {connected ? 'Connect another extension' : 'Connect extension'}
           </Button>
         )}
+        {waitingForExtension && (
+          <Button onClick={() => port.open('setup')} variant="outlined">
+            Show extension window
+          </Button>
+        )}
         {active && failed && (
           <Button disabled={busy} onClick={() => void run('get')} variant="outlined">
             Try again
           </Button>
         )}
-        {active && (
-          <Button disabled={busy} onClick={() => void run('cancel')}>
+        {(active || waitingForExtension) && (
+          <Button
+            disabled={busy}
+            onClick={() => {
+              setWaitingForExtension(false);
+              port.cancel();
+              if (active) void run('cancel');
+            }}
+          >
             Cancel
           </Button>
         )}
@@ -301,7 +431,7 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
   connection: ExtensionConnection;
   creatorAccountId: string;
   onCount: (count: number | null) => void;
-  refresh: number;
+  refresh: string;
 }) {
   const [pins, setPins] = useState<CompanionPairingStatus[]>([]);
   const [failed, setFailed] = useState(false);
@@ -418,7 +548,11 @@ function AdmittedPairings({ api, connection, creatorAccountId, onCount, refresh 
 }
 
 /** Browser extension section of Settings: connection status, pairing, and disconnect. */
-export function CompanionPairingControls({ api = companionPairingApi }: { api?: CompanionPairingApi }) {
+export function CompanionPairingControls({ api = companionPairingApi, port }: {
+  api?: CompanionPairingApi;
+  port?: ExtensionPort;
+}) {
+  const extensionPort = port ?? defaultExtensionPort();
   const { canViewSettings } = usePermissions();
   const { agent, creatorAccountId } = useSyncExternalStore(
     bridgeTransportStore.subscribe,
@@ -431,6 +565,7 @@ export function CompanionPairingControls({ api = companionPairingApi }: { api?: 
         <PairingAttemptControls
           key={creatorAccountId}
           api={api}
+          port={extensionPort}
           connection={extensionConnection(agent)}
           creatorAccountId={creatorAccountId}
         />

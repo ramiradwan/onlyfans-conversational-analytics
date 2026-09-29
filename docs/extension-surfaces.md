@@ -11,10 +11,11 @@ Integrated upstream recovery fix: `e70f634a1cbf4cbccae3e895978bea8e28572da2`.
 | `extension/popup.html` | Status, Preview counts, Pause/Resume, and contextual links. |
 | `extension/setup.html` | Legal review, mode choice, browser access, extension-side pairing, and continuation. |
 | `extension/options.html` | Extension access, connection details, local data controls, and links to desktop settings. |
-| Bridge | Existing desktop pairing confirmation and desktop-owned settings. Only handoff instructions change. |
+| Bridge | Starts extension setup and pairing through the desktop port, confirms pairing, and owns desktop settings. See [ADR 0027](adr/0027-desktop-led-extension-setup.md). |
 
 Setup and Options are packaged extension pages. They do not import Bridge views,
-stores, sessions, or API clients. They share the existing generated static tokens,
+stores, sessions, or API clients. Bridge reaches them only through the desktop
+port, which can open them in a compact window (`setup.html#desktop`). They share the existing generated static tokens,
 fonts, and extension presentation helpers. No permissions, external messaging
 origins, or network policy are added to make the full pages work.
 
@@ -30,10 +31,18 @@ companion client owns pairing and readiness. Pages submit actions and render tho
 results; a remembered review position is never proof of consent or completed setup.
 
 Opening setup focuses an existing setup tab rather than starting another ceremony.
-Pairing begins only after an explicit action. The initiating port owns the attempt:
-closing an observing popup or switching apps does not cancel it; closing the owning
-setup page does. Only its initiating port can issue the pairing Cancel command. Only setup receives the
-comparison code, and confirmation remains in Bridge.
+Pairing begins only after an explicit action: Pair in setup, or Connect extension
+in Bridge through the desktop port. The initiating port owns the attempt: closing
+an observing popup or switching apps does not cancel it; closing the owning setup
+page or Bridge page does. Only its initiating port can issue the pairing Cancel
+command. Only setup and the owning desktop port receive the comparison code, and
+confirmation remains in Bridge. While a desktop port is connected, setup hides
+its Pair button so Bridge alone starts pairing.
+
+Pages refresh on events, not on a timer: the worker signals open pages when the
+companion session changes, permissions change, the detected account changes, or
+delivery progresses. A desktop page in the same browser starts setup through the
+port, and the compact window returns to it when its step is complete.
 
 A connected desktop does not imply active commercial authority or admitted analysis.
 Readiness is requested separately through the existing authenticated companion path.

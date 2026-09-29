@@ -327,6 +327,11 @@ const messagePayloadValidators: Record<string, Validator> = {
     updated_at: isoDateTime,
     detail: nullable(string),
   }),
+  'companion.state': object({
+    creator_account_id: nonEmptyString,
+    revision: integer(0),
+    changed_at: isoDateTime,
+  }),
   'protocol.error': object({
     code: literal(
       'unsupported_version',
@@ -413,6 +418,7 @@ const brainToBridgeTypes = new Set([
   'presence.state',
   'agent.state',
   'system.state',
+  'companion.state',
   'protocol.error',
 ]);
 

@@ -47,3 +47,31 @@ test('concurrent opens reuse the setup tab and explicit section navigation stays
   assert.equal(listener({ type: UI_OPEN_SURFACE_MESSAGE_TYPE, surface: 'setup', section: 'https://other.test' }, sender('popup.html'), () => {}), false);
   assert.equal(listener({ type: UI_OPEN_SURFACE_MESSAGE_TYPE, surface: 'setup', section: '' }, sender('content.js'), () => {}), false);
 });
+
+test('the desktop handoff opens a compact window centred on the desktop tab and records it', async () => {
+  const { openSurfacePage, DESKTOP_HANDOFF_STORAGE_KEY } = await import('../runtime/ui-surfaces.mjs');
+  const created = [], stored = {};
+  const api = { runtime: { ...runtime, getContexts: async () => [] },
+    storage: { session: { async set(value) { Object.assign(stored, value); } } },
+    tabs: { async create() { throw new Error('a tab is not the handoff presentation'); } },
+    windows: { async get(id) { assert.equal(id, 4); return { left: 100, top: 50, width: 1480, height: 960 }; },
+      async create(options) { created.push(options); } } };
+  await openSurfacePage(api, { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab: { id: 12, windowId: 4 } });
+  assert.deepEqual(created, [{ url: runtime.getURL('setup.html#desktop'), type: 'popup', focused: true,
+    width: 480, height: 760, left: 600, top: 150 }]);
+  assert.deepEqual(stored[DESKTOP_HANDOFF_STORAGE_KEY], { tab_id: 12, window_id: 4 });
+  await assert.rejects(openSurfacePage(api, { surface: 'setup', section: 'https://other.test', presentation: 'window' }));
+  await assert.rejects(openSurfacePage(api, { surface: 'popup', section: '' }));
+});
+
+test('the desktop handoff focuses an existing setup page instead of opening another', async () => {
+  const { openSurfacePage } = await import('../runtime/ui-surfaces.mjs');
+  const updates = [], focused = [];
+  const api = { runtime: { ...runtime, getContexts: async () => [{ tabId: 8, windowId: 3, documentUrl: runtime.getURL('setup.html') }] },
+    storage: { session: { async set() {} } },
+    tabs: { async update(id, options) { updates.push({ id, ...options }); } },
+    windows: { async update(id, options) { focused.push({ id, ...options }); }, async create() { throw new Error('duplicate'); } } };
+  await openSurfacePage(api, { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab: { id: 12, windowId: 4 } });
+  assert.deepEqual(updates, [{ id: 8, active: true, url: runtime.getURL('setup.html#desktop') }]);
+  assert.deepEqual(focused, [{ id: 3, focused: true }]);
+});

@@ -440,6 +440,13 @@ export interface SystemStatePayload {
   detail: string | null;
 }
 
+/** Change notice only; pairing details are read through the authenticated pairing API. */
+export interface CompanionStatePayload {
+  creator_account_id: string;
+  revision: number;
+  changed_at: IsoDateTime;
+}
+
 export interface ProtocolErrorPayload {
   code: 'unsupported_version' | 'wrong_role' | 'pre_handshake' | 'identity_conflict' | 'validation_failed' | 'unauthorized' | 'internal_error';
   related_message_id: UUID | null;
@@ -520,6 +527,7 @@ export type PresenceObservedMessage = Envelope<'presence.observed', PresenceObse
 export type PresenceStateMessage = Envelope<'presence.state', PresenceStatePayload>;
 export type AgentStateMessage = Envelope<'agent.state', AgentStatePayload>;
 export type SystemStateMessage = Envelope<'system.state', SystemStatePayload>;
+export type CompanionStateMessage = Envelope<'companion.state', CompanionStatePayload>;
 export type ProtocolErrorMessage = Envelope<'protocol.error', ProtocolErrorPayload>;
 export type ConfigAvailableMessage = Envelope<'config.available', ConfigAvailablePayload>;
 export type ConfigAppliedMessage = Envelope<'config.applied', ConfigAppliedPayload>;
@@ -530,7 +538,7 @@ export type CommandResultAckMessage = Envelope<'command.result.ack', CommandResu
 export type AgentToBrainMessage = AgentHelloMessage | AgentHeartbeatMessage | IngestSnapshotMessage | IngestDeltaMessage | PresenceObservedMessage | ConfigAppliedMessage | CommandResultMessage;
 export type BrainToAgentMessage = AgentSessionMessage | SyncRequiredMessage | IngestAckMessage | IngestRejectedMessage | ProtocolErrorMessage | ConfigAvailableMessage | CommandExecuteMessage | CommandResultAckMessage;
 export type BridgeToBrainMessage = BridgeHelloMessage | StateResyncMessage;
-export type BrainToBridgeMessage = BridgeSessionMessage | StateSnapshotMessage | StateDeltaMessage | PresenceStateMessage | AgentStateMessage | SystemStateMessage | ProtocolErrorMessage;
+export type BrainToBridgeMessage = BridgeSessionMessage | StateSnapshotMessage | StateDeltaMessage | PresenceStateMessage | AgentStateMessage | SystemStateMessage | CompanionStateMessage | ProtocolErrorMessage;
 
 export interface AgentConfigGetRequest {
   operation: 'agent.config.get';

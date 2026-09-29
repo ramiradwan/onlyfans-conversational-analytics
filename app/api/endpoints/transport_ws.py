@@ -66,6 +66,7 @@ KNOWN_SERVER_TYPES = {
     "presence.state",
     "agent.state",
     "system.state",
+    "companion.state",
     "protocol.error",
     "config.available",
     "command.execute",
@@ -615,6 +616,11 @@ async def _bridge_socket(websocket: WebSocket) -> None:
         )
         await transport_manager.send_bridge(
             websocket, "system.state", transport_manager.system_state_payload(account_id)
+        )
+        await transport_manager.send_bridge(
+            websocket,
+            "companion.state",
+            transport_manager.companion_state_payload(account_id),
         )
         # A fresh bind (reload / deep-link) that lands while durable projection work
         # is still pending would otherwise be stranded on the stale bind-time

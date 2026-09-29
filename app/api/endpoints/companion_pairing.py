@@ -13,6 +13,7 @@ import json
 import re
 import threading
 from contextlib import suppress
+from datetime import datetime, timezone
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
@@ -20,6 +21,7 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from fastapi.responses import JSONResponse
 
 from app.api.activation import require_activated_runtime
+from app.bootstrap import transport_manager
 from app.api.security import (
     get_authenticated_runtime_policy,
     get_runtime_policy,
@@ -45,6 +47,8 @@ HTTP_MAX_BODY_BYTES = 2_048
 FRAME_MAX_BYTES = 36_864
 _NO_STORE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._~-]{0,127}")
+_COMPARISON_CODE = re.compile(r"[0-9]{6}")
+_EXPIRY_NOTICE_MARGIN_SECONDS = 0.5
 _TERMINAL = {"confirmed", "declined", "expired", "cancelled"}
 _REFUSALS = {
     "pairing_account_refused",
@@ -159,7 +163,9 @@ def _document(raw: bytes | str, maximum: int) -> dict[str, Any]:
         raise _Refusal() from None
 
 
-async def _body(request: Request, field: str) -> dict[str, Any]:
+async def _body(
+    request: Request, field: str, optional: frozenset[str] = frozenset()
+) -> dict[str, Any]:
     raw = bytearray()
     async with asyncio.timeout(STEP_TIMEOUT_SECONDS):
         async for chunk in request.stream():
@@ -167,14 +173,29 @@ async def _body(request: Request, field: str) -> dict[str, Any]:
                 raise _Refusal()
             raw.extend(chunk)
     body = _document(bytes(raw), HTTP_MAX_BODY_BYTES)
-    if set(body) != {field}:
+    if field not in body or not set(body) <= {field} | optional:
         raise _Refusal()
     if field == "version":
         if type(body[field]) is not int or not 0 <= body[field] <= 2**53 - 1:
             raise _Refusal()
     elif not isinstance(body[field], str) or not _ID.fullmatch(body[field]):
         raise _Refusal()
+    code = body.get("agent_comparison_code")
+    if "agent_comparison_code" in body and (
+        not isinstance(code, str) or not _COMPARISON_CODE.fullmatch(code)
+    ):
+        raise _Refusal()
     return body
+
+
+def _announce(result: Any) -> None:
+    """Push a change notice to Bridge; the notice carries no pairing details."""
+    records = result if isinstance(result, list) else [result]
+    for record in records:
+        if isinstance(record, dict) and isinstance(
+            record.get("creator_account_id"), str
+        ):
+            transport_manager.notify_companion_changed(record["creator_account_id"])
 
 
 def _bridge_policy(request: Request, *, mutation: bool):
@@ -197,15 +218,24 @@ def _bridge_policy(request: Request, *, mutation: bool):
 async def _http_operation(
     request: Request, operation: str, pairing_id: str | None = None
 ):
+    account_id: str | None = None
+    mutation = operation not in {"status", "pins"}
     try:
         async with asyncio.timeout(STEP_TIMEOUT_SECONDS):
-            mutation = operation not in {"status", "pins"}
             policy = await asyncio.to_thread(_bridge_policy, request, mutation=mutation)
+            if policy.identity is not None:
+                account_id = policy.identity.creator_account_id
             if pairing_id is not None:
                 _pairing_id(pairing_id)
             if mutation:
                 body = await _body(
-                    request, "creator_account_id" if operation == "open" else "version"
+                    request,
+                    "creator_account_id" if operation == "open" else "version",
+                    (
+                        frozenset({"agent_comparison_code"})
+                        if operation == "confirm"
+                        else frozenset()
+                    ),
                 )
             else:
                 async for chunk in request.stream():
@@ -222,7 +252,14 @@ async def _http_operation(
             elif operation == "revoke":
                 call = lambda: service.revoke(policy, pairing_id, body["version"])
             elif operation == "confirm":
-                call = lambda: service.confirm(policy, pairing_id, body["version"])
+                verified = (
+                    {"agent_comparison_code": body["agent_comparison_code"]}
+                    if "agent_comparison_code" in body
+                    else {}
+                )
+                call = lambda: service.confirm(
+                    policy, pairing_id, body["version"], **verified
+                )
             else:
                 call = lambda: service.cancel(
                     policy, pairing_id, body["version"], decline=operation == "decline"
@@ -236,7 +273,20 @@ async def _http_operation(
             )
         if operation == "pins":
             return _response({"pins": [_public_status(pin) for pin in result]})
+        if mutation:
+            _announce(result)
+        if operation == "open":
+            _schedule_expiry_notice(result)
         return _response(_public_status(result), 201 if operation == "open" else 200)
+    except CompanionPairingError as error:
+        # A refused confirmation can end the attempt (a code mismatch declines
+        # it), so Bridge must re-read even after an error.
+        if mutation and account_id:
+            transport_manager.notify_companion_changed(account_id)
+        code = _fixed_code(error)
+        return _response(
+            {"detail": code}, 403 if code == "pairing_account_refused" else 409
+        )
     except _Refusal as error:
         return _response({"detail": error.code}, error.status)
     except HTTPException as error:
@@ -246,15 +296,22 @@ async def _http_operation(
             else "pairing_account_refused"
         )
         return _response({"detail": code}, error.status_code)
-    except CompanionPairingError as error:
-        code = _fixed_code(error)
-        return _response(
-            {"detail": code}, 403 if code == "pairing_account_refused" else 409
-        )
     except TimeoutError:
         return _response({"detail": "pairing_state_refused"}, 408)
     except Exception:
         return _response({"detail": "pairing_storage_refused"}, 503)
+
+
+def _schedule_expiry_notice(result: Any) -> None:
+    try:
+        expires_at = datetime.fromisoformat(result["expires_at"])
+        delay = (expires_at - datetime.now(timezone.utc)).total_seconds()
+    except (KeyError, TypeError, ValueError):
+        return
+    transport_manager.notify_companion_changed(
+        result["creator_account_id"],
+        delay_seconds=max(0.0, delay) + _EXPIRY_NOTICE_MARGIN_SECONDS,
+    )
 
 
 async def _http_call(
@@ -533,6 +590,7 @@ async def _send(websocket: WebSocket, document: dict[str, Any]) -> None:
 async def companion_pairing_socket(websocket: WebSocket) -> None:
     service = None
     pairing_id = None
+    account_id = None
     complete = False
     incoming = None
     try:
@@ -550,6 +608,7 @@ async def companion_pairing_socket(websocket: WebSocket) -> None:
                 incoming, service.claim, service=service, claim=True
             )
             pairing_id = window.pairing_id
+            account_id = getattr(window, "creator_account_id", None)
             offer = await _work_step(
                 incoming,
                 lambda: service.offer(window, request),
@@ -557,6 +616,7 @@ async def companion_pairing_socket(websocket: WebSocket) -> None:
                 pairing_id=pairing_id,
             )
             await _send(websocket, offer)
+            transport_manager.notify_companion_changed(account_id)
             confirm = await _input_step(incoming, service, pairing_id)
             await _work_step(
                 incoming,
@@ -564,6 +624,8 @@ async def companion_pairing_socket(websocket: WebSocket) -> None:
                 service=service,
                 pairing_id=pairing_id,
             )
+            # The comparison code is now visible to the opening Bridge session.
+            transport_manager.notify_companion_changed(account_id)
             inbound = incoming.task
             terminal = asyncio.create_task(_terminal_outcome(service, pairing_id))
             try:
@@ -630,3 +692,5 @@ async def companion_pairing_socket(websocket: WebSocket) -> None:
             await _stop(incoming.task)
         if service is not None and pairing_id is not None and not complete:
             await _abort(service, pairing_id)
+        if account_id is not None:
+            transport_manager.notify_companion_changed(account_id)

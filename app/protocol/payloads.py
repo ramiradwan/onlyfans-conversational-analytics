@@ -262,6 +262,18 @@ class AgentStatePayload(StrictModel):
     degraded_reason: str | None
 
 
+class CompanionStatePayload(StrictModel):
+    """Change notice for the account's companion pairing state.
+
+    It carries no pairing identifiers or codes. Bridge reads the details through
+    the authenticated pairing endpoints, which keep their per-session scope.
+    """
+
+    creator_account_id: NonEmptyString
+    revision: NonNegativeInt
+    changed_at: Timestamp
+
+
 class SystemStatePayload(StrictModel):
     creator_account_id: NonEmptyString
     processing_mode: Literal["processing_snapshot", "realtime", "resyncing"]

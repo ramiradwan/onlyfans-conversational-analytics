@@ -186,6 +186,8 @@ class InMemoryTransportManager:
         ] = {}
         self._projection_pending_accounts: set[str] = set()
         self._onboarding_progress = onboarding_progress
+        self._companion_revisions: dict[str, tuple[int, datetime]] = {}
+        self._companion_tasks: set[asyncio.Task[None]] = set()
 
     def _development_stub_allowed(self) -> bool:
         auth_mode = settings.websocket_auth_mode
@@ -677,6 +679,11 @@ class InMemoryTransportManager:
         self.presence.clear()
         self._agent_pairing_grants.clear()
         self._agent_config_grants.clear()
+        self._companion_revisions.clear()
+        for task in self._companion_tasks:
+            if not task.done() and not task.get_loop().is_closed():
+                task.cancel()
+        self._companion_tasks.clear()
         self.projection.reset()
         self.history.reset()
         self.commands.reset()
@@ -1320,6 +1327,45 @@ class InMemoryTransportManager:
 
     async def broadcast_agent_state(self, account_id: str) -> None:
         await self._broadcast_bridge(account_id, "agent.state", self.agent_state_payload(account_id))
+
+    def companion_state_payload(self, account_id: str) -> dict[str, Any]:
+        """Return the current companion change notice for one bound account."""
+        revision, changed_at = self._companion_revisions.get(
+            account_id, (0, utc_now())
+        )
+        return {
+            "creator_account_id": account_id,
+            "revision": revision,
+            "changed_at": changed_at.isoformat(),
+        }
+
+    def notify_companion_changed(
+        self, account_id: str, *, delay_seconds: float = 0.0
+    ) -> None:
+        """Announce a pairing change to the account's Bridge sockets.
+
+        Callers are the pairing adapters. This is fire-and-forget: a failed send
+        drops only that socket, and Bridge re-reads state on its next bind.
+        """
+        if not isinstance(account_id, str) or not account_id:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        async def announce() -> None:
+            if delay_seconds > 0:
+                await asyncio.sleep(delay_seconds)
+            previous, _ = self._companion_revisions.get(account_id, (0, utc_now()))
+            self._companion_revisions[account_id] = (previous + 1, utc_now())
+            await self._broadcast_bridge(
+                account_id, "companion.state", self.companion_state_payload(account_id)
+            )
+
+        task = loop.create_task(announce(), name=f"companion-state-{account_id}")
+        self._companion_tasks.add(task)
+        task.add_done_callback(self._companion_tasks.discard)
 
     async def broadcast_presence_state(self, account_id: str) -> None:
         await self._broadcast_bridge(account_id, "presence.state", self.presence_state_payload(account_id))
