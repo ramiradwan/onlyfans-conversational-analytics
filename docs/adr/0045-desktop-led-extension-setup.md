@@ -2,7 +2,7 @@
 
 # ADR 0045: Let the desktop app lead extension setup and controls with pushed state
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-29
 - Amends: [ADR 0024](0024-authenticated-companion-sessions.md), pairing steps 5 and 6 and its Bridge extension-message consequence; the surface ownership in [Extension surfaces](../extension-surfaces.md).
 
