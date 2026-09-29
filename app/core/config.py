@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     websocket_bind_host: str = "127.0.0.1"
     agent_heartbeat_interval_seconds: int = Field(default=20, gt=0, le=300)
     agent_lease_timeout_seconds: int = Field(default=60, gt=0, le=900)
+    catchup_enabled: bool = True
+    catchup_canary_interval_minutes: int = Field(default=60, gt=0)
+    catchup_daily_page_cap: int = Field(default=1000, gt=0)
+    catchup_grant_min_interval_minutes: int = Field(default=10, gt=0)
+    catchup_lease_seconds: int = Field(default=300, gt=0)
+    catchup_grant_page_chunk: int = Field(default=200, gt=0)
+    catchup_skew_margin_minutes: int = Field(default=15, ge=0)
+    capture_report_max_age_seconds: int = Field(default=90, gt=0)
     # The shipped runtime is local-first and durable. Tests must opt in to the
     # disposable backend explicitly (see tests/conftest.py).
     canonical_persistence_backend: Literal["memory", "sqlite"] = "sqlite"

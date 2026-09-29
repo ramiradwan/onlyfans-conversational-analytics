@@ -300,6 +300,7 @@ async def _handle_agent_message(websocket: WebSocket, lease: AgentLease, message
                 lease.creator_account_id,
                 lease.principal_id,
             )
+        await transport_manager.broadcast_catchup(lease.creator_account_id)
         return True
 
     if message.type == "config.applied":
@@ -416,6 +417,7 @@ async def _agent_socket(websocket: WebSocket, *, authenticate=None) -> None:
             agent_stream_id=hello.payload.agent_stream_id,
             config_auth_ticket=config_auth_ticket,
             applied_config_revision=hello.payload.applied_config_revision,
+            capabilities=hello.payload.capabilities,
         )
         checkpoint = transport_manager.checkpoint_for(lease)
         pending_snapshot = transport_manager.pending_snapshot_for(lease)
@@ -591,6 +593,7 @@ async def _bridge_socket(websocket: WebSocket) -> None:
             principal_id=principal_id,
             creator_account_id=account_id,
             bridge_session_id=hello.payload.bridge_session_id,
+            capabilities=hello.payload.capabilities,
         )
         await transport_manager.send_bridge(
             websocket,

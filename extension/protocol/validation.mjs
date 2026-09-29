@@ -152,7 +152,28 @@ export const rawMessage = object({
   direction: literal('inbound', 'outbound'),
 });
 
+const checkCounts = object({list: integer(0), messages: integer(0), probes: integer(0)});
+const checkHead = object({chat_id: nonEmptyString}, {head_message_id: nullable(nonEmptyString), head_sent_at: nullable(isoDateTime)});
+
 export const coverageEvidence = discriminated({
+  'check.chat_reconciled': object({
+    type: literal('check.chat_reconciled'), generation_id: uuid, chat_id: nonEmptyString,
+    target_head: object({}, {message_id: nullable(nonEmptyString), sent_at: nullable(isoDateTime)}),
+    reached: literal('boundary', 'history_start'), final_source_seq: integer(0),
+  }),
+  'check.inventory_closed': object({
+    type: literal('check.inventory_closed'), generation_id: uuid,
+    strategy: literal('timestamp', 'probe', 'mixed'), scanned: integer(0), changed: integer(0), movers: integer(0),
+  }),
+  'check.completed': discriminatedBy('kind', {
+    catch_up: object({type: literal('check.completed'), generation_id: uuid, kind: literal('catch_up'),
+      final_source_seq: integer(0), pages_read: integer(0), counts: checkCounts}),
+    canary: object({type: literal('check.completed'), generation_id: uuid, kind: literal('canary'),
+      final_source_seq: integer(0), pages_read: integer(0), counts: checkCounts}, {heads: array(checkHead, 0, 100)}),
+  }),
+  'check.abandoned': object({type: literal('check.abandoned'), generation_id: uuid,
+    reason: literal('account_changed', 'authorization_changed', 'paused', 'cursor_invalid', 'retry_exhausted', 'storage_lost')}),
+
   'generation.started': object({
     type: literal('generation.started'),
     generation_id: uuid,
@@ -223,3 +244,47 @@ export const historyAcquisition = (value, path) => {
     );
   }
 };
+
+export const catchupFreshness = object({
+  status: literal('paused', 'checking', 'never_checked', 'behind', 'current'),
+  reason: nullable(literal('user_paused', 'consent_needed', 'extension_offline', 'no_onlyfans_tab',
+    'onlyfans_sleeping', 'account_changed', 'applying_settings', 'capture_off', 'extension_outdated',
+    'catch_up', 'canary', 'awaiting_check', 'daily_cap', 'check_incomplete', 'not_observing')),
+  gap_epoch: integer(0), uncertain_since: nullable(isoDateTime), check_id: nullable(uuid),
+  last_closed_at: nullable(isoDateTime), observing_since: nullable(isoDateTime), evaluated_at: isoDateTime,
+});
+
+const utcDay = (value, path) => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)
+      || Number.isNaN(Date.parse(value)) || new Date(value).toISOString().slice(0, 10) !== value) {
+    throw new ProtocolValidationError(path, 'expected UTC calendar day');
+  }
+};
+
+const catchupAuth = {protocol_version: literal('2'), auth_ticket: nonEmptyString,
+  agent_installation_id: uuid, creator_account_id: nonEmptyString};
+export const captureStateReportRequest = object({
+  ...catchupAuth, operation: literal('capture.state.report'), worker_instance_id: uuid,
+  report_seq: integer(1), observing: boolean,
+  reason: literal('ok', 'capture_off', 'consent_needed', 'no_onlyfans_tab', 'tab_frozen', 'tab_discarded',
+    'hook_not_armed', 'reload_required', 'page_socket_closed', 'account_mismatch', 'storage_locked', 'paused'),
+  tabs: object({armed: integer(0), frozen: integer(0), discarded: integer(0)}), page_socket_open: boolean,
+  drops_since_last: object({expired: integer(0), rejected: integer(0)}),
+  requests_since_last: object({canary_list: integer(0), catchup_list: integer(0), catchup_messages: integer(0),
+    history_list: integer(0), history_messages: integer(0), identity: integer(0), retries: integer(0)}),
+  utc_day: utcDay, automatic_pages_today: integer(0),
+});
+export const captureStateReportResponse = object({acknowledged_seq: integer(1)});
+export const historyCheckBeginRequest = object({
+  ...catchupAuth, operation: literal('history.check.begin'), request_id: uuid, worker_instance_id: uuid,
+  trigger: literal('admission', 'tab_runnable', 'observing', 'alarm', 'renew'), config_revision: nonEmptyString,
+  head_evidence: literal('none', 'timestamp', 'full'), active_check_id: nullable(uuid),
+});
+export const historyCheckBeginResponse = discriminatedBy('result', {
+  not_needed: object({result: literal('not_needed')}),
+  deferred: object({result: literal('deferred'), retry_after_seconds: integer(1),
+    reason: literal('grant_interval', 'daily_cap', 'not_runnable', 'history_incomplete', 'check_active')}),
+  granted: object({result: literal('granted'), check_id: uuid, kind: literal('catch_up', 'canary'), gap_epoch: integer(0),
+    uncertain_since: nullable(isoDateTime), granted_at: isoDateTime, blind: boolean, page_budget: integer(1),
+    lease_expires_at: isoDateTime, resume: boolean}),
+});

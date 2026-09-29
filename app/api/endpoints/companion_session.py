@@ -151,6 +151,14 @@ class SessionRPC:
             }
         if self.auth_ticket is None:
             raise CompanionRecordError()
+        if method in {"capture.state.report", "history.check.begin"}:
+            from app.protocol.config import CaptureStateReportRequest, HistoryCheckBeginRequest
+
+            model = CaptureStateReportRequest if method == "capture.state.report" else HistoryCheckBeginRequest
+            request = model.model_validate_json(encode_document(params))
+            self.authority.validate_config(request.auth_ticket, request.creator_account_id, str(request.agent_installation_id))
+            operation = transport_manager.capture_state_report if method == "capture.state.report" else transport_manager.history_check_begin
+            return operation(request)
         if method == "agent.analysis.readiness":
             _exact(params, ())
             identity = policy.identity
@@ -306,6 +314,8 @@ async def _serve(channel, pin):
             await channel.send(
                 {"type": "rpc.response", "id": value["id"], "result": result}
             )
+            if value["method"] in {"capture.state.report", "history.check.begin"}:
+                await transport_manager.broadcast_catchup(pin.creator_account_id)
 
     tasks = [
         asyncio.create_task(read()),

@@ -255,6 +255,7 @@ async def health_check():
         "message": "API is running",
         "version": settings.version,
         "environment": settings.environment,
+        "capture_counters": transport_manager.catchup.counters(),
     }
 
 

@@ -19,6 +19,7 @@ from app.persistence.database import (
     ProjectionsSQLite,
 )
 from app.persistence.migrations import MigrationChecksumError, MigrationRunner
+from app.persistence.catchup import CatchupLedger, CatchupEvidenceError
 from app.persistence.projection_pipeline import (
     CanonicalProjectionConversation,
     CanonicalProjectionMessage,
@@ -119,11 +120,17 @@ class HistoryRepository:
 
     def __init__(self, database: CanonicalSQLite) -> None:
         self.database = database
+        self.catchup = CatchupLedger(database)
 
     def reset(self) -> None:
         """Remove v2 history state while retaining configuration and command audit data."""
         with self.database.transaction() as connection:
             for table in (
+                "message_check_chats",
+                "message_checks",
+                "message_catchup",
+                "capture_report_receipts",
+                "capture_daily_counters",
                 "projection_activation_intents",
                 "projection_work",
                 "live_ingest_state",
@@ -535,6 +542,7 @@ class HistoryRepository:
     def _merge_message(
         self, connection: sqlite3.Connection, account_id: str, message: dict[str, Any],
         epoch: int, source_seq: int, event_id: str | None, now: str,
+        check_id: str | None = None,
     ) -> bool:
         if self._tombstoned(connection, account_id, "message", message["message_id"]):
             return False
@@ -574,6 +582,7 @@ class HistoryRepository:
              message["direction"], message.get("upstream_updated_at"), content_hash,
              epoch, source_seq, event_id, now),
         )
+        self.catchup.attribute_insert(connection, account_id, check_id, message["sent_at"])
         return True
 
     @staticmethod
@@ -1149,6 +1158,9 @@ class HistoryRepository:
                 (*key.sql(), str(payload.snapshot_id)),
             ):
                 evidence = json.loads(row[0])
+                if evidence["type"].startswith("check."):
+                    self.catchup.apply_evidence(connection, key.creator_account_id, evidence, now, snapshot=True)
+                    continue
                 coverage_changed |= self._apply_coverage(
                     connection, key.creator_account_id, evidence, now
                 )
@@ -1419,7 +1431,7 @@ class HistoryRepository:
     def _commit_delta(self, key: StreamKey, payload: Any) -> IngestResult:
         self._require_stream_identity(key, payload)
         now = _iso(utc_now())
-        document = payload.model_dump(mode="json")
+        document = payload.model_dump(mode="json", exclude_unset=True)
         fingerprint = _hash({"source_seq": payload.source_seq, "change": document["change"]})
         with self.database.transaction() as connection:
             epoch = self._ensure_stream(connection, key, now)
@@ -1502,7 +1514,7 @@ class HistoryRepository:
             elif kind == "message.upsert":
                 conversation_id = change["message"]["chat_id"]
                 changed = self._merge_message(connection, key.creator_account_id, change["message"], epoch,
-                                              payload.source_seq, str(payload.event_id), now)
+                                              payload.source_seq, str(payload.event_id), now, document.get("check_id"))
                 connection.execute(
                     """INSERT INTO stream_message_membership(
                            creator_account_id,agent_installation_id,agent_stream_id,message_id,chat_id,
@@ -1527,7 +1539,14 @@ class HistoryRepository:
                 )
             elif kind == "coverage.observed":
                 conversation_id = change["evidence"].get("conversation_id")
-                changed = self._apply_coverage(connection, key.creator_account_id, change["evidence"], now)
+                if change["evidence"]["type"].startswith("check."):
+                    try:
+                        changed = self.catchup.apply_evidence(connection, key.creator_account_id,
+                            change["evidence"], now, key=key, checkpoint=checkpoint)
+                    except CatchupEvidenceError as error:
+                        raise InvariantViolation(str(error)) from error
+                else:
+                    changed = self._apply_coverage(connection, key.creator_account_id, change["evidence"], now)
             else:
                 raise InvariantViolation(f"unsupported ingest change {kind}")
             revision = None
@@ -1659,6 +1678,14 @@ class HistoryRepository:
 
     def live_freshness(self, account_id: str, now: datetime | None = None) -> dict[str, Any]:
         now = now or utc_now()
+        if self.catchup.supported(account_id):
+            status = self.catchup.state(account_id, now=now)
+            with self.database.read() as connection:
+                row = connection.execute("SELECT last_observed_at,last_committed_at,pending_event_count FROM live_ingest_state WHERE creator_account_id=?", (account_id,)).fetchone()
+            return {"status": "current" if status["status"] == "current" else "delayed",
+                    "last_observed_at": None if row is None else row[0],
+                    "last_committed_at": None if row is None else row[1], "expires_at": None,
+                    "pending_count": None if row is None else row[2], "reason": status["reason"]}
         with self.database.read() as connection:
             row = connection.execute(
                 """SELECT last_observed_at,last_committed_at,expires_at,pending_event_count
@@ -1689,6 +1716,9 @@ class HistoryRepository:
             ).fetchone()
             if int(row[0]) != expected_revision:
                 raise LookupError("settings_revision_conflict")
+            previous = connection.execute("SELECT consent_revision,authorized_platform_creator_id,desired_state FROM history_settings WHERE creator_account_id=?", (account_id,)).fetchone()
+            if tuple(previous) != (values.get("consent_revision"), values.get("authorized_platform_creator_id"), values["desired_state"]):
+                self.catchup.epoch_changed(account_id, now=datetime.fromisoformat(now), connection=connection)
             connection.execute(
                 """UPDATE history_settings SET
                        settings_revision=settings_revision+1,
