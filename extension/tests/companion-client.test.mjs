@@ -67,6 +67,7 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
           }
           if (method === 'agent.storage.rotate') return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: 'replacement-bootstrap' };
           if (method === 'agent.config.get') return { status: 304, etag: 'config-1', document: null };
+          if (method === 'agent.surface.report') return {};
           throw new Error('test_method_missing');
         },
       };
@@ -195,6 +196,26 @@ test('current Agent proof, storage unseal, configuration and rotation use only t
     assert.equal(JSON.stringify([h.chrome.storage.local.values, h.chrome.storage.session.values]).includes('ticket'), false);
     assert.equal(JSON.stringify(await h.client.status()).includes('bootstrap'), false);
   } finally { h.client.invalidate(); }
+});
+
+test('an active Full session reports pending browser state on its authenticated channel', async () => {
+  const h = harness();
+  const surface = {
+    schema: 'ofca-browser-surface/v1',
+    capture: 'active',
+    site_access: 'granted',
+    history_permission: 'granted',
+    legal_review_required: false,
+  };
+  h.client.reportSurface(surface);
+  await h.client.adapter.loadBrainBinding();
+  await tick();
+  assert.deepEqual(
+    h.channels[0].rpcCalls.map((call) => call.method),
+    ['agent.challenge', 'agent.authenticate', 'agent.storage.unseal', 'agent.surface.report'],
+  );
+  assert.deepEqual(h.channels[0].rpcCalls.at(-1).params, surface);
+  h.client.invalidate();
 });
 
 test('explicit confirmed pairing is not blocked by automatic reconnect cooldown', async () => {
