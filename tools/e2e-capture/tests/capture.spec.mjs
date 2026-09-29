@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
+import playwrightExpect from '../node_modules/playwright/lib/matchers/expect.js';
 
 import {
   PROVISIONING_IDENTITY_STORAGE_KEY,
@@ -31,8 +32,7 @@ import {
 } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 import { readSqliteProof } from '../lib/sqlite-proof.mjs';
-import { buildStableConnectionDiagnostic } from '../lib/stable-connection-diagnostic.mjs';
-
+import { buildStableConnectionDiagnostic, redactStableConnectionAssertionError, withoutReportedExpectStep } from '../lib/stable-connection-diagnostic.mjs';
 const IDENTITY_PATH = '/api2/v2/users/me';
 const CHATS_PATH = '/api2/v2/chats';
 const MESSAGES_PATH = `/api2/v2/chats/${SYNTHETIC.chatId}/messages`;
@@ -564,8 +564,9 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
           popupClosedAt = Date.now();
         }
         summary = await readBrainSummary(context);
-        expect(summary.connectionToken).toBe(initialConnection);
+        withoutReportedExpectStep(() => expect(summary.connectionToken).toBe(initialConnection), playwrightExpect);
       } catch (error) {
+        redactStableConnectionAssertionError(error, summary?.connectionToken, initialConnection);
         const liveWorker = context.serviceWorkers().find((candidate) =>
           candidate.url().endsWith('/background.js'));
         let state = null;
