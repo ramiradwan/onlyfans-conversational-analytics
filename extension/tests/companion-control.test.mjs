@@ -173,11 +173,15 @@ test('controls map only to pause and resume in the matching consent state', asyn
   assert.deepEqual(calls, ['pause', 'resume']);
 });
 
-test('the reporter reads state only in Full-family modes and always settles the control session', async () => {
-  let relevant = false, reads = 0, ensured = 0;
+test('the reporter reacts to companion session changes and coalesces Full-family state reads', async () => {
+  let relevant = false, reads = 0, ensured = 0, sessionChanged = null;
   const reported = [];
   const reporter = createSurfaceReporter({
-    companion: { reportSurface: (value) => reported.push(value), ensureControl: async () => { ensured += 1; } },
+    companion: {
+      reportSurface: (value) => reported.push(value),
+      ensureControl: async () => { ensured += 1; },
+      subscribe: (listener) => { sessionChanged = listener; return () => {}; },
+    },
     readState: async () => { reads += 1; return { consent: { consent: { mode: 'full' }, phase: 'full' }, legal: {} }; },
     relevant: () => relevant,
   });
@@ -186,7 +190,7 @@ test('the reporter reads state only in Full-family modes and always settles the 
   assert.equal(reads, 0);
   assert.equal(ensured, 1);
   relevant = true;
-  reporter.changed(); reporter.changed(); reporter.changed();
+  sessionChanged(); sessionChanged(); sessionChanged();
   await tick();
   assert.equal(reads, 1);
   assert.equal(reported.length, 1);

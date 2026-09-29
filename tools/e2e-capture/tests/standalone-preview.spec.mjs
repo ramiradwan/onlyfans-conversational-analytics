@@ -6,6 +6,7 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
 import { LEGAL_ACTIVATION_FLOW_STORAGE_KEY } from '../../../extension/runtime/legal-activation-controller.mjs';
+import { DESKTOP_LINK_STORAGE_KEY } from '../../../extension/runtime/desktop-port.mjs';
 import {
   PROVISIONING_IDENTITY_STORAGE_KEY,
   PROVISIONING_IDENTITY_STORAGE_SCHEMA,
@@ -125,6 +126,7 @@ function expectNoOptionalAccess(snapshot) {
 
 function expectEmptyProvisioningIdentitySession(snapshot) {
   expect(snapshot.session).toEqual({
+    [DESKTOP_LINK_STORAGE_KEY]: 0,
     [PROVISIONING_IDENTITY_STORAGE_KEY]: {
       schema: PROVISIONING_IDENTITY_STORAGE_SCHEMA,
       contexts: [],

@@ -39,14 +39,16 @@ export function createSurfaceReporter({ companion, readState, relevant = () => t
     } catch { /* The next change event retries. */ }
     await companion.ensureControl();
   }
-  return Object.freeze({
-    changed() {
-      // Preview and off modes have no companion session: skip their frequent
-      // writes, but still close a control session left from a paused Full mode.
-      if (!relevant()) { void Promise.resolve(companion.ensureControl()).catch(() => undefined); return; }
-      if (scheduled) return;
-      scheduled = true;
-      queueMicrotask(() => { void publish(); });
-    },
-  });
+  function changed() {
+    // Preview and off modes have no companion session: skip their frequent
+    // writes, but still close a control session left from a paused Full mode.
+    if (!relevant()) { void Promise.resolve(companion.ensureControl()).catch(() => undefined); return; }
+    if (scheduled) return;
+    scheduled = true;
+    queueMicrotask(() => { void publish(); });
+  }
+  // Session admission is the authoritative opportunity to publish a surface
+  // that may have been computed before a companion channel was available.
+  companion.subscribe?.(() => changed());
+  return Object.freeze({ changed });
 }
