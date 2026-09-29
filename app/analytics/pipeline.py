@@ -715,10 +715,26 @@ class AnalyticsPipeline:
             return False
         currentness = getattr(self.projections, "projection_currentness", None)
         if callable(currentness):
-            current = currentness(
+            # Preserve the established projection-currentness call contract for
+            # adapters and test doubles. Native stores may opt into cancellable
+            # verification without making the keyword mandatory for all stores.
+            import inspect
+            try:
+                parameters = inspect.signature(currentness).parameters.values()
+                cancellable = any(
+                    item.name == "cancellation_check"
+                    or item.kind == inspect.Parameter.VAR_KEYWORD
+                    for item in parameters
+                )
+            except (TypeError, ValueError):
+                cancellable = False
+            args = (
                 creator_account_id, identity, self.pipeline_revision,
                 self.pipeline_config_digest, self._retention_clock,
-                cancellation_check=cancellation_check,
+            )
+            current = (
+                currentness(*args, cancellation_check=cancellation_check)
+                if cancellable else currentness(*args)
             )
         else:
             projection = self.projections.get(creator_account_id, canonical_identity=identity)
