@@ -28,7 +28,9 @@ def test_exact_append_loads_each_predecessor_unit_once(tmp_path, monkeypatch):
             insert_message(db, 'chat-0', 'single-new-tail', NOW, 2)
             advance(db)
         result = f.pipeline.project_account(ACCOUNT)
-        assert reads == Counter({conversation_ref(ACCOUNT, f'chat-{i}'): 1 for i in range(3)})
+        assert reads == Counter({conversation_ref(ACCOUNT, 'chat-0'): 1}), reads
+        # Other conversations remain covered by the account catalog and persisted proofs;
+        # the deletion test below proves they cannot disappear behind this fast path.
         cold_equal(f, result.artifact)
     finally:
         cleanup(f)

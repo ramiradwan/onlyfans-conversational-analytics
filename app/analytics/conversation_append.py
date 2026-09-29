@@ -10,13 +10,15 @@ import re
 
 from app.analytics.compact_graph import CompactGraph
 from app.analytics.conversation_enrichment_units import (
-    AppendedMessageEnrichments, ConversationEnrichmentUnit, message_records,
+    AppendedMessageEnrichments, ConversationEnrichmentUnit, message_frame, message_records,
+    sentiment_score_sum,
 )
 from app.analytics.conversation_graph_units import graph_unit_ids
 from app.analytics.graph_projection import stable_node_id
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 from app.analytics.metrics import (
-    ConversationMetricInput, build_conversation_metrics_from_values as build_conversation_metrics,
+    ConversationMetricInput, append_conversation_metrics,
+    build_conversation_metrics_from_values as build_conversation_metrics,
 )
 from app.analytics.opaque_refs import account_ref, conversation_ref, message_ref
 from app.analytics.source_snapshot import conversation_digest
@@ -63,7 +65,7 @@ def _previous_graph(loader, unit, check):
     return graph
 
 
-def try_append(pipeline, account, source_revision, conversation, raw, loader, reuse, config, cutoff,
+def try_append(pipeline, account, source_revision, conversation, raw, input_digest, loader, reuse, config, cutoff,
                check, cancellation_check):
     """Use only a current-process proof and an exact canonical prefix match."""
     from app.analytics.enrichment import EnrichmentStage
@@ -138,38 +140,72 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
     if pair is None:
         raise ValueError('conversation_append_enrichment_missing')
     unit = ConversationEnrichmentUnit(expected, pair[0], pair[1])
-    rows = message_records(unit)
-    inputs, references = [], set()
-    for record, message in zip(rows, prefix_values, strict=True):
-        check()
-        value = json.loads(record)
-        if not isinstance(value['sent_at'], str):
-            return None  # Noncanonical timestamp encodings use full model validation.
-        at = datetime.fromisoformat(value['sent_at'])
-        ref_value = message_ref(account, conversation.conversation_id, message.message_id)
-        if (value['account_ref'] != partition or value['conversation_ref'] != ref
-                or value['participant_ref'] != expected.metrics.participant_ref
-                or value['message_ref'] != ref_value or ref_value in references
-                or value['source_ordinal'] != message.source_ordinal
-                or at != message.sent_at or value['direction'] != message.direction):
-            raise ValueError('conversation_append_source_mismatch')
-        references.add(ref_value)
-        inputs.append(ConversationMetricInput(at, value['source_ordinal'], message.direction,
-            value['sentiment']['label'], float(value['sentiment']['score']),
-            tuple(topic['taxonomy_id'] for topic in value['topic_entities']['topics']),
-            tuple(entity['entity_type'] for entity in value['topic_entities']['entities']),
-            value['engagement']['state']))
-    with reuse.known_new_message(message_ref(account, conversation.conversation_id, ordered[-1].message_id)):
+    frame = message_frame(unit)
+    boundary_raw = frame.rpartition(b'\n')[2]
+    try:
+        boundary_value = json.loads(boundary_raw)
+        boundary_at = datetime.fromisoformat(boundary_value['sent_at'])
+    except (ValueError, TypeError, KeyError):
+        return None
+    source_boundary = ordered[-2]
+    boundary_ref = message_ref(account, conversation.conversation_id, source_boundary.message_id)
+    if (boundary_value.get('account_ref') != partition
+            or boundary_value.get('conversation_ref') != ref
+            or boundary_value.get('participant_ref') != expected.metrics.participant_ref
+            or boundary_value.get('message_ref') != boundary_ref
+            or boundary_value.get('source_ordinal') != source_boundary.source_ordinal
+            or boundary_at != source_boundary.sent_at
+            or boundary_value.get('direction') != source_boundary.direction):
+        raise ValueError('conversation_append_source_mismatch')
+    last = SimpleNamespace(sent_at=boundary_at, direction=source_boundary.direction)
+    tail_ref = message_ref(account, conversation.conversation_id, ordered[-1].message_id)
+    with reuse.known_new_message(tail_ref):
         added = pipeline.enrichment.enrich_conversation(account,
             conversation.model_copy(update={'messages': ordered[-1:]}),
             cancellation_check=cancellation_check)
-    if len(added) != 1 or added[0].message_ref in references:
+    if len(added) != 1 or added[0].message_ref != tail_ref or tail_ref == boundary_ref:
         raise ValueError('conversation_append_tail_invalid')
     tail = added[0]
-    inputs.append(ConversationMetricInput.from_enrichment(tail))
-    metrics = build_conversation_metrics(account, conversation, inputs)
-    findings = AppendedMessageEnrichments(rows, tail, references, inputs[0].sent_at, previous=unit)
-    del inputs
+    metrics = append_conversation_metrics(
+        expected.metrics, last, tail, conversation.unread_count,
+        sentiment_total_factory=lambda: sentiment_score_sum(
+            frame, expected.message_count, check=check
+        ),
+    )
+    if metrics is not None:
+        findings = AppendedMessageEnrichments(
+            frame, tail, None, expected.first_source_at, previous=unit
+        )
+    else:
+        rows = message_records(unit)
+        inputs, references = [], set()
+        for record, message in zip(rows, prefix_values, strict=True):
+            check()
+            value = json.loads(record)
+            if not isinstance(value['sent_at'], str):
+                return None  # Noncanonical timestamp encodings use full model validation.
+            at = datetime.fromisoformat(value['sent_at'])
+            ref_value = message_ref(account, conversation.conversation_id, message.message_id)
+            if (value['account_ref'] != partition or value['conversation_ref'] != ref
+                    or value['participant_ref'] != expected.metrics.participant_ref
+                    or value['message_ref'] != ref_value or ref_value in references
+                    or value['source_ordinal'] != message.source_ordinal
+                    or at != message.sent_at or value['direction'] != message.direction):
+                raise ValueError('conversation_append_source_mismatch')
+            references.add(ref_value)
+            inputs.append(ConversationMetricInput(at, value['source_ordinal'], message.direction,
+                value['sentiment']['label'], float(value['sentiment']['score']),
+                tuple(topic['taxonomy_id'] for topic in value['topic_entities']['topics']),
+                tuple(entity['entity_type'] for entity in value['topic_entities']['entities']),
+                value['engagement']['state']))
+        if tail.message_ref in references:
+            raise ValueError('conversation_append_tail_invalid')
+        inputs.append(ConversationMetricInput.from_enrichment(tail))
+        metrics = build_conversation_metrics(account, conversation, inputs)
+        findings = AppendedMessageEnrichments(
+            rows, tail, references, inputs[0].sent_at, previous=unit
+        )
+        del inputs
     delta = CompactGraph(partition)
     boundary = conversation.model_copy(update={'messages': ordered[-2:]})
     shift = len(messages) - 2
@@ -185,7 +221,7 @@ def try_append(pipeline, account, source_revision, conversation, raw, loader, re
     conversation_node = stable_node_id(partition, GraphNodeKind.CONVERSATION, ref)
     from app.analytics.conversation_graph_stream import append_unit
     graph_unit = append_unit(loader, old_graph, delta, conversation_node=conversation_node,
-        input_digest=conversation_digest(raw), config_digest=config, cutoff=cutoff,
+        input_digest=input_digest, config_digest=config, cutoff=cutoff,
         findings=findings, metrics=metrics, check=check)
     graph = None
     if graph_unit is None:

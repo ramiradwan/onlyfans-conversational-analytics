@@ -164,3 +164,63 @@ def canonical_groups(unit, summaries, check):
     if result.keys()!=summaries.keys() or digest.hexdigest()!=h.unit_id:
         raise ValueError('conversation_graph_unit_digest_invalid')
     return result
+
+
+def trusted_groups(unit, check=lambda: None):
+    """Reuse an already-proven immutable unit without repeating per-ID validation.
+
+    This helper is construction-only. Persisted candidate validation still uses
+    canonical_groups and therefore independently checks every candidate ID.
+    """
+    from app.analytics.conversation_graph_units import (
+        MAX_GRAPH_UNIT_BYTES, MAX_GRAPH_UNIT_RECORDS,
+    )
+    from app.analytics.conversation_integrity import decode_manifest
+
+    h = unit.header
+    summaries = decode_manifest(unit)
+    result = {}
+    for kind, data, count in (
+        ('node', unit.node_ids, h.node_count),
+        ('edge', unit.edge_ids, h.edge_count),
+    ):
+        check()
+        if (type(count) is not int or not 0 <= count <= MAX_GRAPH_UNIT_RECORDS
+                or not isinstance(data, bytes) or not data
+                or len(data) > MAX_GRAPH_UNIT_BYTES):
+            return None
+        decoder = zlib.decompressobj()
+        maximum = min(MAX_GRAPH_UNIT_BYTES * 4, max(2, count * 72 + 2))
+        try:
+            raw = decoder.decompress(data, maximum + 1)
+        except zlib.error:
+            return None
+        if (len(raw) > maximum or not decoder.eof
+                or decoder.unused_data or decoder.unconsumed_tail):
+            return None
+        if not count:
+            if raw != b'[]':
+                return None
+            continue
+        if len(raw) != count * _FRAME + 1 or raw[:1] != b'[' or raw[-1:] != b']':
+            return None
+        framed = raw[1:-1] + b','
+        offset = 0
+        for key, summary in summaries.items():
+            if key[0] != kind:
+                continue
+            size = summary[2]
+            if offset + size > count:
+                return None
+            begin = offset * _FRAME
+            end = (offset + size) * _FRAME
+            bucket = key[1].encode('ascii')
+            if (framed[begin + 4:begin + 6] != bucket
+                    or framed[end - _FRAME + 4:end - _FRAME + 6] != bucket):
+                return None
+            result[key] = EncodedIds(framed, begin, size)
+            offset += size
+        if offset != count:
+            return None
+    check()
+    return summaries, result

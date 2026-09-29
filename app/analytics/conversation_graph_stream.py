@@ -13,7 +13,8 @@ def append_unit(loader, previous, delta, *, conversation_node, input_digest,
         try:
             return append_v2(loader, previous, delta, conversation_node=conversation_node,
                 input_digest=input_digest, config_digest=config_digest, cutoff=cutoff,
-                findings=findings, metrics=metrics, check=check)
+                findings=findings, metrics=metrics, check=check,
+                trusted_predecessor=True)
         except IntegrityCapacity:
             return None
     from app.analytics.conversation_append import _checked_record_spans

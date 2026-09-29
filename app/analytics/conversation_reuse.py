@@ -304,10 +304,10 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
             if incremental and stream_enrichments:
                 from app.analytics.conversation_append import try_append
                 appended = try_append(pipeline, account_id, catalog.view_revision,
-                    None, raw, loader, reuse, config, cutoff, check, cancellation_check)
+                    None, raw, input_digest, loader, reuse, config, cutoff, check, cancellation_check)
             if appended is None and incremental and stream_enrichments:
                 from app.analytics.conversation_insertion import try_insert
-                inserted = try_insert(pipeline, account_id, catalog.view_revision, raw, loader,
+                inserted = try_insert(pipeline, account_id, catalog.view_revision, raw, input_digest, loader,
                     reuse, config, cutoff, check, cancellation_check)
                 if inserted is not None and (
                         len(state.graph_units) >= MAX_GRAPH_UNITS

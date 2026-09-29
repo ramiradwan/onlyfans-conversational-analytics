@@ -1332,6 +1332,18 @@ class SQLiteAnalyticsProjectionStore:
         """Delete one bounded retired-generation batch for a validated partition."""
 
         partition_ref = validated_account_ref(partition_ref)
+        with self.database.read() as connection:
+            eligible = connection.execute(
+                """
+                SELECT 1 FROM projection_generations
+                WHERE creator_account_id=? AND status='retired'
+                ORDER BY COALESCE(retired_at, started_at) DESC, generation_id DESC
+                LIMIT 1 OFFSET ?
+                """,
+                (partition_ref, self.rollback_retention),
+            ).fetchone()
+        if eligible is None:
+            return 0
 
         with self.database.transaction() as connection:
             from app.analytics.database import GENERATION_WRITE_CACHE_KIB

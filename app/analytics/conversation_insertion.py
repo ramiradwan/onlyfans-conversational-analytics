@@ -106,7 +106,7 @@ def suffix_graph(pipeline, account, revision, raw, rows, metrics, start, check, 
     return graph
 
 
-def try_insert(pipeline, account, revision, raw, loader, reuse, config, cutoff, check, cancellation):
+def try_insert(pipeline, account, revision, raw, input_digest, loader, reuse, config, cutoff, check, cancellation):
     """Only an exact one-message insertion with message-local analysis is eligible."""
     from app.analytics.enrichment import EnrichmentStage
     from app.analytics.graph_projection import RelationshipGraphProjector
@@ -169,12 +169,12 @@ def try_insert(pipeline, account, revision, raw, loader, reuse, config, cutoff, 
     delta = suffix_graph(pipeline, account, revision, raw, output, metrics, start, check, cancellation)
     from app.analytics.conversation_graph_insertion import replace_suffix
     graph_unit, removed = replace_suffix(loader, old_graph, old_delta, delta,
-        input_digest=conversation_digest(raw), config=config, cutoff=cutoff,
+        input_digest=input_digest, config=config, cutoff=cutoff,
         findings=findings, metrics=metrics, check=check)
     if graph_unit is None:
         return None
     from app.analytics.conversation_enrichment_insertion import pack_insertion
-    enrichment_unit = pack_insertion(unit, findings, metrics, conversation_digest(raw), config, cutoff,
+    enrichment_unit = pack_insertion(unit, findings, metrics, input_digest, config, cutoff,
                                     reuse.conversation_entries(ref), check)
     if enrichment_unit is None:
         return None

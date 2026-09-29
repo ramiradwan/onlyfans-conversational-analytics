@@ -132,13 +132,20 @@ def from_graph(account, conversation, graph, check=lambda: None):
     return encode_manifest(account, conversation, groups)
 
 def append_unit(loader, previous, delta, *, conversation_node, input_digest,
-                config_digest, cutoff, findings, metrics, check):
+                config_digest, cutoff, findings, metrics, check,
+                trusted_predecessor=False):
     """Only touched groups read exact predecessor content-version metadata."""
     from app.analytics.conversation_graph_units import create_membership_unit
     header = previous.header
     if delta.account_ref != header.account_ref:
         raise ValueError('conversation_integrity_scope_invalid')
-    summaries, members = groups_for_members(previous, check)
+    trusted = None
+    if trusted_predecessor:
+        from app.analytics.conversation_id_frames import trusted_groups
+        trusted = trusted_groups(previous, check)
+    summaries, members = (
+        trusted if trusted is not None else groups_for_members(previous, check)
+    )
     final = {kind: [] for kind in ('node', 'edge')}
     for kind, changes in (('edge', delta.edges), ('node', delta.nodes)):
         for bucket in sorted({key[3:5] for key in changes}):
