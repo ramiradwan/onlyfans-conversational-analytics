@@ -149,6 +149,7 @@ export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile'
   const consent = await consentController.status();
   const recovery = (await chrome.storage.local.get(['companion_recovery_v1'])).companion_recovery_v1;
   return {
+    capturedAt: Date.now(),
     workerInstanceId: agentWorkerInstanceId,
     consentMode: consent.consent.mode,
     capturePhase: consent.phase,
@@ -156,7 +157,10 @@ export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile'
     socketOpen: transport?.socket?.readyState === WebSocket.OPEN,
     sessionBound: transport?.session !== null && transport?.session !== undefined,
     heartbeatTimerPresent: transport?.heartbeatTimer !== null && transport?.heartbeatTimer !== undefined,
+    lastHeartbeatSentAt: transport?.lastHeartbeatSentAt === null || transport?.lastHeartbeatSentAt === undefined
+      ? null : Math.round(performance.timeOrigin + transport.lastHeartbeatSentAt),
     reconnectTimerPresent: transport?.reconnectTimer !== null && transport?.reconnectTimer !== undefined,
+    connectionEvents: companionClient.diagnosticEvents,
     recoveryAttempts: recovery?.attempts ?? null,
     recoveryNextAttemptInMs: recovery === undefined ? null
       : Math.max(0, recovery.next_attempt_at - Date.now()),
