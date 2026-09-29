@@ -430,16 +430,15 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
             fragments.append(fragment)
             enrichments.extend(fragment.enrichments)
             metrics.append(fragment.metrics)
-        append_units_retained = (
-            (append_delta is not None or inserted is not None)
-            and graph_unit is not None and enrichment_unit is not None
+        complete_units_retained = (
+            graph_unit is not None and enrichment_unit is not None
             and state.graph_units and state.graph_units[-1] is graph_unit
             and state.enrichment_units and state.enrichment_units[-1] is enrichment_unit
         )
-        # Complete units already retain this append's graph and analyzer records.
-        # Do not write a second optional cache of the same data. If either unit
-        # was refused by its existing bound, keep the ordinary page fallback.
-        if use_pages and not append_units_retained:
+        # Complete units already retain this conversation's graph and analyzer
+        # records. Do not write a second optional cache of the same data. If
+        # either unit was refused by its existing bound, keep the page fallback.
+        if use_pages and not complete_units_retained:
             if append_delta is not None and local_graph is None:
                 from app.analytics.conversation_append import _previous_graph, _merge_append_delta
                 from app.analytics.graph_projection import stable_node_id
