@@ -167,8 +167,13 @@ class LazySQLiteAnalyticsProjectionStore:
     def prepare_update_reuse(self, account, *args):
         return self._read("prepare_update_reuse", account, account, *args)
 
-    def projection_currentness(self, account_id, *args):
-        return self._read("projection_currentness", account_id, account_id, *args)
+    def update_reuse_prepared(self, account, identity):
+        return self._read("update_reuse_prepared", account, account, identity)
+
+    def projection_currentness(self, account_id, *args, **kwargs):
+        return self._read(
+            "projection_currentness", account_id, account_id, *args, **kwargs
+        )
 
     def get(self, creator_account_id: str, **kwargs):
         return self._read("get", creator_account_id, creator_account_id, **kwargs)

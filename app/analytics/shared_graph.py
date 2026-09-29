@@ -161,6 +161,9 @@ class SegmentValidation:
     digest: str
     count: int
     reused: bool
+    categories: tuple[tuple[str, int], ...] = ()
+    chunk_digest: str | None = None
+    changed_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,7 +172,22 @@ class SharedGraphValidation:
     plans: tuple[SegmentValidation, ...]
     proof: GraphSegmentProof | None
     removed_nodes: tuple[str, ...] | None = None
+    removed_edges: tuple[str, ...] | None = None
     segment_root: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChangedSegmentVerification:
+    segments: tuple[VerifiedSegment, ...]
+    invalidated_nodes: frozenset[str]
+    invalidated_edges: frozenset[str]
+    removed_nodes: frozenset[str]
+    removed_edges: frozenset[str]
+    changed_edge_endpoints: tuple[str, ...]
+
+    @property
+    def invalidated(self):
+        return {'node': set(self.invalidated_nodes), 'edge': set(self.invalidated_edges)}
 
 
 class PredecessorSegments(dict):
@@ -483,6 +501,168 @@ def _read_changed_segment_rows(connection, account_id, plans, check):
     }
 
 
+def _verified_changed_segment_chunks(connection, account_id, validation, check):
+    """Stream changed persisted chunks against a complete predecessor proof."""
+    if (validation is None or validation.proof is None
+            or validation.removed_nodes is None or validation.removed_edges is None
+            or not chunks_supported(connection)):
+        return None
+    changed = tuple(plan for plan in validation.plans if not plan.reused)
+    if (not changed or any(plan.chunk_digest is None or (not plan.categories and plan.count)
+                           for plan in changed)):
+        return None
+    if sum(len(plan.changed_keys) for plan in changed) > MAX_CHANGED_VERIFICATION_ROWS:
+        return None
+    claimed_removed = {'node': set(validation.removed_nodes),
+                       'edge': set(validation.removed_edges)}
+    if sum(map(len, claimed_removed.values())) > MAX_CHANGED_VERIFICATION_ROWS:
+        return None
+
+    from app.analytics.conversation_append import _checked_record_spans
+    from app.analytics.graph_row_encoding import node_bytes, edge_bytes
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+
+    proven = {(item.kind, item.bucket): item for item in validation.proof.segments}
+    current_keys = {(plan.kind, plan.bucket) for plan in validation.plans}
+    verified = []
+    invalidated = {'node': set(), 'edge': set()}
+    removed = {'node': set(), 'edge': set()}
+    changed_endpoints = set()
+
+    def old_records(item):
+        opened = verified_segment_chunk(
+            connection, account_id, validation.proof, item.kind, item.bucket
+        )
+        if opened is None or opened[0] != item:
+            raise GraphReferentialIntegrityError('graph_segment_chunk_invalid')
+        return _checked_record_spans(item, opened[1], account_id, check)
+
+    def current_chunk(plan):
+        row = connection.execute(
+            """SELECT kind,record_count,canonical_bytes,canonical_digest
+               FROM graph_segment_chunks
+               WHERE creator_account_id=? AND segment_id=?""",
+            (account_id, plan.segment_id),
+        ).fetchone()
+        if (row is None or row['kind'] != plan.kind
+                or int(row['record_count']) != plan.count
+                or row['canonical_digest'] != plan.chunk_digest
+                or hashlib.sha256(row['canonical_bytes']).hexdigest() != plan.chunk_digest):
+            raise GraphReferentialIntegrityError('graph_segment_chunk_invalid')
+        return row['canonical_bytes']
+
+    def compare_delta(plan, encoded):
+        prior = proven.get((plan.kind, plan.bucket))
+        before = iter(()) if prior is None else iter(old_records(prior))
+        after = iter(_checked_record_spans(plan, encoded, account_id, check))
+        left = next(before, None)
+        right = next(after, None)
+        detected = set()
+        while left is not None or right is not None:
+            check()
+            if right is None or (left is not None and left[0] < right[0]):
+                invalidated[plan.kind].add(left[0])
+                removed[plan.kind].add(left[0])
+                left = next(before, None)
+            elif left is None or right[0] < left[0]:
+                detected.add(right[0])
+                right = next(after, None)
+            else:
+                if left[2] != right[2]:
+                    invalidated[plan.kind].add(left[0])
+                    detected.add(right[0])
+                left = next(before, None)
+                right = next(after, None)
+            if (sum(map(len, invalidated.values())) > MAX_CHANGED_VERIFICATION_ROWS
+                    or sum(map(len, removed.values())) > MAX_CHANGED_VERIFICATION_ROWS):
+                return False
+        if detected != set(plan.changed_keys):
+            raise GraphReferentialIntegrityError('graph_segment_changed_set_invalid')
+        return True
+
+    for plan in changed:
+        check()
+        encoded = current_chunk(plan)
+        if not compare_delta(plan, encoded):
+            return None
+        relation = plan.kind + '_id'
+        table = 'graph_segment_' + plan.kind + 's'
+        membership = connection.execute(
+            f'SELECT {relation},content_id FROM {table} '
+            f'WHERE creator_account_id=? AND segment_id=? ORDER BY {relation}',
+            (account_id, plan.segment_id),
+        )
+        digest = hashlib.sha256(
+            ('graph-segment.v1:' + plan.kind + ':' + plan.bucket).encode()
+        )
+        changed_set = set(plan.changed_keys)
+        seen_changed = set()
+        count = 0
+        try:
+            rows = iter(membership)
+            current = next(rows, None)
+            for key, _category, data in _checked_record_spans(
+                    plan, encoded, account_id, check):
+                check()
+                if key[3:5] != plan.bucket or current is None or current[0] != key:
+                    raise GraphReferentialIntegrityError('graph_segment_membership_invalid')
+                raw = data.encode('utf-8')
+                content_id = hashlib.sha256(raw).hexdigest()
+                if current[1] != content_id:
+                    raise GraphReferentialIntegrityError('graph_segment_content_invalid')
+                digest.update(key.encode() + b':' + content_id.encode() + b'\n')
+                if key in changed_set:
+                    content = connection.execute(
+                        f'SELECT * FROM graph_{plan.kind}_content '
+                        f'WHERE creator_account_id=? AND {relation}=? AND content_id=?',
+                        (account_id, key, content_id),
+                    ).fetchone()
+                    if content is None:
+                        raise GraphReferentialIntegrityError('graph_segment_content_invalid')
+                    category, actual = (
+                        node_bytes(content, account_id) if plan.kind == 'node'
+                        else edge_bytes(content, account_id)
+                    )
+                    if actual != raw:
+                        raise GraphReferentialIntegrityError('graph_segment_content_invalid')
+                    seen_changed.add(key)
+                    if plan.kind == 'edge':
+                        changed_endpoints.update((content['source_id'], content['target_id']))
+                count += 1
+                current = next(rows, None)
+            if current is not None:
+                raise GraphReferentialIntegrityError('graph_segment_membership_invalid')
+        finally:
+            membership.close()
+        if (count != plan.count or digest.hexdigest() != plan.digest
+                or seen_changed != changed_set):
+            raise GraphReferentialIntegrityError('graph_segment_digest_invalid')
+        verified.append(VerifiedSegment(
+            plan.kind, plan.bucket, plan.segment_id, plan.digest, plan.count,
+            tuple(plan.categories), plan.chunk_digest,
+        ))
+
+    for key, item in proven.items():
+        if key in current_keys:
+            continue
+        for identity, _category, _data in old_records(item):
+            check()
+            invalidated[item.kind].add(identity)
+            removed[item.kind].add(identity)
+            if (sum(map(len, invalidated.values())) > MAX_CHANGED_VERIFICATION_ROWS
+                    or sum(map(len, removed.values())) > MAX_CHANGED_VERIFICATION_ROWS):
+                return None
+
+    if removed != claimed_removed:
+        raise GraphReferentialIntegrityError('graph_segment_removed_set_invalid')
+    return ChangedSegmentVerification(
+        tuple(verified),
+        frozenset(invalidated['node']), frozenset(invalidated['edge']),
+        frozenset(removed['node']), frozenset(removed['edge']),
+        tuple(sorted(changed_endpoints)),
+    )
+
+
 def _verify_segment_rows(connection, account_id, plan, check, *, prepared=None):
     from app.analytics.graph_row_encoding import node_bytes, edge_bytes
     from app.analytics.graph_store import GraphReferentialIntegrityError
@@ -550,7 +730,7 @@ def verify_generation_segments(connection, generation_id, account_id, check):
     )
 
 
-def verify_shared_graph(connection, generation_id, account_id, validation, check, *, prepared=None):
+def verify_shared_graph(connection, generation_id, account_id, validation, check, *, prepared=None, verified_changes=None):
     """Reuse only exact, schema-bound proofs of immutable predecessor segments."""
 
     if validation is None or validation.proof is None:
@@ -577,6 +757,10 @@ def verify_shared_graph(connection, generation_id, account_id, validation, check
     if actual != expected:
         raise GraphReferentialIntegrityError('graph_segment_plan_invalid')
     proven = {(item.kind, item.bucket): item for item in proof.segments}
+    changed_verified = (
+        {} if verified_changes is None else
+        {(item.kind, item.bucket): item for item in verified_changes.segments}
+    )
     verified, node_counts, edge_counts = [], Counter(), Counter()
     for plan in validation.plans:
         check()
@@ -587,9 +771,16 @@ def verify_shared_graph(connection, generation_id, account_id, validation, check
                     or item.chunk_digest is None):
                 return None
         else:
-            item = _verify_segment_rows(
-                connection, account_id, plan, check,
-                prepared=None if prepared is None else prepared[(plan.kind, plan.segment_id)])
+            item = changed_verified.get((plan.kind, plan.bucket))
+            if item is not None:
+                if (item.segment_id != plan.segment_id or item.digest != plan.digest
+                        or item.count != plan.count):
+                    from app.analytics.graph_store import GraphReferentialIntegrityError
+                    raise GraphReferentialIntegrityError('graph_segment_changed_set_invalid')
+            else:
+                item = _verify_segment_rows(
+                    connection, account_id, plan, check,
+                    prepared=None if prepared is None else prepared[(plan.kind, plan.segment_id)])
         verified.append(item)
         counts = node_counts if plan.kind == 'node' else edge_counts
         counts.update(dict(item.categories))
@@ -702,7 +893,7 @@ def uses_segments(connection, generation_id: str, account_id: str) -> bool:
 
 
 def _incremental_endpoint_links_valid(
-    connection, generation_id, account_id, validation, check, *, prepared=None
+    connection, generation_id, account_id, validation, check, *, prepared=None, verified_changes=None
 ):
     """Verify only endpoint closure that can change from a proven predecessor."""
 
@@ -777,6 +968,21 @@ def _incremental_endpoint_links_valid(
                 LIMIT 1''', (account_id, *batch, generation_id)).fetchone()
             if referenced is not None:
                 raise GraphReferentialIntegrityError('graph_endpoint_absent')
+
+    if verified_changes is not None:
+        if (frozenset(validation.removed_nodes) != verified_changes.removed_nodes
+                or (validation.removed_edges is not None
+                    and frozenset(validation.removed_edges) != verified_changes.removed_edges)):
+            raise GraphReferentialIntegrityError('graph_segment_removed_set_invalid')
+        endpoints = set(verified_changes.changed_edge_endpoints)
+        if endpoints:
+            present = selected_content_ids(
+                connection, generation_id, account_id, 'node',
+                sorted(endpoints), check, page_layout=pages_supported(connection),
+            )
+            if endpoints != present.keys():
+                raise GraphReferentialIntegrityError('graph_endpoint_absent')
+        return True
 
     if prepared is not None:
         endpoints = set()
@@ -864,7 +1070,7 @@ def _verify_all_shared_endpoints(connection, generation_id, account_id):
 
 def verify_segment_links(
     connection, generation_id: str, account_id: str, *,
-    validation=None, check=lambda: None, prepared=None,
+    validation=None, check=lambda: None, prepared=None, verified_changes=None,
 ) -> None:
     """Check selected endpoints and layout, reusing only proven predecessor closure."""
 
@@ -903,7 +1109,8 @@ def verify_segment_links(
     if not shared:
         return
     if _incremental_endpoint_links_valid(
-        connection, generation_id, account_id, validation, check, prepared=prepared
+        connection, generation_id, account_id, validation, check,
+        prepared=prepared, verified_changes=verified_changes,
     ):
         return
     if _verify_all_shared_endpoints(connection, generation_id, account_id):

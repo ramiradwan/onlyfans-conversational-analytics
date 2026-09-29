@@ -659,29 +659,55 @@ class AnalyticsPipeline:
         def read():
             check_cancelled(cancellation_check)
             return prepare(creator_account_id, cancellation_check=cancellation_check)
-        current = self._projection_currentness_with_identity(
-            creator_account_id, requested_revision, read,
-        )
+
         restore = getattr(self.projections, "prepare_update_reuse", None)
+        prepared_reader = getattr(self.projections, "update_reuse_prepared", None)
         snapshot = getattr(self.source, "analytics_snapshot", None)
         from app.analytics.graph_projection import RelationshipGraphProjector
-        if (current and self.reuse_conversations and self.reuse_enrichment
-                and type(self.graph_projector) is RelationshipGraphProjector
-                and callable(restore) and callable(snapshot)):
+        reuse_capable = bool(
+            self.reuse_conversations and self.reuse_enrichment
+            and type(self.graph_projector) is RelationshipGraphProjector
+            and callable(prepared_reader) and callable(restore) and callable(snapshot)
+        )
+        current = None
+        identity = read()
+        if identity is None or identity.revision < requested_revision:
+            return False
+        if reuse_capable and prepared_reader(creator_account_id, identity):
+            current = self._projection_currentness_with_identity(
+                creator_account_id, requested_revision, read,
+                cancellation_check=cancellation_check,
+            )
+        elif reuse_capable:
+            # Recovery independently verifies the active generation and source
+            # binding. Do not materialize the same generation once for
+            # currentness and then recompute it a second time for reuse.
             from app.analytics.recovered_reuse import expected_units
             catalog = snapshot(creator_account_id, cancellation_check=cancellation_check)
+            if catalog.identity.revision < requested_revision:
+                return False
             check = lambda: check_cancelled(cancellation_check)
+            def source_current(projection=None, *, source_due_at=None):
+                live = (source_due_at > self._retention_clock()
+                        if source_due_at is not None else not self._expired(projection))
+                return live and read() == catalog.identity
             prepared = restore(creator_account_id, catalog,
                 lambda projection, refs: expected_units(self, creator_account_id, catalog,
-                    projection, refs, cancellation_check), check,
-                lambda projection: not self._expired(projection) and read() == catalog.identity)
-            current = prepared is not False and read() == catalog.identity
+                    projection, refs, cancellation_check), check, source_current)
+            if prepared is not None:
+                current = bool(prepared) and read() == catalog.identity
+        if current is None:
+            current = self._projection_currentness_with_identity(
+                creator_account_id, requested_revision, read,
+                cancellation_check=cancellation_check,
+            )
         check_cancelled(cancellation_check)
         # Preparation does not write or bypass licensed build admission. The
         # scheduler requests the existing owned build/publication path instead.
-        return current and not self._requires_integrity_upgrade(creator_account_id)
+        return bool(current) and not self._requires_integrity_upgrade(creator_account_id)
 
-    def _projection_currentness_with_identity(self, creator_account_id, requested_revision, read):
+    def _projection_currentness_with_identity(self, creator_account_id, requested_revision, read,
+                                              *, cancellation_check=None):
         if not self.source.account_exists(creator_account_id):
             return False
         identity = read()
@@ -689,8 +715,11 @@ class AnalyticsPipeline:
             return False
         currentness = getattr(self.projections, "projection_currentness", None)
         if callable(currentness):
-            current = currentness(creator_account_id, identity, self.pipeline_revision,
-                                  self.pipeline_config_digest, self._retention_clock)
+            current = currentness(
+                creator_account_id, identity, self.pipeline_revision,
+                self.pipeline_config_digest, self._retention_clock,
+                cancellation_check=cancellation_check,
+            )
         else:
             projection = self.projections.get(creator_account_id, canonical_identity=identity)
             current = bool(

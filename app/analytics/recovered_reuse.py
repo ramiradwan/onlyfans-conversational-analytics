@@ -112,8 +112,44 @@ def restore(store, account, catalog, build_expected, check, source_current):
         if not 0 < count <= MAX_GRAPH_UNITS:
             return None
         values = recompute_generation(db, row['generation_id'], check=check,
-            materialize_projection=True, materialize_graph=False)
+            materialize_projection=False, materialize_graph=False)
         from app.analytics.sqlite_projection_store import verify_generation_values
+        verify_generation_values(row, values)
+        projection = values['projection']
+        enrichment_headers = tuple(values.get('enrichment_units', ()))
+        integrity = values.get('conversation_integrity')
+        expected = {h.conversation_ref for h in enrichment_headers}
+        verified_headers = () if integrity is None else tuple(integrity.headers)
+        verified_refs = {h.conversation_ref for h in verified_headers}
+
+        # Modern v2 units are already independently checked by recompute_generation.
+        # Reuse that exact result to rebuild process-local proof metadata instead of
+        # reconstructing every conversation graph from canonical source a second time.
+        direct = bool(expected) and verified_refs == expected and len(verified_headers) == len(expected)
+        if direct:
+            check()
+            db.rollback()
+            current = db.execute('SELECT * FROM projection_generations WHERE generation_id=?',
+                                 (row['generation_id'],)).fetchone()
+            if current is None or dict(current) != dict(row) or content_stamp(db) != stamp:
+                return False
+            witness = store.activation.get(row['generation_id'])
+            source_due_at = min(h.expires_at for h in enrichment_headers)
+            if (not store._intent_matches(current, witness, require_completed=True)
+                    or witness.creator_account_id != account
+                    or not source_current(projection, source_due_at=source_due_at)):
+                return False
+            check()
+            receipt = ValidationReceipt(row['generation_id'], stamp,
+                generation_binding(row), time.monotonic() + RECEIPT_SECONDS)
+            store._remember_graph_segment_proof(receipt, values['graph_segments'])
+            store._remember_verified_conversation_graph_proof(receipt, integrity, expected)
+            store._remember_conversation_enrichment_proof(receipt, enrichment_headers)
+            return store._remember_verification_envelope(receipt) is not None
+
+        # Compatibility fallback for legacy/incomplete optional integrity units.
+        values = recompute_generation(db, row['generation_id'], check=check,
+            materialize_projection=True, materialize_graph=False)
         verify_generation_values(row, values)
         projection = values['projection']
         references = units.list_references(db, row['generation_id'], row['creator_account_id'])
@@ -141,7 +177,6 @@ def restore(store, account, catalog, build_expected, check, source_current):
         if len(verified_units) != len(references):
             return False
         check()
-        # Leave the snapshot and recheck the generation, store and source before reuse.
         db.rollback()
         current = db.execute('SELECT * FROM projection_generations WHERE generation_id=?',
                              (row['generation_id'],)).fetchone()
@@ -152,11 +187,10 @@ def restore(store, account, catalog, build_expected, check, source_current):
                 or witness.creator_account_id != account or not source_current(projection)):
             return False
         check()
-        # This carrier installs only checked reuse metadata. It is not deposited
-        # as a single-use activation receipt for this already active generation.
         receipt = ValidationReceipt(row['generation_id'], stamp,
             generation_binding(row), time.monotonic() + RECEIPT_SECONDS)
         store._remember_graph_segment_proof(receipt, values['graph_segments'])
         store._remember_conversation_graph_proof(receipt, verified_units, None, projection)
         store._remember_conversation_enrichment_proof(receipt, values['enrichment_units'])
+        store._remember_verification_envelope(receipt)
         return True

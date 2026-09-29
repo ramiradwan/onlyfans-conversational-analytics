@@ -28,6 +28,18 @@ async def test_scheduler_idle_insertion_keeps_queries_cleanup_and_rebuild_equali
         await direct(work,journal,resources,'unchanged_rebuild')
         await scheduled(work,journal,resources,scheduler,'one_committed_message',
             lambda:work.add(0,'visibility-rebuilt-dominant'),case='rebuilt/dominant')
+        recovery_calls=[]
+        prepared_calls=[]
+        original_recovery=work.f.stores.projections.prepare_update_reuse
+        original_prepared=work.f.stores.projections.update_reuse_prepared
+        def observe_recovery(*args,**kwargs):
+            recovery_calls.append(True)
+            return original_recovery(*args,**kwargs)
+        def observe_prepared(*args,**kwargs):
+            prepared_calls.append(True)
+            return original_prepared(*args,**kwargs)
+        monkeypatch.setattr(work.f.stores.projections,'prepare_update_reuse',observe_recovery)
+        monkeypatch.setattr(work.f.stores.projections,'update_reuse_prepared',observe_prepared)
         started=perf_counter()
         await asyncio.sleep(manifest['visibility']['idle_seconds'])
         idle=perf_counter()-started
@@ -39,6 +51,8 @@ async def test_scheduler_idle_insertion_keeps_queries_cleanup_and_rebuild_equali
             lambda:work.add(1,'visibility-idle-small'),case='idle/small')
         assert accepted==[True]
         assert idle>=manifest['visibility']['idle_seconds']
+        assert prepared_calls, 'idle reconciliation did not consult the verified envelope'
+        assert recovery_calls==[], 'idle reconciliation repeated complete recovery despite a live envelope'
         assert result['independent_rebuild_equal'] and result['persisted_content_revalidated']
         assert result['stale_reference_rejected'] and result['valid_current_result'] and result['cleanup_complete']
         assert result['backlog_before']==result['backlog_after']==0

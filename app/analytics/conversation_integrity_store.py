@@ -1,5 +1,6 @@
 """Verify conversation summaries against independently checked generation content."""
 from collections import OrderedDict
+from dataclasses import dataclass
 from sys import getsizeof
 
 from app.analytics import conversation_graph_unit_sql as units
@@ -10,17 +11,24 @@ from app.analytics.validation_receipt import content_stamp, generation_binding
 from app.analytics.shared_graph import MAX_CHANGED_VERIFICATION_ROWS, MAX_CHANGED_VERIFICATION_BYTES
 
 
+@dataclass(frozen=True, slots=True)
+class VerifiedConversationIntegrity:
+    headers: tuple
+    integrity_groups: tuple
+    membership_prefixes: tuple = ()
+
+
 def verify_generation_integrity(connection, generation, account, *, proof=None,
                                 graph_validation=None, segments=(), prepared=None,
-                                check=lambda: None):
+                                verified_changes=None, check=lambda: None):
     """A process-local proof can skip only groups in unchanged verified segments."""
     if not units.integrity_supported(connection):
-        return ()
+        return VerifiedConversationIntegrity((), (), ())
     references = units.list_references(connection, generation['generation_id'], account)
     if not any(ref.header.checksum_version == 2 for ref in references):
-        return ()
+        return VerifiedConversationIntegrity((), (), ())
     stamp = content_stamp(connection)
-    trusted, old_segments, old_generation = {}, {}, None
+    trusted, trusted_groups, trusted_prefixes, old_segments, old_generation = {}, {}, {}, {}, None
     prior_graph = getattr(graph_validation, 'proof', None)
     if proof is not None and prior_graph is not None and stamp is not None:
         prior = connection.execute('SELECT * FROM projection_generations WHERE generation_id=? '
@@ -31,6 +39,9 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
                 and prior_graph.binding == proof.binding == generation_binding(prior)
                 and tuple(stamp[:3]) == proof.stamp_prefix == prior_graph.stamp_prefix):
             trusted = {h.conversation_ref: h for h in proof.headers}
+            trusted_groups = dict(getattr(proof, 'integrity_groups', ()))
+            trusted_prefixes = {item[0]: (item[1], item[2])
+                                for item in getattr(proof, 'membership_prefixes', ())}
             old_segments = {(s.kind, s.bucket): s for s in prior_graph.segments}
             old_generation = proof.generation_id
     current = {(s.kind, s.bucket): s for s in segments}
@@ -86,9 +97,14 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
     )
     complete_predecessor = bool(trusted) and predecessor_manifest_matches(
         connection, old_generation, account, prior_graph.segments, check)
-    changes = (changed_predecessor_members(connection, account, old_segments, current, prepared, check)
-               if complete_predecessor else None)
-    headers = []
+    if complete_predecessor and verified_changes is not None:
+        changes = verified_changes.invalidated
+    else:
+        changes = (changed_predecessor_members(
+            connection, account, old_segments, current, prepared, check
+        ) if complete_predecessor else None)
+    headers, verified_groups, verified_prefixes = [], [], []
+    capture_prefixes = proof is None and graph_validation is None
     for reference in references:
         check()
         h = reference.header
@@ -96,8 +112,16 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
             continue
         predecessor = trusted.get(h.conversation_ref)
         if (changes is not None and predecessor == h
-                and proven_unit_is_unchanged(connection, generation['generation_id'], account, h, changes, check)):
+                and proven_unit_is_unchanged(
+                    connection, generation['generation_id'], account, h, changes, check,
+                    integrity_groups=trusted_groups.get(h.conversation_ref),
+                    membership_prefixes=trusted_prefixes.get(h.conversation_ref),
+                )):
             headers.append(h)
+            verified_groups.append((h.conversation_ref, tuple(trusted_groups.get(h.conversation_ref, ()))))
+            prefixes = trusted_prefixes.get(h.conversation_ref)
+            if prefixes is not None:
+                verified_prefixes.append((h.conversation_ref, prefixes[0], prefixes[1]))
             continue
         unit = units.load_unit(connection, generation['generation_id'], account, h.conversation_ref)
         if unit is None or unit.header != h:
@@ -125,7 +149,20 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
                     *key, actual, check) != summary:
                 raise ValueError('conversation_integrity_selected_content_changed')
         headers.append(h)
+        verified_groups.append((h.conversation_ref, tuple(sorted(summaries))))
+        if capture_prefixes:
+            from itertools import chain
+            from app.analytics.membership_prefixes import bitmap
+            nodes = chain.from_iterable(
+                values for (kind, _), values in members.items() if kind == 'node'
+            )
+            edges = chain.from_iterable(
+                values for (kind, _), values in members.items() if kind == 'edge'
+            )
+            verified_prefixes.append((h.conversation_ref, bitmap(nodes), bitmap(edges)))
     if content_stamp(connection) != stamp:
         raise ValueError('conversation_integrity_store_changed')
     check()
-    return tuple(headers)
+    return VerifiedConversationIntegrity(
+        tuple(headers), tuple(sorted(verified_groups)), tuple(sorted(verified_prefixes))
+    )

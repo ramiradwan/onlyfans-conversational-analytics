@@ -45,30 +45,43 @@ class GenerationCurrentness:
             stamp = content_stamp(db)
             return row['generation_id'], generation_binding(row), stamp
 
-    def _verified_source_due(self, store, snapshot):
+    def _verified_source_due(self, store, snapshot, cancellation_check=None):
         """Recheck existing complete-content proofs under their original bindings."""
         if snapshot[2] is None:
             return False, None
+        envelope_reader = getattr(store, "_trusted_verification_envelope", None)
         methods = tuple(getattr(store, name, None) for name in (
             "_trusted_graph_segment_proof", "_trusted_conversation_graph_proof",
             "_trusted_conversation_enrichment_proof"))
-        if not all(callable(method) for method in methods):
+        if not callable(envelope_reader) and not all(callable(method) for method in methods):
             return False, None
         with store.database.read() as db:
             db.execute('BEGIN')
             row = db.execute('SELECT * FROM projection_generations WHERE generation_id=?',
                              (snapshot[0],)).fetchone()
             if (row is None or row['status'] != 'active' or row['activated_at'] is None
-                    or generation_binding(row) != snapshot[1] or content_stamp(db) != snapshot[2]):
+                    or generation_binding(row) != snapshot[1]):
                 return False, None
-            graph, conversations, enrichment = (method(db, row) for method in methods)
-            if (graph is None or conversations is None or enrichment is None
-                    or enrichment.stamp != snapshot[2] or not enrichment.headers):
+            observed_stamp = content_stamp(db)
+            if observed_stamp != snapshot[2]:
                 return False, None
-            return True, min(header.expires_at for header in enrichment.headers)
+            if callable(envelope_reader):
+                envelope = envelope_reader(db, row)
+                if envelope is not None and envelope.stamp == snapshot[2]:
+                    return True, envelope.source_due_at
+            if all(callable(method) for method in methods):
+                graph, conversations, enrichment = (method(db, row) for method in methods)
+                if (graph is not None and conversations is not None and enrichment is not None
+                        and enrichment.stamp == snapshot[2] and enrichment.headers):
+                    return True, min(header.expires_at for header in enrichment.headers)
+        prepare = getattr(store, "prepare_current_verification_envelope", None)
+        if callable(prepare):
+            return prepare(snapshot, cancellation_check=cancellation_check)
+        return False, None
 
     def matches(self, store, account: str, identity: CanonicalIdentity, revision: str,
-                config: str, retention_clock: Callable[[], datetime]) -> bool:
+                config: str, retention_clock: Callable[[], datetime], *,
+                cancellation_check=None) -> bool:
         """Reuse a checked positive result only while its actual storage stamp matches."""
 
         snapshot = self._snapshot(store, account, identity, revision, config)
@@ -88,7 +101,7 @@ class GenerationCurrentness:
                 self.entries.move_to_end(key)
                 return True
             self.entries.pop(key, None)
-        verified, due = self._verified_source_due(store, snapshot)
+        verified, due = self._verified_source_due(store, snapshot, cancellation_check)
         if not verified:
             projection = store.get(account, canonical_identity=identity)
             if (projection is None or projection.account_ref != account_ref(account)

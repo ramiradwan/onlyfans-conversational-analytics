@@ -41,10 +41,13 @@ def test_currentness_expiry_rechecks_existing_verified_content_without_materiali
 def test_missing_any_content_proof_requires_full_verification(proven, monkeypatch, cache):
     f = proven
     getattr(f.stores.projections, cache).clear()
-    full = Mock(wraps=f.stores.projections.get)
-    monkeypatch.setattr(f.stores.projections, 'get', full)
+    materialize = Mock(wraps=f.stores.projections.get)
+    verify = Mock(wraps=f.stores.projections.prepare_current_verification_envelope)
+    monkeypatch.setattr(f.stores.projections, 'get', materialize)
+    monkeypatch.setattr(f.stores.projections, 'prepare_current_verification_envelope', verify)
     assert current(f)
-    full.assert_called_once()
+    verify.assert_called_once()
+    materialize.assert_not_called()
 
 
 @pytest.mark.parametrize('fault', ['node', 'document'])

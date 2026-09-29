@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import hashlib
 import json
@@ -14,6 +14,7 @@ from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 
 MAX_GRAPH_UNIT_BYTES = 64 * 1024 * 1024
 MAX_GRAPH_UNIT_RECORDS = 4_000_000
+MAX_PROOF_BUCKET_KEYS = 65_536
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,10 +41,15 @@ class ConversationGraphUnit:
     node_ids: bytes
     edge_ids: bytes
     integrity_metadata: bytes | None = None
+    membership_prefixes: tuple[bytes, bytes] | None = field(
+        default=None, compare=False, repr=False
+    )
 
     @property
     def retained_bytes(self) -> int:
-        return len(self.node_ids) + len(self.edge_ids) + len(self.integrity_metadata or b'')
+        return (len(self.node_ids) + len(self.edge_ids)
+                + len(self.integrity_metadata or b'')
+                + sum(map(len, self.membership_prefixes or ())))
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +64,8 @@ class ConversationGraphProof:
     binding: str
     stamp_prefix: tuple
     headers: tuple[ConversationGraphUnitHeader, ...]
+    integrity_groups: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = ()
+    membership_prefixes: tuple[tuple[str, bytes, bytes], ...] = ()
 
 
 def _encode_ids(ids) -> bytes:
@@ -203,7 +211,11 @@ def create_membership_unit(*, account_ref, conversation_ref, input_digest, confi
         unit_id=unit_id(digest, nodes, edges, checksum_version=checksum_version),
         checksum_version=checksum_version,
     )
-    result = ConversationGraphUnit(header, node_data, edge_data, integrity_metadata)
+    from app.analytics.membership_prefixes import bitmap
+    prefixes = (bitmap(nodes), bitmap(edges))
+    result = ConversationGraphUnit(
+        header, node_data, edge_data, integrity_metadata, prefixes
+    )
     if checksum_version == 2:
         from app.analytics.conversation_integrity import decode_manifest
         decode_manifest(result)

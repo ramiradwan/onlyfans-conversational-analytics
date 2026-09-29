@@ -151,12 +151,32 @@ def contains_changed_member(data, expected_count, kind, identities, check):
     return False
 
 
-def proven_unit_is_unchanged(connection, generation_id, account, header, changed, check):
-    """Keep prior verification only when no replaced/removed record is a member."""
+def proven_unit_is_unchanged(connection, generation_id, account, header, changed, check, *,
+                             integrity_groups=None, membership_prefixes=None):
+    """Keep prior verification only when no replaced/removed record is a member.
+
+    A verified v2 integrity manifest can first prove that whole hash buckets are
+    absent from this immutable unit. Exact membership bytes are opened only for
+    changed identities whose buckets are actually represented by the unit.
+    """
+    group_keys = (None if integrity_groups is None else
+                  {(group[0], group[1]) for group in integrity_groups})
     for kind, identities in changed.items():
         check()
         if not identities:
             continue
+        if group_keys is not None:
+            identities = {identity for identity in identities
+                          if (kind, identity[3:5]) in group_keys}
+            if not identities:
+                continue
+        if membership_prefixes is not None:
+            from app.analytics.membership_prefixes import possibly_contains
+            summary = membership_prefixes[0 if kind == 'node' else 1]
+            identities = {identity for identity in identities
+                          if possibly_contains(summary, identity)}
+            if not identities:
+                continue
         row = connection.execute(
             f'SELECT u.{kind}_ids FROM conversation_graph_refs r '
             'JOIN conversation_graph_units u USING(creator_account_id,unit_id) '

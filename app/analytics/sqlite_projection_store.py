@@ -126,6 +126,8 @@ class SQLiteAnalyticsProjectionStore:
         self._conversation_graph_proof_lock = RLock()
         self._conversation_enrichment_proofs = OrderedDict()
         self._conversation_enrichment_proof_lock = RLock()
+        self._verification_envelopes = OrderedDict()
+        self._verification_envelope_lock = RLock()
         self.reuse_validation_receipts = True
         self.reuse_conversation_enrichment_units = True
         from app.analytics.currentness import GenerationCurrentness
@@ -137,9 +139,9 @@ class SQLiteAnalyticsProjectionStore:
         if reconcile:
             self.reconcile_startup()
 
-    def _remember_graph_segment_proof(self, receipt, segments) -> None:
+    def _remember_graph_segment_proof(self, receipt, segments):
         if receipt is None or not segments:
-            return
+            return None
         from app.analytics.shared_graph import GraphSegmentProof
         from app.analytics.validation_receipt import MAX_RECEIPTS
 
@@ -152,6 +154,7 @@ class SQLiteAnalyticsProjectionStore:
             self._graph_segment_proofs.move_to_end(receipt.generation_id)
             while len(self._graph_segment_proofs) > MAX_RECEIPTS:
                 self._graph_segment_proofs.popitem(last=False)
+        return proof
 
     def _trusted_graph_segment_proof(self, connection, generation):
         from app.analytics.validation_receipt import content_stamp, generation_binding
@@ -171,42 +174,110 @@ class SQLiteAnalyticsProjectionStore:
 
     def _remember_conversation_graph_proof(
         self, receipt, units, predecessor_proof, projection
-    ) -> None:
+    ):
         if receipt is None or not units:
-            return
+            return None
         from app.analytics.conversation_graph_units import (
             ConversationGraphProof, ConversationGraphReference,
         )
         from app.analytics.validation_receipt import MAX_RECEIPTS
 
         expected = {item.conversation_ref for item in projection.conversation_metrics}
-        headers, seen = [], set()
+        headers, seen, integrity_groups, bucket_keys = [], set(), [], 0
+        membership_prefixes, prefix_bytes = [], 0
+        keep_integrity_groups = True
         trusted = {
             header.conversation_ref: header
             for header in (() if predecessor_proof is None else predecessor_proof.headers)
         }
+        predecessor_groups = dict(
+            () if predecessor_proof is None else predecessor_proof.integrity_groups
+        )
+        predecessor_prefixes = {
+            item[0]: (item[1], item[2])
+            for item in (() if predecessor_proof is None else predecessor_proof.membership_prefixes)
+        }
         for unit in units:
             header = unit.header
             if header.conversation_ref in seen or header.conversation_ref not in expected:
-                return
+                return None
             if isinstance(unit, ConversationGraphReference):
                 if (predecessor_proof is None
                         or unit.generation_id != predecessor_proof.generation_id
                         or trusted.get(header.conversation_ref) != header):
-                    return
+                    return None
+                groups = predecessor_groups.get(header.conversation_ref, ())
+                prefixes = predecessor_prefixes.get(header.conversation_ref)
+            elif header.checksum_version == 2:
+                from app.analytics.conversation_integrity import decode_manifest
+                groups = tuple(sorted(decode_manifest(unit)))
+                prefixes = unit.membership_prefixes
+            else:
+                groups = ()
+                prefixes = None
+            if keep_integrity_groups:
+                from app.analytics.conversation_graph_units import MAX_PROOF_BUCKET_KEYS
+                bucket_keys += len(groups)
+                if bucket_keys > MAX_PROOF_BUCKET_KEYS:
+                    keep_integrity_groups = False
+                    integrity_groups.clear()
             seen.add(header.conversation_ref)
             headers.append(header)
+            if keep_integrity_groups:
+                integrity_groups.append((header.conversation_ref, tuple(groups)))
+            if prefixes is not None:
+                from app.analytics.membership_prefixes import MAX_ENVELOPE_PREFIX_BYTES
+                cost = sum(map(len, prefixes))
+                if prefix_bytes + cost <= MAX_ENVELOPE_PREFIX_BYTES:
+                    membership_prefixes.append((header.conversation_ref, prefixes[0], prefixes[1]))
+                    prefix_bytes += cost
         if seen != expected:
-            return
+            return None
         proof = ConversationGraphProof(
             receipt.generation_id, receipt.binding, tuple(receipt.stamp[:3]),
             tuple(sorted(headers, key=lambda item: item.conversation_ref)),
+            tuple(sorted(integrity_groups)), tuple(sorted(membership_prefixes)),
         )
         with self._conversation_graph_proof_lock:
             self._conversation_graph_proofs[receipt.generation_id] = proof
             self._conversation_graph_proofs.move_to_end(receipt.generation_id)
             while len(self._conversation_graph_proofs) > MAX_RECEIPTS:
                 self._conversation_graph_proofs.popitem(last=False)
+        return proof
+
+    def _remember_verified_conversation_graph_proof(self, receipt, verification, expected):
+        """Install proof metadata only from persisted validation of this generation."""
+        if receipt is None or verification is None or not verification.headers:
+            return None
+        from app.analytics.conversation_graph_units import ConversationGraphProof
+        from app.analytics.validation_receipt import MAX_RECEIPTS
+        headers = tuple(sorted(verification.headers, key=lambda item: item.conversation_ref))
+        refs = [header.conversation_ref for header in headers]
+        if len(refs) != len(set(refs)) or set(refs) != set(expected):
+            return None
+        groups = tuple(sorted(verification.integrity_groups))
+        if {item[0] for item in groups} != set(refs):
+            return None
+        from app.analytics.membership_prefixes import MAX_ENVELOPE_PREFIX_BYTES
+        prefixes, used = [], 0
+        for item in tuple(getattr(verification, 'membership_prefixes', ())):
+            if item[0] not in set(refs):
+                continue
+            cost = len(item[1]) + len(item[2])
+            if used + cost > MAX_ENVELOPE_PREFIX_BYTES:
+                break
+            prefixes.append(item)
+            used += cost
+        proof = ConversationGraphProof(
+            receipt.generation_id, receipt.binding, tuple(receipt.stamp[:3]),
+            headers, groups, tuple(sorted(prefixes)),
+        )
+        with self._conversation_graph_proof_lock:
+            self._conversation_graph_proofs[receipt.generation_id] = proof
+            self._conversation_graph_proofs.move_to_end(receipt.generation_id)
+            while len(self._conversation_graph_proofs) > MAX_RECEIPTS:
+                self._conversation_graph_proofs.popitem(last=False)
+        return proof
 
     def _trusted_conversation_graph_proof(self, connection, generation):
         from app.analytics.validation_receipt import content_stamp, generation_binding
@@ -224,9 +295,9 @@ class SQLiteAnalyticsProjectionStore:
             return None
         return proof
 
-    def _remember_conversation_enrichment_proof(self, receipt, headers) -> None:
+    def _remember_conversation_enrichment_proof(self, receipt, headers):
         if receipt is None or not headers:
-            return
+            return None
         from app.analytics.conversation_enrichment_units import ConversationEnrichmentProof
         from app.analytics.validation_receipt import MAX_RECEIPTS
 
@@ -239,6 +310,7 @@ class SQLiteAnalyticsProjectionStore:
             self._conversation_enrichment_proofs.move_to_end(receipt.generation_id)
             while len(self._conversation_enrichment_proofs) > MAX_RECEIPTS:
                 self._conversation_enrichment_proofs.popitem(last=False)
+        return proof
 
     def _trusted_conversation_enrichment_proof(self, connection, generation):
         from app.analytics.validation_receipt import content_stamp, generation_binding
@@ -256,6 +328,139 @@ class SQLiteAnalyticsProjectionStore:
             return None
         return proof
 
+    def _remember_verification_envelope(self, receipt):
+        if receipt is None:
+            return None
+        from app.analytics.generation_verification import build_envelope
+        from app.analytics.validation_receipt import MAX_RECEIPTS
+        generation_id = receipt.generation_id
+        with self._graph_segment_proof_lock:
+            graph = self._graph_segment_proofs.get(generation_id)
+        with self._conversation_graph_proof_lock:
+            conversations = self._conversation_graph_proofs.get(generation_id)
+        with self._conversation_enrichment_proof_lock:
+            enrichment = self._conversation_enrichment_proofs.get(generation_id)
+        envelope = build_envelope(receipt, graph, conversations, enrichment)
+        if envelope is None:
+            return None
+        with self._verification_envelope_lock:
+            self._verification_envelopes[generation_id] = envelope
+            self._verification_envelopes.move_to_end(generation_id)
+            while len(self._verification_envelopes) > MAX_RECEIPTS:
+                self._verification_envelopes.popitem(last=False)
+        return envelope
+
+    def _trusted_verification_envelope(self, connection, generation):
+        from app.analytics.validation_receipt import content_stamp, generation_binding
+        if generation is None:
+            return None
+        generation_id = generation['generation_id']
+        with self._verification_envelope_lock:
+            envelope = self._verification_envelopes.get(generation_id)
+        if (envelope is None or envelope.generation_id != generation_id
+                or envelope.binding != generation_binding(generation)):
+            return None
+        with self._graph_segment_proof_lock:
+            graph = self._graph_segment_proofs.get(generation_id)
+        with self._conversation_graph_proof_lock:
+            conversations = self._conversation_graph_proofs.get(generation_id)
+        with self._conversation_enrichment_proof_lock:
+            enrichment = self._conversation_enrichment_proofs.get(generation_id)
+        if (graph is not envelope.graph or conversations is not envelope.conversations
+                or enrichment is not envelope.enrichment):
+            return None
+        stamp = content_stamp(connection)
+        if stamp is None or tuple(stamp) != envelope.stamp:
+            return None
+        return envelope
+
+    def prepare_current_verification_envelope(self, snapshot, *, cancellation_check=None):
+        """Independently verify one active generation and retain only bound proof metadata."""
+        from app.analytics.cancellation import check_cancelled
+        from app.analytics.validation_receipt import (
+            ValidationReceipt, RECEIPT_SECONDS, content_stamp, generation_binding,
+        )
+        if snapshot is None or len(snapshot) != 3 or snapshot[2] is None:
+            return False, None
+        check = lambda: check_cancelled(cancellation_check)
+        with self.database.read() as connection:
+            connection.execute('BEGIN')
+            check()
+            generation = connection.execute(
+                "SELECT * FROM projection_generations WHERE generation_id=? "
+                "AND status='active' AND activated_at IS NOT NULL", (snapshot[0],)
+            ).fetchone()
+            if (generation is None or generation_binding(generation) != snapshot[1]
+                    or content_stamp(connection) != snapshot[2]):
+                return False, None
+            intent = self.activation.get(generation['generation_id'])
+            if not self._intent_matches(generation, intent, require_completed=True):
+                return False, None
+            values = recompute_generation(
+                connection, generation['generation_id'], check=check,
+                materialize_projection=False, materialize_graph=False,
+            )
+            verify_generation_values(generation, values)
+            check()
+            if content_stamp(connection) != snapshot[2]:
+                return False, None
+            enrichment = tuple(values.get('enrichment_units', ()))
+            integrity = values.get('conversation_integrity')
+            expected = {item.conversation_ref for item in enrichment}
+            verified = set() if integrity is None else {
+                item.conversation_ref for item in integrity.headers
+            }
+            if (not expected or integrity is None or verified != expected
+                    or len(integrity.headers) != len(expected)):
+                return False, None
+            receipt = ValidationReceipt(
+                generation['generation_id'], tuple(snapshot[2]), snapshot[1],
+                time.monotonic() + RECEIPT_SECONDS,
+            )
+            self._remember_graph_segment_proof(receipt, values['graph_segments'])
+            self._remember_verified_conversation_graph_proof(receipt, integrity, expected)
+            self._remember_conversation_enrichment_proof(receipt, enrichment)
+            envelope = self._remember_verification_envelope(receipt)
+            check()
+            if envelope is None:
+                return False, None
+            return True, envelope.source_due_at
+
+    def update_reuse_prepared(self, account_id, identity) -> bool:
+        """Return true only for an active generation with a live exact envelope."""
+        partition = account_ref(account_id)
+        with self.database.read() as connection:
+            connection.execute('BEGIN')
+            generation = connection.execute(
+                "SELECT * FROM projection_generations WHERE creator_account_id=? "
+                "AND status='active' AND activated_at IS NOT NULL", (partition,)
+            ).fetchone()
+            if (generation is None
+                    or int(generation['canonical_revision']) != identity.revision
+                    or generation['canonical_content_digest'] != identity.content_digest):
+                return False
+            witness = self.activation.get(generation['generation_id'])
+            if (not self._intent_matches(generation, witness, require_completed=True)
+                    or witness.creator_account_id != account_id):
+                return False
+            return self._trusted_verification_envelope(connection, generation) is not None
+
+    def _enrichment_transition_candidate(self, generation):
+        """Return a bound proof candidate; capture_transition remains authority."""
+        if generation is None:
+            return None
+        from app.analytics.validation_receipt import generation_binding
+        generation_id = generation['generation_id']
+        binding = generation_binding(generation)
+        with self._verification_envelope_lock:
+            envelope = self._verification_envelopes.get(generation_id)
+        if (envelope is not None and envelope.generation_id == generation_id
+                and envelope.binding == binding):
+            return envelope.enrichment
+        with self._conversation_enrichment_proof_lock:
+            proof = self._conversation_enrichment_proofs.get(generation_id)
+        return proof if proof is not None and proof.binding == binding else None
+
     def _install_enrichment_transition(self, transition, renewed) -> None:
         if transition is None or renewed is None:
             return
@@ -263,6 +468,13 @@ class SQLiteAnalyticsProjectionStore:
         with self._conversation_enrichment_proof_lock:
             if self._conversation_enrichment_proofs.get(proof.generation_id) is proof:
                 self._conversation_enrichment_proofs[proof.generation_id] = renewed
+        from app.analytics.generation_verification import transitioned
+        with self._verification_envelope_lock:
+            envelope = self._verification_envelopes.get(proof.generation_id)
+            refreshed = transitioned(envelope, proof, renewed)
+            if refreshed is not None:
+                self._verification_envelopes[proof.generation_id] = refreshed
+                self._verification_envelopes.move_to_end(proof.generation_id)
 
     def generation_references_supported(self) -> bool:
         with self.database.read() as connection:
@@ -378,8 +590,12 @@ class SQLiteAnalyticsProjectionStore:
                 (generation['generation_id'], generation['creator_account_id'])
             ).fetchone() is not None
 
-    def projection_currentness(self, account_id, identity, revision, config, retention_clock):
-        return self._currentness.matches(self, account_id, identity, revision, config, retention_clock)
+    def projection_currentness(self, account_id, identity, revision, config, retention_clock,
+                               cancellation_check=None):
+        return self._currentness.matches(
+            self, account_id, identity, revision, config, retention_clock,
+            cancellation_check=cancellation_check,
+        )
 
     def get(
         self,
@@ -862,6 +1078,7 @@ class SQLiteAnalyticsProjectionStore:
                     receipt, conversation_graph_units,
                     predecessor_graph_unit_proof, projection,
                 )
+            self._remember_verification_envelope(receipt)
             self._validation_receipts.put(receipt)
         self._checkpoint("validated", generation_id)
         check_cancelled(cancellation_check)
@@ -1367,8 +1584,7 @@ class SQLiteAnalyticsProjectionStore:
                 (partition_ref,),
             ).fetchone() if rows else None
             transition = capture_transition(
-                connection, active,
-                self._trusted_conversation_enrichment_proof(connection, active),
+                connection, active, self._enrichment_transition_candidate(active)
             )
             from app.analytics.shared_graph import supported
             graph_tables = ("graph_owned_edges", "graph_owned_nodes") if supported(connection) else ("graph_edges", "graph_nodes")
@@ -1573,8 +1789,7 @@ class SQLiteAnalyticsProjectionStore:
             if candidate["publication_epoch"] in self._locally_fenced_epochs:
                 raise ProjectionActivationConflict("publication epoch revoked")
             transition = capture_transition(
-                connection, candidate,
-                self._trusted_conversation_enrichment_proof(connection, candidate),
+                connection, candidate, self._enrichment_transition_candidate(candidate)
             )
             connection.execute(
                 """
@@ -1916,7 +2131,8 @@ class SQLiteAnalyticsProjectionStore:
 
 
 def _validate_generation_links(
-    connection, generation_id, account_id, check, graph_validation=None, graph_rows=None
+    connection, generation_id, account_id, check, graph_validation=None, graph_rows=None,
+    graph_changes=None,
 ):
     """Check the candidate's referential closure without scanning other accounts."""
 
@@ -1936,6 +2152,7 @@ def _validate_generation_links(
         verify_segment_links(
             connection, generation_id, account_id,
             validation=graph_validation, check=check, prepared=graph_rows,
+            verified_changes=graph_changes,
         )
     else:
         missing = connection.execute("""SELECT 1 FROM graph_edges AS e
@@ -2161,16 +2378,24 @@ def _recompute_generation(
     ):
         raise ProjectionValidationError("projection row digest differs")
     graph_rows = None
+    graph_changes = None
     read_version = getattr(connection, 'total_changes', None)
     if (not materialize_graph and read_version is not None
             and getattr(connection, 'in_transaction', False)
             and getattr(graph_validation, 'proof', None) is not None):
-        from app.analytics.shared_graph import _read_changed_segment_rows
+        from app.analytics.shared_graph import (
+            _read_changed_segment_rows, _verified_changed_segment_chunks,
+        )
         changed = tuple(plan for plan in graph_validation.plans if not plan.reused)
         graph_rows = _read_changed_segment_rows(connection, account_id, changed, run_check)
+        if graph_rows is None:
+            graph_changes = _verified_changed_segment_chunks(
+                connection, account_id, graph_validation, run_check
+            )
     _validate_generation_links(
         connection, generation_id, account_id, run_check,
         graph_validation=graph_validation, graph_rows=graph_rows,
+        graph_changes=graph_changes,
     )
     if materialize_graph:
         nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
@@ -2184,7 +2409,7 @@ def _recompute_generation(
 
         reused = verify_shared_graph(
             connection, generation_id, account_id, graph_validation, run_check,
-            prepared=graph_rows,
+            prepared=graph_rows, verified_changes=graph_changes,
         )
         if reused is None:
             from app.analytics.graph_verification import verify_graph_rows
@@ -2244,9 +2469,11 @@ def _recompute_generation(
     if projection.graph.edge_counts_by_relation != dict(sorted(edge_counts.items())):
         raise ProjectionValidationError("edge-kind coverage differs")
     from app.analytics.conversation_integrity_store import verify_generation_integrity
-    verify_generation_integrity(connection, generation, account_id, proof=conversation_validation,
+    conversation_integrity = verify_generation_integrity(
+        connection, generation, account_id, proof=conversation_validation,
         graph_validation=graph_validation, segments=(() if materialize_graph else graph_segments),
-        prepared=graph_rows, check=run_check)
+        prepared=graph_rows, verified_changes=graph_changes, check=run_check,
+    )
     return {
         "projection": projection,
         "nodes": nodes,
@@ -2257,6 +2484,7 @@ def _recompute_generation(
         "edge_count": edge_count,
         "graph_segments": (() if materialize_graph else graph_segments),
         "enrichment_units": enrichment_headers,
+        "conversation_integrity": conversation_integrity,
     }
 
 
