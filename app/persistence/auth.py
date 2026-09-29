@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.persistence.catchup_events import capture_authority_change
+
 import hashlib
 import json
 import re
@@ -749,6 +751,7 @@ class SQLiteAuthenticationStore:
         if cursor.rowcount != 1:
             raise AuthenticationStateError("Authorization epoch update failed")
 
+    @capture_authority_change
     def reserve_installation_key(
         self, reservation: InstallationKeyReservation
     ) -> InstallationKeyReservation:
@@ -785,6 +788,7 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _installation_key_reservation(row)
 
+    @capture_authority_change
     def activate_installation_key(
         self, reference: InstallationKeyReference
     ) -> None:
@@ -846,6 +850,7 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _installation_key_reference(row)
 
+    @capture_authority_change
     def register_webauthn_credential(self, credential: WebAuthnCredential) -> None:
         if credential.signature_count < 0:
             raise ValueError("signature_count must be non-negative")
@@ -958,6 +963,7 @@ class SQLiteAuthenticationStore:
     def record_verified_grant(self, grant: VerifiedGrantReference) -> None:
         self.record_verified_grants((grant,))
 
+    @capture_authority_change
     def record_verified_grants(
         self, grants: tuple[VerifiedGrantReference, ...]
     ) -> None:
@@ -970,6 +976,7 @@ class SQLiteAuthenticationStore:
                 self._insert_verified_grant(connection, grant)
             self._increment_authorization_epoch(connection)
 
+    @capture_authority_change
     def record_verified_grant_and_approve_provisioning_candidate(
         self,
         grant: VerifiedGrantReference,
@@ -1018,6 +1025,7 @@ class SQLiteAuthenticationStore:
             return False
         return True
 
+    @capture_authority_change
     def replace_verified_grant(
         self, previous_reference_id: str, grant: VerifiedGrantReference,
         *, expected: VerifiedGrantReference | None = None,
@@ -1093,6 +1101,7 @@ class SQLiteAuthenticationStore:
                 ):
                     raise AuthenticationStateError("Verified grant replacement context is stale")
 
+    @capture_authority_change
     def apply_hosted_grant_denial(
         self, expected: VerifiedGrantReference, denial: VerifiedGrantDenial
     ) -> Literal["applied", "already_applied", "stale"]:
@@ -1354,6 +1363,7 @@ class SQLiteAuthenticationStore:
             RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id),
         )
 
+    @capture_authority_change
     def register_agent_pairing(self, pairing: AgentPairing) -> None:
         grants = _unique(pairing.grant_reference_ids)
         with self.database.transaction() as connection:
@@ -1394,6 +1404,7 @@ class SQLiteAuthenticationStore:
             )
             self._increment_authorization_epoch(connection)
 
+    @capture_authority_change
     def activate_agent_pairing(
         self, policy: RuntimePolicy, pairing_id: str
     ) -> bool:
@@ -2255,6 +2266,7 @@ class SQLiteAuthenticationStore:
             commercial_authority=authority,
         )
 
+    @capture_authority_change
     def revoke(self, key: RevocationKey, *, reason: str | None = None) -> int:
         with self.database.transaction() as connection:
             version = self._revoke_in_transaction(connection, key, reason=reason)
@@ -2703,6 +2715,7 @@ class SQLiteAuthenticationStore:
                 "Required verified grant reference types are missing"
             )
 
+    @capture_authority_change
     def record_verified_capability_license(
         self, reference: VerifiedCapabilityLicenseReference
     ) -> None:
@@ -3135,6 +3148,7 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _provisioning_candidate(row)
 
+    @capture_authority_change
     def approve_provisioning_candidate(
         self, association_request_id: str, *, resolved_at: datetime
     ) -> bool:
@@ -3793,6 +3807,7 @@ class SQLiteAuthenticationStore:
             ).fetchall()
         return tuple(_onboarding_progress_event(row) for row in rows)
 
+    @capture_authority_change
     def record_authorized_account_binding(
         self, binding: AuthorizedAccountBinding
     ) -> None:
@@ -3888,6 +3903,7 @@ class SQLiteAuthenticationStore:
                 for row in rows
             )
 
+    @capture_authority_change
     def revoke_authorized_account_binding(self, creator_account_id: str) -> bool:
         """Revoke one authorized account binding and its account scope."""
 

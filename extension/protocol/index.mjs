@@ -1,5 +1,6 @@
 import {
   ProtocolValidationError,
+  captureStateReportRequest, captureStateReportResponse, historyCheckBeginRequest, historyCheckBeginResponse,
   array,
   boolean,
   capturePolicy,
@@ -29,6 +30,7 @@ const capabilityStatus = object({
     'capture.messages',
     'capture.presence',
     'history.sync',
+  'history.catchup.v1',
     'command.message.send',
   ),
   status: literal('active', 'degraded', 'unsupported'),
@@ -124,6 +126,7 @@ const payloadValidators = {
       'capture.messages',
       'capture.presence',
       'history.sync',
+  'history.catchup.v1',
       'command.message.send',
     ), 1),
     extension_version: nonEmptyString,
@@ -180,7 +183,7 @@ const payloadValidators = {
     source_seq: integer(1),
     acquisition_origin: literal('passive', 'signer'),
     change: rawIngestChange,
-  }),
+  }, {check_id: nullable(uuid)}),
   'ingest.ack': object({
     connection_id: uuid,
     creator_account_id: nonEmptyString,
@@ -347,3 +350,23 @@ export function parseAgentConfigDocumentResponse(value) {
 export const isAgentConfigGetRequest = (value) => isParsedBy(parseAgentConfigGetRequest, value);
 export const isAgentConfigDocumentResponse = (value) => isParsedBy(parseAgentConfigDocumentResponse, value);
 export { ProtocolValidationError };
+
+export function parseCaptureStateReportRequest(value) {
+  captureStateReportRequest(value, '$');
+  return value;
+}
+
+export function parseCaptureStateReportResponse(value) {
+  captureStateReportResponse(value, '$');
+  return value;
+}
+
+export function parseHistoryCheckBeginRequest(value) {
+  historyCheckBeginRequest(value, '$');
+  return value;
+}
+
+export function parseHistoryCheckBeginResponse(value) {
+  historyCheckBeginResponse(value, '$');
+  return value;
+}

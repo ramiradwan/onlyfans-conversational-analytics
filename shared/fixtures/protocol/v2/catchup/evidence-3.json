@@ -1,0 +1,38 @@
+{
+  "type": "ingest.delta",
+  "protocol_version": "2",
+  "message_id": "00000000-0000-4000-8000-000000000008",
+  "payload": {
+    "connection_id": "10000000-0000-4000-8000-000000000001",
+    "fencing_token": "fence-42",
+    "creator_account_id": "dev-creator-account",
+    "agent_installation_id": "20000000-0000-4000-8000-000000000001",
+    "event_id": "50000000-0000-4000-8000-000000000001",
+    "agent_stream_id": "30000000-0000-4000-8000-000000000001",
+    "source_seq": 11,
+    "acquisition_origin": "passive",
+    "change": {
+      "type": "coverage.observed",
+      "evidence": {
+        "type": "check.completed",
+        "generation_id": "70000000-0000-4000-8000-000000000001",
+        "kind": "canary",
+        "final_source_seq": 3,
+        "pages_read": 1,
+        "counts": {
+          "list": 1,
+          "messages": 0,
+          "probes": 0
+        },
+        "heads": [
+          {
+            "chat_id": "chat-1",
+            "head_message_id": "message-1",
+            "head_sent_at": "2026-09-29T00:00:00Z"
+          }
+        ]
+      }
+    },
+    "check_id": "70000000-0000-4000-8000-000000000001"
+  }
+}
