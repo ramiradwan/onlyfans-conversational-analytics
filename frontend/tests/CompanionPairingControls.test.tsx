@@ -102,16 +102,17 @@ describe('companion pairing controls', () => {
     const api = makeApi({ pins: vi.fn(async () => [pin]) });
     await act(async () => bridgeTransportStore.setAgent({
       creator_account_id: 'creator-1', status: 'connected', agent_installation_id: null, connection_id: null,
-      required_config_revision: null, applied_config_revision: null, required_history_settings_revision: 0,
-      applied_history_settings_revision: null, last_heartbeat_at: null, degraded_reason: null,
+      required_config_revision: 'r1', applied_config_revision: 'r1', required_history_settings_revision: 1,
+      applied_history_settings_revision: 1, last_heartbeat_at: null, degraded_reason: null,
       browser: { capture: 'paused', site_access: 'granted', history_permission: 'granted', legal_review_required: false, reported_at: now.toISOString() },
     }));
     mount(api);
     await act(async () => {});
     expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
+    expect(screen.getByText('Paused', { exact: true })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Resume collecting' })).toBeNull();
     await act(async () => useUserStore.getState().actions.setUserRole('creator-ceo'));
-    expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Resume collecting' })).toBeTruthy();
     expect(screen.queryByText(/managed in the extension/)).toBeNull();
   });
 
@@ -285,6 +286,8 @@ describe('companion pairing controls', () => {
       expect(vi.mocked(api.open).mock.invocationCallOrder[0])
         .toBeLessThan(port.pair.mock.invocationCallOrder[0]);
       expect(screen.getByText('Connecting the extension in this browser…')).toBeTruthy();
+      expect(screen.getByText('Connecting', { exact: true })).toBeTruthy();
+      expect(screen.queryByText('Not connected')).toBeNull();
       await act(async () => push({ stage: 'pairing', attempt: { state: 'compare', comparison_code: '012345' } }));
       expect(api.confirmVerified).not.toHaveBeenCalled();
       await brainNotice();

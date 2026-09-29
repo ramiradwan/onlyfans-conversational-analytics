@@ -27,7 +27,7 @@ function makeApi(result: 'delivered' | 'unreachable' = 'delivered'): BrowserCont
 }
 
 function mount(props: Partial<Parameters<typeof BrowserExtensionControls>[0]> = {}) {
-  const all = { api: makeApi(), browser: active, canManage: true, port: makePort(), ...props };
+  const all = { api: makeApi(), browser: active, canManage: true, connection: 'connected' as const, port: makePort(), ...props };
   const view = render(<ThemeProvider theme={theme}><BrowserExtensionControls {...all} /></ThemeProvider>);
   const rerender = (next: Partial<typeof all>) => view.rerender(
     <ThemeProvider theme={theme}><BrowserExtensionControls {...all} {...next} /></ThemeProvider>,
@@ -42,28 +42,28 @@ describe('browser extension controls', () => {
   it('shows only pushed state and settles a pause when the extension reports it', async () => {
     const { api, rerender } = mount();
     expect(screen.getByText('Collecting in the browser.')).toBeTruthy();
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause' })));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
     expect(api.setCapture).toHaveBeenCalledWith('pause', expect.any(AbortSignal));
     expect(screen.getByRole('button', { name: 'Pausing…' })).toHaveProperty('disabled', true);
     expect(screen.getByText('Collecting in the browser.')).toBeTruthy();
     rerender({ browser: { ...active, capture: 'paused' } });
     expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Resume' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', false);
     await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('reports an extension that never confirms the change', async () => {
     mount();
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause' })));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
     await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(screen.getByRole('alert').textContent).toContain("didn't confirm");
-    expect(screen.getByRole('button', { name: 'Pause' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'Pause collecting' })).toHaveProperty('disabled', false);
   });
 
   it('reports an unreachable extension without changing the shown state', async () => {
     mount({ api: makeApi('unreachable') });
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause' })));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
     expect(screen.getByRole('alert').textContent).toContain('not connected right now');
     expect(screen.getByText('Collecting in the browser.')).toBeTruthy();
   });
@@ -71,8 +71,8 @@ describe('browser extension controls', () => {
   it('sends resume to the extension review instead when the terms changed', () => {
     const port = makePort();
     const { api } = mount({ browser: { ...active, capture: 'paused', legal_review_required: true }, port });
-    expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    expect(screen.queryByRole('button', { name: 'Resume collecting' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Review terms' }));
     expect(port.open).toHaveBeenCalledWith('setup');
     expect(api.setCapture).not.toHaveBeenCalled();
   });
@@ -89,8 +89,9 @@ describe('browser extension controls', () => {
   it('explains where to act when the extension is in another browser', () => {
     mount({ browser: { ...active, site_access: 'needs_approval' }, port: makePort('absent') });
     expect(screen.queryByRole('button', { name: 'Allow in extension' })).toBeNull();
-    expect(screen.getByText(/Open the extension in its browser/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
+    // One caption explains where to act, instead of repeating it on every row.
+    expect(screen.getAllByText('Change these in the browser where the extension is installed.')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Pause collecting' })).toBeTruthy();
   });
 
   it('shows status without controls to operators', () => {
@@ -99,10 +100,27 @@ describe('browser extension controls', () => {
     expect(screen.getByText('Collecting in the browser.')).toBeTruthy();
   });
 
-  it('says how to reach the extension when no session is open', () => {
+  it('waits for a connected extension to report its settings', () => {
     mount({ browser: null });
-    expect(screen.getByText(/Open the browser where the extension is installed/)).toBeTruthy();
+    expect(screen.getByText('Waiting for the browser extension to report its settings.')).toBeTruthy();
     expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('adds nothing when the connection issue above already explains the missing extension', () => {
+    const { container } = render(
+      <ThemeProvider theme={theme}>
+        <BrowserExtensionControls api={makeApi()} browser={null} canManage connection="offline" port={makePort()} />
+      </ThemeProvider>,
+    );
+    expect(container.textContent).toBe('');
+  });
+
+  it('keeps the review in the paused row and gives controls distinct names from history sync', () => {
+    mount({ browser: { ...active, capture: 'paused', legal_review_required: true } });
+    expect(screen.getByText('Paused. Review the updated terms in the extension to resume.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Pause$|^Resume$/ })).toBeNull();
+    expect(screen.getAllByRole('heading', { level: 3 }).map((node) => node.textContent))
+      .toEqual(['New messages', 'Site access', 'Message history access']);
   });
 });
 

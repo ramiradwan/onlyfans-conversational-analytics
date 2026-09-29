@@ -481,6 +481,9 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (EXTENSION_ID_PATTERN.test(extensionId) && typeof connectExtension === 'function') {
       extensionPort = connectExtension(extensionId, (stage) => {
         extensionStage = stage;
+        // Pushed stages keep this step current, so a manual re-check is only
+        // offered when no extension answers in this browser.
+        elements.refreshIdentity.hidden = stage !== null;
         if (!configurationComplete && !recoveryRequired && associationRequestId === null) void refreshIdentity();
         else renderExtensionSetup();
       });

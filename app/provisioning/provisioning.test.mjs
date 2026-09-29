@@ -656,10 +656,14 @@ test('extension stage pushes refresh identity guidance and offer the extension s
   assert.equal(elements.openExtensionSetup.hidden, false);
   elements.openExtensionSetup.dispatch('click');
   assert.deepEqual(ports[0].sent, [{ type: 'open', version: 1, step: 'setup' }]);
+  assert.equal(elements.refreshIdentity.hidden, true, 'pushed stages make a manual re-check redundant');
   identity = signedInIdentity();
   ports[0].deliver({ type: 'state', version: 1, stage: 'ready_to_pair', attempt: null });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(elements.openExtensionSetup.hidden, true);
+  ports[0].drop();
+  ports[1].drop();
+  assert.equal(elements.refreshIdentity.hidden, false, 'without an answering extension, the re-check returns');
 });
 
 test('a first connection that drops before answering is retried once', () => {

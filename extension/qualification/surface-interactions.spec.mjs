@@ -68,9 +68,21 @@ test('popup uses pause and resume commands without changing the selected mode', 
     .toEqual(['pause', 'resume']);
 });
 
-test('while the desktop app controls this browser, the popup offers no pause', async ({ page }) => {
+test('while the desktop app controls this browser, the popup explains where pause moved', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.desktop_controlled);
   await expect(page.locator('#pause')).toBeHidden();
+  await expect(page.locator('#desktop-control-note')).toBeVisible();
+});
+
+test('the popup shows no desktop pause note while it owns pause itself', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.full_ready);
+  await expect(page.locator('#desktop-control-note')).toBeHidden();
+});
+
+test('the compact setup window for the desktop app shows only its task', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.pairing_required, hash: 'desktop' });
+  await expect(page.locator('main')).toHaveAttribute('data-handoff', /active|complete/);
+  await expect(page.locator('#open-options')).toBeHidden();
 });
 
 test('while the desktop app controls a paused browser, resume points to the desktop app', async ({ page }) => {

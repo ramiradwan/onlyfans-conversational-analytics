@@ -19,6 +19,8 @@ function render(model) {
   // While the desktop app can control this browser, it owns pause and resume.
   const desktopOwned = model.pairing.desktop_control === true;
   show('pause', ['preview', 'full'].includes(status?.consent.mode) && !desktopOwned);
+  // Explain the missing Pause where it would have been.
+  show('desktop-control-note', desktopOwned && status?.consent.mode === 'full');
   show('open-connection', status?.consent.mode === 'full' || status?.consent.resume_mode === 'full');
   renderLegalLinks(legal);
   const showReadiness = status?.consent.mode === 'full' && model.pairing.state === 'paired';

@@ -5,7 +5,7 @@ import {
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { BrowserExtensionControls } from './BrowserExtensionControls';
-import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
+import { Panel, SectionHeader, SettingRow, useRevealHold, type SectionStatus } from './ui';
 import { usePermissions } from '../hooks/usePermissions';
 import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
 import {
@@ -78,6 +78,11 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
     () => bridgeTransportStore.getState().companion,
   );
   const sameBrowser = extension.status === 'connected';
+  const browser = useSyncExternalStore(
+    bridgeTransportStore.subscribe,
+    () => bridgeTransportStore.getState().agent?.browser ?? null,
+    () => bridgeTransportStore.getState().agent?.browser ?? null,
+  );
 
   useEffect(() => () => {
     epoch.current += 1;
@@ -261,14 +266,22 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
   }, [active, status?.pairing_id]);
 
   const issue = extensionIssue(connection);
-  const sectionStatus: SectionStatus | null = connected
-    ? {
-        label: extensionLabel(connection),
-        tone: connection === 'connected' ? 'success' : issue?.severity === 'info' ? 'default' : 'warning',
-      }
-    : connectedCount === null
-      ? null
-      : { label: 'Not connected', tone: 'default' };
+  // The chip names the most important current fact: a link problem, then what
+  // the extension itself reports, then a healthy link. A running attempt reads
+  // as connecting rather than as not connected.
+  const sectionStatus: SectionStatus | null = active || waitingForExtension
+    ? { label: 'Connecting', tone: 'info' }
+    : connected
+      ? issue
+        ? { label: extensionLabel(connection), tone: issue.severity === 'info' ? 'default' : 'warning' }
+        : browser && (browser.legal_review_required || browser.site_access !== 'granted')
+          ? { label: 'Needs attention', tone: 'warning' }
+          : browser?.capture === 'paused'
+            ? { label: 'Paused', tone: 'default' }
+            : { label: extensionLabel(connection), tone: 'success' }
+      : connectedCount === null
+        ? null
+        : { label: 'Not connected', tone: 'default' };
 
   return (
     <Stack
@@ -502,27 +515,29 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
           {issue && (
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>{issue.detail}</Typography>
           )}
-          <BrowserExtensionControls api={browserApi} browser={browser} canManage={isCreator} port={port} />
+          <BrowserExtensionControls
+            api={browserApi}
+            browser={browser}
+            canManage={isCreator}
+            connection={connection}
+            port={port}
+          />
           {pins.map((pin, index) => (
-            <Stack
+            <SettingRow
               key={pin.pairing_id}
-              direction="row"
-              spacing={2}
-              sx={{ alignItems: 'center', justifyContent: 'space-between' }}
-            >
-              <Typography variant="body2">
-                {pins.length === 1 ? 'Extension linked to this app' : `Linked extension ${index + 1}`}
-              </Typography>
-              <Button
-                aria-label={`Disconnect browser extension ${index + 1}`}
-                disabled={busy}
-                onClick={() => setConfirming(pin)}
-                size="small"
-                sx={{ color: 'text.secondary' }}
-              >
-                Disconnect
-              </Button>
-            </Stack>
+              title={pins.length === 1 ? 'Extension linked to this app' : `Linked extension ${index + 1}`}
+              action={(
+                <Button
+                  aria-label={`Disconnect browser extension ${index + 1}`}
+                  disabled={busy}
+                  onClick={() => setConfirming(pin)}
+                  size="small"
+                  sx={{ color: 'text.secondary' }}
+                >
+                  Disconnect
+                </Button>
+              )}
+            />
           ))}
         </>
       )}
