@@ -721,6 +721,36 @@ class InMemoryTransportManager:
                     settings_revision=int(history_settings["settings_revision"]),
                     config_revision=config_record.required_config_revision,
                 )
+            elif (
+                history_settings["required_config_revision"]
+                != config_record.required_config_revision
+                and (
+                    history_settings["effective_config_revision"]
+                    != history_settings["required_config_revision"]
+                    or history_settings["effective_settings_revision"]
+                    != history_settings["settings_revision"]
+                )
+            ):
+                bound_document = self.config_authority.repository.document(
+                    creator_account_id, history_settings["required_config_revision"],
+                )
+                required_document = self.config_authority.repository.document(
+                    creator_account_id, config_record.required_config_revision,
+                )
+                if bound_document is not None and required_document is not None:
+                    bound_history = bound_document.history_acquisition.model_dump(mode="json")
+                    required_history = required_document.history_acquisition.model_dump(mode="json")
+                    if bound_history["authorized_platform_creator_id"] is None:
+                        bound_history["authorized_platform_creator_id"] = required_history[
+                            "authorized_platform_creator_id"
+                        ]
+                    if bound_history == required_history:
+                        self.history.move_pending_history_config(
+                            creator_account_id,
+                            settings_revision=int(history_settings["settings_revision"]),
+                            old_config_revision=history_settings["required_config_revision"],
+                            config_revision=config_record.required_config_revision,
+                        )
             if (
                 config_record.applied_config_revision
                 == config_record.required_config_revision

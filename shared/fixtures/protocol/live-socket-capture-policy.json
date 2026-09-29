@@ -1,0 +1,10 @@
+{
+  "observation_interval_seconds": 30,
+  "rules": [
+    {"resource": "chats", "url_pattern": "/api2/v2/chats", "enabled": true},
+    {"resource": "chats", "url_pattern": "/api2/v2/users/*/chats", "enabled": true},
+    {"resource": "messages", "url_pattern": "/api2/v2/chats/*/messages", "enabled": true},
+    {"resource": "messages", "url_pattern": "/ws3", "enabled": true},
+    {"resource": "messages", "url_pattern": "/ws3/*", "enabled": true}
+  ]
+}

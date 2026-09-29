@@ -1,5 +1,5 @@
 const PLATFORM_ORIGIN = 'https://onlyfans.com';
-const PLATFORM_SOCKET = 'wss://ws2.onlyfans.com/ws3/';
+const PLATFORM_SOCKET = 'wss://ws2.onlyfans.com/ws3/17';
 const BRAIN_ORIGIN = 'http://bridge.localhost:17871';
 
 export const SYNTHETIC = Object.freeze({

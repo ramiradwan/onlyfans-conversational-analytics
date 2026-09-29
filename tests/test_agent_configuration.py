@@ -127,6 +127,7 @@ def test_bootstrap_requires_a_dependency_closed_capture_policy() -> None:
         ("chats", "/api2/v2/users/*/chats"),
         ("messages", "/api2/v2/chats/*/messages"),
         ("messages", "/ws3"),
+        ("messages", "/ws3/*"),
     }
 
 
