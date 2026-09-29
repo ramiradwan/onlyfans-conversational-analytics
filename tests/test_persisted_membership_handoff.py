@@ -95,11 +95,11 @@ def test_unchanged_units_do_not_restore_membership_models(tmp_path, monkeypatch,
         cleanup(f)
 
 
-@pytest.mark.parametrize('fallback', ['missing_unit_proof', 'missing_segment_proof', 'missing_buffer', 'small_buffer'])
+@pytest.mark.parametrize('fallback', ['missing_unit_proof', 'missing_segment_proof', 'missing_changed_set', 'small_buffer'])
 def test_unavailable_authority_or_capacity_retains_complete_validation(tmp_path, monkeypatch, fallback):
     from unittest.mock import Mock
     from app.analytics import conversation_integrity_store as integrity
-    from app.analytics import conversation_membership_validation as membership
+    from app.analytics import shared_graph
     f = dominant_fixture(tmp_path)
     try:
         f.pipeline.project_account(ACCOUNT)
@@ -107,11 +107,11 @@ def test_unavailable_authority_or_capacity_retains_complete_validation(tmp_path,
         def verify(*args, **kwargs):
             if fallback == 'missing_unit_proof': kwargs['proof'] = None
             if fallback == 'missing_segment_proof': kwargs['graph_validation'] = None
-            if fallback == 'missing_buffer': kwargs['prepared'] = None
+            if fallback == 'missing_changed_set': kwargs['verified_changes'] = None
             return original(*args, **kwargs)
         monkeypatch.setattr(integrity, 'verify_generation_integrity', verify)
         if fallback == 'small_buffer':
-            monkeypatch.setattr(membership, 'MAX_CHANGED_VERIFICATION_ROWS', 1)
+            monkeypatch.setattr(shared_graph, 'MAX_CHANGED_VERIFICATION_ROWS', 1)
         restored = Mock(wraps=integrity.groups_for_members)
         monkeypatch.setattr(integrity, 'groups_for_members', restored)
         with f.repositories.database.transaction() as db:
