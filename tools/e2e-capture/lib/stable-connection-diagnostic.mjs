@@ -1,6 +1,6 @@
 import { safeCompanionCloseReason } from '../../../extension/transport/companion-channel.mjs';
 
-const EVENTS = new Set(['connect-start', 'connect-admitted', 'circuit-reset', 'channel-close', 'invalidate']);
+const EVENTS = new Set(['connect-start', 'connect-admitted', 'circuit-reset', 'channel-close', 'facade-close', 'invalidate']);
 const ERROR_CLASSES = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'EvalError']);
 const number = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const boolean = (value) => typeof value === 'boolean' ? value : null;
