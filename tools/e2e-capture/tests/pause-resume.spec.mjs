@@ -13,14 +13,6 @@ import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function clickPopup(popup, selector, step) {
-  try {
-    await popup.locator(selector).click({ timeout: 8_000 });
-  } catch (error) {
-    throw new Error(`${step}: popup click failed`, { cause: error });
-  }
-}
-
 async function popupConsent(popup, step) {
   return popup.evaluate(async (stepName) => {
     let timer;
@@ -39,6 +31,21 @@ async function popupConsent(popup, step) {
       clearTimeout(timer);
     }
   }, step);
+}
+
+async function setCaptureFromBridge(page, action) {
+  const result = await page.evaluate(async (captureAction) => {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!csrf) throw new Error('Bridge CSRF token is unavailable');
+    const response = await fetch('/api/v1/companion/browser/capture', {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ action: captureAction }),
+    });
+    return { status: response.status, body: await response.json().catch(() => null) };
+  }, action);
+  expect(result.status).toBe(202);
+  expect(result.body?.delivered).toBeGreaterThan(0);
 }
 
 async function admitted(context, worker, previousToken = null) {
@@ -147,9 +154,10 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     const previousInstance = (await extensionState(worker)).workerInstanceId;
     expect(previousInstance).not.toBeNull();
     let controls = await openPopup(context, id, errors);
-    await clickPopup(controls, '#pause', 'click Pause analytics');
-    await expect(controls.locator('#journey-primary'), 'wait for Resume analytics after pause')
-      .toHaveText('Resume analytics', { timeout: 8_000 });
+    await expect(controls.locator('#pause'), 'desktop-owned Pause is hidden').toBeHidden();
+    await setCaptureFromBridge(binding, 'pause');
+    await expect(controls.locator('#journey-primary'), 'wait for desktop-owned Resume after pause')
+      .toHaveText('Resume in the desktop app', { timeout: 8_000 });
     expect(await popupConsent(controls, 'read paused consent')).toEqual({ mode: 'paused', reload: false });
     platform.sendPauseProbe('paused-probe');
     await expect.poll(() => page.evaluate(() => globalThis.fixtureSocketFrames),
@@ -162,12 +170,12 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     controls = await openPopup(context, id, errors);
     await expect(controls.locator('main'), 'wait for popup after worker replacement')
       .toHaveAttribute('data-ready', 'true', { timeout: 8_000 });
-    await expect(controls.locator('#journey-primary'), 'wait for Resume analytics after worker replacement')
-      .toHaveText('Resume analytics', { timeout: 8_000 });
+    await expect(controls.locator('#journey-primary'), 'wait for desktop-owned Resume after worker replacement')
+      .toHaveText('Resume in the desktop app', { timeout: 8_000 });
     expect(await popupConsent(controls, 'read paused consent after worker replacement'))
       .toEqual({ mode: 'paused', reload: false });
     expect((await readBrainSummary(context)).messageCount).toBe(3);
-    await clickPopup(controls, '#journey-primary', 'click Resume analytics');
+    await setCaptureFromBridge(binding, 'resume');
     await expect.poll(() => popupConsent(controls, 'read resumed consent'),
       { timeout: 8_000, message: 'wait for Full consent after resume' })
       .toEqual({ mode: 'full', reload: false });
