@@ -71,7 +71,7 @@ def history_values():
     }
 
 
-def seed_history_copy(repositories, monkeypatch):
+def seed_history_copy(repositories, monkeypatch, *, values=None):
     with monkeypatch.context() as legacy:
         legacy.setattr(config, "BOOTSTRAP_CONFIG_REVISION", "config-10")
         legacy.setattr(config, "BOOTSTRAP_ISSUED_AT", OLD_ISSUED_AT)
@@ -82,7 +82,7 @@ def seed_history_copy(repositories, monkeypatch):
         manager = InMemoryTransportManager(repositories)
         manager.config_authority = authority(repositories.configuration)
         row = repositories.history.update_history_settings(
-            ACCOUNT, expected_revision=0, values=history_values(),
+            ACCOUNT, expected_revision=0, values=history_values() if values is None else values,
         )
         document = asyncio.run(manager.publish_history_settings(ACCOUNT, row))
     return document
@@ -249,3 +249,156 @@ def test_t5_custom_policy_is_unchanged(kind):
     assert configured.required_document(ACCOUNT).model_dump_json() == previous.model_dump_json()
     assert configured.bind_installation(ACCOUNT, uuid4(), "config-21").required_config_revision == "config-21"
     assert repository.next_revision(ACCOUNT) == "config-22"
+
+
+def pending_history_restart(tmp_path, monkeypatch, *, missing_identity=False, difference=None):
+    path = tmp_path / "canonical.sqlite3"
+    repositories = create_canonical_repositories("sqlite", canonical_path=path)
+    with monkeypatch.context() as legacy:
+        values = history_values()
+        if missing_identity:
+            values = {**history_values(), "desired_state": "paused", "authorized_platform_creator_id": None}
+            legacy.setattr(config.AgentConfigurationAuthority, "_bind_platform_identity", lambda self, account, history: {
+                **history, "authorized_platform_creator_id": None,
+            })
+        old = seed_history_copy(repositories, legacy, values=values)
+    before = repositories.history.history_settings(ACCOUNT)
+    assert before["required_config_revision"] == old.config_revision
+    assert before["effective_config_revision"] is None
+    if difference:
+        changed_history = old.history_acquisition.model_dump(mode="json")
+        changed_history.update(difference)
+        seed(repositories.configuration, revision="config-12", history=changed_history)
+    repositories = create_canonical_repositories("sqlite", canonical_path=path)
+    expected_identity = (difference or {}).get("authorized_platform_creator_id", IDENTITY)
+    def configured(repository):
+        return config.AgentConfigurationAuthority(
+            repository, authorized_accounts=lambda: frozenset({ACCOUNT}),
+            authorized_platform_identities=lambda: {ACCOUNT: expected_identity},
+        )
+    restarted = configured(repositories.configuration)
+    current = restarted.required_document(ACCOUNT)
+    assert current.config_revision != old.config_revision
+    assert repositories.history.history_settings(ACCOUNT) == before
+    # Resume from persisted publication before admission.
+    manager = InMemoryTransportManager(create_canonical_repositories("sqlite", canonical_path=path))
+    manager.config_authority = configured(manager.config_authority.repository)
+    monkeypatch.setattr(manager.projection, "state", lambda _: {
+        "status": "current", "projected_revision": 0, "canonical_revision": 0,
+    })
+    return path, manager, old, current, before
+
+
+async def admit_apply_heartbeat(manager, document, *, applied=None, after_admission=None):
+    lease = await manager.bind_agent(
+        SimpleNamespace(), principal_id="test-principal", creator_account_id=ACCOUNT,
+        agent_installation_id=uuid4(), agent_stream_id=uuid4(), applied_config_revision=applied,
+    )
+    if after_admission:
+        after_admission()
+    await manager.record_config_applied(lease, SimpleNamespace(
+        config_revision=document.config_revision, digest=document.digest,
+        outcome="applied", capabilities=[],
+    ))
+    await manager.heartbeat(lease, document.config_revision)
+
+
+def assert_history_confirmed(manager, document):
+    row = manager.history.history_settings(ACCOUNT)
+    assert row["effective_state"] == row["desired_state"]
+    assert row["required_config_revision"] == row["effective_config_revision"] == document.config_revision
+    assert row["effective_settings_revision"] == row["settings_revision"]
+    assert "configuration=aligned" in manager.system_state_payload(ACCOUNT)["detail"]
+    agent = manager.agent_state_payload(ACCOUNT)
+    assert agent["degraded_reason"] is None
+    assert agent["applied_history_settings_revision"] == agent["required_history_settings_revision"]
+    return row
+
+
+@pytest.mark.parametrize("missing_identity", [False, True])
+def test_t6_pending_history_survives_restart(tmp_path, monkeypatch, missing_identity):
+    _, manager, old, current, _ = pending_history_restart(
+        tmp_path, monkeypatch, missing_identity=missing_identity,
+    )
+    assert old.history_acquisition.authorized_platform_creator_id == (None if missing_identity else IDENTITY)
+    assert current.history_acquisition.authorized_platform_creator_id == IDENTITY
+    asyncio.run(admit_apply_heartbeat(manager, current))
+    assert_history_confirmed(manager, current)
+
+
+@pytest.mark.parametrize("difference", [{"page_size": 25}, {"authorized_platform_creator_id": "other-test-identity"}])
+def test_t7_only_matching_history_moves(tmp_path, monkeypatch, difference):
+    _, matching, _, compatible, _ = pending_history_restart(tmp_path / "matching", monkeypatch)
+    asyncio.run(admit_apply_heartbeat(matching, compatible))
+    assert_history_confirmed(matching, compatible)
+    _, manager, old, current, before = pending_history_restart(
+        tmp_path / "different", monkeypatch, difference=difference,
+    )
+    def assert_pending():
+        assert manager.history.history_settings(ACCOUNT) == before
+    asyncio.run(admit_apply_heartbeat(manager, current, after_admission=assert_pending))
+    assert_pending()
+    assert manager.history.history_settings(ACCOUNT)["required_config_revision"] == old.config_revision
+    assert "configuration=pending" in manager.system_state_payload(ACCOUNT)["detail"]
+    assert manager.agent_state_payload(ACCOUNT)["degraded_reason"] == (
+        "Historical acquisition settings are waiting for Agent confirmation"
+    )
+
+
+def test_t8_repeated_admission_and_restart_preserve_binding(tmp_path, monkeypatch):
+    path, manager, _, current, _ = pending_history_restart(tmp_path, monkeypatch)
+    asyncio.run(admit_apply_heartbeat(manager, current))
+    before = assert_history_confirmed(manager, current)
+    for restart in (False, True):
+        if restart:
+            manager = InMemoryTransportManager(create_canonical_repositories("sqlite", canonical_path=path))
+            manager.config_authority = authority(manager.config_authority.repository)
+            monkeypatch.setattr(manager.projection, "state", lambda _: {
+                "status": "current", "projected_revision": 0, "canonical_revision": 0,
+            })
+        for _ in range(3):
+            asyncio.run(admit_apply_heartbeat(manager, current, applied=current.config_revision))
+            after = assert_history_confirmed(manager, current)
+            assert {key: value for key, value in after.items() if key != "updated_at"} == {
+                key: value for key, value in before.items() if key != "updated_at"
+            }
+            assert manager.required_config_document(ACCOUNT).model_dump_json() == current.model_dump_json()
+            assert manager.config_authority.repository.next_revision(ACCOUNT) == "config-13"
+
+
+@pytest.mark.parametrize("guard", ["account", "settings", "binding", "effective", "config_pending", "settings_pending", "pending"])
+def test_pending_history_move_is_conditional(tmp_path, monkeypatch, guard):
+    repositories = create_canonical_repositories("sqlite", canonical_path=tmp_path / "canonical.sqlite3")
+    old = seed_history_copy(repositories, monkeypatch)
+    history = repositories.history
+    if guard in {"effective", "config_pending", "settings_pending"}:
+        history.mark_history_config_applied(ACCOUNT, old.config_revision)
+        if guard != "effective":
+            with history.database.transaction() as connection:
+                if guard == "config_pending":
+                    connection.execute(
+                        "UPDATE history_settings SET effective_config_revision=NULL WHERE creator_account_id=?", (ACCOUNT,),
+                    )
+                else:
+                    connection.execute(
+                        "UPDATE history_settings SET effective_settings_revision=0 WHERE creator_account_id=?", (ACCOUNT,),
+                    )
+    before = history.history_settings(ACCOUNT)
+    arguments = {
+        "account_id": "other-test-account" if guard == "account" else ACCOUNT,
+        "settings_revision": before["settings_revision"] + (1 if guard == "settings" else 0),
+        "old_config_revision": "config-9" if guard == "binding" else old.config_revision,
+        "config_revision": "config-12",
+    }
+    moved = history.move_pending_history_config(**arguments)
+    assert moved is (guard in {"config_pending", "settings_pending", "pending"})
+    after = history.history_settings(ACCOUNT)
+    if moved:
+        assert after["required_config_revision"] == "config-12"
+        assert {key: value for key, value in after.items() if key not in {"required_config_revision", "updated_at"}} == {
+            key: value for key, value in before.items() if key not in {"required_config_revision", "updated_at"}
+        }
+        assert history.move_pending_history_config(**arguments) is False
+        assert history.history_settings(ACCOUNT) == after
+    else:
+        assert after == before

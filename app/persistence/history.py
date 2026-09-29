@@ -1735,6 +1735,27 @@ class HistoryRepository:
                     raise LookupError("history_settings_changed_during_publication")
         return self.history_settings(account_id)
 
+    def move_pending_history_config(
+        self,
+        account_id: str,
+        *,
+        settings_revision: int,
+        old_config_revision: str,
+        config_revision: str,
+    ) -> bool:
+        """Move a still-pending binding after its documents have been compared."""
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                """UPDATE history_settings SET required_config_revision=?,updated_at=?
+                   WHERE creator_account_id=? AND settings_revision=?
+                     AND required_config_revision=? AND required_config_revision!=?
+                     AND (effective_config_revision IS NOT required_config_revision
+                          OR effective_settings_revision IS NOT settings_revision)""",
+                (config_revision, _iso(utc_now()), account_id, settings_revision,
+                 old_config_revision, config_revision),
+            )
+            return cursor.rowcount == 1
+
     def mark_history_config_applied(
         self, account_id: str, config_revision: str
     ) -> dict[str, Any]:
