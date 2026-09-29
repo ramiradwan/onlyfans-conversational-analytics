@@ -1,0 +1,13 @@
+{
+  "operation": "history.check.begin",
+  "protocol_version": "2",
+  "auth_ticket": "agent-config-ticket-42",
+  "agent_installation_id": "20000000-0000-4000-8000-000000000001",
+  "creator_account_id": "dev-creator-account",
+  "request_id": "70000000-0000-4000-8000-000000000001",
+  "worker_instance_id": "70000000-0000-4000-8000-000000000001",
+  "trigger": "alarm",
+  "config_revision": "config-11",
+  "head_evidence": "full",
+  "active_check_id": null
+}

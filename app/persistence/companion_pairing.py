@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.persistence.catchup_events import capture_authority_change
+
 import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -690,6 +692,7 @@ class CompanionPairingPersistence:
             self._require_updated(cursor)
             return self._window_in_transaction(connection, pairing_id)
 
+    @capture_authority_change
     def confirm_and_admit(
         self,
         pairing_id: bytes,
@@ -980,6 +983,7 @@ class CompanionPairingPersistence:
                 return self._window_in_transaction(connection, pairing_id)
             return record
 
+    @capture_authority_change
     def cancel_authorized_window(
         self,
         pairing_id: bytes,
@@ -1024,6 +1028,7 @@ class CompanionPairingPersistence:
             self._terminate_row(connection, row, state, now)
             return self._window_in_transaction(connection, pairing_id)
 
+    @capture_authority_change
     def revoke_companion_pin(
         self, pairing_id: bytes, *, session_id: str, expected_version: int | None = None
     ) -> bool:
@@ -1048,6 +1053,7 @@ class CompanionPairingPersistence:
             self._revoke_pin(connection, pairing_id)
             return True
 
+    @capture_authority_change
     def abort_candidate(self, pairing_id: bytes) -> bool:
         """Fence cancellation by the owning pairing socket, including late admission."""
         _require_bytes32(pairing_id, name="pairing_id")
@@ -1081,6 +1087,7 @@ class CompanionPairingPersistence:
         )
         self.authentication._increment_authorization_epoch(connection)
 
+    @capture_authority_change
     def terminate_window(
         self,
         pairing_id: bytes,

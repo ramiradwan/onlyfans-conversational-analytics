@@ -277,25 +277,25 @@ def commit_fixture_snapshot(socket, session: dict, hello: dict) -> tuple[dict, d
 
 
 def test_agent_and_bridge_complete_role_specific_handshakes() -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/__test__/agent-protocol") as agent:
-        _, agent_session = agent_handshake(agent)
-        assert agent_session["payload"]["resume_action"] == "snapshot_required"
-        assert agent_session["payload"]["lease"] == {
-            "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_SECONDS,
-            "lease_timeout_seconds": LEASE_TIMEOUT_SECONDS,
-        }
+    with TestClient(app) as client:
+        with client.websocket_connect("/__test__/agent-protocol") as agent:
+            _, agent_session = agent_handshake(agent)
+            assert agent_session["payload"]["resume_action"] == "snapshot_required"
+            assert agent_session["payload"]["lease"] == {
+                "heartbeat_interval_seconds": HEARTBEAT_INTERVAL_SECONDS,
+                "lease_timeout_seconds": LEASE_TIMEOUT_SECONDS,
+            }
 
-    with client.websocket_connect("/ws/bridge") as bridge:
-        _, bridge_session, initial = bridge_handshake(bridge)
-        assert (
-            bridge_session["payload"]["bridge_session_id"]
-            == fixture("bridge.hello")["payload"]["bridge_session_id"]
-        )
-        assert initial[0]["payload"]["conversations"] == []
-        assert initial[1]["payload"]["freshness"] == "unknown"
-        assert initial[2]["payload"]["status"] == "disconnected"
-        assert initial[3]["payload"]["readiness"] == "unavailable"
+        with client.websocket_connect("/ws/bridge") as bridge:
+            _, bridge_session, initial = bridge_handshake(bridge)
+            assert (
+                bridge_session["payload"]["bridge_session_id"]
+                == fixture("bridge.hello")["payload"]["bridge_session_id"]
+            )
+            assert initial[0]["payload"]["conversations"] == []
+            assert initial[1]["payload"]["freshness"] == "unknown"
+            assert initial[2]["payload"]["status"] == "disconnected"
+            assert initial[3]["payload"]["readiness"] == "unavailable"
 
 
 def test_bridge_binds_an_account_that_holds_no_agent_configuration(
@@ -316,18 +316,18 @@ def test_bridge_binds_an_account_that_holds_no_agent_configuration(
     )
     transport_manager.config_authority.repository.reset()
 
-    client = TestClient(app)
-    with client.websocket_connect("/ws/bridge") as bridge:
-        _, _, initial = bridge_handshake(bridge)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/bridge") as bridge:
+            _, _, initial = bridge_handshake(bridge)
 
-    agent_state = initial[2]["payload"]
-    assert agent_state["required_config_revision"] is None
-    assert agent_state["applied_config_revision"] is None
-    assert agent_state["status"] == "disconnected"
-    assert (
-        agent_state["degraded_reason"]
-        == "No Agent configuration is required for this account"
-    )
+        agent_state = initial[2]["payload"]
+        assert agent_state["required_config_revision"] is None
+        assert agent_state["applied_config_revision"] is None
+        assert agent_state["status"] == "disconnected"
+        assert (
+            agent_state["degraded_reason"]
+            == "No Agent configuration is required for this account"
+        )
 
 
 def test_bridge_bind_publishes_configuration_for_an_authorized_account(
@@ -344,11 +344,11 @@ def test_bridge_bind_publishes_configuration_for_an_authorized_account(
     )
     transport_manager.config_authority.repository.reset()
 
-    client = TestClient(app)
-    with client.websocket_connect("/ws/bridge") as bridge:
-        _, _, initial = bridge_handshake(bridge)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/bridge") as bridge:
+            _, _, initial = bridge_handshake(bridge)
 
-    assert initial[2]["payload"]["required_config_revision"] == REQUIRED_CONFIG_REVISION
+        assert initial[2]["payload"]["required_config_revision"] == REQUIRED_CONFIG_REVISION
 
 
 def test_a_durable_authorization_reaches_configuration_through_the_manager(
@@ -377,97 +377,97 @@ def test_a_durable_authorization_reaches_configuration_through_the_manager(
     # be the authority never consulting it.
     assert authorized_account_ids() == frozenset({DEV_ACCOUNT_ID})
 
-    client = TestClient(app)
-    with client.websocket_connect("/ws/bridge") as bridge:
-        _, _, initial = bridge_handshake(bridge)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/bridge") as bridge:
+            _, _, initial = bridge_handshake(bridge)
 
-    agent_state = initial[2]["payload"]
-    assert agent_state["required_config_revision"] == REQUIRED_CONFIG_REVISION
-    assert (
-        transport_manager.required_config_document(DEV_ACCOUNT_ID).config_revision
-        == REQUIRED_CONFIG_REVISION
-    )
+        agent_state = initial[2]["payload"]
+        assert agent_state["required_config_revision"] == REQUIRED_CONFIG_REVISION
+        assert (
+            transport_manager.required_config_document(DEV_ACCOUNT_ID).config_revision
+            == REQUIRED_CONFIG_REVISION
+        )
 
 
 def test_agent_drop_reconnects_with_new_connection_and_fence() -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/__test__/agent-protocol") as first:
-        _, first_session = agent_handshake(first)
+    with TestClient(app) as client:
+        with client.websocket_connect("/__test__/agent-protocol") as first:
+            _, first_session = agent_handshake(first)
 
-    with client.websocket_connect("/__test__/agent-protocol") as second:
-        _, second_session = agent_handshake(second)
+        with client.websocket_connect("/__test__/agent-protocol") as second:
+            _, second_session = agent_handshake(second)
 
-    assert (
-        first_session["payload"]["connection_id"]
-        != second_session["payload"]["connection_id"]
-    )
-    assert (
-        first_session["payload"]["fencing_token"]
-        != second_session["payload"]["fencing_token"]
-    )
+        assert (
+            first_session["payload"]["connection_id"]
+            != second_session["payload"]["connection_id"]
+        )
+        assert (
+            first_session["payload"]["fencing_token"]
+            != second_session["payload"]["fencing_token"]
+        )
 
 
 def test_valid_fixture_exchange_routes_ack_and_presence_end_to_end() -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/ws/bridge") as bridge:
-        bridge_handshake(bridge)
-        with client.websocket_connect("/__test__/agent-protocol") as agent:
-            hello, session = agent_handshake(agent)
-            connected = bridge.receive_json()
-            assert connected["type"] == "agent.state"
-            assert connected["payload"]["status"] == "connected"
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/bridge") as bridge:
+            bridge_handshake(bridge)
+            with client.websocket_connect("/__test__/agent-protocol") as agent:
+                hello, session = agent_handshake(agent)
+                connected = bridge.receive_json()
+                assert connected["type"] == "agent.state"
+                assert connected["payload"]["status"] == "connected"
 
-            snapshot, snapshot_ack = commit_fixture_snapshot(agent, session, hello)
-            assert snapshot_ack["correlation_id"] == snapshot["message_id"]
-            assert snapshot_ack["payload"]["snapshot_id"] == snapshot["payload"]["snapshot_id"]
+                snapshot, snapshot_ack = commit_fixture_snapshot(agent, session, hello)
+                assert snapshot_ack["correlation_id"] == snapshot["message_id"]
+                assert snapshot_ack["payload"]["snapshot_id"] == snapshot["payload"]["snapshot_id"]
 
-            delta = bind_agent_payload(fixture("ingest.delta"), session, hello)
-            agent.send_json(delta)
-            delta_ack = agent.receive_json()
-            assert delta_ack["type"] == "ingest.ack"
-            assert delta_ack["payload"]["committed_source_seq"] == 11
+                delta = bind_agent_payload(fixture("ingest.delta"), session, hello)
+                agent.send_json(delta)
+                delta_ack = agent.receive_json()
+                assert delta_ack["type"] == "ingest.ack"
+                assert delta_ack["payload"]["committed_source_seq"] == 11
 
-            observed = bind_agent_payload(fixture("presence.observed"), session, hello)
-            observed["payload"]["observed_at"] = utc_now().isoformat()
-            agent.send_json(observed)
-            presence = bridge.receive_json()
-            while presence["type"] != "presence.state":
-                assert presence["type"] in {"state.snapshot", "state.delta"}
+                observed = bind_agent_payload(fixture("presence.observed"), session, hello)
+                observed["payload"]["observed_at"] = utc_now().isoformat()
+                agent.send_json(observed)
                 presence = bridge.receive_json()
-            assert presence["type"] == "presence.state"
-            assert presence["payload"]["freshness"] == "current"
-            assert presence["payload"]["online_platform_user_ids"] == ["fan-1", "fan-2"]
+                while presence["type"] != "presence.state":
+                    assert presence["type"] in {"state.snapshot", "state.delta"}
+                    presence = bridge.receive_json()
+                assert presence["type"] == "presence.state"
+                assert presence["payload"]["freshness"] == "current"
+                assert presence["payload"]["online_platform_user_ids"] == ["fan-1", "fan-2"]
 
 
 def test_invalid_ingest_fixture_is_rejected_without_crashing_connection() -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/__test__/agent-protocol") as agent:
-        hello, session = agent_handshake(agent)
-        invalid = json.loads(
-            (FIXTURES / "invalid" / "missing-identity.ingest.delta.json").read_text(
-                encoding="utf-8"
+    with TestClient(app) as client:
+        with client.websocket_connect("/__test__/agent-protocol") as agent:
+            hello, session = agent_handshake(agent)
+            invalid = json.loads(
+                (FIXTURES / "invalid" / "missing-identity.ingest.delta.json").read_text(
+                    encoding="utf-8"
+                )
             )
-        )
-        agent.send_json(invalid)
-        rejected = agent.receive_json()
-        assert rejected["type"] == "ingest.rejected"
-        assert rejected["payload"]["code"] == "invalid_payload"
-        assert rejected["payload"]["retryable"] is False
+            agent.send_json(invalid)
+            rejected = agent.receive_json()
+            assert rejected["type"] == "ingest.rejected"
+            assert rejected["payload"]["code"] == "invalid_payload"
+            assert rejected["payload"]["retryable"] is False
 
-        heartbeat = bind_agent_payload(fixture("agent.heartbeat"), session, hello)
-        # The fixture carries a revision this service never published, which is
-        # recorded as a reporting failure rather than as an applied revision.
-        heartbeat["payload"]["applied_config_revision"] = REQUIRED_CONFIG_REVISION
-        agent.send_json(heartbeat)
+            heartbeat = bind_agent_payload(fixture("agent.heartbeat"), session, hello)
+            # The fixture carries a revision this service never published, which is
+            # recorded as a reporting failure rather than as an applied revision.
+            heartbeat["payload"]["applied_config_revision"] = REQUIRED_CONFIG_REVISION
+            agent.send_json(heartbeat)
 
-        # A heartbeat is answered only towards Bridge, so reading the lease right
-        # after sending one races the connection. Frames are handled in order, so
-        # a reply to a later frame places the read after the heartbeat.
-        agent.send_json(invalid)
-        assert agent.receive_json()["type"] == "ingest.rejected"
+            # A heartbeat is answered only towards Bridge, so reading the lease right
+            # after sending one races the connection. Frames are handled in order, so
+            # a reply to a later frame places the read after the heartbeat.
+            agent.send_json(invalid)
+            assert agent.receive_json()["type"] == "ingest.rejected"
 
-        lease = transport_manager.active_agents[DEV_ACCOUNT_ID]
-        assert lease.applied_config_revision == REQUIRED_CONFIG_REVISION
+            lease = transport_manager.active_agents[DEV_ACCOUNT_ID]
+            assert lease.applied_config_revision == REQUIRED_CONFIG_REVISION
 
 
 @pytest.mark.parametrize(
@@ -479,87 +479,87 @@ def test_invalid_ingest_fixture_is_rejected_without_crashing_connection() -> Non
     ],
 )
 def test_invalid_agent_hellos_receive_fatal_error_and_close(hello_mutation, expected_code) -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/__test__/agent-protocol") as socket:
-        hello = fixture("agent.hello")
-        hello_mutation(hello)
-        socket.send_json(hello)
-        error = socket.receive_json()
-        assert error["type"] == "protocol.error"
-        assert error["payload"]["code"] == expected_code
-        assert error["payload"]["fatal"] is True
-        with pytest.raises(WebSocketDisconnect):
-            socket.receive_json()
+    with TestClient(app) as client:
+        with client.websocket_connect("/__test__/agent-protocol") as socket:
+            hello = fixture("agent.hello")
+            hello_mutation(hello)
+            socket.send_json(hello)
+            error = socket.receive_json()
+            assert error["type"] == "protocol.error"
+            assert error["payload"]["code"] == expected_code
+            assert error["payload"]["fatal"] is True
+            with pytest.raises(WebSocketDisconnect):
+                socket.receive_json()
 
 
 def test_wrong_role_pre_handshake_and_bridge_invalid_fixture_follow_error_matrix() -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/__test__/agent-protocol") as socket:
-        socket.send_json(fixture("bridge.hello"))
-        error = socket.receive_json()
-        assert error["payload"]["code"] == "wrong_role"
-        assert error["payload"]["fatal"] is True
+    with TestClient(app) as client:
+        with client.websocket_connect("/__test__/agent-protocol") as socket:
+            socket.send_json(fixture("bridge.hello"))
+            error = socket.receive_json()
+            assert error["payload"]["code"] == "wrong_role"
+            assert error["payload"]["fatal"] is True
 
-    with client.websocket_connect("/ws/bridge") as socket:
-        invalid = json.loads(
-            (FIXTURES / "invalid" / "unknown-extra.bridge.hello.json").read_text(
-                encoding="utf-8"
+        with client.websocket_connect("/ws/bridge") as socket:
+            invalid = json.loads(
+                (FIXTURES / "invalid" / "unknown-extra.bridge.hello.json").read_text(
+                    encoding="utf-8"
+                )
             )
-        )
-        socket.send_json(invalid)
-        error = socket.receive_json()
-        assert error["payload"]["code"] == "validation_failed"
-        assert error["payload"]["fatal"] is True
+            socket.send_json(invalid)
+            error = socket.receive_json()
+            assert error["payload"]["code"] == "validation_failed"
+            assert error["payload"]["fatal"] is True
 
-    with client.websocket_connect("/__test__/agent-protocol") as socket:
-        heartbeat = fixture("agent.heartbeat")
-        socket.send_json(heartbeat)
-        error = socket.receive_json()
-        assert error["payload"]["code"] == "pre_handshake"
+        with client.websocket_connect("/__test__/agent-protocol") as socket:
+            heartbeat = fixture("agent.heartbeat")
+            socket.send_json(heartbeat)
+            error = socket.receive_json()
+            assert error["payload"]["code"] == "pre_handshake"
 
 
 def test_new_agent_connection_fences_old_writer() -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/__test__/agent-protocol") as first:
-        first_hello, first_session = agent_handshake(first)
-        with client.websocket_connect("/__test__/agent-protocol") as second:
-            agent_handshake(second)
-            stale_snapshot = bind_agent_payload(
-                fixture("ingest.snapshot"), first_session, first_hello
-            )
-            first.send_json(stale_snapshot)
-            rejected = first.receive_json()
-            assert rejected["type"] == "ingest.rejected"
-            assert rejected["payload"]["code"] == "stale_fence"
+    with TestClient(app) as client:
+        with client.websocket_connect("/__test__/agent-protocol") as first:
+            first_hello, first_session = agent_handshake(first)
+            with client.websocket_connect("/__test__/agent-protocol") as second:
+                agent_handshake(second)
+                stale_snapshot = bind_agent_payload(
+                    fixture("ingest.snapshot"), first_session, first_hello
+                )
+                first.send_json(stale_snapshot)
+                rejected = first.receive_json()
+                assert rejected["type"] == "ingest.rejected"
+                assert rejected["payload"]["code"] == "stale_fence"
 
 
 def test_lease_and_presence_expiry_derive_stale_disconnected_and_unknown() -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/__test__/agent-protocol") as agent:
-        hello, session = agent_handshake(agent)
-        lease = transport_manager.active_agents[DEV_ACCOUNT_ID]
-        observed = bind_agent_payload(fixture("presence.observed"), session, hello)
-        observed["payload"]["online_platform_user_ids"] = []
-        observed["payload"]["observed_at"] = utc_now().isoformat()
-        agent.send_json(observed)
-        agent.send_json(observed)
-        assert agent.receive_json()["type"] == "protocol.error"
+    with TestClient(app) as client:
+        with client.websocket_connect("/__test__/agent-protocol") as agent:
+            hello, session = agent_handshake(agent)
+            lease = transport_manager.active_agents[DEV_ACCOUNT_ID]
+            observed = bind_agent_payload(fixture("presence.observed"), session, hello)
+            observed["payload"]["online_platform_user_ids"] = []
+            observed["payload"]["observed_at"] = utc_now().isoformat()
+            agent.send_json(observed)
+            agent.send_json(observed)
+            assert agent.receive_json()["type"] == "protocol.error"
 
-        record = transport_manager.presence[DEV_ACCOUNT_ID]
-        assert transport_manager.presence_state_payload(DEV_ACCOUNT_ID)["freshness"] == "current"
-        assert transport_manager.presence_state_payload(DEV_ACCOUNT_ID)["online_platform_user_ids"] == []
-        asyncio.run(transport_manager.expire(lease.last_heartbeat_at + timedelta(seconds=60)))
-        assert transport_manager.agent_state_payload(DEV_ACCOUNT_ID)["status"] == "stale"
-        asyncio.run(transport_manager.expire(lease.last_heartbeat_at + timedelta(seconds=120)))
-        assert transport_manager.agent_state_payload(DEV_ACCOUNT_ID)["status"] == "disconnected"
-        assert DEV_ACCOUNT_ID not in transport_manager.active_agents
-        assert lease.connection_id not in transport_manager.agent_connections
+            record = transport_manager.presence[DEV_ACCOUNT_ID]
+            assert transport_manager.presence_state_payload(DEV_ACCOUNT_ID)["freshness"] == "current"
+            assert transport_manager.presence_state_payload(DEV_ACCOUNT_ID)["online_platform_user_ids"] == []
+            asyncio.run(transport_manager.expire(lease.last_heartbeat_at + timedelta(seconds=60)))
+            assert transport_manager.agent_state_payload(DEV_ACCOUNT_ID)["status"] == "stale"
+            asyncio.run(transport_manager.expire(lease.last_heartbeat_at + timedelta(seconds=120)))
+            assert transport_manager.agent_state_payload(DEV_ACCOUNT_ID)["status"] == "disconnected"
+            assert DEV_ACCOUNT_ID not in transport_manager.active_agents
+            assert lease.connection_id not in transport_manager.agent_connections
 
-        asyncio.run(transport_manager.expire(record.expires_at))
-        presence = transport_manager.presence_state_payload(DEV_ACCOUNT_ID)
-        assert presence["freshness"] == "unknown"
-        assert presence["online_platform_user_ids"] == []
-        assert presence["last_observation"] is not None
+            asyncio.run(transport_manager.expire(record.expires_at))
+            presence = transport_manager.presence_state_payload(DEV_ACCOUNT_ID)
+            assert presence["freshness"] == "unknown"
+            assert presence["online_platform_user_ids"] == []
+            assert presence["last_observation"] is not None
 
 
 class RecordingWebSocket:
@@ -706,19 +706,19 @@ def test_agent_lease_timing_rejects_heartbeat_at_or_after_timeout(
 
 
 def test_bridge_resync_returns_correlated_snapshot() -> None:
-    client = TestClient(app)
-    with client.websocket_connect("/ws/bridge") as bridge:
-        hello, session, _ = bridge_handshake(bridge)
-        resync = fixture("state.resync")
-        resync["payload"].update(
-            connection_id=session["payload"]["connection_id"],
-            bridge_session_id=hello["payload"]["bridge_session_id"],
-            creator_account_id=DEV_ACCOUNT_ID,
-        )
-        bridge.send_json(resync)
-        snapshot = bridge.receive_json()
-        assert snapshot["type"] == "state.snapshot"
-        assert snapshot["correlation_id"] == resync["message_id"]
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/bridge") as bridge:
+            hello, session, _ = bridge_handshake(bridge)
+            resync = fixture("state.resync")
+            resync["payload"].update(
+                connection_id=session["payload"]["connection_id"],
+                bridge_session_id=hello["payload"]["bridge_session_id"],
+                creator_account_id=DEV_ACCOUNT_ID,
+            )
+            bridge.send_json(resync)
+            snapshot = bridge.receive_json()
+            assert snapshot["type"] == "state.snapshot"
+            assert snapshot["correlation_id"] == resync["message_id"]
 
 
 def test_development_stub_fails_closed_for_production_or_non_local_exposure(monkeypatch) -> None:
