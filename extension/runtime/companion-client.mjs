@@ -164,8 +164,7 @@ export function createCompanionClient({
         record('connect-admitted');
         closeControl();
         attachControls(channel);
-        notifySurfaces();
-        void sendSurface();
+        void notifySurfaces();
         admitted.stableTimer = timers.setTimeout(() => {
           admitted.stableTimer = null;
           if (active !== admitted || channel.closed) return;
@@ -312,8 +311,7 @@ export function createCompanionClient({
         notifySurfaces();
         if (allowsControl() && !allowsFull?.()) void recovery.retryAfterMs().then(scheduleControl, () => scheduleControl(60_000));
       });
-      notifySurfaces();
-      await sendSurface();
+      await notifySurfaces();
     })().catch(async (error) => {
       controller.abort();
       if (!allowsControl() || allowsFull?.() || generation !== version) return;
@@ -504,7 +502,13 @@ export function createCompanionClient({
   function owns(owner) { return pairingOwner !== null && pairingOwner === owner; }
   function subscribe(notify) { subscribers.add(notify); return () => { subscribers.delete(notify); }; }
   // Tell every open surface to re-read its state. It carries no state itself.
-  function notifySurfaces() { for (const notify of subscribers) notify({ type: 'surface_changed' }); }
+  function notifySurfaces() {
+    // A newly admitted protocol session is also a retry point for a browser
+    // surface that was computed before Brain was ready to accept its report.
+    const report = sendSurface();
+    for (const notify of subscribers) notify({ type: 'surface_changed' });
+    return report;
+  }
   function registerPopup({ onPaired = async () => {}, onForget = async () => {} } = {}) {
     chromeApi.runtime.onConnect.addListener((port) => {
       const surface = uiSurface(port.sender, chromeApi);

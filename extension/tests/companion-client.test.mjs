@@ -221,7 +221,7 @@ test('an active Full session reports pending browser state on its authenticated 
   h.client.invalidate();
 });
 
-test('an unchanged browser surface retries after a refused report', async () => {
+test('session-ready notification retries a refused unchanged browser surface', async () => {
   const h = harness({ surfaceFailures: 1 });
   const surface = {
     schema: 'ofca-browser-surface/v1', capture: 'active', site_access: 'granted',
@@ -231,7 +231,7 @@ test('an unchanged browser surface retries after a refused report', async () => 
   await h.client.adapter.loadBrainBinding();
   await tick();
   assert.equal(h.channels[0].rpcCalls.filter((call) => call.method === 'agent.surface.report').length, 1);
-  h.client.reportSurface({ ...surface });
+  h.client.notifySurfaces();
   await tick();
   assert.equal(h.channels[0].rpcCalls.filter((call) => call.method === 'agent.surface.report').length, 2);
   h.client.invalidate();
