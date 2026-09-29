@@ -143,6 +143,25 @@ test('a stable channel close permits an immediate reconnect when the service is 
   h.client.invalidate();
 });
 
+test('diagnostics retain the stable reset and channel close sequence', async () => {
+  let time = 1_800_000_000_000;
+  const timers = new Set();
+  const scheduler = {
+    setTimeout(handler, delay) { const timer = { handler, due: time + delay }; timers.add(timer); return timer; },
+    clearTimeout(timer) { timers.delete(timer); },
+  };
+  const h = harness({ now: () => time, scheduler });
+  await h.client.adapter.loadBrainBinding();
+  time += 10_000;
+  for (const timer of [...timers]) if (timer.due <= time) { timers.delete(timer); timer.handler(); }
+  await tick();
+  h.channels[0].close();
+  assert.deepEqual(h.client.diagnosticEvents.map((entry) => entry.event),
+    ['connect-start', 'connect-admitted', 'circuit-reset', 'channel-close']);
+  assert.equal(h.client.diagnosticEvents.at(-1).at, time);
+  h.client.invalidate();
+});
+
 test('Preview and unavailable modes never initialize companion storage, crypto or networking', async () => {
   const h = harness({ full: false });
   assert.deepEqual(await h.client.status(), { state: 'unavailable', comparison_code: null });

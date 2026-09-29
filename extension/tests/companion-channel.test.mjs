@@ -134,6 +134,7 @@ test('raw socket keeps a well-formed peer close reason and ignores malformed one
   refused.socket.onclose({ code: 1008, reason: 'pairing_state_refused' });
   assert.equal(refused.wire.closed, true);
   assert.equal(refused.wire.closeReason, 'pairing_state_refused');
+  assert.equal(refused.wire.closeCode, 1008);
   const malformed = await open();
   malformed.socket.onclose({ code: 1008, reason: 'Pairing refused!' });
   assert.equal(malformed.wire.closeReason, null);
@@ -141,6 +142,7 @@ test('raw socket keeps a well-formed peer close reason and ignores malformed one
   local.wire.close();
   local.socket.onclose({ code: 4008, reason: 'companion_session_closed' });
   assert.equal(local.wire.closeReason, null);
+  assert.equal(local.wire.closeCode, null);
 });
 
 test('a silent peer holding a partial encrypted document is closed at its assembly deadline', async (t) => {

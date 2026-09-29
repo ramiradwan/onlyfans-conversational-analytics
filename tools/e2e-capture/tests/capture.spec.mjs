@@ -543,15 +543,47 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     });
 
     await test.step('a stable connection resets persisted recovery history through normal UI polling', async () => {
+      const watcher = watchExtensionWorkers(context);
+      let statusPolls = 0;
+      let lastStatusPollAt = null;
+      let popupClosedAt = null;
+      let summary = null;
       const recoveryPopup = await openPopup(context, extensionId(worker), pageErrors);
       try {
-        await expect.poll(async () => {
-          await recoveryPopup.evaluate(() => chrome.runtime.sendMessage({ type: 'ofca.ui.status' }));
-          return worker.evaluate(async () => (await chrome.storage.local.get(['companion_recovery_v1']))
-            .companion_recovery_v1?.attempts);
-        }, { timeout: 75_000, intervals: [1_000] }).toBe(0);
-      } finally { await recoveryPopup.close(); }
-      expect((await readBrainSummary(context)).connectionToken).toBe(initialConnection);
+        try {
+          await expect.poll(async () => {
+            statusPolls++;
+            lastStatusPollAt = Date.now();
+            await recoveryPopup.evaluate(() => chrome.runtime.sendMessage({ type: 'ofca.ui.status' }));
+            return worker.evaluate(async () => (await chrome.storage.local.get(['companion_recovery_v1']))
+              .companion_recovery_v1?.attempts);
+          }, { timeout: 75_000, intervals: [1_000] }).toBe(0);
+        } finally {
+          await recoveryPopup.close();
+          popupClosedAt = Date.now();
+        }
+        summary = await readBrainSummary(context);
+        expect(summary.connectionToken === initialConnection).toBe(true);
+      } catch (error) {
+        const liveWorker = context.serviceWorkers().find((candidate) =>
+          candidate.url().endsWith('/background.js'));
+        let state = null;
+        let stateError = null;
+        try { state = liveWorker ? await extensionState(liveWorker) : null; }
+        catch (failure) { stateError = failure instanceof Error ? failure.message : String(failure); }
+        throw new Error(`Stable connection diagnostic: ${JSON.stringify({
+          at: Date.now(), statusPolls, lastStatusPollAt, popupClosedAt,
+          workerStartsDuringStep: watcher.creations.length,
+          originalWorkerAlive: liveWorker === worker,
+          brain: summary === null ? null : {
+            status: summary.agentStatus,
+            lastHeartbeatAt: summary.lastHeartbeatAt,
+            connectionPresent: summary.connectionToken !== null,
+          },
+          extension: state,
+          stateError,
+        })}`, { cause: error });
+      } finally { watcher.stop(); }
     });
 
     let pendingEncryptedOutbox;
