@@ -445,6 +445,40 @@ class SQLiteAnalyticsProjectionStore:
                 return False
             return self._trusted_verification_envelope(connection, generation) is not None
 
+    def predecessor_update_reuse_prepared(
+        self, account_id, identity, revision, config, retention_clock
+    ) -> bool:
+        """Reuse a resident verified predecessor without running recovery again.
+
+        This is deliberately not a currentness predicate.  It is true only when
+        the active generation is older than the live canonical identity and its
+        exact process-local verification envelope is still bound to the active
+        generation, current pipeline, completed activation witness and source
+        retention window.  Missing or ambiguous state falls back to recovery.
+        """
+        partition = account_ref(account_id)
+        with self.database.read() as connection:
+            connection.execute('BEGIN')
+            generation = connection.execute(
+                "SELECT * FROM projection_generations WHERE creator_account_id=? "
+                "AND status='active' AND activated_at IS NOT NULL", (partition,)
+            ).fetchone()
+            if generation is None:
+                return False
+            canonical_revision = int(generation['canonical_revision'])
+            if (canonical_revision >= identity.revision
+                    or generation['pipeline_revision'] != revision
+                    or generation['pipeline_config_digest'] != config):
+                return False
+            witness = self.activation.get(generation['generation_id'])
+            if (not self._intent_matches(generation, witness, require_completed=True)
+                    or witness.creator_account_id != account_id):
+                return False
+            envelope = self._trusted_verification_envelope(connection, generation)
+            if envelope is None:
+                return False
+            return envelope.source_due_at is None or envelope.source_due_at > retention_clock()
+
     def _enrichment_transition_candidate(self, generation):
         """Return a bound proof candidate; capture_transition remains authority."""
         if generation is None:

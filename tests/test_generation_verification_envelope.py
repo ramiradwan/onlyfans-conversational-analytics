@@ -38,6 +38,66 @@ def test_envelope_is_not_independent_authority(tmp_path, cache):
         cleanup(f)
 
 
+def test_new_revision_with_live_predecessor_skips_recovery_snapshot(tmp_path, monkeypatch):
+    from tests.continuous_analytics_fixture import insert_message, advance, cold_equal
+    f = make_fixture(tmp_path)
+    try:
+        f.pipeline.project_account(ACCOUNT)
+        with f.repositories.database.transaction() as db:
+            insert_message(db, 'chat-0', 'warm-predecessor-next', NOW, 2)
+            advance(db)
+        identity = f.source.read_identity(ACCOUNT)
+        assert identity.revision == 2
+        assert f.stores.projections.predecessor_update_reuse_prepared(
+            ACCOUNT, identity, f.pipeline.pipeline_revision,
+            f.pipeline.pipeline_config_digest, f.pipeline._retention_clock,
+        )
+        original_snapshot = f.source.analytics_snapshot
+        original_recovery = f.stores.projections.prepare_update_reuse
+        def forbidden(*args, **kwargs):
+            raise AssertionError('ordinary admission launched recovery despite live predecessor')
+        monkeypatch.setattr(f.source, 'analytics_snapshot', forbidden)
+        monkeypatch.setattr(f.stores.projections, 'prepare_update_reuse', forbidden)
+        assert not f.pipeline.prepare_questions(ACCOUNT, identity.revision)
+        monkeypatch.setattr(f.source, 'analytics_snapshot', original_snapshot)
+        monkeypatch.setattr(f.stores.projections, 'prepare_update_reuse', original_recovery)
+        result = f.pipeline.project_account(ACCOUNT)
+        cold_equal(f, result.artifact)
+    finally:
+        cleanup(f)
+
+
+def test_predecessor_readiness_is_not_currentness_and_respects_bindings(tmp_path):
+    from datetime import timedelta
+    from tests.continuous_analytics_fixture import insert_message, advance
+    f = make_fixture(tmp_path)
+    try:
+        f.pipeline.project_account(ACCOUNT)
+        current = f.source.read_identity(ACCOUNT)
+        assert not f.stores.projections.predecessor_update_reuse_prepared(
+            ACCOUNT, current, f.pipeline.pipeline_revision,
+            f.pipeline.pipeline_config_digest, f.pipeline._retention_clock,
+        )
+        with f.repositories.database.transaction() as db:
+            insert_message(db, 'chat-0', 'predecessor-binding-next', NOW, 2)
+            advance(db)
+        identity = f.source.read_identity(ACCOUNT)
+        ready = f.stores.projections.predecessor_update_reuse_prepared
+        assert ready(ACCOUNT, identity, f.pipeline.pipeline_revision,
+                     f.pipeline.pipeline_config_digest, f.pipeline._retention_clock)
+        assert not ready(ACCOUNT, identity, 'different-pipeline',
+                         f.pipeline.pipeline_config_digest, f.pipeline._retention_clock)
+        assert not ready(ACCOUNT, identity, f.pipeline.pipeline_revision,
+                         'sha256:' + '0' * 64, f.pipeline._retention_clock)
+        expired = lambda: NOW + timedelta(days=91)
+        assert not ready(ACCOUNT, identity, f.pipeline.pipeline_revision,
+                         f.pipeline.pipeline_config_digest, expired)
+        f.stores.projections._verification_envelopes.clear()
+        assert not ready(ACCOUNT, identity, f.pipeline.pipeline_revision,
+                         f.pipeline.pipeline_config_digest, f.pipeline._retention_clock)
+    finally:
+        cleanup(f)
+
 def test_envelope_survives_guarded_activation_and_noop_gc(tmp_path):
     f = make_fixture(tmp_path)
     try:
@@ -169,6 +229,42 @@ def test_membership_prefix_envelope_is_bounded_and_optional(tmp_path, monkeypatc
     finally:
         cleanup(f)
 
+
+def test_missing_predecessor_envelope_keeps_recovery_fallback(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    from tests.continuous_analytics_fixture import insert_message, advance
+    f = make_fixture(tmp_path)
+    try:
+        f.pipeline.project_account(ACCOUNT)
+        with f.repositories.database.transaction() as db:
+            insert_message(db, 'chat-0', 'missing-envelope-next', NOW, 2)
+            advance(db)
+        f.stores.projections._verification_envelopes.clear()
+        observed = Mock(wraps=f.source.analytics_snapshot)
+        monkeypatch.setattr(f.source, 'analytics_snapshot', observed)
+        assert not f.pipeline.prepare_questions(ACCOUNT, 2)
+        assert observed.call_count == 1
+    finally:
+        cleanup(f)
+
+
+def test_lazy_predecessor_readiness_forwards_bindings(monkeypatch):
+    from app.analytics.resilient_projection_store import LazySQLiteAnalyticsProjectionStore
+    store = object.__new__(LazySQLiteAnalyticsProjectionStore)
+    calls = []
+    def observed(*args, **kwargs):
+        calls.append((args, kwargs))
+        return True
+    monkeypatch.setattr(store, '_read', observed)
+    identity = object()
+    clock = lambda: NOW
+    assert store.predecessor_update_reuse_prepared(
+        'account-a', identity, 'pipeline-a', 'config-a', clock
+    )
+    assert calls == [(
+        ('predecessor_update_reuse_prepared', 'account-a', 'account-a',
+         identity, 'pipeline-a', 'config-a', clock), {}
+    )]
 
 def test_lazy_currentness_forwards_cancellation_keyword(monkeypatch):
     from app.analytics.resilient_projection_store import LazySQLiteAnalyticsProjectionStore

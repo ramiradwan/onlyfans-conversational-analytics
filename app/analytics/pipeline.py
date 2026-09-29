@@ -662,6 +662,9 @@ class AnalyticsPipeline:
 
         restore = getattr(self.projections, "prepare_update_reuse", None)
         prepared_reader = getattr(self.projections, "update_reuse_prepared", None)
+        predecessor_reader = getattr(
+            self.projections, "predecessor_update_reuse_prepared", None
+        )
         snapshot = getattr(self.source, "analytics_snapshot", None)
         from app.analytics.graph_projection import RelationshipGraphProjector
         reuse_capable = bool(
@@ -678,6 +681,16 @@ class AnalyticsPipeline:
                 creator_account_id, requested_revision, read,
                 cancellation_check=cancellation_check,
             )
+        elif (reuse_capable and callable(predecessor_reader)
+                and predecessor_reader(
+                    creator_account_id, identity, self.pipeline_revision,
+                    self.pipeline_config_digest, self._retention_clock,
+                )):
+            # A normal new revision can reuse the already verified active
+            # predecessor directly.  It is not current for the new identity, so
+            # return false and let the scheduler build; do not run the restart
+            # recovery verifier just to recreate proof state already resident.
+            current = False
         elif reuse_capable:
             # Recovery independently verifies the active generation and source
             # binding. Do not materialize the same generation once for
