@@ -9,6 +9,7 @@ import { ReadOnlyAgentWebSocketClient } from '../transport/read-only-agent-webso
 import { parseAgentToBrainMessage } from '../protocol/read-only.mjs';
 import { FakeIndexedDb } from './fake-indexeddb.mjs';
 import { createReadOnlyIndexedDbIngestionStorage } from '../transport/read-only-indexeddb-ingestion-storage.mjs';
+import { ConsentController } from '../runtime/consent-controller.mjs';
 
 const START = Date.parse('2026-09-29T12:00:00Z');
 const stamp = (offset = 0) => new Date(START + offset).toISOString();
@@ -361,6 +362,160 @@ test('concurrent stop reports and wakes share one pending acknowledgement', asyn
   assert.equal(r.calls.length, 0);
 });
 
+test('notification reports carry socket and drop changes without an acquisition run', async () => {
+  const r = await rig({ list: [] });
+  r.state = { ...observing(), page_socket_open: false,
+    drops: { expired: 0, rejected: 0 }, drop_tabs: [7],
+    drop_sources: { 7: { document: 'status-page', expired: 0, rejected: 0 } } };
+  await r.coordinator.requestCaptureStateReport();
+  r.state = { ...r.state, page_socket_open: true };
+  await r.coordinator.requestCaptureStateReport();
+  r.state = { ...r.state, drops: { expired: 1, rejected: 2 },
+    drop_sources: { 7: { document: 'status-page', expired: 1, rejected: 2 } } };
+  await r.coordinator.requestCaptureStateReport();
+
+  const reports = r.rpcs.filter(value => value.operation === 'capture.state.report');
+  assert.deepEqual(reports.map(value => value.page_socket_open), [false, true, true]);
+  assert.deepEqual(reports.map(value => value.drops_since_last), [
+    { expired: 0, rejected: 0 }, { expired: 0, rejected: 0 }, { expired: 1, rejected: 2 },
+  ]);
+  assert.equal(r.calls.length, 0);
+});
+
+test('trusted page socket open and close notifications report each current state', async () => {
+  let time = START;
+  let nextTimer = 0;
+  const timers = new Map();
+  const scheduler = {
+    setTimeout(callback, delay) {
+      const id = ++nextTimer;
+      timers.set(id, { callback, at: time + delay });
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+    tick(ms) {
+      const end = time + ms;
+      while (true) {
+        const due = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due || due[1].at > end) break;
+        time = due[1].at;
+        timers.delete(due[0]);
+        due[1].callback();
+      }
+      time = end;
+    },
+  };
+  const listeners = [];
+  const chromeApi = {
+    runtime: { id: 'synthetic-extension-id', onMessage: { addListener: fn => listeners.push(fn) } },
+    storage: { local: { async get() { return {}; }, async set() {} } },
+    scripting: {}, permissions: { onAdded: { addListener() {} }, onRemoved: { addListener() {} } },
+  };
+  const r = await rig({ list: [] });
+  const controller = new ConsentController({
+    chromeApi,
+    runtime: { async start() {}, history: r.coordinator },
+    adapter: { async loadBrainBinding() {}, async clearBrainBinding() {} },
+    provisioningIdentityBridge: { register() {} },
+    previewMetrics: { async record() {}, async summary() { return {}; }, async clear() {}, async prune() {} },
+    clearLocalData: async () => {},
+    activeModeAuthorization: {
+      async authorizeTransition() { return true; }, async authorizeResume() { return true; },
+      async reconcileActiveMode() { return true; },
+    },
+    scheduler, now: () => new Date(time),
+  });
+  controller.register();
+  const listener = listeners[0];
+  const sender = { id: chromeApi.runtime.id, frameId: 0, url: 'https://onlyfans.com/chats' };
+  const notify = () => listener({ type: 'ofca.capture.state.changed' }, sender, () => assert.fail('no response'));
+  const waitForReports = async expected => {
+    for (let count = 0; count < 50; count++) {
+      if (r.rpcs.filter(value => value.operation === 'capture.state.report').length >= expected) return;
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.fail(`report ${expected} was not sent`);
+  };
+
+  r.state = { ...observing(), page_socket_open: false };
+  notify();
+  await waitForReports(1);
+  scheduler.tick(5_000);
+  r.clock += 5_000;
+  r.state = { ...r.state, page_socket_open: true };
+  notify();
+  await waitForReports(2);
+  scheduler.tick(5_000);
+  r.clock += 5_000;
+  r.state = { ...r.state, page_socket_open: false };
+  notify();
+  await waitForReports(3);
+
+  const reports = r.rpcs.filter(value => value.operation === 'capture.state.report');
+  assert.deepEqual(reports.map(value => value.page_socket_open), [false, true, false]);
+  assert.equal(r.calls.length, 0);
+});
+
+test('notification report waits for a catch-up run without aborting it', async () => {
+  let release;
+  let entered;
+  let finished = false;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const r = await rig({ list: [], read: async q => {
+    if (q.operation === 'conversations') { entered(); await gate; }
+    return page(q.operation, []);
+  } });
+  r.grant.blind = true;
+  const { coordinateAcquisition } = await import('../transport/catchup-coordinator.mjs');
+  let historyCanceled = false;
+  const coordinated = coordinateAcquisition({ cancelCurrent() { historyCanceled = true; } }, r.coordinator);
+  const run = r.coordinator.wake('admission').then(() => { finished = true; });
+  await waiting;
+  r.state = { ...observing(), page_socket_open: false, drops: { expired: 1, rejected: 0 },
+    drop_tabs: [7], drop_sources: { 7: { document: 'status-page', expired: 1, rejected: 0 } } };
+  const report = coordinated.requestCaptureStateReport();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(finished, false, 'notification must not abort the running catch-up');
+  assert.equal(historyCanceled, false, 'notification must not cancel history');
+  assert.ok(r.rpcs.filter(value => value.operation === 'capture.state.report')
+    .every(value => value.page_socket_open === true), 'the changed snapshot waits for catch-up to finish');
+  release();
+  await Promise.all([run, report]);
+
+  assert.equal((await r.job()).phase, 'completed');
+  const sent = r.rpcs.find(value => value.operation === 'capture.state.report' && !value.page_socket_open);
+  assert.equal(sent.page_socket_open, false);
+  assert.deepEqual(sent.drops_since_last, { expired: 1, rejected: 0 });
+});
+
+test('notifications arriving during an unacknowledged report retain the latest state serially', async () => {
+  let release;
+  let entered;
+  let active = 0;
+  let maximumActive = 0;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const r = await rig({ list: [], rpc: async (operation, request) => {
+    if (operation !== 'capture.state.report') return { ...r.grant, resume: false,
+      lease_expires_at: new Date(r.clock + 300_000).toISOString() };
+    active++;
+    maximumActive = Math.max(maximumActive, active);
+    if (active === 1) { entered(); await gate; }
+    active--;
+    return { acknowledged_seq: request.report_seq };
+  } });
+  const first = r.coordinator.requestCaptureStateReport();
+  await waiting;
+  r.state = { ...r.state, page_socket_open: false };
+  const second = r.coordinator.requestCaptureStateReport();
+  release();
+  await Promise.all([first, second]);
+  const reports = r.rpcs.filter(value => value.operation === 'capture.state.report');
+  assert.deepEqual(reports.map(value => value.page_socket_open), [true, false]);
+  assert.equal(maximumActive, 1);
+});
+
 test('refusing Brain backoff survives 24 hours of worker restarts', async () => {
   let closes = 0;
   let reconnects = 0;
@@ -470,4 +625,77 @@ test('lost grant response reuses the durable begin request after restart', async
   assert.equal(begins.length, 2);
   assert.equal(begins[1].request_id, begins[0].request_id);
   assert.equal((await r.job()).phase, 'completed');
+});
+
+
+test('a capture-state trigger arriving during a check is processed after that check', async () => {
+  let release;
+  let entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const r = await rig({ list: [], read: async q => {
+    if (q.operation === 'conversations') {
+      entered();
+      await gate;
+    }
+    return page(q.operation, []);
+  } });
+  r.grant.blind = true;
+  r.state = { ...observing(), observing: false, reason: 'page_socket_closed' };
+
+  const first = r.coordinator.wake('admission');
+  await waiting;
+  r.state = observing();
+  const second = r.coordinator.wake('observing');
+  release();
+  await Promise.all([first, second]);
+
+  const reports = r.rpcs.filter(value => value.operation === 'capture.state.report');
+  assert.ok(reports.some(value => value.observing === true));
+  assert.equal(r.rpcs.filter(value => value.operation === 'history.check.begin'
+    && value.trigger === 'observing').length, 0);
+
+  await r.outbox.acknowledge(r.outbox.identityState().last_source_seq);
+  await r.coordinator.onIngestAcknowledged();
+
+  assert.ok(r.rpcs.some(value => value.operation === 'history.check.begin'
+    && value.trigger === 'observing'));
+});
+
+test('coordinated acquisition preserves a trigger that arrives while acquisition is running', async () => {
+  const { coordinateAcquisition } = await import('../transport/catchup-coordinator.mjs');
+  let release;
+  let entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const triggers = [];
+  let historyWakes = 0;
+  const catchup = {
+    async wake(trigger) {
+      triggers.push(trigger);
+      if (triggers.length === 1) {
+        entered();
+        await gate;
+      }
+    },
+    reportCaptureState: async () => {},
+    cancelCurrent() {},
+    stop() {},
+  };
+  const history = {
+    async wake() { historyWakes++; },
+    cancelCurrent() {},
+    stop() {},
+    historyErrorCode() { return null; },
+  };
+  const coordinated = coordinateAcquisition(history, catchup);
+
+  const first = coordinated.wake('admission');
+  await waiting;
+  const second = coordinated.wake('observing');
+  release();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(triggers, ['admission', 'observing']);
+  assert.equal(historyWakes, 2);
 });

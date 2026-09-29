@@ -13,6 +13,16 @@ import { EXTENSION_DIST, assertBuiltExtension, assertBuiltSpa } from '../lib/pat
 
 async function syntheticExtension(directory) {
   await cp(EXTENSION_DIST, directory, { recursive: true });
+  const trust = JSON.parse(await readFile(
+    new URL('../../../contracts/companion-pairing-v1/trust-set.json', import.meta.url),
+    'utf8',
+  ));
+  if (trust.production_usable !== false || !Array.isArray(trust.keys)
+    || trust.keys.length === 0 || !trust.keys.every(entry => entry?.fixture_only === true)) {
+    throw new Error('The pinned E2E pairing trust fixture is not explicitly test-only.');
+  }
+  await writeFile(path.join(directory, 'companion-grant-trust.json'),
+    `${JSON.stringify({ ...trust, production_usable: true }, null, 2)}\n`);
   const original = await readFile(path.join(directory, 'background.js'), 'utf8');
   await writeFile(path.join(directory, 'production-background.mjs'), original);
   await writeFile(path.join(directory, 'background.js'), `

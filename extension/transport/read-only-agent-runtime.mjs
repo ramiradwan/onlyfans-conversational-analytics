@@ -133,6 +133,7 @@ export function createReadOnlyAgentRuntime(options = {}) {
         health: () => configuration.healthSummary(),
         onSession: () => { if (!signal.aborted) void history?.wake('admission').catch(() => undefined); },
         onSessionLost: () => history?.cancelCurrent?.('Agent session ended'),
+        onIngestAcknowledged: (payload) => { if (!signal.aborted) void history?.onIngestAcknowledged?.(payload)?.catch?.(() => undefined); },
       });
       signal.throwIfAborted();
       return { transport, configuration, history, drain: () => accountStorage.drain(), bindingFingerprint: bindingFingerprint(binding) };

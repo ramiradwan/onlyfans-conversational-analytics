@@ -1,3 +1,4 @@
+import { PAGE_CONTROL_STATUS_TYPE, PAGE_CONTROL_VERSION } from './envelopes.mjs';
 import { CAPTURE_LIMITS, utf8Bytes } from './limits.mjs';
 export { CAPTURE_LIMITS, fitsUtf8, utf8Bytes } from './limits.mjs';
 
@@ -6,9 +7,53 @@ const dropState = globalThis[Symbol.for('ofca.capture.queue.drops')] ??= {
   reporting: false,
 };
 const queueDrops = dropState.counts;
+const pageState = globalThis[Symbol.for('ofca.capture.page-state')] ??= {
+  installed: false,
+  signature: null,
+  notifications: Object.create(null),
+};
+function notifyWorker(type) {
+  const state = pageState.notifications[type] ??= { timer: null, pending: false };
+  const send = () => {
+    try { void globalThis.chrome.runtime.sendMessage({ type })?.catch(() => {}); } catch {}
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      if (!state.pending) return;
+      state.pending = false;
+      send();
+    }, 1_000);
+  };
+  if (state.timer !== null) {
+    state.pending = true;
+    return;
+  }
+  send();
+}
+if (!pageState.installed && globalThis.window?.addEventListener && globalThis.chrome?.runtime?.sendMessage) {
+  pageState.installed = true;
+  const pageOrigin = globalThis.window.location?.origin;
+  globalThis.window.addEventListener('message', (event) => {
+    if (event.source !== globalThis.window || event.origin !== pageOrigin) return;
+    const envelope = event.data;
+    const status = envelope?.type === PAGE_CONTROL_STATUS_TYPE && envelope.version === PAGE_CONTROL_VERSION
+      ? envelope.status : null;
+    if (!status || typeof status !== 'object' || Array.isArray(status)
+      || Object.keys(status).length !== 4
+      || !['identity', 'preview', 'full'].includes(status.mode)
+      || typeof status.active !== 'boolean' || typeof status.forwarding !== 'boolean'
+      || typeof status.ws2_socket_open !== 'boolean') return;
+    const signature = JSON.stringify([
+      status.mode, status.active, status.forwarding, status.ws2_socket_open,
+    ]);
+    if (pageState.signature !== null && pageState.signature !== signature) {
+      notifyWorker('ofca.capture.state.changed');
+    }
+    pageState.signature = signature;
+  });
+}
 function reportDrop(reason) {
   queueDrops[reason]++;
-  try { void globalThis.chrome?.runtime?.sendMessage({ type: 'ofca.capture.queue.changed' })?.catch(() => {}); } catch {}
+  notifyWorker('ofca.capture.queue.changed');
 }
 
 function delay(ms, signal) {

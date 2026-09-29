@@ -24,10 +24,12 @@ function harness(mode = 'full', confirmed = true) {
   const listeners = new Map();
   let next = () => Promise.resolve(new Response('{}'));
   class Socket {
-    constructor() { this.listeners = new Map(); }
+    constructor() { this.listeners = new Map(); this.readyState = 0; }
     addEventListener(name, listener) { this.listeners.set(name, listener); }
     removeEventListener(name) { this.listeners.delete(name); }
     emit(frame) { this.listeners.get('message')?.({ data: JSON.stringify(frame) }); }
+    open() { this.readyState = 1; this.listeners.get('open')?.({}); }
+    close() { this.readyState = 3; this.listeners.get('close')?.({}); }
   }
   class Xhr {
     constructor() { this.listeners = new Map(); this.status = 200; }
@@ -384,4 +386,15 @@ test('Preview waits for identity, keeps it across SPA navigation, and rejects st
   release(new Response(JSON.stringify({ list: [message] })));
   await pending; await flush();
   assert.equal(h.posts.length, count);
+});
+
+
+test('Full page socket lifecycle publishes readiness changes', () => {
+  const h = harness();
+  const socket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
+  h.posts.length = 0;
+  socket.open();
+  assert.equal(h.posts.at(-1).status.ws2_socket_open, true);
+  socket.close();
+  assert.equal(h.posts.at(-1).status.ws2_socket_open, false);
 });

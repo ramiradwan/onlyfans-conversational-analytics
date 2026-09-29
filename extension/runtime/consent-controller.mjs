@@ -196,6 +196,9 @@ export class ConsentController {
     this.phase = 'booting';
     this.initialization = null;
     this.registered = false;
+    this.captureNotificationLastReportAt = null;
+    this.captureNotificationTimer = null;
+    this.captureNotificationPending = false;
     this.messageListener = this.#onMessage.bind(this);
     this.storageListener = this.#onStorageChanged.bind(this);
     this.permissionListener = () => { void this.reconcile().catch(() => undefined); };
@@ -851,7 +854,41 @@ export class ConsentController {
     }
   }
 
+  #requestCaptureStateNotificationReport() {
+    const requestReport = () => {
+      const request = this.runtime.history?.requestCaptureStateReport?.();
+      if (request && typeof request.catch === 'function') void request.catch(() => undefined);
+    };
+    const current = this.now().getTime();
+    const windowMs = 5_000;
+    if (this.captureNotificationLastReportAt === null
+      || current - this.captureNotificationLastReportAt >= windowMs) {
+      this.captureNotificationLastReportAt = current;
+      this.captureNotificationPending = false;
+      if (this.captureNotificationTimer !== null) this.scheduler.clearTimeout(this.captureNotificationTimer);
+      this.captureNotificationTimer = null;
+      requestReport();
+      return;
+    }
+    this.captureNotificationPending = true;
+    if (this.captureNotificationTimer !== null) return;
+    const delay = Math.max(0, this.captureNotificationLastReportAt + windowMs - current);
+    this.captureNotificationTimer = this.scheduler.setTimeout(() => {
+      this.captureNotificationTimer = null;
+      if (!this.captureNotificationPending) return;
+      this.captureNotificationPending = false;
+      this.captureNotificationLastReportAt = this.now().getTime();
+      requestReport();
+    }, delay);
+  }
+
   #onMessage(message, sender, sendResponse) {
+    if (message?.type === 'ofca.capture.state.changed'
+      || message?.type === 'ofca.capture.queue.changed') {
+      if (Object.keys(message).length !== 1 || !trustedContentSender(sender, this.chromeApi)) return false;
+      this.#requestCaptureStateNotificationReport();
+      return false;
+    }
     if (message?.type === CAPTURE_STATE_QUERY_TYPE && Object.keys(message).length === 1) {
       if (!trustedContentSender(sender, this.chromeApi)) return false;
       const ready = this.loaded && this.phase !== 'booting' ? Promise.resolve() : this.initialize();

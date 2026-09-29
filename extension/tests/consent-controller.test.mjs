@@ -165,6 +165,53 @@ test('capture is absent before consent and optional site access', async () => {
   assert.equal(Object.hasOwn(h.local, CONSENT_STORAGE_KEY), false);
 });
 
+test('capture notifications require the exact trusted content envelope and are throttled', async () => {
+  let time = 0;
+  let nextTimer = 0;
+  const timers = new Map();
+  const scheduler = {
+    setTimeout(callback, delay) {
+      const id = ++nextTimer;
+      timers.set(id, { callback, at: time + delay });
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+    tick(ms) {
+      const end = time + ms;
+      while (true) {
+        const due = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due || due[1].at > end) break;
+        time = due[1].at;
+        timers.delete(due[0]);
+        due[1].callback();
+      }
+      time = end;
+    },
+  };
+  let reports = 0;
+  const h = harness({ scheduler, now: () => new Date(time), runtime: {
+    async start() {}, async suspend() {},
+    history: { requestCaptureStateReport() { reports++; } },
+  } });
+  h.controller.register();
+  const listener = h.chromeApi.runtime.onMessage.listeners[0];
+  const trusted = { id: 'synthetic-extension-id', frameId: 0, url: 'https://onlyfans.com/chats' };
+  const stateChanged = { type: 'ofca.capture.state.changed' };
+  const queueChanged = { type: 'ofca.capture.queue.changed' };
+  listener(stateChanged, { ...trusted, url: 'https://untrusted.example/' }, () => assert.fail('no response'));
+  listener({ ...stateChanged, extra: true }, trusted, () => assert.fail('no response'));
+  assert.equal(reports, 0);
+  listener(stateChanged, trusted, () => assert.fail('no response'));
+  assert.equal(reports, 1, 'the leading notification requests a report immediately');
+  for (let i = 0; i < 100; i++) {
+    listener(i % 2 ? stateChanged : queueChanged, trusted, () => assert.fail('no response'));
+    scheduler.tick(100);
+  }
+  scheduler.tick(5_000);
+  assert.ok(reports > 0);
+  assert.ok(reports <= 3, `expected at most three reports, got ${reports}`);
+});
+
 test('preview can be enabled, paused, resumed, and fully deleted without a local service', async () => {
   const h = harness();
   h.permissionState.onlyFans = true;

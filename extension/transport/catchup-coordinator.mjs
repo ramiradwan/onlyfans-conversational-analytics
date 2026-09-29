@@ -15,20 +15,36 @@ const hasHead = value => Boolean(value.head_message_id || value.head_sent_at);
 
 export function coordinateAcquisition(history, catchup) {
   let running = null;
+  const pending = [];
+  const queue = (trigger) => {
+    if (running && trigger === 'alarm') return running;
+    if (!pending.includes(trigger)) pending.push(trigger);
+    if (running) return running;
+    running = (async () => {
+      while (pending.length > 0) {
+        const next = pending.shift();
+        await catchup.wake(next);
+        await history.wake();
+      }
+    })().finally(() => { running = null; });
+    return running;
+  };
   return {
     catchup,
     initial: history,
-    wake(trigger) {
-      if (running) return running;
-      running = (async () => {
-        await catchup.wake(trigger);
-        return history.wake();
-      })().finally(() => { running = null; });
-      return running;
+    wake(trigger = 'alarm') {
+      return queue(trigger);
     },
     async reportCaptureState() {
       history.cancelCurrent?.('Capture state changed');
       return catchup.reportCaptureState();
+    },
+    requestCaptureStateReport() {
+      return catchup.requestCaptureStateReport?.() ?? Promise.resolve();
+    },
+    onIngestAcknowledged(payload) {
+      const resume = () => catchup.onIngestAcknowledged?.(payload);
+      return running ? running.then(resume) : resume();
     },
     cancelCurrent(reason) { catchup.cancelCurrent(); return history.cancelCurrent(reason); },
     stop() { catchup.stop(); history.stop(); },
@@ -42,6 +58,11 @@ export class CatchupCoordinator {
     Object.assign(this, { outbox, signer, configuration, session, rpc, captureState, workerInstanceId, clock, delay });
     this.allowance = new AcquisitionAllowance({ outbox, clock, dailyCap });
     this.running = null;
+    this.notificationReporting = null;
+    this.notificationReportPending = false;
+    this.reportLock = null;
+    this.controller = new AbortController();
+    this.pendingTriggers = [];
     this.stopped = false;
     this.renewed = null;
     this.leaseToken = crypto.randomUUID();
@@ -49,11 +70,37 @@ export class CatchupCoordinator {
 
   wake(trigger = 'alarm') {
     if (this.stopped) return Promise.resolve();
-    if (this.reporting) return this.reporting;
+    if (trigger === 'alarm') {
+      if (this.reporting) return this.reporting;
+      if (this.running) return this.running;
+      if (this.pendingTriggers.length > 0) return this.#ensureRunning();
+    }
+    if (!this.pendingTriggers.includes(trigger)) this.pendingTriggers.push(trigger);
+    if (this.reporting) return this.reporting.then(() => this.#ensureRunning());
+    return this.#ensureRunning();
+  }
+
+  #ensureRunning() {
+    if (this.stopped) return Promise.resolve();
     if (this.running) return this.running;
-    this.controller = new AbortController();
-    this.running = this.#run(trigger).catch(() => undefined).finally(() => { this.running = null; });
+    this.running = (async () => {
+      while (!this.stopped && this.pendingTriggers.length > 0) {
+        const trigger = this.pendingTriggers.shift();
+        this.controller = new AbortController();
+        try {
+          const outcome = await this.#run(trigger);
+          if (outcome?.wait_for_ack === true) {
+            if (!this.pendingTriggers.includes(outcome.trigger)) this.pendingTriggers.unshift(outcome.trigger);
+            break;
+          }
+        } catch {}
+      }
+    })().finally(() => { this.running = null; });
     return this.running;
+  }
+
+  onIngestAcknowledged() {
+    return this.pendingTriggers.length > 0 ? this.#ensureRunning() : Promise.resolve();
   }
 
   cancelCurrent() { this.controller?.abort(); this.renewed = null; clearTimeout(this.renewTimer); }
@@ -67,7 +114,24 @@ export class CatchupCoordinator {
       this.controller = new AbortController();
       await this.#report(await this.captureState());
     })().finally(() => { this.reporting = null; });
-    return this.reporting;
+    return this.reporting.then(() => this.#ensureRunning());
+  }
+
+  requestCaptureStateReport() {
+    if (this.notificationReporting) {
+      this.notificationReportPending = true;
+      return this.notificationReporting;
+    }
+    this.notificationReportPending = false;
+    this.notificationReporting = (async () => {
+      if (this.running) await this.running;
+      if (this.reporting) await this.reporting;
+      do {
+        this.notificationReportPending = false;
+        await this.#report(await this.captureState());
+      } while (this.notificationReportPending);
+    })().finally(() => { this.notificationReporting = null; });
+    return this.notificationReporting;
   }
 
   #identity() {
@@ -113,6 +177,19 @@ export class CatchupCoordinator {
   }
 
   async #report(state) {
+    while (this.reportLock !== null) await this.reportLock;
+    let release;
+    this.reportLock = new Promise(resolve => { release = resolve; });
+    try {
+      let next = state;
+      while (next) next = await this.#reportOnce(next);
+    } finally {
+      this.reportLock = null;
+      release();
+    }
+  }
+
+  async #reportOnce(state) {
     const now = this.clock();
     const day = new Date(now).toISOString().slice(0, 10);
     const summary = { observing: state.observing === true, reason: state.reason,
@@ -179,7 +256,8 @@ export class CatchupCoordinator {
     const pending = control.pending_report;
     if (pending.worker_instance_id !== this.workerInstanceId || pending.observing !== summary.observing
       || pending.reason !== summary.reason || pending.page_socket_open !== summary.page_socket_open
-      || JSON.stringify(pending.tabs) !== JSON.stringify(summary.tabs)) await this.#report(state);
+      || JSON.stringify(pending.tabs) !== JSON.stringify(summary.tabs)) return this.captureState();
+    return null;
   }
 
   async #begin(job, trigger) {
@@ -237,6 +315,8 @@ export class CatchupCoordinator {
     if (!this.session()) return;
     const state = await this.captureState();
     await this.allowance.update(saved => {
+      if (trigger === 'observing' && !state.observing) trigger = 'alarm';
+      if (trigger === 'tab_runnable' && !state.runnable) trigger = 'alarm';
       if (trigger !== 'admission' && state.runnable && saved.was_runnable === false) trigger = 'tab_runnable';
       else if (trigger !== 'admission' && state.observing && saved.was_observing === false) trigger = 'observing';
       saved.was_runnable = state.runnable;
@@ -247,7 +327,10 @@ export class CatchupCoordinator {
     const expected = this.#identity();
     try { await this.#assert(expected); }
     catch { if (job?.lease_token === this.leaseToken) await this.#abandon(job, state.reason === 'paused' ? 'paused' : 'authorization_changed'); return; }
-    if (terminal(job) && job && this.outbox.identityState().acknowledged_source_seq < job.final_source_seq) return;
+    if (terminal(job) && job && this.outbox.identityState().acknowledged_source_seq < job.final_source_seq) {
+      return ['admission', 'observing', 'tab_runnable'].includes(trigger)
+        ? { wait_for_ack: true, trigger } : undefined;
+    }
     const control = await this.allowance.update(() => {});
     if (terminal(job) || this.renewed !== job.check_id || this.clock() >= job.renew_at || job.grant_used >= job.grant.page_budget) {
       if (this.clock() < (control.check_not_before ?? 0)) return;
