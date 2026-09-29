@@ -241,7 +241,12 @@ void consentController.initialize().then(() => surfaceReporter.changed(), () => 
 chrome.permissions?.onAdded?.addListener(signalSurfaces);
 chrome.permissions?.onRemoved?.addListener(signalSurfaces);
 chrome.tabs?.onUpdated?.addListener((_tabId, changeInfo) => {
-  if (changeInfo?.status === 'complete') signalSurfaces();
+  if (changeInfo?.status !== 'complete') return;
+  signalSurfaces();
+  // Chromium can publish "complete" just before the newly injected content
+  // bridge answers status. One bounded follow-up keeps event-driven surfaces
+  // accurate without restoring periodic polling.
+  setTimeout(signalSurfaces, 500);
 });
 provisioningIdentityBridge.onAccountChange(signalSurfaces);
 
