@@ -48,6 +48,7 @@ function captureEnvelope(chatId) {
 function harness() {
   const pageListeners = [];
   const delivered = [];
+  const controls = [];
   let contextCallback = null;
   const pageWindow = {
     location: { origin: 'https://onlyfans.com' },
@@ -64,9 +65,9 @@ function harness() {
   const chrome = {
     runtime: {
       lastError: null,
-      onMessage: { addListener() {} },
+      onMessage: { addListener(listener) { controls.push(listener); } },
       sendMessage(message, callback) {
-        if (message?.type === 'ofca.capture.context.query') {
+        if (message?.type === 'ofca.capture.state.query') {
           contextCallback = callback;
           return;
         }
@@ -100,6 +101,7 @@ function harness() {
   return {
     delivered,
     dispatch,
+    pause() { controls[0]({ type: 'ofca.capture.control', version: 1, action: 'pause' }, {}, () => {}); },
     resolveContext(response) {
       assert.equal(typeof contextCallback, 'function');
       const callback = contextCallback;
@@ -109,7 +111,7 @@ function harness() {
   };
 }
 
-test('Full observations arriving before context readiness are buffered and delivered in order', async () => {
+test('unconfirmed observations are dropped and confirmed Full observations are delivered in order', async () => {
   const h = harness();
   h.dispatch(captureEnvelope('chat-a'));
   h.dispatch(captureEnvelope('chat-b'));
@@ -117,7 +119,11 @@ test('Full observations arriving before context readiness are buffered and deliv
 
   assert.deepEqual(h.delivered, []);
 
-  h.resolveContext({ ok: true, consent_epoch: CONSENT_EPOCH });
+  h.resolveContext({ ok: true, mode: 'full', consent_epoch: CONSENT_EPOCH });
+  await flush();
+  assert.deepEqual(h.delivered, []);
+  h.dispatch(captureEnvelope('chat-a'));
+  h.dispatch(captureEnvelope('chat-b'));
   await flush();
   await flush();
 
@@ -130,4 +136,14 @@ test('Full observations arriving before context readiness are buffered and deliv
     ['chat-a', 'chat-b'],
   );
   assert.notEqual(h.delivered[0].delivery_id, h.delivered[1].delivery_id);
+});
+
+test('a delayed state confirmation cannot revive a bridge after pause', async () => {
+  const h = harness();
+  h.pause();
+  h.resolveContext({ ok: true, mode: 'full', consent_epoch: CONSENT_EPOCH });
+  await flush();
+  h.dispatch(captureEnvelope('late-confirmation'));
+  await flush();
+  assert.deepEqual(h.delivered, []);
 });

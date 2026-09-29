@@ -153,8 +153,13 @@ function harness({ local = {}, indexedDb = evidenceDatabase(), bindingRef = { cu
     },
     tabs: {
       async query() { return [{ id: 1 }]; },
-      async sendMessage() {},
-      async reload() { flags.reloads += 1; },
+      async sendMessage(_id, message) {
+        if (message.action === 'stop') flags.documentMode = null;
+        if (message.action === 'status' && flags.documentMode) return {
+          mode: flags.documentMode, active: true, forwarding: true, ws2_socket_open: false,
+        };
+      },
+      async reload() { flags.reloads += 1; flags.documentMode = scripts[0]?.id.split('-')[1]; },
     },
     alarms: { onAlarm: event(), async create() {} },
   };
@@ -211,7 +216,7 @@ for (const mode of ['preview', 'full']) for (const paused of [false, true]) for 
     await h.consent.reconcile();
     assert.equal((await h.consent.status()).consent.mode, 'paused');
     assert.equal(h.consent.captureScope.isOpen, false);
-    assert.equal(h.scripts.length, 0);
+    assert.equal(h.scripts.length, h.consent.state.resume_mode === 'full' ? 2 : 0);
     assert.equal(await h.authorization.recordAuthorizes(first.evidence.event_id, mode), false);
     await assert.rejects(h.consent.setMode('resume'));
     assert.equal((await h.legal.status()).requires_reauthorization, true);
@@ -232,7 +237,7 @@ for (const mode of ['preview', 'full']) for (const lost of ['terms', 'risk', 'bo
     assert.equal(model.status.consent.mode, 'paused');
     assert.equal(h.consent.captureScope.isOpen, false);
     assert.equal(h.consent.allowsFullCapture(), false);
-    assert.equal(h.scripts.length, 0);
+    assert.equal(h.scripts.length, h.consent.state.resume_mode === 'full' ? 2 : 0);
     assert.deepEqual(await h.evidenceStore.exportAuditTrail(), surviving);
     assert.equal((await renderSurface('popup', model))('journey-primary').textContent, 'Review changes');
     const setup = await renderSurface('setup', model);
@@ -750,11 +755,36 @@ test('idempotent Full mode retry retains its document epoch and explicit reload 
   assert.equal(h.consent.captureScope.isOpen, false);
 });
 
+test('a soft paused Full registration still permits an explicit tab reload', async () => {
+  const h = harness();
+  await h.activate('full');
+  await h.consent.setMode('pause');
+  const response = deferred();
+  const sender = { id: 'synthetic', url: 'chrome-extension://synthetic/popup.html' };
+  h.chromeApi.runtime.onMessage.listeners.some((listener) => listener(
+    { type: UI_RELOAD_TABS_MESSAGE_TYPE }, sender, response.resolve,
+  ));
+  await response.promise;
+  assert.equal(h.flags.reloads, 1);
+  assert.equal(h.consent.captureScope.isOpen, false);
+});
+
+test('Preview pause keeps resume available before its next explicit reload', async () => {
+  const h = harness();
+  await h.activate('preview');
+  await h.consent.setMode('pause');
+  const model = { legal: await h.legal.status(), status: await h.consent.status() };
+  assert.equal(model.status.reload_required, false);
+  const popup = await renderSurface('popup', model);
+  assert.equal(popup('journey-primary').textContent, 'Resume analytics');
+  assert.equal((await h.consent.setMode('resume')).reload_required, true);
+});
+
 test('a frozen tab cannot hold setup status or pause behind its pending reload acknowledgement', async (t) => {
   const h = harness();
   await h.activate('full');
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  h.chromeApi.tabs.reload = () => { h.flags.reloads += 1; return new Promise(() => {}); };
+  h.chromeApi.tabs.reload = () => { h.flags.reloads += 1; h.flags.documentMode = 'full'; return new Promise(() => {}); };
   const response = deferred();
   const sender = { id: 'synthetic', url: 'chrome-extension://synthetic/setup.html' };
   assert.equal(h.chromeApi.runtime.onMessage.listeners.some((listener) => listener(
@@ -871,7 +901,7 @@ test('identity recovery remains closed without an authenticated binding and pres
   await h.restarted.setMode('pause');
   assert.equal(h.restarted.phase, 'paused');
   assert.equal(h.timers.size, 0);
-  assert.equal(h.scripts.length, 0);
+  assert.equal(h.scripts.length, 2);
 });
 
 test('recovery skips frozen and discarded documents without bypassing their lifecycle', async () => {
@@ -888,7 +918,7 @@ test('unpaired Full consent still stops old Full scripts and requires explicit r
   const h = await restartedFullHarness({ paired: false });
   assert.equal(h.messages[0].message.action, 'stop');
   assert.deepEqual(h.scripts.map((script) => script.id), ['ofca-identity-main', 'ofca-identity-isolated']);
-  assert.equal(h.restarted.reloadRequired, true);
+  assert.equal((await h.restarted.status()).reload_required, true);
   assert.equal(h.timers.size, 0);
   assert.equal(h.flags.reloads, 0);
 });

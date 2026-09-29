@@ -4,16 +4,14 @@ import {
   CAPTURE_MESSAGE_TYPE,
   PAGE_CONTROL_MESSAGE_TYPE,
   PAGE_CONTROL_VERSION,
+  PAGE_CONTROL_STATUS_TYPE,
+  CAPTURE_STATE_QUERY_TYPE,
   PREVIEW_MESSAGE_TYPE,
   isCaptureEnvelope,
   isPreviewEnvelope,
   isProvisioningIdentityEnvelope,
 } from './capture/envelopes.mjs';
-import {
-  CAPTURE_LIMITS,
-  CaptureDeliveryQueue,
-  utf8Bytes,
-} from './capture/delivery-queue.mjs';
+import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
 
 (function installCaptureBridge() {
   if (globalThis.__OFCA_CAPTURE_BRIDGE_ACTIVE__) return;
@@ -21,6 +19,9 @@ import {
 
   const pageOrigin = window.location.origin;
   let active = true;
+  let forwarding = false;
+  let stateGeneration = 0;
+  const statusWaiters = new Set();
   let droppedEnvelopeCount = 0;
   let deliveryFailureCount = 0;
 
@@ -82,11 +83,10 @@ import {
   }
 
   let consentEpoch = null;
-  const pendingContextCaptures = [];
-  let pendingContextBytes = 0;
-  const deliveryQueue = new CaptureDeliveryQueue({
+  const createQueue = () => new CaptureDeliveryQueue({
     send: (delivery, signal) => sendRuntimeMessage(delivery, signal),
   });
+  let deliveryQueue = createQueue();
 
   function enqueueCaptureDelivery(delivery) {
     try {
@@ -109,51 +109,41 @@ import {
     };
   }
 
-  function bufferUntilContext(envelope) {
-    const bytes = utf8Bytes(JSON.stringify(envelope));
-    if (
-      pendingContextCaptures.length >= CAPTURE_LIMITS.queueEntries
-      || pendingContextBytes + bytes > CAPTURE_LIMITS.queueBytes
-    ) {
-      reportDeliveryFailure('delivery_queue_full');
-      return;
-    }
-    pendingContextCaptures.push({
-      envelope: structuredClone(envelope),
-      bytes,
-      createdAtMs: Date.now(),
-      deliveryId: crypto.randomUUID(),
-    });
-    pendingContextBytes += bytes;
+  function pageControl(action) {
+    window.postMessage({ type: PAGE_CONTROL_MESSAGE_TYPE, version: PAGE_CONTROL_VERSION, action }, pageOrigin);
   }
 
-  function settlePendingContextCaptures(available) {
-    const pending = pendingContextCaptures.splice(0);
-    pendingContextBytes = 0;
-    if (!available || consentEpoch === null) {
-      for (const _entry of pending) reportBridgeDrop('capture_context_unavailable');
-      return;
-    }
-    for (const entry of pending) {
-      enqueueCaptureDelivery(
-        makeCaptureDelivery(entry.envelope, entry.createdAtMs, entry.deliveryId),
-      );
-    }
+  function pause() {
+    forwarding = false;
+    consentEpoch = null;
+    stateGeneration += 1;
+    deliveryQueue.close('capture_paused');
+    pageControl('pause');
   }
 
-  void sendRuntimeMessage({ type: 'ofca.capture.context.query' }).then((response) => {
+  async function resume() {
     if (!active) return;
-    if (response?.ok === true && typeof response.consent_epoch === 'string') {
+    const generation = ++stateGeneration;
+    try {
+      const response = await sendRuntimeMessage({ type: CAPTURE_STATE_QUERY_TYPE });
+      if (!active || generation !== stateGeneration) return;
+      if (response?.ok !== true || !['full', 'preview'].includes(response.mode)
+        || typeof response.consent_epoch !== 'string') { pause(); return; }
+      if (consentEpoch !== response.consent_epoch || !forwarding) {
+        pause();
+        deliveryQueue = createQueue();
+      }
       consentEpoch = response.consent_epoch;
-      settlePendingContextCaptures(true);
-      return;
+      forwarding = true;
+      pageControl('resume');
+      pageControl('refresh_identity');
+    } catch {
+      if (active && generation === stateGeneration) {
+        pause();
+        reportDeliveryFailure('capture_context_unavailable');
+      }
     }
-    settlePendingContextCaptures(false);
-  }, () => {
-    if (!active) return;
-    reportDeliveryFailure('capture_context_unavailable');
-    settlePendingContextCaptures(false);
-  });
+  }
 
   function forwardRuntimeMessage(message, isDeliveryFailure) {
     void sendRuntimeMessage(message).then(
@@ -165,17 +155,23 @@ import {
   }
 
   function pageMessageListener(event) {
-    if (!active || event.source !== window || event.origin !== pageOrigin) return;
+    if (event.source !== window || event.origin !== pageOrigin) return;
     const envelope = event.data;
+    if (envelope?.type === PAGE_CONTROL_STATUS_TYPE && envelope.version === PAGE_CONTROL_VERSION) {
+      if (active && forwarding && envelope.status?.active === true && envelope.status.forwarding === false) {
+        pageControl('resume');
+        pageControl('refresh_identity');
+      }
+      for (const resolve of [...statusWaiters]) resolve(envelope.status);
+      return;
+    }
+    if (!active || !forwarding) return;
     if (envelope?.type === CAPTURE_MESSAGE_TYPE) {
       if (!isCaptureEnvelope(envelope)) {
         reportBridgeDrop('invalid_capture_envelope');
         return;
       }
-      if (consentEpoch === null) {
-        bufferUntilContext(envelope);
-        return;
-      }
+      if (consentEpoch === null) return;
       enqueueCaptureDelivery(makeCaptureDelivery(envelope));
       return;
     }
@@ -198,9 +194,8 @@ import {
 
   function stop() {
     if (!active) return;
+    pause();
     active = false;
-    pendingContextCaptures.length = 0;
-    pendingContextBytes = 0;
     deliveryQueue.close('capture_stopped');
     window.removeEventListener('message', pageMessageListener);
     window.removeEventListener('pagehide', stop);
@@ -214,6 +209,30 @@ import {
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== PAGE_CONTROL_MESSAGE_TYPE) return false;
+    if (message.action === 'status' && message.version === PAGE_CONTROL_VERSION) {
+      let timer;
+      const finish = (status) => {
+        clearTimeout(timer);
+        statusWaiters.delete(finish);
+        sendResponse?.(status ? { ...status, active: active && status.active,
+          forwarding: forwarding && status.forwarding } : null);
+      };
+      statusWaiters.add(finish);
+      timer = setTimeout(() => finish(null), 1_000);
+      pageControl('status');
+      return true;
+    }
+    if (['pause', 'resume'].includes(message.action) && message.version === PAGE_CONTROL_VERSION) {
+      if (active) {
+        if (message.action === 'pause') pause();
+        else {
+          void resume().then(() => sendResponse?.({ ok: forwarding }));
+          return true;
+        }
+      }
+      sendResponse?.({ ok: active });
+      return false;
+    }
     if (message.action === 'refresh_identity' && message.version === PAGE_CONTROL_VERSION && active) {
       window.postMessage({
         type: PAGE_CONTROL_MESSAGE_TYPE, version: PAGE_CONTROL_VERSION, action: 'refresh_identity',
@@ -228,4 +247,5 @@ import {
   });
   window.addEventListener('message', pageMessageListener);
   window.addEventListener('pagehide', stop);
+  void resume();
 })();
