@@ -573,7 +573,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         let stateError = null;
         try { state = liveWorker ? await extensionState(liveWorker) : null; }
         catch (failure) { stateError = failure; }
-        await test.info().attach('stable-connection-diagnostic', { contentType: 'application/json', body: JSON.stringify(buildStableConnectionDiagnostic({
+        const diagnostic = JSON.stringify(buildStableConnectionDiagnostic({
           at: Date.now(), statusPolls, lastStatusPollAt, popupClosedAt,
           workerStartsDuringStep: watcher.creations.length,
           originalWorkerAlive: liveWorker === worker,
@@ -584,7 +584,9 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
           },
           extension: state,
           stateError,
-        })) });
+        }));
+        console.error(`stable-connection-diagnostic: ${diagnostic}`);
+        await test.info().attach('stable-connection-diagnostic', { contentType: 'application/json', body: diagnostic });
         throw error;
       } finally { watcher.stop(); }
     });
