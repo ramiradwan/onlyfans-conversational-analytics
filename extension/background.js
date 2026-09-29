@@ -240,6 +240,9 @@ chrome.storage.onChanged.addListener((_changes, area) => { if (area === 'local')
 void consentController.initialize().then(() => surfaceReporter.changed(), () => undefined);
 chrome.permissions?.onAdded?.addListener(signalSurfaces);
 chrome.permissions?.onRemoved?.addListener(signalSurfaces);
+chrome.tabs?.onUpdated?.addListener((_tabId, changeInfo) => {
+  if (changeInfo?.status === 'complete') signalSurfaces();
+});
 provisioningIdentityBridge.onAccountChange(signalSurfaces);
 
 export const desktopPort = registerDesktopPort({
@@ -261,6 +264,11 @@ export const desktopPort = registerDesktopPort({
       const listener = (_changes, area) => { if (area === 'local') changed(); };
       chrome.storage.onChanged.addListener(listener);
       return () => chrome.storage.onChanged.removeListener(listener);
+    },
+    (changed) => {
+      const listener = (_tabId, changeInfo) => { if (changeInfo?.status === 'complete') changed(); };
+      chrome.tabs?.onUpdated?.addListener(listener);
+      return () => chrome.tabs?.onUpdated?.removeListener?.(listener);
     },
   ],
 });
