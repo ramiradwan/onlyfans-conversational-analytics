@@ -15,7 +15,9 @@ from tests.continuous_analytics_fixture import (ACCOUNT, NOW, make_fixture, clea
 
 
 @pytest.fixture
-def fixture(tmp_path):
+def fixture(tmp_path, monkeypatch):
+    monkeypatch.setattr('app.analytics.conversation_reuse.MAX_GRAPH_UNITS', 0)
+    monkeypatch.setattr('app.analytics.conversation_reuse.MAX_ENRICHMENT_UNITS', 0)
     value = make_fixture(tmp_path, conversations=2, messages=0)
     with value.repositories.database.transaction() as db:
         for index in range(513):

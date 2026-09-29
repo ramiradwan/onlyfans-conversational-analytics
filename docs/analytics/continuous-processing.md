@@ -22,6 +22,8 @@ Verified graph chunks retain their exact canonical bytes during append assembly.
 
 When an append retains complete graph and enrichment units, it omits the additional conversation-page cache. Both units still undergo their normal validation. If either unit is refused by its existing size or count bound, the builder keeps the page-cache fallback.
 
+Predecessor page-cache cleanup remains synchronous during activation. Schema 22 batches that cleanup inside the activation transaction: page manifests are retired normally, unreferenced shared page content is reclaimed before commit, and the content epoch advances once for the batch instead of once per deleted page. A failed cleanup rolls back the retirement, batch state, and activation together. Other retirement cleanup is unchanged.
+
 An exact append keeps all predecessor graph members. It does not enumerate them as possible deletions. Changed or removed conversations retain the ordinary removal checks. Prefix copying frames previously verified canonical bytes without decoding their property objects. Stored enrichment validation compares actual prefix bytes and checks the new message, including duplicate references with JSON escapes.
 
 An eligible append keeps verified prefix records serialized through metrics and staging. Cache-entry checks materialize only their source messages while retaining the earliest actual source time. Missing proofs, incomplete units and explicit artifact reads keep the full validation and materialization path.

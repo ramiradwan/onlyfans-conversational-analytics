@@ -19,6 +19,15 @@ GUARD_NAMES = (
     'projection_generation_transition_monotonic',
     'projection_generation_identity_immutable',
     'projection_generation_delete_retired_only',
+    'generation_content_bulk_cleanup_insert',
+    'generation_content_bulk_cleanup_delete',
+    'generation_content_bulk_cleanup_update',
+    'generation_content_bulk_cleanup_arm_epoch',
+    'conversation_page_content_reclaim',
+    'generation_content_conversation_page_sets_delete',
+    'generation_content_conversation_pages_delete',
+    'generation_content_conversation_page_content_delete',
+    'generation_content_conversation_page_refs_delete',
 )
 GUARD_DIGEST = "256dbd8dfa5dfac13911a2683fa9cdc665bd45fa3b03f251fd1dc687465cc85b"
 GUARD_DIGESTS = {
@@ -27,12 +36,20 @@ GUARD_DIGESTS = {
     19: "74e6d61917e9f0b644d2d85fcd2166689280849c7e913c7042d7556f8c6f8ba0",
     20: "080907d543c0fe5632ac20ceaf4273232f751caacd08bac9145d5daf4a7d158e",
     21: "080907d543c0fe5632ac20ceaf4273232f751caacd08bac9145d5daf4a7d158e",
+    22: "3712667e2921862395802fb1e0d7745ef628c9a32c08be28e4b9c80f99f1e0af",
 }
 
 
 def _guards_match(connection):
     if connection.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
         return False
+    version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+    if version >= 22:
+        state = connection.execute(
+            "SELECT page_retirement FROM generation_content_bulk_cleanup WHERE singleton=1"
+        ).fetchone()
+        if state is None or int(state[0]) != 0:
+            return False
     rows = connection.execute(
         "SELECT name,sql FROM sqlite_master WHERE type='trigger'"
     )
@@ -41,7 +58,7 @@ def _guards_match(connection):
     finally:
         rows.close()
     encoded = json.dumps(signatures, sort_keys=True, separators=(",", ":")).encode()
-    expected = GUARD_DIGESTS.get(connection.execute("PRAGMA user_version").fetchone()[0])
+    expected = GUARD_DIGESTS.get(version)
     return expected is not None and hashlib.sha256(encoded).hexdigest() == expected
 
 

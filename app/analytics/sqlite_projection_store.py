@@ -1724,6 +1724,48 @@ class SQLiteAnalyticsProjectionStore:
         except (sqlite3.DatabaseError, ValueError, TypeError, KeyError) as error:
             raise ProjectionValidationError("projection_generation_invalid") from None
 
+    @staticmethod
+    def _retire_active_generation(connection, generation_id, account_ref, retired_at) -> None:
+        if generation_id is None:
+            return
+        batching = (
+            int(connection.execute("PRAGMA user_version").fetchone()[0]) >= 22
+            and connection.execute(
+                "SELECT 1 FROM conversation_page_sets "
+                "WHERE generation_id=? AND creator_account_id=? LIMIT 1",
+                (generation_id, account_ref),
+            ).fetchone() is not None
+        )
+        if batching:
+            armed = connection.execute(
+                "UPDATE generation_content_bulk_cleanup SET page_retirement=1 "
+                "WHERE singleton=1 AND page_retirement=0"
+            )
+            if armed.rowcount != 1:
+                raise ProjectionReconciliationError("page retirement scope differs")
+        updated = connection.execute(
+            "UPDATE projection_generations SET status='retired', retired_at=? "
+            "WHERE generation_id=? AND creator_account_id=? AND status='active'",
+            (retired_at, generation_id, account_ref),
+        )
+        if updated.rowcount != 1:
+            raise ProjectionActivationConflict("active generation changed")
+        if not batching:
+            return
+        connection.execute(
+            "DELETE FROM conversation_page_content WHERE creator_account_id=? "
+            "AND NOT EXISTS(SELECT 1 FROM conversation_page_refs r "
+            "WHERE r.creator_account_id=conversation_page_content.creator_account_id "
+            "AND r.content_id=conversation_page_content.content_id)",
+            (account_ref,),
+        )
+        disarmed = connection.execute(
+            "UPDATE generation_content_bulk_cleanup SET page_retirement=0 "
+            "WHERE singleton=1 AND page_retirement=1"
+        )
+        if disarmed.rowcount != 1:
+            raise ProjectionReconciliationError("page retirement scope differs")
+
     def _activate_completed_generation(
         self,
         generation_id: str,
@@ -1825,13 +1867,11 @@ class SQLiteAnalyticsProjectionStore:
             transition = capture_transition(
                 connection, candidate, self._enrichment_transition_candidate(candidate)
             )
-            connection.execute(
-                """
-                UPDATE projection_generations
-                SET status='retired', retired_at=?
-                WHERE creator_account_id=? AND status='active'
-                """,
-                (now, generation["creator_account_id"]),
+            self._retire_active_generation(
+                connection,
+                expected_id,
+                generation["creator_account_id"],
+                now,
             )
             owner_clause = """
                   AND owner_id=? AND owner_pid=?

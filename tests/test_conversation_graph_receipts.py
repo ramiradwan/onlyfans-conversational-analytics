@@ -7,8 +7,34 @@ import pytest
 
 from app.analytics import conversation_graph_sql
 from app.analytics.opaque_refs import account_ref
-from tests.test_conversation_graph_references import fixture
-from tests.continuous_analytics_fixture import ACCOUNT, cold_equal
+from tests.continuous_analytics_fixture import (
+    ACCOUNT, NOW, cleanup, cold_equal, insert_message, make_fixture,
+)
+
+
+def populated_fixture(tmp_path):
+    value = make_fixture(tmp_path, conversations=2, messages=0)
+    with value.repositories.database.transaction() as db:
+        for index in range(257):
+            insert_message(db, 'chat-0', f'large-{index}', NOW, index)
+        insert_message(db, 'chat-1', 'small', NOW)
+    return value
+
+
+@pytest.fixture
+def fixture(tmp_path):
+    value = populated_fixture(tmp_path)
+    yield value
+    cleanup(value)
+
+
+@pytest.fixture
+def page_fixture(tmp_path, monkeypatch):
+    monkeypatch.setattr('app.analytics.conversation_reuse.MAX_GRAPH_UNITS', 0)
+    monkeypatch.setattr('app.analytics.conversation_reuse.MAX_ENRICHMENT_UNITS', 0)
+    value = populated_fixture(tmp_path)
+    yield value
+    cleanup(value)
 
 
 def observe_reads(fixture, monkeypatch, change=None):
@@ -95,7 +121,8 @@ def test_verified_graph_unit_avoids_predecessor_row_reads(fixture, monkeypatch):
     cold_equal(fixture, fixture.pipeline.publish_candidate(candidate).artifact)
 
 
-def test_verified_graph_read_avoids_second_source_scan(fixture, monkeypatch):
+def test_verified_graph_read_avoids_second_source_scan(page_fixture, monkeypatch):
+    fixture = page_fixture
     fixture.pipeline.project_account(ACCOUNT)
     fixture.stores.projections._conversation_graph_proofs.clear()
     receipts = []
@@ -111,7 +138,8 @@ def test_verified_graph_read_avoids_second_source_scan(fixture, monkeypatch):
 
 @pytest.mark.parametrize('fault', ['disabled', 'missing', 'proof', 'stamp', 'generation',
     'account', 'header', 'changed_storage', 'tracking_removed', 'schema_changed'])
-def test_unusable_graph_receipt_rereads_actual_rows(fixture, monkeypatch, fault):
+def test_unusable_graph_receipt_rereads_actual_rows(page_fixture, monkeypatch, fault):
+    fixture = page_fixture
     fixture.pipeline.project_account(ACCOUNT)
     fixture.stores.projections._conversation_graph_proofs.clear()
     def alter(kwargs):
@@ -152,7 +180,8 @@ def test_unusable_graph_receipt_rereads_actual_rows(fixture, monkeypatch, fault)
 
 
 @pytest.mark.parametrize('every_read', [False, True])
-def test_change_during_read_prevents_receipt(fixture, monkeypatch, every_read):
+def test_change_during_read_prevents_receipt(page_fixture, monkeypatch, every_read):
+    fixture = page_fixture
     fixture.pipeline.project_account(ACCOUNT)
     fixture.stores.projections._conversation_graph_proofs.clear()
     reading = conversation_graph_sql._read_graph_records
@@ -204,7 +233,8 @@ def test_graph_receipt_does_not_replace_full_stored_validation(fixture, monkeypa
     fixture.stores.projections.discard_generation(changed[0])
 
 
-def test_internal_verified_page_reference_cannot_be_injected(fixture):
+def test_internal_verified_page_reference_cannot_be_injected(page_fixture):
+    fixture = page_fixture
     from app.analytics.conversation_page_sql import load_page_header, resolve_page_sets
     from app.analytics.conversation_pages import VerifiedPageReference
     from app.analytics.validation_receipt import content_stamp
@@ -239,7 +269,8 @@ def test_graph_receipt_requires_a_write_transaction(fixture):
                                    check=lambda: None, source_stamp=stamp))
 
 
-def test_malformed_receipt_falls_back_without_trusting_its_attributes(fixture, monkeypatch):
+def test_malformed_receipt_falls_back_without_trusting_its_attributes(page_fixture, monkeypatch):
+    fixture = page_fixture
     fixture.pipeline.project_account(ACCOUNT)
     fixture.stores.projections._conversation_graph_proofs.clear()
     def alter(kwargs):
