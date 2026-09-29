@@ -93,7 +93,11 @@ export function createCompanionClient({
     const controller = new AbortController();
     const signal = controls.signal ? AbortSignal.any([controller.signal, controls.signal]) : controller.signal;
     const timer = setTimeout(() => controller.abort(), 10_000);
-    try { return await abortable(connectCurrent({ ...controls, signal, connectionAbort: controller }, requestId), signal); }
+    try {
+      const connected = await abortable(connectCurrent({ ...controls, signal }, requestId), signal);
+      signal.throwIfAborted(); controls.assertCurrent?.();
+      return connected;
+    }
     finally { clearTimeout(timer); }
   }
   async function connectCurrent(controls, requestId) {
@@ -112,12 +116,15 @@ export function createCompanionClient({
       return connected;
     }
     const version = generation;
-    connectionAbort = controls.connectionAbort;
+    const controller = new AbortController();
+    connectionAbort = controller;
+    const timer = setTimeout(() => controller.abort(), 10_000);
     connectingAccount = accountId;
     const current = () => {
-      controls.signal?.throwIfAborted(); controls.assertCurrent?.();
+      controller.signal.throwIfAborted();
       if (generation !== version || !allowsFull?.()) throw failure();
     };
+    const handshakeControls = { signal: controller.signal, assertCurrent: current };
     const operation = (async () => {
       record('connect-start');
       // The persisted circuit limits automatic reconnects. A freshly confirmed
@@ -130,24 +137,24 @@ export function createCompanionClient({
       current(); await permitted(accountId);
       const channel = await channelFactory({
         url: LOCAL_SERVICE_WS, store: pairingStore, SnowSession: snow.SnowSession,
-        accountId, requestId, trust: await trust(), signal: controls.signal,
+        accountId, requestId, trust: await trust(), signal: controller.signal,
       });
       try {
         current(); await permitted(accountId);
         if (channel.identity.creator_account_id !== accountId) throw failure();
         const agentInstallationId = await installationId();
-        const challenge = await channel.rpc('agent.challenge', {}, controls);
+        const challenge = await channel.rpc('agent.challenge', {}, handshakeControls);
         if (!exact(challenge, ['challenge_id', 'challenge', 'session_id', 'expires_at'])
           || typeof challenge.challenge_id !== 'string' || challenge.challenge_id.length > 128
           || typeof challenge.expires_at !== 'string' || challenge.expires_at.length > 40
           || !Number.isFinite(Date.parse(challenge.expires_at))) throw failure();
         const signature = await signAgentSessionProof(await pairingStore.identity(), challenge, channel.identity, agentInstallationId);
         current(); await permitted(accountId);
-        const authorized = await channel.rpc('agent.authenticate', { challenge_id: challenge.challenge_id, signature }, controls);
+        const authorized = await channel.rpc('agent.authenticate', { challenge_id: challenge.challenge_id, signature }, handshakeControls);
         if (!exact(authorized, ['creator_account_id', 'auth_ticket', 'storage_bootstrap'])
           || authorized.creator_account_id !== accountId || !secret(authorized.auth_ticket)
           || !secret(authorized.storage_bootstrap)) throw failure();
-        const unlocked = await channel.rpc('agent.storage.unseal', { storage_bootstrap: authorized.storage_bootstrap }, controls);
+        const unlocked = await channel.rpc('agent.storage.unseal', { storage_bootstrap: authorized.storage_bootstrap }, handshakeControls);
         if (!exact(unlocked, ['schema', 'creator_account_id', 'credential_kind', 'auth_ticket', 'storage_key_base64'])
           || unlocked.schema !== 'ofca-extension-storage-unlock/v1' || unlocked.creator_account_id !== accountId
           || !['pairing', 'reconnect'].includes(unlocked.credential_kind)
@@ -185,9 +192,11 @@ export function createCompanionClient({
         return active;
       } catch { channel.close(); throw failure(); }
     })();
-    connecting = operation;
-    try { return await operation; } finally {
-      if (connecting === operation) { connecting = null; connectingAccount = null; connectionAbort = null; }
+    const bounded = abortable(operation, controller.signal);
+    connecting = bounded;
+    try { return await bounded; } finally {
+      clearTimeout(timer);
+      if (connecting === bounded) { connecting = null; connectingAccount = null; connectionAbort = null; }
     }
   }
   async function hasSavedPairing() {
@@ -280,7 +289,8 @@ export function createCompanionClient({
       record('facade-close');
       stopped = true; facade.readyState = 3;
       controller.abort();
-      unsubscribe?.(); channel?.close();
+      unsubscribe?.(); (channel ?? active?.channel)?.close();
+      if (channel === null) connectionAbort?.abort();
       void recovery.retryAfterMs().then((delay) => { facade.retryAfterMs = delay; })
         .catch(() => { facade.retryAfterMs = 60_000; })
         .finally(() => facade.onclose?.({ code: 4008 }));
@@ -359,6 +369,7 @@ export function createCompanionClient({
       if (port.name !== PAIRING_PORT_NAME || surface === null) return;
       const controller = new AbortController();
       const notify = (value) => {
+        if (controller.signal.aborted) return;
         const projection = value?.state ? {
           ...value,
           comparison_code: surface === 'setup' ? value.comparison_code : null,
