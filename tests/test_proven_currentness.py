@@ -20,16 +20,21 @@ def current(f):
     return f.pipeline.projection_is_current(ACCOUNT, 1)
 
 
-def test_currentness_expiry_rechecks_existing_verified_content_without_materialization(proven, monkeypatch):
+def test_currentness_half_life_renews_existing_verified_content_without_materialization(proven, monkeypatch):
     f = proven
     full = Mock(side_effect=AssertionError('unchanged verified contents need no new full materialization'))
     monkeypatch.setattr(f.stores.projections, 'get', full)
     assert current(f)
     first = next(iter(f.stores.projections._currentness.entries.values()))
     assert first.expires_at == 60
-    f.now[0] = 59
+    f.now[0] = 29
     assert current(f)
     assert next(iter(f.stores.projections._currentness.entries.values())) is first
+    f.now[0] = 30
+    assert current(f)
+    renewed = next(iter(f.stores.projections._currentness.entries.values()))
+    assert renewed is not first
+    assert renewed.expires_at == 90
     f.now[0] = 60
     assert current(f)
     assert next(iter(f.stores.projections._currentness.entries.values())).expires_at == 120
