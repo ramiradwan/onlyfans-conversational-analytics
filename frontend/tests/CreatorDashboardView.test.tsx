@@ -142,6 +142,7 @@ function readyStore(payload = snapshot()) {
     applied_history_settings_revision: 9,
     last_heartbeat_at: AS_OF,
     degraded_reason: null,
+    browser: null,
   });
   store.applySnapshot(payload);
   return store;

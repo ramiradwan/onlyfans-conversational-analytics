@@ -78,3 +78,7 @@ dialog::backdrop { background: color-mix(in oklch, var(--dipsy-color-text) 35%, 
   #setup-progress [aria-current="step"] button { text-decoration: underline; }
   dialog { border: 1px solid CanvasText; }
 }
+
+/* The compact window the desktop app opens shows only its one task. */
+main[data-handoff="active"] #open-options,
+main[data-handoff="complete"] #open-options { display: none; }

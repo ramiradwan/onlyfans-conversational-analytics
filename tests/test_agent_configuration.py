@@ -227,7 +227,7 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
     with client.websocket_connect("/ws/bridge") as bridge:
         bridge.send_json(fixture("bridge.hello"))
         assert bridge.receive_json()["type"] == "bridge.session"
-        for _ in range(4):
+        for _ in range(5):
             bridge.receive_json()
 
         with client.websocket_connect("/__test__/agent-protocol") as agent:

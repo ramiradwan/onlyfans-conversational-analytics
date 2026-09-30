@@ -1,4 +1,7 @@
-import { registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
+import { createSurfaceOpener, registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
+import { registerDesktopPort } from './runtime/desktop-port.mjs';
+import { probeDesktopRuntime } from './runtime/customer-journey.mjs';
+import { applyControl, createSurfaceReporter } from './runtime/browser-surface.mjs';
 import { createAgentRuntime } from './transport/agent-runtime.mjs';
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
 import { AgentWebSocketClient } from './transport/agent-websocket.mjs';
@@ -19,9 +22,17 @@ import { LegalConsentAuthorization } from './runtime/legal-consent-authorization
 import { legalReleaseBindings } from './runtime/legal-release-bindings.mjs';
 
 let lastStartupErrorCode = null;
+// Delivery progress changes often; open pages re-read at most once a second.
+let deliverySignalTimer = null;
+const signalDeliveryProgress = () => {
+  if (deliverySignalTimer !== null) return;
+  deliverySignalTimer = setTimeout(() => { deliverySignalTimer = null; companionClient.notifySurfaces(); }, 1_000);
+};
 export const companionClient = createCompanionClient({
   accountDatabaseName,
   allowsFull: () => consentController?.state.mode === 'full',
+  allowsControl: () => consentController?.state.mode === 'paused' && consentController.state.resume_mode === 'full',
+  onControl: (action) => applyControl(consentController, action),
   detectedAccountId: () => provisioningIdentityBridge.currentAccountId(),
 });
 export const chromeAdapter = companionClient.adapter;
@@ -34,7 +45,14 @@ export const agentRuntime = createAgentRuntime({
   configHttpFactory: () => companionClient.configAdapter,
   catchupRpc: (...args) => companionClient.configAdapter.catchupRpc(...args),
   captureState: () => consentController.captureState(),
-  transportFactory: (options) => new AgentWebSocketClient({ ...options, webSocketFactory: companionClient.webSocketFactory }),
+  transportFactory: (options) => new AgentWebSocketClient({
+    ...options,
+    webSocketFactory: companionClient.webSocketFactory,
+    onSession: (...values) => { options.onSession?.(...values); companionClient.notifySurfaces(); },
+    onSessionLost: (...values) => { options.onSessionLost?.(...values); companionClient.notifySurfaces(); },
+    onIngestAcknowledged: (...values) => { options.onIngestAcknowledged?.(...values); signalDeliveryProgress(); },
+    onIngestRejected: (...values) => { options.onIngestRejected?.(...values); signalDeliveryProgress(); },
+  }),
   signerFactory: (options) => createChromeBrowserSigningProvider(options),
   onStartupError: () => {
     lastStartupErrorCode = 'startup_failed';
@@ -201,6 +219,73 @@ companionClient.registerPopup({
   onPaired: () => consentController.reconcile(),
   onForget: () => consentController.reconcile(),
 });
+companionClient.onRevoked(() => consentController.reconcile());
 void consentController.initialize().catch(() => undefined);
 
-registerSurfaceNavigation();
+const openSurface = createSurfaceOpener(chrome);
+registerSurfaceNavigation(chrome, openSurface);
+
+// The same change events feed open pages, the desktop port, and the browser
+// state that Brain shows in the desktop app.
+const surfaceReporter = createSurfaceReporter({
+  companion: companionClient,
+  relevant: () => consentController?.state.mode === 'full'
+    || (consentController?.state.mode === 'paused' && consentController.state.resume_mode === 'full'),
+  readState: async () => ({
+    consent: await consentController.status(),
+    legal: await legalActivationController.status(),
+  }),
+});
+const signalSurfaces = () => { companionClient.notifySurfaces(); surfaceReporter.changed(); };
+chrome.storage.onChanged.addListener((_changes, area) => { if (area === 'local') surfaceReporter.changed(); });
+void consentController.initialize().then(() => surfaceReporter.changed(), () => undefined);
+chrome.permissions?.onAdded?.addListener(signalSurfaces);
+chrome.permissions?.onRemoved?.addListener(signalSurfaces);
+chrome.tabs?.onUpdated?.addListener((_tabId, changeInfo) => {
+  if (changeInfo?.status !== 'complete') return;
+  signalSurfaces();
+  // Chromium can publish "complete" just before the newly injected content
+  // bridge answers status. One bounded follow-up keeps event-driven surfaces
+  // accurate without restoring periodic polling.
+  setTimeout(signalSurfaces, 500);
+});
+provisioningIdentityBridge.onAccountChange(signalSurfaces);
+
+export const desktopPort = registerDesktopPort({
+  chromeApi: chrome,
+  companion: companionClient,
+  readState: async () => ({
+    consent: await consentController.status(),
+    legal: await legalActivationController.status(),
+    pairing: await companionClient.status(),
+  }),
+  // Each step opens the one extension page that owns it. Site access and the
+  // history permission need a click there because Chrome requires the gesture.
+  openStep: (step, { anchorTab }) => openSurface(['setup', 'access'].includes(step)
+    ? { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab }
+    : { surface: 'options', section: step === 'history' ? 'history' : 'connection', presentation: 'window', anchorTab }),
+  onPaired: () => consentController.reconcile(),
+  changeSources: [
+    (changed) => {
+      const listener = (_changes, area) => { if (area === 'local') changed(); };
+      chrome.storage.onChanged.addListener(listener);
+      return () => chrome.storage.onChanged.removeListener(listener);
+    },
+    (changed) => {
+      const listener = (_tabId, changeInfo) => { if (changeInfo?.status === 'complete') changed(); };
+      chrome.tabs?.onUpdated?.addListener(listener);
+      return () => chrome.tabs?.onUpdated?.removeListener?.(listener);
+    },
+  ],
+});
+desktopPort.register();
+
+// Installed after the desktop app: open setup on the desktop-guided path. It
+// still asks for every choice; it only skips the Preview-first framing.
+chrome.runtime.onInstalled?.addListener(({ reason } = {}) => {
+  if (reason !== 'install') return;
+  void probeDesktopRuntime().then((present) => {
+    if (present) return openSurface({ surface: 'setup', section: 'desktop' });
+    return undefined;
+  }).catch(() => undefined);
+});

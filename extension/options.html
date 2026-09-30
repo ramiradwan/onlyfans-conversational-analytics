@@ -40,7 +40,6 @@
       <div class="section-heading"><h2 id="capture-title">Browser activity</h2><span id="mode-label" class="status-line">Checking…</span></div>
       <p>What this extension observes in your browser.</p>
       <div class="settings-row"><div><h3>Site access</h3><p id="site-access">Checking…</p></div><button id="revoke" class="danger hidden">Revoke</button></div>
-      <div class="settings-row"><div><h3 id="pause-title">Pause analytics</h3><p>No new activity is collected while paused. Saved data is unchanged.</p></div><button id="pause" class="secondary hidden">Pause</button></div>
       <button id="restore-access" class="secondary hidden">Allow site access</button>
       <button id="reload-tabs" class="secondary hidden">Reload OnlyFans tabs to apply access</button>
     </section>
@@ -54,7 +53,7 @@
       </dl>
       <button id="open-dashboard" class="secondary">Open the desktop app</button>
       <div class="settings-row"><div><h3>Forget the desktop app</h3><p>Ends this connection. Pair again to use Full analytics.</p></div><button id="forget-companion" class="secondary hidden">Forget</button></div>
-      <div class="settings-row"><div><h3>Message history</h3><p id="history-status">Manage earlier conversations in the desktop app.</p></div><button id="history" class="secondary hidden">Allow message history</button></div>
+      <div class="settings-row" id="history-row"><div><h3 id="history-title" tabindex="-1">Message history</h3><p id="history-status">Manage earlier conversations in the desktop app.</p></div><button id="history" class="secondary hidden">Allow message history</button></div>
       <details><summary>Connection details</summary>
         <dl class="connection-grid"><div><dt>Updates waiting to send</dt><dd id="pending-count">0</dd></div></dl>
         <p id="capture-health" class="fine-print"></p><p id="history-health" class="fine-print"></p>

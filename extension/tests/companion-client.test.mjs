@@ -13,10 +13,10 @@ const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null } = {}) {
+function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0 } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
-  let enabled = full, account = ACCOUNT, paired = true, pairingWait;
+  let enabled = full, account = ACCOUNT, paired = true, pairingWait, remainingSurfaceFailures = surfaceFailures;
   const pairingStore = {
     async identity() { return { privateKey: key }; }, async status() { return { paired }; },
     async begin() { return { requestId: 'request-one', deadline: Math.floor(Date.now() / 1000) + 300, request: vector.request }; },
@@ -67,6 +67,10 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
           }
           if (method === 'agent.storage.rotate') return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: 'replacement-bootstrap' };
           if (method === 'agent.config.get') return { status: 304, etag: 'config-1', document: null };
+          if (method === 'agent.surface.report') {
+            if (remainingSurfaceFailures > 0) { remainingSurfaceFailures -= 1; throw new Error('surface_refused'); }
+            return {};
+          }
           throw new Error('test_method_missing');
         },
       };
@@ -197,6 +201,42 @@ test('current Agent proof, storage unseal, configuration and rotation use only t
   } finally { h.client.invalidate(); }
 });
 
+test('an active Full session reports pending browser state on its authenticated channel', async () => {
+  const h = harness();
+  const surface = {
+    schema: 'ofca-browser-surface/v1',
+    capture: 'active',
+    site_access: 'granted',
+    history_permission: 'granted',
+    legal_review_required: false,
+  };
+  h.client.reportSurface(surface);
+  await h.client.adapter.loadBrainBinding();
+  await tick();
+  assert.deepEqual(
+    h.channels[0].rpcCalls.map((call) => call.method),
+    ['agent.challenge', 'agent.authenticate', 'agent.storage.unseal', 'agent.surface.report'],
+  );
+  assert.deepEqual(h.channels[0].rpcCalls.at(-1).params, surface);
+  h.client.invalidate();
+});
+
+test('an unchanged browser surface retries after a refused report', async () => {
+  const h = harness({ surfaceFailures: 1 });
+  const surface = {
+    schema: 'ofca-browser-surface/v1', capture: 'active', site_access: 'granted',
+    history_permission: 'granted', legal_review_required: false,
+  };
+  h.client.reportSurface(surface);
+  await h.client.adapter.loadBrainBinding();
+  await tick();
+  assert.equal(h.channels[0].rpcCalls.filter((call) => call.method === 'agent.surface.report').length, 1);
+  h.client.reportSurface({ ...surface });
+  await tick();
+  assert.equal(h.channels[0].rpcCalls.filter((call) => call.method === 'agent.surface.report').length, 2);
+  h.client.invalidate();
+});
+
 test('explicit confirmed pairing is not blocked by automatic reconnect cooldown', async () => {
   let time = 1_800_000_000_000;
   const h = harness({ enforcePairing: true, now: () => time });
@@ -313,7 +353,7 @@ test('setup pairing is restricted to its packaged page and disconnect cancels co
   for (let i = 0; i < 10 && !states.some((state) => state.state === 'compare'); i++) await tick();
   assert.equal(states.find((state) => state.state === 'compare').comparison_code, vector.expected.comparison_code);
   port.onDisconnect.listeners[0](); await tick(); assert.equal(h.stats.cancel, 1); assert.equal(h.stats.networks, 0);
-  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,owns_attempt,state'));
+  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,desktop_attempt,desktop_control,owns_attempt,state'));
 });
 
 test('the transient toolbar popup can inspect status but cannot start a comparison', async () => {

@@ -23,6 +23,7 @@ function normalizeSummary(snapshot, agent) {
     requiredConfigRevision: agent.required_config_revision,
     lastHeartbeatAt: agent.last_heartbeat_at,
     connectionToken: agent.connection_id,
+    browser: agent.browser ?? null,
   };
 }
 

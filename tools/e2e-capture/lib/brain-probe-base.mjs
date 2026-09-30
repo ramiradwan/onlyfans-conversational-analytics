@@ -358,6 +358,7 @@ export async function readBrainSummary(context, { timeoutMs = 10_000 } = {}) {
         requiredConfigRevision: agent.required_config_revision,
         lastHeartbeatAt: agent.last_heartbeat_at,
         connectionToken: agent.connection_id,
+        browser: agent.browser ?? null,
       });
     }
 
