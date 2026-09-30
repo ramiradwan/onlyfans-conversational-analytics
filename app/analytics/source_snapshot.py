@@ -49,7 +49,12 @@ class SourceCatalog:
 
 def scan_identity(db, account_id: str, revision: int, *, check=lambda: None,
                   consume=lambda: None, max_text: int | None = None):
-    """Match canonical JSON byte for byte without holding message bodies."""
+    """Match canonical JSON byte for byte while streaming the account once.
+
+    The digest contract is unchanged.  Chat metadata and latest timestamps are
+    read in one grouped query and all live messages are consumed from one
+    account-ordered cursor, avoiding two message queries per conversation.
+    """
 
     account_hash = hashlib.sha256(b"ofca:canonical-account:v1\0")
     digests, message_count = {}, 0
@@ -61,9 +66,33 @@ def scan_identity(db, account_id: str, revision: int, *, check=lambda: None,
         if conversation_hash is not None:
             conversation_hash.update(data)
 
+    text_column = "m.text" if max_text is None else "substr(m.text,1,?) AS text"
+    message_parameters = (account_id,) if max_text is None else (max_text + 1, account_id)
+    chats = db.execute(
+        """SELECT c.chat_id,c.platform_user_id,c.display_name,MAX(m.sent_at) AS last_message_at
+             FROM account_chats AS c
+             LEFT JOIN account_messages AS m
+               ON m.creator_account_id=c.creator_account_id
+              AND m.chat_id=c.chat_id AND m.is_deleted=0
+            WHERE c.creator_account_id=? AND c.is_deleted=0
+            GROUP BY c.chat_id,c.platform_user_id,c.display_name
+            ORDER BY c.chat_id""",
+        (account_id,),
+    )
+    messages = db.execute(
+        f"""SELECT m.chat_id,m.message_id,{text_column},m.sent_at,m.direction
+              FROM account_messages AS m
+              JOIN account_chats AS c
+                ON c.creator_account_id=m.creator_account_id
+               AND c.chat_id=m.chat_id AND c.is_deleted=0
+             WHERE m.creator_account_id=? AND m.is_deleted=0
+             ORDER BY m.chat_id,m.sent_at,m.winning_stream_epoch,
+                      m.winning_source_seq,m.message_id""",
+        message_parameters,
+    )
+    pending = messages.fetchone()
+
     emit('{"conversations":{')
-    chats = db.execute("""SELECT chat_id,platform_user_id,display_name FROM account_chats
-        WHERE creator_account_id=? AND is_deleted=0 ORDER BY chat_id""", (account_id,))
     for ordinal, chat in enumerate(chats):
         consume()
         if ordinal:
@@ -71,33 +100,30 @@ def scan_identity(db, account_id: str, revision: int, *, check=lambda: None,
         chat_id = str(chat["chat_id"])
         emit(encoded(chat_id) + ':')
         part = hashlib.sha256()
-        latest = db.execute("""SELECT sent_at FROM account_messages
-            WHERE creator_account_id=? AND chat_id=? AND is_deleted=0
-            ORDER BY sent_at DESC,winning_stream_epoch DESC,winning_source_seq DESC,message_id DESC
-            LIMIT 1""", (account_id, chat_id)).fetchone()
         emit('{"conversation_id":' + encoded(chat_id), part)
         emit(',"display_name":' + encoded(chat["display_name"]), part)
-        emit(',"last_message_at":' + encoded(instant(latest[0]) if latest else None), part)
+        latest = chat["last_message_at"]
+        emit(',"last_message_at":' + encoded(instant(str(latest)) if latest else None), part)
         emit(',"messages":[', part)
-        text_column = 'text' if max_text is None else 'substr(text,1,?) AS text'
-        parameters = (account_id, chat_id) if max_text is None else (max_text + 1, account_id, chat_id)
-        messages = db.execute(f"""SELECT message_id,{text_column},sent_at,direction
-            FROM account_messages WHERE creator_account_id=? AND chat_id=? AND is_deleted=0
-            ORDER BY sent_at,winning_stream_epoch,winning_source_seq,message_id""", parameters)
-        for index, message in enumerate(messages):
+        index = 0
+        while pending is not None and str(pending["chat_id"]) == chat_id:
             consume()
-            if max_text is not None and len(message["text"]) > max_text:
+            if max_text is not None and len(pending["text"]) > max_text:
                 from app.analytics.query_execution import QuestionLimitExceeded
                 raise QuestionLimitExceeded()
             if index:
                 emit(',', part)
-            emit(encoded({"message_id": str(message["message_id"]), "source_ordinal": index,
-                "text": str(message["text"]), "sent_at": instant(str(message["sent_at"])),
-                "direction": str(message["direction"]), "sentiment": None}), part)
+            emit(encoded({"message_id": str(pending["message_id"]), "source_ordinal": index,
+                "text": str(pending["text"]), "sent_at": instant(str(pending["sent_at"])),
+                "direction": str(pending["direction"]), "sentiment": None}), part)
             message_count += 1
+            index += 1
+            pending = messages.fetchone()
         participant = chat["platform_user_id"] or 'placeholder:' + chat_id
         emit('],"platform_user_id":' + encoded(participant) + ',"unread_count":0}', part)
         digests[chat_id] = 'sha256:' + part.hexdigest()
+    if pending is not None:
+        raise ValueError("canonical_message_without_live_chat")
     emit('},"view_revision":' + str(revision) + '}')
     return CanonicalIdentity(revision, 'sha256:' + account_hash.hexdigest()), digests, message_count
 

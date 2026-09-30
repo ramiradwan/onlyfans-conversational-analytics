@@ -114,3 +114,35 @@ def test_aggregate_catalog_budget_is_enforced(monkeypatch):
         assert len(catalogs.entries) <= 1
     assert catalogs.get('0', token) is None
     assert catalogs.get('11', token) is not None
+
+
+def test_identity_scan_streams_account_without_per_conversation_message_queries(fixture):
+    from app.analytics import source_snapshot
+    from app.analytics.source_snapshot import conversation_digest
+
+    model = fixture.source.account_read_model(ACCOUNT)
+    statements = []
+    with fixture.repositories.database.read() as db:
+        db.set_trace_callback(statements.append)
+        try:
+            identity, digests, count = source_snapshot.scan_identity(
+                db, ACCOUNT, model.view_revision
+            )
+        finally:
+            db.set_trace_callback(None)
+
+    assert identity == canonical_identity(model)
+    assert digests == {
+        chat_id: conversation_digest(conversation)
+        for chat_id, conversation in model.conversations.items()
+    }
+    assert count == sum(
+        len(conversation["messages"])
+        for conversation in model.conversations.values()
+    )
+    message_reads = [
+        sql for sql in statements
+        if sql.lstrip().upper().startswith("SELECT")
+        and "account_messages AS m" in sql
+    ]
+    assert len(message_reads) == 2

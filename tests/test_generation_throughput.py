@@ -195,3 +195,24 @@ def test_candidate_rejects_a_missing_local_publication_epoch(fixture, published)
                    (candidate.publication_epoch,))
     with pytest.raises(GraphReferentialIntegrityError, match='projection_epoch_absent'):
         fixture.stores.projections._validate_persisted_generation(candidate.staged_generation_id)
+
+
+def test_candidate_validation_reuses_live_lease_connection(fixture, monkeypatch):
+    original = SQLiteGraphGenerationWriter.validate
+    observed = []
+
+    def validate(writer):
+        connection = writer._write_connection
+        assert connection is not None
+        result = original(writer)
+        assert writer._write_connection is connection
+        assert connection.execute("SELECT 1").fetchone()[0] == 1
+        observed.append(connection)
+        return result
+
+    monkeypatch.setattr(SQLiteGraphGenerationWriter, "validate", validate)
+    fixture.pipeline.build_candidate(ACCOUNT)
+    assert len(observed) == 1
+    assert fixture.stores.database.open_connection_count(
+        fixture.stores.database.path
+    ) == 0
