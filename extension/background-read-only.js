@@ -182,6 +182,8 @@ export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile'
     consentMode: consent.consent.mode,
     capturePhase: consent.phase,
     runtimeReady: transport !== null,
+    transportStopped: transport?.stopped ?? null,
+    reconnectAllowed: transport?.reconnectAllowed ?? null,
     socketOpen: transport?.socket?.readyState === WebSocket.OPEN,
     sessionBound: transport?.session !== null && transport?.session !== undefined,
     heartbeatTimerPresent: transport?.heartbeatTimer !== null && transport?.heartbeatTimer !== undefined,

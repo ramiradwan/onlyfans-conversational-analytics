@@ -1,9 +1,35 @@
 import { safeCompanionCloseReason } from '../../../extension/transport/companion-channel.mjs';
 
-const EVENTS = new Set(['connect-start', 'connect-admitted', 'circuit-reset', 'channel-close', 'facade-close', 'invalidate']);
+const EVENTS = new Set(['connect-start', 'connect-admitted', 'connect-failed', 'circuit-reset', 'channel-close', 'facade-close', 'invalidate']);
 const ERROR_CLASSES = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'EvalError']);
 const number = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const boolean = (value) => typeof value === 'boolean' ? value : null;
+
+export function buildWorkerRecoveryDiagnostic(extension) {
+  const state = extension ?? {};
+  const alarmTime = number(state.reconcileAlarm?.scheduledTime);
+  const capturedAt = number(state.capturedAt);
+  return {
+    runtimeReady: boolean(state.runtimeReady),
+    transportStopped: boolean(state.transportStopped),
+    reconnectAllowed: boolean(state.reconnectAllowed),
+    socketOpen: boolean(state.socketOpen),
+    sessionBound: boolean(state.sessionBound),
+    reconnectTimerPresent: boolean(state.reconnectTimerPresent),
+    recoveryAttempts: number(state.recoveryAttempts),
+    recoveryNextAttemptInMs: number(state.recoveryNextAttemptInMs),
+    alarmPresent: state.reconcileAlarm != null,
+    alarmDueInMs: alarmTime === null || capturedAt === null ? null : Math.max(0, alarmTime - capturedAt),
+    acknowledgedSourceSeq: number(state.outbox?.acknowledgedSourceSeq),
+    pendingEntries: number(state.outbox?.pendingEntries),
+    connectionEvents: Array.isArray(state.connectionEvents) ? state.connectionEvents.slice(-24).map((entry) => ({
+      event: EVENTS.has(entry.event) ? entry.event : 'other',
+      code: Number.isInteger(entry.code) && entry.code >= 1000 && entry.code <= 4999 ? entry.code : null,
+      reason: safeCompanionCloseReason(entry.reason),
+      wasStable: boolean(entry.wasStable),
+    })) : [],
+  };
+}
 
 export function withoutReportedExpectStep(assertion, { expectConfig, setExpectConfig }) {
   const previous = expectConfig();

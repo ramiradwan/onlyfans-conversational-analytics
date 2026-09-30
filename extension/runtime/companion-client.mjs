@@ -101,6 +101,10 @@ export function createCompanionClient({
       signal.throwIfAborted(); controls.assertCurrent?.();
       return connected;
     }
+    catch (error) {
+      record('connect-failed', { reason: safeCompanionCloseReason(error?.code ?? 'other') });
+      throw error;
+    }
     finally { clearTimeout(timer); }
   }
   async function connectCurrent(controls, requestId) {
@@ -407,9 +411,10 @@ export function createCompanionClient({
       onerror: null, authTicket: null, retryAfterMs: 0 };
     const controller = new AbortController();
     let channel = null, stopped = false, unsubscribe;
-    facade.close = () => {
+    facade.close = (code = null, reason = null) => {
       if (stopped) return;
-      record('facade-close');
+      record('facade-close', { code: Number.isInteger(code) && code >= 1000 && code <= 4999 ? code : null,
+        reason: safeCompanionCloseReason(reason) });
       stopped = true; facade.readyState = 3;
       controller.abort();
       unsubscribe?.(); (channel ?? active?.channel)?.close();
