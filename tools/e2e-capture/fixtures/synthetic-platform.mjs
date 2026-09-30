@@ -111,7 +111,8 @@ export class SyntheticPlatform {
     if (!inventory && request.operation !== 'message-page') throw new Error('Unexpected synthetic operation');
     const items = inventory ? [...this.catchupChats].map(([id, messages]) => ({ id, platform_user_id: id,
       display_name: null, updated_at: messages[0].sent_at })) : this.catchupChats.get(request.parameters.conversationId);
-    if (!items || request.parameters.query.cursor !== null) throw new Error('Unexpected synthetic continuation');
+    const cursor = request.parameters?.query?.cursor ?? null;
+    if (!items || cursor !== null) throw new Error('Unexpected synthetic continuation');
     return { success: true, operation: request.operation, data: { items: structuredClone(items),
       continuation: null, boundary: inventory ? 'inventory_end' : 'history_start' } };
   }
