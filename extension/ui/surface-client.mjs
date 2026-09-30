@@ -7,6 +7,10 @@ import { LOCAL_SERVICE_ORIGIN, assertLocalServiceUrl } from '../transport/local-
 import { DESKTOP_LINK_STORAGE_KEY } from '../runtime/desktop-port.mjs';
 
 const unknownReadiness = () => ({ commercial_authority: 'unknown', analysis_admission: 'blocked' });
+export function isFullFamilyStatus(status) {
+  return status?.consent?.mode === 'full'
+    || (status?.consent?.mode === 'paused' && status.consent.resume_mode === 'full');
+}
 export class NoticeError extends Error {}
 export const noticeText = (error, fallback) => error instanceof NoticeError ? error.message : fallback;
 
@@ -137,7 +141,7 @@ export function createSurfaceClient(onChange, onError) {
       model.desktopLinked = await desktopLinked();
       // An open desktop page proves the desktop app is running; otherwise probe
       // once for this refresh. Refreshes are event-driven, never on a timer.
-      model.desktopRuntimeReachable = status.consent.mode === 'full'
+      model.desktopRuntimeReachable = isFullFamilyStatus(status)
         ? model.desktopLinked || await probeDesktopRuntime() : false;
       if (!model.desktopRuntimeReachable) resetReadiness();
       if (port && (status.consent.mode === 'full'

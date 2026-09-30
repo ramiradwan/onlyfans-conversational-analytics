@@ -10,6 +10,7 @@ import {
   CAPTURE_PROTOCOL_VERSION,
   isCaptureDelivery,
 } from '../capture/envelopes.mjs';
+import { CaptureDeliveryQueue } from '../capture/delivery-queue.mjs';
 
 const CONSENT_EPOCH = '10000000-0000-4000-8000-000000000008';
 const PAGE_EPOCH = '10000000-0000-4000-8000-000000000001';
@@ -45,7 +46,7 @@ function captureEnvelope(chatId) {
   };
 }
 
-function harness() {
+function harness({ timers = null } = {}) {
   const pageListeners = [];
   const delivered = [];
   const controls = [];
@@ -83,8 +84,8 @@ function harness() {
     TextDecoder,
     AbortController,
     DOMException,
-    setTimeout,
-    clearTimeout,
+    setTimeout: timers?.setTimeout ?? setTimeout,
+    clearTimeout: timers?.clearTimeout ?? clearTimeout,
     structuredClone,
     crypto,
     console,
@@ -101,12 +102,38 @@ function harness() {
   return {
     delivered,
     dispatch,
-    pause() { controls[0]({ type: 'ofca.capture.control', version: 1, action: 'pause' }, {}, () => {}); },
+    pause() { for (const control of controls) control({ type: 'ofca.capture.control', version: 1, action: 'pause' }, {}, () => {}); },
     resolveContext(response) {
       assert.equal(typeof contextCallback, 'function');
       const callback = contextCallback;
       contextCallback = null;
       callback(response);
+    },
+    tick(ms) { timers?.tick(ms); },
+  };
+}
+
+function fakeTimers() {
+  let now = 0;
+  let nextId = 0;
+  const tasks = new Map();
+  return {
+    setTimeout(callback, delay = 0) {
+      const id = ++nextId;
+      tasks.set(id, { callback, at: now + delay });
+      return id;
+    },
+    clearTimeout(id) { tasks.delete(id); },
+    tick(ms) {
+      const end = now + ms;
+      while (true) {
+        const next = [...tasks].sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (!next || next[1].at > end) break;
+        now = next[1].at;
+        tasks.delete(next[0]);
+        next[1].callback();
+      }
+      now = end;
     },
   };
 }
@@ -146,4 +173,63 @@ test('a delayed state confirmation cannot revive a bridge after pause', async ()
   h.dispatch(captureEnvelope('late-confirmation'));
   await flush();
   assert.deepEqual(h.delivered, []);
+});
+
+
+test('page readiness changes wake the worker only after the status changes', async () => {
+  const h = harness();
+  const status = (socketOpen) => ({
+    type: 'ofca.capture.control.status',
+    version: 1,
+    status: { mode: 'full', active: true, forwarding: true, ws2_socket_open: socketOpen },
+  });
+  h.dispatch(status(false));
+  h.dispatch(status(false));
+  h.dispatch(status(true));
+  await flush();
+
+  const changes = h.delivered.filter(message => message.type === 'ofca.capture.state.changed');
+  assert.equal(changes.length, 1);
+});
+
+test('100 alternating page statuses send at most 11 worker notifications in 10 seconds', async () => {
+  const timers = fakeTimers();
+  const h = harness({ timers });
+  const status = (socketOpen) => ({
+    type: 'ofca.capture.control.status', version: 1,
+    status: { mode: 'full', active: true, forwarding: true, ws2_socket_open: socketOpen },
+  });
+  h.dispatch(status(false));
+  for (let i = 0; i < 100; i++) {
+    h.dispatch(status(i % 2 === 0));
+    timers.tick(100);
+  }
+  timers.tick(1_000);
+  await flush();
+  assert.ok(h.delivered.filter(message => message.type === 'ofca.capture.state.changed').length <= 11);
+});
+
+test('100 queue drops send at most 11 queue notifications in 10 seconds', () => {
+  const timers = fakeTimers();
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalChrome = globalThis.chrome;
+  const delivered = [];
+  globalThis.setTimeout = timers.setTimeout;
+  globalThis.clearTimeout = timers.clearTimeout;
+  globalThis.chrome = { runtime: { sendMessage(message) { delivered.push(structuredClone(message)); } } };
+  try {
+    const queue = new CaptureDeliveryQueue({ send: async () => ({ ok: true }), maxEntries: 0 });
+    for (let i = 0; i < 100; i++) {
+      assert.throws(() => queue.enqueue({ sequence: i }));
+      timers.tick(100);
+    }
+    timers.tick(1_000);
+    assert.ok(delivered.filter(message => message.type === 'ofca.capture.queue.changed').length <= 11);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+  }
 });

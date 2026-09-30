@@ -31,6 +31,16 @@ const LOCAL_CLOSE_REASONS = new Map([
   ['Session identity conflict', 'identity_conflict'],
 ]);
 
+export function safeCompanionChannelDiagnostic(value) {
+  if (value == null) return null;
+  return {
+    cause: ['rpc_capacity', 'send_capacity', 'rpc_backlog', 'caller_aborted', 'rpc_timeout',
+      'send_failed', 'receive_failed', 'wire_closed', 'local_close', 'closed'].includes(value.cause) ? value.cause : 'other',
+    ...Object.fromEntries(['pendingRpcs', 'abandonedRpcs', 'queuedSends'].map(key => [key,
+      Number.isSafeInteger(value[key]) && value[key] >= 0 ? value[key] : null])),
+  };
+}
+
 export function safeCompanionCloseReason(reason) {
   if (reason === 'Agent heartbeat lease expired') return 'heartbeat_lease_expired';
   if (LOCAL_CLOSE_REASONS.has(reason)) return LOCAL_CLOSE_REASONS.get(reason);
@@ -127,28 +137,40 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
     const identity = await session.authorize(await wire.receive(2_000));
     const pending = new Map();
     const abandoned = new Map();
+    let rotationId = null;
     const discardAbandoned = (id) => {
       clearTimeout(abandoned.get(id)?.timer);
       abandoned.delete(id);
+      if (rotationId === id) rotationId = null;
     };
     const observers = new Set();
     const controlObservers = new Set();
     const closedObservers = new Set();
     const fragments = createFragmentReceiver();
-    let sending = Promise.resolve(), queued = 0, stopped = false;
-    function close() {
+    let sending = Promise.resolve(), queued = 0, rotationQueued = 0, stopped = false;
+    let closeDiagnostic = null;
+    const diagnostic = cause => safeCompanionChannelDiagnostic({ cause,
+      pendingRpcs: pending.size, abandonedRpcs: abandoned.size, queuedSends: queued + rotationQueued });
+    const failure = cause => Object.assign(refused(), { diagnostic: diagnostic(cause) });
+    function close(cause = wire.closed ? 'wire_closed' : 'local_close') {
       if (stopped) return;
+      closeDiagnostic = diagnostic(cause);
       stopped = true;
       fragments.clear();
       session.close(); wire.close();
-      for (const item of pending.values()) item.reject(refused());
+      for (const item of pending.values()) item.reject(Object.assign(refused(), { diagnostic: closeDiagnostic }));
       pending.clear();
       for (const id of abandoned.keys()) discardAbandoned(id);
       for (const listener of closedObservers) listener();
     }
     wire.onClose(close);
-    const send = (document) => {
-      if (stopped || ++queued > 8) { queued--; close(); return Promise.reject(refused()); }
+    const send = (document, rotation = false) => {
+      if (stopped || (rotation ? rotationQueued >= 1 : queued >= 8)) {
+        close('send_capacity');
+        return Promise.reject(Object.assign(refused(), { diagnostic: closeDiagnostic }));
+      }
+      if (rotation) rotationQueued++;
+      else queued++;
       const deadline = performance.now() + 10_000;
       const operation = sending.then(async () => {
         for (const frame of fragmentMessage(document)) {
@@ -156,13 +178,22 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
           await wire.send(session.seal(frame), deadline);
         }
       });
-      sending = operation.catch(() => { close(); });
-      return operation.finally(() => queued--);
+      sending = operation.catch(() => { close('send_failed'); });
+      return operation.finally(() => { if (rotation) rotationQueued--; else queued--; });
     };
     async function rpc(method, params = {}, controls = {}) {
-      if (stopped || pending.size >= 8 || pending.size + abandoned.size >= 64 || controls.signal?.aborted) throw refused();
+      const rotation = method === 'agent.storage.rotate';
+      const ordinaryPending = pending.size - Number(pending.has(rotationId));
+      const ordinaryTotal = ordinaryPending + abandoned.size - Number(abandoned.has(rotationId));
+      const atCapacity = rotation ? rotationId !== null : ordinaryPending >= 8;
+      const atBacklog = !rotation && ordinaryTotal >= 64;
+      if (stopped || atCapacity || atBacklog || controls.signal?.aborted) {
+        throw failure(stopped ? 'closed' : atCapacity ? 'rpc_capacity'
+          : atBacklog ? 'rpc_backlog' : 'caller_aborted');
+      }
       controls.assertCurrent?.();
       const id = crypto.randomUUID();
+      if (rotation) rotationId = id;
       const deadline = performance.now() + 10_000;
       let timer, abort;
       const result = new Promise((resolve, reject) => {
@@ -170,22 +201,23 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
         abort = () => {
           if (!pending.delete(id)) return;
           abandoned.set(id, { timer, deadline });
-          reject(refused());
+          reject(failure('caller_aborted'));
         };
         timer = setTimeout(() => {
-          if (abandoned.delete(id)) return;
-          close(); reject(refused());
+          if (abandoned.has(id)) { discardAbandoned(id); return; }
+          close('rpc_timeout'); reject(failure('rpc_timeout'));
         }, 10_000);
         controls.signal?.addEventListener('abort', abort, { once: true });
       });
       void result.catch(() => undefined);
       try {
-        const [, value] = await Promise.all([send({ type: 'rpc.request', id, method, params }), result]);
+        const [, value] = await Promise.all([send({ type: 'rpc.request', id, method, params }, rotation), result]);
         controls.signal?.throwIfAborted(); controls.assertCurrent?.();
         return value;
       } finally {
         if (!abandoned.has(id)) clearTimeout(timer);
         controls.signal?.removeEventListener('abort', abort); pending.delete(id);
+        if (rotationId === id && !abandoned.has(id)) rotationId = null;
       }
     }
     void (async () => {
@@ -220,14 +252,15 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
             for (const listener of observers) listener(document);
           }
         }
-      } catch { close(); }
+      } catch { close('receive_failed'); }
     })();
     return Object.freeze({
       identity: Object.freeze({ ...identity, pairing_id: session.pairingId }),
       get closed() { return stopped; },
       get closeReason() { return wire.closeReason; },
       get closeCode() { return wire.closeCode; },
-      rpc, send, close,
+      get closeDiagnostic() { return safeCompanionChannelDiagnostic(closeDiagnostic); },
+      rpc, send: document => send(document), close,
       onMessage(listener) { if (observers.size) throw refused(); observers.add(listener); return () => observers.delete(listener); },
       onControl(listener) { controlObservers.add(listener); return () => controlObservers.delete(listener); },
       onClose(listener) { closedObservers.add(listener); return () => closedObservers.delete(listener); },

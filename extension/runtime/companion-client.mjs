@@ -2,7 +2,7 @@ import { uiSurface } from './ui-surfaces.mjs';
 import { openPairingStore } from './companion-pairing-store.mjs';
 import { loadPackagedSnow } from './packaged-snow.mjs';
 import { signAgentSessionProof, snowKeypairGenerator } from './companion-agent-identity.mjs';
-import { openCompanionChannel, openLoopbackSocket, CompanionChannelError, safeCompanionCloseReason } from '../transport/companion-channel.mjs';
+import { openCompanionChannel, openLoopbackSocket, CompanionChannelError, safeCompanionCloseReason, safeCompanionChannelDiagnostic } from '../transport/companion-channel.mjs';
 import { parseMessage } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { LOCAL_SERVICE_WS, LOCAL_PAIRING_WS } from '../transport/local-service-endpoints.mjs';
@@ -54,6 +54,7 @@ export function createCompanionClient({
   const timers = scheduler ?? globalThis;
   const subscribers = new Set();
   const diagnosticEvents = [];
+  const credentialRotation = { attempts: 0, completed: 0, failure: null };
   const record = (event, detail = {}) => {
     diagnosticEvents.push({ at: now(), event, ...detail });
     if (diagnosticEvents.length > 24) diagnosticEvents.shift();
@@ -170,18 +171,14 @@ export function createCompanionClient({
         attachControls(channel);
         notifySurfaces();
         void sendSurface();
-        admitted.stableTimer = timers.setTimeout(() => {
-          admitted.stableTimer = null;
-          if (active !== admitted || channel.closed) return;
-          record('circuit-reset');
-          void recovery.stable().catch(() => undefined);
-        }, CONNECTION_STABLE_MS);
+        scheduleStable(admitted);
         channel.onClose(() => {
           if (active?.channel !== channel) return;
-          const wasStable = now() - active.openedAt >= CONNECTION_STABLE_MS;
+          const wasStable = !active.rotationPending && now() - active.openedAt >= CONNECTION_STABLE_MS;
           const resetOnClose = wasStable && active.stableTimer !== null;
           record('channel-close', { code: channel.closeCode ?? null,
-            reason: safeCompanionCloseReason(channel.closeReason), wasStable });
+            reason: safeCompanionCloseReason(channel.closeReason), wasStable,
+            channel: safeCompanionChannelDiagnostic(channel.closeDiagnostic) });
           if (active.stableTimer !== null) timers.clearTimeout(active.stableTimer);
           active = null;
           notifySurfaces();
@@ -201,6 +198,14 @@ export function createCompanionClient({
       clearTimeout(timer);
       if (connecting === bounded) { connecting = null; connectingAccount = null; connectionAbort = null; }
     }
+  }
+  function scheduleStable(bound) {
+    bound.stableTimer = timers.setTimeout(() => {
+      bound.stableTimer = null;
+      if (active !== bound || bound.channel.closed || bound.rotationPending) return;
+      record('circuit-reset');
+      void recovery.stable().catch(() => undefined);
+    }, CONNECTION_STABLE_MS);
   }
   // Prove the pinned Agent identity to Brain on a newly opened channel.
   async function authenticateChannel(channel, pairingStore, accountId, agentInstallationId, controls = {}, check = async () => {}) {
@@ -455,16 +460,64 @@ export function createCompanionClient({
     async loadReconnectAuthTicket() { return null; },
     async saveReconnectAuthTicket(credential, controls = {}) {
       const bound = active;
-      if (!bound || bound.channel.closed || bound.accountId !== credential.creatorAccountId) throw failure();
-      const rotated = await bound.channel.rpc('agent.storage.rotate', {
-        protocol_version: '2', creator_account_id: credential.creatorAccountId,
-        agent_installation_id: credential.agentInstallationId, reconnect_auth_ticket: credential.authTicket,
-        config_auth_ticket: credential.configAuthTicket, storage_bootstrap: bound.storageBootstrap,
-      }, controls);
-      if (!exact(rotated, ['schema', 'storage_bootstrap'])
-        || rotated.schema !== 'ofca-extension-storage-rotation/v1' || !secret(rotated.storage_bootstrap)) throw failure();
-      if (active !== bound) throw failure();
-      bound.storageBootstrap = rotated.storage_bootstrap;
+      credentialRotation.attempts++;
+      let phase = 'binding', cause = 'binding_unavailable';
+      try {
+        if (!bound) throw failure();
+        cause = 'channel_closed';
+        if (bound.channel.closed) throw failure();
+        cause = 'account_mismatch';
+        if (bound.accountId !== credential.creatorAccountId) throw failure();
+        bound.rotationPending = true;
+        if (bound.stableTimer !== null) timers.clearTimeout(bound.stableTimer);
+        bound.stableTimer = null;
+        phase = 'rpc'; cause = null;
+        const params = {
+          protocol_version: '2', creator_account_id: credential.creatorAccountId,
+          agent_installation_id: credential.agentInstallationId, reconnect_auth_ticket: credential.authTicket,
+          config_auth_ticket: credential.configAuthTicket, storage_bootstrap: bound.storageBootstrap,
+        };
+        const deadline = performance.now() + 10_000;
+        let rotated;
+        for (;;) {
+          controls.signal?.throwIfAborted(); controls.assertCurrent?.();
+          if (active !== bound || bound.channel.closed) throw failure();
+          try {
+            rotated = await bound.channel.rpc('agent.storage.rotate', params, controls);
+            break;
+          } catch (error) {
+            // Local capacity refusal happens before the request is sent.
+            if (error?.code !== 'companion_session_refused' || error?.diagnostic?.cause !== 'rpc_capacity'
+              || performance.now() >= deadline) throw error;
+            await new Promise(resolve => timers.setTimeout(resolve, 25));
+            if (performance.now() >= deadline) throw error;
+          }
+        }
+        phase = 'response'; cause = 'rotation_response_invalid';
+        if (!exact(rotated, ['schema', 'storage_bootstrap'])
+          || rotated.schema !== 'ofca-extension-storage-rotation/v1' || !secret(rotated.storage_bootstrap)) throw failure();
+        phase = 'commit'; cause = 'binding_changed';
+        if (active !== bound) throw failure();
+        bound.storageBootstrap = rotated.storage_bootstrap;
+        bound.rotationPending = false;
+        bound.openedAt = now();
+        scheduleStable(bound);
+        credentialRotation.completed++;
+      } catch (error) {
+        credentialRotation.failure = {
+          phase,
+          cause: cause ?? (['session_request_refused', 'companion_session_refused', 'companion_recovery_backoff',
+            'unknown_method'].includes(error?.code) ? error.code : 'other'),
+          errorName: ['Error', 'TypeError', 'CompanionChannelError', 'AbortError', 'TimeoutError',
+            'InvalidStateError', 'QuotaExceededError', 'TransactionInactiveError'].includes(error?.name) ? error.name : 'other',
+          signalAborted: controls.signal?.aborted === true,
+          channelClosed: bound?.channel.closed ?? null,
+          bindingCurrent: bound !== null && active === bound,
+          channel: safeCompanionChannelDiagnostic(error?.diagnostic ?? bound?.channel.closeDiagnostic),
+        };
+        record('credential-rotation-failed');
+        throw error;
+      }
     },
     async clearBrainBinding() {
       await forget();
@@ -472,7 +525,8 @@ export function createCompanionClient({
       (await store()).close(); storePromise = null; installationPromise = null;
     },
     onWake(listener) {
-      const events = [chromeApi.runtime.onStartup, chromeApi.runtime.onInstalled, chromeApi.runtime.onMessage, chromeApi.tabs?.onUpdated].filter(Boolean);
+      const events = [chromeApi.runtime.onStartup, chromeApi.runtime.onInstalled, chromeApi.runtime.onMessage,
+        chromeApi.tabs?.onUpdated].filter(Boolean);
       for (const event of events) event.addListener(listener);
       const alarm = (value) => { if (value?.name === RECONCILE_ALARM) listener(); };
       chromeApi.alarms?.onAlarm?.addListener(alarm);
@@ -481,6 +535,10 @@ export function createCompanionClient({
     },
   });
   const configAdapter = {
+    async catchupRpc(operation, payload, controls = {}) {
+      if (!active || active.channel.closed || active.accountId !== payload.creator_account_id) throw failure();
+      return active.channel.rpc(operation, payload, controls);
+    },
     async fetchConfig(context) {
       if (!active || active.channel.closed || active.accountId !== context.creatorAccountId) throw failure();
       return active.channel.rpc('agent.config.get', {
@@ -569,5 +627,6 @@ export function createCompanionClient({
     pairFor, cancelFor, owns, subscribe, notifySurfaces, reportSurface, ensureControl, controlReady,
     onRevoked(listener) { revocationListener = listener; },
     get diagnosticEvents() { return diagnosticEvents.map((entry) => ({ ...entry })); },
+    get credentialRotation() { return structuredClone(credentialRotation); },
     get connected() { return active !== null && !active.channel.closed; } });
 }

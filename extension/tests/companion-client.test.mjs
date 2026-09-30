@@ -11,6 +11,84 @@ const publicKey = await crypto.subtle.importKey('jwk', vector.request.agent_iden
 const ACCOUNT = vector.detected_account_id;
 const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 
+async function capacityHarness() {
+  const waits = new Map();
+  let timerId = 0, busy = true, attempts = 0;
+  const scheduler = { setTimeout(callback, delay) { const id = ++timerId; waits.set(id, { callback, delay }); return id; },
+    clearTimeout(id) { waits.delete(id); } };
+  const h = harness({ scheduler });
+  await h.client.adapter.loadBrainBinding();
+  const channel = h.channels[0], rpc = channel.rpc.bind(channel);
+  const capacity = Object.assign(new Error('companion_session_refused'), { code: 'companion_session_refused',
+    diagnostic: { cause: 'rpc_capacity', pendingRpcs: 8, abandonedRpcs: 0, queuedSends: 0 } });
+  channel.rpc = async (...args) => {
+    attempts++;
+    if (busy) throw capacity;
+    return rpc(...args);
+  };
+  return { ...h, channel, capacity, waits, get attempts() { return attempts; }, release() { busy = false; },
+    rotate(controls = {}) { return h.client.adapter.saveReconnectAuthTicket({ creatorAccountId: ACCOUNT,
+      authTicket: 'reconnect-fixture', configAuthTicket: 'config-fixture' }, controls); },
+    retry() {
+      const entry = [...waits].find(([, value]) => value.delay === 25);
+      assert.ok(entry, 'capacity wait is scheduled');
+      waits.delete(entry[0]); entry[1].callback();
+    } };
+}
+
+for (const invalidation of ['abort', 'binding', 'channel', 'generation']) {
+  test('credential capacity wait rejects stale work after ' + invalidation, async () => {
+    const h = await capacityHarness(), controller = new AbortController();
+    let current = true;
+    try {
+      let settled = false;
+      const rotation = h.rotate({ signal: controller.signal, assertCurrent() { assert.ok(current); } });
+      void rotation.then(() => { settled = true; }, () => { settled = true; });
+      await tick();
+      assert.equal(settled, false, 'local capacity must not fail credential persistence immediately');
+      if (invalidation === 'abort') controller.abort();
+      if (invalidation === 'binding') h.client.invalidate();
+      if (invalidation === 'channel') h.channel.close();
+      if (invalidation === 'generation') current = false;
+      h.release(); h.retry();
+      await assert.rejects(rotation);
+      assert.equal(h.attempts, 1);
+      assert.equal(h.client.credentialRotation.completed, 0);
+    } finally { h.client.invalidate(); }
+  });
+}
+
+test('credential capacity wait expires without admitting another RPC', async (t) => {
+  let time = 0;
+  t.mock.method(performance, 'now', () => time);
+  const h = await capacityHarness();
+  try {
+    let settled = false;
+    const rotation = h.rotate();
+    void rotation.then(() => { settled = true; }, () => { settled = true; });
+    await tick();
+    assert.equal(settled, false);
+    time = 10_000;
+    h.release(); h.retry();
+    await assert.rejects(rotation, error => error === h.capacity);
+    assert.equal(h.attempts, 1);
+  } finally { h.client.invalidate(); }
+});
+
+test('credential rotation never retries a dispatched refusal or ambiguous failure', async () => {
+  for (const diagnostic of [undefined, { cause: 'rpc_timeout' }, { cause: 'rpc_backlog' }, { cause: 'send_failed' }]) {
+    const h = harness();
+    try {
+      await h.client.adapter.loadBrainBinding();
+      let calls = 0;
+      const error = Object.assign(new Error('session_request_refused'), { diagnostic });
+      h.channels[0].rpc = async () => { calls++; throw error; };
+      await assert.rejects(h.client.adapter.saveReconnectAuthTicket({ creatorAccountId: ACCOUNT }), value => value === error);
+      assert.equal(calls, 1);
+    } finally { h.client.invalidate(); }
+  }
+});
+
 test('facade diagnostics retain closed local causes without arbitrary text', async () => {
   for (const [input, expected] of [
     ['Session establishment timed out', 'session_timeout'],
@@ -71,7 +149,7 @@ function area() { const values = {}; return { values, async get(keys) { return O
 
 function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0 } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
-  const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
+  const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event(), onCreated: event(), onRemoved: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait, remainingSurfaceFailures = surfaceFailures;
   const pairingStore = {
     async identity() { return { privateKey: key }; }, async status() { return { paired }; },
@@ -138,6 +216,21 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
   return { client, stats, channels, chrome, setFull(value) { enabled = value; }, setAccount(value) { account = value; client.invalidate(); },
     unpair() { paired = false; }, pairingResult() { pairingWait.resolve(JSON.stringify(vector.result)); } };
 }
+
+test('tab creation and removal do not create companion runtime wake storms', () => {
+  const h = harness({ full: false });
+  let wakes = 0;
+  const stop = h.client.adapter.onWake(() => { wakes += 1; });
+  assert.equal(h.chrome.tabs.onUpdated.listeners.length, 1);
+  assert.equal(h.chrome.tabs.onCreated.listeners.length, 0);
+  assert.equal(h.chrome.tabs.onRemoved.listeners.length, 0);
+  h.chrome.tabs.onCreated.listeners.forEach((listener) => listener({ id: 1 }));
+  h.chrome.tabs.onRemoved.listeners.forEach((listener) => listener(1));
+  assert.equal(wakes, 0);
+  h.chrome.tabs.onUpdated.listeners[0](1, { status: 'complete' });
+  assert.equal(wakes, 1);
+  stop();
+});
 
 test('six admitted 15-second sessions durably reset the circuit before worker loss', async () => {
   let time = 1_800_000_000_000;
@@ -494,4 +587,56 @@ test('forget is an Options-only action and acknowledgement follows reconciliatio
   gate.resolve(); await tick();
   assert.deepEqual(options.values.find((value) => value.type === 'pairing_command_result'),
     { type: 'pairing_command_result', command: 'forget', ok: true });
+});
+
+
+for (const [mode, phase, cause] of [
+  ['unbound', 'binding', 'binding_unavailable'],
+  ['refused', 'rpc', 'session_request_refused'],
+  ['malformed', 'response', 'rotation_response_invalid'],
+  ['changed', 'commit', 'binding_changed'],
+]) {
+  test('credential rotation diagnostics preserve the ' + mode + ' failure without material', async () => {
+    const h = harness();
+    const failure = Object.assign(new Error('private_message private_token'), { code: 'session_request_refused' });
+    try {
+      if (mode !== 'unbound') await h.client.adapter.loadBrainBinding();
+      if (h.channels[0]) h.channels[0].rpc = async () => {
+        if (mode === 'refused') throw failure;
+        if (mode === 'malformed') return { token: 'private_token' };
+        if (mode === 'changed') h.client.invalidate();
+        return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: 'private_bootstrap' };
+      };
+      await assert.rejects(h.client.adapter.saveReconnectAuthTicket({ creatorAccountId: ACCOUNT,
+        agentInstallationId: 'private_installation', authTicket: 'private_ticket', configAuthTicket: 'private_config' }),
+      error => mode !== 'refused' || error === failure);
+      const report = h.client.credentialRotation;
+      assert.equal(report.failure.phase, phase);
+      assert.equal(report.failure.cause, cause);
+      assert.equal(report.attempts, 1);
+      assert.doesNotMatch(JSON.stringify(report), /private_|sealed|ticket|bootstrap/);
+      report.failure.phase = 'private_mutation';
+      assert.equal(h.client.credentialRotation.failure.phase, phase);
+    } finally { h.client.invalidate(); }
+  });
+}
+
+test('credential rotation diagnostics retain a failure across later success and event churn', async () => {
+  const h = harness();
+  try {
+    await h.client.adapter.loadBrainBinding();
+    const rpc = h.channels[0].rpc;
+    h.channels[0].rpc = async () => { throw Object.assign(new Error('private_failure'), { name: 'private_name', code: 'private_code' }); };
+    const credential = { creatorAccountId: ACCOUNT, authTicket: 'private_ticket', configAuthTicket: 'private_config' };
+    await assert.rejects(h.client.adapter.saveReconnectAuthTicket(credential));
+    h.channels[0].rpc = rpc;
+    await h.client.adapter.saveReconnectAuthTicket(credential);
+    for (let i = 0; i < 40; i++) h.client.invalidate();
+    assert.equal(h.client.credentialRotation.attempts, 2);
+    assert.equal(h.client.credentialRotation.completed, 1);
+    assert.equal(h.client.credentialRotation.failure.phase, 'rpc');
+    assert.equal(h.client.credentialRotation.failure.cause, 'other');
+    assert.equal(h.client.credentialRotation.failure.errorName, 'other');
+    assert.doesNotMatch(JSON.stringify(h.client.credentialRotation), /private_/);
+  } finally { h.client.invalidate(); }
 });

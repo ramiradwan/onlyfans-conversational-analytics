@@ -460,8 +460,11 @@ import {
               });
             }
           };
+          const statusListener = () => postStatus();
           socket.addEventListener('message', listener);
-          socketListeners.add({ socket, listener });
+          socket.addEventListener('open', statusListener);
+          socket.addEventListener('close', statusListener);
+          socketListeners.add({ socket, listener, statusListener });
         }
         return socket;
       },
@@ -567,8 +570,10 @@ import {
     if (XMLHttpRequest.prototype.send === installedXhrSend) {
       XMLHttpRequest.prototype.send = originalXhrSend;
     }
-    for (const { socket, listener } of socketListeners) {
+    for (const { socket, listener, statusListener } of socketListeners) {
       socket.removeEventListener?.('message', listener);
+      socket.removeEventListener?.('open', statusListener);
+      socket.removeEventListener?.('close', statusListener);
     }
     socketListeners.clear();
     window.removeEventListener('message', controlListener);

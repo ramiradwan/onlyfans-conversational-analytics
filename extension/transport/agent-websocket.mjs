@@ -266,6 +266,7 @@ export class AgentWebSocketClient {
             event_id: item.event_id,
             source_seq: item.source_seq,
             acquisition_origin: item.acquisition_origin ?? 'passive',
+            ...(item.check_id === undefined ? {} : { check_id: item.check_id }),
             change: item.change,
             agent_installation_id: this.identity.agentInstallationId,
             agent_stream_id: this.identity.agentStreamId,
@@ -305,6 +306,8 @@ export class AgentWebSocketClient {
     if (sent) {
       this.lastHeartbeatSentAt = this.monotonicNow();
       this.scheduleHeartbeat();
+      // History pages can commit without a passive capture event to trigger delivery.
+      void this.flushOutbox().catch((error) => this.onValidationError(error));
     }
     return sent;
   }
@@ -459,7 +462,8 @@ export class AgentWebSocketClient {
     ))
       .catch((error) => {
         if (controls.signal.aborted) return;
-        this.reconnectAllowed = false;
+        this.reconnectAllowed = error?.code === 'companion_session_refused'
+          && ['rpc_capacity', 'rpc_backlog'].includes(error?.diagnostic?.cause);
         this.onValidationError(error);
         this.socket?.close(safeCloseCode(1011), 'Agent reconnect credential could not be stored');
       });
