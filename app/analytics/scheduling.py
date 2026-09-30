@@ -491,6 +491,7 @@ class InProcessProjectionScheduler:
             await asyncio.sleep(self.reconciliation_interval)
             try:
                 await self.reconcile_once()
+                await self._run_owned(self.pipeline.passive_projection_checkpoint)
             except Exception:
                 # Currentness is checked on every read; the next wake retries repair.
                 continue

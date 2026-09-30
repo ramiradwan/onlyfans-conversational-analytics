@@ -272,12 +272,18 @@ class LazySQLiteAnalyticsProjectionStore:
     def integrity_upgrade_required(self, account_id):
         return self._read("integrity_upgrade_required", account_id, account_id)
 
+    def passive_wal_checkpoint(self):
+        return self._write("passive_wal_checkpoint", None)
+
     def close(self) -> None:
         with self._lock:
             self._closed = True
+            store = self._store
             self._store = None
             self._file_identity = None
             self._store_identity = None
+        if store is not None:
+            store.close()
 
     def _read(self, method: str, account_id: str | None, *args, **kwargs):
         store = self._available_store(account_id)
@@ -330,6 +336,11 @@ class LazySQLiteAnalyticsProjectionStore:
     ) -> FailureCallback | None:
         if self._store is not failed_store:
             return None
+        if failed_store is not None:
+            try:
+                failed_store.close()
+            except Exception:
+                pass
         self._store = None
         self._file_identity = None
         self._store_identity = None

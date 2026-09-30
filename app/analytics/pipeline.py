@@ -587,6 +587,10 @@ class AnalyticsPipeline:
         if callable(setter):
             setter(callback)
 
+    def passive_projection_checkpoint(self):
+        checkpoint = getattr(self.projections, "passive_wal_checkpoint", None)
+        return checkpoint() if callable(checkpoint) else None
+
     def close_projection_storage(self) -> None:
         closer = getattr(self.projections, "close", None)
         if callable(closer):

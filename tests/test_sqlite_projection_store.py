@@ -140,6 +140,30 @@ def test_projection_database_path_has_a_separate_default(monkeypatch) -> None:
     assert configured.projection_database_path != configured.canonical_database_path
 
 
+def test_analytics_projection_connections_disable_wal_autocheckpoint(tmp_path: Path) -> None:
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    with database.read() as connection:
+        assert connection.execute("PRAGMA wal_autocheckpoint").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_scheduler_epoch_retains_and_releases_wal_anchor(tmp_path: Path) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    store = make_store(tmp_path / "analytics.sqlite3", repositories)
+    pipeline = pipeline_for(repositories, store)
+    scheduler = InProcessProjectionScheduler(
+        pipeline, worker_count=1, queue_capacity=2, reconciliation_interval=30
+    )
+
+    assert store.database.open_connection_count(store.database.path) == 0
+    await scheduler.start(recover=False)
+    assert store.database.open_connection_count(store.database.path) == 1
+    checkpoint = store.passive_wal_checkpoint()
+    assert checkpoint is not None and len(checkpoint) == 3
+    assert await scheduler.close(timeout=5)
+    assert store.database.open_connection_count(store.database.path) == 0
+
+
 @pytest.mark.asyncio
 async def test_scheduler_recovery_publishes_sqlite_once_through_owned_executor(
     tmp_path: Path,

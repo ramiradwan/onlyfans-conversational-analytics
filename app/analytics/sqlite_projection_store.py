@@ -1146,11 +1146,14 @@ class SQLiteAnalyticsProjectionStore:
         self.activation.register_publication_epoch(
             epoch, scheduler_owner_id, digest
         )
+        wal_anchor_retained = False
         try:
             if retain_fence_connection:
                 self.activation.prepare_publication_epoch_fence(
                     epoch, scheduler_owner_id, digest
                 )
+                self.database.retain_wal_anchor()
+                wal_anchor_retained = True
             with self.database.transaction() as connection:
                 connection.execute(
                     """
@@ -1167,6 +1170,8 @@ class SQLiteAnalyticsProjectionStore:
                     ),
                 )
         except BaseException:
+            if wal_anchor_retained:
+                self.database.release_wal_anchor()
             self.activation.revoke_publication_epoch(
                 epoch, scheduler_owner_id, digest
             )
@@ -1208,6 +1213,15 @@ class SQLiteAnalyticsProjectionStore:
                 if row is None or row["state"] != "revoked":
                     raise ProjectionActivationConflict("publication epoch unavailable")
         self.activation.release_publication_epoch_fence(publication_epoch)
+        self.database.release_wal_anchor()
+
+    def passive_wal_checkpoint(self):
+        """Checkpoint scheduler-owned WAL outside latency-sensitive publication."""
+
+        return self.database.passive_wal_checkpoint()
+
+    def close(self) -> None:
+        self.database.release_wal_anchor()
 
     def fence_publication_epoch(self, publication_epoch: str) -> None:
         self._locally_fenced_epochs.add(publication_epoch)
