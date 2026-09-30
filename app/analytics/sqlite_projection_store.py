@@ -78,6 +78,13 @@ _SCOPED_PAGE_RETIREMENT_RECLAIM = (
     "WHERE r.creator_account_id=conversation_page_content.creator_account_id "
     "AND r.content_id=conversation_page_content.content_id)"
 )
+_SCOPED_GRAPH_RETIREMENT_RECLAIM = (
+    "DELETE FROM conversation_graph_units WHERE creator_account_id=? "
+    "AND unit_id IN (SELECT unit_id FROM retirement_graph_unit_ids) "
+    "AND NOT EXISTS(SELECT 1 FROM conversation_graph_refs r "
+    "WHERE r.creator_account_id=conversation_graph_units.creator_account_id "
+    "AND r.unit_id=conversation_graph_units.unit_id)"
+)
 CrashHook = Callable[[str, str], None]
 CanonicalIdentityReader = Callable[[str], CanonicalIdentity | None]
 
@@ -1735,15 +1742,24 @@ class SQLiteAnalyticsProjectionStore:
     def _retire_active_generation(connection, generation_id, account_ref, retired_at) -> None:
         if generation_id is None:
             return
-        batching = (
-            int(connection.execute("PRAGMA user_version").fetchone()[0]) >= 22
+        version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        page_batching = (
+            version >= 22
             and connection.execute(
                 "SELECT 1 FROM conversation_page_sets "
                 "WHERE generation_id=? AND creator_account_id=? LIMIT 1",
                 (generation_id, account_ref),
             ).fetchone() is not None
         )
-        if batching:
+        graph_batching = (
+            version >= 23
+            and connection.execute(
+                "SELECT 1 FROM conversation_graph_refs "
+                "WHERE generation_id=? AND creator_account_id=? LIMIT 1",
+                (generation_id, account_ref),
+            ).fetchone() is not None
+        )
+        if page_batching:
             connection.execute(
                 "CREATE TEMP TABLE IF NOT EXISTS retirement_page_content_ids ("
                 "content_id TEXT PRIMARY KEY) WITHOUT ROWID"
@@ -1761,7 +1777,6 @@ class SQLiteAnalyticsProjectionStore:
             )
             if armed.rowcount != 1:
                 raise ProjectionReconciliationError("page retirement scope differs")
-        if batching:
             connection.execute(
                 "DELETE FROM conversation_page_refs "
                 "WHERE generation_id=? AND creator_account_id=?",
@@ -1778,6 +1793,37 @@ class SQLiteAnalyticsProjectionStore:
                 (generation_id, account_ref),
             )
             connection.execute(_SCOPED_PAGE_RETIREMENT_RECLAIM, (account_ref,))
+        if graph_batching:
+            connection.execute(
+                "CREATE TEMP TABLE IF NOT EXISTS retirement_graph_unit_ids ("
+                "unit_id TEXT PRIMARY KEY) WITHOUT ROWID"
+            )
+            connection.execute("DELETE FROM retirement_graph_unit_ids")
+            connection.execute(
+                "INSERT OR IGNORE INTO retirement_graph_unit_ids(unit_id) "
+                "SELECT unit_id FROM conversation_graph_refs "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            armed = connection.execute(
+                "UPDATE generation_content_bulk_cleanup SET graph_retirement=1 "
+                "WHERE singleton=1 AND graph_retirement=0"
+            )
+            if armed.rowcount != 1:
+                raise ProjectionReconciliationError("graph retirement scope differs")
+            connection.execute(
+                "DELETE FROM conversation_graph_refs "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            connection.execute(_SCOPED_GRAPH_RETIREMENT_RECLAIM, (account_ref,))
+            connection.execute("DELETE FROM retirement_graph_unit_ids")
+            disarmed = connection.execute(
+                "UPDATE generation_content_bulk_cleanup SET graph_retirement=0 "
+                "WHERE singleton=1 AND graph_retirement=1"
+            )
+            if disarmed.rowcount != 1:
+                raise ProjectionReconciliationError("graph retirement scope differs")
         updated = connection.execute(
             "UPDATE projection_generations SET status='retired', retired_at=? "
             "WHERE generation_id=? AND creator_account_id=? AND status='active'",
@@ -1785,15 +1831,14 @@ class SQLiteAnalyticsProjectionStore:
         )
         if updated.rowcount != 1:
             raise ProjectionActivationConflict("active generation changed")
-        if not batching:
-            return
-        connection.execute("DELETE FROM retirement_page_content_ids")
-        disarmed = connection.execute(
-            "UPDATE generation_content_bulk_cleanup SET page_retirement=0 "
-            "WHERE singleton=1 AND page_retirement=1"
-        )
-        if disarmed.rowcount != 1:
-            raise ProjectionReconciliationError("page retirement scope differs")
+        if page_batching:
+            connection.execute("DELETE FROM retirement_page_content_ids")
+            disarmed = connection.execute(
+                "UPDATE generation_content_bulk_cleanup SET page_retirement=0 "
+                "WHERE singleton=1 AND page_retirement=1"
+            )
+            if disarmed.rowcount != 1:
+                raise ProjectionReconciliationError("page retirement scope differs")
 
     def _activate_completed_generation(
         self,

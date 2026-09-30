@@ -36,7 +36,7 @@ def test_schema22_keeps_legacy_units_and_published_output(tmp_path):
             assert db.execute('PRAGMA user_version').fetchone()[0] == 20
         upgraded = ProjectionsDatabase(database.path)
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 22
+            assert db.execute('PRAGMA user_version').fetchone()[0] == 23
             assert content_stamp(db) is not None
             assert not db.execute('PRAGMA foreign_key_check').fetchall()
             rows = [tuple(r) for r in db.execute('SELECT * FROM conversation_graph_units ORDER BY unit_id')]

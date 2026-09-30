@@ -23,7 +23,10 @@ GUARD_NAMES = (
     'generation_content_bulk_cleanup_delete',
     'generation_content_bulk_cleanup_update',
     'generation_content_bulk_cleanup_arm_epoch',
+    'generation_content_bulk_cleanup_graph_arm_epoch',
     'conversation_page_content_reclaim',
+    'conversation_graph_refs_delete',
+    'conversation_graph_unit_reclaim',
     'generation_content_conversation_page_sets_delete',
     'generation_content_conversation_pages_delete',
     'generation_content_conversation_page_content_delete',
@@ -37,6 +40,7 @@ GUARD_DIGESTS = {
     20: "080907d543c0fe5632ac20ceaf4273232f751caacd08bac9145d5daf4a7d158e",
     21: "080907d543c0fe5632ac20ceaf4273232f751caacd08bac9145d5daf4a7d158e",
     22: "3712667e2921862395802fb1e0d7745ef628c9a32c08be28e4b9c80f99f1e0af",
+    23: "bf3daafe97f37c06e8edfc54bf5167a9557c14abb83771a2f56016f7c1547abd",
 }
 
 
@@ -44,7 +48,14 @@ def _guards_match(connection):
     if connection.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
         return False
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-    if version >= 22:
+    if version >= 23:
+        state = connection.execute(
+            "SELECT page_retirement,graph_retirement "
+            "FROM generation_content_bulk_cleanup WHERE singleton=1"
+        ).fetchone()
+        if state is None or any(int(value) != 0 for value in state):
+            return False
+    elif version >= 22:
         state = connection.execute(
             "SELECT page_retirement FROM generation_content_bulk_cleanup WHERE singleton=1"
         ).fetchone()
