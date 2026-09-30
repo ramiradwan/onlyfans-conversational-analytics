@@ -121,7 +121,9 @@ for (const enabled of [true, false]) {
       const pairing = await requestAgentPairingTicket(context);
       await bindAgentFromBridgePage(bridge, { extensionId: id, creatorAccountId: pairing.creatorAccountId,
         authTicket: pairing.pairingTicket, storageBootstrap: pairing.storageBootstrap });
-      await grantHistoryPermission(context, popup, worker);
+      const historyPopup = await openPopup(context, id, []);
+      await grantHistoryPermission(context, historyPopup, worker);
+      await historyPopup.close();
       const platform = new SyntheticPlatform();
       const old = new Date(Date.now() - 3_600_000).toISOString();
       platform.seedCatchup('101', 'initial101', old);
