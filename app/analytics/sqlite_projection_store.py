@@ -1613,43 +1613,42 @@ class SQLiteAnalyticsProjectionStore:
             return 0
 
         with self.database.transaction() as connection:
-            from app.analytics.database import GENERATION_WRITE_CACHE_KIB
-            connection.execute(f"PRAGMA cache_size=-{GENERATION_WRITE_CACHE_KIB}")
-            rows = connection.execute(
-                """
-                SELECT generation_id FROM projection_generations
-                WHERE creator_account_id=? AND status='retired'
-                ORDER BY COALESCE(retired_at, started_at) DESC, generation_id DESC
-                LIMIT ? OFFSET ?
-                """,
-                (
-                    partition_ref,
-                    self.gc_batch_size,
-                    self.rollback_retention,
-                ),
-            ).fetchall()
-            active = connection.execute(
-                "SELECT * FROM projection_generations "
-                "WHERE creator_account_id=? AND status='active'",
-                (partition_ref,),
-            ).fetchone() if rows else None
-            transition = capture_transition(
-                connection, active, self._enrichment_transition_candidate(active)
-            )
-            from app.analytics.shared_graph import supported
-            graph_tables = ("graph_owned_edges", "graph_owned_nodes") if supported(connection) else ("graph_edges", "graph_nodes")
-            for row in rows:
-                # Remove outgoing references before their endpoints in this transaction.
-                for table in graph_tables:
-                    connection.execute(
-                        f"DELETE FROM {table} WHERE generation_id=? AND creator_account_id=?",
-                        (row[0], partition_ref),
-                    )
-                connection.execute(
-                    "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
-                    (row[0],),
+            with generation_retirement_cache(connection):
+                rows = connection.execute(
+                    """
+                    SELECT generation_id FROM projection_generations
+                    WHERE creator_account_id=? AND status='retired'
+                    ORDER BY COALESCE(retired_at, started_at) DESC, generation_id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (
+                        partition_ref,
+                        self.gc_batch_size,
+                        self.rollback_retention,
+                    ),
+                ).fetchall()
+                active = connection.execute(
+                    "SELECT * FROM projection_generations "
+                    "WHERE creator_account_id=? AND status='active'",
+                    (partition_ref,),
+                ).fetchone() if rows else None
+                transition = capture_transition(
+                    connection, active, self._enrichment_transition_candidate(active)
                 )
-            renewed = finish_transition(connection, transition)
+                from app.analytics.shared_graph import supported
+                graph_tables = ("graph_owned_edges", "graph_owned_nodes") if supported(connection) else ("graph_edges", "graph_nodes")
+                for row in rows:
+                    # Remove outgoing references before their endpoints in this transaction.
+                    for table in graph_tables:
+                        connection.execute(
+                            f"DELETE FROM {table} WHERE generation_id=? AND creator_account_id=?",
+                            (row[0], partition_ref),
+                        )
+                    connection.execute(
+                        "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
+                        (row[0],),
+                    )
+                renewed = finish_transition(connection, transition)
         self._install_enrichment_transition(transition, renewed)
         return len(rows)
 

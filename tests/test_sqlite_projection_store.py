@@ -1138,7 +1138,7 @@ async def test_non_sqlite_projection_file_cannot_block_canonical_readiness(
 
 
 def test_retired_generation_gc_is_bounded_and_preserves_pending(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(
@@ -1154,8 +1154,28 @@ def test_retired_generation_gc_is_bounded_and_preserves_pending(
         pipeline.project_account("account-a")
     advance(repositories, 5)
     pending = pipeline.build_candidate("account-a")
+
+    from app.analytics.database import (
+        GENERATION_RETIREMENT_CACHE_KIB, generation_retirement_cache,
+    )
+    import app.analytics.sqlite_projection_store as projection_store_module
+    observed_cache_sizes = []
+
+    @contextmanager
+    def observed_retirement_cache(connection):
+        with generation_retirement_cache(connection):
+            observed_cache_sizes.append(
+                int(connection.execute("PRAGMA cache_size").fetchone()[0])
+            )
+            yield
+
+    monkeypatch.setattr(
+        projection_store_module, "generation_retirement_cache", observed_retirement_cache
+    )
+    store.rollback_retention = 0
     store.collect_garbage(account_ref("account-a"))
 
+    assert observed_cache_sizes == [-GENERATION_RETIREMENT_CACHE_KIB]
     generations = store.database.generations("account-a")
     assert sum(item.status == "active" for item in generations) == 1
     assert sum(item.status == "validated" for item in generations) == 1
