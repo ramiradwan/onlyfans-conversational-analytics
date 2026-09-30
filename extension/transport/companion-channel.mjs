@@ -15,10 +15,25 @@ const CLOSE_REASONS = new Set([
   'session_refused', 'wrong_role', 'validation_failed', 'unsupported_version',
   'pre_handshake', 'unauthorized', 'identity_conflict',
   'companion_session_closed', 'companion_session_refused', 'heartbeat_lease_expired',
+  'session_timeout', 'credential_unavailable', 'credential_store_failed',
+  'agent_stopped', 'malformed_json', 'invalid_frame', 'session_expected', 'duplicate_session',
+  'internal_error', 'companion_recovery_backoff',
+]);
+const LOCAL_CLOSE_REASONS = new Map([
+  ['Session establishment timed out', 'session_timeout'],
+  ['Agent reconnect credential unavailable', 'credential_unavailable'],
+  ['Agent reconnect credential could not be stored', 'credential_store_failed'],
+  ['Agent stopped', 'agent_stopped'],
+  ['Malformed JSON from Brain', 'malformed_json'],
+  ['Invalid protocol frame from Brain', 'invalid_frame'],
+  ['Expected agent.session', 'session_expected'],
+  ['Duplicate agent.session', 'duplicate_session'],
+  ['Session identity conflict', 'identity_conflict'],
 ]);
 
 export function safeCompanionCloseReason(reason) {
   if (reason === 'Agent heartbeat lease expired') return 'heartbeat_lease_expired';
+  if (LOCAL_CLOSE_REASONS.has(reason)) return LOCAL_CLOSE_REASONS.get(reason);
   return reason === null || reason === undefined ? null : CLOSE_REASONS.has(reason) ? reason : 'other';
 }
 

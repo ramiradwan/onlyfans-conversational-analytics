@@ -32,7 +32,7 @@ import {
 } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 import { readSqliteProof } from '../lib/sqlite-proof.mjs';
-import { buildStableConnectionDiagnostic, redactStableConnectionAssertionError, withoutReportedExpectStep } from '../lib/stable-connection-diagnostic.mjs';
+import { buildStableConnectionDiagnostic, buildWorkerRecoveryDiagnostic, redactStableConnectionAssertionError, withoutReportedExpectStep } from '../lib/stable-connection-diagnostic.mjs';
 const IDENTITY_PATH = '/api2/v2/users/me';
 const CHATS_PATH = '/api2/v2/chats';
 const MESSAGES_PATH = `/api2/v2/chats/${SYNTHETIC.chatId}/messages`;
@@ -70,26 +70,8 @@ async function waitForExtensionState(
       latest = await extensionState(worker);
       return predicate(latest);
     }, { message, timeout: timeoutMs }).toBe(true);
-  } catch (error) {
-    let identityContext = null;
-    let identityReadError = null;
-    try {
-      identityContext = await worker.evaluate(async (storageKey) => {
-        const stored = await chrome.storage.session.get([storageKey]);
-        return stored[storageKey] ?? null;
-      }, PROVISIONING_IDENTITY_STORAGE_KEY);
-    } catch (identityError) {
-      identityReadError = identityError instanceof Error
-        ? identityError.message
-        : String(identityError);
-    }
-    const identityDiagnostic = identityReadError === null
-      ? `Provisioning identity context: ${JSON.stringify(identityContext)}`
-      : `Provisioning identity context read failed: ${identityReadError}`;
-    throw new Error(
-      `${message}\nLast extension state: ${JSON.stringify(latest)}\n${identityDiagnostic}`,
-      { cause: error },
-    );
+  } catch {
+    throw new Error(`${message}\nworker-recovery-diagnostic: ${JSON.stringify(buildWorkerRecoveryDiagnostic(latest))}`);
   }
   return latest;
 }
