@@ -141,14 +141,11 @@ export function createSurfaceClient(onChange, onError) {
       model.desktopLinked = await desktopLinked();
       // An open desktop page proves the desktop app is running; otherwise probe
       // once for this refresh. Refreshes are event-driven, never on a timer.
-      const fullFamily = isFullFamilyStatus(status);
-      model.desktopRuntimeReachable = fullFamily
+      model.desktopRuntimeReachable = isFullFamilyStatus(status)
         ? model.desktopLinked || await probeDesktopRuntime() : false;
       if (!model.desktopRuntimeReachable) resetReadiness();
-      // Paused Full still has a control-only companion session. Re-read its
-      // control status after MV3 worker replacement so the popup does not
-      // temporarily fall back to local Resume.
-      if (port && fullFamily) post('status');
+      if (port && (status.consent.mode === 'full'
+        || (status.consent.mode === 'paused' && status.consent.resume_mode === 'full'))) post('status');
       requestReadiness(); emit();
     } catch (error) {
       model.status = null; model.legal = null; resetReadiness();

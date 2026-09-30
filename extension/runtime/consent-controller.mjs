@@ -219,6 +219,9 @@ export class ConsentController {
     this.chromeApi.storage.onChanged?.addListener(this.storageListener);
     this.chromeApi.permissions.onRemoved?.addListener(this.permissionListener);
     this.chromeApi.permissions.onAdded?.addListener(this.permissionListener);
+    for (const event of ['onCreated', 'onRemoved', 'onUpdated', 'onReplaced']) {
+      this.chromeApi.tabs?.[event]?.addListener(() => this.#requestCaptureStateNotificationReport());
+    }
     this.chromeApi.alarms?.onAlarm?.addListener(this.alarmListener);
     const alarm = this.chromeApi.alarms?.create?.(PREVIEW_PRUNE_ALARM_NAME, {
       delayInMinutes: 1,

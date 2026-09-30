@@ -413,3 +413,36 @@ test('invalidation during saved-pairing check skips scheduling without rejecting
   assert.equal(h.controller.phase, 'paused');
   assert.equal(scheduler.timers.size, 0);
 });
+
+for (const change of ['removed', 'created', 'updated', 'replaced']) {
+  test(`tab ${change} reports observation changes without a runtime wake`, async () => {
+    const h = harness();
+    for (const name of ['onRemoved', 'onCreated', 'onUpdated', 'onReplaced']) h.chromeApi.tabs[name] = event();
+    h.controller.state = { mode: 'full' };
+    h.controller.phase = 'full';
+    h.controller.captureScope = { isOpen: true };
+    h.chromeApi.tabs.sendMessage = async (_id, value) => value.action === 'status'
+      ? { mode: 'full', active: true, forwarding: true, ws2_socket_open: true }
+      : { document: 'fixture-document', expired: 0, rejected: 0 };
+    const reports = [];
+    h.controller.runtime.configuration = { activeDocument: { history_acquisition: { enabled: true } } };
+    h.controller.runtime.history = { async requestCaptureStateReport() {
+      reports.push(await h.controller.captureState());
+    } };
+    assert.equal((await h.controller.captureState()).observing, true);
+    h.controller.register();
+    if (change === 'removed') h.onlyFansTabs.length = 0;
+    else if (change === 'updated') h.onlyFansTabs[0].frozen = true;
+    else if (change === 'created') h.onlyFansTabs.push({ id: 8, discarded: true });
+    else h.chromeApi.tabs.sendMessage = async () => ({ mode: 'full', active: true, forwarding: true, ws2_socket_open: false });
+    const source = h.chromeApi.tabs[`on${change[0].toUpperCase()}${change.slice(1)}`];
+    for (const listener of source.listeners) listener(7, { frozen: true });
+    for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(reports.length, 1);
+    assert.equal(h.counters.starts, 0);
+    if (change === 'created') assert.equal(reports[0].tabs.discarded, 1);
+    else assert.equal(reports[0].observing, false);
+    if (change === 'removed') assert.equal(reports[0].reason, 'no_onlyfans_tab');
+    if (change === 'replaced') assert.equal(reports[0].page_socket_open, false);
+  });
+}

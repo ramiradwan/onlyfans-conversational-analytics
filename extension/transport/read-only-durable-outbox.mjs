@@ -479,9 +479,14 @@ export class DurableIngestOutbox {
         const meta = await tx.get(INGESTION_STORES.meta, INGESTION_META_KEY);
         if (job.account_epoch !== meta.account_epoch) throw new Error('History job account epoch is stale');
         if (validateAuthorization !== null) await validateAuthorization();
-        await tx.put(INGESTION_STORES.historyJobs, clone(job));
+        const saved = await tx.get(INGESTION_STORES.historyJobs, job.job_id);
+        const next = clone(job);
+        if (job.kind === 'catchup' && saved?.check_id === job.check_id) {
+          next.passive_heads = { ...next.passive_heads, ...saved.passive_heads };
+        }
+        await tx.put(INGESTION_STORES.historyJobs, next);
         if (this.invalidated) throw new Error('Account partition was invalidated');
-        return clone(job);
+        return clone(next);
       },
       guard,
     ));

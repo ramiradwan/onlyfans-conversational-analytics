@@ -24,9 +24,9 @@ const observing = () => ({ observing: true, reason: 'ok', runnable: true,
   drops: { expired: 0, rejected: 0 } });
 
 async function rig({ list = [conversation('101')], messages = { '101': [message('m101')] },
-  kind = 'catch_up', budget = 50, cap = 1000, read, rpc, storage = new InMemoryIngestionStorage() } = {}) {
+  kind = 'catch_up', budget = 50, cap = 1000, read, rpc, Outbox = DurableIngestOutbox, storage = new InMemoryIngestionStorage() } = {}) {
   const { CatchupCoordinator } = await import('../transport/catchup-coordinator.mjs');
-  const outbox = new DurableIngestOutbox({ storage, creatorAccountId: TRAVERSAL_ACCOUNT });
+  const outbox = new Outbox({ storage, creatorAccountId: TRAVERSAL_ACCOUNT });
   await outbox.initialize();
   const r = { storage, outbox, clock: START, calls: [], rpcs: [], state: observing(),
     config: traversalConfiguration({ pages_per_wake: budget, page_size: 100 }),
@@ -140,9 +140,13 @@ test('mover arriving at the completion transaction prevents premature closure', 
 
 for (const scenario of ['repeated', 'non-adjacent', 'empty']) {
   test(`${scenario} cursor ends incomplete within the exact budget`, async () => {
-    const r = await rig({ read: async (q, r) => page(q.operation,
-      scenario === 'empty' ? [] : [conversation(String(100 + r.calls.length))],
-      scenario === 'non-adjacent' && r.calls.length === 2 ? 'second' : 'first') });
+    const r = await rig({ read: async (q, r) => {
+      const offset = Number(q.parameters.query.cursor ?? 0);
+      const next = scenario === 'repeated' ? '100'
+        : r.calls.length === 3 ? '100' : String(offset + 100);
+      return page(q.operation, scenario === 'empty' ? []
+        : Array.from({ length: 100 }, (_, i) => conversation(String(1000 + offset + i))), next);
+    } });
     await r.coordinator.wake();
     assert.equal(r.calls.length, scenario === 'empty' ? 1 : scenario === 'repeated' ? 2 : 3);
     assert.equal((await r.evidence('check.abandoned'))[0].reason, 'cursor_invalid');
@@ -573,7 +577,10 @@ test('refusing Brain backoff survives 24 hours of worker restarts', async () => 
 });
 
 test('history receives one reserved page within five minutes of catchup pressure', async () => {
-  const r = await rig({ budget: 2, read: async (q, r) => page(q.operation, [conversation(String(r.calls.length + 100))], `next${r.calls.length}`) });
+  const r = await rig({ budget: 2, read: async q => {
+    const offset = Number(q.parameters.query.cursor ?? 0);
+    return page(q.operation, Array.from({ length: 100 }, (_, i) => conversation(String(1000 + offset + i))), String(offset + 100));
+  } });
   await r.coordinator.allowance.historyPending(true);
   await r.coordinator.wake();
   assert.equal(r.calls.length, 1);
@@ -715,3 +722,65 @@ test('coordinated acquisition preserves a trigger that arrives while acquisition
   assert.deepEqual(triggers, ['admission', 'observing']);
   assert.equal(historyWakes, 2);
 });
+
+for (const twin of ['read-only-durable-outbox', 'durable-outbox']) {
+  test(`stale job save preserves a passive mover in ${twin}`, async () => {
+    const { DurableIngestOutbox: Outbox } = await import(`../transport/${twin}.mjs`);
+    const r = await rig({ Outbox, list: [conversation('101', stamp(-900_001))],
+      messages: { '102': [message('live', '102', 1), message('missed', '102')] } });
+    const save = r.outbox.saveHistoryJob.bind(r.outbox);
+    let injected = false;
+    r.outbox.saveHistoryJob = async (...args) => {
+      if (!injected && args[0].counts.list === 1) {
+        injected = true;
+        await r.passive(message('live', '102', 1));
+      }
+      return save(...args);
+    };
+    await r.coordinator.wake();
+    assert.deepEqual(await r.ids(), ['live', 'missed']);
+    assert.equal((await r.evidence('check.inventory_closed'))[0].movers, 1);
+    assert.equal((await r.evidence('check.completed')).length, 1);
+    r.coordinator.stop();
+  });
+}
+
+for (const shift of ['delete', 'insert', 'anchor-delete']) {
+  test(`offset ${shift} abandons without completing an incomplete inventory`, async () => {
+    let list = Array.from({ length: 101 }, (_, i) => conversation(String(1000 + i), stamp(-900_001)));
+    const r = await rig({ read: async q => {
+      assert.equal(q.operation, 'conversations');
+      const offset = Number(q.parameters.query.cursor ?? 0);
+      if (offset > 0) {
+        if (shift === 'delete') list.shift();
+        else if (shift === 'anchor-delete') list.splice(99, 1);
+        else list.unshift(conversation('999', stamp(-900_001)));
+      }
+      const items = list.slice(offset, offset + 100);
+      return page(q.operation, items, offset + 100 < list.length ? String(offset + 100) : null);
+    } });
+    await r.coordinator.wake();
+    assert.equal((await r.evidence('check.completed')).length, 0);
+    assert.equal((await r.evidence('check.abandoned'))[0].reason, 'cursor_invalid');
+    assert.equal(r.calls.length, 2);
+    r.coordinator.stop();
+  });
+}
+
+for (const size of [0, 100, 101, 199, 200, 1000]) {
+  test(`overlapping inventory has an exact list budget for ${size} chats`, async () => {
+    const list = Array.from({ length: size }, (_, i) => conversation(String(1000 + i), stamp(-900_001)));
+    const r = await rig({ read: async q => {
+      const offset = Number(q.parameters.query.cursor ?? 0);
+      return page(q.operation, list.slice(offset, offset + 100), offset + 100 < size ? String(offset + 100) : null);
+    } });
+    await r.coordinator.wake();
+    const expected = Math.max(1, Math.ceil((size - 1) / 99));
+    const [end] = await r.evidence('check.completed');
+    assert.deepEqual(end.counts, { list: expected, messages: 0, probes: 0 });
+    assert.equal(end.pages_read, expected);
+    assert.deepEqual(r.calls.map(q => q.cursor), Array.from({ length: expected }, (_, i) => i ? String(i * 99) : null));
+    assert.equal((await r.evidence('check.inventory_closed'))[0].scanned, size);
+    r.coordinator.stop();
+  });
+}

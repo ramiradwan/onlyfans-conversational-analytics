@@ -417,6 +417,25 @@ export class CatchupCoordinator {
                 || data.continuation.length > MAX_CURSOR_LENGTH || data.items.length === 0)) throw failure('cursor_invalid');
           const seen = inventory ? job.seen_cursors : chat.seen_cursors;
           if (data.continuation !== null && (data.continuation === cursor || seen.includes(data.continuation))) throw failure('cursor_invalid');
+          let nextCursor = data.continuation;
+          if (inventory && job.grant.kind === 'catch_up') {
+            const offset = cursor === null ? 0 : Number(cursor);
+            if (!Number.isSafeInteger(offset) || offset < 0
+              || (cursor !== null && (!job.list_anchor || data.items[0]?.id !== job.list_anchor))) {
+              throw failure('cursor_invalid');
+            }
+            const fresh = cursor === null ? data.items : data.items.slice(1);
+            if (new Set(fresh.map(item => item.id)).size !== fresh.length
+              || fresh.some(item => job.seen.includes(item.id))) throw failure('cursor_invalid');
+            if (nextCursor !== null) {
+              if (!/^(0|[1-9][0-9]*)$/.test(nextCursor)
+                || Number(nextCursor) !== offset + data.items.length || data.items.length < 2) {
+                throw failure('cursor_invalid');
+              }
+              nextCursor = String(Number(nextCursor) - 1);
+              job.list_anchor = data.items.at(-1).id;
+            }
+          }
           const current = await this.outbox.historyJob(ACTIVE);
           job.passive_heads = current.passive_heads;
           if (data.continuation !== null) seen.push(data.continuation);
@@ -467,7 +486,7 @@ export class CatchupCoordinator {
             chat.cursor = data.continuation;
           }
           const resultCommit = await this.#commit(job, { changes, evidence,
-            cursor: inventory ? data.continuation : job.cursor, patch: { ...job, retries: 0, retry_at: null } }, expected);
+            cursor: inventory ? nextCursor : job.cursor, patch: { ...job, retries: 0, retry_at: null } }, expected);
           job = resultCommit.job;
         } catch (error) {
           job = await this.outbox.historyJob(ACTIVE);

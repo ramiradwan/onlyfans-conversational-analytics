@@ -53,9 +53,8 @@ async function grantHistoryPermission(context, popup, worker) {
     permissions: ['webRequest'],
     origins: [origin],
   }), ONLYFANS_ORIGIN_PATTERN);
-  // Chromium may grant webRequest without a native confirmation once the
-  // OnlyFans host permission is already present. Automate the native prompt
-  // only when the permission is still pending after the click.
+  // Existing site access can make the permission grant immediate.
+  // Handle a native prompt only while the permission is still pending.
   let grantedWithoutPrompt = false;
   try {
     await expect.poll(hasPermission, { timeout: 1_500 }).toBe(true);
@@ -177,7 +176,7 @@ for (const enabled of [true, false]) {
           const checking = states.indexOf('checking', behind + 1);
           return behind >= 0 && checking > behind && states.indexOf('current', checking + 1) > checking;
         }), true);
-        expect(platform.requestCounts.catchup_list - before.catchup_list).toBe(Math.ceil(3 / 100));
+        expect(platform.requestCounts.catchup_list - before.catchup_list).toBe(Math.max(1, Math.ceil((3 - 1) / 99)));
         expect(platform.requestCounts.catchup_messages - before.catchup_messages).toBe(3);
         for (const chat of ['101', '102', '103']) {
           const ids = await bridge.evaluate(async chat => (await (await fetch(
