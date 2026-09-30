@@ -1761,6 +1761,23 @@ class SQLiteAnalyticsProjectionStore:
             )
             if armed.rowcount != 1:
                 raise ProjectionReconciliationError("page retirement scope differs")
+        if batching:
+            connection.execute(
+                "DELETE FROM conversation_page_refs "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            connection.execute(
+                "DELETE FROM conversation_owned_pages "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            connection.execute(
+                "DELETE FROM conversation_page_sets "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            connection.execute(_SCOPED_PAGE_RETIREMENT_RECLAIM, (account_ref,))
         updated = connection.execute(
             "UPDATE projection_generations SET status='retired', retired_at=? "
             "WHERE generation_id=? AND creator_account_id=? AND status='active'",
@@ -1770,7 +1787,6 @@ class SQLiteAnalyticsProjectionStore:
             raise ProjectionActivationConflict("active generation changed")
         if not batching:
             return
-        connection.execute(_SCOPED_PAGE_RETIREMENT_RECLAIM, (account_ref,))
         connection.execute("DELETE FROM retirement_page_content_ids")
         disarmed = connection.execute(
             "UPDATE generation_content_bulk_cleanup SET page_retirement=0 "

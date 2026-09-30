@@ -134,6 +134,46 @@ def test_failed_batched_page_retirement_rolls_back(tmp_path, monkeypatch):
         cleanup(fixture)
 
 
+def test_failed_retirement_after_page_batch_rolls_back(tmp_path, monkeypatch):
+    fixture = page_fixture(tmp_path, monkeypatch)
+    try:
+        fixture.pipeline.project_account(ACCOUNT)
+        store = fixture.stores.projections
+        with store.database.read() as db:
+            old = db.execute(
+                "SELECT generation_id FROM projection_generations WHERE status='active'"
+            ).fetchone()[0]
+            before = page_counts(db, old)
+            before_content = db.execute(
+                "SELECT COUNT(*) FROM conversation_page_content"
+            ).fetchone()[0]
+        with pytest.raises(sqlite3.IntegrityError, match="injected retirement failure"):
+            with store.database.transaction() as db:
+                db.execute(
+                    "CREATE TRIGGER fail_active_retirement BEFORE UPDATE OF status "
+                    "ON projection_generations "
+                    "WHEN OLD.status='active' AND NEW.status='retired' "
+                    "BEGIN SELECT RAISE(ABORT,'injected retirement failure'); END"
+                )
+                store._retire_active_generation(
+                    db, old, store._partition_ref(ACCOUNT), "2026-09-18T12:00:00.000000Z"
+                )
+        with store.database.read() as db:
+            assert db.execute(
+                "SELECT status FROM projection_generations WHERE generation_id=?", (old,)
+            ).fetchone()[0] == "active"
+            assert page_counts(db, old) == before
+            assert db.execute(
+                "SELECT COUNT(*) FROM conversation_page_content"
+            ).fetchone()[0] == before_content
+            assert db.execute(
+                "SELECT page_retirement FROM generation_content_bulk_cleanup WHERE singleton=1"
+            ).fetchone()[0] == 0
+            assert content_stamp(db) is not None and _guards_match(db)
+    finally:
+        cleanup(fixture)
+
+
 def legacy_catalog(tmp_path):
     catalog = tmp_path / "legacy-catalog"
     catalog.mkdir()
