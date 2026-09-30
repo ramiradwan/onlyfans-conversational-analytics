@@ -103,6 +103,23 @@ def test_query_to_source_round_trip(ready):
     assert ready.client.post("/api/v1/insights/questions/evidence", json=reference).status_code == 404
 
 
+def test_question_reuses_pinned_canonical_connection_for_evidence(ready, monkeypatch):
+    original = ready.source.read_evidence_message
+    scoped = []
+
+    def observed(*args, **kwargs):
+        scoped.append(
+            getattr(ready.source._question_scope_local, "connection", None) is not None
+        )
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(ready.source, "read_evidence_message", observed)
+    response = ready.client.post("/api/v1/insights/questions", json=plan())
+    assert response.status_code == 200, response.text
+    assert len(response.json()["page"]["rows"]) == 2
+    assert scoped and all(scoped)
+
+
 def test_production_source_preserves_missing_kind_as_undetermined(ready):
     ready.resources.source = HistoryAnalyticsSource(ready.stored.history)
     ready.resources.source.prepare_question_identity(ACCOUNT)

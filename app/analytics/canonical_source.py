@@ -7,7 +7,7 @@ from contextlib import contextmanager
 import json
 from app.persistence import sqlite_api as sqlite3
 from datetime import datetime
-from threading import Lock
+from threading import Lock, local
 
 from app.analytics.evidence_contracts import (
     EvidenceLocation, EvidenceMessage, MAX_EVIDENCE_TEXT_CHARS,
@@ -31,6 +31,7 @@ class HistoryAnalyticsSource:
         from app.analytics.source_tokens import SourceIdentityCache
         self._identity_cache = SourceIdentityCache()
         self._question_preparation_lock = Lock()
+        self._question_scope_local = local()
         from app.analytics.catalog_cache import SourceCatalogCache
         self._catalog_cache = SourceCatalogCache(self._identity_cache)
 
@@ -178,20 +179,26 @@ class HistoryAnalyticsSource:
         if self.connection is not None:
             raise ValueError("question_live_read_required")
         with self.history.database.read() as connection, bounded_sql(connection, budget):
-            budget.consume(2)
-            scope = CanonicalQuestionScope(connection, account_id, budget)
-            token = self._identity_cache.token(connection, account_id)
-            scope.identity = self._identity_cache.get(account_id, token)
-            if scope.identity is None:
-                from app.analytics.errors import ProjectionUnavailable
-                if token is None:
-                    raise ProjectionUnavailable(availability="error",
-                        reason_code="analytics_question_source_tracking_unavailable")
-                raise ProjectionUnavailable(availability="building",
-                    reason_code="analytics_question_identity_preparing")
-            scope.check(budget)
-            yield scope
-            scope.check(budget)
+            if getattr(self._question_scope_local, "connection", None) is not None:
+                raise RuntimeError("nested_question_scope")
+            self._question_scope_local.connection = connection
+            try:
+                budget.consume(2)
+                scope = CanonicalQuestionScope(connection, account_id, budget)
+                token = self._identity_cache.token(connection, account_id)
+                scope.identity = self._identity_cache.get(account_id, token)
+                if scope.identity is None:
+                    from app.analytics.errors import ProjectionUnavailable
+                    if token is None:
+                        raise ProjectionUnavailable(availability="error",
+                            reason_code="analytics_question_source_tracking_unavailable")
+                    raise ProjectionUnavailable(availability="building",
+                        reason_code="analytics_question_identity_preparing")
+                scope.check(budget)
+                yield scope
+                scope.check(budget)
+            finally:
+                del self._question_scope_local.connection
 
     def read_evidence_message(
         self, account_id: str, location: EvidenceLocation, budget: QuestionBudget,
@@ -202,62 +209,70 @@ class HistoryAnalyticsSource:
             raise ValueError("evidence_live_read_required")
         location = EvidenceLocation.model_validate(location)
         budget.check()
-        with self.history.database.read() as connection:
-            budget.check()
-            timeout_ms = max(1, int(budget.remaining_seconds() * 1000))
-            connection.execute(f"PRAGMA busy_timeout={timeout_ms}")
-            connection.execute("PRAGMA query_only=ON")
-            interrupted = []
 
-            def progress() -> int:
-                try:
-                    budget.check()
-                except Exception as error:
-                    interrupted.append(error)
-                    return 1
-                return 0
+        def read_row(connection):
+            budget.consume()
+            return connection.execute(
+                """SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
+                          m.sender_platform_user_id,m.upstream_updated_at,
+                          m.content_hash,m.winning_stream_epoch,m.winning_source_seq
+                     FROM account_messages AS m
+                     JOIN account_heads AS h
+                       ON h.creator_account_id=m.creator_account_id
+                     JOIN account_chats AS c
+                       ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
+                    WHERE m.creator_account_id=? AND m.message_id=? AND m.chat_id=?
+                      AND m.is_deleted=0 AND c.is_deleted=0 AND length(m.text)<=?
+                      AND length(CAST(m.text AS BLOB))<=?
+                      AND NOT EXISTS (
+                          SELECT 1 FROM entity_tombstones AS t
+                           WHERE t.creator_account_id=m.creator_account_id
+                             AND ((t.entity_kind='message' AND t.entity_id=m.message_id)
+                               OR (t.entity_kind='chat' AND t.entity_id=m.chat_id)))
+                      AND NOT EXISTS (
+                          SELECT 1 FROM deletion_barriers AS b
+                           WHERE b.creator_account_id=m.creator_account_id
+                             AND ((b.scope_kind='account' AND b.scope_key='*')
+                               OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
+                               OR (b.scope_kind='message' AND b.scope_key=m.message_id)
+                               OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
+                      AND NOT EXISTS (
+                          SELECT 1 FROM participant_deletion_chat_scopes AS p
+                           WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id)
+                    LIMIT 1""",
+                (account_id, location.message_id, location.conversation_id,
+                 MAX_EVIDENCE_TEXT_CHARS, MAX_EVIDENCE_TEXT_CHARS * 4),
+            ).fetchone()
 
-            connection.set_progress_handler(progress, 100)
-            try:
-                budget.consume()
-                row = connection.execute(
-                    """SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
-                              m.sender_platform_user_id,m.upstream_updated_at,
-                              m.content_hash,m.winning_stream_epoch,m.winning_source_seq
-                         FROM account_messages AS m
-                         JOIN account_heads AS h
-                           ON h.creator_account_id=m.creator_account_id
-                         JOIN account_chats AS c
-                           ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
-                        WHERE m.creator_account_id=? AND m.message_id=? AND m.chat_id=?
-                          AND m.is_deleted=0 AND c.is_deleted=0 AND length(m.text)<=?
-                          AND length(CAST(m.text AS BLOB))<=?
-                          AND NOT EXISTS (
-                              SELECT 1 FROM entity_tombstones AS t
-                               WHERE t.creator_account_id=m.creator_account_id
-                                 AND ((t.entity_kind='message' AND t.entity_id=m.message_id)
-                                   OR (t.entity_kind='chat' AND t.entity_id=m.chat_id)))
-                          AND NOT EXISTS (
-                              SELECT 1 FROM deletion_barriers AS b
-                               WHERE b.creator_account_id=m.creator_account_id
-                                 AND ((b.scope_kind='account' AND b.scope_key='*')
-                                   OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
-                                   OR (b.scope_kind='message' AND b.scope_key=m.message_id)
-                                   OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
-                          AND NOT EXISTS (
-                              SELECT 1 FROM participant_deletion_chat_scopes AS p
-                               WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id)
-                        LIMIT 1""",
-                    (account_id, location.message_id, location.conversation_id,
-                     MAX_EVIDENCE_TEXT_CHARS, MAX_EVIDENCE_TEXT_CHARS * 4),
-                ).fetchone()
-            except sqlite3.OperationalError:
-                if interrupted:
-                    raise interrupted[0] from None
+        scoped = getattr(self._question_scope_local, "connection", None)
+        if scoped is not None:
+            row = read_row(scoped)
+        else:
+            with self.history.database.read() as connection:
                 budget.check()
-                raise
-            finally:
-                connection.set_progress_handler(None, 0)
+                timeout_ms = max(1, int(budget.remaining_seconds() * 1000))
+                connection.execute(f"PRAGMA busy_timeout={timeout_ms}")
+                connection.execute("PRAGMA query_only=ON")
+                interrupted = []
+
+                def progress() -> int:
+                    try:
+                        budget.check()
+                    except Exception as error:
+                        interrupted.append(error)
+                        return 1
+                    return 0
+
+                connection.set_progress_handler(progress, 100)
+                try:
+                    row = read_row(connection)
+                except sqlite3.OperationalError:
+                    if interrupted:
+                        raise interrupted[0] from None
+                    budget.check()
+                    raise
+                finally:
+                    connection.set_progress_handler(None, 0)
         budget.check()
         if row is None:
             return None
