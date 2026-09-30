@@ -1,9 +1,12 @@
 """Production native-Snow route exercised by the independent noiseprotocol peer."""
 
 import base64
+import ast
 import asyncio
 import hashlib
+import inspect
 import json
+import textwrap
 import threading
 import time
 from typing import get_args
@@ -874,6 +877,60 @@ def test_unknown_method_keeps_same_channel(route, forward_logs):
             "supported_config_schema_versions": ["2"],
         })
         assert result["status"] == 200
+
+
+def test_surface_report_reaches_session_dispatch(route):
+    report = {
+        "schema": "ofca-browser-surface/v1",
+        "capture": "active",
+        "site_access": "granted",
+        "history_permission": "granted",
+        "legal_review_required": False,
+    }
+    with _client(route) as client, client.websocket_connect(
+        "/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}
+    ) as socket:
+        oracle = _establish(socket, route)
+        _prove(socket, oracle, route)
+        assert _rpc(socket, oracle, "agent.surface.report", report) == {}
+        surface = route.manager.browser_surface(route.local.account)
+        assert surface is not None
+        assert {key: surface[key] for key in report if key != "schema"} == {
+            key: value for key, value in report.items() if key != "schema"
+        }
+    assert route.manager.browser_surface(route.local.account) is None
+
+
+def test_served_methods_cover_dispatch_handlers():
+    handled = set()
+    for handler in (companion_session.SessionRPC.call, companion_session._serve):
+        tree = ast.parse(textwrap.dedent(inspect.getsource(handler)))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Compare) or len(node.ops) != 1:
+                continue
+            selector = node.left
+            is_method = isinstance(selector, ast.Name) and selector.id == "method"
+            is_request_method = (
+                isinstance(selector, ast.Subscript)
+                and isinstance(selector.value, ast.Name)
+                and selector.value.id == "value"
+                and isinstance(selector.slice, ast.Constant)
+                and selector.slice.value == "method"
+            )
+            if not (is_method or is_request_method):
+                continue
+            if isinstance(node.ops[0], ast.Eq):
+                literals = [node.comparators[0]]
+            elif isinstance(node.ops[0], ast.In):
+                literals = node.comparators[0].elts
+            else:
+                continue
+            for literal in literals:
+                assert isinstance(literal, ast.Constant)
+                assert isinstance(literal.value, str)
+                handled.add(literal.value)
+    assert handled
+    assert companion_session.SessionRPC.METHODS == handled
 
 
 @pytest.mark.parametrize("failure", ["known", "timeout", "non-string"])

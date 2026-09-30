@@ -119,7 +119,7 @@ class SessionRPC:
     METHODS = frozenset({
         "agent.challenge", "agent.authenticate", "capture.state.report",
         "history.check.begin", "agent.analysis.readiness", "agent.config.get",
-        "agent.storage.unseal", "agent.storage.rotate",
+        "agent.storage.unseal", "agent.storage.rotate", "agent.surface.report",
     })
 
     def __init__(self, authority, pin):
