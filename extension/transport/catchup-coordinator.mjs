@@ -68,8 +68,13 @@ export class CatchupCoordinator {
     this.leaseToken = crypto.randomUUID();
   }
 
+  #enabled() {
+    return this.configuration()?.history_acquisition?.enabled === true;
+  }
+
   wake(trigger = 'alarm') {
     if (this.stopped) return Promise.resolve();
+    if (!this.#enabled()) { this.cancelCurrent(); return Promise.resolve(); }
     if (trigger === 'alarm') {
       if (this.reporting) return this.reporting;
       if (this.running) return this.running;
@@ -100,6 +105,7 @@ export class CatchupCoordinator {
   }
 
   onIngestAcknowledged() {
+    if (!this.#enabled()) return Promise.resolve();
     return this.pendingTriggers.length > 0 ? this.#ensureRunning() : Promise.resolve();
   }
 
@@ -107,6 +113,7 @@ export class CatchupCoordinator {
   stop() { this.stopped = true; this.cancelCurrent(); }
 
   reportCaptureState() {
+    if (!this.#enabled()) { this.cancelCurrent(); return Promise.resolve(); }
     if (this.reporting) return this.reporting;
     this.cancelCurrent();
     this.reporting = (async () => {
@@ -118,6 +125,7 @@ export class CatchupCoordinator {
   }
 
   requestCaptureStateReport() {
+    if (!this.#enabled()) return Promise.resolve();
     if (this.notificationReporting) {
       this.notificationReportPending = true;
       return this.notificationReporting;

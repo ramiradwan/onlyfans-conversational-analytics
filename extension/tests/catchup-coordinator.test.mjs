@@ -61,6 +61,22 @@ async function rig({ list = [conversation('101')], messages = { '101': [message(
   return r;
 }
 
+test('disabled history keeps catch-up dormant until configuration enables it', async () => {
+  const r = await rig();
+  r.config = traversalConfiguration({ enabled: false });
+  await r.coordinator.wake('admission');
+  await r.coordinator.reportCaptureState();
+  await r.coordinator.requestCaptureStateReport();
+  await r.coordinator.onIngestAcknowledged({ committed_source_seq: 0 });
+  assert.equal(r.rpcs.length, 0);
+  assert.equal(r.calls.length, 0);
+
+  r.config = traversalConfiguration({ enabled: true });
+  await r.coordinator.wake('observing');
+  assert.ok(r.rpcs.some(value => value.operation === 'capture.state.report'));
+  assert.ok(r.rpcs.some(value => value.operation === 'history.check.begin'));
+});
+
 test('ties, missing heads and new chats have exact budgets and frozen heads', async () => {
   const r = await rig({ list: [conversation('101', stamp(-900_000)), conversation('102', stamp(-900_000)),
     conversation('103'), conversation('104', stamp(-900_001))],
