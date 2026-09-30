@@ -142,9 +142,9 @@ for (const enabled of [true, false]) {
       await context.exposeBinding('syntheticCatchupRead', (source, request, category) => platform.readCatchupPage(request, category));
       let lastSummary = null;
       const summary = async () => (lastSummary = await readBrainSummary(context, { catchup: true }));
-      const poll = (read, expected, timeout = 180_000) => withCatchupDiagnostics(
+      const poll = (read, expected, timeout = 180_000, checkpoint = null) => withCatchupDiagnostics(
         () => expect.poll(read, { timeout }).toBe(expected),
-        { summary: () => lastSummary ?? summary(), platform, context, brain },
+        { summary: () => lastSummary ?? summary(), platform, context, brain, checkpoint },
       );
       const reopen = async () => {
         const page = await context.newPage();
@@ -156,7 +156,7 @@ for (const enabled of [true, false]) {
       };
       let page = await reopen();
       expect(await enableHistory(bridge)).toBe(200);
-      await poll(async () => (await summary()).coverage.status, 'complete', 60_000);
+      await poll(async () => (await summary()).coverage.status, 'complete', 60_000, 'initial_history');
       if (enabled) await poll(async () => (await summary()).catchupFreshness?.status, 'current');
       await observeFreshness(bridge, await readServedRuntimeConfig(context));
       await poll(() => bridge.evaluate(() => globalThis.catchupStates.length > 0), true, 12_000);

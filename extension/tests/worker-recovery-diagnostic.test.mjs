@@ -4,6 +4,97 @@ import test from 'node:test';
 import * as diagnostics from '../../tools/e2e-capture/lib/stable-connection-diagnostic.mjs';
 import { AgentRuntime } from '../transport/agent-runtime-core.mjs';
 
+test('session task provenance survives collection without arbitrary data', () => {
+  const collector = diagnostics.createSessionFailureCollector();
+  collector.append('e2e-session-failure: ' + JSON.stringify({ method: 'session.serve',
+    causes: [{ errorName: 'QueueFull', phase: 'broadcast_catchup', message: 'private_message',
+      frames: [{ module: 'channel', line: 81 }, { module: 'agent_socket', line: 44 }] }] }) + '\n');
+  const [entry] = collector.snapshot();
+  assert.equal(entry.method, 'session.serve');
+  assert.equal(entry.causes[0].errorName, 'QueueFull');
+  assert.equal(entry.causes[0].phase, 'broadcast_catchup');
+  assert.equal(entry.causes[0].frames[0].module, 'channel');
+  assert.equal(entry.causes[0].frames[1].module, 'agent_socket');
+  assert.doesNotMatch(JSON.stringify(entry), /private_/);
+});
+
+test('successful recovery checkpoints retain rotation evidence with bounded redaction', () => {
+  const output = [];
+  diagnostics.logWorkerRecoveryCheckpoint('alarm', { token: 'private_token',
+    credentialRotation: { attempts: 2, completed: 1, failure: { phase: 'rpc', cause: 'session_request_refused' } },
+    connectionEvents: Array.from({ length: 40 }, () => ({ event: 'facade-close', reason: 'credential_store_failed' })),
+  }, [{ method: 'agent.storage.rotate', causes: [], token: 'private_token' }], line => output.push(line));
+  assert.equal(output.length, 1);
+  const report = JSON.parse(output[0].split('worker-recovery-checkpoint: ')[1]);
+  assert.equal(report.stage, 'alarm');
+  assert.equal(report.recovery.credentialRotation.completed, 1);
+  assert.equal(report.recovery.credentialRotation.failure.cause, 'session_request_refused');
+  assert.equal(report.recovery.connectionEvents.length, 24);
+  assert.equal(report.brainSessionFailures[0].method, 'agent.storage.rotate');
+  assert.doesNotMatch(output[0], /private_/);
+  diagnostics.logWorkerRecoveryCheckpoint('private_stage', {}, [], line => output.push(line));
+  assert.equal(output.length, 1);
+  assert.doesNotThrow(() => diagnostics.logWorkerRecoveryCheckpoint('alarm', {}, [], () => { throw Error(); }));
+});
+
+test('successful initial history checkpoint exposes setup order without changing its result', async () => {
+  const { withCatchupDiagnostics } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
+  const output = [], result = {};
+  assert.equal(await withCatchupDiagnostics(async () => result, {
+    checkpoint: 'initial_history', summary: async () => ({ account: 'private_account' }),
+    platform: { requestCounts: {} }, readWorker: async () => ({ shim: { setupTrace: [
+      { event: 'notification', sessionPresent: false, configurationEnabled: true, configurationApplied: false, token: 'private_token' },
+      { event: 'rpc', operation: 'capture.state.report', sessionPresent: true, configurationEnabled: true, configurationApplied: true },
+    ] } }), log: line => output.push(line),
+  }), result);
+  assert.equal(output.length, 1);
+  assert.match(output[0], /^Catch-up checkpoint initial_history /);
+  assert.match(output[0], /"sessionPresent":false/);
+  assert.match(output[0], /"operation":"capture.state.report"/);
+  assert.doesNotMatch(output[0], /private_/);
+});
+
+test('setup trace is bounded and observes notification and RPC admission independently', async () => {
+  const { installCatchupShim, catchupDiagnosticFields } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
+  let session = null, enabled = false;
+  const result = Promise.resolve('unchanged');
+  const catchup = { configuration: () => ({ config_revision: 'private_revision', history_acquisition: { enabled } }),
+    session: () => session, requestCaptureStateReport() { assert.equal(this, catchup); return result; },
+    rpc() { assert.equal(this, catchup); return result; } };
+  const transport = { onSession() { assert.equal(this, transport); return 'admitted'; } };
+  const components = { history: { initial: {}, catchup }, transport };
+  const runtime = { async initialize() { return components; } }, root = {};
+  installCatchupShim(runtime, {}, root, async () => ({}));
+  assert.equal(await runtime.initialize(), components);
+  assert.equal(catchup.requestCaptureStateReport(), result);
+  enabled = true;
+  session = { applied_config_revision: null };
+  assert.equal(transport.onSession(), 'admitted');
+  session.applied_config_revision = 'private_revision';
+  assert.equal(catchup.rpc('capture.state.report', { token: 'private_token' }), result);
+  const trace = root.__OFCA_CATCHUP_SHIM__.setupTrace;
+  assert.deepEqual(trace.map(entry => entry.event), ['initialized', 'notification', 'admission', 'rpc']);
+  assert.equal(trace[1].sessionPresent, false);
+  assert.equal(trace[2].configurationApplied, false);
+  assert.equal(trace[3].configurationApplied, true);
+  for (let index = 0; index < 40; index++) catchup.rpc('private_method');
+  assert.equal(trace.length, 32);
+  const report = catchupDiagnosticFields(null, null, { shim: root.__OFCA_CATCHUP_SHIM__ });
+  assert.equal(report.shim.setupTrace.length, 32);
+  assert.doesNotMatch(JSON.stringify(report), /private_/);
+});
+
+test('successful checkpoint diagnostics bound unreadable state and preserve the assertion result', async () => {
+  const { withCatchupDiagnostics } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
+  let logs = 0;
+  const result = await withCatchupDiagnostics(async () => 7, {
+    checkpoint: 'initial_history', summary: () => new Promise(() => {}), readWorker: () => new Promise(() => {}),
+    platform: { requestCounts: {} }, timeoutMs: 1, log() { logs++; throw new Error('private_sink'); },
+  });
+  assert.equal(result, 7);
+  assert.equal(logs, 1);
+});
+
 test('worker recovery diagnostics are bounded and exclude arbitrary snapshot data', () => {
   const report = diagnostics.buildWorkerRecoveryDiagnostic({
     capturedAt: 100, runtimeReady: true, transportStopped: false, reconnectAllowed: false,

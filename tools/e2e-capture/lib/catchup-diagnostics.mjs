@@ -10,6 +10,7 @@ export function installCatchupShim(agentRuntime, chromeApi, root, readStatus) {
     calls: { history: operations(), catchup: operations() },
     failures: { tab_unavailable: failure(), execute_script_failed: failure(), binding_failed: failure(), other: failure() },
   };
+  counters.setupTrace ??= [];
   const errorName = error => ['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError',
     'AbortError', 'TimeoutError', 'InvalidStateError', 'SecurityError', 'NotAllowedError'].includes(error?.name)
     ? error.name : 'Error';
@@ -77,6 +78,31 @@ export function installCatchupShim(agentRuntime, chromeApi, root, readStatus) {
         counters.installed[category]++;
         counters.lastInstalled[category] = true;
       }
+      const catchup = components.history.catchup;
+      const trace = (event, operation = null) => {
+        try {
+          const config = catchup.configuration(), session = catchup.session();
+          counters.setupTrace.push({ event,
+            operation: ['capture.state.report', 'history.check.begin'].includes(operation) ? operation : null,
+            sessionPresent: session != null,
+            configurationEnabled: config?.history_acquisition?.enabled === true,
+            configurationApplied: session?.applied_config_revision != null
+              && session.applied_config_revision === config?.config_revision });
+          if (counters.setupTrace.length > 32) counters.setupTrace.shift();
+        } catch {}
+      };
+      for (const [owner, method, event] of [
+        [catchup, 'requestCaptureStateReport', 'notification'], [catchup, 'rpc', 'rpc'],
+        [components.transport, 'onSession', 'admission'],
+      ]) {
+        const original = owner?.[method];
+        if (typeof original !== 'function') continue;
+        owner[method] = function (...args) {
+          trace(event, event === 'rpc' ? args[0] : null);
+          return original.apply(this, args);
+        };
+      }
+      trace('initialized');
       counters.initializeCompleted++;
       return components;
     } catch (error) {
@@ -139,6 +165,12 @@ function safeShimCounters(shim) {
   if (!shim) return null;
   const categories = ['history', 'catchup'];
   return {
+    setupTrace: Array.isArray(shim.setupTrace) ? shim.setupTrace.slice(-32).map(entry => ({
+      event: enumValue(entry?.event, ['initialized', 'notification', 'admission', 'rpc']),
+      operation: enumValue(entry?.operation, ['capture.state.report', 'history.check.begin']),
+      sessionPresent: boolean(entry?.sessionPresent), configurationEnabled: boolean(entry?.configurationEnabled),
+      configurationApplied: boolean(entry?.configurationApplied),
+    })) : [],
     initializeWrapped: count(shim.initializeWrapped), initializeCalls: count(shim.initializeCalls),
     initializeCompleted: count(shim.initializeCompleted),
     installed: Object.fromEntries(categories.map(key => [key, count(shim.installed?.[key])])),
@@ -186,16 +218,23 @@ export async function readCatchupWorker(context, findWorker = async context => {
 }
 
 export async function withCatchupDiagnostics(assertion, { summary, platform, context, brain,
-  readWorker = () => readCatchupWorker(context), log = line => console.error(line), timeoutMs = 2_500 }) {
-  try { return await assertion(); }
-  catch (error) {
+  readWorker = () => readCatchupWorker(context), log = line => console.error(line), timeoutMs = 2_500,
+  checkpoint = null }) {
+  const report = async prefix => {
     let fields;
     try {
       const [lastSummary, worker] = await Promise.all([boundedRead(summary, timeoutMs), boundedRead(readWorker, timeoutMs)]);
       fields = catchupDiagnosticFields(lastSummary, platform.requestCounts, worker);
       fields.brainSessionFailures = brain?.sessionFailures?.() ?? readSessionFailures(brain?.recentOutput?.() ?? '');
     } catch { fields = catchupDiagnosticFields(null, null, null); }
-    try { log(`Catch-up poll timed out ${JSON.stringify(fields)}`); } catch {}
+    try { log(`${prefix} ${JSON.stringify(fields)}`); } catch {}
+  };
+  let result;
+  try { result = await assertion(); }
+  catch (error) {
+    await report('Catch-up poll timed out');
     throw error;
   }
+  if (checkpoint === 'initial_history') await report('Catch-up checkpoint initial_history');
+  return result;
 }

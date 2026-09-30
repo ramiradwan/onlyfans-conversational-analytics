@@ -32,7 +32,7 @@ import {
 } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 import { readSqliteProof } from '../lib/sqlite-proof.mjs';
-import { buildStableConnectionDiagnostic, buildWorkerRecoveryDiagnostic, redactStableConnectionAssertionError, withoutReportedExpectStep } from '../lib/stable-connection-diagnostic.mjs';
+import { buildStableConnectionDiagnostic, buildWorkerRecoveryDiagnostic, logWorkerRecoveryCheckpoint, redactStableConnectionAssertionError, withoutReportedExpectStep } from '../lib/stable-connection-diagnostic.mjs';
 const IDENTITY_PATH = '/api2/v2/users/me';
 const CHATS_PATH = '/api2/v2/chats';
 const MESSAGES_PATH = `/api2/v2/chats/${SYNTHETIC.chatId}/messages`;
@@ -646,6 +646,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         { timeoutMs: 60_000 },
       );
       expect(recovered.heartbeatTimerPresent).toBe(true);
+      logWorkerRecoveryCheckpoint('replay', recovered, brain.sessionFailures());
       expect(recovered.workerInstanceId).not.toBe(oldWorkerInstanceId);
 
       const replayed = await waitForBrain(
@@ -739,6 +740,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         'The second replacement worker did not resume cleanly at acknowledgment 8.',
       );
       expect(replacement.workerInstanceId).not.toBe(oldWorkerInstanceId);
+      logWorkerRecoveryCheckpoint('replacement', replacement, brain.sessionFailures());
       const rebound = await waitForBrain(
         context,
         (candidate) => (
@@ -815,6 +817,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         { timeoutMs: Math.max(20_000, cooldownRemaining + 60_000) },
       );
       expect(alarmReplacement.workerInstanceId).not.toBe(oldWorkerInstanceId);
+      logWorkerRecoveryCheckpoint('alarm', alarmReplacement, brain.sessionFailures());
       const recovered = await waitForBrain(
         context,
         (candidate) => (

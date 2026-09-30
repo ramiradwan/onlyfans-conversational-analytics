@@ -46,17 +46,17 @@ export function readSessionFailures(output) {
     try { value = JSON.parse(line.slice('e2e-session-failure: '.length)); } catch { continue; }
     results.push({
       method: enumValue(value?.method, ['agent.storage.rotate', 'agent.storage.unseal', 'agent.config.get',
-        'capture.state.report', 'history.check.begin', 'agent.challenge', 'agent.authenticate', 'agent.analysis.readiness']),
+        'capture.state.report', 'history.check.begin', 'agent.challenge', 'agent.authenticate', 'agent.analysis.readiness', 'session.serve']),
       causes: Array.isArray(value?.causes) ? value.causes.slice(0, 4).map(cause => ({
         errorName: enumValue(cause?.errorName, ['CompanionSessionError', 'CompanionRecordError', 'AuthenticationStateError',
           'CompanionPairingPersistenceError', 'LocalDataKeyError', 'RuntimeError', 'ValueError', 'TypeError', 'KeyError',
           'OperationalError', 'DatabaseError', 'IntegrityError', 'TimeoutError', 'ValidationError', 'PermissionError',
-          'InvalidToken', 'InvalidTag', 'OSError']),
+          'InvalidToken', 'InvalidTag', 'OSError', 'QueueFull', 'WebSocketDisconnect']),
         phase: enumValue(cause?.phase, ['dispatch', 'validate_config', 'open_bootstrap', 'seal_bootstrap',
-          'policy', 'consume_config', 'ticket_binding', 'data_key']),
+          'policy', 'consume_config', 'ticket_binding', 'data_key', 'serve', 'receive', 'send', 'agent_socket', 'broadcast_catchup']),
         frames: Array.isArray(cause?.frames) ? cause.frames.slice(-8).map(frame => ({
           module: enumValue(frame?.module, ['rpc', 'authority', 'auth_store', 'pairing_store', 'bootstrap',
-            'data_key', 'catchup', 'manager']), line: number(frame?.line),
+            'data_key', 'catchup', 'manager', 'channel', 'agent_socket']), line: number(frame?.line),
         })) : [],
       })) : [],
     });
@@ -113,6 +113,16 @@ export function buildWorkerRecoveryDiagnostic(extension) {
       channel: safeCompanionChannelDiagnostic(entry.channel),
     })) : [],
   };
+}
+
+export function logWorkerRecoveryCheckpoint(stage, state, failures = [], log = line => console.error(line)) {
+  if (!['replay', 'replacement', 'alarm'].includes(stage)) return;
+  try {
+    const brainSessionFailures = readSessionFailures(failures.slice(-24)
+      .map(value => 'e2e-session-failure: ' + JSON.stringify(value)).join('\n'));
+    log('worker-recovery-checkpoint: ' + JSON.stringify({ stage,
+      recovery: buildWorkerRecoveryDiagnostic(state), brainSessionFailures }));
+  } catch {}
 }
 
 export function withoutReportedExpectStep(assertion, { expectConfig, setExpectConfig }) {

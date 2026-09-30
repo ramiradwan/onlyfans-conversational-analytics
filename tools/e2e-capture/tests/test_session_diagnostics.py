@@ -79,3 +79,73 @@ def test_diagnostic_sink_failure_does_not_replace_the_original_failure():
     with pytest.raises(RuntimeError) as caught:
         RPC().call('agent.storage.rotate', {})
     assert caught.value is error
+
+
+@pytest.mark.asyncio
+async def test_session_task_failure_retains_post_rpc_provenance_and_exception():
+    module = load_module()
+    scope = {'__name__': 'app.transport.manager'}
+    exec(compile("async def broadcast_catchup():\n    raise RuntimeError('private_payload')\n", 'private_path', 'exec'), scope)
+    class RPC:
+        def call(self, method, params):
+            return params
+    async def serve(channel, pin):
+        await scope['broadcast_catchup']()
+    target = SimpleNamespace(SessionRPC=RPC, _serve=serve)
+    output = []
+    module.install_session_diagnostics(target, emit=output.append)
+    with pytest.raises(RuntimeError) as caught:
+        await target._serve(None, None)
+    assert str(caught.value) == 'private_payload'
+    assert len(output) == 1
+    report = json.loads(output[0].split(': ', 1)[1])
+    assert report['method'] == 'session.serve'
+    assert report['causes'][0]['phase'] == 'broadcast_catchup'
+    assert report['causes'][0]['frames'] == [{'module': 'manager', 'line': 2}]
+    assert 'private_' not in output[0]
+
+
+@pytest.mark.asyncio
+async def test_rpc_and_session_task_failures_share_one_output_limit():
+    module = load_module()
+    original = RuntimeError('private_failure')
+    class RPC:
+        def call(self, method, params):
+            raise original
+    async def serve(channel, pin):
+        raise original
+    target = SimpleNamespace(SessionRPC=RPC, _serve=serve)
+    output = []
+    module.install_session_diagnostics(target, emit=output.append, limit=2)
+    for _ in range(3):
+        with pytest.raises(RuntimeError) as caught:
+            await target._serve(None, None)
+        assert caught.value is original
+    with pytest.raises(RuntimeError) as caught:
+        RPC().call('agent.storage.rotate', {})
+    assert caught.value is original
+    assert len(output) == 2
+
+
+@pytest.mark.asyncio
+async def test_session_task_diagnostic_preserves_success_cancellation_and_sink_failure():
+    import asyncio
+    module = load_module()
+    class RPC:
+        def call(self, method, params):
+            return params
+    async def serve(channel, pin):
+        if isinstance(pin, BaseException):
+            raise pin
+        return pin
+    def emit(line):
+        raise OSError('private_sink')
+    target = SimpleNamespace(SessionRPC=RPC, _serve=serve)
+    module.install_session_diagnostics(target, emit=emit)
+    assert target._serve is not serve
+    result = object()
+    assert await target._serve(None, result) is result
+    for error in (RuntimeError('private_original'), asyncio.CancelledError()):
+        with pytest.raises(type(error)) as caught:
+            await target._serve(None, error)
+        assert caught.value is error

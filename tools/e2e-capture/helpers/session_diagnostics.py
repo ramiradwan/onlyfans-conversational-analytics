@@ -8,14 +8,14 @@ from threading import Lock
 METHODS = frozenset({
     "agent.storage.rotate", "agent.storage.unseal", "agent.config.get",
     "capture.state.report", "history.check.begin", "agent.challenge",
-    "agent.authenticate", "agent.analysis.readiness",
+    "agent.authenticate", "agent.analysis.readiness", "session.serve",
 })
 ERRORS = frozenset({
     "CompanionSessionError", "CompanionRecordError", "AuthenticationStateError",
     "CompanionPairingPersistenceError", "LocalDataKeyError", "RuntimeError",
     "ValueError", "TypeError", "KeyError", "OperationalError", "DatabaseError",
     "IntegrityError", "TimeoutError", "ValidationError", "PermissionError",
-    "InvalidToken", "InvalidTag", "OSError",
+    "InvalidToken", "InvalidTag", "OSError", "QueueFull", "WebSocketDisconnect",
 })
 MODULES = {
     "app.api.endpoints.companion_session": "rpc",
@@ -26,6 +26,8 @@ MODULES = {
     "app.security.local_data_key": "data_key",
     "app.persistence.catchup": "catchup",
     "app.transport.manager": "manager",
+    "app.transport.companion_channel": "channel",
+    "app.api.endpoints.transport_ws": "agent_socket",
 }
 PHASES = {
     "call": "dispatch", "validate_config": "validate_config",
@@ -33,6 +35,8 @@ PHASES = {
     "seal_extension_storage_bootstrap": "seal_bootstrap", "_bootstrap": "seal_bootstrap",
     "current_policy": "policy", "companion_session_policy": "policy",
     "consume_companion_ticket": "consume_config", "_ticket_binding": "ticket_binding",
+    "_serve": "serve", "read": "receive", "receive": "receive", "send": "send",
+    "_agent_socket": "agent_socket", "broadcast_catchup": "broadcast_catchup",
 }
 
 
@@ -60,19 +64,32 @@ def install_session_diagnostics(endpoint, *, emit=print, limit=24):
     remaining = min(24, max(0, limit))
     lock = Lock()
 
+    def record(method, error):
+        nonlocal remaining
+        try:
+            with lock:
+                if remaining > 0:
+                    remaining -= 1
+                    emit("e2e-session-failure: " + json.dumps(session_failure(method, error), separators=(",", ":")))
+        except Exception:
+            pass
+
     @wraps(original)
     def call(self, method, params):
-        nonlocal remaining
         try:
             return original(self, method, params)
         except Exception as error:
-            try:
-                with lock:
-                    if remaining > 0:
-                        remaining -= 1
-                        emit("e2e-session-failure: " + json.dumps(session_failure(method, error), separators=(",", ":")))
-            except Exception:
-                pass
+            record(method, error)
             raise
 
     endpoint.SessionRPC.call = call
+    original_serve = getattr(endpoint, "_serve", None)
+    if original_serve is not None:
+        @wraps(original_serve)
+        async def serve(channel, pin):
+            try:
+                return await original_serve(channel, pin)
+            except Exception as error:
+                record("session.serve", error)
+                raise
+        endpoint._serve = serve
