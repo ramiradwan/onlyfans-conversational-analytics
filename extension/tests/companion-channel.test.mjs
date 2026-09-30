@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import initialize, { SnowSession } from '../vendor/companion-snow/ofca_snow_wasm.js';
 import { openCompanionChannel, openLoopbackSocket, safeCompanionCloseReason } from '../transport/companion-channel.mjs';
+import { createCompanionClient } from '../runtime/companion-client.mjs';
 import { createFragmentReceiver, fragmentMessage } from '../transport/companion-fragments.mjs';
 import { key32 } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
-import { vector, trustSet, fixtureMaterial } from '../test-fixtures/pairing/vendored-vector.mjs';
+import { vector, trustSet, fixtureMaterial, fixturePrivateJwk } from '../test-fixtures/pairing/vendored-vector.mjs';
 
 await initialize({ module_or_path: await readFile(new URL('../vendor/companion-snow/ofca_snow_wasm_bg.wasm', import.meta.url)) });
 const trust = await loadGrantTrustSet(trustSet, { allowNonProduction: true });
@@ -45,7 +46,7 @@ async function waitFor(predicate) {
   assert.ok(predicate(), 'the controlled asynchronous phase was entered');
 }
 
-function fixture({ wrongKey = false, authorization = vector.session_authorization, stall = false, sentFrame = () => {}, delayedCommit = null, delayedMaterial = null } = {}) {
+function fixture({ wrongKey = false, authorization = vector.session_authorization, stall = false, sentFrame = () => {}, delayedCommit = null, delayedMaterial = null, reply = document => ({ secret: 'protected-ticket', method: document.method }) } = {}) {
   const captured = [], received = [], fragments = createFragmentReceiver();
   let socket, responder, phase = 0, invalidated, commitSignal, materialSignal, pinned = false;
   const store = {
@@ -82,7 +83,10 @@ function fixture({ wrongKey = false, authorization = vector.session_authorizatio
             const document = fragments.receive(plain.slice(1));
             if (document) {
               received.push(document);
-              if (document.type === 'rpc.request') application({ type: 'rpc.response', id: document.id, result: { secret: 'protected-ticket', method: document.method } });
+              if (document.type === 'rpc.request') {
+                const result = reply(document);
+                if (result !== undefined) application({ type: 'rpc.response', id: document.id, result });
+              }
             }
           }
         } catch { socket.close(); }
@@ -95,6 +99,59 @@ function fixture({ wrongKey = false, authorization = vector.session_authorizatio
     get materialSignal() { return materialSignal; }, get pinned() { return pinned; }, invalidate: () => invalidated(),
     open: (extra = {}) => openCompanionChannel({ url: 'ws://127.0.0.1:17871/ws/agent', store, SnowSession, accountId: vector.detected_account_id, trust, clock: () => vector.now, webSocketFactory: factory, ...extra }) };
 }
+
+test('credential rotation survives eight pending RPCs without resending material', async () => {
+  const account = vector.detected_account_id, held = [], rotations = [];
+  const challenge = { challenge_id: crypto.randomUUID(), challenge: Buffer.alloc(32, 9).toString('base64url'),
+    session_id: crypto.randomUUID(), expires_at: '2026-09-30T12:00:00Z' };
+  const peer = fixture({ reply(document) {
+    if (document.method === 'agent.challenge') return challenge;
+    if (document.method === 'agent.authenticate') return { creator_account_id: account,
+      auth_ticket: 'fixture-ticket', storage_bootstrap: 'fixture-bootstrap' };
+    if (document.method === 'agent.storage.unseal') return { schema: 'ofca-extension-storage-unlock/v1',
+      creator_account_id: account, credential_kind: 'pairing', auth_ticket: 'fixture-ticket',
+      storage_key_base64: Buffer.alloc(32, 7).toString('base64') };
+    if (document.method === 'agent.storage.rotate') {
+      rotations.push(document);
+      return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: 'rotated-bootstrap' };
+    }
+    held.push(document);
+  } });
+  const channel = await peer.open();
+  const privateKey = await crypto.subtle.importKey('jwk',
+    fixturePrivateJwk(vector.fixture_labels.agent_identity_key, vector.request.agent_identity_jwk),
+    { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const values = {};
+  const area = { async get() { return { ...values }; }, async set(update) { Object.assign(values, update); } };
+  const client = createCompanionClient({ chromeApi: { storage: { local: area, session: area } },
+    allowsFull: () => true, detectedAccountId: async () => account, accountDatabaseName: async () => 'fixture-storage',
+    storeFactory: async () => ({ identity: async () => ({ privateKey }) }), loadSnow: async () => ({ SnowSession }),
+    loadTrust: async () => trust, channelFactory: async () => channel });
+  const pending = [];
+  try {
+    await client.adapter.loadBrainBinding();
+    for (let i = 0; i < 8; i++) pending.push(channel.rpc('agent.analysis.readiness'));
+    await waitFor(() => held.length === 8);
+    const rotation = client.adapter.saveReconnectAuthTicket({ creatorAccountId: account,
+      agentInstallationId: await client.adapter.loadAgentInstallationId(), authTicket: 'reconnect-fixture',
+      configAuthTicket: 'config-fixture' });
+    void rotation.catch(() => undefined);
+    await tick();
+    assert.equal(rotations.length, 0);
+    for (const document of held) {
+      peer.application({ type: 'rpc.response', id: document.id, result: {} });
+      await tick();
+    }
+    await Promise.all(pending);
+    await rotation;
+    assert.equal(rotations.length, 1);
+    assert.equal(client.credentialRotation.completed, 1);
+    assert.equal(channel.closed, false);
+  } finally {
+    client.invalidate(); channel.close();
+    await Promise.allSettled(pending);
+  }
+});
 
 test('packaged Snow authenticates the pinned peer before encrypted RPC and protocol traffic', async () => {
   const peer = fixture(), channel = await peer.open();

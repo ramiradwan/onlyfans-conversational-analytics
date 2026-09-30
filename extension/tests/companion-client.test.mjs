@@ -11,6 +11,84 @@ const publicKey = await crypto.subtle.importKey('jwk', vector.request.agent_iden
 const ACCOUNT = vector.detected_account_id;
 const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 
+async function capacityHarness() {
+  const waits = new Map();
+  let timerId = 0, busy = true, attempts = 0;
+  const scheduler = { setTimeout(callback, delay) { const id = ++timerId; waits.set(id, { callback, delay }); return id; },
+    clearTimeout(id) { waits.delete(id); } };
+  const h = harness({ scheduler });
+  await h.client.adapter.loadBrainBinding();
+  const channel = h.channels[0], rpc = channel.rpc.bind(channel);
+  const capacity = Object.assign(new Error('companion_session_refused'), { code: 'companion_session_refused',
+    diagnostic: { cause: 'rpc_capacity', pendingRpcs: 8, abandonedRpcs: 0, queuedSends: 0 } });
+  channel.rpc = async (...args) => {
+    attempts++;
+    if (busy) throw capacity;
+    return rpc(...args);
+  };
+  return { ...h, channel, capacity, waits, get attempts() { return attempts; }, release() { busy = false; },
+    rotate(controls = {}) { return h.client.adapter.saveReconnectAuthTicket({ creatorAccountId: ACCOUNT,
+      authTicket: 'reconnect-fixture', configAuthTicket: 'config-fixture' }, controls); },
+    retry() {
+      const entry = [...waits].find(([, value]) => value.delay === 25);
+      assert.ok(entry, 'capacity wait is scheduled');
+      waits.delete(entry[0]); entry[1].callback();
+    } };
+}
+
+for (const invalidation of ['abort', 'binding', 'channel', 'generation']) {
+  test('credential capacity wait rejects stale work after ' + invalidation, async () => {
+    const h = await capacityHarness(), controller = new AbortController();
+    let current = true;
+    try {
+      let settled = false;
+      const rotation = h.rotate({ signal: controller.signal, assertCurrent() { assert.ok(current); } });
+      void rotation.then(() => { settled = true; }, () => { settled = true; });
+      await tick();
+      assert.equal(settled, false, 'local capacity must not fail credential persistence immediately');
+      if (invalidation === 'abort') controller.abort();
+      if (invalidation === 'binding') h.client.invalidate();
+      if (invalidation === 'channel') h.channel.close();
+      if (invalidation === 'generation') current = false;
+      h.release(); h.retry();
+      await assert.rejects(rotation);
+      assert.equal(h.attempts, 1);
+      assert.equal(h.client.credentialRotation.completed, 0);
+    } finally { h.client.invalidate(); }
+  });
+}
+
+test('credential capacity wait expires without admitting another RPC', async (t) => {
+  let time = 0;
+  t.mock.method(performance, 'now', () => time);
+  const h = await capacityHarness();
+  try {
+    let settled = false;
+    const rotation = h.rotate();
+    void rotation.then(() => { settled = true; }, () => { settled = true; });
+    await tick();
+    assert.equal(settled, false);
+    time = 10_000;
+    h.release(); h.retry();
+    await assert.rejects(rotation, error => error === h.capacity);
+    assert.equal(h.attempts, 1);
+  } finally { h.client.invalidate(); }
+});
+
+test('credential rotation never retries a dispatched refusal or ambiguous failure', async () => {
+  for (const diagnostic of [undefined, { cause: 'rpc_timeout' }, { cause: 'rpc_backlog' }, { cause: 'send_failed' }]) {
+    const h = harness();
+    try {
+      await h.client.adapter.loadBrainBinding();
+      let calls = 0;
+      const error = Object.assign(new Error('session_request_refused'), { diagnostic });
+      h.channels[0].rpc = async () => { calls++; throw error; };
+      await assert.rejects(h.client.adapter.saveReconnectAuthTicket({ creatorAccountId: ACCOUNT }), value => value === error);
+      assert.equal(calls, 1);
+    } finally { h.client.invalidate(); }
+  }
+});
+
 test('facade diagnostics retain closed local causes without arbitrary text', async () => {
   for (const [input, expected] of [
     ['Session establishment timed out', 'session_timeout'],

@@ -466,11 +466,27 @@ export function createCompanionClient({
         cause = 'account_mismatch';
         if (bound.accountId !== credential.creatorAccountId) throw failure();
         phase = 'rpc'; cause = null;
-        const rotated = await bound.channel.rpc('agent.storage.rotate', {
+        const params = {
           protocol_version: '2', creator_account_id: credential.creatorAccountId,
           agent_installation_id: credential.agentInstallationId, reconnect_auth_ticket: credential.authTicket,
           config_auth_ticket: credential.configAuthTicket, storage_bootstrap: bound.storageBootstrap,
-        }, controls);
+        };
+        const deadline = performance.now() + 10_000;
+        let rotated;
+        for (;;) {
+          controls.signal?.throwIfAborted(); controls.assertCurrent?.();
+          if (active !== bound || bound.channel.closed) throw failure();
+          try {
+            rotated = await bound.channel.rpc('agent.storage.rotate', params, controls);
+            break;
+          } catch (error) {
+            // Local capacity refusal happens before the request is sent.
+            if (error?.code !== 'companion_session_refused' || error?.diagnostic?.cause !== 'rpc_capacity'
+              || performance.now() >= deadline) throw error;
+            await new Promise(resolve => timers.setTimeout(resolve, 25));
+            if (performance.now() >= deadline) throw error;
+          }
+        }
         phase = 'response'; cause = 'rotation_response_invalid';
         if (!exact(rotated, ['schema', 'storage_bootstrap'])
           || rotated.schema !== 'ofca-extension-storage-rotation/v1' || !secret(rotated.storage_bootstrap)) throw failure();
