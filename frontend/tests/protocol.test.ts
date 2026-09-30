@@ -41,6 +41,7 @@ const brainToBridge = new Set([
   'presence.state',
   'agent.state',
   'system.state',
+  'companion.state',
 ]);
 
 function readJson(path: string): unknown {
@@ -61,7 +62,7 @@ describe('protocol v2 golden fixtures', () => {
   const validFixtures = readdirSync(fixtureRoot).filter((name) => name.endsWith('.json')).sort();
 
   it('contains and validates one fixture for every matrix operation', () => {
-    expect(validFixtures).toHaveLength(25);
+    expect(validFixtures).toHaveLength(26);
     for (const fixture of validFixtures) {
       const operation = fixture.slice(0, -'.json'.length);
       expect(validatesOperation(operation, readJson(`${fixtureRoot}/${fixture}`)), fixture).toBe(true);

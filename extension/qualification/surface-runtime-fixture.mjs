@@ -5,7 +5,8 @@ export function installSurfaceFixture(input) {
     removeListener: (fn) => listeners.delete(fn), emit: (value) => { for (const fn of listeners) fn(value); } }; };
   const pairState = () => ({ state: state.pairing ?? (state.paired ? 'paired' : 'unpaired'),
     comparison_code: state.pairing === 'compare' && state.surface === 'setup' ? '483217' : null,
-    owns_attempt: state.surface === 'setup' && ['pairing', 'compare'].includes(state.pairing) });
+    owns_attempt: state.surface === 'setup' && ['pairing', 'compare'].includes(state.pairing),
+    desktop_control: state.desktopControl === true });
   const status = () => ({ consent: { mode: state.mode, resume_mode: state.resume ?? null, consent_epoch: 'fixture-epoch' },
     phase: state.phase ?? (state.mode === 'full' ? (state.paired ? 'full' : 'identity') : state.mode),
     reload_required: state.reload === true, onlyfans_permission: state.phase !== 'permission_required', history_permission: false,

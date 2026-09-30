@@ -260,6 +260,16 @@ class PresenceStatePayload(StrictModel):
     last_observation: LastPresenceObservation | None
 
 
+class BrowserSurfacePayload(StrictModel):
+    """The browser extension's own state, as its authenticated session last reported it."""
+
+    capture: Literal["active", "paused", "off"]
+    site_access: Literal["granted", "needs_approval", "reload_required"]
+    history_permission: Literal["granted", "missing"]
+    legal_review_required: bool
+    reported_at: Timestamp
+
+
 class AgentStatePayload(StrictModel):
     creator_account_id: NonEmptyString
     status: Literal["connected", "stale", "disconnected"]
@@ -273,6 +283,20 @@ class AgentStatePayload(StrictModel):
     applied_history_settings_revision: NonNegativeInt | None
     last_heartbeat_at: Timestamp | None
     degraded_reason: str | None
+    # Null while no authenticated extension session is open for the account.
+    browser: BrowserSurfacePayload | None
+
+
+class CompanionStatePayload(StrictModel):
+    """Change notice for the account's companion pairing state.
+
+    It carries no pairing identifiers or codes. Bridge reads the details through
+    the authenticated pairing endpoints, which keep their per-session scope.
+    """
+
+    creator_account_id: NonEmptyString
+    revision: NonNegativeInt
+    changed_at: Timestamp
 
 
 class SystemStatePayload(StrictModel):

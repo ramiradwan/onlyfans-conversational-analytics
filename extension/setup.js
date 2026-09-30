@@ -6,11 +6,15 @@ import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError 
 import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
+import { createHandoffFinisher, returnToDesktop } from './ui/handoff.mjs';
 
 let failed = false;
 let dismissed = false;
 let reviewStep = null;
-let fullReviewRequested = location.hash === '#full';
+// '#desktop' is the compact window the desktop app opens. It is presentation
+// only: every action on this page keeps its usual authorization.
+let handoff = location.hash === '#desktop';
+let fullReviewRequested = location.hash === '#full' || handoff;
 try { fullReviewRequested ||= sessionStorage.getItem('full-review') === 'true'; } catch {}
 const client = createSurfaceClient((model) => { if (model.status) failed = false; render(model); }, () => { failed = true; render(client.model); });
 const page = createPageActions(client, render);
@@ -93,11 +97,34 @@ function render(model) {
     element(id).dataset.action = action ?? ''; text(id, label ?? '');
     show(id, Boolean(action) && !['pair', 'cancel_pairing'].includes(action));
   }
+  if (model.desktopLinked && currentJourney.id === 'pairing_required') {
+    text('journey-body', 'Choose Connect extension in the desktop app to finish.');
+  }
+  renderHandoff(model, view, currentJourney);
   show('review-notice', legal.requires_reauthorization === true);
 }
+// Extension-side steps for the desktop app end once Full mode, site access and
+// the creator account are in place. Pairing continues in the desktop app.
+const HANDOFF_PENDING = new Set(['analytics_off', 'preview_available', 'paused', 'setup_incomplete', 'desktop_app_needed']);
+function renderHandoff(model, view, journey) {
+  const done = handoff && view === 'journey' && model.status.consent.mode === 'full' && !HANDOFF_PENDING.has(journey.id);
+  document.querySelector('main').dataset.handoff = handoff ? (done ? 'complete' : 'active') : '';
+  if (!done) return;
+  if (!['pairing', 'compare'].includes(model.pairing.state)) show('companion-pairing', false);
+  text('journey-title', 'Continue in the desktop app');
+  text('journey-body', model.desktopLinked
+    ? 'This browser is ready. Returning you to the desktop app…'
+    : 'This browser is ready. Open the desktop app to connect it.');
+  element('journey-primary').dataset.action = 'return_to_desktop';
+  text('journey-primary', 'Return to the desktop app'); show('journey-primary', true);
+  show('journey-secondary', false);
+  if (model.desktopLinked) void finishHandoff();
+}
+const finishHandoff = createHandoffFinisher(() => client.model.config.dashboard_url);
 function renderPairing(model, journey) {
   const pending = ['pairing', 'compare'].includes(model.pairing.state);
-  const pairAction = journey.primaryAction === 'pair' || journey.secondaryAction === 'pair';
+  // While the desktop app is open in this browser, it owns starting a pairing.
+  const pairAction = (journey.primaryAction === 'pair' || journey.secondaryAction === 'pair') && !model.desktopLinked;
   show('companion-pairing', pending || pairAction);
   show('pair-companion', pairAction && !pending);
   element('pair-companion').className = (journey.primaryAction === 'pair' ? 'primary' : 'secondary') + (pairAction && !pending ? '' : ' hidden');
@@ -109,7 +136,9 @@ function renderPairing(model, journey) {
   show('open-pairing-desktop', pending); show('pairing-note', pending);
   text('pairing-note', model.pairing.owns_attempt
     ? 'Closing this page cancels this attempt. Switching to the desktop app does not.'
-    : 'This connection was started in another setup tab. Continue there to finish or cancel it.');
+    : model.pairing.desktop_attempt
+      ? 'This connection was started in the desktop app. Continue there to finish or cancel it.'
+      : 'This connection was started in another setup tab. Continue there to finish or cancel it.');
 }
 function runJourneyAction(action) {
   if (action === 'review_full' || action === 'choose_mode') {
@@ -117,6 +146,7 @@ function runJourneyAction(action) {
   }
   if (action === 'pair') return client.post('pair');
   if (action === 'cancel_pairing') return client.post('cancel');
+  if (action === 'return_to_desktop') return returnToDesktop(client.model.config.dashboard_url);
   if (action === 'open_dashboard') return chrome.tabs.create({ url: client.model.config.dashboard_url });
   if (action === 'open_desktop_settings') return chrome.tabs.create({ url: client.model.config.history_settings_url });
   if (action === 'open_creator_account') return openCreatorAccount();
@@ -162,6 +192,7 @@ for (const heading of document.querySelectorAll('h2')) heading.setAttribute('tab
 void client.start();
 
 window.addEventListener('hashchange', () => {
-  if (location.hash !== '#full' || ['pairing', 'compare'].includes(client.model.pairing.state)) return;
+  if (!['#full', '#desktop'].includes(location.hash) || ['pairing', 'compare'].includes(client.model.pairing.state)) return;
+  if (location.hash === '#desktop') handoff = true;
   setFullReview(true); reviewStep = null; dismissed = false; render(client.model);
 });

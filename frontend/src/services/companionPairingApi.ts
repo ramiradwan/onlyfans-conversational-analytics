@@ -31,6 +31,16 @@ export interface CompanionPairingApi {
     version: number,
     signal?: AbortSignal,
   ): Promise<CompanionPairingStatus>;
+  /**
+   * Confirm with the code the extension reported over the browser's extension
+   * channel. Brain compares it with its own code and declines on a mismatch.
+   */
+  confirmVerified(
+    pairingId: string,
+    version: number,
+    agentComparisonCode: string,
+    signal?: AbortSignal,
+  ): Promise<CompanionPairingStatus>;
 }
 
 export class CompanionPairingApiError extends Error {
@@ -169,6 +179,18 @@ export function createCompanionPairingApi(options: ApiOptions = {}): CompanionPa
     },
     get: (id, signal) => forPairing(id, undefined, undefined, signal),
     change: (id, action, version, signal) => forPairing(id, action, version, signal),
+    async confirmVerified(id, version, agentComparisonCode, signal) {
+      if (!pairingId.safeParse(id).success || !/^\d{6}$/.test(agentComparisonCode)) {
+        throw new CompanionPairingApiError('request');
+      }
+      const value = parseStatus(await invoke(
+        `${ENDPOINT}/${id}/confirm`,
+        { version, agent_comparison_code: agentComparisonCode },
+        signal,
+      ));
+      if (value.pairing_id !== id) throw new CompanionPairingApiError('response');
+      return value;
+    },
   };
 }
 

@@ -10,9 +10,9 @@ const fixtures = await staticFixtures();
 test('static capture covers the existing popup matrix, both disclosure steps, and all setup stages', async () => {
   const extension = fixtures.filter((item) => item.surface !== 'provisioning');
   assert.deepEqual(extension.map((item) => item.name).sort(), Object.keys(SURFACE_STATES).sort());
-  assert.equal(fixtures.filter((item) => item.surface === 'popup').length, 6);
+  assert.equal(fixtures.filter((item) => item.surface === 'popup').length, 8);
   assert.equal(fixtures.filter((item) => item.surface === 'setup').length, 25);
-  assert.equal(fixtures.filter((item) => item.surface === 'options').length, 3);
+  assert.equal(fixtures.filter((item) => item.surface === 'options').length, 4);
   assert.equal(fixtures.filter((item) => item.surface === 'provisioning').length, 12);
   for (const name of ['software_activation', 'mode_choice', 'mode_choice_full', 'full_review', 'pairing_compare']) {
     assert.equal(fixtures.find((item) => item.name === name).surface, 'setup');

@@ -840,7 +840,8 @@
         transition: transform var(--dipsy-motion-fast) var(--dipsy-easing-standard), background-color var(--dipsy-motion-fast) var(--dipsy-easing-standard);
       }
 
-      .primary-link[hidden] {
+      .primary-link[hidden],
+      button[hidden] {
         display: none;
       }
 
@@ -1070,6 +1071,7 @@
             <p id="identity-step-description" class="step-description"><span id="identity-status" role="status" aria-live="polite" aria-atomic="true">Sign in to your creator account on OnlyFans, then return here.</span></p>
           <div data-step-feedback></div>
             <div class="actions">
+              <button id="open-extension-setup" type="button" aria-describedby="identity-status" hidden>Open extension setup</button>
               <button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Check again</button>
               <button id="confirm-identity" type="button" disabled aria-describedby="identity-step-description">Use this account</button>
             </div>
