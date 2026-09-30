@@ -30,6 +30,8 @@ The reconstructed document is either an existing protocol v2 envelope or an RPC.
 
 Responses contain exactly `type`, the same `id`, and either `result` or a fixed payload-free `error`. Repeated RPC IDs and more than 1,024 requests in one session are refused.
 
+Hello fields remain closed. New features negotiate only through capabilities and RPCs. Agent hello accepts at most 32 capability tokens, each at most 64 characters matching `[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+`. Unknown tokens are dropped before negotiation and never echoed in responses, logs or diagnostics. Malformed tokens or no known capability reject the hello, and duplicate handling is unchanged. An unserved string RPC method returns `{"type":"rpc.response","id":<id>,"error":"unknown_method"}` without closing the channel. Its ID still counts toward replay protection and the 1,024-request limit. Exact keys, canonical UUID IDs, non-string methods, known-method failures and the ten-second timeout retain their existing refusal and close behavior.
+
 ## Encrypted operations
 
 | Method | Purpose |
