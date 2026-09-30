@@ -116,6 +116,12 @@ class ProtectedSocket:
 
 
 class SessionRPC:
+    METHODS = frozenset({
+        "agent.challenge", "agent.authenticate", "capture.state.report",
+        "history.check.begin", "agent.analysis.readiness", "agent.config.get",
+        "agent.storage.unseal", "agent.storage.rotate", "agent.surface.report",
+    })
+
     def __init__(self, authority, pin):
         self.authority, self.pin = authority, pin
         self.auth_ticket = None
@@ -364,6 +370,13 @@ async def _serve(channel, pin):
                 raise CompanionRecordError()
             identifiers.add(value["id"])
             try:
+                if not isinstance(value["method"], str):
+                    raise CompanionRecordError()
+                if value["method"] not in SessionRPC.METHODS:
+                    await channel.send(
+                        {"type": "rpc.response", "id": value["id"], "error": "unknown_method"}
+                    )
+                    continue
                 async with asyncio.timeout(10):
                     if value["method"] == "agent.surface.report":
                         result = await browser.report(value["params"])

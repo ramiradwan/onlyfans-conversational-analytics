@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal, Union, get_args
 from uuid import UUID
 
-from pydantic import Field, TypeAdapter, model_validator
+from pydantic import Field, TypeAdapter, field_validator, model_validator
 
 from .common import (
     AnalyticsView, CapabilityStatus, CommandAction, CommandError, CommandOutput,
@@ -20,6 +20,9 @@ from .common import (
 AgentCapability = Literal[
     "capture.chats", "capture.messages", "capture.presence", "history.sync", "history.catchup.v1", "command.message.send"
 ]
+AgentCapabilityToken = Annotated[
+    str, Field(strict=True, max_length=64, pattern=r"^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$")
+]
 BridgeCapability = Literal["state.snapshot", "state.delta", "presence.state", "message.page", "state.catchup_freshness"]
 
 
@@ -27,11 +30,19 @@ class AgentHelloPayload(StrictModel):
     auth_ticket: NonEmptyString
     agent_installation_id: UUID
     requested_creator_account_id: NonEmptyString
-    capabilities: Annotated[list[AgentCapability], Field(min_length=1)]
+    capabilities: Annotated[list[AgentCapabilityToken], Field(min_length=1, max_length=32)]
     extension_version: NonEmptyString
     agent_stream_id: UUID
     last_acknowledged_source_seq: NonNegativeInt
     applied_config_revision: str | None
+
+    @field_validator("capabilities")
+    @classmethod
+    def known_capabilities(cls, tokens: list[str]) -> list[str]:
+        known = [token for token in tokens if token in get_args(AgentCapability)]
+        if not known:
+            raise ValueError("at least one known capability is required")
+        return known
 
 
 class LeaseParameters(StrictModel):
