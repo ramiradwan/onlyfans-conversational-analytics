@@ -70,8 +70,10 @@ function render(model) {
   show('back-current', reviewStep !== null);
   show('pre-mode', view === 'agree'); show('mode-choice', view === 'mode');
   show('access-card', view === 'access'); show('journey-card', view === 'journey');
-  element('terms-accepted').checked = Boolean(legal.flow.terms_event_id);
-  element('risk-acknowledged').checked = Boolean(legal.flow.risk_event_id);
+  if (!page.busy) {
+    element('terms-accepted').checked = Boolean(legal.flow.terms_event_id);
+    element('risk-acknowledged').checked = Boolean(legal.flow.risk_event_id);
+  }
   page.lock('terms-accepted', Boolean(legal.flow.terms_event_id) || active);
   page.lock('risk-acknowledged', Boolean(legal.flow.risk_event_id) || active);
   page.lock('activate-software', !legal.flow.terms_event_id || !legal.flow.risk_event_id || active);
