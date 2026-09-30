@@ -7,6 +7,7 @@ import { AgentRuntime } from '../transport/agent-runtime-core.mjs';
 
 for (const [status, body, code] of [
   [409, { detail: 'cursor_stale' }, 'cursor_stale'],
+  [409, { detail: 'cursor_invalid' }, 'cursor_invalid'],
   [503, { detail: 'projection_unavailable' }, 'projection_unavailable'],
   [403, { detail: { code: 'access_refused' } }, 'access_refused'],
   [200, {}, 'unavailable'],
@@ -16,7 +17,7 @@ for (const [status, body, code] of [
   test(`catchup message diagnostics retain status ${status} and code ${code}`, async () => {
     const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
     let calls = 0;
-    const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { fetch: async url => {
+    const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { AbortSignal, fetch: async url => {
       calls++;
       assert.equal(url, '/api/v1/conversations/103/messages?limit=100');
       return { status, ok: status === 200, async json() {
@@ -28,16 +29,68 @@ for (const [status, body, code] of [
       assert.equal(error.message, `Catch-up messages unavailable: chat=103 status=${status} code=${code}`);
       return true;
     });
-    assert.equal(calls, 1);
+    assert.equal(calls, code === 'cursor_stale' ? 2 : 1);
   });
 }
 
 test('catchup message diagnostics preserve readable message identifiers', async () => {
   const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
-  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { fetch: async () => ({
+  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { AbortSignal, fetch: async () => ({
     status: 200, ok: true, json: async () => ({ items: [{ message_id: 'missing103' }] }),
   }) });
   assert.equal(JSON.stringify(await read('103')), '["missing103"]');
+});
+
+test('catchup message read retries a stale first page once without a cursor', async () => {
+  const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
+  const requests = [];
+  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { AbortSignal, fetch: async (url, options) => {
+    requests.push({ url, signal: options?.signal });
+    return requests.length === 1
+      ? { status: 409, ok: false, json: async () => ({ detail: 'cursor_stale' }) }
+      : { status: 200, ok: true, json: async () => ({ items: [{ message_id: 'missing102' }] }) };
+  } });
+  assert.equal(JSON.stringify(await read('102')), '["missing102"]');
+  assert.deepEqual(requests.map(request => request.url), Array(2).fill('/api/v1/conversations/102/messages?limit=100'));
+  assert.ok(requests[0].signal instanceof AbortSignal);
+  assert.equal(requests[0].signal, requests[1].signal);
+});
+
+test('catchup message read reports the final response when its one retry fails', async () => {
+  const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
+  let calls = 0;
+  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { AbortSignal, fetch: async () => {
+    calls++;
+    return calls === 1
+      ? { status: 409, ok: false, json: async () => ({ detail: 'cursor_stale' }) }
+      : { status: 503, ok: false, json: async () => ({ detail: 'projection_unavailable' }) };
+  } });
+  await assert.rejects(read('102'), { message: 'Catch-up messages unavailable: chat=102 status=503 code=projection_unavailable' });
+  assert.equal(calls, 2);
+});
+
+test('catchup message read shares a ten-second deadline across the stale retry', async () => {
+  const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
+  const controller = new AbortController();
+  let calls = 0, deadlines = 0;
+  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, {
+    AbortSignal: { timeout(milliseconds) {
+      assert.equal(milliseconds, 10_000);
+      deadlines++;
+      return controller.signal;
+    } },
+    fetch: async (_url, options) => {
+      calls++;
+      if (calls === 1) return { status: 409, ok: false, json: async () => ({ detail: 'cursor_stale' }) };
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('arbitrary network detail')), { once: true });
+        controller.abort();
+      });
+    },
+  });
+  await assert.rejects(read('102'), { message: 'Catch-up messages unavailable: chat=102 status=409 code=cursor_stale' });
+  assert.equal(calls, 2);
+  assert.equal(deadlines, 1);
 });
 
 test('session task provenance survives collection without arbitrary data', () => {

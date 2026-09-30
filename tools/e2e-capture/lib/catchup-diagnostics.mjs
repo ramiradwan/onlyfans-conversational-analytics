@@ -1,14 +1,20 @@
 import { buildWorkerRecoveryDiagnostic, readSessionFailures } from './stable-connection-diagnostic.mjs';
 
 export async function readCatchupMessageIds(chat) {
-  const response = await fetch('/api/v1/conversations/' + chat + '/messages?limit=100');
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !Array.isArray(body?.items)) {
-    const detail = typeof body?.detail === 'string' ? body.detail : body?.detail?.code ?? body?.code;
-    const code = typeof detail === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(detail) ? detail : 'unavailable';
-    throw new Error(`Catch-up messages unavailable: chat=${chat} status=${response.status} code=${code}`);
-  }
-  return body.items.map(item => item.message_id);
+  const signal = AbortSignal.timeout(10_000);
+  let status = 'unavailable', code = 'unavailable';
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await fetch('/api/v1/conversations/' + chat + '/messages?limit=100', { signal });
+      status = response.status;
+      const body = await response.json().catch(() => null);
+      const detail = typeof body?.detail === 'string' ? body.detail : body?.detail?.code ?? body?.code;
+      code = typeof detail === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(detail) ? detail : 'unavailable';
+      if (response.ok && Array.isArray(body?.items)) return body.items.map(item => item.message_id);
+      if (status !== 409 || code !== 'cursor_stale') break;
+    }
+  } catch {}
+  throw new Error(`Catch-up messages unavailable: chat=${chat} status=${status} code=${code}`);
 }
 
 // Serialized into the copied worker with no module dependencies.
