@@ -70,20 +70,16 @@ def test_actual_content_tamper_invalidates_a_currentness_proof(fixture, mutation
         current(fixture)
 
 
-def test_currentness_proof_renews_at_half_life_from_bound_envelope(fixture):
+def test_currentness_expiry_is_fixed_not_extended_by_reads(fixture):
     now = [0.0]
     fixture.stores.projections._currentness.clock = lambda: now[0]
     assert current(fixture)
-    cache = fixture.stores.projections._currentness
-    first = next(iter(cache.entries.values()))
-    assert first.expires_at == 60
-    now[0] = 29
+    now[0] = 59
     assert current(fixture)
-    assert next(iter(cache.entries.values())) is first
-    now[0] = 30
+    assert fixture.verifications.call_count == 1
+    fixture.reads.assert_not_called()
+    now[0] = 60
     assert current(fixture)
-    renewed = next(iter(cache.entries.values()))
-    assert renewed is not first and renewed.expires_at == 90
     assert fixture.verifications.call_count == 1
     fixture.reads.assert_not_called()
 

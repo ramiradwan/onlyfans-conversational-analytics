@@ -98,13 +98,8 @@ class GenerationCurrentness:
                 if proof.source_due_at is not None and proof.source_due_at <= retention_clock():
                     self.entries.pop(key, None)
                     return False
-                # Reconciliation runs every 30 seconds for the reference
-                # scheduler. Renew a still-bound proof at half-life instead of
-                # letting the 60-second expiry force expensive verification
-                # immediately before the next interactive mutation.
-                if proof.expires_at - self.clock() > CURRENTNESS_SECONDS / 2:
-                    self.entries.move_to_end(key)
-                    return True
+                self.entries.move_to_end(key)
+                return True
             self.entries.pop(key, None)
         verified, due = self._verified_source_due(store, snapshot, cancellation_check)
         if not verified:
