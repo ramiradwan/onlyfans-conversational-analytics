@@ -6,7 +6,13 @@ import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs
 import { BrainProcess } from '../lib/brain.mjs';
 import { establishBrowserWebAuthnSession, readBrainSummary, requestAgentPairingTicket,
   readServedRuntimeConfig } from '../lib/brain-probe.mjs';
-import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
+import {
+  ONLYFANS_ORIGIN_PATTERN,
+  acceptNativeHostPermissionPrompt,
+  connectFullAnalytics,
+  openManageExtension,
+  openPopup,
+} from '../lib/consent-ui.mjs';
 import { bindAgentFromBridgePage, extensionId, extensionWorker, launchExtensionBrowser,
   terminateExtensionWorker } from '../lib/extension-browser.mjs';
 import { EXTENSION_DIST, assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
@@ -30,6 +36,30 @@ async function syntheticExtension(directory) {
 import { agentRuntime, consentController } from './production-background.mjs';
 (${installCatchupShim.toString()})(agentRuntime, chrome, globalThis, () => consentController.status());
 `);
+}
+
+async function grantHistoryPermission(context, popup, worker) {
+  const granted = await worker.evaluate(async (origin) => chrome.permissions.contains({
+    permissions: ['webRequest'],
+    origins: [origin],
+  }), ONLYFANS_ORIGIN_PATTERN);
+  if (granted) return;
+
+  const options = await openManageExtension(popup);
+  await expect(options.getByRole('button', { name: 'Allow message history' })).toBeVisible();
+  const settingsPage = context.waitForEvent('page');
+  await options.getByRole('button', { name: 'Allow message history' }).click();
+  await acceptNativeHostPermissionPrompt(context);
+  await expect.poll(() => worker.evaluate(async (origin) => chrome.permissions.contains({
+    permissions: ['webRequest'],
+    origins: [origin],
+  }), ONLYFANS_ORIGIN_PATTERN), {
+    timeout: 12_000,
+    message: 'History permission was not granted through the extension UI.',
+  }).toBe(true);
+  const opened = await settingsPage;
+  if (opened !== popup && opened !== options) await opened.close().catch(() => undefined);
+  await options.close().catch(() => undefined);
 }
 
 async function enableHistory(page) {
@@ -91,6 +121,7 @@ for (const enabled of [true, false]) {
       const pairing = await requestAgentPairingTicket(context);
       await bindAgentFromBridgePage(bridge, { extensionId: id, creatorAccountId: pairing.creatorAccountId,
         authTicket: pairing.pairingTicket, storageBootstrap: pairing.storageBootstrap });
+      await grantHistoryPermission(context, popup, worker);
       const platform = new SyntheticPlatform();
       const old = new Date(Date.now() - 3_600_000).toISOString();
       platform.seedCatchup('101', 'initial101', old);

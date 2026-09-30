@@ -15,7 +15,7 @@ function area() { const values = {}; return { values, async get(keys) { return O
 
 function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0 } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
-  const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
+  const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event(), onCreated: event(), onRemoved: event() }, alarms: { onAlarm: event(), async create() {} } };
   let enabled = full, account = ACCOUNT, paired = true, pairingWait, remainingSurfaceFailures = surfaceFailures;
   const pairingStore = {
     async identity() { return { privateKey: key }; }, async status() { return { paired }; },
@@ -82,6 +82,21 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
   return { client, stats, channels, chrome, setFull(value) { enabled = value; }, setAccount(value) { account = value; client.invalidate(); },
     unpair() { paired = false; }, pairingResult() { pairingWait.resolve(JSON.stringify(vector.result)); } };
 }
+
+test('tab creation and removal do not create companion runtime wake storms', () => {
+  const h = harness({ full: false });
+  let wakes = 0;
+  const stop = h.client.adapter.onWake(() => { wakes += 1; });
+  assert.equal(h.chrome.tabs.onUpdated.listeners.length, 1);
+  assert.equal(h.chrome.tabs.onCreated.listeners.length, 0);
+  assert.equal(h.chrome.tabs.onRemoved.listeners.length, 0);
+  h.chrome.tabs.onCreated.listeners.forEach((listener) => listener({ id: 1 }));
+  h.chrome.tabs.onRemoved.listeners.forEach((listener) => listener(1));
+  assert.equal(wakes, 0);
+  h.chrome.tabs.onUpdated.listeners[0](1, { status: 'complete' });
+  assert.equal(wakes, 1);
+  stop();
+});
 
 test('six admitted 15-second sessions durably reset the circuit before worker loss', async () => {
   let time = 1_800_000_000_000;

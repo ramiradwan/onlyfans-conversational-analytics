@@ -468,7 +468,7 @@ export function createCompanionClient({
     },
     onWake(listener) {
       const events = [chromeApi.runtime.onStartup, chromeApi.runtime.onInstalled, chromeApi.runtime.onMessage,
-        chromeApi.tabs?.onUpdated, chromeApi.tabs?.onCreated, chromeApi.tabs?.onRemoved].filter(Boolean);
+        chromeApi.tabs?.onUpdated].filter(Boolean);
       for (const event of events) event.addListener(listener);
       const alarm = (value) => { if (value?.name === RECONCILE_ALARM) listener(); };
       chromeApi.alarms?.onAlarm?.addListener(alarm);
