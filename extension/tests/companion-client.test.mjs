@@ -510,3 +510,55 @@ test('forget is an Options-only action and acknowledgement follows reconciliatio
   assert.deepEqual(options.values.find((value) => value.type === 'pairing_command_result'),
     { type: 'pairing_command_result', command: 'forget', ok: true });
 });
+
+
+for (const [mode, phase, cause] of [
+  ['unbound', 'binding', 'binding_unavailable'],
+  ['refused', 'rpc', 'session_request_refused'],
+  ['malformed', 'response', 'rotation_response_invalid'],
+  ['changed', 'commit', 'binding_changed'],
+]) {
+  test('credential rotation diagnostics preserve the ' + mode + ' failure without material', async () => {
+    const h = harness();
+    const failure = Object.assign(new Error('private_message private_token'), { code: 'session_request_refused' });
+    try {
+      if (mode !== 'unbound') await h.client.adapter.loadBrainBinding();
+      if (h.channels[0]) h.channels[0].rpc = async () => {
+        if (mode === 'refused') throw failure;
+        if (mode === 'malformed') return { token: 'private_token' };
+        if (mode === 'changed') h.client.invalidate();
+        return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: 'private_bootstrap' };
+      };
+      await assert.rejects(h.client.adapter.saveReconnectAuthTicket({ creatorAccountId: ACCOUNT,
+        agentInstallationId: 'private_installation', authTicket: 'private_ticket', configAuthTicket: 'private_config' }),
+      error => mode !== 'refused' || error === failure);
+      const report = h.client.credentialRotation;
+      assert.equal(report.failure.phase, phase);
+      assert.equal(report.failure.cause, cause);
+      assert.equal(report.attempts, 1);
+      assert.doesNotMatch(JSON.stringify(report), /private_|sealed|ticket|bootstrap/);
+      report.failure.phase = 'private_mutation';
+      assert.equal(h.client.credentialRotation.failure.phase, phase);
+    } finally { h.client.invalidate(); }
+  });
+}
+
+test('credential rotation diagnostics retain a failure across later success and event churn', async () => {
+  const h = harness();
+  try {
+    await h.client.adapter.loadBrainBinding();
+    const rpc = h.channels[0].rpc;
+    h.channels[0].rpc = async () => { throw Object.assign(new Error('private_failure'), { name: 'private_name', code: 'private_code' }); };
+    const credential = { creatorAccountId: ACCOUNT, authTicket: 'private_ticket', configAuthTicket: 'private_config' };
+    await assert.rejects(h.client.adapter.saveReconnectAuthTicket(credential));
+    h.channels[0].rpc = rpc;
+    await h.client.adapter.saveReconnectAuthTicket(credential);
+    for (let i = 0; i < 40; i++) h.client.invalidate();
+    assert.equal(h.client.credentialRotation.attempts, 2);
+    assert.equal(h.client.credentialRotation.completed, 1);
+    assert.equal(h.client.credentialRotation.failure.phase, 'rpc');
+    assert.equal(h.client.credentialRotation.failure.cause, 'other');
+    assert.equal(h.client.credentialRotation.failure.errorName, 'other');
+    assert.doesNotMatch(JSON.stringify(h.client.credentialRotation), /private_/);
+  } finally { h.client.invalidate(); }
+});

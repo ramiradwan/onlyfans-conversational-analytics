@@ -1,4 +1,4 @@
-import { extensionWorker } from './extension-browser.mjs';
+import { buildWorkerRecoveryDiagnostic, readSessionFailures } from './stable-connection-diagnostic.mjs';
 
 // Serialized into the copied worker with no module dependencies.
 export function installCatchupShim(agentRuntime, chromeApi, root, readStatus) {
@@ -122,6 +122,7 @@ export function catchupDiagnosticFields(summary, requestCounts, worker) {
     requestCounts: Object.fromEntries(['history_list', 'history_messages', 'catchup_list', 'catchup_messages', 'canary_list', 'identity']
       .map(key => [key, count(requestCounts?.[key])])),
     shim: safeShimCounters(worker?.shim),
+    recovery: buildWorkerRecoveryDiagnostic(worker?.recovery),
     extension: {
       consentMode: enumValue(status?.consentMode, ['off', 'preview', 'full', 'paused', 'revoked']),
       phase: enumValue(status?.phase, ['booting', 'transitioning', 'off', 'preview', 'full', 'paused', 'revoked', 'identity', 'permission_required', 'unavailable']),
@@ -162,21 +163,29 @@ async function boundedRead(read, timeoutMs) {
   finally { clearTimeout(timer); }
 }
 
-export async function readCatchupWorker(context) {
-  const worker = await extensionWorker(context, { timeoutMs: 1_000 });
+export async function readCatchupWorker(context, findWorker = async context => {
+  const { extensionWorker } = await import('./extension-browser.mjs');
+  return extensionWorker(context, { timeoutMs: 1_000 });
+}) {
+  const worker = await findWorker(context);
   return worker.evaluate(async () => {
-    let timer;
-    let status = null;
-    try {
-      status = await Promise.race([globalThis.__OFCA_CATCHUP_STATUS__?.(),
-        new Promise(resolve => { timer = setTimeout(() => resolve(null), 1_000); })]);
-    } catch {}
-    finally { clearTimeout(timer); }
-    return { shim: globalThis.__OFCA_CATCHUP_SHIM__ ?? null, status };
+    const read = async callback => {
+      let timer;
+      try {
+        return await Promise.race([Promise.resolve().then(callback),
+          new Promise(resolve => { timer = setTimeout(() => resolve(null), 1_000); })]);
+      } catch { return null; }
+      finally { clearTimeout(timer); }
+    };
+    const [status, recovery] = await Promise.all([
+      read(() => globalThis.__OFCA_CATCHUP_STATUS__?.()),
+      read(() => globalThis.__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__?.()),
+    ]);
+    return { shim: globalThis.__OFCA_CATCHUP_SHIM__ ?? null, status, recovery };
   });
 }
 
-export async function withCatchupDiagnostics(assertion, { summary, platform, context,
+export async function withCatchupDiagnostics(assertion, { summary, platform, context, brain,
   readWorker = () => readCatchupWorker(context), log = line => console.error(line), timeoutMs = 2_500 }) {
   try { return await assertion(); }
   catch (error) {
@@ -184,6 +193,7 @@ export async function withCatchupDiagnostics(assertion, { summary, platform, con
     try {
       const [lastSummary, worker] = await Promise.all([boundedRead(summary, timeoutMs), boundedRead(readWorker, timeoutMs)]);
       fields = catchupDiagnosticFields(lastSummary, platform.requestCounts, worker);
+      fields.brainSessionFailures = brain?.sessionFailures?.() ?? readSessionFailures(brain?.recentOutput?.() ?? '');
     } catch { fields = catchupDiagnosticFields(null, null, null); }
     try { log(`Catch-up poll timed out ${JSON.stringify(fields)}`); } catch {}
     throw error;

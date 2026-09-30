@@ -1,9 +1,90 @@
-import { safeCompanionCloseReason } from '../../../extension/transport/companion-channel.mjs';
+import { safeCompanionCloseReason, safeCompanionChannelDiagnostic } from '../../../extension/transport/companion-channel.mjs';
 
-const EVENTS = new Set(['connect-start', 'connect-admitted', 'connect-failed', 'circuit-reset', 'channel-close', 'facade-close', 'invalidate']);
+const EVENTS = new Set(['connect-start', 'connect-admitted', 'connect-failed', 'circuit-reset', 'channel-close', 'facade-close', 'invalidate', 'credential-rotation-failed']);
 const ERROR_CLASSES = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'EvalError']);
 const number = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const boolean = (value) => typeof value === 'boolean' ? value : null;
+const enumValue = (value, allowed) => value == null ? null : allowed.includes(value) ? value : 'other';
+
+function rotationDiagnostic(value) {
+  const failure = value?.failure;
+  return {
+    attempts: number(value?.attempts), completed: number(value?.completed),
+    failure: failure == null ? null : {
+      phase: enumValue(failure.phase, ['binding', 'rpc', 'response', 'commit']),
+      cause: enumValue(failure.cause, ['binding_unavailable', 'channel_closed', 'account_mismatch',
+        'rotation_response_invalid', 'binding_changed', 'session_request_refused', 'companion_session_refused',
+        'companion_recovery_backoff', 'unknown_method']),
+      errorName: enumValue(failure.errorName, ['Error', 'TypeError', 'CompanionChannelError', 'AbortError',
+        'TimeoutError', 'InvalidStateError', 'QuotaExceededError', 'TransactionInactiveError']),
+      signalAborted: boolean(failure.signalAborted), channelClosed: boolean(failure.channelClosed),
+      bindingCurrent: boolean(failure.bindingCurrent),
+      channel: safeCompanionChannelDiagnostic(failure.channel),
+    },
+  };
+}
+
+function configurationDiagnostic(value) {
+  return {
+    ...Object.fromEntries(['documentPresent', 'bundled', 'applied', 'required', 'revisionsMatch',
+      'authorized', 'refreshPending', 'retryScheduled'].map(key => [key, boolean(value?.[key])])),
+    retryAttempt: number(value?.retryAttempt),
+    failureCode: enumValue(value?.failureCode, ['fetch_failed', 'persistence_failed', 'missing_persisted_config',
+      'missing_session_authorization', 'session_authorization_changed', 'session_request_refused',
+      'companion_session_refused', 'unauthorized', 'server_error', 'invalid_304', 'unexpected_status',
+      'unsupported_schema', 'account_mismatch', 'revision_mismatch', 'signaled_digest_mismatch', 'etag_mismatch',
+      'digest_mismatch', 'unsafe_capture_pattern', 'history_authorization_missing', 'unsafe_capture_policy',
+      'unsupported_capability']),
+  };
+}
+
+export function readSessionFailures(output) {
+  const results = [];
+  for (const line of String(output).split('\n')) {
+    if (!line.startsWith('e2e-session-failure: ') || line.length > 16_384) continue;
+    let value;
+    try { value = JSON.parse(line.slice('e2e-session-failure: '.length)); } catch { continue; }
+    results.push({
+      method: enumValue(value?.method, ['agent.storage.rotate', 'agent.storage.unseal', 'agent.config.get',
+        'capture.state.report', 'history.check.begin', 'agent.challenge', 'agent.authenticate', 'agent.analysis.readiness']),
+      causes: Array.isArray(value?.causes) ? value.causes.slice(0, 4).map(cause => ({
+        errorName: enumValue(cause?.errorName, ['CompanionSessionError', 'CompanionRecordError', 'AuthenticationStateError',
+          'CompanionPairingPersistenceError', 'LocalDataKeyError', 'RuntimeError', 'ValueError', 'TypeError', 'KeyError',
+          'OperationalError', 'DatabaseError', 'IntegrityError', 'TimeoutError', 'ValidationError', 'PermissionError',
+          'InvalidToken', 'InvalidTag', 'OSError']),
+        phase: enumValue(cause?.phase, ['dispatch', 'validate_config', 'open_bootstrap', 'seal_bootstrap',
+          'policy', 'consume_config', 'ticket_binding', 'data_key']),
+        frames: Array.isArray(cause?.frames) ? cause.frames.slice(-8).map(frame => ({
+          module: enumValue(frame?.module, ['rpc', 'authority', 'auth_store', 'pairing_store', 'bootstrap',
+            'data_key', 'catchup', 'manager']), line: number(frame?.line),
+        })) : [],
+      })) : [],
+    });
+    if (results.length > 24) results.shift();
+  }
+  return results;
+}
+
+export function createSessionFailureCollector() {
+  const reports = [];
+  let pending = '', discarding = false;
+  return {
+    append(chunk) {
+      for (const part of String(chunk).split(/(?<=\n)/)) {
+        if (!discarding) {
+          pending += part;
+          if (pending.length > 16_384) { pending = ''; discarding = true; }
+        }
+        if (part.endsWith('\n')) {
+          if (!discarding) reports.push(...readSessionFailures(pending));
+          if (reports.length > 24) reports.splice(0, reports.length - 24);
+          pending = ''; discarding = false;
+        }
+      }
+    },
+    snapshot() { return structuredClone(reports); },
+  };
+}
 
 export function buildWorkerRecoveryDiagnostic(extension) {
   const state = extension ?? {};
@@ -22,11 +103,14 @@ export function buildWorkerRecoveryDiagnostic(extension) {
     alarmDueInMs: alarmTime === null || capturedAt === null ? null : Math.max(0, alarmTime - capturedAt),
     acknowledgedSourceSeq: number(state.outbox?.acknowledgedSourceSeq),
     pendingEntries: number(state.outbox?.pendingEntries),
+    credentialRotation: rotationDiagnostic(state.credentialRotation),
+    configuration: configurationDiagnostic(state.configuration),
     connectionEvents: Array.isArray(state.connectionEvents) ? state.connectionEvents.slice(-24).map((entry) => ({
       event: EVENTS.has(entry.event) ? entry.event : 'other',
       code: Number.isInteger(entry.code) && entry.code >= 1000 && entry.code <= 4999 ? entry.code : null,
       reason: safeCompanionCloseReason(entry.reason),
       wasStable: boolean(entry.wasStable),
+      channel: safeCompanionChannelDiagnostic(entry.channel),
     })) : [],
   };
 }

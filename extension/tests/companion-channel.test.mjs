@@ -14,6 +14,31 @@ const bytes = (hex) => new Uint8Array(Buffer.from(hex, 'hex'));
 const encode = (document) => new TextEncoder().encode(JSON.stringify(document));
 const record = (document) => { const text = encode(document); const value = new Uint8Array(text.length + 1); value[0] = 1; value.set(text, 1); return value; };
 const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+test('RPC capacity diagnostics distinguish admission contention without request material', async () => {
+  const peer = fixture(), channel = await peer.open();
+  try {
+    const pending = Array.from({ length: 8 }, () => channel.rpc('private_method', { text: 'private_message' }));
+    await assert.rejects(channel.rpc('agent.storage.rotate', { token: 'private_token' }), error => {
+      assert.deepEqual(error.diagnostic, { cause: 'rpc_capacity', pendingRpcs: 8, abandonedRpcs: 0, queuedSends: 8 });
+      assert.doesNotMatch(JSON.stringify(error.diagnostic), /private_/);
+      return true;
+    });
+    await Promise.all(pending);
+    assert.equal(channel.closed, false);
+  } finally { channel.close(); }
+});
+
+test('send capacity close diagnostics preserve the initiating cause and queue size', async () => {
+  const peer = fixture(), channel = await peer.open();
+  const pending = Array.from({ length: 9 }, () => channel.send({ protocol_version: '2', text: 'private_message' }));
+  await Promise.allSettled(pending);
+  assert.equal(channel.closed, true);
+  assert.equal(channel.closeDiagnostic.cause, 'send_capacity');
+  assert.equal(channel.closeDiagnostic.queuedSends, 8);
+  assert.doesNotMatch(JSON.stringify(channel.closeDiagnostic), /private_/);
+});
+
 async function waitFor(predicate) {
   const deadline = Date.now() + 5000;
   while (!predicate() && Date.now() < deadline) await tick();

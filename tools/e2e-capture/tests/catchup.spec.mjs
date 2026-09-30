@@ -144,7 +144,7 @@ for (const enabled of [true, false]) {
       const summary = async () => (lastSummary = await readBrainSummary(context, { catchup: true }));
       const poll = (read, expected, timeout = 180_000) => withCatchupDiagnostics(
         () => expect.poll(read, { timeout }).toBe(expected),
-        { summary: () => lastSummary ?? summary(), platform, context },
+        { summary: () => lastSummary ?? summary(), platform, context, brain },
       );
       const reopen = async () => {
         const page = await context.newPage();

@@ -2,7 +2,7 @@ import { uiSurface } from './ui-surfaces.mjs';
 import { openPairingStore } from './companion-pairing-store.mjs';
 import { loadPackagedSnow } from './packaged-snow.mjs';
 import { signAgentSessionProof, snowKeypairGenerator } from './companion-agent-identity.mjs';
-import { openCompanionChannel, openLoopbackSocket, CompanionChannelError, safeCompanionCloseReason } from '../transport/companion-channel.mjs';
+import { openCompanionChannel, openLoopbackSocket, CompanionChannelError, safeCompanionCloseReason, safeCompanionChannelDiagnostic } from '../transport/companion-channel.mjs';
 import { parseMessage } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { LOCAL_SERVICE_WS, LOCAL_PAIRING_WS } from '../transport/local-service-endpoints.mjs';
@@ -54,6 +54,7 @@ export function createCompanionClient({
   const timers = scheduler ?? globalThis;
   const subscribers = new Set();
   const diagnosticEvents = [];
+  const credentialRotation = { attempts: 0, completed: 0, failure: null };
   const record = (event, detail = {}) => {
     diagnosticEvents.push({ at: now(), event, ...detail });
     if (diagnosticEvents.length > 24) diagnosticEvents.shift();
@@ -181,7 +182,8 @@ export function createCompanionClient({
           const wasStable = now() - active.openedAt >= CONNECTION_STABLE_MS;
           const resetOnClose = wasStable && active.stableTimer !== null;
           record('channel-close', { code: channel.closeCode ?? null,
-            reason: safeCompanionCloseReason(channel.closeReason), wasStable });
+            reason: safeCompanionCloseReason(channel.closeReason), wasStable,
+            channel: safeCompanionChannelDiagnostic(channel.closeDiagnostic) });
           if (active.stableTimer !== null) timers.clearTimeout(active.stableTimer);
           active = null;
           notifySurfaces();
@@ -455,16 +457,42 @@ export function createCompanionClient({
     async loadReconnectAuthTicket() { return null; },
     async saveReconnectAuthTicket(credential, controls = {}) {
       const bound = active;
-      if (!bound || bound.channel.closed || bound.accountId !== credential.creatorAccountId) throw failure();
-      const rotated = await bound.channel.rpc('agent.storage.rotate', {
-        protocol_version: '2', creator_account_id: credential.creatorAccountId,
-        agent_installation_id: credential.agentInstallationId, reconnect_auth_ticket: credential.authTicket,
-        config_auth_ticket: credential.configAuthTicket, storage_bootstrap: bound.storageBootstrap,
-      }, controls);
-      if (!exact(rotated, ['schema', 'storage_bootstrap'])
-        || rotated.schema !== 'ofca-extension-storage-rotation/v1' || !secret(rotated.storage_bootstrap)) throw failure();
-      if (active !== bound) throw failure();
-      bound.storageBootstrap = rotated.storage_bootstrap;
+      credentialRotation.attempts++;
+      let phase = 'binding', cause = 'binding_unavailable';
+      try {
+        if (!bound) throw failure();
+        cause = 'channel_closed';
+        if (bound.channel.closed) throw failure();
+        cause = 'account_mismatch';
+        if (bound.accountId !== credential.creatorAccountId) throw failure();
+        phase = 'rpc'; cause = null;
+        const rotated = await bound.channel.rpc('agent.storage.rotate', {
+          protocol_version: '2', creator_account_id: credential.creatorAccountId,
+          agent_installation_id: credential.agentInstallationId, reconnect_auth_ticket: credential.authTicket,
+          config_auth_ticket: credential.configAuthTicket, storage_bootstrap: bound.storageBootstrap,
+        }, controls);
+        phase = 'response'; cause = 'rotation_response_invalid';
+        if (!exact(rotated, ['schema', 'storage_bootstrap'])
+          || rotated.schema !== 'ofca-extension-storage-rotation/v1' || !secret(rotated.storage_bootstrap)) throw failure();
+        phase = 'commit'; cause = 'binding_changed';
+        if (active !== bound) throw failure();
+        bound.storageBootstrap = rotated.storage_bootstrap;
+        credentialRotation.completed++;
+      } catch (error) {
+        credentialRotation.failure = {
+          phase,
+          cause: cause ?? (['session_request_refused', 'companion_session_refused', 'companion_recovery_backoff',
+            'unknown_method'].includes(error?.code) ? error.code : 'other'),
+          errorName: ['Error', 'TypeError', 'CompanionChannelError', 'AbortError', 'TimeoutError',
+            'InvalidStateError', 'QuotaExceededError', 'TransactionInactiveError'].includes(error?.name) ? error.name : 'other',
+          signalAborted: controls.signal?.aborted === true,
+          channelClosed: bound?.channel.closed ?? null,
+          bindingCurrent: bound !== null && active === bound,
+          channel: safeCompanionChannelDiagnostic(error?.diagnostic ?? bound?.channel.closeDiagnostic),
+        };
+        record('credential-rotation-failed');
+        throw error;
+      }
     },
     async clearBrainBinding() {
       await forget();
@@ -574,5 +602,6 @@ export function createCompanionClient({
     pairFor, cancelFor, owns, subscribe, notifySurfaces, reportSurface, ensureControl, controlReady,
     onRevoked(listener) { revocationListener = listener; },
     get diagnosticEvents() { return diagnosticEvents.map((entry) => ({ ...entry })); },
+    get credentialRotation() { return structuredClone(credentialRotation); },
     get connected() { return active !== null && !active.channel.closed; } });
 }

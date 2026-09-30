@@ -900,6 +900,9 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(finalState.outbox.pendingEntries).toBe(0);
       platform.assertFailClosed();
     });
+  } catch (error) {
+    console.error(`Brain session failures ${JSON.stringify(brain?.sessionFailures() ?? [])}`);
+    throw error;
   } finally {
     await context?.close().catch(() => undefined);
     await brain?.stop().catch(() => undefined);

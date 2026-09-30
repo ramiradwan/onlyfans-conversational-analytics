@@ -191,6 +191,20 @@ export async function agentDiagnosticSnapshot(alarmName = 'ofca-agent-reconcile'
       ? null : Math.round(performance.timeOrigin + transport.lastHeartbeatSentAt),
     reconnectTimerPresent: transport?.reconnectTimer !== null && transport?.reconnectTimer !== undefined,
     connectionEvents: companionClient.diagnosticEvents,
+    credentialRotation: companionClient.credentialRotation,
+    configuration: {
+      documentPresent: agentRuntime.configuration?.activeDocument != null,
+      bundled: agentRuntime.configuration?.activeDocument?.config_revision === 'bundled-safe-2',
+      applied: agentRuntime.configuration?.identity?.appliedConfigRevision != null,
+      required: agentRuntime.configuration?.required?.revision != null,
+      revisionsMatch: agentRuntime.configuration?.required?.revision != null
+        ? agentRuntime.configuration.required.revision === agentRuntime.configuration.identity?.appliedConfigRevision : null,
+      authorized: agentRuntime.configuration?.configAuthTicket != null,
+      refreshPending: agentRuntime.configuration?.refreshPromise != null,
+      retryScheduled: agentRuntime.configuration?.retryTimer != null,
+      retryAttempt: agentRuntime.configuration?.retryAttempt ?? null,
+      failureCode: agentRuntime.configuration?.lastFailure?.code ?? null,
+    },
     recoveryAttempts: recovery?.attempts ?? null,
     recoveryNextAttemptInMs: recovery === undefined ? null
       : Math.max(0, recovery.next_attempt_at - Date.now()),

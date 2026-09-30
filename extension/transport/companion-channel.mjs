@@ -31,6 +31,16 @@ const LOCAL_CLOSE_REASONS = new Map([
   ['Session identity conflict', 'identity_conflict'],
 ]);
 
+export function safeCompanionChannelDiagnostic(value) {
+  if (value == null) return null;
+  return {
+    cause: ['rpc_capacity', 'send_capacity', 'rpc_backlog', 'caller_aborted', 'rpc_timeout',
+      'send_failed', 'receive_failed', 'wire_closed', 'local_close', 'closed'].includes(value.cause) ? value.cause : 'other',
+    ...Object.fromEntries(['pendingRpcs', 'abandonedRpcs', 'queuedSends'].map(key => [key,
+      Number.isSafeInteger(value[key]) && value[key] >= 0 ? value[key] : null])),
+  };
+}
+
 export function safeCompanionCloseReason(reason) {
   if (reason === 'Agent heartbeat lease expired') return 'heartbeat_lease_expired';
   if (LOCAL_CLOSE_REASONS.has(reason)) return LOCAL_CLOSE_REASONS.get(reason);
@@ -136,19 +146,27 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
     const closedObservers = new Set();
     const fragments = createFragmentReceiver();
     let sending = Promise.resolve(), queued = 0, stopped = false;
-    function close() {
+    let closeDiagnostic = null;
+    const diagnostic = cause => safeCompanionChannelDiagnostic({ cause,
+      pendingRpcs: pending.size, abandonedRpcs: abandoned.size, queuedSends: queued });
+    const failure = cause => Object.assign(refused(), { diagnostic: diagnostic(cause) });
+    function close(cause = wire.closed ? 'wire_closed' : 'local_close') {
       if (stopped) return;
+      closeDiagnostic = diagnostic(cause);
       stopped = true;
       fragments.clear();
       session.close(); wire.close();
-      for (const item of pending.values()) item.reject(refused());
+      for (const item of pending.values()) item.reject(Object.assign(refused(), { diagnostic: closeDiagnostic }));
       pending.clear();
       for (const id of abandoned.keys()) discardAbandoned(id);
       for (const listener of closedObservers) listener();
     }
     wire.onClose(close);
     const send = (document) => {
-      if (stopped || ++queued > 8) { queued--; close(); return Promise.reject(refused()); }
+      if (stopped || ++queued > 8) {
+        queued--; close('send_capacity');
+        return Promise.reject(Object.assign(refused(), { diagnostic: closeDiagnostic }));
+      }
       const deadline = performance.now() + 10_000;
       const operation = sending.then(async () => {
         for (const frame of fragmentMessage(document)) {
@@ -156,11 +174,14 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
           await wire.send(session.seal(frame), deadline);
         }
       });
-      sending = operation.catch(() => { close(); });
+      sending = operation.catch(() => { close('send_failed'); });
       return operation.finally(() => queued--);
     };
     async function rpc(method, params = {}, controls = {}) {
-      if (stopped || pending.size >= 8 || pending.size + abandoned.size >= 64 || controls.signal?.aborted) throw refused();
+      if (stopped || pending.size >= 8 || pending.size + abandoned.size >= 64 || controls.signal?.aborted) {
+        throw failure(stopped ? 'closed' : pending.size >= 8 ? 'rpc_capacity'
+          : pending.size + abandoned.size >= 64 ? 'rpc_backlog' : 'caller_aborted');
+      }
       controls.assertCurrent?.();
       const id = crypto.randomUUID();
       const deadline = performance.now() + 10_000;
@@ -170,11 +191,11 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
         abort = () => {
           if (!pending.delete(id)) return;
           abandoned.set(id, { timer, deadline });
-          reject(refused());
+          reject(failure('caller_aborted'));
         };
         timer = setTimeout(() => {
           if (abandoned.delete(id)) return;
-          close(); reject(refused());
+          close('rpc_timeout'); reject(failure('rpc_timeout'));
         }, 10_000);
         controls.signal?.addEventListener('abort', abort, { once: true });
       });
@@ -220,13 +241,14 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
             for (const listener of observers) listener(document);
           }
         }
-      } catch { close(); }
+      } catch { close('receive_failed'); }
     })();
     return Object.freeze({
       identity: Object.freeze({ ...identity, pairing_id: session.pairingId }),
       get closed() { return stopped; },
       get closeReason() { return wire.closeReason; },
       get closeCode() { return wire.closeCode; },
+      get closeDiagnostic() { return safeCompanionChannelDiagnostic(closeDiagnostic); },
       rpc, send, close,
       onMessage(listener) { if (observers.size) throw refused(); observers.add(listener); return () => observers.delete(listener); },
       onControl(listener) { controlObservers.add(listener); return () => controlObservers.delete(listener); },
