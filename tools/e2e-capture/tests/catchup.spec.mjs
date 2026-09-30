@@ -49,11 +49,20 @@ async function grantHistoryPermission(context, popup, worker) {
   await expect(options.getByRole('button', { name: 'Allow message history' })).toBeVisible();
   const settingsPage = context.waitForEvent('page');
   await options.getByRole('button', { name: 'Allow message history' }).click();
-  await acceptNativeHostPermissionPrompt(context);
-  await expect.poll(() => worker.evaluate(async (origin) => chrome.permissions.contains({
+  const hasPermission = () => worker.evaluate(async (origin) => chrome.permissions.contains({
     permissions: ['webRequest'],
     origins: [origin],
-  }), ONLYFANS_ORIGIN_PATTERN), {
+  }), ONLYFANS_ORIGIN_PATTERN);
+  // Chromium may grant webRequest without a native confirmation once the
+  // OnlyFans host permission is already present. Automate the native prompt
+  // only when the permission is still pending after the click.
+  let grantedWithoutPrompt = false;
+  try {
+    await expect.poll(hasPermission, { timeout: 1_500 }).toBe(true);
+    grantedWithoutPrompt = true;
+  } catch {}
+  if (!grantedWithoutPrompt) await acceptNativeHostPermissionPrompt(context);
+  await expect.poll(hasPermission, {
     timeout: 12_000,
     message: 'History permission was not granted through the extension UI.',
   }).toBe(true);
