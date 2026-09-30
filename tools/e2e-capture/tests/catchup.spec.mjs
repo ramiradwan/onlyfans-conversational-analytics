@@ -96,6 +96,8 @@ async function observeFreshness(page, config) {
   }, config);
 }
 
+test.describe.configure({ retries: 0 });
+
 for (const enabled of [true, false]) {
   test(`unopened chats recover after downtime with catchup_enabled=${enabled}`, async () => {
     test.setTimeout(600_000);
@@ -146,7 +148,7 @@ for (const enabled of [true, false]) {
       };
       let page = await reopen();
       expect(await enableHistory(bridge)).toBe(200);
-      await poll(async () => (await summary()).coverage.status, 'complete');
+      await poll(async () => (await summary()).coverage.status, 'complete', 60_000);
       if (enabled) await poll(async () => (await summary()).catchupFreshness?.status, 'current');
       await observeFreshness(bridge, await readServedRuntimeConfig(context));
       await poll(() => bridge.evaluate(() => globalThis.catchupStates.length > 0), true, 12_000);
