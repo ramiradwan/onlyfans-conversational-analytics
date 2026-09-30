@@ -15,6 +15,7 @@ from app.analytics.opaque_refs import normalize_account_ref
 
 GENERATION_WRITE_CACHE_KIB = 16 * 1024
 GENERATION_VERIFICATION_CACHE_KIB = 32 * 1024
+GENERATION_RETIREMENT_CACHE_KIB = 128 * 1024
 MAX_CONTENT_WRITE_CACHE_KIB = 128 * 1024
 
 
@@ -42,6 +43,21 @@ def content_write_cache_target(record_count: int, *, membership_page_count: int 
     return max(GENERATION_WRITE_CACHE_KIB,
                min(MAX_CONTENT_WRITE_CACHE_KIB,
                    (record_count + 1) // 2 + membership_page_count))
+
+
+@contextmanager
+def generation_retirement_cache(connection):
+    """Use bounded headroom while synchronously reclaiming retired content."""
+
+    previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
+    target = -GENERATION_RETIREMENT_CACHE_KIB
+    if previous != target:
+        connection.execute(f"PRAGMA cache_size={target}")
+    try:
+        yield
+    finally:
+        if previous != target:
+            connection.execute(f"PRAGMA cache_size={previous}")
 
 
 @contextmanager

@@ -5,7 +5,8 @@ from contextlib import nullcontext
 import pytest
 
 from app.analytics.database import (
-    GENERATION_VERIFICATION_CACHE_KIB, generation_verification_cache,
+    GENERATION_RETIREMENT_CACHE_KIB, GENERATION_VERIFICATION_CACHE_KIB,
+    generation_retirement_cache, generation_verification_cache,
 )
 from app.analytics.errors import ProjectionBuildCancelled
 from app.persistence import sqlite_api as sqlite3
@@ -49,6 +50,29 @@ def test_setting_restored_on_success_failure_and_cancellation(connection, initia
     assert connection.execute('SELECT COUNT(*) FROM pending').fetchone()[0] == 1
     connection.rollback()
     assert connection.execute('SELECT COUNT(*) FROM pending').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('error', [None, ValueError, ProjectionBuildCancelled])
+def test_retirement_cache_is_bounded_and_restored(connection, error):
+    connection.execute('PRAGMA cache_size=-4096')
+    with pytest.raises(error) if error else nullcontext():
+        with generation_retirement_cache(connection):
+            assert cache_size(connection) == -GENERATION_RETIREMENT_CACHE_KIB
+            assert connection.in_transaction
+            if error:
+                raise error()
+    assert cache_size(connection) == -4096
+    assert connection.in_transaction
+
+
+def test_retirement_cache_restores_outer_verification_cache(connection):
+    connection.execute('PRAGMA cache_size=-2048')
+    with generation_verification_cache(connection):
+        assert cache_size(connection) == -GENERATION_VERIFICATION_CACHE_KIB
+        with generation_retirement_cache(connection):
+            assert cache_size(connection) == -GENERATION_RETIREMENT_CACHE_KIB
+        assert cache_size(connection) == -GENERATION_VERIFICATION_CACHE_KIB
+    assert cache_size(connection) == -2048
 
 
 def test_query_only_connection_keeps_its_setting(connection):

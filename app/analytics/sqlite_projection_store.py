@@ -15,7 +15,9 @@ from uuid import uuid4
 
 from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.enrichment_proof_transition import capture_transition, finish_transition
-from app.analytics.database import ProjectionsDatabase, generation_verification_cache
+from app.analytics.database import (
+    ProjectionsDatabase, generation_retirement_cache, generation_verification_cache,
+)
 from app.analytics.compact_graph import CompactArtifact, write_compact_graph
 from app.analytics.graph_privacy import safe_graph_records
 from app.analytics.shared_graph import (
@@ -1941,12 +1943,13 @@ class SQLiteAnalyticsProjectionStore:
             transition = capture_transition(
                 connection, candidate, self._enrichment_transition_candidate(candidate)
             )
-            self._retire_active_generation(
-                connection,
-                expected_id,
-                generation["creator_account_id"],
-                now,
-            )
+            with generation_retirement_cache(connection):
+                self._retire_active_generation(
+                    connection,
+                    expected_id,
+                    generation["creator_account_id"],
+                    now,
+                )
             owner_clause = """
                   AND owner_id=? AND owner_pid=?
                   AND owner_process_started_at=? AND owner_instance_nonce=?
