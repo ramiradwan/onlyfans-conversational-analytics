@@ -7,7 +7,10 @@ import pytest
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.enrichment_proof_transition import _guards_match
 from app.analytics.pipeline import AnalyticsPipeline
-from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
+from app.analytics.opaque_refs import account_ref
+from app.analytics.sqlite_projection_store import (
+    SQLiteAnalyticsProjectionStore, _SCOPED_PAGE_RETIREMENT_RECLAIM,
+)
 from app.analytics.validation_receipt import content_stamp
 from app.persistence import sqlite_api as sqlite3
 from tests.continuous_analytics_fixture import (
@@ -48,7 +51,14 @@ def test_activation_batches_page_retirement_synchronously(tmp_path, monkeypatch)
                 "SELECT generation_id FROM projection_generations WHERE status='active'"
             ).fetchone()[0]
             before = page_counts(db, old)
+            old_content = {
+                row[0] for row in db.execute(
+                    "SELECT content_id FROM conversation_page_refs "
+                    "WHERE generation_id=? ORDER BY content_id", (old,)
+                )
+            }
             assert before["sets"] > 0 and before["owned"] + before["refs"] > 0
+            assert old_content
             assert content_stamp(db) is not None and _guards_match(db)
         with fixture.repositories.database.transaction() as db:
             insert_message(db, "chat-0", "retirement-next", NOW, 258)
@@ -64,6 +74,23 @@ def test_activation_batches_page_retirement_synchronously(tmp_path, monkeypatch)
                 "SELECT 1 FROM conversation_page_refs r "
                 "WHERE r.creator_account_id=c.creator_account_id AND r.content_id=c.content_id)"
             ).fetchone()[0] == 0
+            current = db.execute(
+                "SELECT generation_id FROM projection_generations WHERE status='active'"
+            ).fetchone()[0]
+            current_content = {
+                row[0] for row in db.execute(
+                    "SELECT content_id FROM conversation_page_refs "
+                    "WHERE generation_id=? ORDER BY content_id", (current,)
+                )
+            }
+            shared = old_content & current_content
+            assert shared
+            assert db.execute(
+                "SELECT COUNT(*) FROM conversation_page_content "
+                "WHERE creator_account_id=? AND content_id IN ("
+                + ",".join("?" for _ in shared) + ")",
+                (result.artifact.projection.account_ref, *sorted(shared)),
+            ).fetchone()[0] == len(shared)
             assert db.execute(
                 "SELECT page_retirement FROM generation_content_bulk_cleanup WHERE singleton=1"
             ).fetchone()[0] == 0
@@ -192,5 +219,36 @@ def test_armed_bulk_cleanup_cannot_support_validation_receipts(tmp_path):
             )
             after = content_stamp(db)
             assert after is not None and after != before and _guards_match(db)
+    finally:
+        cleanup(fixture)
+
+
+def test_scoped_reclamation_plan_uses_retirement_ids(tmp_path):
+    fixture = make_fixture(tmp_path)
+    try:
+        with fixture.stores.database.transaction() as db:
+            db.execute(
+                "CREATE TEMP TABLE retirement_page_content_ids ("
+                "content_id TEXT PRIMARY KEY) WITHOUT ROWID"
+            )
+            plan = [
+                row[3] for row in db.execute(
+                    "EXPLAIN QUERY PLAN " + _SCOPED_PAGE_RETIREMENT_RECLAIM,
+                    (account_ref(ACCOUNT),),
+                )
+            ]
+            assert any(
+                "conversation_page_content" in step
+                and "creator_account_id=?" in step
+                and "content_id=?" in step
+                for step in plan
+            )
+            assert any("retirement_page_content_ids" in step for step in plan)
+            assert any(
+                "conversation_page_refs" in step
+                and "creator_account_id=?" in step
+                and "content_id=?" in step
+                for step in plan
+            )
     finally:
         cleanup(fixture)

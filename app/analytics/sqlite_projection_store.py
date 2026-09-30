@@ -71,6 +71,13 @@ from app.persistence.projection_activation import (
 
 
 PROJECTION_BUILD_VERSION = "analytics.projection.v3"
+_SCOPED_PAGE_RETIREMENT_RECLAIM = (
+    "DELETE FROM conversation_page_content WHERE creator_account_id=? "
+    "AND content_id IN (SELECT content_id FROM retirement_page_content_ids) "
+    "AND NOT EXISTS(SELECT 1 FROM conversation_page_refs r "
+    "WHERE r.creator_account_id=conversation_page_content.creator_account_id "
+    "AND r.content_id=conversation_page_content.content_id)"
+)
 CrashHook = Callable[[str, str], None]
 CanonicalIdentityReader = Callable[[str], CanonicalIdentity | None]
 
@@ -1737,6 +1744,17 @@ class SQLiteAnalyticsProjectionStore:
             ).fetchone() is not None
         )
         if batching:
+            connection.execute(
+                "CREATE TEMP TABLE IF NOT EXISTS retirement_page_content_ids ("
+                "content_id TEXT PRIMARY KEY) WITHOUT ROWID"
+            )
+            connection.execute("DELETE FROM retirement_page_content_ids")
+            connection.execute(
+                "INSERT OR IGNORE INTO retirement_page_content_ids(content_id) "
+                "SELECT content_id FROM conversation_page_refs "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
             armed = connection.execute(
                 "UPDATE generation_content_bulk_cleanup SET page_retirement=1 "
                 "WHERE singleton=1 AND page_retirement=0"
@@ -1752,13 +1770,8 @@ class SQLiteAnalyticsProjectionStore:
             raise ProjectionActivationConflict("active generation changed")
         if not batching:
             return
-        connection.execute(
-            "DELETE FROM conversation_page_content WHERE creator_account_id=? "
-            "AND NOT EXISTS(SELECT 1 FROM conversation_page_refs r "
-            "WHERE r.creator_account_id=conversation_page_content.creator_account_id "
-            "AND r.content_id=conversation_page_content.content_id)",
-            (account_ref,),
-        )
+        connection.execute(_SCOPED_PAGE_RETIREMENT_RECLAIM, (account_ref,))
+        connection.execute("DELETE FROM retirement_page_content_ids")
         disarmed = connection.execute(
             "UPDATE generation_content_bulk_cleanup SET page_retirement=0 "
             "WHERE singleton=1 AND page_retirement=1"
