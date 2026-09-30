@@ -16,7 +16,7 @@ import {
 import { bindAgentFromBridgePage, extensionId, extensionWorker, launchExtensionBrowser,
   terminateExtensionWorker } from '../lib/extension-browser.mjs';
 import { EXTENSION_DIST, assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
-import { installCatchupShim, withCatchupDiagnostics } from '../lib/catchup-diagnostics.mjs';
+import { installCatchupShim, readCatchupMessageIds, withCatchupDiagnostics } from '../lib/catchup-diagnostics.mjs';
 
 async function syntheticExtension(directory) {
   await cp(EXTENSION_DIST, directory, { recursive: true });
@@ -179,8 +179,7 @@ for (const enabled of [true, false]) {
         expect(platform.requestCounts.catchup_list - before.catchup_list).toBe(Math.max(1, Math.ceil((3 - 1) / 99)));
         expect(platform.requestCounts.catchup_messages - before.catchup_messages).toBe(3);
         for (const chat of ['101', '102', '103']) {
-          const ids = await bridge.evaluate(async chat => (await (await fetch(
-            '/api/v1/conversations/' + chat + '/messages?limit=100')).json()).items.map(item => item.message_id), chat);
+          const ids = await bridge.evaluate(readCatchupMessageIds, chat);
           expect(ids).toContain('missing' + chat);
         }
       } else {

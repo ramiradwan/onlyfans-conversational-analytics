@@ -1,8 +1,44 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import * as diagnostics from '../../tools/e2e-capture/lib/stable-connection-diagnostic.mjs';
 import { AgentRuntime } from '../transport/agent-runtime-core.mjs';
+
+for (const [status, body, code] of [
+  [409, { detail: 'cursor_stale' }, 'cursor_stale'],
+  [503, { detail: 'projection_unavailable' }, 'projection_unavailable'],
+  [403, { detail: { code: 'access_refused' } }, 'access_refused'],
+  [200, {}, 'unavailable'],
+  [500, { detail: 'arbitrary response text', items: [{ text: 'arbitrary message text' }] }, 'unavailable'],
+  [502, null, 'unavailable'],
+]) {
+  test(`catchup message diagnostics retain status ${status} and code ${code}`, async () => {
+    const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
+    let calls = 0;
+    const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { fetch: async url => {
+      calls++;
+      assert.equal(url, '/api/v1/conversations/103/messages?limit=100');
+      return { status, ok: status === 200, async json() {
+        if (body === null) throw new SyntaxError('arbitrary response text');
+        return body;
+      } };
+    } });
+    await assert.rejects(read('103'), error => {
+      assert.equal(error.message, `Catch-up messages unavailable: chat=103 status=${status} code=${code}`);
+      return true;
+    });
+    assert.equal(calls, 1);
+  });
+}
+
+test('catchup message diagnostics preserve readable message identifiers', async () => {
+  const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
+  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { fetch: async () => ({
+    status: 200, ok: true, json: async () => ({ items: [{ message_id: 'missing103' }] }),
+  }) });
+  assert.equal(JSON.stringify(await read('103')), '["missing103"]');
+});
 
 test('session task provenance survives collection without arbitrary data', () => {
   const collector = diagnostics.createSessionFailureCollector();

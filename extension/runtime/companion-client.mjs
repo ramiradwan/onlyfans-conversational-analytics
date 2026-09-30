@@ -171,15 +171,10 @@ export function createCompanionClient({
         attachControls(channel);
         notifySurfaces();
         void sendSurface();
-        admitted.stableTimer = timers.setTimeout(() => {
-          admitted.stableTimer = null;
-          if (active !== admitted || channel.closed) return;
-          record('circuit-reset');
-          void recovery.stable().catch(() => undefined);
-        }, CONNECTION_STABLE_MS);
+        scheduleStable(admitted);
         channel.onClose(() => {
           if (active?.channel !== channel) return;
-          const wasStable = now() - active.openedAt >= CONNECTION_STABLE_MS;
+          const wasStable = !active.rotationPending && now() - active.openedAt >= CONNECTION_STABLE_MS;
           const resetOnClose = wasStable && active.stableTimer !== null;
           record('channel-close', { code: channel.closeCode ?? null,
             reason: safeCompanionCloseReason(channel.closeReason), wasStable,
@@ -203,6 +198,14 @@ export function createCompanionClient({
       clearTimeout(timer);
       if (connecting === bounded) { connecting = null; connectingAccount = null; connectionAbort = null; }
     }
+  }
+  function scheduleStable(bound) {
+    bound.stableTimer = timers.setTimeout(() => {
+      bound.stableTimer = null;
+      if (active !== bound || bound.channel.closed || bound.rotationPending) return;
+      record('circuit-reset');
+      void recovery.stable().catch(() => undefined);
+    }, CONNECTION_STABLE_MS);
   }
   // Prove the pinned Agent identity to Brain on a newly opened channel.
   async function authenticateChannel(channel, pairingStore, accountId, agentInstallationId, controls = {}, check = async () => {}) {
@@ -465,6 +468,9 @@ export function createCompanionClient({
         if (bound.channel.closed) throw failure();
         cause = 'account_mismatch';
         if (bound.accountId !== credential.creatorAccountId) throw failure();
+        bound.rotationPending = true;
+        if (bound.stableTimer !== null) timers.clearTimeout(bound.stableTimer);
+        bound.stableTimer = null;
         phase = 'rpc'; cause = null;
         const params = {
           protocol_version: '2', creator_account_id: credential.creatorAccountId,
@@ -493,6 +499,9 @@ export function createCompanionClient({
         phase = 'commit'; cause = 'binding_changed';
         if (active !== bound) throw failure();
         bound.storageBootstrap = rotated.storage_bootstrap;
+        bound.rotationPending = false;
+        bound.openedAt = now();
+        scheduleStable(bound);
         credentialRotation.completed++;
       } catch (error) {
         credentialRotation.failure = {

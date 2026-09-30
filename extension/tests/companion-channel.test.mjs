@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import initialize, { SnowSession } from '../vendor/companion-snow/ofca_snow_wasm.js';
 import { openCompanionChannel, openLoopbackSocket, safeCompanionCloseReason } from '../transport/companion-channel.mjs';
 import { createCompanionClient } from '../runtime/companion-client.mjs';
+import { AgentWebSocketClient } from '../transport/agent-websocket.mjs';
+import { ReadOnlyAgentWebSocketClient } from '../transport/read-only-agent-websocket.mjs';
 import { createFragmentReceiver, fragmentMessage } from '../transport/companion-fragments.mjs';
 import { key32 } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
@@ -20,7 +22,7 @@ test('RPC capacity diagnostics distinguish admission contention without request 
   const peer = fixture(), channel = await peer.open();
   try {
     const pending = Array.from({ length: 8 }, () => channel.rpc('private_method', { text: 'private_message' }));
-    await assert.rejects(channel.rpc('agent.storage.rotate', { token: 'private_token' }), error => {
+    await assert.rejects(channel.rpc('agent.analysis.readiness', { token: 'private_token' }), error => {
       assert.deepEqual(error.diagnostic, { cause: 'rpc_capacity', pendingRpcs: 8, abandonedRpcs: 0, queuedSends: 8 });
       assert.doesNotMatch(JSON.stringify(error.diagnostic), /private_/);
       return true;
@@ -137,7 +139,7 @@ test('credential rotation survives eight pending RPCs without resending material
       configAuthTicket: 'config-fixture' });
     void rotation.catch(() => undefined);
     await tick();
-    assert.equal(rotations.length, 0);
+    assert.equal(rotations.length, 1);
     for (const document of held) {
       peer.application({ type: 'rpc.response', id: document.id, result: {} });
       await tick();
@@ -324,4 +326,249 @@ test('a malformed or unknown session control closes the channel', async () => {
     await waitFor(() => channel.closed);
     assert.deepEqual(controls, [], JSON.stringify(control));
   }
+});
+
+async function rotationTransport(t, Client, { localRefusal = null, rotationResult = 'success' } = {}) {
+  let time = 0, refusal = localRefusal;
+  t.mock.method(performance, 'now', () => time);
+  const timers = new Map();
+  let timerId = 0;
+  t.mock.method(globalThis, 'setTimeout', (handler, delay) => {
+    const id = ++timerId;
+    timers.set(id, { handler, due: time + delay });
+    return id;
+  });
+  t.mock.method(globalThis, 'clearTimeout', id => timers.delete(id));
+  const peers = [], channels = [], pending = [], errors = [], values = {};
+  const account = vector.detected_account_id;
+  const area = { async get() { return { ...values }; }, async set(update) { Object.assign(values, update); } };
+  const privateKey = await crypto.subtle.importKey('jwk',
+    fixturePrivateJwk(vector.fixture_labels.agent_identity_key, vector.request.agent_identity_jwk),
+    { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const client = createCompanionClient({ chromeApi: { storage: { local: area, session: area } },
+    allowsFull: () => true, detectedAccountId: async () => account, accountDatabaseName: async () => 'fixture-storage',
+    storeFactory: async () => ({ identity: async () => ({ privateKey }) }), loadSnow: async () => ({ SnowSession }),
+    loadTrust: async () => trust, now: () => 1_800_000_000_000 + time, random: () => 0.5,
+    channelFactory: async () => {
+      const held = [], rotations = [];
+      const peer = fixture({ reply(document) {
+        if (document.method === 'agent.challenge') return { challenge_id: crypto.randomUUID(),
+          challenge: Buffer.alloc(32, 9).toString('base64url'), session_id: crypto.randomUUID(), expires_at: '2026-09-30T12:00:00Z' };
+        if (document.method === 'agent.authenticate') return { creator_account_id: account,
+          auth_ticket: 'fixture-ticket', storage_bootstrap: 'fixture-bootstrap' };
+        if (document.method === 'agent.storage.unseal') return { schema: 'ofca-extension-storage-unlock/v1',
+          creator_account_id: account, credential_kind: 'pairing', auth_ticket: 'fixture-ticket',
+          storage_key_base64: Buffer.alloc(32, 7).toString('base64') };
+        if (document.method === 'agent.storage.rotate') {
+          rotations.push(document);
+          if (rotationResult === 'refused') {
+            peer.application({ type: 'rpc.response', id: document.id, error: 'session_request_refused' });
+            return;
+          }
+          if (rotationResult === 'ambiguous') return;
+          return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: 'rotated-bootstrap' };
+        }
+        held.push({ document, at: time });
+      } });
+      peers.push(Object.assign(peer, { held, rotations }));
+      const channel = await peer.open();
+      channels.push(channel);
+      return new Proxy({}, { get(_target, name) {
+        if (name !== 'rpc') return Reflect.get(channel, name);
+        return (method, params, controls) => {
+          if (method === 'agent.storage.rotate' && refusal) return Promise.reject(Object.assign(
+            new Error('companion_session_refused'), { code: 'companion_session_refused',
+              diagnostic: { cause: refusal, pendingRpcs: 8, abandonedRpcs: 0, queuedSends: 0 } }));
+          return channel.rpc(method, params, controls);
+        };
+      } });
+    } });
+  await client.adapter.loadBrainBinding();
+  const installation = await client.adapter.loadAgentInstallationId();
+  const session = JSON.parse(await readFile(new URL('../../shared/fixtures/protocol/v2/agent.session.json', import.meta.url)));
+  Object.assign(session.payload, { creator_account_id: account, agent_installation_id: installation });
+  const transport = new Client({ creatorAccountId: account, authTicket: 'fixture-ticket', extensionVersion: '2.0.3',
+    identity: { agentInstallationId: installation, agentStreamId: session.payload.agent_stream_id,
+      lastAcknowledgedSourceSeq: 10, appliedConfigRevision: 'config-8' },
+    webSocketFactory: client.webSocketFactory, monotonicNow: () => time,
+    persistReconnectAuthTicket: (authTicket, configAuthTicket, controls) => client.adapter.saveReconnectAuthTicket({
+      creatorAccountId: account, agentInstallationId: installation, authTicket, configAuthTicket }, controls),
+    onValidationError: error => errors.push(error) });
+  const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
+  const advance = async ms => {
+    time += ms;
+    for (const [id, timer] of [...timers]) if (timer.due <= time && timers.delete(id)) timer.handler();
+    await settle();
+  };
+  const accept = async () => {
+    await waitFor(() => peers.at(-1).received.some(document => document.type === 'agent.hello'));
+    peers.at(-1).application(session);
+    await settle();
+  };
+  t.after(async () => { transport.stop(); client.invalidate(); await Promise.allSettled(pending); });
+  return { client, transport, peers, channels, errors, values, pending, accept, advance, settle,
+    get time() { return time; }, release() { refusal = null; },
+    traffic(kind) {
+      for (let i = 0; i < 8; i++) {
+        if (kind === 'surface') client.reportSurface({ schema: 'ofca-browser-surface/v1', capture: 'active',
+          site_access: 'granted', history_permission: 'granted', legal_review_required: i % 2 === 0 });
+        else { const call = client.analysisReadiness(); void call.catch(() => {}); pending.push(call); }
+      }
+    },
+    async completeTraffic() {
+      for (const { document, at } of peers.at(-1).held.splice(0)) {
+        assert.ok(time - at <= 200, 'ordinary RPCs complete within 200 simulated milliseconds');
+        peers.at(-1).application({ type: 'rpc.response', id: document.id, result:
+          document.method === 'agent.analysis.readiness'
+            ? { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'active', analysis_admission: 'admitted' } : {} });
+        await tick();
+      }
+    } };
+}
+
+for (const Client of [ReadOnlyAgentWebSocketClient, AgentWebSocketClient]) {
+  for (const kind of ['readiness', 'surface']) {
+    test(`${Client.name}: rolling ${kind} contention cannot starve rotation or disable reconnect`, async t => {
+      const h = await rotationTransport(t, Client);
+      h.transport.start();
+      await waitFor(() => h.peers[0].received.some(document => document.type === 'agent.hello'));
+      await h.settle();
+      h.traffic(kind);
+      await waitFor(() => h.peers[0].held.length === 8);
+      await h.accept();
+      for (let elapsed = 0; elapsed < 10_025 && !h.channels[0].closed; elapsed += 25) {
+        await h.completeTraffic(); await h.settle();
+        h.traffic(kind); await h.settle();
+        await h.advance(25);
+      }
+      assert.equal(h.transport.reconnectAllowed, true, 'local-only deadline must preserve automatic reconnect');
+      assert.ok(h.time >= 10_000, JSON.stringify({ time: h.time, close: h.channels[0].closeDiagnostic }));
+      assert.equal(h.peers[0].rotations.length, 1, 'rotation has a reserved admission slot');
+      assert.equal(h.client.credentialRotation.completed, 1);
+      assert.equal(h.channels[0].closed, false);
+      h.channels[0].close(); await h.settle();
+      h.transport.ensureConnected(); await h.advance(0);
+      await waitFor(() => h.channels.length === 2);
+      await h.accept();
+      assert.equal(h.client.credentialRotation.completed, 2);
+    });
+  }
+
+  for (const cause of ['rpc_capacity', 'rpc_backlog']) {
+    test(`${Client.name}: undispatched ${cause} rotation uses the six-attempt recovery circuit`, async t => {
+      const h = await rotationTransport(t, Client, { localRefusal: cause });
+      h.transport.start();
+      for (let attempt = 1; attempt <= 6; attempt++) {
+        await h.accept();
+        if (cause === 'rpc_capacity') await h.advance(10_000);
+        await h.settle();
+        assert.equal(h.transport.reconnectAllowed, true);
+        assert.equal(h.values.companion_recovery_v1.attempts, attempt, 'failed rotation cannot reset the circuit');
+        assert.equal(h.peers.at(-1).rotations.length, 0);
+        const delay = Math.max(0, h.values.companion_recovery_v1.next_attempt_at - (1_800_000_000_000 + h.time));
+        for (let wake = 0; wake < 20; wake++) h.transport.ensureConnected();
+        await h.settle();
+        if (delay > 0) {
+          await assert.rejects(h.client.adapter.loadBrainBinding(), { code: 'companion_recovery_backoff' });
+          await h.advance(delay - 1);
+          assert.equal(h.channels.length, attempt, 'wakes and timers respect the persisted deadline');
+        }
+        if (attempt === 6) {
+          assert.equal(delay, cause === 'rpc_capacity' ? 290_000 : 300_000);
+          h.release();
+        }
+        await h.advance(delay > 0 ? 1 : 0);
+        await waitFor(() => h.channels.length === attempt + 1);
+      }
+      await h.accept();
+      assert.equal(h.client.credentialRotation.completed, 1);
+      assert.equal(h.values.companion_recovery_v1.attempts, 1);
+    });
+  }
+
+  for (const invalidation of ['stop', 'binding', 'channel']) {
+    test(`${Client.name}: pending rotation is fenced after ${invalidation}`, async t => {
+      const h = await rotationTransport(t, Client, { localRefusal: 'rpc_capacity' });
+      h.transport.start(); await h.accept();
+      if (invalidation === 'stop') h.transport.stop();
+      if (invalidation === 'binding') h.client.invalidate();
+      if (invalidation === 'channel') h.channels[0].close();
+      await h.settle();
+      h.release(); await h.advance(25);
+      assert.equal(h.peers[0].rotations.length, 0);
+      assert.equal(h.client.credentialRotation.completed, 0);
+      assert.equal(h.errors.length, 0);
+    });
+  }
+
+  for (const rotationResult of ['refused', 'ambiguous']) {
+    test(`${Client.name}: a dispatched ${rotationResult} rotation is never replayed`, async t => {
+      const h = await rotationTransport(t, Client, { rotationResult });
+      h.transport.start(); await h.accept();
+      if (rotationResult === 'ambiguous') await h.advance(10_000);
+      for (let wake = 0; wake < 20; wake++) h.transport.ensureConnected();
+      await h.settle();
+      assert.equal(h.peers[0].rotations.length, 1);
+      assert.equal(h.client.credentialRotation.completed, 0);
+      assert.ok(h.peers.every(peer => peer.rotations.length <= 1));
+      assert.equal(h.client.credentialRotation.attempts, 1);
+    });
+  }
+}
+
+test('rotation reserves admission and send capacity while ordinary RPC limits stay unchanged', async () => {
+  const peer = fixture({ reply: () => undefined }), channel = await peer.open(), pending = [];
+  try {
+    for (let i = 0; i < 8; i++) pending.push(channel.rpc('agent.analysis.readiness'));
+    pending.push(channel.rpc('agent.storage.rotate'));
+    for (const operation of pending) void operation.catch(() => {});
+    await tick();
+    assert.equal(channel.closed, false);
+    assert.equal(peer.received.length, 9);
+    for (const method of ['agent.analysis.readiness', 'agent.storage.rotate']) {
+      await assert.rejects(channel.rpc(method), error => error.code === 'companion_session_refused'
+        && error.diagnostic.cause === 'rpc_capacity');
+    }
+    for (const document of peer.received) {
+      peer.application({ type: 'rpc.response', id: document.id, result: {} });
+      await tick();
+    }
+    await Promise.all(pending);
+  } finally { channel.close(); await Promise.allSettled(pending); }
+});
+
+test('ordinary abandoned RPCs cannot consume the rotation reservation', async () => {
+  const peer = fixture({ reply: document => document.method === 'agent.storage.rotate' ? {} : undefined });
+  const channel = await peer.open(), pending = [];
+  try {
+    for (let batch = 0; batch < 8; batch++) {
+      const controller = new AbortController();
+      for (let i = 0; i < 8; i++) {
+        const operation = channel.rpc('agent.analysis.readiness', {}, { signal: controller.signal });
+        void operation.catch(() => {}); pending.push(operation);
+      }
+      await tick(); controller.abort(); await tick();
+    }
+    await assert.rejects(channel.rpc('agent.analysis.readiness'), error => error.diagnostic.cause === 'rpc_backlog');
+    await channel.rpc('agent.storage.rotate');
+    assert.equal(peer.received.filter(document => document.method === 'agent.storage.rotate').length, 1);
+    assert.equal(channel.closed, false);
+  } finally { channel.close(); await Promise.allSettled(pending); }
+});
+
+test('an abandoned rotation keeps its reservation until its response is discarded', async () => {
+  const peer = fixture({ reply: () => undefined }), channel = await peer.open();
+  const controller = new AbortController();
+  try {
+    const rotation = channel.rpc('agent.storage.rotate', {}, { signal: controller.signal });
+    void rotation.catch(() => {}); await tick();
+    controller.abort(); await assert.rejects(rotation);
+    await assert.rejects(channel.rpc('agent.storage.rotate'), error => error.diagnostic.cause === 'rpc_capacity');
+    assert.equal(peer.received.length, 1);
+    peer.application({ type: 'rpc.response', id: peer.received[0].id, result: {} }); await tick();
+    const next = channel.rpc('agent.storage.rotate');
+    void next.catch(() => {}); await tick();
+    peer.application({ type: 'rpc.response', id: peer.received[1].id, result: {} });
+    await next;
+  } finally { channel.close(); }
 });
