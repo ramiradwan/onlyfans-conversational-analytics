@@ -140,7 +140,8 @@ export function createSurfaceClient(onChange, onError) {
       model.desktopRuntimeReachable = status.consent.mode === 'full'
         ? model.desktopLinked || await probeDesktopRuntime() : false;
       if (!model.desktopRuntimeReachable) resetReadiness();
-      if (port && status.consent.mode === 'full') post('status');
+      if (port && (status.consent.mode === 'full'
+        || (status.consent.mode === 'paused' && status.consent.resume_mode === 'full'))) post('status');
       requestReadiness(); emit();
     } catch (error) {
       model.status = null; model.legal = null; resetReadiness();

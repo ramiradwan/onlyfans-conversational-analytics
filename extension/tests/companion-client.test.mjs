@@ -10,6 +10,62 @@ const key = await crypto.subtle.importKey('jwk', fixturePrivateJwk(vector.fixtur
 const publicKey = await crypto.subtle.importKey('jwk', vector.request.agent_identity_jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
 const ACCOUNT = vector.detected_account_id;
 const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
+
+test('facade diagnostics retain closed local causes without arbitrary text', async () => {
+  for (const [input, expected] of [
+    ['Session establishment timed out', 'session_timeout'],
+    ['Agent reconnect credential could not be stored', 'credential_store_failed'],
+    ['Session identity conflict', 'identity_conflict'],
+    ['unauthorized', 'unauthorized'],
+    ['private-message-token', 'other'],
+  ]) {
+    const h = harness();
+    await h.client.adapter.loadBrainBinding();
+    const socket = h.client.webSocketFactory();
+    for (let i = 0; i < 20 && socket.readyState !== 1; i++) await tick();
+    socket.close(4008, input);
+    const closed = h.client.diagnosticEvents.find((entry) => entry.event === 'facade-close');
+    h.client.invalidate();
+    assert.equal(closed.reason, expected);
+    assert.equal(closed.code, 4008);
+    assert.doesNotMatch(JSON.stringify(h.client.diagnosticEvents), /private-message-token/);
+  }
+});
+
+test('three Full worker starts and surface signals reserve only one attempt each', async () => {
+  let time = 1_800_000_000_000, chromeApi;
+  const scheduler = { setTimeout() { return 1; }, clearTimeout() {} };
+  for (let worker = 1; worker <= 3; worker++) {
+    const h = harness({ chromeApi, now: () => time, scheduler });
+    chromeApi = h.chrome;
+    await Promise.all([h.client.adapter.loadBrainBinding(), h.client.adapter.loadBrainBinding(), h.client.ensureControl()]);
+    h.client.reportSurface({ schema: 'ofca-browser-surface/v1', capture: 'active' });
+    await h.client.ensureControl();
+    assert.equal(h.stats.networks, 1);
+    assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, worker);
+    h.client.invalidate();
+    time += 5_000;
+  }
+});
+
+test('worker wake subscriptions retain message and tab wakes plus the minute alarm', () => {
+  const h = harness();
+  let wakes = 0;
+  const alarms = [];
+  h.chrome.alarms.create = (name, options) => alarms.push({ name, options });
+  const remove = h.client.adapter.onWake(() => { wakes++; });
+  const events = [h.chrome.runtime.onStartup, h.chrome.runtime.onInstalled,
+    h.chrome.runtime.onMessage, h.chrome.tabs.onUpdated];
+  for (const source of events) source.listeners[0]();
+  assert.equal(wakes, 4);
+  assert.deepEqual(alarms, [{ name: 'ofca-agent-reconcile', options: { delayInMinutes: 1, periodInMinutes: 1 } }]);
+  h.chrome.alarms.onAlarm.listeners[0]({ name: 'unrelated' });
+  assert.equal(wakes, 4);
+  h.chrome.alarms.onAlarm.listeners[0]({ name: 'ofca-agent-reconcile' });
+  assert.equal(wakes, 5);
+  remove();
+  assert.ok([...events, h.chrome.alarms.onAlarm].every((source) => source.listeners.length === 0));
+});
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
