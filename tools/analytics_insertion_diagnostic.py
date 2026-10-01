@@ -423,9 +423,13 @@ async def run_update(args, q, light, outer, status, manifest, result, workdir):
             lambda: work.add(0, name), case=case)
         result.update(probe=probe, summary=summarize_probe(probe), complete=True)
     finally:
-        trace.restore()
-        outer.restore()
-        outer.patches.clear()
+        # The coarse layer is installed last and may wrap the full tracer's
+        # connection methods. Unwind in reverse order, including on errors.
+        try:
+            outer.restore()
+            outer.patches.clear()
+        finally:
+            trace.restore()
         result["attribution"] = trace.events
         if getattr(args, 'full_attribution', False):
             result['full_attribution'] = trace.snapshot()

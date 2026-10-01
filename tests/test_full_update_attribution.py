@@ -83,10 +83,18 @@ def test_full_scope_cli_is_explicit():
 def test_actual_scheduled_smoke_full_attribution(tmp_path):
     args=SimpleNamespace(messages=1000,output=tmp_path,trace_mode='coarse',full_attribution=True,focused_operation='insert')
     manifest=q.read_json(Path(__file__).resolve().parents[1]/'docs/analytics/acceptance-manifest.json')
+    from app.persistence.database import LocalSQLite, _TrackedConnection
+    from app.analytics.pipeline import AnalyticsPipeline
+    descriptors = (LocalSQLite.transaction, LocalSQLite.read, _TrackedConnection.close,
+                   AnalyticsPipeline._account_lock)
     result={}
     outer=runner.Trace()
     light=SimpleNamespace(atomic_status=lambda *a,**k:None)
     asyncio.run(focused.run_update(args,q,light,outer,tmp_path/'status.json',manifest,result,tmp_path/'work'))
+    assert descriptors == (LocalSQLite.transaction, LocalSQLite.read,
+                           _TrackedConnection.close, AnalyticsPipeline._account_lock)
+    assert 'commit' not in vars(_TrackedConnection)
+    assert 'execute' not in vars(_TrackedConnection)
     assert result['complete'] is True,result
     assert result['safety']==dict(scheduler_closed=True,detached_workers=0,backlog=0)
     trace=result['full_attribution']
