@@ -32,6 +32,14 @@ class EncodedIds(Sequence):
         begin = self._start + index * _FRAME + 1
         return self._raw[begin:begin + 67].decode('ascii')
 
+    def __iter__(self):
+        # Decode one bounded block rather than making a Python method call,
+        # bytes allocation and decoder call for every selected identity.
+        for block in self.frames():
+            text = block.decode('ascii')
+            for offset in range(0, len(text), _FRAME):
+                yield text[offset + 1:offset + 68]
+
     def frames(self):
         for index in range(0, len(self), _BATCH):
             begin = self._start + index * _FRAME
@@ -110,6 +118,7 @@ class IdGroups(Sequence):
         if kind not in ('node', 'edge'):
             raise ValueError('graph_record_kind_invalid')
         expected = b'g1:' if kind == 'node' else b'e1:'
+        pattern = re.compile(rb'"' + expected + rb'([0-9a-f]{4})[0-9a-f]{60}",')
         compressor = zlib.compressobj(1)
         pieces, size = [], 0
         summary = bytearray(PREFIX_BYTES)
@@ -126,15 +135,16 @@ class IdGroups(Sequence):
                 if size > maximum:
                     return None
             digest.update(block.translate(_TRANSLATE, b'"'))
-            for offset in range(0, len(block), _FRAME):
-                frame = block[offset:offset + _FRAME]
-                if (frame[:1] != b'"' or frame[1:4] != expected
-                        or frame[-2:] != b'",'):
-                    raise ValueError('graph_identity_invalid')
-                try:
-                    prefix = int(frame[4:8], 16)
-                except ValueError as error:
-                    raise ValueError('graph_identity_invalid') from error
+            # Fixed-width full matches cover every byte when their lengths
+            # sum to the block length. The regex checks framing and every hex
+            # character, including IDs in caller-created non-framed groups.
+            prefixes = pattern.findall(block)
+            if len(prefixes) * _FRAME != len(block):
+                raise ValueError('graph_identity_invalid')
+            # At most _BATCH four-byte values are retained. Multiple members of
+            # the same prefix set one bit; no per-identity Python parse is needed.
+            for value in set(prefixes):
+                prefix = int(value, 16)
                 summary[prefix >> 3] |= 1 << (prefix & 7)
         final = (compressor.compress(tail[:-1] + b']')
                  if len(self) else compressor.compress(b'[]'))
@@ -214,9 +224,14 @@ def canonical_groups(unit, summaries, check, *, proven_summaries=None):
             if proven_summaries is not None:
                 # Hash equality reuses only an independently proved membership
                 # ordering. Fixed JSON framing is still checked on actual bytes.
-                bound_shape = re.compile(rb'(?:"'+prefix+bucket+rb'[0-9a-f]{62}",)+')
                 known = proven_summaries.get(key)
                 same = known is not None and known[2:4] == expected[2:4]
+                # The independently proved membership digest above binds every
+                # identity byte. Equal count and digest permit skipping repeated
+                # per-character hex validation, not JSON frame boundaries.
+                # Without that binding, retain the complete hexadecimal check.
+                body = rb'.{62}' if same else rb'[0-9a-f]{62}'
+                bound_shape = re.compile(rb'(?:"'+prefix+bucket+body+rb'",)+', re.DOTALL)
                 for block in group.frames():
                     check()
                     if bound_shape.fullmatch(block) is None:
