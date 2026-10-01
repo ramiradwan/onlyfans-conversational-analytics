@@ -492,7 +492,7 @@ def main():
                 result['helper_sha256']['analytics_graph_component.py'] = light.file_sha256(
                     root/'tools/analytics_graph_component.py')
             if args.component_kind == 'reference-sql':
-                result.update(component_kind='reference-sql',preparation_recipe='a07-reference-sql-component.v1',
+                result.update(component_kind='reference-sql',preparation_recipe='a07-reference-sql-component.v2',
                     limitations=['SQL/storage/reference-lifecycle diagnostic; not canonical graph equivalence or visibility qualification.',
                         'Candidate writes and synchronous retirement are timed. Fresh independent byte/key checks remain outside timing.',
                         'All samples reset in a savepoint; durability and scheduler lifecycle are not measured.'])

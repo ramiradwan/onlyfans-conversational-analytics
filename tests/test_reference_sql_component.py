@@ -19,6 +19,8 @@ def test_real_sql_reference_lifecycle_and_fresh_oracle(tmp_path):
     assert result['complete'] and result['safety']['component_database_closed']
     assert not result['safety']['publication_authority_tested']
     assert result['attribution']==[]
+    assert result['schema']=='a07-reference-sql-component.v2'
+    assert result['cache_scopes']==dict(store_and_validation_kib=32768,retirement_kib=131072)
     assert result['samples'][0]['output_digest']==result['samples'][1]['output_digest']
     for sample in result['samples']:
         assert sample['independent_membership_and_content_equal']

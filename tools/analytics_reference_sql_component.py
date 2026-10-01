@@ -138,6 +138,7 @@ class ReferenceSQLFixture:
     def sample(self,index,trace):
         from app.analytics import conversation_graph_unit_sql as sql
         from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
+        from app.analytics.database import generation_verification_cache,generation_retirement_cache
         db=self.db;db.execute('BEGIN');db.execute('SAVEPOINT sample');times={};trace.phase='reference-sample-'+str(index)
         def measured(name,fn):
             start=time.monotonic();cpu=time.thread_time();before=db.total_changes
@@ -146,14 +147,19 @@ class ReferenceSQLFixture:
             return value
         try:
             start=time.monotonic()
-            if measured('store_changed_unit',lambda:sql.insert_units(db,self.new,[self.changed]))!=1:
-                raise ValueError('changed_unit_not_inserted')
-            if measured('copy_unchanged_references',lambda:sql.insert_units(db,self.new,self.references))!=100:
-                raise ValueError('reference_copy_incomplete')
-            if measured('validate_graph_links',lambda:db.execute(self.check_query,(self.new,self.account)).fetchone()) is not None:
-                raise ValueError('reference_closure_failed')
-            measured('retire_predecessor',lambda:SQLiteAnalyticsProjectionStore._retire_active_generation(
-                db,self.old,self.account,'2026-10-01T00:00:00.000000Z'))
+            # Match the production cache scopes. Both storing units and
+            # persisted validation use 32 MiB; synchronous retirement uses its
+            # existing 128 MiB target. These are unchanged runtime policies.
+            with generation_verification_cache(db):
+                if measured('store_changed_unit',lambda:sql.insert_units(db,self.new,[self.changed]))!=1:
+                    raise ValueError('changed_unit_not_inserted')
+                if measured('copy_unchanged_references',lambda:sql.insert_units(db,self.new,self.references))!=100:
+                    raise ValueError('reference_copy_incomplete')
+                if measured('validate_graph_links',lambda:db.execute(self.check_query,(self.new,self.account)).fetchone()) is not None:
+                    raise ValueError('reference_closure_failed')
+            with generation_retirement_cache(db):
+                measured('retire_predecessor',lambda:SQLiteAnalyticsProjectionStore._retire_active_generation(
+                    db,self.old,self.account,'2026-10-01T00:00:00.000000Z'))
             seconds=time.monotonic()-start
             at=time.monotonic();digest=self.verify();oracle=time.monotonic()-at
             return dict(index=index,intervals=times,transition_seconds=seconds,oracle_seconds=oracle,
@@ -168,11 +174,13 @@ class ReferenceSQLFixture:
 
 async def run_reference_sql_component(args,q,light,outer,status,manifest,result,workdir):
     from tools.analytics_insertion_diagnostic import Attribution
+    from app.analytics.database import GENERATION_VERIFICATION_CACHE_KIB, GENERATION_RETIREMENT_CACHE_KIB
     workdir.mkdir(parents=True);begun=time.monotonic()
     light.atomic_status(status,'reference-sql-preparation')
     fixture=ReferenceSQLFixture(workdir,args.messages,datetime.fromisoformat(manifest['fixture']['evaluation_clock']))
     result.update(fixture=fixture.metadata,preparation_seconds=time.monotonic()-begun,samples=[],
-        schema='a07-reference-sql-component.v1',query_plans=fixture.plans(),
+        schema='a07-reference-sql-component.v2',query_plans=fixture.plans(),
+        cache_scopes=dict(store_and_validation_kib=GENERATION_VERIFICATION_CACHE_KIB,retirement_kib=GENERATION_RETIREMENT_CACHE_KIB),
         scope='Actual schema, storage, reference-copy, closure-check and synchronous retirement; independent byte/key oracle. Not scheduler visibility or graph-content qualification.')
     trace=Attribution(enabled=args.trace_mode!='none')
     try:

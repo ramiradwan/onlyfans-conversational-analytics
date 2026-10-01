@@ -12,3 +12,6 @@ The complete component interval includes changed-unit storage, reference copying
 SQLite documents covering indexes and warns that large-row WITHOUT ROWID tables have expensive B-tree search behavior. The disposable plan experiment found that a compact UNIQUE identity index is used by the foreign-key program as well as the reference-closure query. A wider nonunique metadata index and a NOT EXISTS rewrite alone did not remove that cost. Reference-first reclamation avoids visiting large units that are still shared.
 
 References: https://www.sqlite.org/withoutrowid.html, https://www.sqlite.org/queryplanner.html, https://www.sqlite.org/foreignkeys.html and https://www.sqlite.org/eqp.html.
+
+
+Recipe v2 uses the unchanged production cache scopes: 32 MiB during unit storage and validation, and 128 MiB during synchronous retirement. Cache entry/restoration is inside the complete transition. V1 used the connection default and is retained as exploratory evidence only, not the matched production-cache comparison. This is still a single-connection component; the exact lifecycle needs its own integration run.
