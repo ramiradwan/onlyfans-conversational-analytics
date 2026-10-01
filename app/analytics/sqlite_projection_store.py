@@ -82,10 +82,9 @@ _SCOPED_PAGE_RETIREMENT_RECLAIM = (
 )
 _SCOPED_GRAPH_RETIREMENT_RECLAIM = (
     "DELETE FROM conversation_graph_units WHERE creator_account_id=? "
-    "AND unit_id IN (SELECT unit_id FROM retirement_graph_unit_ids) "
-    "AND NOT EXISTS(SELECT 1 FROM conversation_graph_refs r "
-    "WHERE r.creator_account_id=conversation_graph_units.creator_account_id "
-    "AND r.unit_id=conversation_graph_units.unit_id)"
+    "AND unit_id IN (SELECT c.unit_id FROM retirement_graph_unit_ids c "
+    "WHERE NOT EXISTS(SELECT 1 FROM conversation_graph_refs r "
+    "WHERE r.creator_account_id=? AND r.unit_id=c.unit_id))"
 )
 CrashHook = Callable[[str, str], None]
 CanonicalIdentityReader = Callable[[str], CanonicalIdentity | None]
@@ -1831,7 +1830,9 @@ class SQLiteAnalyticsProjectionStore:
                 "WHERE generation_id=? AND creator_account_id=?",
                 (generation_id, account_ref),
             )
-            connection.execute(_SCOPED_GRAPH_RETIREMENT_RECLAIM, (account_ref,))
+            # Determine unreferenced IDs before visiting their large unit rows.
+            # The same transaction and referenced-unit trigger still fence deletion.
+            connection.execute(_SCOPED_GRAPH_RETIREMENT_RECLAIM, (account_ref, account_ref))
             connection.execute("DELETE FROM retirement_graph_unit_ids")
             disarmed = connection.execute(
                 "UPDATE generation_content_bulk_cleanup SET graph_retirement=0 "

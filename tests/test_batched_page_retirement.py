@@ -204,7 +204,7 @@ def test_schema22_upgrade_preserves_page_cache_and_backup(tmp_path, monkeypatch)
             assert before > 0 and db.execute("PRAGMA user_version").fetchone()[0] == 21
         upgraded = ProjectionsDatabase(database.path)
         with upgraded.read() as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 23
+            assert db.execute("PRAGMA user_version").fetchone()[0] == 24
             assert db.execute("SELECT COUNT(*) FROM conversation_pages").fetchone()[0] == before
             assert content_stamp(db) is not None and _guards_match(db)
             assert not db.execute("PRAGMA foreign_key_check").fetchall()
