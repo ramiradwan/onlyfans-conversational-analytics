@@ -25,3 +25,26 @@ def test_graph_component_real_schema_and_repeated_oracle(tmp_path):
     assert result['samples'][0]['output_unit_id']==result['samples'][1]['output_unit_id']
     assert all(s['independent_graph_equal'] and s['persisted_membership_verified'] for s in result['samples'])
     assert result['fixture']['predecessor_messages']==501
+
+
+def test_transition_total_includes_store_and_release(tmp_path):
+    from tools.analytics_insertion_diagnostic import Attribution
+    from app.analytics.graph_membership_selection import MembershipSelection
+    from datetime import datetime
+    import time
+    manifest=q.read_json(Path(__file__).resolve().parents[1]/'docs/analytics/acceptance-manifest.json')
+    f=component.GraphFixture(tmp_path,1000,datetime.fromisoformat(manifest['fixture']['evaluation_clock']))
+    original=MembershipSelection.discard
+    def release(value):
+        time.sleep(.01)
+        original(value)
+    try:
+        with patch.object(MembershipSelection,'discard',release):
+            sample=f.sample(Attribution(enabled=False),0)
+        names=('construct','store','prepare_selection','changed_segments','integrity','release_selection')
+        assert sample['selection_released'] is True
+        assert sample['intervals']['release_selection']['seconds'] >= .01
+        assert sample['complete_transition_seconds'] >= sum(sample['intervals'][n]['seconds'] for n in names)
+        assert sample['complete_transition_seconds'] > sample['selected_interval_seconds']
+        assert f.db.execute('SELECT COUNT(*) FROM conversation_graph_refs WHERE generation_id=?',(f.new_id,)).fetchone()[0]==0
+    finally:f.close()

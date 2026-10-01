@@ -242,6 +242,9 @@ class GraphFixture:
             with trace.span('component.graph.'+name): value=fn()
             times[name]=dict(seconds=time.monotonic()-start,thread_cpu_seconds=time.thread_time()-cpu)
             return value
+        transition_started=time.monotonic()
+        selection_rows=selection_bytes=0
+        released=False
         try:
             unit,removed=measured('construct',lambda:insertion.replace_suffix(self.reader(),self.previous,self.before,self.after,
                 input_digest=self.input_digest,config=self.current.header.config_digest,cutoff=self.current.header.retention_cutoff,
@@ -259,6 +262,13 @@ class GraphFixture:
             verified=measured('integrity',lambda:verify_generation_integrity(db,self.generation,self.account,proof=self.unit_proof,
                 graph_validation=self.validation,segments=self.segments,verified_changes=changes,check=check))
             if unit.header not in verified.headers:raise ValueError('component_integrity_missing')
+            selection_rows=selection.rows if selection else 0
+            selection_bytes=selection.bytes if selection else 0
+            measured('release_selection', lambda: selection.discard() if selection is not None else None)
+            released=True
+            # Include construction, real writes, validation, buffer release and
+            # glue, before starting the separately measured independent oracle.
+            transition_seconds=time.monotonic()-transition_started
             enabled=trace.enabled;trace.enabled=False
             try:
                 start=time.monotonic()
@@ -271,13 +281,14 @@ class GraphFixture:
                 groups_for_members(actual)
                 oracle_seconds=time.monotonic()-start
             finally:trace.enabled=enabled
-            return dict(index=index,intervals=times,selected_interval_seconds=sum(times[n]['seconds'] for n in
+            return dict(index=index,intervals=times,complete_transition_seconds=transition_seconds,
+                selected_interval_seconds=sum(times[n]['seconds'] for n in
                 ('construct','prepare_selection','changed_segments','integrity')),independent_graph_equal=True,
                 persisted_membership_verified=True,oracle_seconds=oracle_seconds,input_digest=self.input_digest,
                 output_unit_id=actual.header.unit_id,output_graph_digest=actual.header.graph_digest,
-                selected_rows=selection.rows if selection else 0,selected_bytes=selection.bytes if selection else 0)
+                selected_rows=selection_rows,selected_bytes=selection_bytes,selection_released=released)
         finally:
-            if selection is not None:selection.discard()
+            if selection is not None and not released:selection.discard()
             db.execute('ROLLBACK TO component_sample');db.execute('RELEASE component_sample');db.rollback()
 
     def close(self):
@@ -291,7 +302,9 @@ async def run_graph_component(args,q,light,outer,status,manifest,result,workdir)
     begun=time.monotonic()
     light.atomic_status(status,'graph-component-preparation')
     fixture=GraphFixture(workdir,args.messages,datetime.fromisoformat(manifest['fixture']['evaluation_clock']))
-    result.update(fixture=fixture.metadata,preparation_seconds=time.monotonic()-begun,samples=[])
+    result.update(fixture=fixture.metadata,preparation_seconds=time.monotonic()-begun,samples=[],
+        graph_measurement_recipe='a07-graph-transition.v2',
+        total_scope='construction + store + selection preparation + independent persisted validation + selection release; excludes separately executed oracle and fixture rollback')
     trace=Attribution(enabled=args.trace_mode!='none')
     counters={'chunk_traversals':0,'chunk_records':0}
     original=conversation_append._checked_record_spans
@@ -305,6 +318,20 @@ async def run_graph_component(args,q,light,outer,status,manifest,result,workdir)
             trace.patch(shared_graph,'selected_content_ids',lambda a,k:dict(requested_keys=len(a[4])))
             trace.patch(shared_graph,'_verified_changed_segment_chunks')
             trace.patch(conversation_integrity_store,'verify_generation_integrity')
+            from app.analytics import conversation_id_frames as frames, graph_membership_selection as selection
+            from app.analytics import conversation_graph_unit_sql as storage
+            trace.patch(frames, 'checked_predecessor_groups')
+            trace.patch(frames, 'canonical_groups')
+            trace.patch(frames.IdGroups, 'pack_contract', lambda a,k: dict(records=len(a[0])))
+            trace.patch(conversation_graph_insertion, 'create_membership_unit')
+            trace.patch(conversation_graph_insertion, 'summarize_group', lambda a,k: dict(records=len(a[4])))
+            trace.patch(conversation_graph_insertion, 'encode_manifest')
+            trace.patch(conversation_integrity_store, 'summarize_group', lambda a,k: dict(records=len(a[4])))
+            trace.patch(conversation_append, 'verified_chunk_content_ids', lambda a,k: dict(
+                chunk_records=a[0].count, chunk_bytes=len(a[1]), requested_keys=len(a[3])))
+            trace.patch(selection, '_request_frame', lambda a,k: dict(frame_records=a[3],compressed_bytes=len(a[2])))
+            trace.patch(selection, 'prepare_selection')
+            trace.patch(storage, 'load_unit')
             conversation_append._checked_record_spans=spans
         for index in range(args.focused_repeats):
             light.atomic_status(status,'graph-component-sample',index=index)
