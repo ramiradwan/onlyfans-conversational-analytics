@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
@@ -43,7 +43,7 @@ jobs:
         run: python tools/check_docs.py
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: 'npm'
@@ -52,7 +52,7 @@ jobs:
             extension/package-lock.json
 
       - name: Cache build caches
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             frontend/.vite
@@ -227,7 +227,7 @@ jobs:
         run: npm run qualify:snapshot:ci --prefix extension
 
       - name: Upload frontend build
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frontend-dist-${{ env.PRODUCT_SHA }}
           path: app/static/dist/
@@ -235,7 +235,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload audited extension artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: extension-dist-${{ env.PRODUCT_SHA }}
           path: extension/dist/
@@ -248,7 +248,7 @@ jobs:
 
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
 
@@ -269,7 +269,7 @@ jobs:
 
       - name: Cache native dependencies
         id: vcpkg-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}\ofca-vcpkg-cache
           key: ofca-vcpkg-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.image-version }}-${{ hashFiles('packaging/sqlcipher/fixed-runtime-sources.json', 'packaging/sqlcipher/build-fixed-wheel.py', 'packaging/sqlcipher/build-fixed-wheel.ps1') }}
@@ -297,7 +297,7 @@ jobs:
           $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM (Join-Path $wheelhouse "ci-source.json")
 
       - name: Retain fixed SQLCipher wheel and provenance
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
@@ -311,7 +311,7 @@ jobs:
 
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
 
@@ -352,7 +352,7 @@ jobs:
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: 'npm'
@@ -430,7 +430,7 @@ jobs:
           $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP\windows-persistence-ci-source.json"
 
       - name: Retain Windows persistence evidence
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-persistence-evidence-${{ env.PRODUCT_SHA }}
           path: |
@@ -459,7 +459,7 @@ jobs:
 
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
 
@@ -503,7 +503,7 @@ jobs:
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: 'npm'
@@ -514,7 +514,7 @@ jobs:
 
       - name: Cache Playwright Chromium
         id: playwright-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}\ms-playwright
           key: ofca-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/e2e-capture/package-lock.json') }}
@@ -579,7 +579,7 @@ jobs:
           --runtime-proof "$env:OFCA_LEGAL_RUNTIME_PROOF_PATH"
 
       - name: Upload Product #5 Legal evidence bundle
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: legal-activation-v2-${{ env.PRODUCT_SHA }}
           path: artifacts/legal/activation-v2/${{ env.PRODUCT_SHA }}/

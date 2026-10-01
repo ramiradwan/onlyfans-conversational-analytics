@@ -78,7 +78,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
           persist-credentials: false
@@ -93,7 +93,7 @@ jobs:
             requirements-dev.txt
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -136,7 +136,7 @@ jobs:
           --output "$EVIDENCE_DIR/linux-scale.json"
 
       - name: Checkout immutable Phase-A source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PHASE_A_SHA }}
           path: phase-a
@@ -153,7 +153,7 @@ jobs:
             > "$EVIDENCE_DIR/disposition-validation.json"
 
       - name: Upload Linux supplement evidence
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: retention-supplement-linux-${{ env.PRODUCT_SHA }}
           path: ${{ env.EVIDENCE_DIR }}/
@@ -165,7 +165,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
           persist-credentials: false
@@ -181,7 +181,7 @@ jobs:
             packaging/sqlcipher/fixed-runtime-sources.json
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -248,7 +248,7 @@ jobs:
           --junitxml="${{ env.EVIDENCE_DIR }}/windows-uninstall-junit.xml"
 
       - name: Upload Windows supplement evidence
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: retention-supplement-windows-${{ env.PRODUCT_SHA }}
           path: ${{ env.EVIDENCE_DIR }}/
@@ -260,7 +260,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
           persist-credentials: false
@@ -372,7 +372,7 @@ jobs:
           PY
 
       - name: Upload exact-head supplement
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: retention-phase-b-supplement-${{ env.PRODUCT_SHA }}
           path: ${{ env.EVIDENCE_DIR }}/
