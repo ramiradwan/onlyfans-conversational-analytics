@@ -35,8 +35,9 @@ def stored_unit_counts(unit):
 
 
 class UpdateAttribution(Attribution):
-    def __init__(self, *, enabled=True):
-        super().__init__(enabled=enabled, max_events=MAX_SPANS)
+    def __init__(self, *, enabled=True, max_events=MAX_SPANS, max_sql_groups=MAX_SQL_GROUPS):
+        super().__init__(enabled=enabled, max_events=max_events)
+        self.max_sql_groups = max_sql_groups
         self.sql_groups = {}
         self.missing_attributes = []
         self.extra_patches = []
@@ -98,7 +99,7 @@ class UpdateAttribution(Attribution):
                 elapsed, used = time.monotonic()-start, time.thread_time()-cpu
                 with self.lock:
                     if key not in self.sql_groups:
-                        if len(self.sql_groups) >= MAX_SQL_GROUPS:
+                        if len(self.sql_groups) >= self.max_sql_groups:
                             raise RuntimeError('full_update_sql_group_capacity_exceeded')
                         self.sql_groups[key] = dict(phase=key[0], parent=parent, store=store,
                             method=name, statement_sha256=fingerprint, calls=0, seconds=0.0,
@@ -213,7 +214,7 @@ class UpdateAttribution(Attribution):
             return dict(schema='a07-full-update-attribution.v1',
                         events=sorted(self.events,key=lambda e:e['id']),
                         sql_groups=list(self.sql_groups.values()),
-                        limits=dict(spans=MAX_SPANS,sql_groups=MAX_SQL_GROUPS),
+                        limits=dict(spans=self.max_events,sql_groups=self.max_sql_groups),
                         sql_scope='execute/executemany only; fetch and iteration remain in enclosing bulk spans',
                         self_time_note='Self time subtracts nested synchronous spans on the same thread only; SQL groups overlap spans.')
 

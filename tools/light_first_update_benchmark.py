@@ -50,8 +50,8 @@ def options():
         p.error('focused diagnostics cannot bind a qualification probe as their baseline')
     if args.component_kind == 'graph' and args.preparation != 'focused-component':
         p.error('--component-kind graph requires focused-component')
-    if args.full_attribution and (args.preparation != 'focused-update' or args.trace_mode != 'coarse'):
-        p.error('--full-attribution requires focused-update and coarse trace mode')
+    if args.full_attribution and (args.preparation not in ('focused-update', 'repeat1-prefix') or args.trace_mode != 'coarse'):
+        p.error('--full-attribution requires focused-update or repeat1-prefix and coarse trace mode')
     if args.timeout_seconds is None:
         args.timeout_seconds = 9000 if args.preparation == 'repeat1-prefix' else 1800
     if args.timeout_seconds <= 0:
@@ -341,7 +341,8 @@ async def run_repeat1_prefix(args, q, light, trace, status, manifest, result, wo
         q.write_once(args.output/'fixture.json', dict(definition=manifest['fixture'],
             manifest_sha256=q.digest(manifest), source_counts=work.counts(),
             kind_adapter='production_unknown_kinds', input_path='direct_synthetic_database_fixture'))
-        if args.trace_mode != 'none':
+        full_prefix = getattr(args, 'full_attribution', False)
+        if args.trace_mode != 'none' and not full_prefix:
             original_save = journal.save
             def save(label, value):
                 if label == 'operation-started':
@@ -351,7 +352,17 @@ async def run_repeat1_prefix(args, q, light, trace, status, manifest, result, wo
                     trace.phase = (value.get('case') or value['phase'])+'-verification'
                 return saved
             journal.save = save
-        report = await repeat1_prefix(work, journal, config, instance)
+        if full_prefix:
+            from tools.analytics_prefix_attribution import PrefixAttribution
+            observer = PrefixAttribution(journal, q, args.output)
+            try:
+                with observer:
+                    report = await repeat1_prefix(work, journal, config, instance)
+            finally:
+                result['prefix_attribution'] = observer.snapshot()
+                trace.events = observer.calls.snapshot()
+        else:
+            report = await repeat1_prefix(work, journal, config, instance)
         result['prefix_report'] = report
         result['summaries'] = [summarize_probe(probe) for probe in report['probes']]
         result['probe_checks'] = {probe['case']: q.check_visibility_probe(
@@ -484,6 +495,11 @@ def main():
                 result['full_attribution_requested'] = True
                 result['helper_sha256']['analytics_update_attribution.py'] = light.file_sha256(
                     root/'tools/analytics_update_attribution.py')
+            if args.full_attribution and args.preparation == 'repeat1-prefix':
+                result.update(attribution_recipe='a07-repeat1-update-attribution.v1',
+                    profiling=True, qualifies_latency=False)
+                result['helper_sha256']['analytics_prefix_attribution.py'] = light.file_sha256(
+                    root/'tools/analytics_prefix_attribution.py')
             q.write_once(args.output/'started.json', dict(result, complete=False))
             def expired():
                 q.write_once(args.output/'aborted.json', dict(complete=False, reason='timeout',
@@ -493,7 +509,7 @@ def main():
             watchdog.daemon = True
             watchdog.start()
             try:
-                if args.trace_mode != 'none' and not focused:
+                if args.trace_mode != 'none' and not focused and not (args.preparation == 'repeat1-prefix' and args.full_attribution):
                     trace.install(q)
                 def pulse():
                     while not heartbeat_stop.wait(30):

@@ -76,6 +76,10 @@ class Attribution:
                 return original(*args, **kwargs)
             counts = before(args, kwargs) if before else {}
             with self.span(label, **counts) as item:
+                # Another thread can close a diagnostic window between the
+                # initial enabled check and span entry. Preserve the call.
+                if not item:
+                    return original(*args, **kwargs)
                 answer = original(*args, **kwargs)
                 if after:
                     item["counts"].update(after(answer))
