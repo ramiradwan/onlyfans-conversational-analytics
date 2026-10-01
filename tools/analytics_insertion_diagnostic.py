@@ -96,10 +96,15 @@ class Attribution:
         self.patch(insertion, "match_inserted_source",
             lambda a,k: dict(source_records=len(a[1]["messages"]), previous_records=len(a[3])),
             lambda r: {} if r is None else dict(insertion_index=r[0],
-                reconstructed_metric_inputs=len(r[3]), shifted_records=len(r[2])-r[0]-1))
+                reconstructed_metric_inputs=0 if r[3] is None else len(r[3]), shifted_records=len(r[2])-r[0]-1))
         self.patch(metrics, "build_conversation_metrics_from_bound_values",
             lambda a,k: dict(metric_inputs=len(a[4])) if hasattr(a[4], "__len__") else {})
         self.patch(metrics, "append_conversation_metrics")
+        if hasattr(insertion, "build_inserted_metrics"):
+            self.patch(insertion, "build_inserted_metrics")
+            from app.analytics import tied_insertion_metrics
+            self.patch(tied_insertion_metrics, "tied_suffix_metrics",
+                lambda a,k: dict(suffix_records=len(a[1])))
         self.patch(insertion, "build_conversation_metrics_from_values")
         self.patch(inserted, "pack_insertion", lambda a,k: dict(previous_records=a[0].header.message_count))
         self.patch(inserted, "validate_inserted_unit", lambda a,k: dict(
@@ -243,8 +248,13 @@ def construct(previous, raw, operation, account, check):
             raise ValueError("focused_insertion_match_rejected")
         index, _, rows, inputs = matched
         rows[index] = units._canonical(added.model_dump(mode="json"))
-        inputs.insert(index, metrics.ConversationMetricInput.from_enrichment(added))
-        counts = insertion.build_conversation_metrics_from_values(account, conversation, inputs)
+        if hasattr(insertion, "build_inserted_metrics"):
+            # Follow the constructor's production helper; baseline revisions use
+            # their original full metric calculation. Instrumentation is identical.
+            counts = insertion.build_inserted_metrics(h, rows, index, added, check)
+        else:
+            inputs.insert(index, metrics.ConversationMetricInput.from_enrichment(added))
+            counts = insertion.build_conversation_metrics_from_values(account, conversation, inputs)
         findings = units.InsertedMessageEnrichments(rows, added, index, h.first_source_at)
         result = inserted.pack_insertion(previous, findings, counts, digest, h.config_digest,
                                          h.retention_cutoff, (), check)
