@@ -9,6 +9,7 @@ import asyncio
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
+import inspect
 from pathlib import Path
 import threading
 import time
@@ -65,6 +66,8 @@ class Attribution:
 
     def patch(self, owner, name, before=None, after=None):
         original = getattr(owner, name)
+        if inspect.isgeneratorfunction(original) or inspect.iscoroutinefunction(original):
+            raise ValueError("focused_trace_requires_synchronous_bulk_call")
         label = owner.__name__ + "." + name
         @wraps(original)
         def measured(*args, **kwargs):
@@ -136,7 +139,7 @@ class Attribution:
             self.patch(insertion, "try_insert", lambda a,k: proof_counts(a[5]))
             self.patch(append, "try_append", lambda a,k: proof_counts(a[6]))
             self.patch(conversation_graph_insertion, "replace_suffix")
-            for name in ("insert_page_sets", "checked_page_sets"):
+            for name in ("insert_page_sets",):
                 if hasattr(conversation_pages, name):
                     self.patch(conversation_pages, name)
 
@@ -335,7 +338,8 @@ async def run_component(args, q, light, outer, status, manifest, result, workdir
     trace = Attribution(enabled=args.trace_mode != "none")
     start = time.monotonic()
     try:
-        trace.install()
+        if trace.enabled:
+            trace.install()
         for repeat in range(args.focused_repeats):
             operations = ("append", "insert") if repeat % 2 == 0 else ("insert", "append")
             for operation in operations:

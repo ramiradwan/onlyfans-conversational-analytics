@@ -175,3 +175,34 @@ def test_focused_cli_does_not_relax_existing_recipe():
     for invalid in (['--seed', 'seed'], ['--idle-seconds', '61'], ['--baseline-operation', 'probe']):
         with patch('sys.argv', base + ['--preparation', 'focused-component', *invalid]):
             with pytest.raises(SystemExit): runner.options()
+
+
+def test_generator_and_coroutine_construction_are_not_work_timings():
+    def stream():
+        yield 1
+    async def task():
+        return 1
+    owner = SimpleNamespace(__name__='fixture', stream=stream, task=task)
+    trace = focused.Attribution()
+    for name in ('stream', 'task'):
+        with pytest.raises(ValueError, match='synchronous_bulk_call'):
+            trace.patch(owner, name)
+    assert not trace.patches
+    assert not trace.events
+
+
+def test_component_none_does_not_install_attribution(tmp_path, monkeypatch):
+    from pathlib import Path
+    from tools import analytics_qualification as q
+    manifest = q.read_json(Path(__file__).resolve().parents[1]/'docs/analytics/acceptance-manifest.json')
+    def forbidden(*args, **kwargs):
+        raise AssertionError('unprofiled run installed a patch')
+    monkeypatch.setattr(focused.Attribution, 'install', forbidden)
+    args = SimpleNamespace(messages=1000, trace_mode='none', focused_repeats=1, output=tmp_path)
+    result = {}
+    light = SimpleNamespace(atomic_status=lambda *a, **k: None)
+    asyncio.run(focused.run_component(args, q, light, None, tmp_path/'status.json', manifest, result, tmp_path/'work'))
+    assert result['complete'] is True
+    assert result['attribution'] == []
+    assert len(result['samples']) == 2
+    assert result['component_database_closed'] is True

@@ -29,13 +29,13 @@ $sha = (git -C $source rev-parse HEAD)
 C:\Python313\python.exe "$source\tools\qualification_host_guard.py" run --label focused-insertion -- C:\Python313\python.exe "$source\tools\light_first_update_benchmark.py" --source-root $source --expected-sha $sha --preparation focused-component --messages 100000 --focused-repeats 3 --trace-mode coarse --output C:\ofca-a07-focused-component-new --owner-lock C:\ofca-a07-u3-closure-20260927\owner.lock
 ```
 
-For integration dispatch use `--preparation focused-update --focused-operation insert --messages 10000`. For uninstrumented timing use `--trace-mode none`; no attribution patches are installed by the scheduled mode. The component mode installs inert pass-through wrappers only; no spans or bulk work counters are captured. Root construction, storage, validation and independent-verification durations remain separate.
+For integration dispatch use `--preparation focused-update --focused-operation insert --messages 10000`. For uninstrumented timing use `--trace-mode none`; neither mode installs attribution patches or captures spans and bulk work counters. Root construction, storage, validation and independent-verification durations remain separate.
 
 ## Reading the receipt
 
 `result.json` binds the source file hashes, signed source revision, runtime, manifest, runner and helper. It always marks these modes diagnostic-only and nonqualifying. Sample records include accepted branch, input/output digests, independent equality and timings. Error, trace overflow or incomplete shutdown prevents successful completion.
 
-Bulk spans record monotonic elapsed time, current-thread CPU, parent IDs and observed collection sizes. No source text, SQL arguments, row-level timers or in-operation diagnostic file writes are recorded. Nested durations overlap: use root intervals or `self_seconds`, not their sum. `seconds - thread_cpu_seconds` is not proof of disk waiting. The scheduled mode also retains existing executor submission/start/end and transaction/close tracing. Proof presence and predicate return values are observed without extra reads; a false predicate does not supply a more specific expiry or mismatch reason.
+Bulk spans record monotonic elapsed time, current-thread CPU, parent IDs and observed collection sizes. No source text, SQL arguments, row-level timers or in-operation diagnostic file writes are recorded. Generator and coroutine functions are refused rather than mistiming iterator creation as completed work. Nested durations overlap: use root intervals or `self_seconds`, not their sum. `seconds - thread_cpu_seconds` is not proof of disk waiting. The scheduled mode also retains existing executor submission/start/end and transaction/close tracing. Proof presence and predicate return values are observed without extra reads; a false predicate does not supply a more specific expiry or mismatch reason.
 
 Do not interpret a component speedup as a ten-second visibility pass. After a measured correction and focused safety checks, confirm the exact unprofiled prefix and then run the prescribed qualification campaign.
 
