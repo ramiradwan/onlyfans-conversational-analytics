@@ -35,6 +35,7 @@ def options():
     p.add_argument('--verify-after', action='store_true')
     p.add_argument('--focused-repeats', type=int, choices=range(1, 6), default=3)
     p.add_argument('--focused-operation', choices=['append', 'insert'], default='insert')
+    p.add_argument('--component-kind', choices=['enrichment', 'graph'], default='enrichment')
     p.add_argument('--full-attribution', action='store_true')
     args = p.parse_args()
     if args.preparation == 'ready' and args.seed is None:
@@ -47,6 +48,8 @@ def options():
         p.error('10000 messages is available only in focused diagnostics')
     if args.preparation.startswith('focused-') and args.baseline_operation:
         p.error('focused diagnostics cannot bind a qualification probe as their baseline')
+    if args.component_kind == 'graph' and args.preparation != 'focused-component':
+        p.error('--component-kind graph requires focused-component')
     if args.full_attribution and (args.preparation != 'focused-update' or args.trace_mode != 'coarse'):
         p.error('--full-attribution requires focused-update and coarse trace mode')
     if args.timeout_seconds is None:
@@ -468,6 +471,15 @@ def main():
                         'Nested spans overlap; use self_seconds or disjoint root spans.'])
                 result['helper_sha256']['analytics_insertion_diagnostic.py'] = light.file_sha256(
                     root/'tools/analytics_insertion_diagnostic.py')
+            if args.component_kind == 'graph':
+                result.update(component_kind='graph',preparation_recipe='a07-graph-transition-component.v1',
+                    limitations=['Graph-input component, not canonical/publication/scheduler/idle qualification.',
+                        'Actual production schema and selected membership/chunk validators; synthetic parent/witness/proofs supplied by fixture.',
+                        'Only touched segment payloads are persisted; complete source graph is used to recompute the oracle for every sample.',
+                        'Preparation of optional shared selections is included in the compared interval.',
+                        'All samples start from the same saved graph input and roll back; no cached PASS.'])
+                result['helper_sha256']['analytics_graph_component.py'] = light.file_sha256(
+                    root/'tools/analytics_graph_component.py')
             if args.full_attribution:
                 result['full_attribution_requested'] = True
                 result['helper_sha256']['analytics_update_attribution.py'] = light.file_sha256(
@@ -494,6 +506,9 @@ def main():
                 if focused:
                     from tools.analytics_insertion_diagnostic import run_component, run_update
                     entry = run_component if args.preparation == 'focused-component' else run_update
+                    if args.component_kind == 'graph':
+                        from tools.analytics_graph_component import run_graph_component
+                        entry = run_graph_component
                 else:
                     entry = {'cold': run_cold, 'ready': run, 'repeat1-prefix': run_repeat1_prefix}[args.preparation]
                 asyncio.run(entry(args, q, light, trace, status, manifest, result, workdir))
