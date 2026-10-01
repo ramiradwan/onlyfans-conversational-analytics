@@ -73,6 +73,9 @@ jobs:
 
       - name: Run Brain Tier A general state machine
         env:
+          CI_TEST_LANE: 'build-and-test-run-brain-tier-a-general-state-machine'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-run-brain-tier-a-general-state-machine'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-run-brain-tier-a-general-state-machine/junit.xml'
           HYPOTHESIS_PROFILE: tier_a_general
         run: >
           python -m pytest
@@ -83,6 +86,9 @@ jobs:
 
       - name: Run Brain Tier A deletion state machine
         env:
+          CI_TEST_LANE: 'build-and-test-run-brain-tier-a-deletion-state-machine'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-run-brain-tier-a-deletion-state-machine'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-run-brain-tier-a-deletion-state-machine/junit.xml'
           HYPOTHESIS_PROFILE: tier_a_deletion
         run: >
           python -m pytest
@@ -93,6 +99,9 @@ jobs:
 
       - name: Run Agent Tier A general state machine
         env:
+          CI_TEST_LANE: 'build-and-test-run-agent-tier-a-general-state-machine'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-run-agent-tier-a-general-state-machine'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-run-agent-tier-a-general-state-machine/junit.xml'
           HYPOTHESIS_PROFILE: agent_tier_a_general
         run: >
           python -m pytest
@@ -102,6 +111,9 @@ jobs:
 
       - name: Run Agent Tier A deletion state machine
         env:
+          CI_TEST_LANE: 'build-and-test-run-agent-tier-a-deletion-state-machine'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-run-agent-tier-a-deletion-state-machine'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-run-agent-tier-a-deletion-state-machine/junit.xml'
           HYPOTHESIS_PROFILE: agent_tier_a_deletion
         run: >
           python -m pytest
@@ -111,6 +123,9 @@ jobs:
 
       - name: Run deterministic analytics rebuilds
         env:
+          CI_TEST_LANE: 'build-and-test-run-deterministic-analytics-rebuilds'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-run-deterministic-analytics-rebuilds'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-run-deterministic-analytics-rebuilds/junit.xml'
           HYPOTHESIS_PROFILE: analytics_determinism_fast
         run: >
           python -m pytest
@@ -121,6 +136,9 @@ jobs:
 
       - name: Run incremental analytics convergence
         env:
+          CI_TEST_LANE: 'build-and-test-run-incremental-analytics-convergence'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-run-incremental-analytics-convergence'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-run-incremental-analytics-convergence/junit.xml'
           HYPOTHESIS_PROFILE: analytics_convergence_fast
         run: >
           python -m pytest
@@ -131,6 +149,9 @@ jobs:
 
       - name: Run derived deletion closure
         env:
+          CI_TEST_LANE: 'build-and-test-run-derived-deletion-closure'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-run-derived-deletion-closure'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-run-derived-deletion-closure/junit.xml'
           HYPOTHESIS_PROFILE: analytics_deletion_fast
         run: >
           python -m pytest
@@ -140,6 +161,10 @@ jobs:
           --hypothesis-show-statistics
 
       - name: Run analytics oracle falsifiers
+        env:
+          CI_TEST_LANE: 'build-and-test-run-analytics-oracle-falsifiers'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-run-analytics-oracle-falsifiers'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-run-analytics-oracle-falsifiers/junit.xml'
         run: >
           python -m pytest
           --override-ini=addopts=
@@ -166,6 +191,10 @@ jobs:
         run: lint-imports
 
       - name: Verify selected contract snapshot integrity
+        env:
+          CI_TEST_LANE: 'build-and-test-verify-selected-contract-snapshot-integrity'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-verify-selected-contract-snapshot-integrity'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-verify-selected-contract-snapshot-integrity/junit.xml'
         run: python -m pytest -m contract_integrity tests/test_contract_snapshot.py
 
       - name: Install frontend dependencies
@@ -196,12 +225,16 @@ jobs:
         run: git diff --exit-code -- frontend/src/theme/generated
 
       - name: Test backend
+        env:
+          CI_TEST_LANE: 'build-and-test-test-backend'
+          CI_REPORT_DIR: 'artifacts/ci-tests/build-and-test-test-backend'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/build-and-test-test-backend/junit.xml'
         run: >
           python -m pytest
           -m "not slow and not windows_production and not stateful_tier_a and not stateful_tier_b and not stateful_agent_tier_a"
           -vv
           --override-ini=faulthandler_timeout=120
-          --durations=30
+          --durations=50
 
       - name: Test frontend
         run: npm test --prefix frontend
@@ -240,6 +273,16 @@ jobs:
           name: extension-dist-${{ env.PRODUCT_SHA }}
           path: extension/dist/
           retention-days: 7
+          if-no-files-found: error
+
+
+      - name: Retain backend timing and selection
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ci-tests-build-and-test-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ci-tests/
+          retention-days: 14
           if-no-files-found: error
 
   fixed-sqlcipher-wheel:
@@ -386,37 +429,59 @@ jobs:
         run: npm run build --prefix extension
 
       - name: Test Windows production boot
+        env:
+          CI_TEST_LANE: 'windows-tests-test-windows-production-boot'
+          CI_REPORT_DIR: 'artifacts/ci-tests/windows-tests-test-windows-production-boot'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-tests-test-windows-production-boot/junit.xml'
         run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
 
       - name: Test Windows persistent SQLCipher general profile
         env:
+          CI_TEST_LANE: 'windows-tests-test-windows-persistent-sqlcipher-general-profile'
+          CI_REPORT_DIR: 'artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-general-profile'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-general-profile/junit.xml'
           HYPOTHESIS_PROFILE: tier_b_general
         run: >
           python -m pytest
           --override-ini=addopts=
           tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral
-          --junitxml="$env:RUNNER_TEMP\tier-b-general-junit.xml"
+          --junitxml=artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-general-profile/junit.xml
           -vv
 
       - name: Test Windows persistent SQLCipher deletion profile
         env:
+          CI_TEST_LANE: 'windows-tests-test-windows-persistent-sqlcipher-deletion-profile'
+          CI_REPORT_DIR: 'artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-deletion-profile'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-deletion-profile/junit.xml'
           HYPOTHESIS_PROFILE: tier_b_deletion
         run: >
           python -m pytest
           --override-ini=addopts=
           tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion
-          --junitxml="$env:RUNNER_TEMP\tier-b-deletion-junit.xml"
+          --junitxml=artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-deletion-profile/junit.xml
           -vv
 
       - name: Test Windows persistent SQLCipher smoke profile
         env:
+          CI_TEST_LANE: 'windows-tests-test-windows-persistent-sqlcipher-smoke-profile'
+          CI_REPORT_DIR: 'artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-smoke-profile'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-smoke-profile/junit.xml'
           HYPOTHESIS_PROFILE: windows_persistence_smoke
         run: >
           python -m pytest
           --override-ini=addopts=
           tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke
-          --junitxml="$env:RUNNER_TEMP\tier-b-smoke-junit.xml"
+          --junitxml=artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-smoke-profile/junit.xml
           -vv
+
+
+      - name: Preserve persistence evidence filenames
+        if: always()
+        shell: pwsh
+        run: |-
+          Copy-Item -LiteralPath "artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-general-profile/junit.xml" -Destination "$env:RUNNER_TEMP\tier-b-general-junit.xml"
+          Copy-Item -LiteralPath "artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-deletion-profile/junit.xml" -Destination "$env:RUNNER_TEMP\tier-b-deletion-junit.xml"
+          Copy-Item -LiteralPath "artifacts/ci-tests/windows-tests-test-windows-persistent-sqlcipher-smoke-profile/junit.xml" -Destination "$env:RUNNER_TEMP\tier-b-smoke-junit.xml"
 
       - name: Record Windows persistence CI source
         shell: pwsh
@@ -430,6 +495,7 @@ jobs:
           $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP\windows-persistence-ci-source.json"
 
       - name: Retain Windows persistence evidence
+        if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: windows-persistence-evidence-${{ env.PRODUCT_SHA }}
@@ -443,7 +509,21 @@ jobs:
           if-no-files-found: error
 
       - name: Test backend
+        env:
+          CI_TEST_LANE: 'windows-tests-test-backend'
+          CI_REPORT_DIR: 'artifacts/ci-tests/windows-tests-test-backend'
+          PYTEST_ADDOPTS: '-p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-tests-test-backend/junit.xml'
         run: python -m pytest
+
+
+      - name: Retain backend timing and selection
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ci-tests-windows-tests-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ci-tests/
+          retention-days: 14
+          if-no-files-found: error
 
   windows-browser-e2e:
     needs: fixed-sqlcipher-wheel
