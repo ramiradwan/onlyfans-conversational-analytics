@@ -36,6 +36,9 @@ def options():
     p.add_argument('--focused-repeats', type=int, choices=range(1, 6), default=3)
     p.add_argument('--focused-operation', choices=['append', 'insert'], default='insert')
     p.add_argument('--component-kind', choices=['enrichment', 'graph', 'reference-sql'], default='enrichment')
+    p.add_argument('--reference-sql-kind', choices=['graph','enrichment'], default='graph')
+    p.add_argument('--enrichment-index-probe', action='store_true')
+    p.add_argument('--enrichment-reference-case', choices=['dominant-insert','dominant-append','small-append'], default='dominant-insert')
     p.add_argument('--full-attribution', action='store_true')
     args = p.parse_args()
     if args.preparation == 'ready' and args.seed is None:
@@ -50,6 +53,10 @@ def options():
         p.error('focused diagnostics cannot bind a qualification probe as their baseline')
     if args.component_kind != 'enrichment' and args.preparation != 'focused-component':
         p.error('non-enrichment component kinds require focused-component')
+    if (args.reference_sql_kind!='graph' or args.enrichment_index_probe or args.enrichment_reference_case!='dominant-insert') and (args.component_kind!='reference-sql' or args.preparation!='focused-component'):
+        p.error('enrichment reference options require the reference-sql component')
+    if args.enrichment_index_probe and args.reference_sql_kind!='enrichment':
+        p.error('--enrichment-index-probe requires --reference-sql-kind enrichment')
     if args.full_attribution and (args.preparation not in ('focused-update', 'repeat1-prefix') or args.trace_mode != 'coarse'):
         p.error('--full-attribution requires focused-update or repeat1-prefix and coarse trace mode')
     if args.timeout_seconds is None:
@@ -498,6 +505,13 @@ def main():
                         'All samples reset in a savepoint; durability and scheduler lifecycle are not measured.'])
                 result['helper_sha256']['analytics_reference_sql_component.py'] = light.file_sha256(
                     root/'tools/analytics_reference_sql_component.py')
+            if args.component_kind=='reference-sql' and args.reference_sql_kind=='enrichment':
+                result.update(preparation_recipe='a07-enrichment-reference-sql.v1',reference_sql_kind='enrichment',
+                    enrichment_reference_case=args.enrichment_reference_case,experimental_index=args.enrichment_index_probe,
+                    limitations=['SQL-only fixture; no canonical publication or full-graph authority.',
+                        'Complete transition includes three actual commits and connection closes; reset and independent oracle are separate.',
+                        'Index-probe mode is an explicit disposable-fixture experiment, not a production migration.'])
+                result['helper_sha256']['analytics_enrichment_reference_sql.py']=light.file_sha256(root/'tools/analytics_enrichment_reference_sql.py')
             if args.full_attribution:
                 result['full_attribution_requested'] = True
                 result['helper_sha256']['analytics_update_attribution.py'] = light.file_sha256(
@@ -535,6 +549,9 @@ def main():
                     elif args.component_kind == 'reference-sql':
                         from tools.analytics_reference_sql_component import run_reference_sql_component
                         entry = run_reference_sql_component
+                        if args.reference_sql_kind=='enrichment':
+                            from tools.analytics_enrichment_reference_sql import run_enrichment_reference
+                            entry=run_enrichment_reference
                 else:
                     entry = {'cold': run_cold, 'ready': run, 'repeat1-prefix': run_repeat1_prefix}[args.preparation]
                 asyncio.run(entry(args, q, light, trace, status, manifest, result, workdir))
