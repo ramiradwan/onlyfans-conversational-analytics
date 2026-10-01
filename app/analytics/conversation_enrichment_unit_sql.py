@@ -348,31 +348,17 @@ def verify_generation_units(
         unit = ConversationEnrichmentUnit(
             header, content["message_bytes"], content["analyzer_bytes"]
         )
-        if (not materialize and trusted and _validate_appended_unit(
+        if (not materialize and trusted and validate_one_added_unit(
                 connection, validation.proof.generation_id,
-                trusted.get(header.conversation_ref), unit, check=check)):
+                trusted.get(header.conversation_ref), unit, check=check) is not None):
             continue
-        if not materialize and trusted:
-            from app.analytics.conversation_enrichment_insertion import validate_inserted_unit
-            if validate_inserted_unit(connection, validation.proof.generation_id,
-                    trusted.get(header.conversation_ref), unit, check=check):
-                continue
         messages.extend(
             _validate_unit(unit, check=check, materialize=materialize)
         )
     return headers, tuple(components), messages
 
 
-def _validate_appended_unit(connection, previous_generation, previous, unit, *, check):
-    """Verify an actual stored append against an independently checked predecessor."""
-    from datetime import timedelta
-    import hashlib
-    from app.analytics.conversation_enrichment_units import (
-        analyzer_frame, message_frame, _canonical, _unit_id,
-    )
-    from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
-    from app.models.analytics import MessageEnrichment
-    h = unit.header
+def _append_header_matches(previous, h):
     if (previous is None or previous.message_count < 128
             or h.message_count != previous.message_count + 1
             or h.account_ref != previous.account_ref
@@ -387,11 +373,28 @@ def _validate_appended_unit(connection, previous_generation, previous, unit, *, 
             or h.metrics.message_count != h.message_count
             or h.metrics.participant_ref != previous.metrics.participant_ref):
         return False
+    return True
+
+
+def _validate_appended_unit(connection, previous_generation, previous, unit, *, check):
+    """Independently validate an actual stored append, including frame digests."""
+    from app.analytics.conversation_enrichment_units import message_frame
+    if not _append_header_matches(previous, unit.header):
+        return False
     check()
-    old = load_unit(connection, previous_generation, h.account_ref, h.conversation_ref)
+    old = load_unit(connection, previous_generation, unit.header.account_ref, unit.header.conversation_ref)
     if old is None or old.header != previous:
         return False
-    old_frame, new_frame = message_frame(old), message_frame(unit)
+    return _validate_appended_frames(old, unit, message_frame(old), message_frame(unit), check=check)
+
+
+def _validate_appended_frames(old, unit, old_frame, new_frame, *, check):
+    from datetime import timedelta
+    import hashlib
+    from app.analytics.conversation_enrichment_units import analyzer_frame, _canonical, _unit_id
+    from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
+    from app.models.analytics import MessageEnrichment
+    previous, h = old.header, unit.header
     boundary = len(old_frame)
     if (len(new_frame) <= boundary or not new_frame.startswith(old_frame)
             or new_frame[boundary:boundary + 1] != b'\n'):
@@ -453,3 +456,29 @@ def _validate_appended_unit(connection, previous_generation, previous, unit, *, 
         return False
     check()
     return True
+
+
+def validate_one_added_unit(connection, previous_generation, previous, unit, *, check):
+    """Read each actual frame once for append/insertion dispatch in this call.
+
+    The caller must first bind the independently verified predecessor proof.
+    No decoded frame or expected-result object is accepted from the constructor.
+    All buffers are local; no validation result or cache survives this call.
+    """
+    from app.analytics.conversation_enrichment_insertion import _insert_header_matches, _validate_inserted_frames
+    from app.analytics.conversation_enrichment_units import message_frame
+    appended = _append_header_matches(previous, unit.header)
+    inserted = _insert_header_matches(previous, unit.header)
+    if not appended and not inserted:
+        return None
+    check()
+    old = load_unit(connection, previous_generation, unit.header.account_ref, unit.header.conversation_ref)
+    if old is None or old.header != previous:
+        return None
+    before, after = message_frame(old), message_frame(unit)
+    check()
+    if appended and _validate_appended_frames(old, unit, before, after, check=check):
+        return 'append'
+    if inserted and _validate_inserted_frames(old, unit, before, after, check=check):
+        return 'insert'
+    return None

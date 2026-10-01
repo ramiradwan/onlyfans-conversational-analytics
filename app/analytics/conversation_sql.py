@@ -31,6 +31,7 @@ def fragment_reader(store, account_id):
     partition = account_ref(account_id)
     with store.database.read() as db, generation_verification_cache(db):
         reader_open = [True]
+        loaded_enrichment_unit = [None]
         generation = db.execute("""SELECT * FROM projection_generations
             WHERE creator_account_id=? AND status='active' AND activated_at IS NOT NULL""",
             (partition,)).fetchone()
@@ -142,6 +143,28 @@ def fragment_reader(store, account_id):
                         and enrichment_headers.get(conversation) == value.header
                     ) else None
                 load.enrichment_unit_reference = enrichment_unit_reference
+                def previous_enrichment_unit(conversation):
+                    # A failed next read must not leave the preceding selection
+                    # authorized by this reader's one-unit identity binding.
+                    loaded_enrichment_unit[0] = None
+                    if not reader_open[0]:
+                        return None
+                    unit = enrichment_units.load_unit(db, generation['generation_id'], partition, conversation)
+                    if unit is None or enrichment_headers.get(conversation) != unit.header:
+                        return None
+                    loaded_enrichment_unit[0] = unit
+                    return unit
+                def matched_enrichment_source(raw, unit, check):
+                    if (not reader_open[0] or unit is None or unit is not loaded_enrichment_unit[0]
+                            or enrichment_headers.get(unit.header.conversation_ref) != unit.header):
+                        return None
+                    from app.analytics.conversation_enrichment_units import message_records
+                    from app.analytics.conversation_insertion import match_proven_inserted_source
+                    rows = message_records(unit)
+                    matched = match_proven_inserted_source(account_id, raw, unit.header, rows, check)
+                    return None if matched is None else (rows, matched)
+                load.previous_enrichment_unit = previous_enrichment_unit
+                load.matched_enrichment_source = matched_enrichment_source
                 from app.analytics.conversation_page_sql import load_page_header
                 from app.analytics.conversation_pages import trusted_page_reference
                 def enrichment_page_reference(conversation, input_digest, config_digest):
@@ -232,6 +255,7 @@ def fragment_reader(store, account_id):
             yield load
         finally:
             reader_open[0] = False
+            loaded_enrichment_unit[0] = None
             if graph_unit_proof is not None:
                 loaded_graph_unit[0] = None
             if graph_segment_proof is not None:

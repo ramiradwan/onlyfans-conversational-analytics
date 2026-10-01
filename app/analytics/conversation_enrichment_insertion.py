@@ -66,29 +66,11 @@ def pack_insertion(previous, findings, metrics, input_digest, config, cutoff, en
     return ConversationEnrichmentUnit(header, messages, analyzers)
 
 
-def _ordinary_record_fields(raw, ordinal):
-    """Keep legacy ordinal/timestamp admission without decoding canonical rows.
+# Compatibility alias: admission semantics are unchanged.
+from app.analytics.enrichment_prefix import ordinary_record_fields as _ordinary_record_fields
 
-    The predecessor frame is already digest-bound and independently validated.
-    Unescaped, unique field names make these two lexical checks unambiguous.
-    Whitespace, escapes, duplicate keys or unusual encodings use JSON parsing.
-    """
-    token = b'"source_ordinal":' + str(ordinal).encode('ascii')
-    if (b'\\' not in raw and raw.count(b'"source_ordinal"') == 1
-            and raw.count(b'"sent_at"') == 1 and b'"sent_at":"' in raw
-            and (token+b',' in raw or token+b'}' in raw)):
-        return True
-    value = json.loads(raw)
-    return (type(value['source_ordinal']) is int and value['source_ordinal'] == ordinal
-            and isinstance(value['sent_at'], str))
 
-def validate_inserted_unit(connection, previous_generation, previous, unit, *, check):
-    """No constructor hint is trusted: read and compare the actual persisted rows."""
-    from app.analytics.conversation_enrichment_unit_sql import load_unit
-    from app.analytics.metrics import build_conversation_metrics_from_bound_values
-    from app.analytics.conversation_insertion import metric_input
-    from app.models.analytics import MessageEnrichment
-    h = unit.header
+def _insert_header_matches(previous, h):
     if (previous is None or not previous.message_count or h.message_count > MAX_ENRICHMENT_UNIT_RECORDS
             or h.message_count != previous.message_count+1
             or h.account_ref != previous.account_ref or h.conversation_ref != previous.conversation_ref
@@ -99,11 +81,29 @@ def validate_inserted_unit(connection, previous_generation, previous, unit, *, c
             or h.metrics.participant_ref != previous.metrics.participant_ref
             or h.metrics.message_count != h.message_count or h.metrics.unread_count != previous.metrics.unread_count):
         return False
+    return True
+
+
+def validate_inserted_unit(connection, previous_generation, previous, unit, *, check):
+    """Read actual stored frames; callers cannot supply a decoded-result hint."""
+    from app.analytics.conversation_enrichment_unit_sql import load_unit
+    from app.analytics.conversation_enrichment_units import message_frame
+    if not _insert_header_matches(previous, unit.header):
+        return False
     check()
-    old = load_unit(connection, previous_generation, h.account_ref, h.conversation_ref)
+    old = load_unit(connection, previous_generation, unit.header.account_ref, unit.header.conversation_ref)
     if old is None or old.header != previous:
         return False
-    before, after = message_records(old), message_records(unit)
+    return _validate_inserted_frames(old, unit, message_frame(old), message_frame(unit), check=check)
+
+
+def _validate_inserted_frames(old, unit, before_frame, after_frame, *, check):
+    """Pure checking after this module's caller read and digest-checked frames."""
+    from app.analytics.metrics import build_conversation_metrics_from_bound_values
+    from app.analytics.conversation_insertion import metric_input
+    from app.models.analytics import MessageEnrichment
+    previous, h = old.header, unit.header
+    before, after = before_frame.splitlines(), after_frame.splitlines()
     insertion = None
     for index, (left, right) in enumerate(zip(before, after)):
         check()
@@ -121,7 +121,6 @@ def validate_inserted_unit(connection, previous_generation, previous, unit, *, c
     # is the actual persisted predecessor content, already independently proved.
     # Compare the bounded changed suffix, not new models of that equal prefix.
     reference = added.message_ref.encode('ascii')
-    before_frame = b'\n'.join(before)
     if reference in before_frame or b'\\' in before_frame:
         # Legal escaped JSON needs parsing to establish identity absence.
         for raw in before:
@@ -129,10 +128,10 @@ def validate_inserted_unit(connection, previous_generation, previous, unit, *, c
             if ((reference in raw or b'\\' in raw)
                     and json.loads(raw)['message_ref'] == added.message_ref):
                 return False
-    for ordinal in range(insertion):
-        check()
-        if not _ordinary_record_fields(before[ordinal], ordinal):
-            return False
+    from itertools import islice
+    from app.analytics.enrichment_prefix import ordinary_records
+    if not ordinary_records(islice(before, insertion), check=check):
+        return False
     suffix = []
     for index in range(insertion, len(before)):
         check()

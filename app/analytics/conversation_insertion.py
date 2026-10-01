@@ -88,6 +88,12 @@ def match_inserted_source(account, raw, previous, rows, check):
     return insertion, old_raw, output, None
 
 
+def match_proven_inserted_source(account, raw, previous, rows, check):
+    """The caller must bind rows to an independently verified source unit."""
+    from app.analytics.enrichment_prefix import match_source
+    return match_source(account, raw, previous, rows, check, limit=PAGE_RECORDS)
+
+
 def build_inserted_metrics(previous, rows, index, inserted, check):
     """Compute from source-matched rows; never trust a supplied metric result."""
     from app.analytics import tied_insertion_metrics
@@ -162,14 +168,25 @@ def try_insert(pipeline, account, revision, raw, input_digest, loader, reuse, co
             or old_graph.header.account_ref != partition or old_graph.header.conversation_ref != ref
             or old_graph.header.expires_at <= pipeline._retention_clock()):
         return None
-    pair = pipeline.projections.load_enrichment_unit_contents(partition, [previous.unit_id]).get(previous.unit_id)
-    if pair is None:
-        return None
-    unit = ConversationEnrichmentUnit(previous, pair[0], pair[1])
-    rows = message_records(unit)
-    matched = match_inserted_source(account, raw, previous, rows, check)
-    if matched is None:
-        return None
+    bound_read = getattr(loader, 'previous_enrichment_unit', None)
+    bound_match = getattr(loader, 'matched_enrichment_source', None)
+    if previous.message_count >= 1024 and callable(bound_read) and callable(bound_match):
+        unit = bound_read(ref)
+        if unit is None or unit.header != previous:
+            return None
+        selection = bound_match(raw, unit, check)
+        if selection is None:
+            return None
+        rows, matched = selection
+    else:
+        pair = pipeline.projections.load_enrichment_unit_contents(partition, [previous.unit_id]).get(previous.unit_id)
+        if pair is None:
+            return None
+        unit = ConversationEnrichmentUnit(previous, pair[0], pair[1])
+        rows = message_records(unit)
+        matched = match_inserted_source(account, raw, previous, rows, check)
+        if matched is None:
+            return None
     index, old_raw, output, values = matched
     start = max(0, index-1)
     conversation = CanonicalConversation.model_validate(dict(raw, messages=raw['messages'][start:]))
