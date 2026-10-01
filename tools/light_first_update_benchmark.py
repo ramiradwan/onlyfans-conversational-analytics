@@ -23,8 +23,8 @@ def options():
     p.add_argument('--source-root', type=Path, required=True)
     p.add_argument('--expected-sha', required=True)
     p.add_argument('--seed', type=Path)
-    p.add_argument('--preparation', choices=['ready', 'cold', 'repeat1-prefix'], default='ready')
-    p.add_argument('--messages', type=int, choices=[1000, 100000], default=100000)
+    p.add_argument('--preparation', choices=['ready', 'cold', 'repeat1-prefix', 'focused-component', 'focused-update'], default='ready')
+    p.add_argument('--messages', type=int, choices=[1000, 10000, 100000], default=100000)
     p.add_argument('--baseline-operation', type=Path)
     p.add_argument('--timeout-seconds', type=float)
     p.add_argument('--trace-mode', choices=['none', 'coarse'], default='coarse')
@@ -33,6 +33,8 @@ def options():
     p.add_argument('--case', choices=['small', 'dominant'], default='small')
     p.add_argument('--idle-seconds', type=float, default=0)
     p.add_argument('--verify-after', action='store_true')
+    p.add_argument('--focused-repeats', type=int, choices=range(1, 6), default=3)
+    p.add_argument('--focused-operation', choices=['append', 'insert'], default='insert')
     args = p.parse_args()
     if args.preparation == 'ready' and args.seed is None:
         p.error('--seed is required for ready preparation')
@@ -40,6 +42,10 @@ def options():
         p.error('fresh preparation does not permit seed reuse or an inserted idle')
     if args.preparation == 'repeat1-prefix' and args.baseline_operation:
         p.error('repeat1-prefix cannot bind a v6 single-operation manifest as v7')
+    if args.messages == 10000 and not args.preparation.startswith('focused-'):
+        p.error('10000 messages is available only in focused diagnostics')
+    if args.preparation.startswith('focused-') and args.baseline_operation:
+        p.error('focused diagnostics cannot bind a qualification probe as their baseline')
     if args.timeout_seconds is None:
         args.timeout_seconds = 9000 if args.preparation == 'repeat1-prefix' else 1800
     if args.timeout_seconds <= 0:
@@ -393,6 +399,7 @@ def main():
         limitations=['Does not replay cold construction or its physical WAL history.',
                      'Cross-source seed is explicit, not relabelled candidate seed.',
                      'Coarse attribution enabled; not frozen latency qualification.'])
+    focused = args.preparation.startswith('focused-')
     trace = Trace()
     guard = None
     workdir = args.output/'work'
@@ -444,6 +451,20 @@ def main():
                     repeat=1, profiling=args.trace_mode != 'none',
                     limitations=['Diagnostic prefix, not full or packaged qualification.',
                                  'One sample cannot establish causality or a speedup.'])
+            if focused:
+                result.update(schema='a07-focused-insertion.v1',
+                    preparation_recipe=args.preparation+'.v1',
+                    startup_mode='isolated_content_component' if args.preparation == 'focused-component'
+                        else 'fresh_shortened_scheduled_fixture',
+                    focused_repeats=args.focused_repeats, focused_operation=args.focused_operation,
+                    profiling=args.trace_mode != 'none', qualifies_latency=False,
+                    limitations=['Not the v7 lifecycle prefix or a qualification run.',
+                        'Component mode excludes graph work, source-proof admission, scheduler, idle and disk waits.',
+                        'Scheduled mode retains real validation and shutdown but omits the forced-rebuild/idle lifecycle.',
+                        'Append versus insert is an operation-cost comparison, not a candidate speedup.',
+                        'Nested spans overlap; use self_seconds or disjoint root spans.'])
+                result['helper_sha256']['analytics_insertion_diagnostic.py'] = light.file_sha256(
+                    root/'tools/analytics_insertion_diagnostic.py')
             q.write_once(args.output/'started.json', dict(result, complete=False))
             def expired():
                 q.write_once(args.output/'aborted.json', dict(complete=False, reason='timeout',
@@ -453,7 +474,7 @@ def main():
             watchdog.daemon = True
             watchdog.start()
             try:
-                if args.trace_mode != 'none':
+                if args.trace_mode != 'none' and not focused:
                     trace.install(q)
                 def pulse():
                     while not heartbeat_stop.wait(30):
@@ -463,7 +484,11 @@ def main():
                 heartbeat_stop = threading.Event()
                 heartbeat = threading.Thread(target=pulse, name='first-update-heartbeat', daemon=True)
                 heartbeat.start()
-                entry = {'cold': run_cold, 'ready': run, 'repeat1-prefix': run_repeat1_prefix}[args.preparation]
+                if focused:
+                    from tools.analytics_insertion_diagnostic import run_component, run_update
+                    entry = run_component if args.preparation == 'focused-component' else run_update
+                else:
+                    entry = {'cold': run_cold, 'ready': run, 'repeat1-prefix': run_repeat1_prefix}[args.preparation]
                 asyncio.run(entry(args, q, light, trace, status, manifest, result, workdir))
             finally:
                 watchdog.cancel()
@@ -487,6 +512,8 @@ def main():
                 and not result['summary']['gate'] else 'NOT_REPRODUCED')
             if args.preparation == 'repeat1-prefix':
                 result['reproduction_status'] = prefix_outcome(result, args.messages)
+            if focused:
+                result['reproduction_status'] = 'FOCUSED_DIAGNOSTIC_COMPLETE' if result['complete'] else 'INCOMPLETE'
             if workdir.exists():
                 shutil.rmtree(workdir)
             result['working_copy_removed'] = not workdir.exists()
