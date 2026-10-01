@@ -7,6 +7,8 @@ import pytest
 from tools import analytics_qualification_worker as worker
 from tools.analytics_qualification_fixture import Journal
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @pytest.mark.asyncio
 async def test_initial_visibility_process_keeps_periodic_maintenance_enabled(tmp_path, monkeypatch):

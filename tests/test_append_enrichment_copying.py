@@ -9,6 +9,10 @@ from app.analytics.conversation_enrichment_units import analyzer_records, messag
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message
 from tests.test_dominant_append_reuse import dominant_fixture
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def active_unit(f):
     with f.stores.database.read() as db:

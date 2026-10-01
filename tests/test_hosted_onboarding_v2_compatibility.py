@@ -10,6 +10,10 @@ from app.provisioning.claim_package import (
 )
 from app.security.hosted_grants import CLAIM_PROFILE_V2
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PIN = ROOT / "contracts" / "consumer-pin.json"

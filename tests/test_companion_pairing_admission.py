@@ -35,6 +35,8 @@ from app.persistence.companion_pairing import (
     CompanionPin,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @dataclass
 class Clock:

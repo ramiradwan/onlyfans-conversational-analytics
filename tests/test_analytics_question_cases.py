@@ -10,6 +10,8 @@ import pytest
 
 from tests.state_models.analytics_question_cases import load_cases, validate_case
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 CASES = load_cases()
 BY_ID = {case["id"]: case for case in CASES}
 

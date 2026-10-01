@@ -14,6 +14,8 @@ from tests.continuous_analytics_fixture import (
     ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message, make_fixture,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def fixture(tmp_path):

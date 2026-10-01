@@ -8,6 +8,8 @@ from app.analytics.errors import ProjectionUnavailable
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_completed_publication_refreshes_an_expired_identity(tmp_path, monkeypatch):
     f = make_fixture(tmp_path)

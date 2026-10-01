@@ -38,6 +38,8 @@ from app.provisioning.session import (
 )
 from app.security.grant_types import PROVISIONING_GRANT_TYPES
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ORGANIZATION_ID = "organization-1"
 INSTALLATION_ID = "installation-1"

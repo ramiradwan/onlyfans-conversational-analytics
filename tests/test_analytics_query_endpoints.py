@@ -26,6 +26,8 @@ from app.api.security import csrf_token
 from app.services import insights_service
 from tests.test_analytics_evidence import stored, policy, ACCOUNT, OTHER, LOCATION, NOW as FIXTURE_NOW
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 SOURCE_NOW = datetime.now(timezone.utc).replace(microsecond=0)
 NOW = SOURCE_NOW + timedelta(days=1)
 

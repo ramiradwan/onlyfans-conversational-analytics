@@ -9,6 +9,8 @@ import pytest
 import app.main as main_module
 from app.analytics import runtime as analytics_runtime
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 class _EmptyCanonicalSource:
     """Sufficient explicit source for registry-only lifecycle coverage."""

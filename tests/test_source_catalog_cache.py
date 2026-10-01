@@ -9,6 +9,8 @@ from app.analytics.identity import canonical_identity, CanonicalIdentity
 from app.analytics.source_tokens import SourceIdentityCache, SourceToken
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def fixture(tmp_path, monkeypatch):

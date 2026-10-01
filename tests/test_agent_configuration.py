@@ -24,6 +24,8 @@ from app.services.agent_configuration import (
 )
 from app.transport import DEV_ACCOUNT_ID
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 # The revision a first publication on top of the bootstrap document issues.

@@ -9,6 +9,8 @@ from tools import analytics_qualification as q
 from tools import analytics_qualification_runner as runner
 from tests.test_analytics_closure_qualification import source
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

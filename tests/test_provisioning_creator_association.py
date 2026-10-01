@@ -38,6 +38,10 @@ from app.security.hosted_grants import (
     TransportResponse,
 )
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 CLAIM_ID = "claim-1"
 ONBOARDING_TRANSACTION_ID = "onboarding-1"

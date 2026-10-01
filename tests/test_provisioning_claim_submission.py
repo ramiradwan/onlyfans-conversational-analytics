@@ -54,6 +54,8 @@ from app.security.installation_key import (
 )
 from contracts.loader import ContractsIntegrityError
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 _P256_ORDER = int(
     "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16

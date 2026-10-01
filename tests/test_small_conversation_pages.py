@@ -13,6 +13,8 @@ from tests.continuous_analytics_fixture import (
 )
 from tests.test_shared_conversation_pages import counts
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def fixture(tmp_path):

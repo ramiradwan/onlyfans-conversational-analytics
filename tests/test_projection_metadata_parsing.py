@@ -11,6 +11,8 @@ from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
 from app.persistence import sqlite_api
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.parametrize('field,value', [('projection_generation',55),('source_message_count',0),
     ('first_source',None),('first_source','2000-01-01T00:00:00Z'),

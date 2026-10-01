@@ -9,6 +9,8 @@ from app.analytics.identity import canonical_identity
 from app.persistence.projection_activation import _sqlite_identity, _sqlite_identity_matches
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def fixture(tmp_path, monkeypatch):

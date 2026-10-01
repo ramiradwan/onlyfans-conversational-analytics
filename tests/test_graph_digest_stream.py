@@ -9,6 +9,8 @@ from pydantic import ValidationError
 from app.analytics.graph_privacy import graph_content_digest
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_record_stream_matches_whole_document_encoding(tmp_path):
     f = make_fixture(tmp_path)

@@ -13,6 +13,8 @@ from app.analytics.query_execution import QuestionBudget, QuestionLimits, Questi
 from app.analytics.query_handlers import _last
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup, insert_message
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def resolved(start=None, end=None, cutoff=None):
     plan = QuestionPlan(question='no_later_creator_reply.v1', timezone='UTC',

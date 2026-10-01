@@ -6,6 +6,8 @@ import pytest
 from tools import analytics_qualification as q
 from tools.analytics_qualification_profile import install
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @pytest.mark.parametrize("failure", [False, True])
 def test_profile_preserves_results_and_errors(tmp_path, failure):

@@ -15,6 +15,8 @@ from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
 from app.persistence import sqlite_api
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cleanup, cold_equal, make_fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def rows(fixture):
     with fixture.stores.database.read() as db:

@@ -14,6 +14,8 @@ from app.analytics.pipeline import AnalyticsPipeline
 from app.canonical.read_models import AccountReadModel
 from app.persistence.projection_activation import InMemoryProjectionActivationRepository
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 NOW = datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
 ACCOUNT = "synthetic-cache-owner"
 

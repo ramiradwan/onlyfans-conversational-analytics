@@ -5,6 +5,10 @@ from importlib import resources
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

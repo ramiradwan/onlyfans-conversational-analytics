@@ -12,6 +12,8 @@ from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from app.analytics.scheduling import InProcessProjectionScheduler
 from tests.continuous_analytics_fixture import ACCOUNT, cleanup, make_fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def source_fixture(tmp_path, monkeypatch):

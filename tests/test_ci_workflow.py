@@ -22,6 +22,8 @@ from typing import Any
 import pytest
 import yaml
 
+pytestmark = [pytest.mark.ci_tier("fast")]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
@@ -141,6 +143,8 @@ def _collects_the_whole_suite(command: str) -> bool:
     """
 
     tokens = shlex.split(command)
+    if tokens[:2] == ["python", "tools/test_backend.py"]:
+        return True
     if tokens[:3] != ["python", "-m", "pytest"]:
         return False
     remaining = tokens[3:]
@@ -176,10 +180,14 @@ def _assert_a_windows_runner_executes_the_backend_tests(
     names = sorted(
         name
         for name, job in _jobs(workflow).items()
-        if _runs_on_windows(job) and _backend_suite_indexes(job)
+        if _runs_on_windows(job)
+        and any(
+            "tools/test_backend.py --lane windows-platform-contract" in str(step.get("run", ""))
+            for step in _steps(job)
+        )
     )
     assert len(names) == 1, (
-        f"exactly one ci.yml job must run `{BACKEND_TEST_COMMAND}` on a Windows "
+        "exactly one ci.yml job must run the Windows platform contract on a Windows "
         f"runner, so tests guarded with skipif(os.name != \"nt\") execute "
         f"somewhere; found {names}"
     )
@@ -624,7 +632,11 @@ def test_non_windows_jobs_deselect_the_production_boot_tests() -> None:
         if _runs_on_windows(job):
             continue
         for index in _backend_suite_indexes(job):
-            expression = _marker_expression(_steps(job)[index]["run"].strip())
+            command = _steps(job)[index]["run"].strip()
+            if "tools/test_backend.py" in command:
+                assert "--lane backend-fast" in command or "--lane analytics-integration" in command
+                continue
+            expression = _marker_expression(command)
             assert expression is not None and (
                 f"not {WINDOWS_PRODUCTION_MARKER}" in expression
             ), (

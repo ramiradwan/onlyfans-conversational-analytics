@@ -9,6 +9,8 @@ from app.analytics.currentness import GenerationCurrentness
 from app.analytics.sqlite_projection_store import ProjectionValidationError
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def fixture(tmp_path, monkeypatch):

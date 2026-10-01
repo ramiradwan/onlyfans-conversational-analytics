@@ -6,7 +6,10 @@ from tools import analytics_qualification as qualification
 from tools.analytics_qualification_worker import collect
 from tests.test_analytics_closure_collectors import configuration
 
+pytestmark = [pytest.mark.ci_tier('scale')]
 
+
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 @pytest.mark.parametrize("case,state", [
     ("populated", "idle"),

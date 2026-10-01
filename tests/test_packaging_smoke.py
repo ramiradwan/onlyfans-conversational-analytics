@@ -27,9 +27,9 @@ import inno_setup_compiler
 import visible_windows
 
 
-pytestmark = pytest.mark.skipif(
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial, pytest.mark.skipif(
     os.name != "nt", reason="drives a real Windows installer via pwsh.exe"
-)
+)]
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE_SCRIPT = ROOT / "tools" / "packaging-smoke" / "run.ps1"

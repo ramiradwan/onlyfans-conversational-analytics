@@ -10,6 +10,8 @@ import pytest
 
 from tools.analytics_qualification_process import supervise
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

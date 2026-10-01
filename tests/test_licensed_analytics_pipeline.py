@@ -5,6 +5,8 @@ import pytest
 from app.analytics.licensed_pipeline import LicensedAnalyticsPipeline
 from app.security.runtime_policy import RuntimeAuthorizationDenied
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 class _UnusedSource:
     def __init__(self) -> None:

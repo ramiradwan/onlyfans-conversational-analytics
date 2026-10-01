@@ -7,6 +7,8 @@ from tests.continuous_analytics_fixture import ACCOUNT
 from tests.test_shared_graph import fixture
 from tests.test_sqlite_backup import open_encrypted_backup, refresh_external_hash
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.parametrize('kind,property_name,value', [
     ('node', 'character_count', 999),

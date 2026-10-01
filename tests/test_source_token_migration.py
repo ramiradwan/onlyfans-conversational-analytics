@@ -9,6 +9,10 @@ from app.persistence.database import CanonicalSQLite
 from app.persistence.migrations import MigrationRunner
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, insert_message
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_populated_canonical_upgrade_preserves_exact_source_identity(tmp_path):
     catalog = tmp_path/'catalog'

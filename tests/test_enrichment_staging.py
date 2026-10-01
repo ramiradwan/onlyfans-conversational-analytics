@@ -14,6 +14,8 @@ from app.analytics.enrichment_sql import INSERT_BATCH_SIZE, insert_entries
 from app.analytics.errors import ProjectionBuildCancelled
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture(scope='module')
 def sample(tmp_path_factory):

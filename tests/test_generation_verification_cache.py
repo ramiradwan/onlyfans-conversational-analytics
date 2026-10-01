@@ -10,6 +10,8 @@ from app.analytics.database import (
 from app.analytics.errors import ProjectionBuildCancelled
 from app.persistence import sqlite_api as sqlite3
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def connection():

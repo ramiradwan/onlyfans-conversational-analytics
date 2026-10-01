@@ -25,6 +25,8 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
 HELPER_PATH = (

@@ -6,6 +6,8 @@ import re
 import pytest
 from sqlcipher3 import dbapi2 as sqlite3
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.parametrize('kind', ['node', 'edge'])
 def test_admission_query_is_bounded_by_the_exact_page(kind):

@@ -7,6 +7,8 @@ import pytest
 
 from tools import analytics_qualification as q
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 MANIFEST = q.read_json(Path(__file__).resolve().parents[1] / "docs/analytics/acceptance-manifest.json")
 
 

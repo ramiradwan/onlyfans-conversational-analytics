@@ -60,6 +60,8 @@ from tests.state_models.analytics_oracle import (
     normalize_convergence_artifact,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 EVALUATION_CLOCK = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
 CREATOR_ID = "analytics_convergence-synthetic-creator"
@@ -974,6 +976,7 @@ def _run_deletion(
     return latest, rebuilt, context, trace, pre_chat_delete, repositories
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 class TestAnalyticsConvergence:
     @given(history=general_histories())
@@ -983,6 +986,7 @@ class TestAnalyticsConvergence:
         _run_generated_history(history, _run_general)
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 class TestAnalyticsDeletionConvergence:
     @given(history=deletion_histories())
@@ -992,6 +996,7 @@ class TestAnalyticsDeletionConvergence:
         _run_generated_history(history, _run_deletion)
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 def test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults() -> None:
     """Every named negative control fails through the shared canonical oracle."""
@@ -1088,6 +1093,7 @@ def _deletion_counterexample_case() -> tuple[Any, Any, ReproducibilityContext, d
     )
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 def test_shared_oracle_rejects_same_forged_topic_or_entity_graph_in_both_artifacts() -> None:
     """A valid, self-consistent forged graph cannot pass by agreement alone."""
@@ -1102,6 +1108,7 @@ def test_shared_oracle_rejects_same_forged_topic_or_entity_graph_in_both_artifac
         )
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 def test_shared_oracle_rejects_same_stale_deleted_message_metric_in_both_artifacts() -> None:
     """A structurally valid stale metric cannot pass by agreement alone."""
@@ -1116,6 +1123,7 @@ def test_shared_oracle_rejects_same_stale_deleted_message_metric_in_both_artifac
         )
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 def test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness() -> None:
     """Current metadata cannot hide stale active projection or graph material."""
@@ -1173,6 +1181,7 @@ def test_active_publication_oracle_rejects_stale_deleted_material_with_current_w
         )
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 def test_deliberate_falsifier_failure_configures_hypothesis_shrink_phase() -> None:
     """Keep a measured, minimizable negative execution behind ``pytest.raises``."""

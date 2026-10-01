@@ -4,6 +4,8 @@ import pytest
 
 from tests.test_analytics_query_endpoints import ready, stored
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.parametrize('method,path', [
     ('POST', '/api/v1/insights/questions'),

@@ -6,6 +6,8 @@ from app.analytics.shared_graph import ordered_rows, verify_segment_links
 from tests.test_shared_graph import fixture
 from tests.continuous_analytics_fixture import ACCOUNT
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 class CapturedQueries:
     def __init__(self, connection):

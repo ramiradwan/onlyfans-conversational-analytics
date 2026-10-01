@@ -5,6 +5,10 @@ from pathlib import Path
 
 import yaml
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIR = ROOT / ".github" / "workflows"

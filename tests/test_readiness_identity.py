@@ -6,6 +6,8 @@ from app.analytics.errors import AnalyticsError
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from tests.continuous_analytics_fixture import ACCOUNT, cleanup, make_fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def ready(tmp_path):

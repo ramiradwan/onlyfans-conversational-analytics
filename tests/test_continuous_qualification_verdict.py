@@ -5,6 +5,8 @@ import pytest
 
 from tools.qualify_continuous_analytics import measurement_checks_passed
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def successful():
     return {"complete": True, "cleanup_complete": True, "clean_rebuild_equal": True,

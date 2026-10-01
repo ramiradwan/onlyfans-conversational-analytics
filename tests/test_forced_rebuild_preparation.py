@@ -4,6 +4,10 @@ from unittest.mock import Mock
 from tests.test_shared_graph import fixture
 from tests.continuous_analytics_fixture import ACCOUNT, cold_equal
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_forced_rebuild_reads_one_current_projection(fixture, monkeypatch):
     first = fixture.pipeline.project_account(ACCOUNT).artifact

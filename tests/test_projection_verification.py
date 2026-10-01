@@ -16,6 +16,8 @@ from app.analytics.errors import ProjectionBuildCancelled
 from app.models.analytics import AnalyticsProjection, MessageEnrichment, ConversationMetrics
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture(scope='module')
 def projection(tmp_path_factory):

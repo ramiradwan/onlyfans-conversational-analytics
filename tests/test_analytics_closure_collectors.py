@@ -8,6 +8,8 @@ import pytest
 from tools import analytics_qualification as q
 from tools.analytics_qualification_worker import collect
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

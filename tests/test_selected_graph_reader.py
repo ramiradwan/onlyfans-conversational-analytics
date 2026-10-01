@@ -10,6 +10,8 @@ from app.models.analytics import GraphTraversalBounds
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, insert_message
 from tests.test_shared_graph import fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def active_reader(fixture):
     with fixture.stores.database.read() as db:

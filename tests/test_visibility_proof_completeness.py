@@ -5,6 +5,8 @@ import pytest
 from tools import analytics_qualification as q
 from tests.test_analytics_closure_qualification import MANIFEST, visibility
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.parametrize('fault', ['stale', 'oracle', 'persisted', 'missing', 'different', 'non_hex'])
 def test_every_visibility_probe_requires_complete_safety_evidence(fault):

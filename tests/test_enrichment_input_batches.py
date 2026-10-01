@@ -16,6 +16,8 @@ from app.analytics.enrichment import EnrichmentStage
 from app.analytics.errors import ProjectionBuildCancelled
 from app.models.analytics import CanonicalConversation, CanonicalMessage, MessageAnalysisInput
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 NOW = datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
 BASES = (RuleBasedSentimentAnalyzer, RuleBasedTopicEntityAnalyzer, RuleBasedEngagementAnalyzer)
 

@@ -6,6 +6,8 @@ from app.persistence import sqlite_api as sqlite3
 from app.persistence.backup import SQLiteBackupError
 from app.persistence.retention_restore import _current_authority
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 class UnreadableAuthorityDatabase:
     def read(self):

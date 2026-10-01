@@ -11,6 +11,8 @@ from app.analytics.graph_projection import RelationshipGraphProjector
 from app.analytics.opaque_refs import account_ref
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup, cold_equal, insert_message, advance
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.parametrize("messages", [1, 127, 128, 129, 257])
 def test_compact_publication_matches_full_graph_across_batches(tmp_path, messages):

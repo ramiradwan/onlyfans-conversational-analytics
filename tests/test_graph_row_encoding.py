@@ -10,6 +10,8 @@ from app.analytics.sqlite_graph_store import _node, _edge
 from app.analytics.graph_schema import NODE_PROPERTY_RULES, EDGE_PROPERTY_RULES
 from app.models.analytics import GraphNodeKind, GraphRelation
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 ACCOUNT = "a1:" + "1" * 64
 NODE = "g1:" + "2" * 64
 EDGE = "e1:" + "3" * 64

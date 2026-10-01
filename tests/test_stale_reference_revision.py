@@ -6,6 +6,8 @@ import pytest
 from app.analytics.errors import CanonicalRevisionChanged
 from tests.continuous_analytics_fixture import ACCOUNT, advance, cleanup, make_fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_old_reference_is_rejected_without_scanning_canonical_content(tmp_path, monkeypatch):
     f = make_fixture(tmp_path)

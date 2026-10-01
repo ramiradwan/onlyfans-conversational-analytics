@@ -24,6 +24,8 @@ from app.security.webauthn import (
     WebAuthnAuthorityResult,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 INSTANT = datetime(2026, 8, 13, 9, 0, tzinfo=timezone.utc)
 PRINCIPAL_ID = "principal-1"

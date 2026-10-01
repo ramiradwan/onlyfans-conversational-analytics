@@ -11,6 +11,8 @@ from app.persistence.retention import CreatorVaultRetention
 from tests.test_continuous_analytics import ready
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cold_equal, insert_message
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 @pytest.mark.asyncio
 async def test_missed_notification_is_recovered_with_normal_admission(ready):

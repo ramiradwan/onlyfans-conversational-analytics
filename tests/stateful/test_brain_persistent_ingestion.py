@@ -24,6 +24,8 @@ from tests.state_models.brain_ingestion_model import (
 from tests.state_models.sqlite_brain_adapter import BrokenReopenAdapter, SQLiteBrainAdapter
 from tests.state_models.transition_oracle import OracleMismatchError, assert_transition_oracle
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 for name, examples, steps in (
     ("tier_b_general", 15, 25), ("tier_b_deletion", 10, 20),
@@ -343,16 +345,19 @@ class PersistentDeletionMachine(RuleBasedStateMachine):
         self.harness.frame(commit, "commit_snapshot", key=key)
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_b
 class TestPersistentGeneral(PersistentGeneralMachine.TestCase):
     pass
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_b
 class TestPersistentDeletion(PersistentDeletionMachine.TestCase):
     pass
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.windows_production
 @pytest.mark.stateful_tier_b
 class TestWindowsProductionPersistenceSmoke(PersistentGeneralMachine.TestCase):

@@ -7,6 +7,8 @@ from app.analytics.opaque_refs import conversation_ref
 from tests.continuous_analytics_fixture import ACCOUNT, cleanup
 from tests.test_dominant_append_reuse import dominant_fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_append_copies_verified_records_without_decoding_property_objects(tmp_path, monkeypatch):
     f = dominant_fixture(tmp_path)

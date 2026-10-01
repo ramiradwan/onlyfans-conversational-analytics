@@ -7,6 +7,8 @@ from app.analytics.opaque_refs import account_ref, conversation_ref
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message
 from tests.test_dominant_append_reuse import dominant_fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def page_count(f):
     with f.stores.database.read() as db:

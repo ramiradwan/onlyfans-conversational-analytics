@@ -8,6 +8,8 @@ from sqlcipher3 import dbapi2 as sqlite3
 
 from tests.test_projection_activation import activation_case, reservation_fields
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def reserve(case):
     return case.ledger.reserve(

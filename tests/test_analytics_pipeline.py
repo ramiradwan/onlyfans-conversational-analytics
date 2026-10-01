@@ -26,6 +26,8 @@ from app.services.data_ingest import CanonicalAnalyticsConsumer
 from app.services.onlyfans_client import OnlyFansClient
 from app.canonical.read_models import AccountReadModel
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 

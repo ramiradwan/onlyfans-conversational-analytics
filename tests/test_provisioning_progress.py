@@ -4,6 +4,10 @@ from types import SimpleNamespace
 from app.provisioning import progress
 from app.provisioning.app import _validated_progress
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 class _Rows:
     def __init__(self, rows):

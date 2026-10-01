@@ -42,6 +42,8 @@ from app.security.account_bindings import (
 )
 from app.security.runtime_policy import AuthContext, RuntimeAuthorizationDenied
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 # Declared here rather than derived from the modules under test: deleting a
 # reason code must fail this agreement instead of deleting its own coverage.

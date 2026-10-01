@@ -12,6 +12,8 @@ from app.analytics.opaque_refs import account_ref, opaque_ref
 from app.analytics.shared_graph import _plans, _records, _content_order, _existing_ids
 from app.models.analytics import GraphNode, GraphEdge
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def graph():
     account = account_ref('synthetic-content-order')

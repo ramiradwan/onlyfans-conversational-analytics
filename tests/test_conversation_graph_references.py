@@ -17,6 +17,8 @@ from app.analytics.opaque_refs import account_ref, conversation_ref
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cold_equal, insert_message
 from tests.test_shared_conversation_pages import fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def selected(db):
     row = db.execute('SELECT * FROM conversation_page_sets WHERE conversation_ref=?',

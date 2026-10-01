@@ -11,6 +11,8 @@ from app.analytics.opaque_refs import account_ref
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cold_equal, insert_message
 from tests.test_shared_graph import fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def selected_plans(db):
     row = db.execute("SELECT * FROM projection_generations WHERE status='active'").fetchone()

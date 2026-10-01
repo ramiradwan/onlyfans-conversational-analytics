@@ -8,6 +8,10 @@ from app.persistence.database import CanonicalSQLite
 from app.persistence.migrations import MigrationRunner
 from app.services.retention_maintenance import RetentionMaintenance
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 ACCOUNT = "creator-account"
 NOW = datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)

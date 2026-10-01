@@ -36,6 +36,8 @@ from app.protocol.payloads import (
     SnapshotRecordCounts,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 

@@ -15,6 +15,8 @@ from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 FIELDS = '["message_enrichments","conversation_metrics"]'
 
 

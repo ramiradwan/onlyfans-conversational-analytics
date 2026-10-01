@@ -12,6 +12,8 @@ from app.analytics.source_tokens import SourceIdentityCache, SourceToken, MAX_ID
 from app.persistence.retention import CreatorVaultRetention
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def fixture(tmp_path, monkeypatch):

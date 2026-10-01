@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+import pytest
+
+pytestmark = pytest.mark.ci_tier("fast")
 
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -7,6 +7,8 @@ from app.analytics.database import (
     MAX_CONTENT_WRITE_CACHE_KIB, content_write_cache, content_write_cache_target,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def test_metadata_allowance_preserves_existing_maximum_and_default():
     assert MAX_CONTENT_WRITE_CACHE_KIB == 128 * 1024

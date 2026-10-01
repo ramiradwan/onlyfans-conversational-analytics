@@ -95,6 +95,8 @@ from app.services import insights_service
 from app.transport.manager import DEV_AGENT_AUTH_TICKET
 from app.canonical.read_models import AccountReadModel
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 REPOSITORY_ROOT = Path(__file__).parents[1]
@@ -1215,6 +1217,7 @@ async def test_projection_revisions_coalesce_to_one_latest_build(
     assert await scheduler.close(timeout=1)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_projection_shutdown_is_awaited_and_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
@@ -1253,6 +1256,7 @@ async def test_projection_shutdown_is_awaited_and_fail_closed(
     assert pipeline.graph.partition_revision(account_ref(account_id)) is None
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_projection_shutdown_joins_cooperative_owned_worker(
     monkeypatch: pytest.MonkeyPatch,
@@ -1294,6 +1298,7 @@ async def test_projection_shutdown_joins_cooperative_owned_worker(
     assert pipeline.graph.partition_revision(account_ref(account_id)) is None
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_projection_startup_recovers_unscheduled_canonical_accounts() -> None:
     source = MutableCanonicalSource(
@@ -1319,6 +1324,7 @@ async def test_projection_startup_recovers_unscheduled_canonical_accounts() -> N
     assert await scheduler.close(timeout=1)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_projection_get_keeps_event_loop_responsive_during_canonical_read() -> None:
     account_id = "synthetic-responsive-get-account"
@@ -1352,6 +1358,7 @@ async def test_projection_get_keeps_event_loop_responsive_during_canonical_read(
     assert await runtime.scheduler.close(timeout=1)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_scheduler_canonical_io_does_not_hold_state_lock_or_event_loop(
 ) -> None:
@@ -1521,6 +1528,7 @@ async def test_projection_build_coordination_is_per_account(
     }
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_scheduler_builds_different_accounts_concurrently(
     monkeypatch: pytest.MonkeyPatch,
@@ -1581,6 +1589,7 @@ async def test_scheduler_builds_different_accounts_concurrently(
     assert await scheduler.close(timeout=1)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_different_accounts_publish_concurrently_without_global_io_lock(
     monkeypatch: pytest.MonkeyPatch,
@@ -1729,6 +1738,7 @@ async def test_naive_protocol_timestamp_is_sanitized_at_analytics_boundary() -> 
         )
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_aware_timestamps_and_equal_time_source_order_survive_sqlite(
     tmp_path: Path,
@@ -2223,6 +2233,7 @@ async def test_public_errors_use_stable_codes_and_redact_inputs() -> None:
         assert private_timestamp not in response.text
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_rebuild_source_is_existing_read_only_schema_and_output_is_atomic(
     tmp_path: Path,
@@ -2323,6 +2334,7 @@ async def test_rebuild_source_is_existing_read_only_schema_and_output_is_atomic(
     assert database_path.read_bytes() == before
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_rebuild_cli_subprocess_uses_sanitized_atomic_boundary(
     tmp_path: Path,
@@ -2382,6 +2394,7 @@ async def test_rebuild_cli_subprocess_uses_sanitized_atomic_boundary(
     assert str(database_path) not in rejected.stdout + rejected.stderr
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_rebuild_pins_one_source_transaction_across_path_swap(
     tmp_path: Path,
@@ -2430,6 +2443,7 @@ async def test_rebuild_pins_one_source_transaction_across_path_swap(
             database.verify_identity()
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_rebuild_rejects_link_and_parent_alias_sources(tmp_path: Path) -> None:
     database_path = tmp_path / "canonical.sqlite3"
@@ -2687,6 +2701,7 @@ async def test_rebuild_sanitizes_repository_and_validation_failures(
     assert "validation" not in public.lower()
 
 
+@pytest.mark.windows_compat
 def test_private_output_platform_ports_fail_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2718,6 +2733,7 @@ def test_private_output_platform_ports_fail_closed(
     assert "synthetic security refusal" not in str(refused.value)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.skipif(os.name != "nt", reason="requires Windows ACL APIs")
 @pytest.mark.asyncio
 async def test_windows_rebuild_output_has_one_protected_owner_ace(

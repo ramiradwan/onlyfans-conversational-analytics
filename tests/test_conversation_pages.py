@@ -13,6 +13,8 @@ from app.persistence import sqlite_api as sqlite3
 from tests.continuous_analytics_fixture import (ACCOUNT, NOW, make_fixture, cleanup,
     cold_equal, insert_message, advance)
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def fixture(tmp_path):

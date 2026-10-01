@@ -12,6 +12,8 @@ from app.analytics.opaque_refs import account_ref
 from app.persistence import sqlite_api
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_metadata_is_exact_immutable_and_removed_with_retired_generation(tmp_path):
     f = make_fixture(tmp_path)

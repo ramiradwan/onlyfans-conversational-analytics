@@ -5,6 +5,8 @@ import pytest
 from tools import analytics_qualification as q
 from tools.analytics_qualification_execution import SCHEMA, StateBudget
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def make_budget(tmp_path):
     policy = {'directory': str(tmp_path), 'states': ['cold', 'ordinary', 'rebuilt'],

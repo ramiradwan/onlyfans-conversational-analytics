@@ -26,6 +26,8 @@ from app.security.runtime_policy import (
     require_analysis_run,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 VECTORS = Path(__file__).resolve().parents[1] / "contracts" / "capability-license-v1"
 NOW = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
 ACCOUNT = "creator-1"

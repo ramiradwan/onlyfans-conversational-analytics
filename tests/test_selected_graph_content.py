@@ -8,6 +8,8 @@ import pytest
 from app.analytics.shared_graph import selected_content_ids
 from app.persistence import sqlite_api as sqlite3
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture(params=["node", "edge"])
 def lookup(request):

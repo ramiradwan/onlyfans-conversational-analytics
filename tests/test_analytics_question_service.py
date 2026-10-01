@@ -33,6 +33,8 @@ from app.security.runtime_policy import (
 )
 from tests.state_models.analytics_question_cases import instant, load_cases
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 NOW = datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
 ACCOUNT = "synthetic-question-creator"
 SECRET = b"synthetic-question-cursor-key-0001"

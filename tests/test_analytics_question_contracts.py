@@ -14,6 +14,8 @@ from app.analytics.query_execution import (
 )
 from app.analytics.query_service import AnalyticsQuestionService, RegisteredQuestion
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def request(**updates):
     return {

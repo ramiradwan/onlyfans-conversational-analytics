@@ -2,11 +2,30 @@
 
 # Test changes
 
-Run checks that cover the changed code. CI defines the full matrix.
+Run the backend lane that covers the changed code. The same Python runner selects tests locally and in CI. Bare `python -m pytest` keeps its existing broad default selection.
 
 ## Common local checks
 
-Install Python dependencies from `requirements-dev.txt`. Run `npm ci` in each changed JavaScript package.
+Install the dependencies described in [Contributing](../CONTRIBUTING.md). Build the frontend and extension before collecting the whole backend suite; test imports use the generated assets.
+
+| Task | Command |
+| --- | --- |
+| Fast backend tests | `python tools/test_backend.py fast` |
+| Changed test | `python -m pytest tests/test_reply_source_selection.py -vv` |
+| All backend integration tests | `python tools/test_backend.py integration` |
+| One integration shard | `python tools/test_backend.py integration --shard 2` |
+| Inspect a lane | `python tools/test_backend.py list integration --shard 2` |
+| Validate all classifications and selectors | `python tools/test_backend.py list all --validate` |
+| One stateful profile | `python tools/test_backend.py stateful --profile analytics_convergence_fast` |
+| Windows platform contract | `python tools/test_backend.py windows-platform` |
+| Windows analytics contract | `python tools/test_backend.py windows-analytics` |
+| One scale qualification file | `python tools/test_backend.py scale -- tests/test_question_identity_scale.py` |
+
+Arguments after `--` pass through to pytest. For example, `python tools/test_backend.py integration --shard 2 -- -k publication -vv` runs a filtered subset. The runner prints the command and writes reports under `artifacts/ci-tests/`. Profile variables apply only to the child process. `fast` runs the fast tier; CI also runs the named stateful profiles as separate steps in its backend-fast job.
+
+Windows contract execution requires Windows and the fixed SQLCipher runtime. A Linux collection that skips a Windows-native test does not reproduce that test. Required hosted and packaged-runtime evidence still comes from their respective workflows.
+
+Other local checks:
 
 ```powershell
 python -m pytest
@@ -97,7 +116,44 @@ CI runs six general histories of fourteen deliveries and four deletion histories
 
 ## CI coverage
 
-GitHub Actions uses Python 3.11 and Node.js 22. [Product CI](../.github/workflows/ci.yml) keeps the four release-qualified jobs: Linux build and tests, the Windows SQLCipher producer, Windows backend tests, and Windows browser acceptance. Both Windows consumers verify that the SQLCipher artifact belongs to the exact source commit and workflow run before using it.
+GitHub Actions uses Python 3.11 and Node.js 22. [Product CI](../.github/workflows/ci.yml) runs fast backend checks, four isolated integration shards, Windows platform and analytics contracts, browser acceptance, and frontend/extension checks. Existing stateful profiles remain required. Every Windows consumer verifies the shared SQLCipher artifact's source and workflow run.
+
+Main, nightly and manual runs also require analytics scale qualification on Windows: long-idle lifecycle checks, the 100,000-record identity case, large graph reads, and SQLite crash/lease boundaries. This adds execution of existing slow cases without removing any PR coverage. Packaged-runtime and TPM qualification keep their separate artifact and hardware prerequisites.
+
+The Required CI gate validates job results and executed coverage. The older build-and-test and windows-tests check names forward its result during branch-rule migration. Architecture impact remains independently required. The full Windows regression remains blocking on pull requests until the comparison period is explicitly completed; it continues on main and nightly afterward.
+
+## Add or classify a backend test
+
+Tests inherit their module's `pytestmark = pytest.mark.ci_tier("fast")` declaration. Use `integration` for database, pipeline, projection and graph lifecycle behavior. A test-level declaration overrides a module default; conflicting declarations at one scope are errors. Keep large-data correctness cases required. `scale` does not authorize removing a previously required test.
+
+New tests in an existing integration file inherit that file's shard. For a new integration file, declare its tier and run `python tools/test_backend.py update-manifest`, then inspect the diff. Existing shard assignments stay unchanged. Add `windows_compat` when native behavior requires Windows execution and give it a reviewed Windows contract selector. `serial` describes tests that must not run concurrently on one runner.
+
+Run `python tools/test_backend.py list all --validate` before submitting classification changes. Unclassified tests, missing assignments, stale selectors and overlaps produce actionable errors. Bare pytest remains available and keeps its previous marker exclusions.
+
+## Diagnose or rerun CI
+
+Open the failed job's summary first. It reports the failing node ID, phase, platform, profile and reproduction command. Detailed phase reports, JUnit and timing data are retained as artifacts for 14 days. Stateful failure output retains Hypothesis replay information when emitted.
+
+Use GitHub's **Re-run failed jobs** or **Re-run job** controls to retry the affected jobs. Successful jobs from earlier attempts of the same source and workflow run remain usable; a newer failure cannot be replaced by an older success. If required evidence has expired, start a fresh complete run. Tests are not automatically retried until green.
+
+Integration assignment is checked in. Download complete successful Linux timing artifacts, then run `python tools/test_backend.py update-manifest --rebalance --timings artifacts/ci-evidence --dry-run`. Review the assignments and repeat without `--dry-run` to save them. The importer combines setup, call and teardown times, takes the median across complete samples, and rejects targeted or stateful runs. A file-to-seconds JSON mapping is also accepted. Record the source run, sample count and report digest with each reviewed rebalance. A shard over ten minutes produces a maintenance warning; its twenty-minute timeout protects against runaway execution.
+
+## Roll out the parallel lanes
+
+The telemetry-only [baseline run 36804164704](https://github.com/ramiradwan/onlyfans-conversational-analytics/actions/runs/36804164704) passed at source `14adf8d7160929d141a5e34426bb19f9aafff6b1`, attempt 1, on Python 3.11.16. It retained the original selections. Its four jobs completed successfully in 48m 43s from the first job's start to the final job's completion.
+
+| Baseline catch-all | Pytest wall time | Selected | Passed | Skipped |
+| --- | --- | --- | --- | --- |
+| Ubuntu | 23m 45s | 4,662 | 4,581 | 81 |
+| Windows | 41m 37s | 4,665 | 4,651 | 14 |
+
+All 131 integration files have complete Ubuntu measurements. The [shard manifest](../ci/backend-test-shards.json) records the source artifact, report digest and one sample per file. The four assignments each contain about 316 seconds of recorded setup, call and teardown time. This is an allocation estimate, excluding bootstrap and collection; the parallel jobs have not yet established their wall times or p95. The baseline browser job took 12m 28s including its wheel dependency, so integration tests may no longer control the critical path after Windows shadow retirement.
+
+The parallel workflow deliberately keeps the complete Windows regression required on every pull request. Before changing that job to main/nightly qualification, record three clean paired runs with matching source commits, zero missing required node IDs, successful Windows contract execution, and unchanged permitted skip reasons. The gate enforces coverage and execution identity on each run; retirement is a separate reviewed change after these comparisons. No existing default test may be demoted to optional scale execution during this rollout.
+
+Keep the existing required check names while deploying the new gate. Add Required CI to branch rules only after it has reported successfully on the current revision and open pull requests can produce it. Retire compatibility aliases in a later change; architecture-impact remains independently required. Historical release evidence continues to use the CI policy declared at its source revision.
+
+After retiring the duplicate Windows PR run, measure both runner execution time and push-to-required-result time, including queue and bootstrap delays. Aim for the first actionable result within three to five minutes. The targets are backend p95 at most fifteen minutes and complete required CI p95 at most twenty minutes; publish the sample count with the percentiles. Use the first twenty representative completed PR runs as the initial review window. Three clean shadow comparisons establish correctness, not a credible p95. Also track total runner minutes so faster feedback does not conceal disproportionate cost.
 
 [Visual capture](../.github/workflows/visual-capture.yml) runs separately for relevant Bridge changes. [Retention Phase-B evidence](../.github/workflows/retention-phase-b-evidence.yml) starts from a successful exact Product CI run instead of polling for one. The supplement remains an explicit workflow.
 

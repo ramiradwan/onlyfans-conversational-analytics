@@ -13,6 +13,8 @@ from app.analytics.query_facts import QuestionConversation, QuestionMessage
 from app.analytics.query_handlers import no_later_creator_reply, pricing_discussions
 from tests.state_models.analytics_question_cases import instant, load_cases
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def sha(value):
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()

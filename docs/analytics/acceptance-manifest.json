@@ -146,6 +146,7 @@
     }
   },
   "ci_jobs": [
+    "Required CI",
     "windows-browser-e2e",
     "windows-tests",
     "fixed-sqlcipher-wheel",

@@ -7,6 +7,8 @@ from tests.continuous_analytics_fixture import (
     ACCOUNT, NOW, make_fixture, insert_message, advance, cleanup, cold_equal,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def dominant_fixture(path):
     f = make_fixture(path, conversations=3, messages=0)

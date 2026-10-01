@@ -13,6 +13,8 @@ from tests.continuous_analytics_fixture import (
     ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message, make_fixture,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 TABLES = ('graph_membership_pages', 'graph_segment_membership_pages',
           'graph_membership_nodes', 'graph_membership_edges',
           'graph_node_content', 'graph_edge_content', 'graph_node_identities')

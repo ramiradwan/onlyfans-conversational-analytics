@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -14,6 +15,8 @@ from typing import Any
 import pytest
 
 from tools import engineering_attestation as producer
+
+pytestmark = [pytest.mark.ci_tier('fast')]
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,7 +110,7 @@ def _artifact(name: str, *, identifier: int) -> dict[str, Any]:
 
 
 class QualificationApi:
-    def __init__(self) -> None:
+    def __init__(self, *, sharded: bool = False) -> None:
         self.run = {
             "workflow_id": 77,
             "path": producer.WINDOWS_PACKAGE_WORKFLOW,
@@ -150,14 +153,26 @@ class QualificationApi:
         }
         self.product_ci_jobs = [
             {
+                "id": 4300 + index,
                 "name": name,
+                "run_attempt": 1,
                 "status": "completed",
                 "conclusion": "success",
                 "run_id": 43,
                 "head_sha": SOURCE_COMMIT,
             }
-            for name in sorted(producer.REQUIRED_PRODUCT_CI_JOB_NAMES)
+            for index, name in enumerate(sorted(
+                producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES if sharded
+                else producer.REQUIRED_PRODUCT_CI_JOB_NAMES
+            ))
         ]
+        source_jobs = producer.SHARDED_PRODUCT_CI_JOB_IDS if sharded else producer.REQUIRED_PRODUCT_CI_JOB_NAMES
+        self.product_ci_source = (
+            "name: CI\n"
+            + ("env:\n  CI_POLICY_VERSION: sharded-v1\n" if sharded else "")
+            + "jobs:\n"
+            + "".join(f"  {name}:\n    runs-on: ubuntu-latest\n" for name in sorted(source_jobs))
+        ).encode()
         self.artifacts = [
             _artifact(f"windows-package-{RELEASE_TAG}", identifier=91),
             _artifact(f"windows-package-unsigned-{RELEASE_TAG}", identifier=90),
@@ -182,11 +197,23 @@ class QualificationApi:
                 "per_page": ["100"],
             }
             return {"total_count": 1, "workflow_runs": [self.product_ci_run]}
-        if path.endswith("/actions/runs/43/attempts/1/jobs?per_page=100"):
+        if path.endswith("/actions/runs/43/jobs?filter=all&per_page=100&page=1"):
             return {
                 "total_count": len(self.product_ci_jobs),
                 "jobs": self.product_ci_jobs,
             }
+        if path.endswith(f"/git/commits/{SOURCE_COMMIT}"):
+            return {"tree": {"sha": "1" * 40}}
+        for tree_sha, name, kind, mode, sha in (
+            ("1", ".github", "tree", "040000", "2"),
+            ("2", "workflows", "tree", "040000", "3"),
+            ("3", "ci.yml", "blob", "100644", "4"),
+        ):
+            if path.endswith(f"/git/trees/{tree_sha * 40}"):
+                return {"tree": [{"path": name, "type": kind, "mode": mode, "sha": sha * 40}]}
+        if path.endswith(f"/git/blobs/{'4' * 40}"):
+            return {"encoding": "base64", "size": len(self.product_ci_source),
+                    "content": base64.b64encode(self.product_ci_source).decode()}
         if path.endswith("/actions/runs/42/attempts/2/jobs?per_page=100"):
             return {"total_count": len(self.windows_jobs), "jobs": self.windows_jobs}
         if path.endswith("/actions/runs/42/artifacts?per_page=100"):
@@ -241,7 +268,7 @@ def test_release_tag_and_packaged_agent_version_mismatch_is_rejected() -> None:
         )
 
 
-def test_product_ci_requires_exact_current_four_job_set() -> None:
+def test_historical_product_ci_requires_exact_legacy_four_job_set() -> None:
     assert producer.REQUIRED_PRODUCT_CI_JOB_NAMES == {
         "build-and-test",
         "fixed-sqlcipher-wheel",
@@ -252,14 +279,27 @@ def test_product_ci_requires_exact_current_four_job_set() -> None:
     assert result.product_ci_run_id == 43
 
 
-def test_required_package_artifacts_accept_current_evidence_artifacts() -> None:
-    result = _qualify_source(QualificationApi())
+def test_current_product_ci_requires_versioned_shards_and_gate() -> None:
+    api = QualificationApi(sharded=True)
+    assert {"Required CI", "analytics-scale-qualification", *(f"analytics-integration-{number}" for number in range(1, 5))} <= {
+        job["name"] for job in api.product_ci_jobs
+    }
+    assert _qualify_source(api).product_ci_run_id == 43
+    api.product_ci_jobs = QualificationApi().product_ci_jobs
+    with pytest.raises(producer.ContractError, match="exact required job set"):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("sharded", [False, True], ids=["legacy-source", "sharded-source"])
+def test_required_package_artifacts_accept_current_evidence_artifacts(sharded) -> None:
+    result = _qualify_source(QualificationApi(sharded=sharded))
     assert result.artifact_name == f"windows-package-{RELEASE_TAG}"
     assert result.artifact_id == 91
 
 
-def test_missing_or_failed_required_ci_jobs_are_rejected() -> None:
-    missing = QualificationApi()
+@pytest.mark.parametrize("sharded", [False, True], ids=["legacy-source", "sharded-source"])
+def test_missing_or_failed_required_ci_jobs_are_rejected(sharded) -> None:
+    missing = QualificationApi(sharded=sharded)
     missing.product_ci_jobs = [
         job
         for job in missing.product_ci_jobs
@@ -268,7 +308,7 @@ def test_missing_or_failed_required_ci_jobs_are_rejected() -> None:
     with pytest.raises(producer.ContractError, match="exact required job set"):
         _qualify_source(missing)
 
-    failed = QualificationApi()
+    failed = QualificationApi(sharded=sharded)
     fixed = next(
         job
         for job in failed.product_ci_jobs
@@ -279,8 +319,9 @@ def test_missing_or_failed_required_ci_jobs_are_rejected() -> None:
         _qualify_source(failed)
 
 
-def test_missing_required_or_unknown_package_artifacts_are_rejected() -> None:
-    missing = QualificationApi()
+@pytest.mark.parametrize("sharded", [False, True], ids=["legacy-source", "sharded-source"])
+def test_missing_required_or_unknown_package_artifacts_are_rejected(sharded) -> None:
+    missing = QualificationApi(sharded=sharded)
     missing.artifacts = [
         artifact
         for artifact in missing.artifacts
@@ -289,7 +330,7 @@ def test_missing_required_or_unknown_package_artifacts_are_rejected() -> None:
     with pytest.raises(producer.ContractError, match="artifact identity/count"):
         _qualify_source(missing)
 
-    unknown = QualificationApi()
+    unknown = QualificationApi(sharded=sharded)
     unknown.artifacts.append(_artifact("unexpected-evidence", identifier=87))
     with pytest.raises(producer.ContractError, match="artifact identity/count"):
         _qualify_source(unknown)

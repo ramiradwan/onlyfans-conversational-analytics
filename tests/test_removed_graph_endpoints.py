@@ -9,6 +9,8 @@ from app.analytics.graph_store import GraphReferentialIntegrityError
 from tests.continuous_analytics_fixture import ACCOUNT
 from tests.test_shared_graph import fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 class ObservedConnection:
     def __init__(self, connection):

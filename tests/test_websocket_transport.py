@@ -38,6 +38,8 @@ from app.transport.manager import (
     utc_now,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 AUTHORIZATION_GRANT_TYPES = (

@@ -15,6 +15,8 @@ from app.security.capability_license_verifier import (
     CapabilityLicenseVerifier,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TRUST_PATH = ROOT / "contracts" / "production" / "capability-license-v1" / "trust-set.json"

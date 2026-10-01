@@ -14,6 +14,8 @@ from tests.continuous_analytics_fixture import (
     ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message, make_fixture,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 SQL = Path(__file__).parents[1] / 'app/analytics/sql'
 
 

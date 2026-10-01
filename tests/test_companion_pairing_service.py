@@ -37,6 +37,8 @@ from test_companion_pairing_proof import (
     ORDER,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @pytest.fixture
 def local(tmp_path, contract, grant_references):

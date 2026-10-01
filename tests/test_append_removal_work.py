@@ -7,6 +7,10 @@ from app.analytics.opaque_refs import conversation_ref
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message
 from tests.test_dominant_append_reuse import dominant_fixture
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_exact_append_loads_each_predecessor_unit_once(tmp_path, monkeypatch):
     f = dominant_fixture(tmp_path)

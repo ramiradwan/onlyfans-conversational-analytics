@@ -57,6 +57,8 @@ from app.protocol.payloads import (
     SnapshotRecordCounts,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 WORKER = Path(__file__).with_name("projection_crash_worker.py")
@@ -289,6 +291,7 @@ def test_canonical_and_projection_paths_must_be_distinct(tmp_path: Path) -> None
         )
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "crash_stage",
@@ -376,6 +379,7 @@ def test_reserved_activation_is_cancelled_after_advance_and_reopen(
     assert reopened.get("account-a") is None
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_concurrent_process_cannot_retire_live_build_or_rollback_winner(
     tmp_path: Path,
@@ -498,6 +502,7 @@ def test_copied_persisted_owner_fields_without_capability_cannot_write(
     original_writer.refresh()
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_50000_node_stage_renews_short_writer_lease_through_validation(
     tmp_path: Path,

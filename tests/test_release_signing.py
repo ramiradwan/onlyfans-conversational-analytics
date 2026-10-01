@@ -15,6 +15,8 @@ from typing import Any
 import pytest
 import yaml
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY_SCRIPT = ROOT / "packaging" / "verify-signatures.ps1"

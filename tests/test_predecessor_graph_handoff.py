@@ -7,6 +7,8 @@ import pytest
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message
 from tests.test_dominant_append_reuse import dominant_fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.parametrize('state', ['ordinary', 'rebuilt'])
 def test_append_does_not_materialize_the_complete_predecessor_graph(tmp_path, monkeypatch, state):

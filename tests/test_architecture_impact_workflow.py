@@ -5,6 +5,10 @@ from typing import Any
 
 import yaml
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "architecture-impact.yml"

@@ -6,6 +6,8 @@ import pytest
 
 from tools.qualify_analytics_baseline import baseline_passed, counts
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def successful_run() -> dict:
     return {

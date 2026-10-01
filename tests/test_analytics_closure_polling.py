@@ -7,6 +7,8 @@ import pytest
 
 from tools import analytics_qualification_workloads as workloads
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @pytest.mark.asyncio
 async def test_bulk_observer_survives_the_old_sample_cutoff(monkeypatch):

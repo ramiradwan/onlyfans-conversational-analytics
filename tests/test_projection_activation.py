@@ -19,6 +19,8 @@ from app.persistence.projection_activation import (
 )
 from app.canonical.read_models import AccountReadModel
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 TEST_OWNER = current_build_owner("activation-test-owner")
 TEST_PUBLICATION_DIGEST = capability_digest("activation-test-publication-secret")

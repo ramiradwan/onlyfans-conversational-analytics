@@ -5,6 +5,10 @@ from tests.test_dominant_append_reuse import dominant_fixture
 from tests.test_append_enrichment_copying import active_unit
 from app.analytics import conversation_enrichment_unit_sql as storage
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_verified_append_does_not_recreate_every_old_message_model(tmp_path, monkeypatch):
     f = dominant_fixture(tmp_path)
@@ -27,7 +31,6 @@ def test_verified_append_does_not_recreate_every_old_message_model(tmp_path, mon
         cleanup(f)
 
 
-import pytest
 from dataclasses import replace
 
 

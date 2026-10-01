@@ -10,6 +10,8 @@ from app.analytics.opaque_refs import account_ref
 from tests.test_conversation_graph_references import fixture
 from tests.continuous_analytics_fixture import ACCOUNT, cold_equal
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def observe_reads(fixture, monkeypatch, change=None):
     calls = Counter()

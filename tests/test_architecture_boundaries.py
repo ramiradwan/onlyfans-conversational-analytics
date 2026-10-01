@@ -7,11 +7,14 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import pytest
 
 from tools.validate_architecture_boundaries import (
     DEFAULT_MANIFEST_PATH,

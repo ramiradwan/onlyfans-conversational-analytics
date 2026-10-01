@@ -10,6 +10,8 @@ from tests.continuous_analytics_fixture import ACCOUNT, cleanup, make_fixture
 from tests.test_sqlite_graph_store import SQLiteGraphHarness, graph_node
 from app.analytics.sqlite_graph_store import SQLiteGraphGenerationWriter
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 @pytest.fixture
 def fixture(tmp_path):

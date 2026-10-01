@@ -30,7 +30,7 @@ Normal extension builds audit the checked-in WASM and need no Rust compiler. Reb
 
 ## Test changes
 
-Run the checks that cover your change. See [Test changes](docs/testing.md) for the common commands and CI coverage.
+Run the checks that cover your change. After building the frontend and extension, use `python tools/test_backend.py fast` for backend feedback or run a changed test directly with pytest. See [Test changes](docs/testing.md) for lane commands, prerequisites, classification and CI failure reproduction. Bare `python -m pytest` retains its broad default selection.
 
 ## Write documentation
 

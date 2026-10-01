@@ -8,6 +8,8 @@ from app.models.analytics import MessageEnrichment
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message
 from tests.test_dominant_append_reuse import dominant_fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.parametrize('state', ['ordinary', 'rebuilt', 'restarted'])
 def test_append_build_and_staging_materialize_only_boundary_messages(tmp_path, monkeypatch, record_property, state):

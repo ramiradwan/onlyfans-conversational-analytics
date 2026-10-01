@@ -15,6 +15,8 @@ from tests.continuous_analytics_fixture import (
 )
 from tests.test_shared_graph import fixture
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def active_proof(fixture):
     with fixture.stores.database.read() as db:

@@ -17,6 +17,8 @@ from app.security.runtime_policy import (
     AuthContext, AuthorizationEpoch, RuntimeAuthorizationDenied, RuntimePolicy,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 NOW = datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
 ACCOUNT = "synthetic-evidence-owner"
 OTHER = "synthetic-evidence-other"

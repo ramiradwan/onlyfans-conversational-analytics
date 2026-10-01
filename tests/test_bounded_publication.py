@@ -17,6 +17,8 @@ from app.analytics.sqlite_projection_store import recompute_generation, Projecti
 from app.models.analytics import RebuildArtifact
 from tests.continuous_analytics_fixture import ACCOUNT, cleanup, make_fixture, cold_equal
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.fixture
 def fixture(tmp_path):

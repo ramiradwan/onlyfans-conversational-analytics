@@ -11,7 +11,10 @@ from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from tools import analytics_qualification as qualification
 from tools.analytics_qualification_fixture import Workload
 
+pytestmark = [pytest.mark.ci_tier('scale')]
 
+
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_fresh_and_expired_100k_identity_fits_the_unchanged_request_budget(tmp_path):
     manifest = qualification.read_json(Path(__file__).resolve().parents[1] /

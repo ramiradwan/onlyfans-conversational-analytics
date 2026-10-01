@@ -24,6 +24,8 @@ import visible_windows
 from app.core.config import Settings
 from app.core.runtime_paths import runtime_data_directory
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"

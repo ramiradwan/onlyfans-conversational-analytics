@@ -15,6 +15,8 @@ from tests.test_conversation_graph_references import selected
 from tests.test_shared_conversation_pages import fixture
 from tests.continuous_analytics_fixture import ACCOUNT as OWNER, cold_equal
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def forbidden(*args, **kwargs):
     raise AssertionError('unchanged graph records were reconstructed')

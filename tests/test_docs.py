@@ -6,6 +6,10 @@ from pathlib import Path
 
 from tools import check_docs
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 

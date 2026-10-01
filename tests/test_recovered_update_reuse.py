@@ -10,6 +10,8 @@ from app.analytics.scheduling import InProcessProjectionScheduler
 from app.models.analytics import AvailabilityStatus
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 @pytest.mark.asyncio
 async def test_reopened_scheduler_prepares_verified_reuse_without_analyzers(tmp_path):

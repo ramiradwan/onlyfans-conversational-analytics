@@ -12,6 +12,8 @@ from app.core.customer_release import (
     validate_customer_release_document,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "packaging" / "pyinstaller" / "brain.spec"

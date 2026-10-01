@@ -10,6 +10,8 @@ from app.analytics.pipeline import AnalyticsPipeline
 from app.security.runtime_policy import RuntimeAuthorizationDenied
 from tests.test_enrichment_reuse import setup, counts, NOW, ACCOUNT, assert_cold_equal
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.parametrize("fields", [
     {"preceding_messages": -1}, {"preceding_messages": 33}, {"following_messages": True},

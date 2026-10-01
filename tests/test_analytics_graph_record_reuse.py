@@ -12,6 +12,8 @@ import pytest
 from app.analytics import graph_row_encoding as encoding
 from app.analytics.conversation_graph_sql import PAGE_RECORDS, graph_records
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 ACCOUNT = "a1:" + "1" * 64
 OTHER_ACCOUNT = "a1:" + "2" * 64

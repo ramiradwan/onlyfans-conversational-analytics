@@ -17,6 +17,8 @@ from app.analytics.opaque_refs import account_ref
 from tests.test_enrichment_reuse import setup, counts, NOW, ACCOUNT, counters
 from tests.test_analytics_evidence import stored, ACCOUNT as STORED_ACCOUNT
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_retired_generations_do_not_retain_reuse_records(setup):
     source, pipeline, _, stores = setup

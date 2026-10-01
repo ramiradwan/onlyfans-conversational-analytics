@@ -8,6 +8,8 @@ from app.security.analysis_authorization import AnalysisReadiness
 from app.security.runtime_policy import AuthContext, AuthorizationEpoch, RuntimePolicy
 from app.transport.companion_records import CompanionRecordError
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 class _Authority:
     def __init__(self) -> None:

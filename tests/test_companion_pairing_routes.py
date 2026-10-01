@@ -25,6 +25,8 @@ from test_companion_pairing_service import (
     _agent_confirmation,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 ORIGIN = "http://bridge.localhost:17871"
 EXTENSION = "a" * 32
 PAIRING_BYTES = b"p" * 32

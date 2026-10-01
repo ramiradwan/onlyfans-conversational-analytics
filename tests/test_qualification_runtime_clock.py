@@ -3,6 +3,10 @@ from datetime import datetime, timedelta, timezone
 from tests.test_analytics_closure_collectors import configuration
 from tools.analytics_qualification_worker import collect
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 def test_fresh_query_uses_real_runtime_time_with_a_past_fixture(tmp_path, monkeypatch):
     monkeypatch.setenv('OFCA_QUALIFICATION_PROCESS', 'test-owner')
