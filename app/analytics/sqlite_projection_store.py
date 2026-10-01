@@ -2541,123 +2541,136 @@ def _recompute_generation(
         != generation["pipeline_identity_digest"]
     ):
         raise ProjectionValidationError("projection row digest differs")
-    graph_rows = None
-    graph_changes = None
-    read_version = getattr(connection, 'total_changes', None)
-    if (not materialize_graph and read_version is not None
-            and getattr(connection, 'in_transaction', False)
-            and getattr(graph_validation, 'proof', None) is not None):
-        from app.analytics.shared_graph import (
-            _read_changed_segment_rows, _verified_changed_segment_chunks,
-        )
-        changed = tuple(plan for plan in graph_validation.plans if not plan.reused)
-        # Prefer the bounded persisted changed-set proof. It verifies immutable
-        # predecessor/current chunks plus exact changed content, and lets the
-        # downstream graph, endpoint and conversation-integrity validators share
-        # one independently checked delta. Broad changed-segment row materialization
-        # remains the compatibility fallback when chunk proof metadata is absent.
-        graph_changes = _verified_changed_segment_chunks(
-            connection, account_id, graph_validation, run_check
-        )
-        if graph_changes is None:
-            graph_rows = _read_changed_segment_rows(
-                connection, account_id, changed, run_check
+    selection = None
+    try:
+        graph_rows = None
+        graph_changes = None
+        read_version = getattr(connection, 'total_changes', None)
+        if (not materialize_graph and read_version is not None
+                and getattr(connection, 'in_transaction', False)
+                and getattr(graph_validation, 'proof', None) is not None):
+            from app.analytics.shared_graph import (
+                _read_changed_segment_rows, _verified_changed_segment_chunks,
             )
-    _validate_generation_links(
-        connection, generation_id, account_id, run_check,
-        graph_validation=graph_validation, graph_rows=graph_rows,
-        graph_changes=graph_changes,
-    )
-    if materialize_graph:
-        nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
-        graph_digest = projection_graph_digest(
-            projection.pipeline_revision, nodes, edges, check=run_check
-        )
-        node_counts = Counter(item.kind.value for item in nodes)
-        edge_counts = Counter(item.relation.value for item in edges)
-    else:
-        from app.analytics.shared_graph import verify_shared_graph
-
-        reused = verify_shared_graph(
-            connection, generation_id, account_id, graph_validation, run_check,
-            prepared=graph_rows, verified_changes=graph_changes,
-        )
-        if reused is None:
-            from app.analytics.graph_verification import verify_graph_rows
-
-            verified = verify_graph_rows(
-                connection, generation_id, account_id, check=run_check
+            changed = tuple(plan for plan in graph_validation.plans if not plan.reused)
+            # Prefer the bounded persisted changed-set proof. It verifies immutable
+            # predecessor/current chunks plus exact changed content, and lets the
+            # downstream graph, endpoint and conversation-integrity validators share
+            # one independently checked delta. Broad changed-segment row materialization
+            # remains the compatibility fallback when chunk proof metadata is absent.
+            from app.analytics.graph_membership_selection import prepare_selection
+            selection = prepare_selection(connection, generation, account_id,
+                                          conversation_validation, graph_validation, run_check)
+            graph_changes = _verified_changed_segment_chunks(
+                connection, account_id, graph_validation, run_check, selection=selection
             )
-            nodes, edges = verified.nodes, verified.edges
-            graph_digest = (
-                verified.segment_root
-                if GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
-                    in projection.pipeline_revision
-                else verified.digest
+            if graph_changes is None:
+                if selection is not None:
+                    selection.discard()
+                graph_rows = _read_changed_segment_rows(
+                    connection, account_id, changed, run_check
+                )
+        _validate_generation_links(
+            connection, generation_id, account_id, run_check,
+            graph_validation=graph_validation, graph_rows=graph_rows,
+            graph_changes=graph_changes,
+        )
+        if materialize_graph:
+            nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
+            graph_digest = projection_graph_digest(
+                projection.pipeline_revision, nodes, edges, check=run_check
             )
-            if graph_digest is None:
-                raise ProjectionValidationError("graph segment root is missing")
-            node_counts, edge_counts = verified.node_counts, verified.edge_counts
-            graph_segments = verified.segments
+            node_counts = Counter(item.kind.value for item in nodes)
+            edge_counts = Counter(item.relation.value for item in edges)
         else:
-            (
-                graph_digest, node_counts, edge_counts, graph_segments,
-                verified_segment_root,
-            ) = reused
-            if (
-                GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
-                in projection.pipeline_revision
-            ):
-                graph_digest = verified_segment_root
-            nodes, edges = [], []
-    if (graph_rows is not None or graph_changes is not None) \
-            and connection.total_changes != read_version:
-        raise ProjectionValidationError('stored graph changed during verification')
-    node_count, edge_count = sum(node_counts.values()), sum(edge_counts.values())
-    run_check()
-    if projection.graph_digest != graph_digest:
-        raise ProjectionValidationError("graph document digest differs")
-    stats = connection.execute(
-        """
-        SELECT * FROM graph_partition_stats
-        WHERE generation_id=? AND creator_account_id=?
-        """,
-        (generation_id, account_id),
-    ).fetchone()
-    if (
-        stats is None
-        or int(stats["source_revision"]) != projection.source_revision
-        or int(stats["node_count"]) != node_count
-        or int(stats["edge_count"]) != edge_count
-        or stats["graph_digest"] != graph_digest
-        or projection.graph.node_count != node_count
-        or projection.graph.edge_count != edge_count
-    ):
-        raise ProjectionValidationError("graph row coverage or digest differs")
-    run_check()
-    run_check()
-    if projection.graph.node_counts_by_kind != dict(sorted(node_counts.items())):
-        raise ProjectionValidationError("node-kind coverage differs")
-    if projection.graph.edge_counts_by_relation != dict(sorted(edge_counts.items())):
-        raise ProjectionValidationError("edge-kind coverage differs")
-    from app.analytics.conversation_integrity_store import verify_generation_integrity
-    conversation_integrity = verify_generation_integrity(
-        connection, generation, account_id, proof=conversation_validation,
-        graph_validation=graph_validation, segments=(() if materialize_graph else graph_segments),
-        prepared=graph_rows, verified_changes=graph_changes, check=run_check,
-    )
-    return {
-        "projection": projection,
-        "nodes": nodes,
-        "edges": edges,
-        "projection_digest": projection_digest,
-        "graph_digest": graph_digest,
-        "node_count": node_count,
-        "edge_count": edge_count,
-        "graph_segments": (() if materialize_graph else graph_segments),
-        "enrichment_units": enrichment_headers,
-        "conversation_integrity": conversation_integrity,
-    }
+            from app.analytics.shared_graph import verify_shared_graph
+
+            reused = verify_shared_graph(
+                connection, generation_id, account_id, graph_validation, run_check,
+                prepared=graph_rows, verified_changes=graph_changes,
+            )
+            if reused is None:
+                from app.analytics.graph_verification import verify_graph_rows
+
+                verified = verify_graph_rows(
+                    connection, generation_id, account_id, check=run_check
+                )
+                nodes, edges = verified.nodes, verified.edges
+                graph_digest = (
+                    verified.segment_root
+                    if GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
+                        in projection.pipeline_revision
+                    else verified.digest
+                )
+                if graph_digest is None:
+                    raise ProjectionValidationError("graph segment root is missing")
+                node_counts, edge_counts = verified.node_counts, verified.edge_counts
+                graph_segments = verified.segments
+            else:
+                (
+                    graph_digest, node_counts, edge_counts, graph_segments,
+                    verified_segment_root,
+                ) = reused
+                if (
+                    GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
+                    in projection.pipeline_revision
+                ):
+                    graph_digest = verified_segment_root
+                nodes, edges = [], []
+        if (graph_rows is not None or graph_changes is not None) \
+                and connection.total_changes != read_version:
+            raise ProjectionValidationError('stored graph changed during verification')
+        node_count, edge_count = sum(node_counts.values()), sum(edge_counts.values())
+        run_check()
+        if projection.graph_digest != graph_digest:
+            raise ProjectionValidationError("graph document digest differs")
+        stats = connection.execute(
+            """
+            SELECT * FROM graph_partition_stats
+            WHERE generation_id=? AND creator_account_id=?
+            """,
+            (generation_id, account_id),
+        ).fetchone()
+        if (
+            stats is None
+            or int(stats["source_revision"]) != projection.source_revision
+            or int(stats["node_count"]) != node_count
+            or int(stats["edge_count"]) != edge_count
+            or stats["graph_digest"] != graph_digest
+            or projection.graph.node_count != node_count
+            or projection.graph.edge_count != edge_count
+        ):
+            raise ProjectionValidationError("graph row coverage or digest differs")
+        run_check()
+        run_check()
+        if projection.graph.node_counts_by_kind != dict(sorted(node_counts.items())):
+            raise ProjectionValidationError("node-kind coverage differs")
+        if projection.graph.edge_counts_by_relation != dict(sorted(edge_counts.items())):
+            raise ProjectionValidationError("edge-kind coverage differs")
+        from app.analytics.conversation_integrity_store import verify_generation_integrity
+        conversation_integrity = verify_generation_integrity(
+            connection, generation, account_id, proof=conversation_validation,
+            graph_validation=graph_validation, segments=(() if materialize_graph else graph_segments),
+            prepared=graph_rows, verified_changes=graph_changes, check=run_check,
+        )
+        if (graph_rows is not None or graph_changes is not None) \
+                and connection.total_changes != read_version:
+            raise ProjectionValidationError('stored graph changed during verification')
+        return {
+            "projection": projection,
+            "nodes": nodes,
+            "edges": edges,
+            "projection_digest": projection_digest,
+            "graph_digest": graph_digest,
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "graph_segments": (() if materialize_graph else graph_segments),
+            "enrichment_units": enrichment_headers,
+            "conversation_integrity": conversation_integrity,
+        }
+    finally:
+        if selection is not None:
+            selection.discard()
 
 
 def _generation_graph(

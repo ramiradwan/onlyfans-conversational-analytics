@@ -49,14 +49,27 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
         rows = connection.execute('SELECT m.kind,m.bucket,m.segment_id FROM generation_graph_segments m '
             'WHERE m.generation_id=? AND m.creator_account_id=?', (generation['generation_id'], account))
         current = {(r['kind'], r['bucket']): r['segment_id'] for r in rows}
+    selection = getattr(verified_changes, 'membership_selection', None)
+    from app.analytics.graph_membership_selection import MembershipSelection
+    if (not isinstance(selection, MembershipSelection) or not trusted
+            or not selection.matches(connection, generation, account, graph_validation)):
+        selection = None
     cache, cache_rows, cache_bytes = OrderedDict(), 0, 0
 
     def versions(kind, bucket, selected):
-        nonlocal cache_rows, cache_bytes
+        nonlocal cache_rows, cache_bytes, selection
         segment = current.get((kind, bucket))
         segment_id = segment if isinstance(segment, str) else getattr(segment, 'segment_id', None)
         if segment_id is None:
             raise ValueError('conversation_integrity_segment_missing')
+        if selection is not None:
+            covered = selection.selected(kind, segment_id, selected)
+            if covered is not None:
+                return covered
+            # Do not retain a selective buffer alongside an unbounded sequence
+            # of fallback selections. Once coverage is incomplete, release it.
+            selection.discard()
+            selection = None
         key = kind, segment_id
         if key in cache:
             cache.move_to_end(key)
@@ -126,15 +139,16 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
         unit = units.load_unit(connection, generation['generation_id'], account, h.conversation_ref)
         if unit is None or unit.header != h:
             raise ValueError('conversation_integrity_unit_missing')
-        summaries, members = groups_for_members(unit, check)
         predecessor = trusted.get(h.conversation_ref)
         if predecessor == h:
-            old_summaries = summaries
+            old_summaries = decode_manifest(unit)
         else:
             previous = None if predecessor is None else units.load_integrity_metadata(
                 connection, old_generation, account, h.conversation_ref)
             old_summaries = (decode_manifest(previous) if previous is not None
                 and previous.header == predecessor and predecessor.checksum_version == 2 else {})
+        summaries, members = groups_for_members(unit, check,
+            proven_summaries=old_summaries if complete_predecessor else None)
         for key, summary in summaries.items():
             check()
             prior = old_segments.get(key)

@@ -150,7 +150,7 @@ class IdGroups(Sequence):
         return b''.join(pieces), bytes(summary)
 
 
-def canonical_groups(unit, summaries, check):
+def canonical_groups(unit, summaries, check, *, proven_summaries=None):
     """Verify actual bytes, counts, ordering and both unchanged hash contracts."""
     from app.analytics.conversation_graph_units import MAX_GRAPH_UNIT_BYTES, MAX_GRAPH_UNIT_RECORDS
     h = unit.header
@@ -180,16 +180,18 @@ def canonical_groups(unit, summaries, check):
         raw=raw[1:-1]+b','
         prefix=b'g1:' if kind=='node' else b'e1:'
         shape=re.compile(rb'(?:"'+prefix+rb'[0-9a-f]{64}",)+')
-        last=None
-        for start in range(0,count,_BATCH):
-            check()
-            block=raw[start*_FRAME:min(count,start+_BATCH)*_FRAME]
-            if shape.fullmatch(block) is None:
-                return None
-            values=[block[i:i+_FRAME] for i in range(0,len(block),_FRAME)]
-            if (last is not None and last>=values[0]) or any(a>=b for a,b in zip(values,values[1:])):
-                raise ValueError('conversation_graph_unit_membership_invalid')
-            last=values[-1]
+        last = None
+        if proven_summaries is None:
+            last=None
+            for start in range(0,count,_BATCH):
+                check()
+                block=raw[start*_FRAME:min(count,start+_BATCH)*_FRAME]
+                if shape.fullmatch(block) is None:
+                    return None
+                values=[block[i:i+_FRAME] for i in range(0,len(block),_FRAME)]
+                if (last is not None and last>=values[0]) or any(a>=b for a,b in zip(values,values[1:])):
+                    raise ValueError('conversation_graph_unit_membership_invalid')
+                last=values[-1]
         digest.update(kind.encode()+b'\0')
         start=0
         while start<count:
@@ -208,6 +210,26 @@ def canonical_groups(unit, summaries, check):
             key=(kind,bucket.decode('ascii'))
             expected=summaries.get(key)
             if expected is None or expected[2:4]!=(len(group),part.hexdigest()):
+                raise ValueError('conversation_integrity_membership_invalid')
+            if proven_summaries is not None:
+                # Hash equality reuses only an independently proved membership
+                # ordering. Fixed JSON framing is still checked on actual bytes.
+                bound_shape = re.compile(rb'(?:"'+prefix+bucket+rb'[0-9a-f]{62}",)+')
+                known = proven_summaries.get(key)
+                same = known is not None and known[2:4] == expected[2:4]
+                for block in group.frames():
+                    check()
+                    if bound_shape.fullmatch(block) is None:
+                        return None
+                    first, end = block[:_FRAME], block[-_FRAME:]
+                    if last is not None and last >= first:
+                        raise ValueError('conversation_graph_unit_membership_invalid')
+                    if not same:
+                        values = [block[i:i+_FRAME] for i in range(0,len(block),_FRAME)]
+                        if any(a >= b for a,b in zip(values,values[1:])):
+                            raise ValueError('conversation_graph_unit_membership_invalid')
+                    last = end
+            if key in result:
                 raise ValueError('conversation_integrity_membership_invalid')
             result[key]=group
             start=lo
@@ -275,3 +297,32 @@ def trusted_groups(unit, check=lambda: None):
             return None
     check()
     return summaries, result
+
+
+def checked_predecessor_groups(unit, check=lambda: None):
+    """Recheck immutable bytes before reusing a previously proved ID shape.
+
+    Caller must bind the actual stored unit header to a complete process-local
+    predecessor proof. Hashes alone never grant that proof authority.
+    """
+    opened = trusted_groups(unit, check)
+    if opened is None:
+        return None
+    summaries, groups = opened
+    digest = sha256(f'conversation-graph-unit.v{unit.header.checksum_version}\0'.encode())
+    digest.update(unit.header.graph_digest.encode('ascii') + b'\0')
+    for kind in ('node', 'edge'):
+        digest.update(kind.encode('ascii') + b'\0')
+        for key, group in groups.items():
+            if key[0] != kind:
+                continue
+            part = sha256(b'conversation-members.v2\0')
+            for block in group.lines():
+                check()
+                part.update(block); digest.update(block)
+            if summaries[key][3] != part.hexdigest():
+                raise ValueError('conversation_integrity_membership_invalid')
+    if digest.hexdigest() != unit.header.unit_id:
+        raise ValueError('conversation_graph_unit_digest_invalid')
+    check()
+    return summaries, groups

@@ -30,6 +30,7 @@ def fragment_reader(store, account_id):
 
     partition = account_ref(account_id)
     with store.database.read() as db, generation_verification_cache(db):
+        reader_open = [True]
         generation = db.execute("""SELECT * FROM projection_generations
             WHERE creator_account_id=? AND status='active' AND activated_at IS NOT NULL""",
             (partition,)).fetchone()
@@ -83,14 +84,26 @@ def fragment_reader(store, account_id):
                     and trusted_headers.get(conversation) == value.header
                     and value.header.checksum_version == load.integrity_checksum_version
                 ) else None
+            loaded_graph_unit = [None]
             def previous_graph_unit(conversation):
                 value = graph_units.load_unit(
                     db, generation['generation_id'], partition, conversation,
                 )
-                return value if (
+                value = value if (
                     value is not None
                     and trusted_headers.get(conversation) == value.header
                 ) else None
+                # Keep only the latest actual unit. A caller-created unit with
+                # a copied header cannot obtain construction reuse authority.
+                loaded_graph_unit[0] = value
+                return value
+            def insertion_graph_groups(unit, check=lambda: None):
+                from app.analytics.conversation_id_frames import checked_predecessor_groups
+                if (not reader_open[0] or unit is None or unit is not loaded_graph_unit[0]
+                        or trusted_headers.get(unit.header.conversation_ref) != unit.header):
+                    return None
+                return checked_predecessor_groups(unit, check)
+            load.insertion_graph_groups = insertion_graph_groups
             def graph_unit_references():
                 values = graph_units.list_references(
                     db, generation['generation_id'], partition,
@@ -160,6 +173,8 @@ def fragment_reader(store, account_id):
             page_layout = pages_supported(db)
             chunk_cache = {}
             def graph_segment_chunk(kind, bucket):
+                if not reader_open[0]:
+                    raise ValueError('conversation_reader_closed')
                 key = (kind, bucket)
                 if key not in chunk_cache:
                     chunk_cache[key] = verified_segment_chunk(
@@ -167,14 +182,14 @@ def fragment_reader(store, account_id):
                     )
                 return chunk_cache[key]
             def graph_content_ids(kind, keys, check=lambda: None):
-                # Generic/insertion verification retains the independently
+                # Generic verification retains the independently
                 # selected persisted-content lookup.
                 return selected_content_ids(
                     db, generation['generation_id'], partition, kind, keys, check,
                     page_layout=page_layout,
                 )
             def append_graph_content_ids(kind, keys, check=lambda: None):
-                # Append construction may consume the same canonical chunks that
+                # Admitted append/insertion construction consumes canonical chunks that
                 # were just matched to the live predecessor segment proof.
                 if kind not in ('node', 'edge'):
                     raise ValueError('graph_record_kind_invalid')
@@ -196,6 +211,16 @@ def fragment_reader(store, account_id):
                         segment, encoded, partition, selected, check
                     ))
                 return result
+            def insertion_graph_content_ids(kind, keys, check=lambda: None):
+                # A small conversation must not read an account-sized chunk just
+                # to resolve a handful of members. Keep the existing point path.
+                unit = loaded_graph_unit[0] if graph_unit_proof is not None else None
+                count = 0 if unit is None else unit.header.node_count + unit.header.edge_count
+                total = sum(segment.count for segment in graph_segment_proof.segments)
+                if unit is not None and 4 * count >= total:
+                    return append_graph_content_ids(kind, keys, check)
+                return graph_content_ids(kind, keys, check)
+            load.insertion_graph_content_ids = insertion_graph_content_ids
             load.graph_segment_proof = graph_segment_proof
             load.graph_content_ids = graph_content_ids
             load.append_graph_content_ids = append_graph_content_ids
@@ -203,4 +228,11 @@ def fragment_reader(store, account_id):
             load.graph_chunks_complete = verified_segment_chunks_complete(
                 db, partition, graph_segment_proof
             )
-        yield load
+        try:
+            yield load
+        finally:
+            reader_open[0] = False
+            if graph_unit_proof is not None:
+                loaded_graph_unit[0] = None
+            if graph_segment_proof is not None:
+                chunk_cache.clear()

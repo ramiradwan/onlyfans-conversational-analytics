@@ -184,6 +184,7 @@ class ChangedSegmentVerification:
     removed_nodes: frozenset[str]
     removed_edges: frozenset[str]
     changed_edge_endpoints: tuple[str, ...]
+    membership_selection: object | None = None
 
     @property
     def invalidated(self):
@@ -501,7 +502,7 @@ def _read_changed_segment_rows(connection, account_id, plans, check):
     }
 
 
-def _verified_changed_segment_chunks(connection, account_id, validation, check):
+def _verified_changed_segment_chunks(connection, account_id, validation, check, *, selection=None):
     """Stream changed persisted chunks against a complete predecessor proof."""
     if (validation is None or validation.proof is None
             or validation.removed_nodes is None or validation.removed_edges is None
@@ -576,45 +577,14 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check):
             raise GraphReferentialIntegrityError('graph_segment_chunk_invalid')
         return row['canonical_bytes']
 
-    def compare_delta(plan, encoded):
-        prior = proven.get((plan.kind, plan.bucket))
-        before = iter(()) if prior is None else iter(old_members(prior))
-        after = iter(_checked_record_spans(plan, encoded, account_id, check))
-        left = next(before, None)
-        right = next(after, None)
-        detected = set()
-        while left is not None or right is not None:
-            check()
-            if right is None or (left is not None and left[0] < right[0]):
-                invalidated[plan.kind].add(left[0])
-                removed[plan.kind].add(left[0])
-                left = next(before, None)
-            elif left is None or right[0] < left[0]:
-                detected.add(right[0])
-                right = next(after, None)
-            else:
-                current_content = hashlib.sha256(right[2].encode('utf-8')).hexdigest()
-                if left[1] != current_content:
-                    invalidated[plan.kind].add(left[0])
-                    detected.add(right[0])
-                left = next(before, None)
-                right = next(after, None)
-            if (sum(map(len, invalidated.values())) > MAX_CHANGED_VERIFICATION_ROWS
-                    or sum(map(len, removed.values())) > MAX_CHANGED_VERIFICATION_ROWS):
-                return False
-        if detected != set(plan.changed_keys):
-            raise GraphReferentialIntegrityError('graph_segment_changed_set_invalid')
-        return True
-
     for plan in changed:
         check()
         encoded = current_chunk(plan)
-        if not compare_delta(plan, encoded):
-            return None
+        prior = proven.get((plan.kind, plan.bucket))
+        before = iter(()) if prior is None else iter(old_members(prior))
         relation = plan.kind + '_id'
-        table = 'graph_segment_' + plan.kind + 's'
         membership = connection.execute(
-            f'SELECT {relation},content_id FROM {table} '
+            f'SELECT {relation},content_id FROM graph_segment_{plan.kind}s '
             f'WHERE creator_account_id=? AND segment_id=? ORDER BY {relation}',
             (account_id, plan.segment_id),
         )
@@ -622,21 +592,41 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check):
             ('graph-segment.v1:' + plan.kind + ':' + plan.bucket).encode()
         )
         changed_set = set(plan.changed_keys)
-        seen_changed = set()
-        count = 0
+        detected, seen_changed = set(), set()
+        count, previous_key = 0, None
+        after = iter(_checked_record_spans(plan, encoded, account_id, check))
         try:
+            left = next(before, None)
             rows = iter(membership)
             current = next(rows, None)
-            for key, _category, data in _checked_record_spans(
-                    plan, encoded, account_id, check):
+            # One independent traversal, merging both persisted membership streams.
+            for key, _category, data in after:
                 check()
-                if key[3:5] != plan.bucket or current is None or current[0] != key:
+                if (key[3:5] != plan.bucket or current is None or current[0] != key
+                        or (previous_key is not None and key <= previous_key)):
                     raise GraphReferentialIntegrityError('graph_segment_membership_invalid')
+                previous_key = key
                 raw = data.encode('utf-8')
                 content_id = hashlib.sha256(raw).hexdigest()
                 if current[1] != content_id:
                     raise GraphReferentialIntegrityError('graph_segment_content_invalid')
                 digest.update(key.encode() + b':' + content_id.encode() + b'\n')
+                while left is not None and left[0] < key:
+                    check()
+                    invalidated[plan.kind].add(left[0]); removed[plan.kind].add(left[0])
+                    if (sum(map(len, invalidated.values())) > MAX_CHANGED_VERIFICATION_ROWS
+                            or sum(map(len, removed.values())) > MAX_CHANGED_VERIFICATION_ROWS):
+                        return None
+                    left = next(before, None)
+                if left is None or key < left[0]:
+                    detected.add(key)
+                else:
+                    if left[1] != content_id:
+                        invalidated[plan.kind].add(key); detected.add(key)
+                    left = next(before, None)
+                if (len(detected) > MAX_CHANGED_VERIFICATION_ROWS
+                        or sum(map(len, invalidated.values())) > MAX_CHANGED_VERIFICATION_ROWS):
+                    return None
                 if key in changed_set:
                     content = connection.execute(
                         f'SELECT * FROM graph_{plan.kind}_content '
@@ -645,21 +635,34 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check):
                     ).fetchone()
                     if content is None:
                         raise GraphReferentialIntegrityError('graph_segment_content_invalid')
-                    category, actual = (
-                        node_bytes(content, account_id) if plan.kind == 'node'
-                        else edge_bytes(content, account_id)
-                    )
+                    category, actual = (node_bytes(content, account_id) if plan.kind == 'node'
+                                        else edge_bytes(content, account_id))
                     if actual != raw:
                         raise GraphReferentialIntegrityError('graph_segment_content_invalid')
                     seen_changed.add(key)
                     if plan.kind == 'edge':
                         changed_endpoints.update((content['source_id'], content['target_id']))
+                if selection is not None:
+                    selection.observe(plan.kind, plan.segment_id, key, content_id)
                 count += 1
                 current = next(rows, None)
             if current is not None:
                 raise GraphReferentialIntegrityError('graph_segment_membership_invalid')
+            while left is not None:
+                check()
+                invalidated[plan.kind].add(left[0]); removed[plan.kind].add(left[0])
+                if (sum(map(len, invalidated.values())) > MAX_CHANGED_VERIFICATION_ROWS
+                        or sum(map(len, removed.values())) > MAX_CHANGED_VERIFICATION_ROWS):
+                    return None
+                left = next(before, None)
         finally:
             membership.close()
+            closer = getattr(before, 'close', None)
+            if closer is not None: closer()
+            closer = getattr(after, 'close', None)
+            if closer is not None: closer()
+        if detected != changed_set:
+            raise GraphReferentialIntegrityError('graph_segment_changed_set_invalid')
         if (count != plan.count or digest.hexdigest() != plan.digest
                 or seen_changed != changed_set):
             raise GraphReferentialIntegrityError('graph_segment_digest_invalid')
@@ -681,11 +684,13 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check):
 
     if removed != claimed_removed:
         raise GraphReferentialIntegrityError('graph_segment_removed_set_invalid')
+    if selection is not None:
+        selection.finish()
     return ChangedSegmentVerification(
         tuple(verified),
         frozenset(invalidated['node']), frozenset(invalidated['edge']),
         frozenset(removed['node']), frozenset(removed['edge']),
-        tuple(sorted(changed_endpoints)),
+        tuple(sorted(changed_endpoints)), selection,
     )
 
 

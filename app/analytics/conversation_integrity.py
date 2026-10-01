@@ -96,11 +96,11 @@ def decode_manifest(unit):
         raise ValueError('conversation_integrity_count_invalid')
     return {(g[0], g[1]): g for g in groups}
 
-def groups_for_members(unit, check=lambda: None):
+def groups_for_members(unit, check=lambda: None, *, proven_summaries=None):
     from app.analytics.conversation_graph_units import graph_unit_ids
     summaries = decode_manifest(unit)
     from app.analytics.conversation_id_frames import canonical_groups
-    framed = canonical_groups(unit, summaries, check)
+    framed = canonical_groups(unit, summaries, check, proven_summaries=proven_summaries)
     if framed is not None:
         return summaries, framed
     result = {}
