@@ -156,7 +156,8 @@ def test_every_tracking_trigger_is_required(fixture):
     with fixture.stores.database.read() as db:
         names = [row[0] for row in db.execute(
             "SELECT name FROM sqlite_master WHERE type='trigger' AND name GLOB 'generation_content_*'")]
-        assert len(names) == 81
+        # Catalogs 22 and 23 add four cleanup guards and one graph epoch guard.
+        assert len(names) == 86
         for name in names:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DROP TRIGGER ' + name)

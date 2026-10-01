@@ -12,12 +12,10 @@ from app.analytics.conversation_pages import PAGE_RECORDS
 from app.analytics.enrichment_cache import CachedEnrichment, MAX_CONVERSATION_CACHE_BYTES, MAX_CONVERSATION_CACHE_ENTRIES
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 
-
 def increase(total, values):
     added = ConfidenceTotal.from_values(values)
     value = total.fraction() + added.fraction()
     return ConfidenceTotal(total.count + added.count, str(value.numerator), str(value.denominator))
-
 
 def pack_insertion(previous, findings, metrics, input_digest, config, cutoff, entries, check):
     h = previous.header
@@ -68,6 +66,22 @@ def pack_insertion(previous, findings, metrics, input_digest, config, cutoff, en
     return ConversationEnrichmentUnit(header, messages, analyzers)
 
 
+def _ordinary_record_fields(raw, ordinal):
+    """Keep legacy ordinal/timestamp admission without decoding canonical rows.
+
+    The predecessor frame is already digest-bound and independently validated.
+    Unescaped, unique field names make these two lexical checks unambiguous.
+    Whitespace, escapes, duplicate keys or unusual encodings use JSON parsing.
+    """
+    token = b'"source_ordinal":' + str(ordinal).encode('ascii')
+    if (b'\\' not in raw and raw.count(b'"source_ordinal"') == 1
+            and raw.count(b'"sent_at"') == 1 and b'"sent_at":"' in raw
+            and (token+b',' in raw or token+b'}' in raw)):
+        return True
+    value = json.loads(raw)
+    return (type(value['source_ordinal']) is int and value['source_ordinal'] == ordinal
+            and isinstance(value['sent_at'], str))
+
 def validate_inserted_unit(connection, previous_generation, previous, unit, *, check):
     """No constructor hint is trusted: read and compare the actual persisted rows."""
     from app.analytics.conversation_enrichment_unit_sql import load_unit
@@ -103,26 +117,46 @@ def validate_inserted_unit(connection, previous_generation, previous, unit, *, c
             or added.participant_ref != h.metrics.participant_ref or added.sent_at <= h.retention_cutoff
             or added.source_ordinal != insertion):
         return False
-    values, seen = [], set()
-    for index, raw in enumerate(before):
+    # Both frames were digest-checked by message_records(). The equal prefix
+    # is the actual persisted predecessor content, already independently proved.
+    # Compare the bounded changed suffix, not new models of that equal prefix.
+    reference = added.message_ref.encode('ascii')
+    before_frame = b'\n'.join(before)
+    if reference in before_frame or b'\\' in before_frame:
+        # Legal escaped JSON needs parsing to establish identity absence.
+        for raw in before:
+            check()
+            if ((reference in raw or b'\\' in raw)
+                    and json.loads(raw)['message_ref'] == added.message_ref):
+                return False
+    for ordinal in range(insertion):
         check()
-        value = json.loads(raw)
+        if not _ordinary_record_fields(before[ordinal], ordinal):
+            return False
+    suffix = []
+    for index in range(insertion, len(before)):
+        check()
+        value = json.loads(before[index])
         if (type(value['source_ordinal']) is not int or value['source_ordinal'] != index
-                or not isinstance(value['sent_at'], str)
-                or value['message_ref'] == added.message_ref or value['message_ref'] in seen):
+                or not isinstance(value['sent_at'], str)):
             return False
-        seen.add(value['message_ref'])
-        position = index + (index >= insertion)
-        current = value if index < insertion else dict(value, source_ordinal=position)
-        if (raw if index < insertion else _canonical(current)) != after[position]:
+        current = dict(value, source_ordinal=index+1)
+        if _canonical(current) != after[index+1]:
             return False
-        values.append(metric_input(current))
-    if added.sent_at != values[insertion].sent_at:
+        suffix.append(MessageEnrichment.model_validate_json(after[index+1]))
+    if not suffix or added.sent_at != suffix[0].sent_at:
         return False
-    from app.analytics.metrics import ConversationMetricInput
-    values.insert(insertion, ConversationMetricInput.from_enrichment(added))
-    metrics = build_conversation_metrics_from_bound_values(h.account_ref, h.conversation_ref,
-        h.metrics.participant_ref, previous.metrics.unread_count, values)
+    from app.analytics import tied_insertion_metrics
+    metrics = tied_insertion_metrics.tied_suffix_metrics(previous.metrics, suffix, added, check)
+    if metrics is None:
+        # Recompute in the actual inserted order, including floating-point sum
+        # order and response samples. This is also the legacy/general tie path.
+        values = []
+        for raw in after:
+            check()
+            values.append(metric_input(json.loads(raw)))
+        metrics = build_conversation_metrics_from_bound_values(h.account_ref, h.conversation_ref,
+            h.metrics.participant_ref, previous.metrics.unread_count, values)
     if metrics != h.metrics:
         return False
     if (increase(previous.sentiment,[added.sentiment.confidence]) != h.sentiment

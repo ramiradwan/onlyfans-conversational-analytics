@@ -24,13 +24,11 @@ class InsertedConversation:
     enrichment_unit: ConversationEnrichmentUnit
     removed_edges: frozenset[str]
 
-
 def metric_input(value):
     return ConversationMetricInput(datetime.fromisoformat(value['sent_at']), value['source_ordinal'],
         value['direction'], value['sentiment']['label'], float(value['sentiment']['score']),
         tuple(t['taxonomy_id'] for t in value['topic_entities']['topics']),
         tuple(e['entity_type'] for e in value['topic_entities']['entities']), value['engagement']['state'])
-
 
 def match_inserted_source(account, raw, previous, rows, check):
     """Removing exactly one row must reproduce the independently verified input."""
@@ -39,7 +37,7 @@ def match_inserted_source(account, raw, previous, rows, check):
         return None
     if not rows or len(messages) > MAX_ENRICHMENT_UNIT_RECORDS:
         return None
-    prior, output, metrics, seen = [], [], [], set()
+    prior, output, seen = [], [], set()
     insertion = None
     cursor = 0
     for ordinal, record in enumerate(rows):
@@ -71,7 +69,6 @@ def match_inserted_source(account, raw, previous, rows, check):
         prior.append(selected if cursor == ordinal else dict(selected, source_ordinal=ordinal))
         actual = value if cursor == ordinal else dict(value, source_ordinal=cursor)
         output.append(record if cursor == ordinal else _canonical(actual))
-        metrics.append(metric_input(actual))
         cursor += 1
     # Appends use their existing path. This path requires an actual tied insertion.
     if insertion is None or cursor != len(messages) or len(messages)-insertion-1 > PAGE_RECORDS:
@@ -86,8 +83,31 @@ def match_inserted_source(account, raw, previous, rows, check):
     if conversation_digest(old_raw) != previous.input_digest:
         return None
     check()
-    return insertion, old_raw, output, metrics
+    # Source/identity checks above remain complete. Metric objects are built
+    # only if the bounded terminal-tie calculation cannot use prior aggregates.
+    return insertion, old_raw, output, None
 
+
+def build_inserted_metrics(previous, rows, index, inserted, check):
+    """Compute from source-matched rows; never trust a supplied metric result."""
+    from app.analytics import tied_insertion_metrics
+    from app.analytics.metrics import build_conversation_metrics_from_bound_values
+    from app.models.analytics import MessageEnrichment
+
+    suffix = []
+    for row in rows[index+1:]:
+        check()
+        suffix.append(MessageEnrichment.model_validate_json(row))
+    result = tied_insertion_metrics.tied_suffix_metrics(previous.metrics, suffix, inserted, check)
+    if result is not None:
+        return result
+    values = []
+    for row in rows:
+        check()
+        values.append(metric_input(json.loads(row)))
+    return build_conversation_metrics_from_bound_values(
+        previous.account_ref, previous.conversation_ref, previous.metrics.participant_ref,
+        previous.metrics.unread_count, values)
 
 def suffix_graph(pipeline, account, revision, raw, rows, metrics, start, check, cancellation):
     """Use the ordinary projector for every affected ordinal and neighbor."""
@@ -104,7 +124,6 @@ def suffix_graph(pipeline, account, revision, raw, rows, metrics, start, check, 
                 {**edge.model_dump(), 'sequence': edge.sequence + start}))
         graph.add(nodes, adjusted, check=check)
     return graph
-
 
 def try_insert(pipeline, account, revision, raw, input_digest, loader, reuse, config, cutoff, check, cancellation):
     """Only an exact one-message insertion with message-local analysis is eligible."""
@@ -162,8 +181,7 @@ def try_insert(pipeline, account, revision, raw, input_digest, loader, reuse, co
         raise ValueError('conversation_insertion_message_invalid')
     inserted = findings[0]
     output[index] = _canonical(inserted.model_dump(mode='json'))
-    values.insert(index, ConversationMetricInput.from_enrichment(inserted))
-    metrics = build_conversation_metrics_from_values(account, conversation, values)
+    metrics = build_inserted_metrics(previous, output, index, inserted, check)
     findings = InsertedMessageEnrichments(output, inserted, index, previous.first_source_at)
     old_delta = suffix_graph(pipeline, account, revision, old_raw, rows, previous.metrics, start, check, cancellation)
     delta = suffix_graph(pipeline, account, revision, raw, output, metrics, start, check, cancellation)
