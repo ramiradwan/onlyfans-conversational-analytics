@@ -43,6 +43,7 @@ GUARD_DIGESTS = {
     23: "bf3daafe97f37c06e8edfc54bf5167a9557c14abb83771a2f56016f7c1547abd",
     # Index-only migration; retain the complete existing guard signature.
     24: "bf3daafe97f37c06e8edfc54bf5167a9557c14abb83771a2f56016f7c1547abd",
+    25: "bf3daafe97f37c06e8edfc54bf5167a9557c14abb83771a2f56016f7c1547abd",
 }
 
 

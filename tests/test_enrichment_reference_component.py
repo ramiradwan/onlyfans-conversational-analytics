@@ -3,6 +3,9 @@ from datetime import datetime,timezone
 from pathlib import Path
 from unittest.mock import patch
 import pytest
+import shutil
+from functools import partial
+from app.analytics.database import ProjectionsDatabase
 from tools.analytics_enrichment_reference_sql import EnrichmentReferenceFixture,INDEX
 from tools.analytics_insertion_diagnostic import Attribution
 from tools import light_first_update_benchmark as runner
@@ -10,7 +13,12 @@ from tools import light_first_update_benchmark as runner
 NOW=datetime(2026,9,18,12,tzinfo=timezone.utc)
 
 @pytest.mark.parametrize('index',[False,True])
-def test_real_reference_transition_and_fresh_oracle(tmp_path,index):
+def test_real_reference_transition_and_fresh_oracle(tmp_path,index,monkeypatch):
+    if index:
+        catalog=tmp_path/'catalog24';catalog.mkdir()
+        for sql in sorted((Path(__file__).resolve().parents[1]/'app/analytics/sql').glob('*.sql'))[:24]:
+            shutil.copy2(sql,catalog/sql.name)
+        monkeypatch.setattr('app.analytics.database.ProjectionsDatabase',partial(ProjectionsDatabase,migrations_dir=catalog))
     fixture=EnrichmentReferenceFixture(tmp_path,1000,NOW,probe_index=index)
     try:
         assert all(r['analyzer_bytes']>8 and r['analyzer_records'] for r in fixture.shape)

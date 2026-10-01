@@ -21,7 +21,9 @@ TRIGGER_DIGESTS = {12: TRIGGER_DIGEST,
     22: '82f8eaf3c79a3c11e88b78bc8bd05ea0b659b64d2b308b275f470c9d1b8c1cd4',
     23: '5058b0b5da2d3a0b5b6eb13688dca9413108f13d1a4ea14237f9f26ed2256172',
     # Catalog 24 adds only an index; all content-tracking triggers are unchanged.
-    24: '5058b0b5da2d3a0b5b6eb13688dca9413108f13d1a4ea14237f9f26ed2256172'}
+    24: '5058b0b5da2d3a0b5b6eb13688dca9413108f13d1a4ea14237f9f26ed2256172',
+    # Catalog 25 is index-only too; schema_version still invalidates old receipts.
+    25: '5058b0b5da2d3a0b5b6eb13688dca9413108f13d1a4ea14237f9f26ed2256172'}
 MAX_RECEIPTS = 8
 RECEIPT_SECONDS = 60.0
 _VOLATILE = frozenset({'status', 'activation_intent_id', 'witness_sequence',

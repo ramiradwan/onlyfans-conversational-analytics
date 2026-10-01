@@ -40,7 +40,7 @@ def test_upgrade_preserves_graph_backup_and_invalidates_old_receipt(tmp_path):
             payloads=[tuple(r) for r in db.execute('SELECT * FROM conversation_graph_units ORDER BY creator_account_id,unit_id')]
         upgraded=ProjectionsDatabase(old.path)
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0]==24
+            assert db.execute('PRAGMA user_version').fetchone()[0]==25
             assert [tuple(r) for r in db.execute('SELECT * FROM conversation_graph_units ORDER BY creator_account_id,unit_id')]==payloads
             after=content_stamp(db)
             assert before!=after and before[:2]==after[:2] and before[3]==after[3]
