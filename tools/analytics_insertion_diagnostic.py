@@ -102,6 +102,18 @@ class Attribution:
             lambda a,k: dict(source_records=len(a[1]["messages"]), previous_records=len(a[3])),
             lambda r: {} if r is None else dict(insertion_index=r[0],
                 reconstructed_metric_inputs=0 if r[3] is None else len(r[3]), shifted_records=len(r[2])-r[0]-1))
+        if hasattr(insertion, 'match_proven_inserted_source'):
+            self.patch(insertion, 'match_proven_inserted_source',
+                lambda a,k: dict(source_records=len(a[1]['messages']), previous_records=len(a[3])),
+                lambda r: {} if r is None else dict(insertion_index=r[0], shifted_records=len(r[2])-r[0]-1))
+        for name in ('validate_one_added_unit', '_validate_appended_frames'):
+            if hasattr(storage, name): self.patch(storage, name)
+        if hasattr(inserted, '_validate_inserted_frames'):
+            self.patch(inserted, '_validate_inserted_frames')
+        if hasattr(insertion, 'match_proven_inserted_source'):
+            from app.analytics import enrichment_prefix
+            self.patch(enrichment_prefix, 'ordinary_records',
+                lambda a,k: dict(records=len(a[0])) if hasattr(a[0], '__len__') else {})
         self.patch(metrics, "build_conversation_metrics_from_bound_values",
             lambda a,k: dict(metric_inputs=len(a[4])) if hasattr(a[4], "__len__") else {})
         self.patch(metrics, "append_conversation_metrics")
@@ -248,7 +260,12 @@ def construct(previous, raw, operation, account, check):
     added = EnrichmentStage().enrich_conversation(account, conversation)[0]
     digest = conversation_digest(raw)
     if operation == "insert":
-        matched = insertion.match_inserted_source(account, raw, h, units.message_records(previous), check)
+        # Component preparation independently validates this predecessor. Runtime
+        # source/proof admission is separately exercised by the scheduled tests.
+        matcher = getattr(insertion, 'match_proven_inserted_source', insertion.match_inserted_source)
+        if h.message_count < 1024:
+            matcher = insertion.match_inserted_source
+        matched = matcher(account, raw, h, units.message_records(previous), check)
         if matched is None:
             raise ValueError("focused_insertion_match_rejected")
         index, _, rows, inputs = matched
@@ -303,11 +320,17 @@ def component_sample(db, previous, raw, operation, account, trace, *, index):
         store_seconds = time.monotonic()-stored_at
         validated_at = time.monotonic()
         with trace.span("component.validate"):
-            appended = sql._validate_appended_unit(db, "previous", previous.header, persisted, check=check)
-            accepted = appended or inserted.validate_inserted_unit(db, "previous", previous.header, persisted, check=check)
+            dispatcher = getattr(sql, 'validate_one_added_unit', None)
+            if dispatcher is None:
+                appended = sql._validate_appended_unit(db, "previous", previous.header, persisted, check=check)
+                accepted = appended or inserted.validate_inserted_unit(db, "previous", previous.header, persisted, check=check)
+            else:
+                path = dispatcher(db, "previous", previous.header, persisted, check=check)
+                accepted, appended = path is not None, path == 'append'
             if not accepted or appended != (operation == "append"):
                 raise ValueError("focused_validation_path_differs")
         validation_seconds = time.monotonic()-validated_at
+        transition_seconds = time.monotonic()-constructed_at
         # Independent source recomputation stays outside component timing, but is
         # executed for EVERY sample and compared with actual persisted bytes.
         enabled = trace.enabled
@@ -323,6 +346,7 @@ def component_sample(db, previous, raw, operation, account, trace, *, index):
             trace.enabled = enabled
         return dict(index=index, operation=operation, accepted_path="append" if appended else "insert",
             construct_seconds=construct_seconds, store_seconds=store_seconds, validation_seconds=validation_seconds,
+            transition_seconds=transition_seconds,
             independent_rebuild_equal=True, persisted_content_revalidated=True,
             oracle_seconds=time.monotonic()-oracle_started,
             input_digest=candidate.header.input_digest, output_digest=candidate.header.canonical_digest,
