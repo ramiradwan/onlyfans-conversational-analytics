@@ -35,6 +35,7 @@ def options():
     p.add_argument('--verify-after', action='store_true')
     p.add_argument('--focused-repeats', type=int, choices=range(1, 6), default=3)
     p.add_argument('--focused-operation', choices=['append', 'insert'], default='insert')
+    p.add_argument('--full-attribution', action='store_true')
     args = p.parse_args()
     if args.preparation == 'ready' and args.seed is None:
         p.error('--seed is required for ready preparation')
@@ -46,6 +47,8 @@ def options():
         p.error('10000 messages is available only in focused diagnostics')
     if args.preparation.startswith('focused-') and args.baseline_operation:
         p.error('focused diagnostics cannot bind a qualification probe as their baseline')
+    if args.full_attribution and (args.preparation != 'focused-update' or args.trace_mode != 'coarse'):
+        p.error('--full-attribution requires focused-update and coarse trace mode')
     if args.timeout_seconds is None:
         args.timeout_seconds = 9000 if args.preparation == 'repeat1-prefix' else 1800
     if args.timeout_seconds <= 0:
@@ -465,6 +468,10 @@ def main():
                         'Nested spans overlap; use self_seconds or disjoint root spans.'])
                 result['helper_sha256']['analytics_insertion_diagnostic.py'] = light.file_sha256(
                     root/'tools/analytics_insertion_diagnostic.py')
+            if args.full_attribution:
+                result['full_attribution_requested'] = True
+                result['helper_sha256']['analytics_update_attribution.py'] = light.file_sha256(
+                    root/'tools/analytics_update_attribution.py')
             q.write_once(args.output/'started.json', dict(result, complete=False))
             def expired():
                 q.write_once(args.output/'aborted.json', dict(complete=False, reason='timeout',

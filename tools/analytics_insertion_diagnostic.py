@@ -20,8 +20,9 @@ MAX_EVENTS = 4096
 
 class Attribution:
     """Bounded bulk-call spans. No row callbacks, SQL text, or source values."""
-    def __init__(self, *, enabled=True):
+    def __init__(self, *, enabled=True, max_events=MAX_EVENTS):
         self.enabled = enabled
+        self.max_events = max_events
         self.phase = "preparation"
         self.events = []
         self.patches = []
@@ -37,7 +38,7 @@ class Attribution:
         with self.lock:
             self.sequence += 1
             index = self.sequence
-            if index > MAX_EVENTS:
+            if index > self.max_events:
                 raise RuntimeError("focused_trace_capacity_exceeded")
         stack = getattr(self.local, "stack", [])
         self.local.stack = stack
@@ -384,13 +385,20 @@ async def run_update(args, q, light, outer, status, manifest, result, workdir):
     scheduler = InProcessProjectionScheduler(work.f.pipeline, worker_count=1,
                                             queue_capacity=64, reconciliation_interval=30)
     journal = Journal(args.output/"events", str(__import__("os").getpid()))
-    trace = Attribution(enabled=args.trace_mode != "none")
+    trace_type = Attribution
+    if getattr(args, 'full_attribution', False):
+        from tools.analytics_update_attribution import UpdateAttribution
+        trace_type = UpdateAttribution
+    trace = trace_type(enabled=args.trace_mode != "none")
     original_save = journal.save
     def save(label, value):
         saved = original_save(label, value)
         if label == "operation" and value.get("case"):
             trace.enabled = False
             outer.phase = "independent-verification"
+            if getattr(args, 'full_attribution', False):
+                q.write_once(args.output/'operation-attribution.json', dict(
+                    probe=value, attribution=trace.snapshot(), coarse_events=list(outer.events)))
         return saved
     journal.save = save
     try:
@@ -419,6 +427,8 @@ async def run_update(args, q, light, outer, status, manifest, result, workdir):
         outer.restore()
         outer.patches.clear()
         result["attribution"] = trace.events
+        if getattr(args, 'full_attribution', False):
+            result['full_attribution'] = trace.snapshot()
         try:
             resources.close()
         finally:
