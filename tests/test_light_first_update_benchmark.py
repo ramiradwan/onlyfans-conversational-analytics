@@ -81,5 +81,78 @@ class FirstUpdateProtocolTests(unittest.TestCase):
         self.assertEqual(args.idle_seconds, 0)
 
 
+class RepeatOnePrefixTests(unittest.TestCase):
+    def arguments(self, *extra):
+        return ['runner', '--source-root', 'source', '--expected-sha', 'sha',
+                '--output', 'output', '--owner-lock', 'lock',
+                '--preparation', 'repeat1-prefix', *extra]
+
+    def test_fresh_prefix_defaults_and_unprofiled_mode(self):
+        with patch('sys.argv', self.arguments('--trace-mode', 'none')):
+            args = runner.options()
+        self.assertEqual(args.messages, 100000)
+        self.assertEqual(args.timeout_seconds, 9000)
+        self.assertEqual(args.trace_mode, 'none')
+        self.assertIsNone(args.seed)
+        self.assertEqual(args.idle_seconds, 0)
+
+    def test_prefix_rejects_seed_extra_idle_and_v6_operation_binding(self):
+        for extra in (['--seed', 'seed'], ['--idle-seconds', '61'],
+                      ['--baseline-operation', 'old-operation.json']):
+            with patch('sys.argv', self.arguments(*extra)), self.assertRaises(SystemExit):
+                runner.options()
+
+    def test_prefix_uses_worker_order_mutations_verification_and_original_idle(self):
+        from tests.test_qualification_process_improvements import Scenario, MANIFEST, q
+        scenario = Scenario()
+        with scenario.installed() as sleep:
+            report = asyncio.run(runner.repeat1_prefix(
+                scenario.work, scenario.journal, scenario.config, 'prefix-parent'))
+        sleep.assert_awaited_once_with(61)
+        self.assertEqual([p['case'] for p in report['probes']], runner.PREFIX_CASES)
+        mutations = [x for x in scenario.calls if isinstance(x, tuple) and x[0] == 'mutate']
+        self.assertEqual(mutations, [('mutate', (0, 'visibility-ordinary-dominant')),
+            ('mutate', (1, 'visibility-rebuilt-small')), ('mutate', (0, 'visibility-idle-dominant'))])
+        self.assertEqual(scenario.calls.count('cold-or-rebuild-verified'), 2)
+        self.assertEqual(scenario.calls.count('independent-verification-complete'), 3)
+        self.assertEqual(scenario.calls.count('scheduler-joined'), 1)
+        self.assertNotIn('restart-child', scenario.calls)
+        self.assertIn('visibility_case_set_mismatch', q.check_visibility(MANIFEST, scenario.config['job'], report))
+
+    def test_verified_idle_failure_stops_and_joins_without_restart(self):
+        from tests.test_qualification_process_improvements import Scenario
+        scenario = Scenario(miss='idle/dominant')
+        with scenario.installed():
+            report = asyncio.run(runner.repeat1_prefix(
+                scenario.work, scenario.journal, scenario.config, 'prefix-parent'))
+        self.assertFalse(report['complete'])
+        self.assertTrue(report['stopped_after_verified_failure']['verification_completed'])
+        self.assertTrue(report['scheduler_closed'])
+        self.assertEqual(report['unexecuted_cases'], ['restarted/small'])
+        self.assertNotIn('restart-child', scenario.calls)
+
+    def test_earlier_failure_never_runs_later_prefix_steps(self):
+        from tests.test_qualification_process_improvements import Scenario
+        scenario = Scenario(miss='ordinary/dominant')
+        with scenario.installed() as sleep:
+            report = asyncio.run(runner.repeat1_prefix(
+                scenario.work, scenario.journal, scenario.config, 'prefix-parent'))
+        sleep.assert_not_awaited()
+        self.assertEqual(len(report['probes']), 1)
+        self.assertNotIn('unchanged_rebuild', scenario.calls)
+        self.assertTrue(report['scheduler_closed'])
+
+    def test_outcome_does_not_conflate_nonreproduction_smoke_or_earlier_failure(self):
+        result = dict(complete=True, summaries=[dict(case=c, gate=True) for c in runner.PREFIX_CASES])
+        self.assertEqual(runner.prefix_outcome(result, 100000), 'NOT_REPRODUCED')
+        self.assertEqual(runner.prefix_outcome(result, 1000), 'SMOKE_ONLY')
+        result['summaries'][-1]['gate'] = False
+        self.assertEqual(runner.prefix_outcome(result, 100000), 'LATENCY_MISS_REPRODUCED')
+        result['summaries'] = result['summaries'][:1]
+        self.assertEqual(runner.prefix_outcome(result, 100000), 'EARLIER_PREFIX_GATE_FAILED')
+        result['complete'] = False
+        self.assertEqual(runner.prefix_outcome(result, 100000), 'INCOMPLETE')
+
+
 if __name__ == '__main__':
     unittest.main()

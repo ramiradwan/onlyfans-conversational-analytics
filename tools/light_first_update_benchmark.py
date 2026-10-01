@@ -23,10 +23,11 @@ def options():
     p.add_argument('--source-root', type=Path, required=True)
     p.add_argument('--expected-sha', required=True)
     p.add_argument('--seed', type=Path)
-    p.add_argument('--preparation', choices=['ready', 'cold'], default='ready')
+    p.add_argument('--preparation', choices=['ready', 'cold', 'repeat1-prefix'], default='ready')
     p.add_argument('--messages', type=int, choices=[1000, 100000], default=100000)
     p.add_argument('--baseline-operation', type=Path)
-    p.add_argument('--timeout-seconds', type=float, default=1800)
+    p.add_argument('--timeout-seconds', type=float)
+    p.add_argument('--trace-mode', choices=['none', 'coarse'], default='coarse')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--owner-lock', type=Path, required=True)
     p.add_argument('--case', choices=['small', 'dominant'], default='small')
@@ -35,8 +36,12 @@ def options():
     args = p.parse_args()
     if args.preparation == 'ready' and args.seed is None:
         p.error('--seed is required for ready preparation')
-    if args.preparation == 'cold' and (args.seed is not None or args.idle_seconds):
-        p.error('cold preparation does not permit seed reuse or an inserted idle')
+    if args.preparation != 'ready' and (args.seed is not None or args.idle_seconds):
+        p.error('fresh preparation does not permit seed reuse or an inserted idle')
+    if args.preparation == 'repeat1-prefix' and args.baseline_operation:
+        p.error('repeat1-prefix cannot bind a v6 single-operation manifest as v7')
+    if args.timeout_seconds is None:
+        args.timeout_seconds = 9000 if args.preparation == 'repeat1-prefix' else 1800
     if args.timeout_seconds <= 0:
         p.error('--timeout-seconds must be positive')
     return args
@@ -260,6 +265,110 @@ async def run_cold(args, q, light, trace, status, manifest, result, workdir):
             result['complete'] = False
 
 
+PREFIX_CASES = ['ordinary/dominant', 'rebuilt/small', 'idle/dominant']
+
+
+def prefix_outcome(result, messages):
+    """A diagnostic completion is never a full visibility qualification pass."""
+    if not result.get('complete'):
+        return 'INCOMPLETE'
+    if messages != 100000:
+        return 'SMOKE_ONLY'
+    rows = result.get('summaries', [])
+    if [row['case'] for row in rows] != PREFIX_CASES:
+        return 'EARLIER_PREFIX_GATE_FAILED'
+    return 'NOT_REPRODUCED' if rows[-1]['gate'] else 'LATENCY_MISS_REPRODUCED'
+
+
+async def repeat1_prefix(work, journal, config, instance):
+    # Use the v7 worker itself. visibility() closes resources but never spawns
+    # restart; collect_visibility() is deliberately not called by this diagnostic.
+    from tools.analytics_qualification_worker import visibility
+    return await visibility(work, journal, config, instance)
+
+
+async def run_repeat1_prefix(args, q, light, trace, status, manifest, result, workdir):
+    from uuid import uuid4
+    from tools.analytics_qualification_fixture import Workload, Journal
+    from tools.analytics_qualification_progress import CollectorProgress
+    from tools.analytics_qualification_execution import mark_state, StateBudget
+    cases = manifest['visibility']['process_cases'][1]
+    if (cases != PREFIX_CASES + ['restarted/small']
+            or manifest['visibility']['idle_seconds'] != 61
+            or not manifest['visibility'].get('fail_fast_after_verified_probe')):
+        raise ValueError('repeat1_v7_recipe_mismatch')
+    schedule = dict(manifest['visibility_execution'], directory=str(args.output/'execution'))
+    if args.timeout_seconds > schedule['maximum_worker_seconds']:
+        raise ValueError('prefix_cannot_extend_worker_limit')
+    Path(schedule['directory']).mkdir()
+    config = dict(repeat=1, job='visibility/reference-windows-16g/1',
+                  execution_schedule=schedule, continue_after_visibility_failure=False)
+    instance = str(os.getpid()) + ':' + uuid4().hex
+    journal = Journal(args.output/'events', instance)
+    progress = CollectorProgress(args.output, instance)
+    result.update(prefix_config=config, intentionally_unexecuted_cases=cases[-1:])
+    begun = time.monotonic()
+    budget = StateBudget(schedule, started=begun, token=os.environ.get('OFCA_QUALIFICATION_PROCESS'))
+    stop = threading.Event()
+    def watch():
+        while not stop.wait(0.5):
+            try:
+                budget.poll(time.monotonic())
+            except Exception as error:
+                q.write_once(args.output/'state-aborted.json',
+                             dict(complete=False, error_type=type(error).__name__, error=str(error)))
+                os._exit(98)
+    monitor = threading.Thread(target=watch, name='prefix-state-budget', daemon=True)
+    mark_state(config, 'cold', instance)
+    monitor.start()
+    work = None
+    try:
+        with progress.phase('fixture.initialization'):
+            work = Workload(workdir, manifest, args.messages, reopen=False, known_kinds=False)
+        work.qualification_progress = progress
+        q.write_once(args.output/'fixture.json', dict(definition=manifest['fixture'],
+            manifest_sha256=q.digest(manifest), source_counts=work.counts(),
+            kind_adapter='production_unknown_kinds', input_path='direct_synthetic_database_fixture'))
+        if args.trace_mode != 'none':
+            original_save = journal.save
+            def save(label, value):
+                if label == 'operation-started':
+                    trace.phase = value.get('case') or value['phase']
+                saved = original_save(label, value)
+                if label == 'operation':
+                    trace.phase = (value.get('case') or value['phase'])+'-verification'
+                return saved
+            journal.save = save
+        report = await repeat1_prefix(work, journal, config, instance)
+        result['prefix_report'] = report
+        result['summaries'] = [summarize_probe(probe) for probe in report['probes']]
+        result['probe_checks'] = {probe['case']: q.check_visibility_probe(
+            manifest, 'reference-windows-16g', probe) for probe in report['probes']}
+        if result['summaries']:
+            result['summary'] = result['summaries'][-1]
+        result['safety'] = {key: report.get(key) for key in
+                            ('scheduler_closed', 'detached_workers', 'backlog')}
+        verified = all(probe.get('independent_rebuild_equal') is True
+                       and probe.get('persisted_content_revalidated') is True
+                       for probe in report['probes'])
+        orderly = (report.get('complete') is True or
+                   report.get('stopped_after_verified_failure', {}).get('verification_completed') is True)
+        result['complete'] = bool(report['probes']) and verified and orderly and (
+            report.get('scheduler_closed') is True and report.get('detached_workers') == 0
+            and report.get('backlog') == 0 and 'error' not in report)
+    finally:
+        stop.set()
+        monitor.join(timeout=5)
+        # Retain the full state schedule: restarted is intentionally absent.
+        budget.poll(time.monotonic())
+        result['execution'] = budget.report(time.monotonic())
+        result['state_monitor_joined'] = not monitor.is_alive()
+        if work is not None:
+            work.close()
+        if monitor.is_alive():
+            result['complete'] = False
+
+
 def main():
     args = options()
     import sys
@@ -278,7 +387,7 @@ def main():
     status = args.output/'status.json'
     result = dict(schema='a07-light-first-update.v2', complete=False,
         source=source, source_revision=source['revision'],
-        runner_sha256=light.file_sha256(Path(__file__)),
+        runner_sha256=light.file_sha256(Path(__file__)), trace_mode=args.trace_mode,
         diagnostic_only=True, qualifies_full_protocol=False,
         startup_mode='shared_verified_seed_candidate_currentness_then_first_update',
         limitations=['Does not replay cold construction or its physical WAL history.',
@@ -298,12 +407,19 @@ def main():
             manifest = q.read_json(root/'docs/analytics/acceptance-manifest.json')
             runtime = q.runtime_context()
             result['manifest_sha256'] = q.digest(manifest)
+            result['measurement_version'] = manifest['measurement']['version']
+            result['app_source_sha256'] = q.digest({name: sha for name, sha in source['files'].items()
+                                                   if name.startswith('app/')})
             result['runtime_sha256'] = q.digest(runtime)
             result['runtime'] = runtime
             result['helper_sha256'] = {name: light.file_sha256(root/'tools'/name)
                 for name in ('targeted_visibility_benchmark.py',
                              'analytics_qualification_fixture.py',
-                             'analytics_qualification_workloads.py')}
+                             'analytics_qualification_workloads.py',
+                             'analytics_qualification_worker.py',
+                             'analytics_qualification.py',
+                             'analytics_qualification_execution.py',
+                             'analytics_qualification_progress.py')}
             if args.preparation == 'ready':
                 light.atomic_status(status, 'copy', state='started')
                 seed = light.seed_metadata(q, args.seed)
@@ -321,6 +437,13 @@ def main():
                                  'One latency miss does not attribute its cause.'])
                 if args.baseline_operation:
                     bind_baseline(args, q, light, result)
+            if args.preparation == 'repeat1-prefix':
+                result.update(schema='a07-light-first-update.v3',
+                    preparation_recipe='a07-idle-dominant-prefix.v1',
+                    startup_mode='fresh_repeat1_prefix_stop_before_restart',
+                    repeat=1, profiling=args.trace_mode != 'none',
+                    limitations=['Diagnostic prefix, not full or packaged qualification.',
+                                 'One sample cannot establish causality or a speedup.'])
             q.write_once(args.output/'started.json', dict(result, complete=False))
             def expired():
                 q.write_once(args.output/'aborted.json', dict(complete=False, reason='timeout',
@@ -330,7 +453,8 @@ def main():
             watchdog.daemon = True
             watchdog.start()
             try:
-                trace.install(q)
+                if args.trace_mode != 'none':
+                    trace.install(q)
                 def pulse():
                     while not heartbeat_stop.wait(30):
                         light.atomic_status(status, trace.phase, state='running',
@@ -339,14 +463,15 @@ def main():
                 heartbeat_stop = threading.Event()
                 heartbeat = threading.Thread(target=pulse, name='first-update-heartbeat', daemon=True)
                 heartbeat.start()
-                asyncio.run((run_cold if args.preparation == 'cold' else run)(
-                    args, q, light, trace, status, manifest, result, workdir))
+                entry = {'cold': run_cold, 'ready': run, 'repeat1-prefix': run_repeat1_prefix}[args.preparation]
+                asyncio.run(entry(args, q, light, trace, status, manifest, result, workdir))
             finally:
                 watchdog.cancel()
                 if 'heartbeat_stop' in locals():
                     heartbeat_stop.set()
                     heartbeat.join(timeout=5)
         except BaseException as error:
+            result['complete'] = False
             result['error'] = dict(type=type(error).__name__, message=str(error), traceback=traceback.format_exc())
         finally:
             trace.restore()
@@ -360,13 +485,15 @@ def main():
             result['reproduction_status'] = ('INCOMPLETE' if not result['complete'] else
                 'SMOKE_ONLY' if args.messages != 100000 else 'LATENCY_MISS_REPRODUCED' if args.preparation == 'cold' and args.messages == 100000
                 and not result['summary']['gate'] else 'NOT_REPRODUCED')
+            if args.preparation == 'repeat1-prefix':
+                result['reproduction_status'] = prefix_outcome(result, args.messages)
             if workdir.exists():
                 shutil.rmtree(workdir)
             result['working_copy_removed'] = not workdir.exists()
             q.write_once(args.output/'result.json', result)
             sha = light.file_sha256(args.output/'result.json')
             light.atomic_status(status, 'finished', complete=result['complete'], receipt_sha256=sha)
-            print(json.dumps({k:v for k,v in result.items() if k in ('source_revision','summary','error','wall_seconds','source_unchanged','complete')}, sort_keys=True), flush=True)
+            print(json.dumps({k:v for k,v in result.items() if k in ('source_revision','summary','summaries','reproduction_status','error','wall_seconds','source_unchanged','complete')}, sort_keys=True), flush=True)
     return 0 if result['complete'] else 2
 
 
