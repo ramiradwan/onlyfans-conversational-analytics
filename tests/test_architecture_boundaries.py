@@ -314,6 +314,23 @@ def test_external_vendored_contracts_are_excluded() -> None:
         assert classification.module_id is None, f"{p} should not have an internal module id"
 
 
+def test_ci_selection_manifest_is_non_production_without_exempting_other_ci_paths() -> None:
+    manifest = load_manifest(DEFAULT_MANIFEST_PATH)
+    selection_path = "ci/backend-test-shards.json"
+    classification = classify_path(selection_path, manifest)
+    assert classification.is_production is False
+    assert classification.is_vendored_contract is False
+    assert classification.module_id is None
+
+    without_declaration = copy.deepcopy(manifest)
+    without_declaration["non_production_policy"]["development_and_test_namespaces"].remove(selection_path)
+    with pytest.raises(UnclassifiedProductionPathError):
+        classify_path(selection_path, without_declaration)
+    for unknown in ("ci/undeclared-runtime.py", "ci/another-manifest.json"):
+        with pytest.raises(UnclassifiedProductionPathError):
+            classify_path(unknown, manifest)
+
+
 def test_unknown_production_path_fails_closed() -> None:
     """Unknown production paths must fail closed by raising UnclassifiedProductionPathError."""
     manifest = load_manifest(DEFAULT_MANIFEST_PATH)

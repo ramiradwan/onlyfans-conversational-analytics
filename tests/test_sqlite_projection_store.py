@@ -818,24 +818,36 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
     scheduler = InProcessProjectionScheduler(
         pipeline, worker_count=1, queue_capacity=2
     )
-    await scheduler.start(recover=False)
-    entered = threading.Event()
+    loop = asyncio.get_running_loop()
+    entered = asyncio.Event()
     release = threading.Event()
-    first_revocation_started = threading.Event()
+    first_revocation_started = asyncio.Event()
     release_first_revocation = threading.Event()
-    canonical_revoked = threading.Event()
+    canonical_revoked = asyncio.Event()
     original_publish = pipeline.publish_candidate
     observed_candidates = []
+    watchdog_seconds = 30
+    close_task: asyncio.Task[bool] | None = None
+
+    async def wait_for_barrier(event: asyncio.Event, name: str) -> None:
+        # Real SQLite preparation is not the close deadline under test. Wait
+        # for the observed transition without occupying a default-executor
+        # thread needed by the scheduler's background revocation.
+        try:
+            await asyncio.wait_for(event.wait(), timeout=watchdog_seconds)
+        except TimeoutError:
+            pytest.fail(
+                f"Timed out waiting for {name}; "
+                f"scheduler state: {scheduler.state('account-a')}",
+                pytrace=False,
+            )
 
     def paused_publish(candidate):
         observed_candidates.append(candidate)
-        entered.set()
+        loop.call_soon_threadsafe(entered.set)
         release.wait()
         return original_publish(candidate)
 
-    pipeline.publish_candidate = paused_publish  # type: ignore[method-assign]
-    await scheduler.schedule("account-a", 0)
-    assert await asyncio.to_thread(entered.wait, 2)
     revocations = 0
     original_revoke = repositories.projection_activation.revoke_publication_epoch
 
@@ -843,27 +855,31 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
         nonlocal revocations
         revocations += 1
         if revocations == 1:
-            first_revocation_started.set()
+            loop.call_soon_threadsafe(first_revocation_started.set)
             release_first_revocation.wait()
             raise sqlite3.OperationalError("synthetic_canonical_revocation_failure")
         result = original_revoke(*args, **kwargs)
-        canonical_revoked.set()
+        loop.call_soon_threadsafe(canonical_revoked.set)
         return result
 
-    monkeypatch.setattr(
-        repositories.projection_activation,
-        "revoke_publication_epoch",
-        flaky_canonical_revoke,
-    )
-    close_task = asyncio.create_task(scheduler.close(timeout=0.02))
     try:
-        assert await asyncio.to_thread(first_revocation_started.wait, 5)
+        await scheduler.start(recover=False)
+        monkeypatch.setattr(pipeline, "publish_candidate", paused_publish)
+        await scheduler.schedule("account-a", 0)
+        await wait_for_barrier(entered, "publication after the open check")
+        monkeypatch.setattr(
+            repositories.projection_activation,
+            "revoke_publication_epoch",
+            flaky_canonical_revoke,
+        )
+        close_task = asyncio.create_task(scheduler.close(timeout=0.02))
+        await wait_for_barrier(first_revocation_started, "first canonical revocation")
         assert not await close_task
 
         # Complete the synthetic late first failure only after the caller's hard
         # deadline. Persisted revocation must still receive its fail-closed retry.
         release_first_revocation.set()
-        assert await asyncio.to_thread(canonical_revoked.wait, 5)
+        await wait_for_barrier(canonical_revoked, "persisted canonical revocation")
         assert revocations >= 2
         assert repositories.database is not None
         with repositories.database.read() as connection:
@@ -875,14 +891,21 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
         assert store.database.active_generation("account-a") is None
     finally:
         release_first_revocation.set()
-        release.set()
-        if not close_task.done():
-            await close_task
-
-    deadline = time.monotonic() + 5
-    while scheduler.executor_thread_count and time.monotonic() < deadline:
-        await asyncio.sleep(0.01)
-    assert scheduler.executor_thread_count == 0
+        try:
+            if close_task is not None:
+                await close_task
+        finally:
+            try:
+                # Fence before releasing a late publisher, including when the
+                # close task was absent or cancelled before its coroutine began.
+                if not scheduler.closed:
+                    await scheduler.close(timeout=0.02)
+            finally:
+                release.set()
+                deadline = time.monotonic() + watchdog_seconds
+                while scheduler.executor_thread_count and time.monotonic() < deadline:
+                    await asyncio.sleep(0.01)
+                assert scheduler.executor_thread_count == 0
     assert store.database.active_generation("account-a") is None
     assert len(observed_candidates) == 1
     witnessed = repositories.projection_activation.get(
