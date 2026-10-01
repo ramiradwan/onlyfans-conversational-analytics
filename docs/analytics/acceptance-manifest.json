@@ -106,7 +106,8 @@
       "backlog_drained"
     ],
     "idle_seconds": 61,
-    "fail_on_any_probe_over_limit": true
+    "fail_on_any_probe_over_limit": true,
+    "fail_fast_after_verified_probe": true
   },
   "questions": {
     "enabled": [
@@ -193,7 +194,7 @@
   },
   "status": "frozen",
   "measurement": {
-    "version": "a07-observable-scheduler.v6",
+    "version": "a07-observable-scheduler.v7",
     "previous_protocol": "Legacy whole-process mutation diagnostic, 1800 seconds including preparation and per-phase oracle work.",
     "change": "Record activation, observed question visibility, cleanup and backlog separately; persist operation and verification separately. Question fixture construction and fresh-runtime startup remain inside one 1800-second owned process-tree guard.",
     "old_failures_remain_failures": true,
@@ -209,7 +210,9 @@
     "visibility_maintenance": "v4 starts recovery and the declared 30-second reconciliation in both initial and restarted visibility processes. The v3 initial process disabled this timer. Prior runs remain historical controls, not evidence for the corrected maintenance path. Preparation, independent verification and product cleanup stay inside the unchanged 1800-second whole-worker guard.",
     "query_clock": "v5 preserves the fixed fixture timestamps, filters and cutoff, but uses the normal system UTC clock for query validity and evidence expiry. Generation creation already uses that clock. A v4 run after its frozen evaluation time can reject every new generation as future-dated; those failed runs remain failed. The 1800-second whole-worker guard, query limits, visibility clocks and required cleanup are unchanged.",
     "observation_journal": "First distinct query refusals (at most 16) and the first current answer are durable before the final operation record; stopped observers cannot erase their refusal reason.",
-    "visibility_state_budgets": "v6 uses five ordered 1800-second execution states within one worker tree, with a 9000-second absolute cap. Cold includes interpreter/fixture preparation, build, and its oracle; ordinary includes update and oracle; rebuilt includes forced rebuild, its oracle, first update and oracle; idle includes waiting, update, oracle and initial shutdown; restarted includes new interpreter, normal readiness, update, oracle and final shutdown. Required product cleanup is synchronous and included. No clock pauses or warm-process replacement are allowed. Previous whole-worker 1800-second failures stay failed; mutation and question execution keep their existing whole-worker limit."
+    "visibility_state_budgets": "v6 uses five ordered 1800-second execution states within one worker tree, with a 9000-second absolute cap. Cold includes interpreter/fixture preparation, build, and its oracle; ordinary includes update and oracle; rebuilt includes forced rebuild, its oracle, first update and oracle; idle includes waiting, update, oracle and initial shutdown; restarted includes new interpreter, normal readiness, update, oracle and final shutdown. Required product cleanup is synchronous and included. No clock pauses or warm-process replacement are allowed. Previous whole-worker 1800-second failures stay failed; mutation and question execution keep their existing whole-worker limit.",
+    "verified_probe_fail_fast": "v7 checks each visibility probe only after synchronous cleanup and its durable independent verification. A failed probe stops later cases and restart, joins owned resources, and records FAIL plus unexecuted cases. A successful run still requires all existing states, all cases and all fresh processes. Prior failures remain failures; no deadline, threshold or product cleanup is removed.",
+    "verification_components": "v7 separately reports generation resolution, independent canonical reference computation, persisted-generation recomputation, and comparison. Advisory progress does not renew deadlines. No expected result or PASS is cached, and no verification is skipped."
   },
   "history": {
     "batches": 100,

@@ -95,6 +95,7 @@ def test_visibility_restarts_the_interpreter_not_only_backend_objects(tmp_path, 
     import time
     from tools.analytics_qualification_execution import StateBudget
     config = configuration(tmp_path, "visibility")
+    config["job"] = "visibility/reference-windows-16g/0"
     config["execution_schedule"] = dict(config["manifest"]["visibility_execution"],
         directory=str(Path(config["output"]) / "execution"))
     budget = StateBudget(config["execution_schedule"], started=time.monotonic(), token="test-owner")
@@ -179,3 +180,34 @@ def test_query_failure_cannot_hide_a_recording_defect(fault):
         phase["clocks"][fault] = None
     with pytest.raises(AssertionError):
         assert_matrix_recording(MANIFEST, report)
+
+
+def test_verified_latency_failure_skips_restart_but_never_passes(tmp_path, monkeypatch):
+    """Real 1k collector + deliberate tiny test-only limit; not a capacity result."""
+    import time
+    from tools.analytics_qualification_execution import StateBudget
+    monkeypatch.setenv("OFCA_QUALIFICATION_PROCESS", "test-owner")
+    config = configuration(tmp_path, "visibility")
+    config["job"] = "visibility/reference-windows-16g/0"
+    config["manifest"]["profiles"]["reference-windows-16g"]["numeric_latency_gates"] = True
+    config["manifest"]["limits"]["visibility_seconds"] = 0.000001
+    config["execution_schedule"] = dict(config["manifest"]["visibility_execution"],
+        directory=str(Path(config["output"]) / "execution"))
+    budget = StateBudget(config["execution_schedule"], started=time.monotonic(), token="test-owner")
+    report = collect(config)
+    assert report["complete"] is False
+    assert report["scheduler_closed"] is True and report["detached_workers"] == 0
+    assert report["backlog"] == 0
+    assert report["unexecuted_cases"] == config["manifest"]["visibility"]["process_cases"][0][1:]
+    assert not (Path(config["output"]) / "restarted-process").exists()
+    phase = report["probes"][0]
+    assert phase["independent_rebuild_equal"] and phase["persisted_content_revalidated"]
+    assert phase["cleanup_complete"] and phase["stale_reference_rejected"]
+    timing = phase["verification_timings"]
+    assert set(timing["components_seconds"]) == {"resolve_generation", "canonical_reference", "persisted_generation", "compare"}
+    assert sum(timing["components_seconds"].values()) <= timing["total_seconds"]
+    assert timing["started"] >= phase["clocks"]["operation_finished"]
+    assert list((Path(config["output"]) / "events").glob("*-visibility-stop.json"))
+    assert "visibility_over_ten_seconds:ordinary/small" in q.check_visibility(config["manifest"], config["job"], report)
+    with pytest.raises(ValueError, match="execution_states_incomplete"):
+        budget.poll(time.monotonic(), finished=True)
