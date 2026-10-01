@@ -11,6 +11,7 @@ import zlib
 _FRAME = 70
 _BATCH = 1024
 _TRANSLATE = bytes.maketrans(b',', b'\n')
+_HEX_BYTES = b'0123456789abcdef'
 
 
 class EncodedIds(Sequence):
@@ -118,7 +119,8 @@ class IdGroups(Sequence):
         if kind not in ('node', 'edge'):
             raise ValueError('graph_record_kind_invalid')
         expected = b'g1:' if kind == 'node' else b'e1:'
-        pattern = re.compile(rb'"' + expected + rb'([0-9a-f]{4})[0-9a-f]{60}",')
+        pattern = re.compile(rb'"' + expected + rb'([0-9a-f]{4}).{60}",', re.DOTALL)
+        framing = (b'"' + expected + b'",').translate(None, _HEX_BYTES)
         compressor = zlib.compressobj(1)
         pieces, size = [], 0
         summary = bytearray(PREFIX_BYTES)
@@ -135,9 +137,12 @@ class IdGroups(Sequence):
                 if size > maximum:
                     return None
             digest.update(block.translate(_TRANSLATE, b'"'))
-            # Fixed-width full matches cover every byte when their lengths
-            # sum to the block length. The regex checks framing and every hex
-            # character, including IDs in caller-created non-framed groups.
+            # Deleting hexadecimal bytes must leave only the expected frame
+            # punctuation. Fixed-width matches below also pin every delimiter,
+            # prefix and ordinal boundary. Together these two bounded C passes
+            # check ALL identity characters without a per-character regex loop.
+            if block.translate(None, _HEX_BYTES) != framing * (len(block) // _FRAME):
+                raise ValueError('graph_identity_invalid')
             prefixes = pattern.findall(block)
             if len(prefixes) * _FRAME != len(block):
                 raise ValueError('graph_identity_invalid')

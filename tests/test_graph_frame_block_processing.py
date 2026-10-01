@@ -86,3 +86,24 @@ def test_fused_bitmap_uses_unique_prefixes_per_bounded_block(monkeypatch):
     packed,summary=frames.IdGroups((values,)).pack_contract(64*1024*1024,sha256(),'node')
     assert len(calls)==4   # Four blocks rather than 4096 individual conversions.
     assert summary==bitmap(values)
+
+
+@pytest.mark.parametrize('byte',[ord('g'),ord(':'),ord('"'),ord(','),ord('Z'),0,10,128,255])
+def test_hex_filter_cannot_hide_structural_or_nonascii_identity_bytes(byte):
+    raw=bytearray(b'"g1:'+b'a'*64+b'",')
+    raw[35]=byte
+    class Broken(frames.IdGroups):
+        def frames(self):yield bytes(raw)
+    with pytest.raises(ValueError,match='graph_identity_invalid'):
+        Broken((('g1:'+'a'*64,),)).pack_contract(1024,sha256(),'node')
+
+
+def test_all_block_positions_reject_displaced_frame_punctuation():
+    base=b'"g1:'+b'a'*64+b'",'
+    for boundary in (0,1,2,3,68,69):
+        for moved in (10,32,67):
+            changed=bytearray(base);changed[boundary],changed[moved]=changed[moved],changed[boundary]
+            class Broken(frames.IdGroups):
+                def frames(self):yield bytes(changed)
+            with pytest.raises(ValueError,match='graph_identity_invalid'):
+                Broken((('g1:'+'a'*64,),)).pack_contract(1024,sha256(),'node')
