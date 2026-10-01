@@ -226,15 +226,48 @@ def check_matrix(manifest: dict, job: str, data: dict) -> list[str]:
     return errors
 
 
+def check_visibility_probe(manifest: dict, profile: str, probe: dict) -> list[str]:
+    """One gate definition shared by early stopping and final verification."""
+    errors = []
+    clock_errors = timestamps(probe, mutation=True)
+    errors.extend(clock_errors)
+    if (type(probe.get("backlog_before")) is not int or probe["backlog_before"] != 0
+            or type(probe.get("backlog_after")) is not int or probe["backlog_after"] != 0
+            or probe.get("valid_current_result") is not True or probe.get("cleanup_complete") is not True):
+        errors.append("visibility_not_valid_current_and_drained")
+    if probe.get("stale_reference_rejected") is not True:
+        errors.append("visibility_stale_reference_not_rejected:" + str(probe.get("case")))
+    expected_digests = probe.get("expected")
+    if (probe.get("independent_rebuild_equal") is not True
+            or probe.get("persisted_content_revalidated") is not True
+            or not isinstance(expected_digests, dict)
+            or set(expected_digests) != {"projection_digest", "graph_digest", "canonical_content_digest"}
+            or expected_digests != probe.get("actual")
+            or any(not isinstance(v, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', v) is None
+                   for v in expected_digests.values())):
+        errors.append("visibility_independent_verification_missing_or_invalid:" + str(probe.get("case")))
+    marks = probe.get("clocks", {})
+    if not clock_errors and manifest["profiles"][profile]["numeric_latency_gates"]:
+        elapsed = max(marks[k] for k in ("first_valid_visible_result", "required_cleanup_complete", "backlog_drained")) - marks["durable_canonical_commit"]
+        if elapsed > manifest["limits"]["visibility_seconds"]:
+            errors.append("visibility_over_ten_seconds:" + probe["case"])
+    return errors
+
+
 def check_visibility(manifest: dict, job: str, data: dict) -> list[str]:
     _, profile, repeat = job.split("/")
     probes = data.get("probes", [])
     if data.get("initial_messages") != manifest["visibility"]["messages"]:
         return ["visibility_dataset_size_mismatch"]
     expected = manifest["visibility"]["process_cases"][int(repeat)]
-    if [p.get("case") for p in probes] != expected:
-        return ["visibility_case_set_mismatch"]
     errors = []
+    if [p.get("case") for p in probes] != expected:
+        errors.append("visibility_case_set_mismatch")
+    if data.get("complete") is False:
+        errors.append("visibility_incomplete")
+    stop = data.get("stopped_after_verified_failure")
+    if stop is not None:
+        errors.append("visibility_stopped_after_verified_failure:" + str(stop.get("case")))
     if (data.get("scheduler_closed") is not True or data.get("restart_scheduler_closed") is not True
             or type(data.get("detached_workers")) is not int or data["detached_workers"] != 0
             or type(data.get("restart_detached_workers")) is not int or data["restart_detached_workers"] != 0
@@ -242,28 +275,7 @@ def check_visibility(manifest: dict, job: str, data: dict) -> list[str]:
             or type(data.get("restart_backlog")) is not int or data["restart_backlog"] != 0):
         errors.append("visibility_workers_or_backlog_not_closed")
     for probe in probes:
-        clock_errors = timestamps(probe, mutation=True)
-        errors.extend(clock_errors)
-        if (type(probe.get("backlog_before")) is not int or probe["backlog_before"] != 0
-                or type(probe.get("backlog_after")) is not int or probe["backlog_after"] != 0
-                or probe.get("valid_current_result") is not True or probe.get("cleanup_complete") is not True):
-            errors.append("visibility_not_valid_current_and_drained")
-        if probe.get("stale_reference_rejected") is not True:
-            errors.append("visibility_stale_reference_not_rejected:" + str(probe.get("case")))
-        expected_digests = probe.get("expected")
-        if (probe.get("independent_rebuild_equal") is not True
-                or probe.get("persisted_content_revalidated") is not True
-                or not isinstance(expected_digests, dict)
-                or set(expected_digests) != {"projection_digest", "graph_digest", "canonical_content_digest"}
-                or expected_digests != probe.get("actual")
-                or any(not isinstance(v, str) or re.fullmatch(r'sha256:[0-9a-f]{64}', v) is None
-                       for v in expected_digests.values())):
-            errors.append("visibility_independent_verification_missing_or_invalid:" + str(probe.get("case")))
-        marks = probe.get("clocks", {})
-        if not clock_errors and manifest["profiles"][profile]["numeric_latency_gates"]:
-            elapsed = max(marks[k] for k in ("first_valid_visible_result", "required_cleanup_complete", "backlog_drained")) - marks["durable_canonical_commit"]
-            if elapsed > manifest["limits"]["visibility_seconds"]:
-                errors.append("visibility_over_ten_seconds:" + probe["case"])
+        errors.extend(check_visibility_probe(manifest, profile, probe))
     return errors
 
 
@@ -381,6 +393,8 @@ def check_package(manifest: dict, job: str, data: dict) -> list[str]:
 def check_payload(manifest: dict, context: dict, job: str, data: dict) -> list[str]:
     if data.get("profiling") is True:
         return ["instrumented_run_is_diagnostic_only"]
+    if data.get("continue_after_visibility_failure") is True:
+        return ["continue_after_failure_is_diagnostic_only"]
     if job == "source-ci":
         jobs = data.get("checks", [])
         expected = set(manifest["ci_jobs"])
@@ -573,6 +587,12 @@ def check_collector_evidence(attempt: Path, result: dict, manifest: dict) -> lis
         return ["collector_profiling_flag_mismatch"]
     if profiled:
         return ["instrumented_run_is_diagnostic_only"]
+    continuation = config.get("continue_after_visibility_failure", False)
+    if (type(continuation) is not bool
+            or continuation != payload.get("continue_after_visibility_failure", False)):
+        return ["collector_continuation_flag_mismatch"]
+    if continuation:
+        return ["continue_after_failure_is_diagnostic_only"]
     if digest(read("payload.json")) != digest(payload):
         return ["collector_payload_differs_from_raw_record"]
     if (digest(config["manifest"]) != digest(manifest) or config["subject_sha256"] != digest(result["subject"])

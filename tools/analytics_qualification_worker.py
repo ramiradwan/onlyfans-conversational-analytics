@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
 import gc
 import shutil
 import os
@@ -16,6 +17,7 @@ from tools.analytics_qualification_fixture import Journal, Workload
 from tools.analytics_qualification_workloads import direct, matrix, scheduled
 from tools.analytics_qualification_questions import questions
 from tools.analytics_qualification_execution import mark_state
+from tools.analytics_qualification_progress import CollectorProgress
 
 
 def subject_matches(config):
@@ -38,6 +40,25 @@ def child(config, directory, mode):
     return payload
 
 
+def stop_after_verified_probe(work, journal, config, report, cases, probe):
+    """Stop only after scheduled() has saved its independent verification."""
+    if (not work.manifest["visibility"].get("fail_fast_after_verified_probe", False)
+            or config.get("continue_after_visibility_failure", False)):
+        return False
+    profile = config["job"].split("/")[1]
+    reasons = q.check_visibility_probe(work.manifest, profile, probe)
+    if not reasons:
+        return False
+    remaining = cases[cases.index(probe["case"]) + 1:]
+    stop = dict(case=probe["case"], reasons=reasons, at=time.monotonic(),
+                verification_completed=probe.get("independent_rebuild_equal") is True
+                    and probe.get("persisted_content_revalidated") is True)
+    report.update(complete=False, stopped_after_verified_failure=stop,
+                  unexecuted_cases=remaining)
+    journal.save("visibility-stop", dict(stop, unexecuted_cases=remaining))
+    return True
+
+
 async def visibility(work, journal, config, instance, *, restarted=False):
     from app.analytics.query_runtime import QuestionResources
     from app.analytics.scheduling import InProcessProjectionScheduler
@@ -48,39 +69,86 @@ async def visibility(work, journal, config, instance, *, restarted=False):
     report = {"initial_messages": work.size, "probes": [], "complete": False,
               "runtime_processes": [instance]}
     cases = work.manifest["visibility"]["process_cases"][config["repeat"]]
+    attempted = []
+    progress = getattr(work, "qualification_progress", None)
+    def step(name):
+        return progress.phase(name) if progress else nullcontext()
     try:
         if not restarted:
             await direct(work, journal, resources, "cold")
-        resources.start()
-        await scheduler.start(recover=True)
+        with step("restart.scheduler_readiness" if restarted else "scheduler.readiness"):
+            resources.start()
+            await scheduler.start(recover=True)
+            if restarted:
+                state = await scheduler.wait(work.account)
+                if state.availability != AvailabilityStatus.AVAILABLE:
+                    raise ValueError("restart_not_ready")
         if restarted:
-            state = await scheduler.wait(work.account)
-            if state.availability != AvailabilityStatus.AVAILABLE:
-                raise ValueError("restart_not_ready")
-            reference = await asyncio.to_thread(work.capture_current_reference)
-            journal.save("restart-reference", reference)
+            with step("restart.reference_capture"):
+                reference = await asyncio.to_thread(work.capture_current_reference)
+                journal.save("restart-reference", reference)
         for case in cases[-1:] if restarted else cases[:-1]:
+            attempted.append(case)
             state, thread = case.split("/")
             if not restarted:
                 mark_state(config, state, instance)
             if state == "rebuilt":
                 await direct(work, journal, resources, "unchanged_rebuild")
             if state == "idle":
-                started = time.monotonic()
-                await asyncio.sleep(work.manifest["visibility"]["idle_seconds"])
-                journal.save("idle", {"seconds": time.monotonic() - started})
+                with step("idle.wait"):
+                    started = time.monotonic()
+                    await asyncio.sleep(work.manifest["visibility"]["idle_seconds"])
+                    journal.save("idle", {"seconds": time.monotonic() - started})
             probe = await scheduled(work, journal, resources, scheduler, "one_committed_message",
                 lambda: work.add(0 if thread == "dominant" else 1, "visibility-" + case.replace("/", "-")), case=case)
             probe["process_instance"] = instance
             report["probes"].append(probe)
-        report["complete"] = True
+            if stop_after_verified_probe(work, journal, config, report, cases, probe):
+                break
+        else:
+            report["complete"] = True
+    except Exception as error:
+        report.update(complete=False, error_type=type(error).__name__, error=str(error),
+                      unexecuted_cases=[case for case in (cases[-1:] if restarted else cases)
+                                        if case not in attempted])
+        journal.save("failure", {"error_type": type(error).__name__, "error": str(error)})
     finally:
-        resources.close()
-        report["scheduler_closed"] = await scheduler.close(timeout=10)
-        report["detached_workers"] = scheduler.detached_worker_count
-        report["backlog"] = scheduler.retained_account_count
-        journal.save("visibility", report)
-        work.close()
+        # A resource or journal failure must not skip the owned scheduler shutdown.
+        try:
+            resources.close()
+        finally:
+            try:
+                report["scheduler_closed"] = await scheduler.close(timeout=10)
+            finally:
+                report["detached_workers"] = scheduler.detached_worker_count
+                report["backlog"] = scheduler.retained_account_count
+                if (report.get("scheduler_closed") is not True
+                        or report["detached_workers"] or report["backlog"]):
+                    report["complete"] = False
+                try:
+                    journal.save("visibility", report)
+                finally:
+                    work.close()
+    return report
+
+
+def collect_visibility(work, journal, config, instance, *, restarted=False):
+    report = asyncio.run(visibility(work, journal, config, instance, restarted=restarted))
+    if restarted or not report.get("complete"):
+        return report
+    if not report["scheduler_closed"] or report["detached_workers"]:
+        raise ValueError("cannot_restart_with_live_workers")
+    mark_state(config, "restarted", instance)
+    restart = child(config, Path(config["output"]) / "restarted-process", "visibility-restarted")
+    report["probes"].extend(restart["probes"])
+    report["runtime_processes"].extend(restart["runtime_processes"])
+    report["complete"] = report["complete"] and restart["complete"]
+    report["restart_scheduler_closed"] = restart["scheduler_closed"]
+    report["restart_detached_workers"] = restart["detached_workers"]
+    report["restart_backlog"] = restart["backlog"]
+    for key in ("stopped_after_verified_failure", "unexecuted_cases", "error", "error_type"):
+        if key in restart:
+            report[key] = restart[key]
     return report
 
 
@@ -90,6 +158,7 @@ def collect(config):
     configured_at = time.monotonic()
     instance = str(os.getpid()) + ":" + uuid4().hex
     journal = Journal(output / "events", instance)
+    progress = CollectorProgress(output, instance)
     process = {"instance": instance, "pid": os.getpid(), "started": q.stamp(),
         "supervisor_instance": os.environ.get("OFCA_QUALIFICATION_PROCESS"),
         "runtime": q.runtime_context(), "subject_sha256": config["subject_sha256"]}
@@ -105,10 +174,12 @@ def collect(config):
     report = {"complete": False, "initial_messages": config["messages"]}
     work = None
     try:
-        work = Workload(data, manifest, config["messages"],
-            reopen=mode in {"questions-child", "visibility-restarted"},
-            question_case=config["case"] if mode in {"questions", "questions-child"} else None,
-            known_kinds=config["known_kinds"])
+        with progress.phase("restart.storage_initialization" if mode == "visibility-restarted" else "fixture.initialization"):
+            work = Workload(data, manifest, config["messages"],
+                reopen=mode in {"questions-child", "visibility-restarted"},
+                question_case=config["case"] if mode in {"questions", "questions-child"} else None,
+                known_kinds=config["known_kinds"])
+        work.qualification_progress = progress
         if config.get("profile_updates"):
             from tools.analytics_qualification_profile import install
             install(work, output)
@@ -132,19 +203,8 @@ def collect(config):
             report = child(config, output / "fresh-process", "questions-child")
             report.update(preparation_seconds=preparation_seconds, preparation=preparation)
         elif mode in {"visibility", "visibility-restarted"}:
-            report = asyncio.run(visibility(work, journal, config, instance,
-                                           restarted=mode == "visibility-restarted"))
-            if mode == "visibility":
-                if not report["scheduler_closed"] or report["detached_workers"]:
-                    raise ValueError("cannot_restart_with_live_workers")
-                mark_state(config, "restarted", instance)
-                restarted = child(config, output / "restarted-process", "visibility-restarted")
-                report["probes"].extend(restarted["probes"])
-                report["runtime_processes"].extend(restarted["runtime_processes"])
-                report["complete"] = report["complete"] and restarted["complete"]
-                report["restart_scheduler_closed"] = restarted["scheduler_closed"]
-                report["restart_detached_workers"] = restarted["detached_workers"]
-                report["restart_backlog"] = restarted["backlog"]
+            report = collect_visibility(work, journal, config, instance,
+                                        restarted=mode == "visibility-restarted")
         else:
             raise ValueError("unknown_collector")
     except BaseException as error:
@@ -157,8 +217,11 @@ def collect(config):
             collector_process=process, subject_sha256=config["subject_sha256"],
             subject_unchanged=subject_matches(config), manifest_sha256=q.digest(manifest),
             fixture_mode="known_synthetic_kinds" if config["known_kinds"] else "production_unknown_kinds",
-            clock=manifest["fixture"]["evaluation_clock"])
+            clock=manifest["fixture"]["evaluation_clock"],
+            continue_after_visibility_failure=config.get("continue_after_visibility_failure", False))
         q.write_once(output / "payload.json", report)
+        progress.record("collector", "complete" if report.get("complete") else "failed",
+                        unexecuted_cases=report.get("unexecuted_cases", []))
     return report
 
 

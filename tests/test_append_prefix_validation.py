@@ -119,9 +119,9 @@ def test_small_conversation_append_uses_checked_prefix_bytes(tmp_path, monkeypat
     f = make_fixture(tmp_path, conversations=3, messages=128)
     try:
         f.pipeline.project_account(ACCOUNT)
-        checked = Mock(wraps=storage._validate_appended_unit)
+        checked = Mock(wraps=storage._validate_appended_frames)
         full = Mock(wraps=storage._validate_unit)
-        monkeypatch.setattr(storage, '_validate_appended_unit', checked)
+        monkeypatch.setattr(storage, '_validate_appended_frames', checked)
         monkeypatch.setattr(storage, '_validate_unit', full)
         with f.repositories.database.transaction() as db:
             insert_message(db, 'chat-1', 'small-new-tail', NOW, 2)

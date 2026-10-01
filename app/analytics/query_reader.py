@@ -10,10 +10,11 @@ from app.analytics.query_execution import QuestionResultInvalid
 
 
 class PublishedQuestionReader:
-    def __init__(self, source, store, account, policy, evidence, pipeline_revision, config_digest):
+    def __init__(self, source, store, account, policy, evidence, pipeline_revision, config_digest, *, preparing=None):
         self.source, self.store, self.account = source, store, account
         self.policy, self.evidence_resolver = policy, evidence
         self.pipeline_revision, self.config_digest = pipeline_revision, config_digest
+        self.preparing = preparing
 
     def publication(self, scope, budget):
         read = getattr(self.store, "question_snapshot", None)
@@ -28,6 +29,10 @@ class PublishedQuestionReader:
     def open(self, partition, budget):
         if partition != account_ref(self.account):
             raise QuestionResultInvalid()
+        budget.check()
+        if self.preparing is not None and self.preparing(self.account) is True:
+            self.evidence_resolver.clear_account(self.policy)
+            raise ProjectionUnavailable(availability="building")
         with self.source.open_question_scope(self.account, budget) as scope:
             session = _QuestionSession(self, scope, self.publication(scope, budget))
             try:

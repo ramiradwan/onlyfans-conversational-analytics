@@ -7,9 +7,28 @@ from app.analytics.catalog_cache import SourceCatalogCache, MAX_CATALOG_BYTES
 from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.identity import canonical_identity, CanonicalIdentity
 from app.analytics.source_tokens import SourceIdentityCache, SourceToken
+from app.analytics.source_snapshot import _encoded_message, encoded, instant
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
 
 pytestmark = [pytest.mark.ci_tier('integration')]
+
+
+@pytest.mark.parametrize("message", [
+    {"message_id": "plain", "text": "hello", "sent_at": "2026-09-18T12:00:00+00:00", "direction": "inbound"},
+    {"message_id": 'quote\\"slash\\\\', "text": "line\\ncontrol\\t\\u0001", "sent_at": "2026-09-18T12:00:00Z", "direction": "outbound"},
+    {"message_id": "emoji-😀", "text": "café 日本語 😀 \\u2028 \\u2029", "sent_at": "2026-09-18T15:30:00+03:30", "direction": "inbound"},
+])
+def test_fast_message_encoding_matches_existing_canonical_json(message):
+    expected = encoded({
+        "message_id": str(message["message_id"]),
+        "source_ordinal": 17,
+        "text": str(message["text"]),
+        "sent_at": instant(str(message["sent_at"])),
+        "direction": str(message["direction"]),
+        "sentiment": None,
+    })
+
+    assert _encoded_message(message, 17) == expected
 
 
 @pytest.fixture

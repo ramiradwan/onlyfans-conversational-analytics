@@ -166,29 +166,36 @@ class Workload:
 
     def verify(self):
         from tools.qualify_continuous_analytics import reference_artifact
+        from tools.analytics_qualification_progress import VerificationTimer
         from app.analytics.generation_reference import GenerationReference
-        store = getattr(self.f.stores.projections, "_store", None) or self.f.stores.projections
-        if self.last is None:
+        timer = VerificationTimer(getattr(self, "qualification_progress", None))
+        with timer.phase("resolve_generation"):
+            store = getattr(self.f.stores.projections, "_store", None) or self.f.stores.projections
+            if self.last is None:
+                with store.database.read() as db:
+                    row = db.execute("SELECT g.generation_id,q.projection_generation FROM projection_generations g JOIN projection_query_metadata q USING(generation_id,creator_account_id) WHERE g.status='active'").fetchone()
+                if row is None:
+                    raise ValueError("no_active_generation")
+                store._validate_persisted_generation(row[0], materialize_projection=False)
+                generation = row["projection_generation"]
+            else:
+                generation = self.last.projection_generation
+        with timer.phase("canonical_reference"):
+            expected = reference_artifact(self.f, generation, compact=True).projection
+        with timer.phase("persisted_generation"):
             with store.database.read() as db:
-                row = db.execute("SELECT g.generation_id,q.projection_generation FROM projection_generations g JOIN projection_query_metadata q USING(generation_id,creator_account_id) WHERE g.status='active'").fetchone()
-            if row is None:
-                raise ValueError("no_active_generation")
-            values = store._validate_persisted_generation(row[0], materialize_projection=False)
-            generation = row["projection_generation"]
-        else:
-            generation = self.last.projection_generation
-        expected = reference_artifact(self.f, generation, compact=True).projection
-        with store.database.read() as db:
-            row = db.execute("SELECT * FROM projection_generations WHERE status='active'").fetchone()
-        actual = store._validate_persisted_generation(row["generation_id"], materialize_projection=False)
-        fields = ("projection_digest", "graph_digest", "canonical_content_digest")
-        expected_values = {key: getattr(expected, key) for key in fields}
-        actual_values = {key: actual[key] if key in actual else row[key] for key in fields}
-        if expected_values != actual_values:
-            raise ValueError("independent_rebuild_mismatch")
-        self.last = GenerationReference.from_projection(expected, row["generation_id"], row["publication_epoch"])
+                row = db.execute("SELECT * FROM projection_generations WHERE status='active'").fetchone()
+            actual = store._validate_persisted_generation(row["generation_id"], materialize_projection=False)
+        with timer.phase("compare"):
+            fields = ("projection_digest", "graph_digest", "canonical_content_digest")
+            expected_values = {key: getattr(expected, key) for key in fields}
+            actual_values = {key: actual[key] if key in actual else row[key] for key in fields}
+            if expected_values != actual_values:
+                raise ValueError("independent_rebuild_mismatch")
+            self.last = GenerationReference.from_projection(expected, row["generation_id"], row["publication_epoch"])
         return {"independent_rebuild_equal": True, "persisted_content_revalidated": True,
-                "expected": expected_values, "actual": actual_values}
+                "expected": expected_values, "actual": actual_values,
+                "verification_timings": timer.result()}
 
     def integrity(self):
         store = getattr(self.f.stores.projections, "_store", None) or self.f.stores.projections

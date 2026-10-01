@@ -148,7 +148,7 @@ def test_future_catalogs_do_not_reuse_an_unreviewed_receipt(fixture):
     with fixture.stores.database.read() as db:
         assert content_stamp(db) is not None
         db.execute('BEGIN IMMEDIATE')
-        db.execute('PRAGMA user_version=21')
+        db.execute('PRAGMA user_version=999')
         assert content_stamp(db) is None
         db.rollback()
         assert content_stamp(db) is not None
@@ -158,7 +158,8 @@ def test_every_tracking_trigger_is_required(fixture):
     with fixture.stores.database.read() as db:
         names = [row[0] for row in db.execute(
             "SELECT name FROM sqlite_master WHERE type='trigger' AND name GLOB 'generation_content_*'")]
-        assert len(names) == 81
+        # Catalogs 22 and 23 add four cleanup guards and one graph epoch guard.
+        assert len(names) == 86
         for name in names:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DROP TRIGGER ' + name)

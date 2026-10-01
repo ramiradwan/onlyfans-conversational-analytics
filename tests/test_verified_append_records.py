@@ -23,7 +23,11 @@ def test_append_copies_verified_records_without_decoding_property_objects(tmp_pa
         assert actual.nodes == expected.nodes and actual.edges == expected.edges
         assert actual.node_counts == expected.node_counts
         assert actual.edge_counts == expected.edge_counts
-        assert actual.digest(check=lambda: None) == unit.header.graph_digest
+        if unit.header.checksum_version == 2:
+            from app.analytics.conversation_integrity import from_graph
+            assert from_graph(actual.account_ref, unit.header.conversation_ref, actual)[0] == unit.header.graph_digest
+        else:
+            assert actual.digest(check=lambda: None) == unit.header.graph_digest
         decoder.assert_not_called()
     finally:
         cleanup(f)

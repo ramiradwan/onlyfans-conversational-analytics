@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
 from datetime import timedelta
 import time
 
@@ -45,10 +46,13 @@ async def direct(work, journal, resources, name):
     def build():
         candidate = work.f.pipeline.build_candidate(work.account, force=True)
         work.f.pipeline.publish_candidate(candidate)
-    await asyncio.to_thread(build)
+    progress = getattr(work, "qualification_progress", None)
+    with progress.phase(name + ".build_and_publish") if progress else nullcontext():
+        await asyncio.to_thread(build)
     # Use the ordinary readiness check; do not fill an identity cache in the harness.
-    await asyncio.to_thread(work.f.pipeline.projection_is_current, work.account, before["revision"])
-    result = await asyncio.to_thread(observed_question, work, resources)
+    with progress.phase(name + ".readiness") if progress else nullcontext():
+        await asyncio.to_thread(work.f.pipeline.projection_is_current, work.account, before["revision"])
+        result = await asyncio.to_thread(observed_question, work, resources)
     item = operation_record(work, name, before, started, None,
                             result["at"] if result["current"] else None, time.monotonic(),
                             observation=result)

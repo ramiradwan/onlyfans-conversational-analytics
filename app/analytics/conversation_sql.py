@@ -30,6 +30,8 @@ def fragment_reader(store, account_id):
 
     partition = account_ref(account_id)
     with store.database.read() as db, generation_verification_cache(db):
+        reader_open = [True]
+        loaded_enrichment_unit = [None]
         generation = db.execute("""SELECT * FROM projection_generations
             WHERE creator_account_id=? AND status='active' AND activated_at IS NOT NULL""",
             (partition,)).fetchone()
@@ -49,6 +51,8 @@ def fragment_reader(store, account_id):
                 return None
             data = row['document_json'].encode()
             return data if len(data) <= MAX_FRAGMENT_BYTES and hashlib.sha256(data).hexdigest() == row['document_digest'] else None
+        load.integrity_checksum_version = (2 if db.execute("PRAGMA user_version").fetchone()[0] >= 21
+            and getattr(store, "reuse_graph_content", True) else 1)
         from app.analytics.conversation_page_sql import supported, load_pages
         if supported(db):
             def pages(conversation, input_digest, config_digest, *, cancellation_check=None):
@@ -79,15 +83,28 @@ def fragment_reader(store, account_id):
                 return value if (
                     value is not None
                     and trusted_headers.get(conversation) == value.header
+                    and value.header.checksum_version == load.integrity_checksum_version
                 ) else None
+            loaded_graph_unit = [None]
             def previous_graph_unit(conversation):
                 value = graph_units.load_unit(
                     db, generation['generation_id'], partition, conversation,
                 )
-                return value if (
+                value = value if (
                     value is not None
                     and trusted_headers.get(conversation) == value.header
                 ) else None
+                # Keep only the latest actual unit. A caller-created unit with
+                # a copied header cannot obtain construction reuse authority.
+                loaded_graph_unit[0] = value
+                return value
+            def insertion_graph_groups(unit, check=lambda: None):
+                from app.analytics.conversation_id_frames import checked_predecessor_groups
+                if (not reader_open[0] or unit is None or unit is not loaded_graph_unit[0]
+                        or trusted_headers.get(unit.header.conversation_ref) != unit.header):
+                    return None
+                return checked_predecessor_groups(unit, check)
+            load.insertion_graph_groups = insertion_graph_groups
             def graph_unit_references():
                 values = graph_units.list_references(
                     db, generation['generation_id'], partition,
@@ -126,6 +143,28 @@ def fragment_reader(store, account_id):
                         and enrichment_headers.get(conversation) == value.header
                     ) else None
                 load.enrichment_unit_reference = enrichment_unit_reference
+                def previous_enrichment_unit(conversation):
+                    # A failed next read must not leave the preceding selection
+                    # authorized by this reader's one-unit identity binding.
+                    loaded_enrichment_unit[0] = None
+                    if not reader_open[0]:
+                        return None
+                    unit = enrichment_units.load_unit(db, generation['generation_id'], partition, conversation)
+                    if unit is None or enrichment_headers.get(conversation) != unit.header:
+                        return None
+                    loaded_enrichment_unit[0] = unit
+                    return unit
+                def matched_enrichment_source(raw, unit, check):
+                    if (not reader_open[0] or unit is None or unit is not loaded_enrichment_unit[0]
+                            or enrichment_headers.get(unit.header.conversation_ref) != unit.header):
+                        return None
+                    from app.analytics.conversation_enrichment_units import message_records
+                    from app.analytics.conversation_insertion import match_proven_inserted_source
+                    rows = message_records(unit)
+                    matched = match_proven_inserted_source(account_id, raw, unit.header, rows, check)
+                    return None if matched is None else (rows, matched)
+                load.previous_enrichment_unit = previous_enrichment_unit
+                load.matched_enrichment_source = matched_enrichment_source
                 from app.analytics.conversation_page_sql import load_page_header
                 from app.analytics.conversation_pages import trusted_page_reference
                 def enrichment_page_reference(conversation, input_digest, config_digest):
@@ -155,19 +194,69 @@ def fragment_reader(store, account_id):
             )
             from app.analytics.graph_membership_pages import supported as pages_supported
             page_layout = pages_supported(db)
+            chunk_cache = {}
+            def graph_segment_chunk(kind, bucket):
+                if not reader_open[0]:
+                    raise ValueError('conversation_reader_closed')
+                key = (kind, bucket)
+                if key not in chunk_cache:
+                    chunk_cache[key] = verified_segment_chunk(
+                        db, partition, graph_segment_proof, kind, bucket
+                    )
+                return chunk_cache[key]
             def graph_content_ids(kind, keys, check=lambda: None):
+                # Generic verification retains the independently
+                # selected persisted-content lookup.
                 return selected_content_ids(
                     db, generation['generation_id'], partition, kind, keys, check,
                     page_layout=page_layout,
                 )
-            def graph_segment_chunk(kind, bucket):
-                return verified_segment_chunk(
-                    db, partition, graph_segment_proof, kind, bucket
+            def append_graph_content_ids(kind, keys, check=lambda: None):
+                # Admitted append/insertion construction consumes canonical chunks that
+                # were just matched to the live predecessor segment proof.
+                if kind not in ('node', 'edge'):
+                    raise ValueError('graph_record_kind_invalid')
+                from collections import defaultdict
+                from app.analytics.conversation_append import (
+                    verified_chunk_content_ids,
                 )
+                grouped = defaultdict(list)
+                for key in dict.fromkeys(keys):
+                    grouped[key[3:5]].append(key)
+                result = {}
+                for bucket, selected in sorted(grouped.items()):
+                    check()
+                    opened = graph_segment_chunk(kind, bucket)
+                    if opened is None:
+                        return {}
+                    segment, encoded = opened
+                    result.update(verified_chunk_content_ids(
+                        segment, encoded, partition, selected, check
+                    ))
+                return result
+            def insertion_graph_content_ids(kind, keys, check=lambda: None):
+                # A small conversation must not read an account-sized chunk just
+                # to resolve a handful of members. Keep the existing point path.
+                unit = loaded_graph_unit[0] if graph_unit_proof is not None else None
+                count = 0 if unit is None else unit.header.node_count + unit.header.edge_count
+                total = sum(segment.count for segment in graph_segment_proof.segments)
+                if unit is not None and 4 * count >= total:
+                    return append_graph_content_ids(kind, keys, check)
+                return graph_content_ids(kind, keys, check)
+            load.insertion_graph_content_ids = insertion_graph_content_ids
             load.graph_segment_proof = graph_segment_proof
             load.graph_content_ids = graph_content_ids
+            load.append_graph_content_ids = append_graph_content_ids
             load.graph_segment_chunk = graph_segment_chunk
             load.graph_chunks_complete = verified_segment_chunks_complete(
                 db, partition, graph_segment_proof
             )
-        yield load
+        try:
+            yield load
+        finally:
+            reader_open[0] = False
+            loaded_enrichment_unit[0] = None
+            if graph_unit_proof is not None:
+                loaded_graph_unit[0] = None
+            if graph_segment_proof is not None:
+                chunk_cache.clear()

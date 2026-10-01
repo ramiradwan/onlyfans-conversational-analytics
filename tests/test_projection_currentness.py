@@ -16,13 +16,21 @@ pytestmark = [pytest.mark.ci_tier('integration')]
 def fixture(tmp_path, monkeypatch):
     value = make_fixture(tmp_path)
     value.pipeline.project_account(ACCOUNT)
-    # Isolate the positive-currentness cache's full-read fallback. The independent
-    # immutable-content proof path is covered in test_proven_currentness.py.
+    # Isolate currentness from the proofs installed by publication. Missing proof
+    # state must trigger one independent persisted-generation verification, not
+    # necessarily materialize the public projection model.
     value.stores.projections._graph_segment_proofs.clear()
     value.stores.projections._conversation_graph_proofs.clear()
     value.stores.projections._conversation_enrichment_proofs.clear()
     value.reads = Mock(wraps=value.stores.projections.get)
+    value.verifications = Mock(
+        wraps=value.stores.projections.prepare_current_verification_envelope
+    )
     monkeypatch.setattr(value.stores.projections, 'get', value.reads)
+    monkeypatch.setattr(
+        value.stores.projections, 'prepare_current_verification_envelope',
+        value.verifications,
+    )
     yield value
     cleanup(value)
 
@@ -31,9 +39,10 @@ def current(fixture):
     return fixture.pipeline.projection_is_current(ACCOUNT, 1)
 
 
-def test_unchanged_reconciliation_does_not_read_the_graph_twice(fixture):
+def test_unchanged_reconciliation_does_not_verify_the_graph_twice(fixture):
     assert current(fixture) and current(fixture)
-    assert fixture.reads.call_count == 1
+    assert fixture.verifications.call_count == 1
+    fixture.reads.assert_not_called()
 
 
 @pytest.mark.parametrize('mutation', ['edit', 'delete', 'revision'])
@@ -69,10 +78,12 @@ def test_currentness_expiry_is_fixed_not_extended_by_reads(fixture):
     assert current(fixture)
     now[0] = 59
     assert current(fixture)
-    assert fixture.reads.call_count == 1
+    assert fixture.verifications.call_count == 1
+    fixture.reads.assert_not_called()
     now[0] = 60
     assert current(fixture)
-    assert fixture.reads.call_count == 2
+    assert fixture.verifications.call_count == 1
+    fixture.reads.assert_not_called()
 
 
 def test_source_expiry_is_checked_on_a_warm_proof(fixture):
@@ -82,7 +93,8 @@ def test_source_expiry_is_checked_on_a_warm_proof(fixture):
     assert current(fixture)
     fixture.clock.now = datetime.fromisoformat(first.replace('Z', '+00:00')) + timedelta(days=90)
     assert not current(fixture)
-    assert fixture.reads.call_count == 1
+    assert fixture.verifications.call_count == 1
+    fixture.reads.assert_not_called()
 
 
 def test_witness_is_checked_even_on_a_warm_proof(fixture, monkeypatch):
@@ -92,9 +104,10 @@ def test_witness_is_checked_even_on_a_warm_proof(fixture, monkeypatch):
 
 
 @pytest.mark.parametrize('change', ['changed_stamp', 'missing_stamp', 'restart'])
-def test_missing_or_changed_proof_requires_another_full_read(fixture, monkeypatch, change):
+def test_missing_or_changed_currentness_proof_reverifies_safely(fixture, monkeypatch, change):
     import app.analytics.currentness as module
     assert current(fixture)
+    assert fixture.verifications.call_count == 1
     if change == 'restart':
         fixture.stores.projections._currentness = GenerationCurrentness()
     else:
@@ -104,10 +117,19 @@ def test_missing_or_changed_proof_requires_another_full_read(fixture, monkeypatc
         else:
             monkeypatch.setattr(module, 'content_stamp', lambda db: None)
     assert current(fixture)
-    assert fixture.reads.call_count == 2
-    if change == 'missing_stamp':
+    if change == 'restart':
+        # Process-local currentness may restart while the exact generation-bound
+        # content envelope remains valid under the same store stamp and witness.
+        assert fixture.verifications.call_count == 1
+        fixture.reads.assert_not_called()
+    elif change == 'changed_stamp':
+        assert fixture.verifications.call_count == 2
+        assert fixture.reads.call_count == 1
+    else:
+        assert fixture.verifications.call_count == 1
+        assert fixture.reads.call_count == 1
         assert current(fixture)
-        assert fixture.reads.call_count == 3
+        assert fixture.reads.call_count == 2
 
 
 def test_pipeline_configuration_and_requested_revision_are_checked(fixture):

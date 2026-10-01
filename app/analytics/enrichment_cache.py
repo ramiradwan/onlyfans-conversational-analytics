@@ -150,7 +150,7 @@ class EnrichmentReuse:
 
     @contextmanager
     def known_new_message(self, reference: str):
-        """Skip predecessor lookup only for a verified new tail message."""
+        """Skip predecessor-unit lookup only for a verified new message."""
         previous, self._known_new_message = self._known_new_message, reference
         try:
             yield

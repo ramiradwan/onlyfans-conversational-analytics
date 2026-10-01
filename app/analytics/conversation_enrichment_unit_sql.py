@@ -348,9 +348,9 @@ def verify_generation_units(
         unit = ConversationEnrichmentUnit(
             header, content["message_bytes"], content["analyzer_bytes"]
         )
-        if (not materialize and trusted and _validate_appended_unit(
+        if (not materialize and trusted and validate_one_added_unit(
                 connection, validation.proof.generation_id,
-                trusted.get(header.conversation_ref), unit, check=check)):
+                trusted.get(header.conversation_ref), unit, check=check) is not None):
             continue
         messages.extend(
             _validate_unit(unit, check=check, materialize=materialize)
@@ -358,14 +358,7 @@ def verify_generation_units(
     return headers, tuple(components), messages
 
 
-def _validate_appended_unit(connection, previous_generation, previous, unit, *, check):
-    """Verify an actual stored append against an independently checked predecessor."""
-    from datetime import timedelta
-    import hashlib
-    from app.analytics.conversation_enrichment_units import message_records, _canonical, _unit_id
-    from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
-    from app.models.analytics import MessageEnrichment
-    h = unit.header
+def _append_header_matches(previous, h):
     if (previous is None or previous.message_count < 128
             or h.message_count != previous.message_count + 1
             or h.account_ref != previous.account_ref
@@ -380,44 +373,67 @@ def _validate_appended_unit(connection, previous_generation, previous, unit, *, 
             or h.metrics.message_count != h.message_count
             or h.metrics.participant_ref != previous.metrics.participant_ref):
         return False
+    return True
+
+
+def _validate_appended_unit(connection, previous_generation, previous, unit, *, check):
+    """Independently validate an actual stored append, including frame digests."""
+    from app.analytics.conversation_enrichment_units import message_frame
+    if not _append_header_matches(previous, unit.header):
+        return False
     check()
-    old = load_unit(connection, previous_generation, h.account_ref, h.conversation_ref)
+    old = load_unit(connection, previous_generation, unit.header.account_ref, unit.header.conversation_ref)
     if old is None or old.header != previous:
         return False
-    old_rows, new_rows = message_records(old), message_records(unit)
-    if len(new_rows) != len(old_rows) + 1:
+    return _validate_appended_frames(old, unit, message_frame(old), message_frame(unit), check=check)
+
+
+def _validate_appended_frames(old, unit, old_frame, new_frame, *, check):
+    from datetime import timedelta
+    import hashlib
+    from app.analytics.conversation_enrichment_units import analyzer_frame, _canonical, _unit_id
+    from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
+    from app.models.analytics import MessageEnrichment
+    previous, h = old.header, unit.header
+    boundary = len(old_frame)
+    if (len(new_frame) <= boundary or not new_frame.startswith(old_frame)
+            or new_frame[boundary:boundary + 1] != b'\n'):
         return False
-    tail = MessageEnrichment.model_validate_json(new_rows[-1])
-    last = MessageEnrichment.model_validate_json(old_rows[-1])
+    tail_raw = new_frame[boundary + 1:]
+    if not tail_raw or b'\n' in tail_raw:
+        return False
+    tail = MessageEnrichment.model_validate_json(tail_raw)
+    last = MessageEnrichment.model_validate_json(old_frame.rpartition(b'\n')[2])
     if (tail.account_ref != h.account_ref or tail.conversation_ref != h.conversation_ref
             or tail.participant_ref != h.metrics.participant_ref
             or (tail.sent_at, tail.source_ordinal) < (last.sent_at, last.source_ordinal)
             or tail.sent_at != h.last_source_at
             or tail.sent_at <= h.retention_cutoff):
         return False
-    import json
-    tail_reference = tail.message_ref.encode("utf-8")
-    for expected, actual in zip(old_rows, new_rows):
-        check()
-        # A previously validated row may have legal whitespace or JSON escapes.
-        # Compare the decoded identity, not a spelling of its serialized field.
-        if expected != actual:
-            return False
-        # An equal decoded reference is literal UTF-8 or contains a JSON escape.
-        # Parse possible matches, including noncanonical escaping; never infer uniqueness.
-        if ((tail_reference in expected or b"\\" in expected)
-                and json.loads(expected)["message_ref"] == tail.message_ref):
-            return False
-    del old_rows, new_rows
-    old_analyzers, new_analyzers = analyzer_records(old), analyzer_records(unit)
-    if not len(old_analyzers) <= len(new_analyzers) <= len(old_analyzers) + 3:
+    # Generated enrichment frames are canonical. A legacy legal escape requires
+    # the complete identity scan because a textual search cannot prove absence.
+    tail_reference = tail.message_ref.encode('ascii')
+    if tail_reference in old_frame or b'\\' in old_frame:
+        import json
+        for raw in old_frame.splitlines():
+            check()
+            if ((tail_reference in raw or b'\\' in raw)
+                    and json.loads(raw)['message_ref'] == tail.message_ref):
+                return False
+    old_analyzers, new_analyzers = analyzer_frame(old), analyzer_frame(unit)
+    if old_analyzers == b'[]':
+        additions = b'' if new_analyzers == b'[]' else new_analyzers
+    elif new_analyzers == old_analyzers:
+        additions = b''
+    elif new_analyzers.startswith(old_analyzers + b'\n'):
+        additions = new_analyzers[len(old_analyzers) + 1:]
+    else:
         return False
-    for expected, actual in zip(old_analyzers, new_analyzers):
-        check()
-        if expected != actual:
-            return False
+    added_rows = () if not additions else additions.splitlines()
+    if len(added_rows) > 3:
+        return False
     seen = set()
-    for raw in new_analyzers[len(old_analyzers):]:
+    for raw in added_rows:
         check()
         entry = CachedEnrichment.model_validate_json(raw)
         key = entry.key
@@ -440,3 +456,29 @@ def _validate_appended_unit(connection, previous_generation, previous, unit, *, 
         return False
     check()
     return True
+
+
+def validate_one_added_unit(connection, previous_generation, previous, unit, *, check):
+    """Read each actual frame once for append/insertion dispatch in this call.
+
+    The caller must first bind the independently verified predecessor proof.
+    No decoded frame or expected-result object is accepted from the constructor.
+    All buffers are local; no validation result or cache survives this call.
+    """
+    from app.analytics.conversation_enrichment_insertion import _insert_header_matches, _validate_inserted_frames
+    from app.analytics.conversation_enrichment_units import message_frame
+    appended = _append_header_matches(previous, unit.header)
+    inserted = _insert_header_matches(previous, unit.header)
+    if not appended and not inserted:
+        return None
+    check()
+    old = load_unit(connection, previous_generation, unit.header.account_ref, unit.header.conversation_ref)
+    if old is None or old.header != previous:
+        return None
+    before, after = message_frame(old), message_frame(unit)
+    check()
+    if appended and _validate_appended_frames(old, unit, before, after, check=check):
+        return 'append'
+    if inserted and _validate_inserted_frames(old, unit, before, after, check=check):
+        return 'insert'
+    return None

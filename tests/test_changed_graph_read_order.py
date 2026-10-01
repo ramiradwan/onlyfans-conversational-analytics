@@ -62,18 +62,32 @@ def test_content_ordered_reads_match_the_streaming_verifier(fixture, kind):
 def test_bounded_fallback_keeps_the_update_complete(fixture, monkeypatch, limit):
     fixture.pipeline.project_account(ACCOUNT)
     monkeypatch.setattr(shared_graph, limit, 1)
-    observed = []
-    original = shared_graph._read_changed_segment_rows
-    def bounded(*args, **kwargs):
-        result = original(*args, **kwargs)
-        observed.append(result)
+    changed_sets, rows = [], []
+    original_changes = shared_graph._verified_changed_segment_chunks
+    original_rows = shared_graph._read_changed_segment_rows
+    def changed(*args, **kwargs):
+        result = original_changes(*args, **kwargs)
+        changed_sets.append(result)
         return result
+    def bounded(*args, **kwargs):
+        result = original_rows(*args, **kwargs)
+        rows.append(result)
+        return result
+    monkeypatch.setattr(shared_graph, '_verified_changed_segment_chunks', changed)
     monkeypatch.setattr(shared_graph, '_read_changed_segment_rows', bounded)
     with fixture.repositories.database.transaction() as db:
         insert_message(db, 'chat-1', 'bounded-read-new-message', NOW, 2)
         advance(db)
     result = fixture.pipeline.project_account(ACCOUNT)
-    assert observed and all(value is None for value in observed)
+    assert changed_sets
+    if limit == 'MAX_CHANGED_VERIFICATION_ROWS':
+        assert all(value is None for value in changed_sets)
+        assert rows and all(value is None for value in rows)
+    else:
+        # The byte guard belongs to broad materialization. The streaming
+        # persisted changed-set verifier does not allocate that row buffer.
+        assert all(value is not None for value in changed_sets)
+        assert rows == []
     cold_equal(fixture, result.artifact)
 
 
@@ -147,11 +161,11 @@ def test_cancellation_closes_read_ahead_cursors(fixture):
         assert db.execute('SELECT 1').fetchone()[0] == 1
 
 
-def test_mutation_after_read_ahead_cannot_publish(fixture, monkeypatch):
+def test_mutation_after_changed_set_verification_cannot_publish(fixture, monkeypatch):
     from app.analytics.sqlite_projection_store import ProjectionValidationError
 
     previous = fixture.pipeline.project_account(ACCOUNT).artifact
-    original = shared_graph._read_changed_segment_rows
+    original = shared_graph._verified_changed_segment_chunks
     mutations = []
     def changed(connection, *args, **kwargs):
         result = original(connection, *args, **kwargs)
@@ -161,7 +175,7 @@ def test_mutation_after_read_ahead_cannot_publish(fixture, monkeypatch):
                 "WHERE status='building'")
             mutations.append(cursor.rowcount)
         return result
-    monkeypatch.setattr(shared_graph, '_read_changed_segment_rows', changed)
+    monkeypatch.setattr(shared_graph, '_verified_changed_segment_chunks', changed)
     with fixture.repositories.database.transaction() as db:
         insert_message(db, 'chat-1', 'mutation-during-verification', NOW, 2)
         advance(db)
@@ -173,3 +187,43 @@ def test_mutation_after_read_ahead_cannot_publish(fixture, monkeypatch):
             "SELECT graph_digest FROM projection_generations WHERE status='active'"
         ).fetchone()[0]
         assert active == previous.projection.graph_digest
+
+
+def test_incremental_validation_prefers_verified_changed_set(fixture, monkeypatch):
+    from tests.continuous_analytics_fixture import cold_equal
+    fixture.pipeline.project_account(ACCOUNT)
+    observed = []
+    original = shared_graph._verified_changed_segment_chunks
+    def changed(*args, **kwargs):
+        value = original(*args, **kwargs)
+        observed.append(value)
+        return value
+    def forbidden(*args, **kwargs):
+        raise AssertionError('eligible incremental validation materialized broad changed rows')
+    monkeypatch.setattr(shared_graph, '_verified_changed_segment_chunks', changed)
+    monkeypatch.setattr(shared_graph, '_read_changed_segment_rows', forbidden)
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, 'chat-1', 'changed-set-primary-path', NOW, 2)
+        advance(db)
+    result = fixture.pipeline.project_account(ACCOUNT)
+    assert observed and all(value is not None for value in observed)
+    cold_equal(fixture, result.artifact)
+
+
+def test_incremental_validation_keeps_changed_row_fallback(fixture, monkeypatch):
+    from tests.continuous_analytics_fixture import cold_equal
+    fixture.pipeline.project_account(ACCOUNT)
+    observed = []
+    original = shared_graph._read_changed_segment_rows
+    monkeypatch.setattr(shared_graph, '_verified_changed_segment_chunks', lambda *a, **k: None)
+    def rows(*args, **kwargs):
+        value = original(*args, **kwargs)
+        observed.append(value)
+        return value
+    monkeypatch.setattr(shared_graph, '_read_changed_segment_rows', rows)
+    with fixture.repositories.database.transaction() as db:
+        insert_message(db, 'chat-1', 'changed-set-fallback', NOW, 2)
+        advance(db)
+    result = fixture.pipeline.project_account(ACCOUNT)
+    assert observed and any(value is not None for value in observed)
+    cold_equal(fixture, result.artifact)

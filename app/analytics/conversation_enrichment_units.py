@@ -108,6 +108,24 @@ def _compress(raw: bytes) -> bytes:
     return zlib.compress(raw, 1)
 
 
+def _compress_digest_parts(parts) -> tuple[bytes, str]:
+    """Compress and hash one canonical byte stream without joining a giant prefix."""
+    compressor = zlib.compressobj(1)
+    digest = hashlib.sha256()
+    chunks = []
+    for part in parts:
+        if not isinstance(part, bytes):
+            raise TypeError("conversation_enrichment_frame_invalid")
+        digest.update(part)
+        chunk = compressor.compress(part)
+        if chunk:
+            chunks.append(chunk)
+    tail = compressor.flush()
+    if tail:
+        chunks.append(tail)
+    return b"".join(chunks), digest.hexdigest()
+
+
 def _decompress(data: bytes, *, maximum: int) -> bytes:
     if not isinstance(data, bytes) or not data or len(data) > MAX_ENRICHMENT_UNIT_BYTES:
         raise ValueError("conversation_enrichment_unit_size_invalid")
@@ -230,37 +248,98 @@ def create_enrichment_unit(
     return ConversationEnrichmentUnit(header, messages, analyzers)
 
 
-def message_records(unit: ConversationEnrichmentUnit):
+def message_frame(unit: ConversationEnrichmentUnit) -> bytes:
+    """Return digest-checked canonical bytes without allocating one object per row."""
     h = unit.header
     maximum = min(MAX_ENRICHMENT_UNIT_BYTES * 4, max(2, h.message_count * 65536))
     raw = _decompress(unit.messages, maximum=maximum)
     if hashlib.sha256(raw).hexdigest() != h.canonical_digest:
         raise ValueError("conversation_enrichment_unit_digest_invalid")
-    rows = raw.splitlines()
-    if len(rows) != h.message_count:
+    if (raw.count(b"\n") + 1 if raw else 0) != h.message_count:
         raise ValueError("conversation_enrichment_unit_membership_invalid")
-    return tuple(rows)
+    return raw
 
 
-def analyzer_records(unit: ConversationEnrichmentUnit):
+_SENTIMENT_SCORE_MARKER = b'"score":'
+_SENTIMENT_SCORE_END = frozenset(b',}')
+
+
+def sentiment_score_sum(frame: bytes, expected_count: int, *, check=lambda: None) -> float:
+    """Recover the exact ordered float sum without materializing message models."""
+    total = 0.0
+    count = 0
+    offset = 0
+    while True:
+        start = frame.find(_SENTIMENT_SCORE_MARKER, offset)
+        if start < 0:
+            break
+        if count % 256 == 0:
+            check()
+        start += len(_SENTIMENT_SCORE_MARKER)
+        end = start
+        while end < len(frame) and frame[end] not in _SENTIMENT_SCORE_END:
+            end += 1
+        if end == start or end == len(frame):
+            raise ValueError('conversation_enrichment_sentiment_frame_invalid')
+        try:
+            total += float(frame[start:end])
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError('conversation_enrichment_sentiment_frame_invalid') from error
+        count += 1
+        if count > expected_count:
+            raise ValueError('conversation_enrichment_sentiment_frame_invalid')
+        offset = end + 1
+    if count != expected_count:
+        raise ValueError('conversation_enrichment_sentiment_frame_invalid')
+    check()
+    return total
+
+
+def analyzer_frame(unit: ConversationEnrichmentUnit) -> bytes:
     raw = _decompress(unit.analyzers, maximum=MAX_ENRICHMENT_UNIT_BYTES * 4)
     if hashlib.sha256(raw).hexdigest() != unit.header.analyzer_digest:
         raise ValueError("conversation_enrichment_analyzer_digest_invalid")
+    return raw
+
+
+def message_records(unit: ConversationEnrichmentUnit):
+    return tuple(message_frame(unit).splitlines())
+
+
+def analyzer_records(unit: ConversationEnrichmentUnit):
+    raw = analyzer_frame(unit)
     return () if raw == b"[]" else tuple(raw.splitlines())
 
 
 class AppendedMessageEnrichments(Sequence):
-    """Keep matched prefix bytes; create old models only for explicit consumers."""
+    """Keep a verified prefix frame and materialize old models only on demand."""
 
-    def __init__(self, rows, tail, references, first_source_at):
-        self._rows = tuple(rows)
+    def __init__(self, rows, tail, references, first_source_at, *, previous=None):
+        self._frame = rows if isinstance(rows, bytes) else None
+        self._rows = None if self._frame is not None else tuple(rows)
+        self._count = (previous.header.message_count if self._frame is not None and previous is not None
+                       else len(self._rows or ()))
         self.tail = tail
-        self.prefix_references = frozenset(references)
+        self.prefix_references = None if references is None else frozenset(references)
         self.first_source_at = first_source_at
         self._boundary = None
+        self._previous = previous
 
     def __len__(self):
-        return len(self._rows) + 1
+        return self._count + 1
+
+    @property
+    def prefix_frame(self):
+        return self._frame
+
+    def _row(self, index):
+        if self._rows is None:
+            if index == self._count - 1:
+                return self._frame.rpartition(b"\n")[2]
+            self._rows = tuple(self._frame.splitlines())
+            if len(self._rows) != self._count:
+                raise ValueError("conversation_enrichment_unit_membership_invalid")
+        return self._rows[index]
 
     def __getitem__(self, index):
         if isinstance(index, slice):
@@ -269,13 +348,37 @@ class AppendedMessageEnrichments(Sequence):
             index += len(self)
         if not 0 <= index < len(self):
             raise IndexError(index)
-        if index == len(self._rows):
+        if index == self._count:
             return self.tail
-        if index == len(self._rows) - 1:
+        if index == self._count - 1:
             if self._boundary is None:
-                self._boundary = MessageEnrichment.model_validate_json(self._rows[index])
+                self._boundary = MessageEnrichment.model_validate_json(self._row(index))
             return self._boundary
-        return MessageEnrichment.model_validate_json(self._rows[index])
+        return MessageEnrichment.model_validate_json(self._row(index))
+
+
+class InsertedMessageEnrichments(Sequence):
+    """Keep verified rows and materialize only explicitly requested suffix models."""
+
+    def __init__(self, rows, inserted, index, first_source_at):
+        self.rows = tuple(rows)
+        self.inserted = inserted
+        self.index = index
+        self.first_source_at = first_source_at
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [self[i] for i in range(*index.indices(len(self)))]
+        if index < 0:
+            index += len(self)
+        if not 0 <= index < len(self):
+            raise IndexError(index)
+        if index == self.index:
+            return self.inserted
+        return MessageEnrichment.model_validate_json(self.rows[index])
 
 
 class IncrementalMessageEnrichments:
@@ -411,15 +514,21 @@ def append_enrichment_unit(previous, *, input_digest, config_digest, cutoff,
             or tail.participant_ref != h.metrics.participant_ref or tail.sent_at <= cutoff
             or (tail.sent_at, tail.source_ordinal) < (findings[-2].sent_at, findings[-2].source_ordinal)
             or (tail.message_ref in findings.prefix_references
-                if isinstance(findings, AppendedMessageEnrichments)
+                if isinstance(findings, AppendedMessageEnrichments) and findings.prefix_references is not None
+                else False if isinstance(findings, AppendedMessageEnrichments) and findings.prefix_frame is not None
                 else any(item.message_ref == tail.message_ref for item in findings[:-1]))):
         return None
     check()
-    old_rows = message_records(previous)
-    old_analyzers = analyzer_records(previous)
-    message_raw = b'\n'.join((*old_rows, _canonical(tail.model_dump(mode='json'))))
-    analyzer_rows = list(old_analyzers)
-    analyzer_size = sum(map(len, analyzer_rows))
+    prefix_frame = (findings.prefix_frame if isinstance(findings, AppendedMessageEnrichments)
+                    and findings._previous is previous else None)
+    if prefix_frame is None:
+        prefix_frame = message_frame(previous)
+    tail_raw = _canonical(tail.model_dump(mode='json'))
+    messages, message_digest = _compress_digest_parts((prefix_frame, b'\n', tail_raw))
+    previous_analyzers = analyzer_frame(previous)
+    analyzer_count = 0 if previous_analyzers == b'[]' else previous_analyzers.count(b'\n') + 1
+    analyzer_size = 0 if previous_analyzers == b'[]' else len(previous_analyzers)
+    added_rows = []
     added_keys = set()
     for raw in analyzer_entries:
         check()
@@ -432,17 +541,23 @@ def append_enrichment_unit(previous, *, input_digest, config_digest, cutoff,
             raise ValueError('conversation_enrichment_append_analyzer_invalid')
         added_keys.add(key.digest)
         encoded = _canonical(entry.model_dump(mode='json'))
-        if (len(analyzer_rows) < MAX_CONVERSATION_CACHE_ENTRIES
-                and analyzer_size + len(encoded) <= MAX_CONVERSATION_CACHE_BYTES):
-            analyzer_rows.append(encoded)
-            analyzer_size += len(encoded)
+        if (analyzer_count + len(added_rows) < MAX_CONVERSATION_CACHE_ENTRIES
+                and analyzer_size + sum(map(len, added_rows)) + len(encoded) <= MAX_CONVERSATION_CACHE_BYTES):
+            added_rows.append(encoded)
     check()
-    analyzer_raw = b'\n'.join(analyzer_rows) if analyzer_rows else b'[]'
-    messages, analyzers = _compress(message_raw), _compress(analyzer_raw)
+    base = b'' if previous_analyzers == b'[]' else previous_analyzers
+    analyzer_parts = []
+    if base:
+        analyzer_parts.append(base)
+    if base and added_rows:
+        analyzer_parts.append(b'\n')
+    if added_rows:
+        analyzer_parts.append(b'\n'.join(added_rows))
+    if not analyzer_parts:
+        analyzer_parts.append(b'[]')
+    analyzers, analyzer_digest = _compress_digest_parts(analyzer_parts)
     if max(len(messages), len(analyzers)) > MAX_ENRICHMENT_UNIT_BYTES:
         return None
-    message_digest = hashlib.sha256(message_raw).hexdigest()
-    analyzer_digest = hashlib.sha256(analyzer_raw).hexdigest()
     metrics_digest = hashlib.sha256(_canonical(metrics.model_dump(mode='json'))).hexdigest()
     def total(previous_total, values):
         extra = ConfidenceTotal.from_values(values)

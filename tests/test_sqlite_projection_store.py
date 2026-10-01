@@ -142,6 +142,30 @@ def test_projection_database_path_has_a_separate_default(monkeypatch) -> None:
     assert configured.projection_database_path != configured.canonical_database_path
 
 
+def test_analytics_projection_connections_disable_wal_autocheckpoint(tmp_path: Path) -> None:
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    with database.read() as connection:
+        assert connection.execute("PRAGMA wal_autocheckpoint").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_scheduler_epoch_retains_and_releases_wal_anchor(tmp_path: Path) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    store = make_store(tmp_path / "analytics.sqlite3", repositories)
+    pipeline = pipeline_for(repositories, store)
+    scheduler = InProcessProjectionScheduler(
+        pipeline, worker_count=1, queue_capacity=2, reconciliation_interval=30
+    )
+
+    assert store.database.open_connection_count(store.database.path) == 0
+    await scheduler.start(recover=False)
+    assert store.database.open_connection_count(store.database.path) == 1
+    checkpoint = store.passive_wal_checkpoint()
+    assert checkpoint is not None and len(checkpoint) == 3
+    assert await scheduler.close(timeout=5)
+    assert store.database.open_connection_count(store.database.path) == 0
+
+
 @pytest.mark.asyncio
 async def test_scheduler_recovery_publishes_sqlite_once_through_owned_executor(
     tmp_path: Path,
@@ -1166,7 +1190,7 @@ async def test_non_sqlite_projection_file_cannot_block_canonical_readiness(
 
 
 def test_retired_generation_gc_is_bounded_and_preserves_pending(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(
@@ -1182,8 +1206,28 @@ def test_retired_generation_gc_is_bounded_and_preserves_pending(
         pipeline.project_account("account-a")
     advance(repositories, 5)
     pending = pipeline.build_candidate("account-a")
+
+    from app.analytics.database import (
+        GENERATION_RETIREMENT_CACHE_KIB, generation_retirement_cache,
+    )
+    import app.analytics.sqlite_projection_store as projection_store_module
+    observed_cache_sizes = []
+
+    @contextmanager
+    def observed_retirement_cache(connection):
+        with generation_retirement_cache(connection):
+            observed_cache_sizes.append(
+                int(connection.execute("PRAGMA cache_size").fetchone()[0])
+            )
+            yield
+
+    monkeypatch.setattr(
+        projection_store_module, "generation_retirement_cache", observed_retirement_cache
+    )
+    store.rollback_retention = 0
     store.collect_garbage(account_ref("account-a"))
 
+    assert observed_cache_sizes == [-GENERATION_RETIREMENT_CACHE_KIB]
     generations = store.database.generations("account-a")
     assert sum(item.status == "active" for item in generations) == 1
     assert sum(item.status == "validated" for item in generations) == 1

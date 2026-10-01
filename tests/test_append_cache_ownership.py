@@ -1,4 +1,4 @@
-"""An append retains complete checked units without a second copy of their pages."""
+"""Complete checked units do not retain a second copy of conversation pages."""
 from datetime import timedelta
 
 import pytest
@@ -23,6 +23,20 @@ def append(f, sequence):
         insert_message(db, 'chat-0', f'append-{sequence}', NOW - timedelta(minutes=1) + timedelta(seconds=sequence), sequence)
         advance(db)
     return f.pipeline.project_account(ACCOUNT)
+
+
+def test_complete_units_replace_pages_on_cold_and_unchanged_rebuild(tmp_path):
+    f = dominant_fixture(tmp_path)
+    try:
+        first = f.pipeline.project_account(ACCOUNT)
+        assert page_count(f) == 0
+        cold_equal(f, first.artifact)
+        candidate = f.pipeline.build_candidate(ACCOUNT, force=True)
+        result = f.pipeline.publish_candidate(candidate)
+        assert page_count(f) == 0
+        cold_equal(f, result.artifact)
+    finally:
+        cleanup(f)
 
 
 def test_dominant_append_does_not_write_duplicate_conversation_pages(tmp_path):

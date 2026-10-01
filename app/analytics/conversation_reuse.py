@@ -184,6 +184,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
     )
     enrichment_parts = []
     current_units, previous_changed_units = {}, {}
+    insertion_removed_edges = set()
     current_refs = set()
     for chat_id, input_digest in catalog.digests.items():
         check_cancelled(cancellation_check)
@@ -193,6 +194,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
         local_graph = None
         append_delta = None
         append_previous = None
+        inserted = None
         packed, restored = None, None
         graph_unit = None
         graph_unit_value = None
@@ -207,11 +209,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 if (header.retention_cutoff > cutoff
                         or header.expires_at <= pipeline._retention_clock()):
                     graph_unit = None
-                else:
-                    graph_unit_value = loader.previous_graph_unit(ref)
-                    if graph_unit_value is None:
-                        raise ValueError('conversation_graph_unit_unavailable')
-        if stream_enrichments and graph_unit_value is not None:
+        if stream_enrichments and graph_unit is not None:
             enrichment_unit = enrichment_reference_loader(ref, input_digest, config)
             if enrichment_unit is not None:
                 header = enrichment_unit.header
@@ -255,8 +253,12 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 h = candidate.header
                 if h.retention_cutoff <= cutoff and h.expires_at > pipeline._retention_clock():
                     try:
-                        if (graph_unit_value is not None
+                        if (graph_unit is not None
+                                and graph_unit.header.checksum_version == 1
                                 and candidate.header.encoding == encoding):
+                            graph_unit_value = loader.previous_graph_unit(ref)
+                            if graph_unit_value is None:
+                                raise ValueError('conversation_graph_unit_unavailable')
                             findings, counts, cached = restore_pages_with_graph_unit(
                                 candidate, graph_unit_value, check
                             )
@@ -298,22 +300,35 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 local_graph.add(fragment.nodes, fragment.edges, check=check)
         else:
             raw = catalog.conversation(chat_id)
-            parts = pipeline._canonical_conversations(
-                AccountReadModel(view_revision=catalog.view_revision, conversations={chat_id: raw}),
-                cancellation_check=cancellation_check)
-            if not parts:
-                # A canonical chat with no retained messages must also lose its
-                # predecessor graph membership, not only its metrics.
-                current_refs.discard(ref)
-                continue
-            conversation = parts[0]
-            state.recomputed += 1
             appended = None
             if incremental and stream_enrichments:
                 from app.analytics.conversation_append import try_append
                 appended = try_append(pipeline, account_id, catalog.view_revision,
-                    conversation, raw, loader, reuse, config, cutoff, check, cancellation_check)
-            if appended is not None:
+                    None, raw, input_digest, loader, reuse, config, cutoff, check, cancellation_check)
+            if appended is None and incremental and stream_enrichments:
+                from app.analytics.conversation_insertion import try_insert
+                inserted = try_insert(pipeline, account_id, catalog.view_revision, raw, input_digest, loader,
+                    reuse, config, cutoff, check, cancellation_check)
+                if inserted is not None and (
+                        len(state.graph_units) >= MAX_GRAPH_UNITS
+                        or len(state.enrichment_units) >= MAX_ENRICHMENT_UNITS
+                        or state.graph_unit_bytes + inserted.graph_unit.retained_bytes > MAX_GRAPH_UNIT_TOTAL_BYTES
+                        or state.enrichment_unit_bytes + inserted.enrichment_unit.retained_bytes > MAX_ENRICHMENT_UNIT_TOTAL_BYTES):
+                    inserted = None  # Ordinary complete construction keeps existing admission limits.
+            if appended is None and inserted is None:
+                parts = pipeline._canonical_conversations(
+                    AccountReadModel(view_revision=catalog.view_revision, conversations={chat_id: raw}),
+                    cancellation_check=cancellation_check)
+                if not parts:
+                    current_refs.discard(ref)
+                    continue
+                conversation = parts[0]
+            state.recomputed += 1
+            if inserted is not None:
+                findings, counts = inserted.findings, inserted.metrics
+                graph_unit, enrichment_unit = inserted.graph_unit, inserted.enrichment_unit
+                local_graph, nodes, edges = None, None, None
+            elif appended is not None:
                 findings, counts, local_graph, append_delta, append_previous, graph_unit = appended
                 nodes, edges = None, None
             else:
@@ -360,6 +375,8 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                     findings=findings,
                     metrics=counts,
                     graph=local_graph,
+                    checksum_version=getattr(loader, "integrity_checksum_version", 1),
+                    check=check,
                 )
             state.retain_graph_unit(graph_unit)
             if enrichment_units_enabled:
@@ -388,12 +405,15 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                 from app.analytics.conversation_graph_units import ConversationGraphReference
                 if graph_unit is not None:
                     current_units[ref] = graph_unit
-                if append_delta is not None:
+                if inserted is not None:
+                    changed_graph.merge(inserted.delta, check=check)
+                    insertion_removed_edges.update(inserted.removed_edges)
+                elif append_delta is not None:
                     changed_graph.merge(append_delta, check=check)
                 elif local_graph is not None:
                     changed_graph.merge(local_graph, check=check)
                 # A verified append retains every predecessor member.
-                if (not isinstance(graph_unit, ConversationGraphReference)
+                if (inserted is None and not isinstance(graph_unit, ConversationGraphReference)
                         and (append_delta is None or graph_unit is None)):
                     previous = loader.previous_graph_unit(ref)
                     if previous is not None:
@@ -410,15 +430,15 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
             fragments.append(fragment)
             enrichments.extend(fragment.enrichments)
             metrics.append(fragment.metrics)
-        append_units_retained = (
-            append_delta is not None and graph_unit is not None and enrichment_unit is not None
+        complete_units_retained = (
+            graph_unit is not None and enrichment_unit is not None
             and state.graph_units and state.graph_units[-1] is graph_unit
             and state.enrichment_units and state.enrichment_units[-1] is enrichment_unit
         )
-        # Complete units already retain this append's graph and analyzer records.
-        # Do not write a second optional cache of the same data. If either unit
-        # was refused by its existing bound, keep the ordinary page fallback.
-        if use_pages and not append_units_retained:
+        # Complete units already retain this conversation's graph and analyzer
+        # records. Do not write a second optional cache of the same data. If
+        # either unit was refused by its existing bound, keep the page fallback.
+        if use_pages and not complete_units_retained:
             if append_delta is not None and local_graph is None:
                 from app.analytics.conversation_append import _previous_graph, _merge_append_delta
                 from app.analytics.graph_projection import stable_node_id
@@ -527,7 +547,7 @@ def assemble(pipeline, account_id, catalog, cutoff, cancellation_check):
                             candidate_edge_removals.intersection(edges)
                         )
             removed_nodes = candidate_node_removals - live_removed_nodes
-            removed_edges = candidate_edge_removals - live_removed_edges
+            removed_edges = (candidate_edge_removals - live_removed_edges) | insertion_removed_edges
 
             previous_timeline = {}
             pipeline.graph_projector._conversation_edges(

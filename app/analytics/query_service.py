@@ -151,7 +151,6 @@ class AnalyticsQuestionService:
                 budget.check()
                 snapshot = QuestionSnapshot.model_validate(session.snapshot)
                 self._check_snapshot(snapshot, account, now)
-                session.assert_current(snapshot, budget)
                 snapshot_digest = digest(snapshot.model_dump(mode="json"))
                 if cursor and (
                     cursor.snapshot_digest != snapshot_digest
@@ -175,7 +174,6 @@ class AnalyticsQuestionService:
                 )
                 budget.check()
                 last = self._check_page(page, resolved, after, budget)
-                session.assert_current(snapshot, budget)
                 checked_at = utc_instant(self._clock())
                 self._check_snapshot(snapshot, account, checked_at)
                 if checked_at < now:

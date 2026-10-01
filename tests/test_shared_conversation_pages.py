@@ -20,7 +20,11 @@ pytestmark = [pytest.mark.ci_tier('integration')]
 
 
 @pytest.fixture
-def fixture(tmp_path):
+def fixture(tmp_path, monkeypatch):
+    # Page storage is the bounded fallback when complete graph/enrichment units
+    # are unavailable; keep these tests focused on that fallback contract.
+    monkeypatch.setattr('app.analytics.conversation_reuse.MAX_GRAPH_UNITS', 0)
+    monkeypatch.setattr('app.analytics.conversation_reuse.MAX_ENRICHMENT_UNITS', 0)
     value = make_fixture(tmp_path, conversations=2, messages=0)
     with value.repositories.database.transaction() as db:
         for index in range(257):
@@ -118,10 +122,7 @@ def test_changed_reference_between_build_and_stage_is_rejected_atomically(fixtur
             kwargs['conversation_pages'] = (reference,)
         return stage(artifact, **kwargs)
     monkeypatch.setattr(fixture.stores.projections, 'stage_built_artifact', changed)
-    expected = (
-        'conversation_enrichment_unit_manifest_invalid'
-        if fault == 'missing_page' else 'conversation_page_reference_'
-    )
+    expected = 'conversation_page_reference_'
     with pytest.raises(ValueError, match=expected):
         fixture.pipeline.build_candidate(ACCOUNT)
     with fixture.stores.database.read() as db:
@@ -197,7 +198,7 @@ def test_legacy_pages_survive_migration_and_convert_on_next_publication(fixture,
         assert before > 0
     upgraded = ProjectionsDatabase(path)
     with upgraded.read() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 20
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 25
         assert content_stamp(db) is not None
         assert db.execute('SELECT COUNT(*) FROM conversation_owned_pages').fetchone()[0] == before
         assert db.execute('SELECT COUNT(*) FROM conversation_page_content').fetchone()[0] == 0

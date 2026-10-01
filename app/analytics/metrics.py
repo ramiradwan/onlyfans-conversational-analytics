@@ -98,6 +98,120 @@ class ConversationMetricInput(NamedTuple):
             item.engagement.state.value)
 
 
+
+def _safe_appended_average(previous: float | None, count: int, added: float) -> float | None:
+    """Return the exact six-decimal result only when the stored average proves it."""
+    if previous is None or count <= 0:
+        return None
+    from decimal import Decimal, localcontext
+    # The stored value is Python's six-decimal rounding of the previous float
+    # average. Widen half a unit by 1e-9 to cover binary arithmetic at the tie.
+    center = Decimal(str(previous))
+    radius = Decimal('0.000000501')
+    with localcontext() as context:
+        context.prec = 50
+        score = Decimal.from_float(float(added))
+        low = ((center - radius) * count + score) / (count + 1)
+        high = ((center + radius) * count + score) / (count + 1)
+    rounded_low = round(float(low), 6)
+    rounded_high = round(float(high), 6)
+    return rounded_low if rounded_low == rounded_high else None
+
+
+def append_conversation_metrics(previous, last, tail, unread_count, *,
+                                previous_sentiment_total=None,
+                                sentiment_total_factory=None):
+    """Update an exact append only when no historical response sample changes.
+
+    An outbound message after an inbound message creates a new response-time
+    sample whose median cannot be recovered from the public aggregate. That
+    case deliberately returns None and uses the complete existing calculation.
+    """
+    from app.models.analytics import MessageDirection
+    if (previous.message_count <= 0 or previous.ended_at != last.sent_at
+            or previous.unread_count != unread_count
+            or tail.sent_at < last.sent_at
+            or tail.account_ref != previous.account_ref
+            or tail.conversation_ref != previous.conversation_ref
+            or tail.participant_ref != previous.participant_ref
+            or (last.direction == MessageDirection.INBOUND
+                and tail.direction == MessageDirection.OUTBOUND)):
+        return None
+    # The exact previous average need not be reconstructed when both endpoints
+    # are in the same six-decimal rounding bin: their weighted average stays in
+    # that bin. Otherwise recover the exact historical float sum only after all
+    # cheaper append-admission checks have passed.
+    average_sentiment = None
+    if (previous.average_sentiment_score is not None
+            and float(tail.sentiment.score) == previous.average_sentiment_score):
+        average_sentiment = previous.average_sentiment_score
+    elif previous_sentiment_total is not None:
+        average_sentiment = round(
+            (previous_sentiment_total + tail.sentiment.score)
+            / (previous.message_count + 1), 6
+        )
+    else:
+        average_sentiment = _safe_appended_average(
+            previous.average_sentiment_score, previous.message_count,
+            tail.sentiment.score,
+        )
+    if average_sentiment is None and sentiment_total_factory is not None:
+        previous_sentiment_total = sentiment_total_factory()
+        average_sentiment = round(
+            (previous_sentiment_total + tail.sentiment.score)
+            / (previous.message_count + 1), 6
+        )
+    if average_sentiment is None:
+        return None
+    def increment(values, key):
+        result = dict(values)
+        result[key] = result.get(key, 0) + 1
+        return dict(sorted(result.items()))
+    topics = dict(previous.topic_counts)
+    for item in tail.topic_entities.topics:
+        topics[item.taxonomy_id] = topics.get(item.taxonomy_id, 0) + 1
+    entities = dict(previous.entity_counts)
+    for item in tail.topic_entities.entities:
+        key = item.entity_type.value
+        entities[key] = entities.get(key, 0) + 1
+    changed_direction = tail.direction != last.direction
+    inbound_added = int(tail.direction == MessageDirection.INBOUND)
+    opportunities = previous.response_opportunity_count + int(inbound_added and changed_direction)
+    responded = previous.responded_count
+    gap = max(0.0, (tail.sent_at - last.sent_at).total_seconds())
+    maximum_silence = max(previous.maximum_silence_seconds or 0.0, gap)
+    unavailable = dict(previous.unavailable_reasons)
+    if opportunities:
+        unavailable.pop('response_coverage', None)
+    if responded:
+        unavailable.pop('response_time', None)
+    unavailable.pop('average_sentiment_score', None)
+    unavailable.pop('maximum_silence_seconds', None)
+    count = previous.message_count + 1
+    provenance = previous.provenance.model_copy(update={
+        'sample_count': count, 'sample_coverage': 1.0, 'unavailable_reason': None
+    })
+    return previous.model_copy(update={
+        'ended_at': tail.sent_at,
+        'duration_seconds': round(max(0.0, (tail.sent_at - previous.started_at).total_seconds()), 6),
+        'message_count': count,
+        'inbound_message_count': previous.inbound_message_count + inbound_added,
+        'outbound_message_count': previous.outbound_message_count + (1 - inbound_added),
+        'turn_count': previous.turn_count + int(changed_direction),
+        'response_opportunity_count': opportunities,
+        'responded_count': responded,
+        'response_coverage': round(responded / opportunities, 6) if opportunities else None,
+        'maximum_silence_seconds': round(maximum_silence, 6),
+        'average_sentiment_score': average_sentiment,
+        'sentiment_counts': increment(previous.sentiment_counts, tail.sentiment.label.value),
+        'topic_counts': dict(sorted(topics.items())),
+        'entity_counts': dict(sorted(entities.items())),
+        'engagement_counts': increment(previous.engagement_counts, tail.engagement.state.value),
+        'provenance': provenance,
+        'window': previous.window.model_copy(update={'end': tail.sent_at}),
+        'unavailable_reasons': unavailable,
+    })
+
 def build_conversation_metrics(
     creator_account_id: str,
     conversation: CanonicalConversation,
@@ -115,6 +229,16 @@ def build_conversation_metrics_from_values(
 ) -> ConversationMetrics:
     """Apply the same metric rules to values from models or a verified prefix."""
 
+    return build_conversation_metrics_from_bound_values(
+        account_ref(creator_account_id),
+        conversation_ref(creator_account_id, conversation.conversation_id),
+        participant_ref(creator_account_id, conversation.platform_user_id),
+        conversation.unread_count, enrichments,
+    )
+
+
+def build_conversation_metrics_from_bound_values(account, conversation, participant, unread_count, enrichments):
+    """Apply the same metric rules to an already account-bound stored selection."""
     ordered = sorted(
         enrichments,
         key=lambda item: (item.sent_at, item.source_ordinal),
@@ -174,14 +298,10 @@ def build_conversation_metrics_from_values(
     if not silence_seconds:
         unavailable_reasons["maximum_silence_seconds"] = "insufficient_messages"
     return ConversationMetrics(
-        account_ref=account_ref(creator_account_id),
-        conversation_ref=conversation_ref(
-            creator_account_id, conversation.conversation_id
-        ),
-        participant_ref=participant_ref(
-            creator_account_id, conversation.platform_user_id
-        ),
-        unread_count=conversation.unread_count,
+        account_ref=account,
+        conversation_ref=conversation,
+        participant_ref=participant,
+        unread_count=unread_count,
         started_at=started_at,
         ended_at=ended_at,
         duration_seconds=round(duration, 6),

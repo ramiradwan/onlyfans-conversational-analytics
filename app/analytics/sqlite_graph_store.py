@@ -2224,8 +2224,18 @@ class SQLiteGraphGenerationWriter:
             with self._write_gate:
                 self._check_heartbeat()
                 self._quiesce_heartbeat_for_terminal_transition()
-                connection = self.database.connect()
+                with self._state_lock:
+                    connection = self._write_connection
+                    owner = self._lease_session_owner
+                if connection is None or owner != threading.get_ident():
+                    raise GraphStoreError("graph_validation_session_missing")
+                if connection.in_transaction:
+                    raise GraphStoreError("graph_validation_transaction_active")
                 try:
+                    # Validation deliberately reuses the lease-owned connection.
+                    # The predicates below are unchanged; only the SQLite page
+                    # cache populated by the just-finished candidate writes is
+                    # retained instead of reopening the same file cold.
                     connection.execute("BEGIN IMMEDIATE")
                     self._renew_owned(connection)
 
@@ -2243,6 +2253,7 @@ class SQLiteGraphGenerationWriter:
                         enrichment_validation=getattr(
                             self, 'enrichment_validation', None
                         ),
+                        conversation_validation=getattr(self, 'conversation_graph_validation', None),
                     )
                     self.validated_graph_segments = values.get(
                         'graph_segments', ()
@@ -2287,8 +2298,6 @@ class SQLiteGraphGenerationWriter:
                 except BaseException:
                     connection.rollback()
                     raise
-                finally:
-                    connection.close()
             with self._state_lock:
                 self._valid = False
                 self._lease_deadline_monotonic = None

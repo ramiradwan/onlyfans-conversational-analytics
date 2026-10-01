@@ -35,6 +35,9 @@ async def test_reopened_scheduler_prepares_verified_reuse_without_analyzers(tmp_
             assert store._trusted_graph_segment_proof(db, row) is not None
             assert store._trusted_conversation_graph_proof(db, row) is not None
             assert store._trusted_conversation_enrichment_proof(db, row) is not None
+            envelope = store._trusted_verification_envelope(db, row)
+            assert envelope is not None
+            assert envelope.conversations.membership_prefixes
         assert [a.calls for a in original.analyzers] == before
     finally:
         assert await scheduler.close(timeout=10)
@@ -53,17 +56,36 @@ def reopened(tmp_path, maker=make_fixture):
     return f, source, stores, pipeline
 
 
-def test_recovery_preparation_reuses_only_independently_checked_bytes(tmp_path, monkeypatch):
+def test_recovery_envelope_does_not_rebuild_expected_conversation_graphs(tmp_path, monkeypatch):
+    from app.analytics import recovered_reuse
     f, source, stores, pipeline = reopened(tmp_path)
     try:
-        read = stores.projections._validate_persisted_generation
+        def forbidden(*args, **kwargs):
+            raise AssertionError('v2 restart recovery rebuilt expected canonical conversation graphs')
+        monkeypatch.setattr(recovered_reuse, 'expected_units', forbidden)
+        assert pipeline.prepare_questions(ACCOUNT, 1)
+        identity = source.read_identity(ACCOUNT)
+        assert stores.projections.update_reuse_prepared(ACCOUNT, identity)
+    finally:
+        stores.projections.close_retention_scheduler()
+
+
+def test_recovery_preparation_reuses_only_independently_checked_bytes(tmp_path, monkeypatch):
+    from app.analytics import sqlite_projection_store
+    f, source, stores, pipeline = reopened(tmp_path)
+    try:
+        verify = sqlite_projection_store.recompute_generation
         checks = []
-        monkeypatch.setattr(stores.projections, '_validate_persisted_generation',
-            lambda *args, **kwargs: (checks.append(args), read(*args, **kwargs))[1])
+        def observed(*args, **kwargs):
+            checks.append(dict(kwargs))
+            return verify(*args, **kwargs)
+        monkeypatch.setattr(sqlite_projection_store, 'recompute_generation', observed)
         assert pipeline.prepare_questions(ACCOUNT, 1)
         before = [a.calls for a in f.analyzers]
         assert checks
+        assert checks[0].get('materialize_projection') is False
         assert pipeline.prepare_questions(ACCOUNT, 1)
+        assert len(checks) == 1
         assert [a.calls for a in f.analyzers] == before
     finally:
         stores.projections.close_retention_scheduler()
@@ -72,11 +94,11 @@ def test_recovery_preparation_reuses_only_independently_checked_bytes(tmp_path, 
 @pytest.mark.parametrize('fault', ['source', 'expiry', 'witness', 'storage'])
 def test_change_at_end_of_recovery_cannot_install_proofs(tmp_path, monkeypatch, fault):
     from datetime import timedelta
-    from app.analytics import recovered_reuse
+    from app.analytics import sqlite_projection_store
     f, source, stores, pipeline = reopened(tmp_path)
-    expected = recovered_reuse.expected_units
-    def changed(*args):
-        yield from expected(*args)
+    expected = sqlite_projection_store.recompute_generation
+    def changed(*args, **kwargs):
+        result = expected(*args, **kwargs)
         if fault == 'source':
             with f.repositories.database.transaction() as db:
                 db.execute("UPDATE account_messages SET text='Changed during preparation'")
@@ -87,7 +109,8 @@ def test_change_at_end_of_recovery_cannot_install_proofs(tmp_path, monkeypatch, 
         else:
             with stores.database.transaction() as db:
                 db.execute('UPDATE generation_content_epoch SET value=value+1')
-    monkeypatch.setattr(recovered_reuse, 'expected_units', changed)
+        return result
+    monkeypatch.setattr(sqlite_projection_store, 'recompute_generation', changed)
     try:
         assert not pipeline.prepare_questions(ACCOUNT, 1)
         assert not stores.projections._graph_segment_proofs
@@ -99,7 +122,7 @@ def test_change_at_end_of_recovery_cannot_install_proofs(tmp_path, monkeypatch, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("dominant", [False, True])
-async def test_reopened_scheduler_updates_with_verified_units(tmp_path, dominant):
+async def test_reopened_scheduler_updates_with_verified_units(tmp_path, dominant, monkeypatch):
     from datetime import timedelta
     from tests.continuous_analytics_fixture import insert_message, advance, cold_equal
     from tests.test_dominant_append_reuse import dominant_fixture
@@ -114,6 +137,14 @@ async def test_reopened_scheduler_updates_with_verified_units(tmp_path, dominant
     try:
         await scheduler.start(recover=True)
         before = [a.calls for a in f.analyzers]
+        if dominant:
+            from app.analytics import conversation_append, conversation_integrity
+            def forbidden_rows(*args, **kwargs):
+                raise AssertionError('recovered dominant append materialized historical enrichment rows')
+            def forbidden_members(*args, **kwargs):
+                raise AssertionError('recovered dominant append revalidated predecessor membership frame')
+            monkeypatch.setattr(conversation_append, 'message_records', forbidden_rows)
+            monkeypatch.setattr(conversation_integrity, 'groups_for_members', forbidden_members)
         with f.repositories.database.transaction() as db:
             insert_message(db, 'chat-0', 'after-restart', NOW-timedelta(hours=1), 2)
             advance(db)
@@ -130,16 +161,16 @@ async def test_reopened_scheduler_updates_with_verified_units(tmp_path, dominant
 def test_concurrent_preparation_shares_one_account_verification(tmp_path, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Event
-    from app.analytics import recovered_reuse
+    from app.analytics import sqlite_projection_store
     f, source, stores, pipeline = reopened(tmp_path)
     started, release = Event(), Event()
-    original, calls = recovered_reuse.expected_units, []
-    def observe(*args):
+    original, calls = sqlite_projection_store.recompute_generation, []
+    def observe(*args, **kwargs):
         calls.append(1)
         started.set()
         assert release.wait(10)
-        yield from original(*args)
-    monkeypatch.setattr(recovered_reuse, 'expected_units', observe)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(sqlite_projection_store, 'recompute_generation', observe)
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
             first = pool.submit(pipeline.prepare_questions, ACCOUNT, 1)
@@ -185,30 +216,25 @@ def test_cancelled_preparation_waiter_does_not_scan_or_keep_account_lock(tmp_pat
         stores.projections.close_retention_scheduler()
 
 
-def test_recovery_sql_is_cancelled_before_installing_reuse(tmp_path, monkeypatch):
+def test_recovery_is_cancelled_before_installing_reuse(tmp_path, monkeypatch):
     from threading import Event
     from app.analytics.errors import ProjectionBuildCancelled
-    from app.analytics import conversation_graph_sql
-    from app.persistence import sqlite_api
+    from app.analytics import sqlite_projection_store
     f, source, stores, pipeline = reopened(tmp_path)
-    stop, interrupted = Event(), []
-    original = conversation_graph_sql.encoded_graph_records
-    def cancel_during_sql(db, *args, **kwargs):
+    stop = Event()
+    original = sqlite_projection_store.recompute_generation
+    def cancel_during_verification(*args, **kwargs):
         stop.set()
-        try:
-            db.execute('WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n '
-                       'WHERE i<1000000) SELECT sum(i) FROM n').fetchone()
-        except sqlite_api.OperationalError:
-            interrupted.append(True)
-            raise
-        return original(db, *args, **kwargs)
-    monkeypatch.setattr(conversation_graph_sql, 'encoded_graph_records', cancel_during_sql)
+        kwargs['check']()
+        raise AssertionError('cancelled recovery continued verification')
+    monkeypatch.setattr(sqlite_projection_store, 'recompute_generation', cancel_during_verification)
     try:
         with pytest.raises(ProjectionBuildCancelled):
             pipeline.prepare_questions(ACCOUNT, 1, cancellation_check=stop.is_set)
-        assert interrupted == [True]
         assert not stores.projections._graph_segment_proofs
+        assert not stores.projections._conversation_graph_proofs
         assert not stores.projections._conversation_enrichment_proofs
+        assert not stores.projections._verification_envelopes
         assert not pipeline._account_locks
     finally:
         stores.projections.close_retention_scheduler()

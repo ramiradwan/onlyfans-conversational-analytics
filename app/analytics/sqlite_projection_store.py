@@ -15,7 +15,9 @@ from uuid import uuid4
 
 from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.enrichment_proof_transition import capture_transition, finish_transition
-from app.analytics.database import ProjectionsDatabase, generation_verification_cache
+from app.analytics.database import (
+    ProjectionsDatabase, generation_retirement_cache, generation_verification_cache,
+)
 from app.analytics.compact_graph import CompactArtifact, write_compact_graph
 from app.analytics.graph_privacy import safe_graph_records
 from app.analytics.shared_graph import (
@@ -71,6 +73,19 @@ from app.persistence.projection_activation import (
 
 
 PROJECTION_BUILD_VERSION = "analytics.projection.v3"
+_SCOPED_PAGE_RETIREMENT_RECLAIM = (
+    "DELETE FROM conversation_page_content WHERE creator_account_id=? "
+    "AND content_id IN (SELECT content_id FROM retirement_page_content_ids) "
+    "AND NOT EXISTS(SELECT 1 FROM conversation_page_refs r "
+    "WHERE r.creator_account_id=conversation_page_content.creator_account_id "
+    "AND r.content_id=conversation_page_content.content_id)"
+)
+_SCOPED_GRAPH_RETIREMENT_RECLAIM = (
+    "DELETE FROM conversation_graph_units WHERE creator_account_id=? "
+    "AND unit_id IN (SELECT c.unit_id FROM retirement_graph_unit_ids c "
+    "WHERE NOT EXISTS(SELECT 1 FROM conversation_graph_refs r "
+    "WHERE r.creator_account_id=? AND r.unit_id=c.unit_id))"
+)
 CrashHook = Callable[[str, str], None]
 CanonicalIdentityReader = Callable[[str], CanonicalIdentity | None]
 
@@ -126,6 +141,8 @@ class SQLiteAnalyticsProjectionStore:
         self._conversation_graph_proof_lock = RLock()
         self._conversation_enrichment_proofs = OrderedDict()
         self._conversation_enrichment_proof_lock = RLock()
+        self._verification_envelopes = OrderedDict()
+        self._verification_envelope_lock = RLock()
         self.reuse_validation_receipts = True
         self.reuse_conversation_enrichment_units = True
         from app.analytics.currentness import GenerationCurrentness
@@ -137,9 +154,9 @@ class SQLiteAnalyticsProjectionStore:
         if reconcile:
             self.reconcile_startup()
 
-    def _remember_graph_segment_proof(self, receipt, segments) -> None:
+    def _remember_graph_segment_proof(self, receipt, segments):
         if receipt is None or not segments:
-            return
+            return None
         from app.analytics.shared_graph import GraphSegmentProof
         from app.analytics.validation_receipt import MAX_RECEIPTS
 
@@ -152,6 +169,7 @@ class SQLiteAnalyticsProjectionStore:
             self._graph_segment_proofs.move_to_end(receipt.generation_id)
             while len(self._graph_segment_proofs) > MAX_RECEIPTS:
                 self._graph_segment_proofs.popitem(last=False)
+        return proof
 
     def _trusted_graph_segment_proof(self, connection, generation):
         from app.analytics.validation_receipt import content_stamp, generation_binding
@@ -171,42 +189,110 @@ class SQLiteAnalyticsProjectionStore:
 
     def _remember_conversation_graph_proof(
         self, receipt, units, predecessor_proof, projection
-    ) -> None:
+    ):
         if receipt is None or not units:
-            return
+            return None
         from app.analytics.conversation_graph_units import (
             ConversationGraphProof, ConversationGraphReference,
         )
         from app.analytics.validation_receipt import MAX_RECEIPTS
 
         expected = {item.conversation_ref for item in projection.conversation_metrics}
-        headers, seen = [], set()
+        headers, seen, integrity_groups, bucket_keys = [], set(), [], 0
+        membership_prefixes, prefix_bytes = [], 0
+        keep_integrity_groups = True
         trusted = {
             header.conversation_ref: header
             for header in (() if predecessor_proof is None else predecessor_proof.headers)
         }
+        predecessor_groups = dict(
+            () if predecessor_proof is None else predecessor_proof.integrity_groups
+        )
+        predecessor_prefixes = {
+            item[0]: (item[1], item[2])
+            for item in (() if predecessor_proof is None else predecessor_proof.membership_prefixes)
+        }
         for unit in units:
             header = unit.header
             if header.conversation_ref in seen or header.conversation_ref not in expected:
-                return
+                return None
             if isinstance(unit, ConversationGraphReference):
                 if (predecessor_proof is None
                         or unit.generation_id != predecessor_proof.generation_id
                         or trusted.get(header.conversation_ref) != header):
-                    return
+                    return None
+                groups = predecessor_groups.get(header.conversation_ref, ())
+                prefixes = predecessor_prefixes.get(header.conversation_ref)
+            elif header.checksum_version == 2:
+                from app.analytics.conversation_integrity import decode_manifest
+                groups = tuple(sorted(decode_manifest(unit)))
+                prefixes = unit.membership_prefixes
+            else:
+                groups = ()
+                prefixes = None
+            if keep_integrity_groups:
+                from app.analytics.conversation_graph_units import MAX_PROOF_BUCKET_KEYS
+                bucket_keys += len(groups)
+                if bucket_keys > MAX_PROOF_BUCKET_KEYS:
+                    keep_integrity_groups = False
+                    integrity_groups.clear()
             seen.add(header.conversation_ref)
             headers.append(header)
+            if keep_integrity_groups:
+                integrity_groups.append((header.conversation_ref, tuple(groups)))
+            if prefixes is not None:
+                from app.analytics.membership_prefixes import MAX_ENVELOPE_PREFIX_BYTES
+                cost = sum(map(len, prefixes))
+                if prefix_bytes + cost <= MAX_ENVELOPE_PREFIX_BYTES:
+                    membership_prefixes.append((header.conversation_ref, prefixes[0], prefixes[1]))
+                    prefix_bytes += cost
         if seen != expected:
-            return
+            return None
         proof = ConversationGraphProof(
             receipt.generation_id, receipt.binding, tuple(receipt.stamp[:3]),
             tuple(sorted(headers, key=lambda item: item.conversation_ref)),
+            tuple(sorted(integrity_groups)), tuple(sorted(membership_prefixes)),
         )
         with self._conversation_graph_proof_lock:
             self._conversation_graph_proofs[receipt.generation_id] = proof
             self._conversation_graph_proofs.move_to_end(receipt.generation_id)
             while len(self._conversation_graph_proofs) > MAX_RECEIPTS:
                 self._conversation_graph_proofs.popitem(last=False)
+        return proof
+
+    def _remember_verified_conversation_graph_proof(self, receipt, verification, expected):
+        """Install proof metadata only from persisted validation of this generation."""
+        if receipt is None or verification is None or not verification.headers:
+            return None
+        from app.analytics.conversation_graph_units import ConversationGraphProof
+        from app.analytics.validation_receipt import MAX_RECEIPTS
+        headers = tuple(sorted(verification.headers, key=lambda item: item.conversation_ref))
+        refs = [header.conversation_ref for header in headers]
+        if len(refs) != len(set(refs)) or set(refs) != set(expected):
+            return None
+        groups = tuple(sorted(verification.integrity_groups))
+        if {item[0] for item in groups} != set(refs):
+            return None
+        from app.analytics.membership_prefixes import MAX_ENVELOPE_PREFIX_BYTES
+        prefixes, used = [], 0
+        for item in tuple(getattr(verification, 'membership_prefixes', ())):
+            if item[0] not in set(refs):
+                continue
+            cost = len(item[1]) + len(item[2])
+            if used + cost > MAX_ENVELOPE_PREFIX_BYTES:
+                break
+            prefixes.append(item)
+            used += cost
+        proof = ConversationGraphProof(
+            receipt.generation_id, receipt.binding, tuple(receipt.stamp[:3]),
+            headers, groups, tuple(sorted(prefixes)),
+        )
+        with self._conversation_graph_proof_lock:
+            self._conversation_graph_proofs[receipt.generation_id] = proof
+            self._conversation_graph_proofs.move_to_end(receipt.generation_id)
+            while len(self._conversation_graph_proofs) > MAX_RECEIPTS:
+                self._conversation_graph_proofs.popitem(last=False)
+        return proof
 
     def _trusted_conversation_graph_proof(self, connection, generation):
         from app.analytics.validation_receipt import content_stamp, generation_binding
@@ -224,9 +310,9 @@ class SQLiteAnalyticsProjectionStore:
             return None
         return proof
 
-    def _remember_conversation_enrichment_proof(self, receipt, headers) -> None:
+    def _remember_conversation_enrichment_proof(self, receipt, headers):
         if receipt is None or not headers:
-            return
+            return None
         from app.analytics.conversation_enrichment_units import ConversationEnrichmentProof
         from app.analytics.validation_receipt import MAX_RECEIPTS
 
@@ -239,6 +325,7 @@ class SQLiteAnalyticsProjectionStore:
             self._conversation_enrichment_proofs.move_to_end(receipt.generation_id)
             while len(self._conversation_enrichment_proofs) > MAX_RECEIPTS:
                 self._conversation_enrichment_proofs.popitem(last=False)
+        return proof
 
     def _trusted_conversation_enrichment_proof(self, connection, generation):
         from app.analytics.validation_receipt import content_stamp, generation_binding
@@ -256,6 +343,173 @@ class SQLiteAnalyticsProjectionStore:
             return None
         return proof
 
+    def _remember_verification_envelope(self, receipt):
+        if receipt is None:
+            return None
+        from app.analytics.generation_verification import build_envelope
+        from app.analytics.validation_receipt import MAX_RECEIPTS
+        generation_id = receipt.generation_id
+        with self._graph_segment_proof_lock:
+            graph = self._graph_segment_proofs.get(generation_id)
+        with self._conversation_graph_proof_lock:
+            conversations = self._conversation_graph_proofs.get(generation_id)
+        with self._conversation_enrichment_proof_lock:
+            enrichment = self._conversation_enrichment_proofs.get(generation_id)
+        envelope = build_envelope(receipt, graph, conversations, enrichment)
+        if envelope is None:
+            return None
+        with self._verification_envelope_lock:
+            self._verification_envelopes[generation_id] = envelope
+            self._verification_envelopes.move_to_end(generation_id)
+            while len(self._verification_envelopes) > MAX_RECEIPTS:
+                self._verification_envelopes.popitem(last=False)
+        return envelope
+
+    def _trusted_verification_envelope(self, connection, generation):
+        from app.analytics.validation_receipt import content_stamp, generation_binding
+        if generation is None:
+            return None
+        generation_id = generation['generation_id']
+        with self._verification_envelope_lock:
+            envelope = self._verification_envelopes.get(generation_id)
+        if (envelope is None or envelope.generation_id != generation_id
+                or envelope.binding != generation_binding(generation)):
+            return None
+        with self._graph_segment_proof_lock:
+            graph = self._graph_segment_proofs.get(generation_id)
+        with self._conversation_graph_proof_lock:
+            conversations = self._conversation_graph_proofs.get(generation_id)
+        with self._conversation_enrichment_proof_lock:
+            enrichment = self._conversation_enrichment_proofs.get(generation_id)
+        if (graph is not envelope.graph or conversations is not envelope.conversations
+                or enrichment is not envelope.enrichment):
+            return None
+        stamp = content_stamp(connection)
+        if stamp is None or tuple(stamp) != envelope.stamp:
+            return None
+        return envelope
+
+    def prepare_current_verification_envelope(self, snapshot, *, cancellation_check=None):
+        """Independently verify one active generation and retain only bound proof metadata."""
+        from app.analytics.cancellation import check_cancelled
+        from app.analytics.validation_receipt import (
+            ValidationReceipt, RECEIPT_SECONDS, content_stamp, generation_binding,
+        )
+        if snapshot is None or len(snapshot) != 3 or snapshot[2] is None:
+            return False, None
+        check = lambda: check_cancelled(cancellation_check)
+        with self.database.read() as connection:
+            connection.execute('BEGIN')
+            check()
+            generation = connection.execute(
+                "SELECT * FROM projection_generations WHERE generation_id=? "
+                "AND status='active' AND activated_at IS NOT NULL", (snapshot[0],)
+            ).fetchone()
+            if (generation is None or generation_binding(generation) != snapshot[1]
+                    or content_stamp(connection) != snapshot[2]):
+                return False, None
+            intent = self.activation.get(generation['generation_id'])
+            if not self._intent_matches(generation, intent, require_completed=True):
+                return False, None
+            values = recompute_generation(
+                connection, generation['generation_id'], check=check,
+                materialize_projection=False, materialize_graph=False,
+            )
+            verify_generation_values(generation, values)
+            check()
+            if content_stamp(connection) != snapshot[2]:
+                return False, None
+            enrichment = tuple(values.get('enrichment_units', ()))
+            integrity = values.get('conversation_integrity')
+            expected = {item.conversation_ref for item in enrichment}
+            verified = set() if integrity is None else {
+                item.conversation_ref for item in integrity.headers
+            }
+            if (not expected or integrity is None or verified != expected
+                    or len(integrity.headers) != len(expected)):
+                return False, None
+            receipt = ValidationReceipt(
+                generation['generation_id'], tuple(snapshot[2]), snapshot[1],
+                time.monotonic() + RECEIPT_SECONDS,
+            )
+            self._remember_graph_segment_proof(receipt, values['graph_segments'])
+            self._remember_verified_conversation_graph_proof(receipt, integrity, expected)
+            self._remember_conversation_enrichment_proof(receipt, enrichment)
+            envelope = self._remember_verification_envelope(receipt)
+            check()
+            if envelope is None:
+                return False, None
+            return True, envelope.source_due_at
+
+    def update_reuse_prepared(self, account_id, identity) -> bool:
+        """Return true only for an active generation with a live exact envelope."""
+        partition = account_ref(account_id)
+        with self.database.read() as connection:
+            connection.execute('BEGIN')
+            generation = connection.execute(
+                "SELECT * FROM projection_generations WHERE creator_account_id=? "
+                "AND status='active' AND activated_at IS NOT NULL", (partition,)
+            ).fetchone()
+            if (generation is None
+                    or int(generation['canonical_revision']) != identity.revision
+                    or generation['canonical_content_digest'] != identity.content_digest):
+                return False
+            witness = self.activation.get(generation['generation_id'])
+            if (not self._intent_matches(generation, witness, require_completed=True)
+                    or witness.creator_account_id != account_id):
+                return False
+            return self._trusted_verification_envelope(connection, generation) is not None
+
+    def predecessor_update_reuse_prepared(
+        self, account_id, identity, revision, config, retention_clock
+    ) -> bool:
+        """Reuse a resident verified predecessor without running recovery again.
+
+        This is deliberately not a currentness predicate.  It is true only when
+        the active generation is older than the live canonical identity and its
+        exact process-local verification envelope is still bound to the active
+        generation, current pipeline, completed activation witness and source
+        retention window.  Missing or ambiguous state falls back to recovery.
+        """
+        partition = account_ref(account_id)
+        with self.database.read() as connection:
+            connection.execute('BEGIN')
+            generation = connection.execute(
+                "SELECT * FROM projection_generations WHERE creator_account_id=? "
+                "AND status='active' AND activated_at IS NOT NULL", (partition,)
+            ).fetchone()
+            if generation is None:
+                return False
+            canonical_revision = int(generation['canonical_revision'])
+            if (canonical_revision >= identity.revision
+                    or generation['pipeline_revision'] != revision
+                    or generation['pipeline_config_digest'] != config):
+                return False
+            witness = self.activation.get(generation['generation_id'])
+            if (not self._intent_matches(generation, witness, require_completed=True)
+                    or witness.creator_account_id != account_id):
+                return False
+            envelope = self._trusted_verification_envelope(connection, generation)
+            if envelope is None:
+                return False
+            return envelope.source_due_at is None or envelope.source_due_at > retention_clock()
+
+    def _enrichment_transition_candidate(self, generation):
+        """Return a bound proof candidate; capture_transition remains authority."""
+        if generation is None:
+            return None
+        from app.analytics.validation_receipt import generation_binding
+        generation_id = generation['generation_id']
+        binding = generation_binding(generation)
+        with self._verification_envelope_lock:
+            envelope = self._verification_envelopes.get(generation_id)
+        if (envelope is not None and envelope.generation_id == generation_id
+                and envelope.binding == binding):
+            return envelope.enrichment
+        with self._conversation_enrichment_proof_lock:
+            proof = self._conversation_enrichment_proofs.get(generation_id)
+        return proof if proof is not None and proof.binding == binding else None
+
     def _install_enrichment_transition(self, transition, renewed) -> None:
         if transition is None or renewed is None:
             return
@@ -263,6 +517,13 @@ class SQLiteAnalyticsProjectionStore:
         with self._conversation_enrichment_proof_lock:
             if self._conversation_enrichment_proofs.get(proof.generation_id) is proof:
                 self._conversation_enrichment_proofs[proof.generation_id] = renewed
+        from app.analytics.generation_verification import transitioned
+        with self._verification_envelope_lock:
+            envelope = self._verification_envelopes.get(proof.generation_id)
+            refreshed = transitioned(envelope, proof, renewed)
+            if refreshed is not None:
+                self._verification_envelopes[proof.generation_id] = refreshed
+                self._verification_envelopes.move_to_end(proof.generation_id)
 
     def generation_references_supported(self) -> bool:
         with self.database.read() as connection:
@@ -353,8 +614,37 @@ class SQLiteAnalyticsProjectionStore:
 
         return restore(self, account, catalog, build_expected, check, source_current)
 
-    def projection_currentness(self, account_id, identity, revision, config, retention_clock):
-        return self._currentness.matches(self, account_id, identity, revision, config, retention_clock)
+    def integrity_upgrade_required(self, account_id):
+        """Request ordinary publication for legacy optional units, not an in-place rewrite."""
+        from app.analytics.conversation_graph_unit_sql import integrity_supported
+        if not getattr(self, "reuse_graph_content", True):
+            return False
+        with self.database.read() as connection:
+            if not integrity_supported(connection):
+                return False
+            generation = connection.execute(
+                "SELECT * FROM projection_generations WHERE creator_account_id=? "
+                "AND status='active'", (account_ref(account_id),)
+            ).fetchone()
+            if generation is None:
+                return False
+            proof = self._trusted_conversation_graph_proof(connection, generation)
+            if proof is not None:
+                return any(header.checksum_version == 1 for header in proof.headers)
+            return connection.execute(
+                "SELECT 1 FROM conversation_graph_refs r "
+                "JOIN conversation_graph_units u USING(creator_account_id,unit_id) "
+                "WHERE r.generation_id=? AND r.creator_account_id=? "
+                "AND u.checksum_version=1 LIMIT 1",
+                (generation['generation_id'], generation['creator_account_id'])
+            ).fetchone() is not None
+
+    def projection_currentness(self, account_id, identity, revision, config, retention_clock,
+                               cancellation_check=None):
+        return self._currentness.matches(
+            self, account_id, identity, revision, config, retention_clock,
+            cancellation_check=cancellation_check,
+        )
 
     def get(
         self,
@@ -800,6 +1090,7 @@ class SQLiteAnalyticsProjectionStore:
             lease_seconds=self.lease_seconds,
         )
         writer.enrichment_validation = enrichment_validation
+        writer.conversation_graph_validation = predecessor_graph_unit_proof
         with writer.lease_session():
             if compact:
                 write_compact_graph(writer, artifact.graph,
@@ -836,6 +1127,7 @@ class SQLiteAnalyticsProjectionStore:
                     receipt, conversation_graph_units,
                     predecessor_graph_unit_proof, projection,
                 )
+            self._remember_verification_envelope(receipt)
             self._validation_receipts.put(receipt)
         self._checkpoint("validated", generation_id)
         check_cancelled(cancellation_check)
@@ -853,11 +1145,14 @@ class SQLiteAnalyticsProjectionStore:
         self.activation.register_publication_epoch(
             epoch, scheduler_owner_id, digest
         )
+        wal_anchor_retained = False
         try:
             if retain_fence_connection:
                 self.activation.prepare_publication_epoch_fence(
                     epoch, scheduler_owner_id, digest
                 )
+                self.database.retain_wal_anchor()
+                wal_anchor_retained = True
             with self.database.transaction() as connection:
                 connection.execute(
                     """
@@ -874,6 +1169,8 @@ class SQLiteAnalyticsProjectionStore:
                     ),
                 )
         except BaseException:
+            if wal_anchor_retained:
+                self.database.release_wal_anchor()
             self.activation.revoke_publication_epoch(
                 epoch, scheduler_owner_id, digest
             )
@@ -915,6 +1212,15 @@ class SQLiteAnalyticsProjectionStore:
                 if row is None or row["state"] != "revoked":
                     raise ProjectionActivationConflict("publication epoch unavailable")
         self.activation.release_publication_epoch_fence(publication_epoch)
+        self.database.release_wal_anchor()
+
+    def passive_wal_checkpoint(self):
+        """Checkpoint scheduler-owned WAL outside latency-sensitive publication."""
+
+        return self.database.passive_wal_checkpoint()
+
+    def close(self) -> None:
+        self.database.release_wal_anchor()
 
     def fence_publication_epoch(self, publication_epoch: str) -> None:
         self._locally_fenced_epochs.add(publication_epoch)
@@ -1306,46 +1612,56 @@ class SQLiteAnalyticsProjectionStore:
         """Delete one bounded retired-generation batch for a validated partition."""
 
         partition_ref = validated_account_ref(partition_ref)
-
-        with self.database.transaction() as connection:
-            from app.analytics.database import GENERATION_WRITE_CACHE_KIB
-            connection.execute(f"PRAGMA cache_size=-{GENERATION_WRITE_CACHE_KIB}")
-            rows = connection.execute(
+        with self.database.read() as connection:
+            eligible = connection.execute(
                 """
-                SELECT generation_id FROM projection_generations
+                SELECT 1 FROM projection_generations
                 WHERE creator_account_id=? AND status='retired'
                 ORDER BY COALESCE(retired_at, started_at) DESC, generation_id DESC
-                LIMIT ? OFFSET ?
+                LIMIT 1 OFFSET ?
                 """,
-                (
-                    partition_ref,
-                    self.gc_batch_size,
-                    self.rollback_retention,
-                ),
-            ).fetchall()
-            active = connection.execute(
-                "SELECT * FROM projection_generations "
-                "WHERE creator_account_id=? AND status='active'",
-                (partition_ref,),
-            ).fetchone() if rows else None
-            transition = capture_transition(
-                connection, active,
-                self._trusted_conversation_enrichment_proof(connection, active),
-            )
-            from app.analytics.shared_graph import supported
-            graph_tables = ("graph_owned_edges", "graph_owned_nodes") if supported(connection) else ("graph_edges", "graph_nodes")
-            for row in rows:
-                # Remove outgoing references before their endpoints in this transaction.
-                for table in graph_tables:
-                    connection.execute(
-                        f"DELETE FROM {table} WHERE generation_id=? AND creator_account_id=?",
-                        (row[0], partition_ref),
-                    )
-                connection.execute(
-                    "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
-                    (row[0],),
+                (partition_ref, self.rollback_retention),
+            ).fetchone()
+        if eligible is None:
+            return 0
+
+        with self.database.transaction() as connection:
+            with generation_retirement_cache(connection):
+                rows = connection.execute(
+                    """
+                    SELECT generation_id FROM projection_generations
+                    WHERE creator_account_id=? AND status='retired'
+                    ORDER BY COALESCE(retired_at, started_at) DESC, generation_id DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (
+                        partition_ref,
+                        self.gc_batch_size,
+                        self.rollback_retention,
+                    ),
+                ).fetchall()
+                active = connection.execute(
+                    "SELECT * FROM projection_generations "
+                    "WHERE creator_account_id=? AND status='active'",
+                    (partition_ref,),
+                ).fetchone() if rows else None
+                transition = capture_transition(
+                    connection, active, self._enrichment_transition_candidate(active)
                 )
-            renewed = finish_transition(connection, transition)
+                from app.analytics.shared_graph import supported
+                graph_tables = ("graph_owned_edges", "graph_owned_nodes") if supported(connection) else ("graph_edges", "graph_nodes")
+                for row in rows:
+                    # Remove outgoing references before their endpoints in this transaction.
+                    for table in graph_tables:
+                        connection.execute(
+                            f"DELETE FROM {table} WHERE generation_id=? AND creator_account_id=?",
+                            (row[0], partition_ref),
+                        )
+                    connection.execute(
+                        "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
+                        (row[0],),
+                    )
+                renewed = finish_transition(connection, transition)
         self._install_enrichment_transition(transition, renewed)
         return len(rows)
 
@@ -1435,6 +1751,110 @@ class SQLiteAnalyticsProjectionStore:
             raise ProjectionValidationError("projection_generation_invalid") from None
         except (sqlite3.DatabaseError, ValueError, TypeError, KeyError) as error:
             raise ProjectionValidationError("projection_generation_invalid") from None
+
+    @staticmethod
+    def _retire_active_generation(connection, generation_id, account_ref, retired_at) -> None:
+        if generation_id is None:
+            return
+        version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        page_batching = (
+            version >= 22
+            and connection.execute(
+                "SELECT 1 FROM conversation_page_sets "
+                "WHERE generation_id=? AND creator_account_id=? LIMIT 1",
+                (generation_id, account_ref),
+            ).fetchone() is not None
+        )
+        graph_batching = (
+            version >= 23
+            and connection.execute(
+                "SELECT 1 FROM conversation_graph_refs "
+                "WHERE generation_id=? AND creator_account_id=? LIMIT 1",
+                (generation_id, account_ref),
+            ).fetchone() is not None
+        )
+        if page_batching:
+            connection.execute(
+                "CREATE TEMP TABLE IF NOT EXISTS retirement_page_content_ids ("
+                "content_id TEXT PRIMARY KEY) WITHOUT ROWID"
+            )
+            connection.execute("DELETE FROM retirement_page_content_ids")
+            connection.execute(
+                "INSERT OR IGNORE INTO retirement_page_content_ids(content_id) "
+                "SELECT content_id FROM conversation_page_refs "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            armed = connection.execute(
+                "UPDATE generation_content_bulk_cleanup SET page_retirement=1 "
+                "WHERE singleton=1 AND page_retirement=0"
+            )
+            if armed.rowcount != 1:
+                raise ProjectionReconciliationError("page retirement scope differs")
+            connection.execute(
+                "DELETE FROM conversation_page_refs "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            connection.execute(
+                "DELETE FROM conversation_owned_pages "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            connection.execute(
+                "DELETE FROM conversation_page_sets "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            connection.execute(_SCOPED_PAGE_RETIREMENT_RECLAIM, (account_ref,))
+        if graph_batching:
+            connection.execute(
+                "CREATE TEMP TABLE IF NOT EXISTS retirement_graph_unit_ids ("
+                "unit_id TEXT PRIMARY KEY) WITHOUT ROWID"
+            )
+            connection.execute("DELETE FROM retirement_graph_unit_ids")
+            connection.execute(
+                "INSERT OR IGNORE INTO retirement_graph_unit_ids(unit_id) "
+                "SELECT unit_id FROM conversation_graph_refs "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            armed = connection.execute(
+                "UPDATE generation_content_bulk_cleanup SET graph_retirement=1 "
+                "WHERE singleton=1 AND graph_retirement=0"
+            )
+            if armed.rowcount != 1:
+                raise ProjectionReconciliationError("graph retirement scope differs")
+            connection.execute(
+                "DELETE FROM conversation_graph_refs "
+                "WHERE generation_id=? AND creator_account_id=?",
+                (generation_id, account_ref),
+            )
+            # Determine unreferenced IDs before visiting their large unit rows.
+            # The same transaction and referenced-unit trigger still fence deletion.
+            connection.execute(_SCOPED_GRAPH_RETIREMENT_RECLAIM, (account_ref, account_ref))
+            connection.execute("DELETE FROM retirement_graph_unit_ids")
+            disarmed = connection.execute(
+                "UPDATE generation_content_bulk_cleanup SET graph_retirement=0 "
+                "WHERE singleton=1 AND graph_retirement=1"
+            )
+            if disarmed.rowcount != 1:
+                raise ProjectionReconciliationError("graph retirement scope differs")
+        updated = connection.execute(
+            "UPDATE projection_generations SET status='retired', retired_at=? "
+            "WHERE generation_id=? AND creator_account_id=? AND status='active'",
+            (retired_at, generation_id, account_ref),
+        )
+        if updated.rowcount != 1:
+            raise ProjectionActivationConflict("active generation changed")
+        if page_batching:
+            connection.execute("DELETE FROM retirement_page_content_ids")
+            disarmed = connection.execute(
+                "UPDATE generation_content_bulk_cleanup SET page_retirement=0 "
+                "WHERE singleton=1 AND page_retirement=1"
+            )
+            if disarmed.rowcount != 1:
+                raise ProjectionReconciliationError("page retirement scope differs")
 
     def _activate_completed_generation(
         self,
@@ -1535,17 +1955,15 @@ class SQLiteAnalyticsProjectionStore:
             if candidate["publication_epoch"] in self._locally_fenced_epochs:
                 raise ProjectionActivationConflict("publication epoch revoked")
             transition = capture_transition(
-                connection, candidate,
-                self._trusted_conversation_enrichment_proof(connection, candidate),
+                connection, candidate, self._enrichment_transition_candidate(candidate)
             )
-            connection.execute(
-                """
-                UPDATE projection_generations
-                SET status='retired', retired_at=?
-                WHERE creator_account_id=? AND status='active'
-                """,
-                (now, generation["creator_account_id"]),
-            )
+            with generation_retirement_cache(connection):
+                self._retire_active_generation(
+                    connection,
+                    expected_id,
+                    generation["creator_account_id"],
+                    now,
+                )
             owner_clause = """
                   AND owner_id=? AND owner_pid=?
                   AND owner_process_started_at=? AND owner_instance_nonce=?
@@ -1878,7 +2296,8 @@ class SQLiteAnalyticsProjectionStore:
 
 
 def _validate_generation_links(
-    connection, generation_id, account_id, check, graph_validation=None, graph_rows=None
+    connection, generation_id, account_id, check, graph_validation=None, graph_rows=None,
+    graph_changes=None,
 ):
     """Check the candidate's referential closure without scanning other accounts."""
 
@@ -1898,6 +2317,7 @@ def _validate_generation_links(
         verify_segment_links(
             connection, generation_id, account_id,
             validation=graph_validation, check=check, prepared=graph_rows,
+            verified_changes=graph_changes,
         )
     else:
         missing = connection.execute("""SELECT 1 FROM graph_edges AS e
@@ -1998,6 +2418,7 @@ def recompute_generation(
     materialize_projection: bool = True,
     graph_validation=None,
     enrichment_validation=None,
+    conversation_validation=None,
 ) -> dict[str, object]:
     """Verify stored data with a connection-local page-cache target."""
 
@@ -2006,7 +2427,8 @@ def recompute_generation(
                                      materialize_graph=materialize_graph,
                                      materialize_projection=materialize_projection,
                                      graph_validation=graph_validation,
-                                     enrichment_validation=enrichment_validation)
+                                     enrichment_validation=enrichment_validation,
+                                     conversation_validation=conversation_validation)
 
 
 def _recompute_generation(
@@ -2018,6 +2440,7 @@ def _recompute_generation(
     materialize_projection: bool = True,
     graph_validation=None,
     enrichment_validation=None,
+    conversation_validation=None,
 ) -> dict[str, object]:
     """Recompute all row-derived validation values; stored digest fields are ignored."""
 
@@ -2119,100 +2542,136 @@ def _recompute_generation(
         != generation["pipeline_identity_digest"]
     ):
         raise ProjectionValidationError("projection row digest differs")
-    graph_rows = None
-    read_version = getattr(connection, 'total_changes', None)
-    if (not materialize_graph and read_version is not None
-            and getattr(connection, 'in_transaction', False)
-            and getattr(graph_validation, 'proof', None) is not None):
-        from app.analytics.shared_graph import _read_changed_segment_rows
-        changed = tuple(plan for plan in graph_validation.plans if not plan.reused)
-        graph_rows = _read_changed_segment_rows(connection, account_id, changed, run_check)
-    _validate_generation_links(
-        connection, generation_id, account_id, run_check,
-        graph_validation=graph_validation, graph_rows=graph_rows,
-    )
-    if materialize_graph:
-        nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
-        graph_digest = projection_graph_digest(
-            projection.pipeline_revision, nodes, edges, check=run_check
-        )
-        node_counts = Counter(item.kind.value for item in nodes)
-        edge_counts = Counter(item.relation.value for item in edges)
-    else:
-        from app.analytics.shared_graph import verify_shared_graph
-
-        reused = verify_shared_graph(
-            connection, generation_id, account_id, graph_validation, run_check,
-            prepared=graph_rows,
-        )
-        if reused is None:
-            from app.analytics.graph_verification import verify_graph_rows
-
-            verified = verify_graph_rows(
-                connection, generation_id, account_id, check=run_check
+    selection = None
+    try:
+        graph_rows = None
+        graph_changes = None
+        read_version = getattr(connection, 'total_changes', None)
+        if (not materialize_graph and read_version is not None
+                and getattr(connection, 'in_transaction', False)
+                and getattr(graph_validation, 'proof', None) is not None):
+            from app.analytics.shared_graph import (
+                _read_changed_segment_rows, _verified_changed_segment_chunks,
             )
-            nodes, edges = verified.nodes, verified.edges
-            graph_digest = (
-                verified.segment_root
-                if GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
-                    in projection.pipeline_revision
-                else verified.digest
+            changed = tuple(plan for plan in graph_validation.plans if not plan.reused)
+            # Prefer the bounded persisted changed-set proof. It verifies immutable
+            # predecessor/current chunks plus exact changed content, and lets the
+            # downstream graph, endpoint and conversation-integrity validators share
+            # one independently checked delta. Broad changed-segment row materialization
+            # remains the compatibility fallback when chunk proof metadata is absent.
+            from app.analytics.graph_membership_selection import prepare_selection
+            selection = prepare_selection(connection, generation, account_id,
+                                          conversation_validation, graph_validation, run_check)
+            graph_changes = _verified_changed_segment_chunks(
+                connection, account_id, graph_validation, run_check, selection=selection
             )
-            if graph_digest is None:
-                raise ProjectionValidationError("graph segment root is missing")
-            node_counts, edge_counts = verified.node_counts, verified.edge_counts
-            graph_segments = verified.segments
+            if graph_changes is None:
+                if selection is not None:
+                    selection.discard()
+                graph_rows = _read_changed_segment_rows(
+                    connection, account_id, changed, run_check
+                )
+        _validate_generation_links(
+            connection, generation_id, account_id, run_check,
+            graph_validation=graph_validation, graph_rows=graph_rows,
+            graph_changes=graph_changes,
+        )
+        if materialize_graph:
+            nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
+            graph_digest = projection_graph_digest(
+                projection.pipeline_revision, nodes, edges, check=run_check
+            )
+            node_counts = Counter(item.kind.value for item in nodes)
+            edge_counts = Counter(item.relation.value for item in edges)
         else:
-            (
-                graph_digest, node_counts, edge_counts, graph_segments,
-                verified_segment_root,
-            ) = reused
-            if (
-                GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
-                in projection.pipeline_revision
-            ):
-                graph_digest = verified_segment_root
-            nodes, edges = [], []
-    if graph_rows is not None and connection.total_changes != read_version:
-        raise ProjectionValidationError('stored graph changed during verification')
-    node_count, edge_count = sum(node_counts.values()), sum(edge_counts.values())
-    run_check()
-    if projection.graph_digest != graph_digest:
-        raise ProjectionValidationError("graph document digest differs")
-    stats = connection.execute(
-        """
-        SELECT * FROM graph_partition_stats
-        WHERE generation_id=? AND creator_account_id=?
-        """,
-        (generation_id, account_id),
-    ).fetchone()
-    if (
-        stats is None
-        or int(stats["source_revision"]) != projection.source_revision
-        or int(stats["node_count"]) != node_count
-        or int(stats["edge_count"]) != edge_count
-        or stats["graph_digest"] != graph_digest
-        or projection.graph.node_count != node_count
-        or projection.graph.edge_count != edge_count
-    ):
-        raise ProjectionValidationError("graph row coverage or digest differs")
-    run_check()
-    run_check()
-    if projection.graph.node_counts_by_kind != dict(sorted(node_counts.items())):
-        raise ProjectionValidationError("node-kind coverage differs")
-    if projection.graph.edge_counts_by_relation != dict(sorted(edge_counts.items())):
-        raise ProjectionValidationError("edge-kind coverage differs")
-    return {
-        "projection": projection,
-        "nodes": nodes,
-        "edges": edges,
-        "projection_digest": projection_digest,
-        "graph_digest": graph_digest,
-        "node_count": node_count,
-        "edge_count": edge_count,
-        "graph_segments": (() if materialize_graph else graph_segments),
-        "enrichment_units": enrichment_headers,
-    }
+            from app.analytics.shared_graph import verify_shared_graph
+
+            reused = verify_shared_graph(
+                connection, generation_id, account_id, graph_validation, run_check,
+                prepared=graph_rows, verified_changes=graph_changes,
+            )
+            if reused is None:
+                from app.analytics.graph_verification import verify_graph_rows
+
+                verified = verify_graph_rows(
+                    connection, generation_id, account_id, check=run_check
+                )
+                nodes, edges = verified.nodes, verified.edges
+                graph_digest = (
+                    verified.segment_root
+                    if GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
+                        in projection.pipeline_revision
+                    else verified.digest
+                )
+                if graph_digest is None:
+                    raise ProjectionValidationError("graph segment root is missing")
+                node_counts, edge_counts = verified.node_counts, verified.edge_counts
+                graph_segments = verified.segments
+            else:
+                (
+                    graph_digest, node_counts, edge_counts, graph_segments,
+                    verified_segment_root,
+                ) = reused
+                if (
+                    GRAPH_SEGMENT_ROOT_PIPELINE_REVISION
+                    in projection.pipeline_revision
+                ):
+                    graph_digest = verified_segment_root
+                nodes, edges = [], []
+        if (graph_rows is not None or graph_changes is not None) \
+                and connection.total_changes != read_version:
+            raise ProjectionValidationError('stored graph changed during verification')
+        node_count, edge_count = sum(node_counts.values()), sum(edge_counts.values())
+        run_check()
+        if projection.graph_digest != graph_digest:
+            raise ProjectionValidationError("graph document digest differs")
+        stats = connection.execute(
+            """
+            SELECT * FROM graph_partition_stats
+            WHERE generation_id=? AND creator_account_id=?
+            """,
+            (generation_id, account_id),
+        ).fetchone()
+        if (
+            stats is None
+            or int(stats["source_revision"]) != projection.source_revision
+            or int(stats["node_count"]) != node_count
+            or int(stats["edge_count"]) != edge_count
+            or stats["graph_digest"] != graph_digest
+            or projection.graph.node_count != node_count
+            or projection.graph.edge_count != edge_count
+        ):
+            raise ProjectionValidationError("graph row coverage or digest differs")
+        run_check()
+        run_check()
+        if projection.graph.node_counts_by_kind != dict(sorted(node_counts.items())):
+            raise ProjectionValidationError("node-kind coverage differs")
+        if projection.graph.edge_counts_by_relation != dict(sorted(edge_counts.items())):
+            raise ProjectionValidationError("edge-kind coverage differs")
+        from app.analytics.conversation_integrity_store import verify_generation_integrity
+        conversation_integrity = verify_generation_integrity(
+            connection, generation, account_id, proof=conversation_validation,
+            graph_validation=graph_validation, segments=(() if materialize_graph else graph_segments),
+            prepared=graph_rows, verified_changes=graph_changes, check=run_check,
+        )
+        if (graph_rows is not None or graph_changes is not None) \
+                and connection.total_changes != read_version:
+            raise ProjectionValidationError('stored graph changed during verification')
+        return {
+            "projection": projection,
+            "nodes": nodes,
+            "edges": edges,
+            "projection_digest": projection_digest,
+            "graph_digest": graph_digest,
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "graph_segments": (() if materialize_graph else graph_segments),
+            "enrichment_units": enrichment_headers,
+            "conversation_integrity": conversation_integrity,
+        }
+    finally:
+        if selection is not None:
+            selection.discard()
 
 
 def _generation_graph(

@@ -127,7 +127,13 @@ def test_streamed_unit_digest_equals_complete_selected_graph_after_successive_ap
             graph.add((n for n in result.artifact.nodes if n.node_id in nodes),
                       (e for e in result.artifact.edges if e.edge_id in edges), check=lambda: None)
             assert len(graph.nodes) == len(nodes) and len(graph.edges) == len(edges)
-            assert graph.digest(check=lambda: None) == unit.header.graph_digest
+            if unit.header.checksum_version == 1:
+                assert graph.digest(check=lambda: None) == unit.header.graph_digest
+            else:
+                from app.analytics.conversation_integrity import from_graph
+                root, metadata = from_graph(graph.account_ref, unit.header.conversation_ref, graph)
+                assert unit.header.checksum_version == 2
+                assert root == unit.header.graph_digest and metadata == unit.integrity_metadata
             cold_equal(f, result.artifact)
     finally:
         cleanup(f)

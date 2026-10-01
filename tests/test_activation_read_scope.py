@@ -120,6 +120,8 @@ def test_page_staging_keeps_each_witness_check(tmp_path, monkeypatch, revoke):
     from app.persistence.projection_activation import _ACTIVATION_READ_SCOPE
     from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, cleanup, insert_message, make_fixture
 
+    monkeypatch.setattr("app.analytics.conversation_reuse.MAX_GRAPH_UNITS", 0)
+    monkeypatch.setattr("app.analytics.conversation_reuse.MAX_ENRICHMENT_UNITS", 0)
     fixture = make_fixture(tmp_path, conversations=5, messages=5)
     calls = []
     try:

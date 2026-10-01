@@ -9,6 +9,8 @@ from tools import analytics_qualification as q
 
 # Coarse call boundaries avoid retaining source values or tracing every record.
 FUNCTIONS = frozenset({
+    'try_insert', 'match_inserted_source', 'suffix_graph', 'replace_suffix',
+    'pack_insertion', 'validate_inserted_unit', 'build_conversation_metrics_from_bound_values',
     'build_candidate', 'publish_candidate', 'stage_artifact', 'stage_built_artifact',
     'scan_identity', '_build_inner', 'assemble', 'enrich_conversation',
     'write_compact_graph', 'write_incremental_graph', 'write_shared_graph',
@@ -25,6 +27,12 @@ FUNCTIONS = frozenset({
     'append_enrichment_unit', 'from_values', '_checked_entries', 'validation_messages',
     '_available_store', '_identity_matches_unlocked', 'store_identity',
     'retain_record', 'prefetch',
+    'verify_generation_integrity', 'groups_for_members', 'summarize_group',
+    'append_unit', 'integrity_upgrade_required',
+    'changed_predecessor_members', 'proven_unit_is_unchanged', 'contains_changed_member',
+    'load_integrity_metadata', 'predecessor_manifest_matches',
+    '_remember_conversation_graph_proof', '_remember_conversation_enrichment_proof',
+    '_owned_transaction', 'take',
     '_quiesce_heartbeat_for_terminal_transition', 'refresh_identity_cache',
 })
 

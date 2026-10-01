@@ -110,7 +110,12 @@ class PreparedReader:
         self.opens += 1
         assert account == self.snapshot.account_ref
         budget.check()
-        yield self
+        self.assert_current(self.snapshot, budget)
+        try:
+            yield self
+            self.assert_current(self.snapshot, budget)
+        except Exception:
+            raise
 
     def assert_current(self, snapshot, budget):
         self.checks += 1
@@ -627,7 +632,8 @@ def test_source_expiry_during_execution_suppresses_the_result(with_rows):
     with pytest.raises(ProjectionUnavailable) as error:
         service(reader, expires, clock=lambda: clock[0]).execute(policy(), plan())
     assert error.value.reason_code == "analytics_question_source_expired"
-    assert reader.checks == 2
+    # Expiry rejects before the context can perform its final currentness recheck.
+    assert reader.checks == 1
 
 
 def test_empty_result_requires_a_current_canonical_witness():

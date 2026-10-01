@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.analytics.conversation_graph_units import (
@@ -16,6 +17,18 @@ def supported(connection) -> bool:
     return connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_graph_refs'"
     ).fetchone() is not None
+
+
+def integrity_supported(connection):
+    return int(connection.execute("PRAGMA user_version").fetchone()[0]) >= 21
+
+
+def _version_column(connection):
+    return "u.checksum_version" if integrity_supported(connection) else "1 AS checksum_version"
+
+
+def _metadata_column(connection):
+    return "u.integrity_metadata" if integrity_supported(connection) else "NULL AS integrity_metadata"
 
 
 def _instant(value: str) -> datetime:
@@ -44,6 +57,7 @@ def _header(row) -> ConversationGraphUnitHeader:
         node_count=int(row["node_count"]),
         edge_count=int(row["edge_count"]),
         unit_id=row["unit_id"],
+        checksum_version=int(row["checksum_version"]) if "checksum_version" in row.keys() else 1,
     )
 
 
@@ -56,7 +70,7 @@ def load_reference(
     config_digest: str,
 ) -> ConversationGraphReference | None:
     row = connection.execute(
-        """SELECT r.*,u.graph_digest,u.node_count,u.edge_count
+        f"""SELECT r.*,u.graph_digest,u.node_count,u.edge_count,{_version_column(connection)}
            FROM conversation_graph_refs r
            JOIN conversation_graph_units u USING(creator_account_id,unit_id)
            WHERE r.generation_id=? AND r.creator_account_id=?
@@ -73,7 +87,8 @@ def load_unit(
     conversation: str,
 ) -> ConversationGraphUnit | None:
     row = connection.execute(
-        """SELECT r.*,u.graph_digest,u.node_count,u.edge_count,u.node_ids,u.edge_ids
+        f"""SELECT r.*,u.graph_digest,u.node_count,u.edge_count,u.node_ids,u.edge_ids,
+                   {_version_column(connection)},{_metadata_column(connection)}
            FROM conversation_graph_refs r
            JOIN conversation_graph_units u USING(creator_account_id,unit_id)
            WHERE r.generation_id=? AND r.creator_account_id=? AND r.conversation_ref=?""",
@@ -81,14 +96,36 @@ def load_unit(
     ).fetchone()
     if row is None:
         return None
-    return ConversationGraphUnit(_header(row), row["node_ids"], row["edge_ids"])
+    return ConversationGraphUnit(_header(row), row["node_ids"], row["edge_ids"], row["integrity_metadata"])
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationIntegrityMetadata:
+    """A checksum carrier, not a membership or publication proof."""
+    header: ConversationGraphUnitHeader
+    integrity_metadata: bytes | None
+
+
+def load_integrity_metadata(connection, generation_id, account, conversation):
+    """Read selected metadata without membership arrays or proof authority."""
+    row = connection.execute(
+        f"""SELECT r.*,u.graph_digest,u.node_count,u.edge_count,
+                   {_version_column(connection)},{_metadata_column(connection)}
+           FROM conversation_graph_refs r
+           JOIN conversation_graph_units u USING(creator_account_id,unit_id)
+           WHERE r.generation_id=? AND r.creator_account_id=? AND r.conversation_ref=?""",
+        (generation_id, account, conversation),
+    ).fetchone()
+    if row is None:
+        return None
+    return ConversationIntegrityMetadata(_header(row), row['integrity_metadata'])
 
 
 def list_references(
     connection, generation_id: str, account: str
 ) -> tuple[ConversationGraphReference, ...]:
     rows = connection.execute(
-        """SELECT r.*,u.graph_digest,u.node_count,u.edge_count
+        f"""SELECT r.*,u.graph_digest,u.node_count,u.edge_count,{_version_column(connection)}
            FROM conversation_graph_refs r
            JOIN conversation_graph_units u USING(creator_account_id,unit_id)
            WHERE r.generation_id=? AND r.creator_account_id=?
@@ -106,6 +143,7 @@ def insert_units(connection, generation_id: str, values, *, check=lambda: None) 
     if not supported(connection):
         return 0
     inserted = 0
+    versioned = integrity_supported(connection)
     for value in values:
         check()
         header = value.header
@@ -134,8 +172,9 @@ def insert_units(connection, generation_id: str, values, *, check=lambda: None) 
         if not isinstance(value, ConversationGraphUnit):
             raise TypeError("conversation_graph_unit_invalid")
         row = connection.execute(
-            """SELECT graph_digest,node_count,edge_count,node_ids,edge_ids
-               FROM conversation_graph_units
+            f"""SELECT graph_digest,node_count,edge_count,node_ids,edge_ids,
+                       {_version_column(connection)},{_metadata_column(connection)}
+               FROM conversation_graph_units u
                WHERE creator_account_id=? AND unit_id=?""",
             (header.account_ref, header.unit_id),
         ).fetchone()
@@ -146,25 +185,23 @@ def insert_units(connection, generation_id: str, values, *, check=lambda: None) 
             and int(row["edge_count"]) == header.edge_count
             and row["node_ids"] == value.node_ids
             and row["edge_ids"] == value.edge_ids
+            and row["checksum_version"] == header.checksum_version
+            and row["integrity_metadata"] == value.integrity_metadata
         )
         if row is not None and not exact:
             # Optional cache corruption cannot overwrite immutable predecessor data.
             continue
         if row is None:
-            connection.execute(
-                """INSERT INTO conversation_graph_units
-                   (creator_account_id,unit_id,graph_digest,node_count,edge_count,node_ids,edge_ids)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (
-                    header.account_ref,
-                    header.unit_id,
-                    header.graph_digest,
-                    header.node_count,
-                    header.edge_count,
-                    value.node_ids,
-                    value.edge_ids,
-                ),
-            )
+            if not versioned and header.checksum_version != 1:
+                raise ValueError('conversation_integrity_schema_incompatible')
+            fields = 'creator_account_id,unit_id,graph_digest,node_count,edge_count,node_ids,edge_ids'
+            parameters = (header.account_ref, header.unit_id, header.graph_digest,
+                          header.node_count, header.edge_count, value.node_ids, value.edge_ids)
+            if versioned:
+                fields += ',checksum_version,integrity_metadata'
+                parameters += (header.checksum_version, value.integrity_metadata)
+            connection.execute(f"INSERT INTO conversation_graph_units ({fields}) "
+                f"VALUES ({','.join('?' for _ in parameters)})", parameters)
         connection.execute(
             """INSERT INTO conversation_graph_refs
                (generation_id,creator_account_id,conversation_ref,input_digest,config_digest,

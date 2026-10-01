@@ -24,6 +24,7 @@ class IncrementalSegment:
     chunk_digest: str
     chunk: bytes | None
     records: dict[str, str] | None
+    changed_keys: tuple[str, ...]
     reused: bool
 
 
@@ -281,7 +282,7 @@ def build_incremental_graph(
                 return None
             segments.append(IncrementalSegment(
                 kind, bucket, previous.digest, previous.segment_id, previous.count,
-                previous.categories, previous.chunk_digest, None, None, True,
+                previous.categories, previous.chunk_digest, None, None, (), True,
             ))
             continue
 
@@ -309,7 +310,9 @@ def build_incremental_graph(
         digest, categories, chunk, chunk_digest = value
         segments.append(IncrementalSegment(
             kind, bucket, digest, str(uuid4()), len(records), categories,
-            chunk_digest, chunk, records, False,
+            chunk_digest, chunk, records,
+            tuple(sorted(key for key in changes[kind] if key[3:5] == bucket)),
+            False,
         ))
 
     node_counts, edge_counts = Counter(), Counter()
@@ -503,12 +506,14 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
             plans=tuple(
                 SegmentValidation(
                     item.kind, item.bucket, item.segment_id, item.digest,
-                    item.count, item.reused,
+                    item.count, item.reused, item.categories,
+                    item.chunk_digest, item.changed_keys,
                 )
                 for item in graph.segments
             ),
             proof=graph.predecessor_proof,
             removed_nodes=tuple(sorted(graph._removed["node"])),
+            removed_edges=tuple(sorted(graph._removed["edge"])),
             segment_root=segment_root_digest(graph.segments, check=check),
         )
         writer.refresh()

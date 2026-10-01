@@ -99,7 +99,9 @@ class QuestionReadSession(Protocol):
 class QuestionReader(Protocol):
     def open(
         self, account_ref: str, budget: QuestionBudget
-    ) -> ContextManager[QuestionReadSession]: ...
+    ) -> ContextManager[QuestionReadSession]:
+        """Yield a current pinned snapshot and recheck it before returning."""
+        ...
 
 
 class QuestionHandler(Protocol):

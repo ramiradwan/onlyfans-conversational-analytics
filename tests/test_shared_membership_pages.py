@@ -165,7 +165,7 @@ def test_populated_upgrade_preserves_logical_memberships_and_backup(tmp_path):
             assert db.execute('PRAGMA user_version').fetchone()[0] == 19
         upgraded = ProjectionsDatabase(legacy.path)
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 20
+            assert db.execute('PRAGMA user_version').fetchone()[0] == 25
             assert selected(db) == before
             assert content_stamp(db) is not None and _guards_match(db)
             assert not db.execute('PRAGMA foreign_key_check').fetchall()

@@ -10,7 +10,7 @@ The [question contract](questions.md) defines evidence semantics. The [question 
 
 Compose one resolver with the live `HistoryAnalyticsSource`. Supply a fresh `RuntimePolicy` from the authenticated runtime for every `bind`, `resolve`, and `clear_account` call. Account authority comes from the security kernel, not request fields. The resolver does not validate sessions or renew grants.
 
-A query adapter reads its selected source through `read_evidence_message` and creates a reference with `EvidenceMessage.reference`. Verify that its revision matches the selected query snapshot. The digest covers account, native identifiers, text, sender, direction, event time, stored content hash, upstream update time, and source-order metadata. The account revision is a separate reference field.
+A query adapter reads its selected source through `read_evidence_message` and creates a reference with `EvidenceMessage.reference`. During one approved question, those evidence lookups reuse the gateway-owned bounded canonical connection already held by that question; standalone evidence resolution still opens fresh canonical connections. The revision check against the selected query snapshot, deletion barriers, SQL budget/progress handler, and final source-currentness checks are unchanged. The digest covers account, native identifiers, text, sender, direction, event time, stored content hash, upstream update time, and source-order metadata. The account revision is a separate reference field.
 
 Call `bind(policy, reference, location, valid_until=...)` before returning the reference. Pass the earliest expiry of every input needed by the finding. Binding rechecks the supplied version; it must not create a new version to justify an old finding.
 

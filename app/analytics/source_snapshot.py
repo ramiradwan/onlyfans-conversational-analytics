@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from json.encoder import encode_basestring
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 from datetime import datetime
@@ -26,6 +27,18 @@ def instant(value: str) -> str:
 
 def conversation_digest(value: dict) -> str:
     return "sha256:" + hashlib.sha256(encoded(value).encode()).hexdigest()
+
+
+def _encoded_message(message, source_ordinal: int) -> str:
+    """Emit the established sorted canonical JSON without a per-message mapping."""
+
+    return (
+        '{"direction":' + encode_basestring(str(message["direction"]))
+        + ',"message_id":' + encode_basestring(str(message["message_id"]))
+        + ',"sent_at":' + encode_basestring(instant(str(message["sent_at"])))
+        + ',"sentiment":null,"source_ordinal":' + str(source_ordinal)
+        + ',"text":' + encode_basestring(str(message["text"])) + '}'
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,9 +104,7 @@ def scan_identity(db, account_id: str, revision: int, *, check=lambda: None,
                 raise QuestionLimitExceeded()
             if index:
                 emit(',', part)
-            emit(encoded({"message_id": str(message["message_id"]), "source_ordinal": index,
-                "text": str(message["text"]), "sent_at": instant(str(message["sent_at"])),
-                "direction": str(message["direction"]), "sentiment": None}), part)
+            emit(_encoded_message(message, index), part)
             message_count += 1
         participant = chat["platform_user_id"] or 'placeholder:' + chat_id
         emit('],"platform_user_id":' + encoded(participant) + ',"unread_count":0}', part)

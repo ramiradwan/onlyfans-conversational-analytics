@@ -167,8 +167,16 @@ class LazySQLiteAnalyticsProjectionStore:
     def prepare_update_reuse(self, account, *args):
         return self._read("prepare_update_reuse", account, account, *args)
 
-    def projection_currentness(self, account_id, *args):
-        return self._read("projection_currentness", account_id, account_id, *args)
+    def update_reuse_prepared(self, account, identity):
+        return self._read("update_reuse_prepared", account, account, identity)
+
+    def predecessor_update_reuse_prepared(self, account, *args):
+        return self._read("predecessor_update_reuse_prepared", account, account, *args)
+
+    def projection_currentness(self, account_id, *args, **kwargs):
+        return self._read(
+            "projection_currentness", account_id, account_id, *args, **kwargs
+        )
 
     def get(self, creator_account_id: str, **kwargs):
         return self._read("get", creator_account_id, creator_account_id, **kwargs)
@@ -261,12 +269,21 @@ class LazySQLiteAnalyticsProjectionStore:
     def clear(self, creator_account_id: str) -> None:
         self._write("clear", creator_account_id, creator_account_id)
 
+    def integrity_upgrade_required(self, account_id):
+        return self._read("integrity_upgrade_required", account_id, account_id)
+
+    def passive_wal_checkpoint(self):
+        return self._write("passive_wal_checkpoint", None)
+
     def close(self) -> None:
         with self._lock:
             self._closed = True
+            store = self._store
             self._store = None
             self._file_identity = None
             self._store_identity = None
+        if store is not None:
+            store.close()
 
     def _read(self, method: str, account_id: str | None, *args, **kwargs):
         store = self._available_store(account_id)
@@ -319,6 +336,11 @@ class LazySQLiteAnalyticsProjectionStore:
     ) -> FailureCallback | None:
         if self._store is not failed_store:
             return None
+        if failed_store is not None:
+            try:
+                failed_store.close()
+            except Exception:
+                pass
         self._store = None
         self._file_identity = None
         self._store_identity = None
