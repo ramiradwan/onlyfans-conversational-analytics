@@ -19,6 +19,8 @@ def pytest_addoption(parser):
     group = parser.getgroup("backend-ci")
     group.addoption("--ci-lane", default=None)
     group.addoption("--ci-shard", type=int, default=None)
+    group.addoption("--ci-windows-shard", type=int, choices=(1, 2), default=None)
+    group.addoption("--ci-windows-manifest", default=None)
     group.addoption("--ci-profile", default=None)
     group.addoption("--ci-output-dir", default=os.environ.get("CI_REPORT_DIR"))
     group.addoption("--ci-manifest", default=None)
@@ -26,6 +28,13 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    if config.getoption("ci_windows_shard") is not None:
+        from tools.ci_windows_shards import LEGACY_WINDOWS_EXPRESSION
+        if config.getoption("ci_lane") or config.getoption("ci_shard") or config.getoption("ci_profile"):
+            raise pytest.UsageError("--ci-windows-shard cannot use --ci-lane, --ci-shard or --ci-profile")
+        if config.option.markexpr and config.option.markexpr != LEGACY_WINDOWS_EXPRESSION:
+            raise pytest.UsageError("Full Windows shards use the frozen legacy marker expression; narrow locally with a node ID or -k")
+        config.option.markexpr = LEGACY_WINDOWS_EXPRESSION
     config._ci_evidence = Evidence(config)
 
 
@@ -42,6 +51,9 @@ class Evidence:
         self.progress_sequence = 0
 
     def lane(self):
+        windows_shard = self.config.getoption("ci_windows_shard")
+        if windows_shard is not None:
+            return f"windows-full-regression-{windows_shard}"
         lane = self.config.getoption("ci_lane") or "legacy"
         shard = self.config.getoption("ci_shard")
         if lane == "integration" and shard is not None:
@@ -124,7 +136,24 @@ def pytest_collection_modifyitems(session, config, items):
     evidence = config._ci_evidence
     evidence.collected = [_describe(item) for item in items]
     lane = config.getoption("ci_lane")
-    if lane:
+    windows_shard = config.getoption("ci_windows_shard")
+    if windows_shard is not None:
+        from tools.ci_windows_shards import WindowsShardError, load_manifest, selected_nodeids
+        # Full default collection fails closed; positional targeting/--ignore is
+        # useful locally, and hosted parity separately refuses narrowed evidence.
+        full_collection = (getattr(config.args_source, "name", "ARGS") != "ARGS"
+                           and not config.option.ignore and not config.option.ignore_glob)
+        try:
+            manifest = load_manifest(config.rootpath, config.getoption("ci_windows_manifest"))
+            wanted = selected_nodeids(evidence.collected, manifest, windows_shard,
+                                      complete=config.getoption("ci_validate") or full_collection)
+        except (WindowsShardError, OSError, json.JSONDecodeError) as error:
+            raise pytest.UsageError(str(error)) from error
+        deselected = [item for item in items if item.nodeid not in wanted]
+        items[:] = [item for item in items if item.nodeid in wanted]
+        if deselected:
+            config.hook.pytest_deselected(items=deselected)
+    elif lane:
         from tools.ci_selection import SelectionError, load_manifest, select_items
 
         try:

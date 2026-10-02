@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-  CI_POLICY_VERSION: sharded-v1
+  CI_POLICY_VERSION: sharded-v2
 jobs:
   web-build-and-test:
     runs-on: ubuntu-latest
@@ -635,10 +635,18 @@ jobs:
           path: artifacts/ci-tests/
           retention-days: 14
           if-no-files-found: error
-  windows-full-regression:
+  windows-full-shards:
+    name: windows-full-regression-${{ matrix.shard }}
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard:
+          - 1
+          - 2
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
@@ -703,22 +711,30 @@ jobs:
         run: npm run build --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
-      - name: Test complete Windows backend regression
+      - name: Test complete Windows backend regression shard
         env:
-          CI_TEST_LANE: windows-full-regression
-          CI_REPORT_DIR: artifacts/ci-tests/windows-full-regression
-          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression/junit.xml
+          CI_TEST_LANE: windows-full-regression-${{ matrix.shard }}
+          CI_REPORT_DIR: artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
-        run: python tools/test_backend.py --lane windows-full-regression
+        run: python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}
       - name: Retain backend timing and selection
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: ci-tests-windows-full-regression-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
+          name: ci-tests-windows-full-regression-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
             }}
           path: artifacts/ci-tests/
           retention-days: 14
           if-no-files-found: error
+  windows-full-regression:
+    if: ${{ always() }}
+    needs: windows-full-shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every full Windows shard
+        run: test '${{ needs.windows-full-shards.result }}' = 'success'
   analytics-scale-qualification:
     if: ${{ github.event_name != 'pull_request' }}
     needs: fixed-sqlcipher-wheel
@@ -933,6 +949,7 @@ jobs:
       - fixed-sqlcipher-wheel
       - windows-platform-contract
       - analytics-windows-contract
+      - windows-full-shards
       - windows-full-regression
       - analytics-scale-qualification
       - windows-browser-e2e

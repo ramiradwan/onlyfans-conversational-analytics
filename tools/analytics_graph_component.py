@@ -2,6 +2,8 @@
 
 The fixture supplies graph inputs and complete predecessor proofs explicitly.
 It cannot establish canonical authority, idle lifecycle or scheduler visibility.
+Independent elapsed durations use perf_counter for short Windows operations;
+Attribution spans retain their own monotonic trace coordinate clock.
 """
 from collections import Counter
 from dataclasses import replace
@@ -238,11 +240,11 @@ class GraphFixture:
         db=self.db;db.execute('BEGIN');db.execute('SAVEPOINT component_sample')
         selection=None;check=lambda:None;times={};trace.phase='graph-sample-'+str(index)
         def measured(name,fn):
-            start=time.monotonic();cpu=time.thread_time()
+            start=time.perf_counter();cpu=time.thread_time()
             with trace.span('component.graph.'+name): value=fn()
-            times[name]=dict(seconds=time.monotonic()-start,thread_cpu_seconds=time.thread_time()-cpu)
+            times[name]=dict(seconds=time.perf_counter()-start,thread_cpu_seconds=time.thread_time()-cpu)
             return value
-        transition_started=time.monotonic()
+        transition_started=time.perf_counter()
         selection_rows=selection_bytes=0
         released=False
         try:
@@ -268,10 +270,10 @@ class GraphFixture:
             released=True
             # Include construction, real writes, validation, buffer release and
             # glue, before starting the separately measured independent oracle.
-            transition_seconds=time.monotonic()-transition_started
+            transition_seconds=time.perf_counter()-transition_started
             enabled=trace.enabled;trace.enabled=False
             try:
-                start=time.monotonic()
+                start=time.perf_counter()
                 expected=units.create_graph_unit(account_ref=self.account,conversation_ref=self.current.header.conversation_ref,
                     input_digest=self.input_digest,config_digest=self.current.header.config_digest,cutoff=self.current.header.retention_cutoff,
                     findings=self.findings,metrics=self.current.header.metrics,graph=self.oracle,checksum_version=2)
@@ -279,7 +281,7 @@ class GraphFixture:
                 if actual is None or actual.header!=expected.header or units.graph_unit_ids(actual)!=units.graph_unit_ids(expected):
                     raise ValueError('component_independent_graph_mismatch')
                 groups_for_members(actual)
-                oracle_seconds=time.monotonic()-start
+                oracle_seconds=time.perf_counter()-start
             finally:trace.enabled=enabled
             return dict(index=index,intervals=times,complete_transition_seconds=transition_seconds,
                 selected_interval_seconds=sum(times[n]['seconds'] for n in
@@ -299,10 +301,10 @@ async def run_graph_component(args,q,light,outer,status,manifest,result,workdir)
     from tools.analytics_insertion_diagnostic import Attribution
     from app.analytics import conversation_graph_insertion,shared_graph,conversation_integrity_store,conversation_append
     workdir.mkdir(parents=True)
-    begun=time.monotonic()
+    begun=time.perf_counter()
     light.atomic_status(status,'graph-component-preparation')
     fixture=GraphFixture(workdir,args.messages,datetime.fromisoformat(manifest['fixture']['evaluation_clock']))
-    result.update(fixture=fixture.metadata,preparation_seconds=time.monotonic()-begun,samples=[],
+    result.update(fixture=fixture.metadata,preparation_seconds=time.perf_counter()-begun,samples=[],
         graph_measurement_recipe='a07-graph-transition.v2',
         total_scope='construction + store + selection preparation + independent persisted validation + selection release; excludes separately executed oracle and fixture rollback')
     trace=Attribution(enabled=args.trace_mode!='none')

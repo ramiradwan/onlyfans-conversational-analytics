@@ -14,6 +14,8 @@ Install the dependencies described in [Contributing](../CONTRIBUTING.md). Build 
 | Changed test | `python -m pytest tests/test_reply_source_selection.py -vv` |
 | All backend integration tests | `python tools/test_backend.py integration` |
 | One integration shard | `python tools/test_backend.py integration --shard 2` |
+| One exhaustive Windows shard | `python tools/test_backend.py windows-full-regression --shard 1` |
+| Inspect an exhaustive Windows shard | `python tools/test_backend.py list windows-full-regression --shard 1` |
 | Inspect a lane | `python tools/test_backend.py list integration --shard 2` |
 | Validate all classifications and selectors | `python tools/test_backend.py list all --validate` |
 | One stateful profile | `python tools/test_backend.py stateful --profile analytics_convergence_fast` |
@@ -122,11 +124,15 @@ Main, nightly and manual runs also require analytics scale qualification on Wind
 
 The Required CI gate validates job results and executed coverage. The older build-and-test and windows-tests check names forward its result during branch-rule migration. Architecture impact remains independently required. The full Windows regression remains blocking on pull requests until the comparison period is explicitly completed; it continues on main and nightly afterward.
 
+The exhaustive Windows regression runs in two isolated jobs, `windows-full-regression-1` and `windows-full-regression-2`, with at most two active runners. Files stay intact and tests run serially within each runner. The stable `windows-full-regression` aggregate requires both jobs; Required CI also checks both jobs' evidence against the independent raw Windows collection. The checked-in [Windows shard manifest](../ci/windows-full-test-shards.json) partitions the original marker expression, independently of analytics tiers and reduced Windows contracts. Missing files, overlapping ownership, incomplete execution, mismatched source/run/attempt evidence and uncorroborated skips fail the gate. No timeout was raised and no test was moved out of required Windows coverage.
+
 ## Add or classify a backend test
 
 Tests inherit their module's `pytestmark = pytest.mark.ci_tier("fast")` declaration. Use `integration` for database, pipeline, projection and graph lifecycle behavior. A test-level declaration overrides a module default; conflicting declarations at one scope are errors. Keep large-data correctness cases required. `scale` does not authorize removing a previously required test.
 
 New tests in an existing integration file inherit that file's shard. For a new integration file, declare its tier and run `python tools/test_backend.py update-manifest`, then inspect the diff. Existing shard assignments stay unchanged. Add `windows_compat` when native behavior requires Windows execution and give it a reviewed Windows contract selector. `serial` describes tests that must not run concurrently on one runner.
+
+New default tests in an existing file also inherit its exhaustive Windows shard. When adding a file, collect the raw inventory with `python tools/test_backend.py list windows-full-regression --output-dir artifacts/windows-inventory`, then run `python tools/test_backend.py update-windows-manifest --inventory artifacts/windows-inventory/report.json --dry-run`. Review the proposed addition and repeat without `--dry-run` to save it. This preserves existing assignments and records unmeasured files. The raw collection remains available even when a new file has no shard assignment or analytics classification.
 
 Run `python tools/test_backend.py list all --validate` before submitting classification changes. Unclassified tests, missing assignments, stale selectors and overlaps produce actionable errors. Bare pytest remains available and keeps its previous marker exclusions.
 
@@ -142,6 +148,8 @@ Use GitHub's **Re-run failed jobs** or **Re-run job** controls to retry the affe
 
 Integration assignment is checked in. Download complete successful Linux timing artifacts, then run `python tools/test_backend.py update-manifest --rebalance --timings artifacts/ci-evidence --dry-run`. Review the assignments and repeat without `--dry-run` to save them. The importer combines setup, call and teardown times, takes the median across complete samples, and rejects targeted or stateful runs. A file-to-seconds JSON mapping is also accepted. Record the source run, sample count and report digest with each reviewed rebalance. A shard over ten minutes produces a maintenance warning; its twenty-minute timeout protects against runaway execution.
 
+The exhaustive Windows manifest is balanced separately from complete Windows timings. Its initial measured files come from PR run 36970647763, with provenance and unmeasured additions recorded in the manifest. Use `update-windows-manifest --inventory <raw-report.json> --timings <complete-windows-report.json> --rebalance --dry-run` to review a rebalance; all current files need measurements. Rerun an individual Windows shard locally with the same command as CI, adding a node ID after `--` for a focused reproduction. Narrow local runs are useful diagnostics but cannot satisfy the complete hosted coverage gate.
+
 ## Roll out the parallel lanes
 
 The telemetry-only [baseline run 36804164704](https://github.com/ramiradwan/onlyfans-conversational-analytics/actions/runs/36804164704) passed at source `14adf8d7160929d141a5e34426bb19f9aafff6b1`, attempt 1, on Python 3.11.16. It retained the original selections. Its four jobs completed successfully in 48m 43s from the first job's start to the final job's completion.
@@ -156,6 +164,8 @@ The baseline's 131 integration files have complete Ubuntu measurements. The [sha
 The analytics expansion added 32 integration files with provisional assignments and preserved the original 131 assignments. Main integration adds catch-up, companion readiness, configuration restart, origin composition, native ACL and migration-history coverage. Existing assignments remain unchanged. Collect successful hosted timings for the complete current inventory before rebalancing; the older estimates do not describe the expanded suite. The baseline browser job took 12m 28s including its wheel dependency, so integration tests may no longer control the critical path after Windows shadow retirement.
 
 The parallel workflow deliberately keeps the complete Windows regression required on every pull request. Before changing that job to main/nightly qualification, record three clean paired runs with matching source commits, zero missing required node IDs, successful Windows contract execution, and unchanged permitted skip reasons. The gate enforces coverage and execution identity on each run; retirement is a separate reviewed change after these comparisons. No existing default test may be demoted to optional scale execution during this rollout.
+
+The complete PR run 36970647763 passed at `61a7c67`, with 5,468 selected Windows tests and 55m47s in pytest. Its paired dispatch 36970711511 exhausted the unchanged 60-minute Windows job limit and recorded two timing assertion failures, so that pair does not count as clean. Splitting the full Windows job provides timeout headroom while retaining all comparison obligations; it does not retire the shadow or establish the latency targets. The rollout still needs three clean pairs.
 
 Keep the existing required check names while deploying the new gate. Add Required CI to branch rules only after it has reported successfully on the current revision and open pull requests can produce it. Retire compatibility aliases in a later change; architecture-impact remains independently required. Historical release evidence continues to use the CI policy declared at its source revision.
 

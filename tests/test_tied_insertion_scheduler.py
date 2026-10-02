@@ -12,6 +12,7 @@ pytestmark = [pytest.mark.ci_tier("integration")]
 
 
 @pytest.mark.asyncio
+@pytest.mark.windows_compat
 async def test_scheduler_idle_insertion_keeps_queries_cleanup_and_rebuild_equality(tmp_path,monkeypatch,record_property):
     from app.analytics.query_runtime import QuestionResources
     from app.analytics.scheduling import InProcessProjectionScheduler
@@ -43,8 +44,13 @@ async def test_scheduler_idle_insertion_keeps_queries_cleanup_and_rebuild_equali
         monkeypatch.setattr(work.f.stores.projections,'prepare_update_reuse',observe_recovery)
         monkeypatch.setattr(work.f.stores.projections,'update_reuse_prepared',observe_prepared)
         started=perf_counter()
-        await asyncio.sleep(manifest['visibility']['idle_seconds'])
-        idle=perf_counter()-started
+        minimum_idle=manifest['visibility']['idle_seconds']
+        idle=0.0
+        # A timer may wake early. Recheck the measured deadline before testing
+        # insertion after the complete real idle interval and identity lifetime.
+        while idle<minimum_idle:
+            await asyncio.sleep(minimum_idle-idle)
+            idle=perf_counter()-started
         accepted=[];original=insertion.try_insert
         def observe(*args,**kwargs):
             value=original(*args,**kwargs);accepted.append(value is not None);return value

@@ -99,6 +99,12 @@ SHARDED_PRODUCT_CI_JOB_IDS = {
 REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES = (
     SHARDED_PRODUCT_CI_JOB_IDS - {"analytics-integration", "required-ci-gate"}
 ) | {f"analytics-integration-{shard}" for shard in range(1, 5)} | {"Required CI"}
+# Keep the v1 sets unchanged: a historical source must still qualify against
+# the jobs it declared, rather than against today's workflow topology.
+SHARDED_V2_PRODUCT_CI_JOB_IDS = SHARDED_PRODUCT_CI_JOB_IDS | {"windows-full-shards"}
+REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES = REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES | {
+    "windows-full-regression-1", "windows-full-regression-2",
+}
 
 PRODUCER_ROOT = Path(__file__).resolve().parent.parent
 LEGAL_BINDINGS_GATE = PRODUCER_ROOT / "tools" / "legal-release-bindings" / "verify.mjs"
@@ -741,6 +747,86 @@ class QualifiedSource:
     archive_download_url: str
 
 
+def _ci_literal_mapping(source: str, indent: int) -> dict[str, str]:
+    """Read one controlled mapping, refusing duplicate/quoted/merged keys.
+
+    This is deliberately narrower than YAML. Nested values stay as source text
+    until a policy explicitly checks their literal shape.
+    """
+    fields: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in source.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        leading = len(line) - len(line.lstrip(" "))
+        if leading == indent:
+            match = re.fullmatch(r"[ ]*([a-zA-Z0-9_-]+):[ \t]*(.*)", line)
+            if match is None or match[1] in fields:
+                raise ContractError("Product CI policy contains an unsupported or duplicate declaration")
+            current = match[1]
+            fields[current] = [match[2]]
+        elif leading > indent and current is not None:
+            fields[current].append(line)
+        else:
+            raise ContractError("Product CI policy contains an unsupported mapping shape")
+    return {key: "\n".join(lines).strip("\n") for key, lines in fields.items()}
+
+
+def _ci_literal_list(source: str) -> list[str]:
+    value = source.strip()
+    if value.startswith("[") and value.endswith("]"):
+        values = [item.strip() for item in value[1:-1].split(",")]
+    else:
+        values = []
+        for line in value.splitlines():
+            match = re.fullmatch(r"[ ]*- ([a-zA-Z0-9_-]+)[ ]*", line)
+            if match is None:
+                raise ContractError("Product CI policy requires a literal list")
+            values.append(match[1])
+    if not values or any(not re.fullmatch(r"[a-zA-Z0-9_-]+", value) for value in values):
+        raise ContractError("Product CI policy requires a nonempty literal list")
+    if len(values) != len(set(values)):
+        raise ContractError("Product CI policy contains duplicate list entries")
+    return values
+
+
+def _validate_sharded_v2_source(job_source: str) -> None:
+    jobs = _ci_literal_mapping(job_source, 2)
+    for job_id, name, runner, timeout, count in (
+        ("analytics-integration", "analytics-integration", "ubuntu-latest", "20", 4),
+        ("windows-full-shards", "windows-full-regression", "windows-latest", "60", 2),
+    ):
+        fields = _ci_literal_mapping(jobs[job_id], 4)
+        if (fields.get("name") != name + "-${{ matrix.shard }}"
+                or fields.get("runs-on") != runner
+                or fields.get("timeout-minutes") != timeout
+                or "if" in fields
+                or fields.get("continue-on-error", "false") != "false"):
+            raise ContractError(f"{job_id}: Product CI matrix execution declaration differs from sharded-v2")
+        strategy = _ci_literal_mapping(fields.get("strategy", ""), 6)
+        matrix = _ci_literal_mapping(strategy.get("matrix", ""), 8)
+        if (set(strategy) != {"fail-fast", "max-parallel", "matrix"}
+                or strategy.get("fail-fast") != "false"
+                or strategy.get("max-parallel") != str(count)
+                or set(matrix) != {"shard"}
+                or _ci_literal_list(matrix["shard"]) != [str(shard) for shard in range(1, count + 1)]):
+            raise ContractError(f"{job_id}: Product CI matrix must declare every bounded sharded-v2 execution")
+    aggregate = _ci_literal_mapping(jobs["windows-full-regression"], 4)
+    gate = _ci_literal_mapping(jobs["required-ci-gate"], 4)
+    gate_needs = SHARDED_V2_PRODUCT_CI_JOB_IDS - {
+        "required-ci-gate", "build-and-test", "windows-tests",
+    }
+    if (aggregate.get("name", "windows-full-regression") != "windows-full-regression"
+            or aggregate.get("if") != "${{ always() }}"
+            or aggregate.get("needs") != "windows-full-shards"
+            or aggregate.get("continue-on-error", "false") != "false"
+            or gate.get("name") != "Required CI"
+            or gate.get("if") != "${{ always() }}"
+            or gate.get("continue-on-error", "false") != "false"
+            or set(_ci_literal_list(gate.get("needs", ""))) != gate_needs):
+        raise ContractError("sharded-v2 Product CI must retain the blocking Windows aggregate and complete gate dependencies")
+
+
 def product_ci_job_policy(workflow_source: bytes) -> set[str]:
     """Read the policy from the qualified source, never from observed results.
 
@@ -767,14 +853,22 @@ def product_ci_job_policy(workflow_source: bytes) -> set[str]:
         if set(job_ids) != REQUIRED_PRODUCT_CI_JOB_NAMES:
             raise ContractError("unversioned Product CI source is not the legacy job policy")
         return set(REQUIRED_PRODUCT_CI_JOB_NAMES)
-    if versions != ["sharded-v1"] or source.count("CI_POLICY_VERSION") != 1:
+    policies = {
+        "sharded-v1": (SHARDED_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES),
+        "sharded-v2": (SHARDED_V2_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES),
+    }
+    if len(versions) != 1 or versions[0] not in policies or source.count("CI_POLICY_VERSION") != 1:
         raise ContractError("Product CI source declares an unknown or ambiguous job policy")
+    version = versions[0]
     env_block = re.search(r"(?m)^env:[ \t]*\n((?:[ \t]+[^\n]*\n|\n)*)", source)
-    if env_block is None or "  CI_POLICY_VERSION: sharded-v1\n" not in env_block[1]:
+    if env_block is None or f"  CI_POLICY_VERSION: {version}\n" not in env_block[1]:
         raise ContractError("Product CI policy must be a literal top-level environment value")
-    if set(job_ids) != SHARDED_PRODUCT_CI_JOB_IDS:
+    required_ids, required_names = policies[version]
+    if set(job_ids) != required_ids:
         raise ContractError("sharded Product CI source does not declare the exact required job set")
-    return set(REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES)
+    if version == "sharded-v2":
+        _validate_sharded_v2_source(job_block)
+    return set(required_names)
 
 
 def latest_ci_jobs(

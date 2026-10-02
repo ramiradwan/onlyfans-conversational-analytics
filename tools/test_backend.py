@@ -6,6 +6,9 @@ Examples:
   python tools/test_backend.py stateful --profile analytics_convergence_fast
   python tools/test_backend.py list windows-analytics
   python tools/test_backend.py list all --validate
+  python tools/test_backend.py list windows-full-regression --shard 1 --validate
+  python tools/test_backend.py windows-full-regression --shard 2
+  python tools/test_backend.py update-windows-manifest --inventory raw/report.json
 
 Use the repository's Python environment and build the frontend before full
 collection, just as for bare ``python -m pytest``. Arguments after ``--`` go
@@ -32,6 +35,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.ci_selection import LANES, LEGACY_EXCLUDED, SelectionError, load_manifest
+from tools import ci_windows_shards as windows_shards
 
 
 ALIASES = {"backend-fast": "fast", "analytics-integration": "integration",
@@ -41,7 +45,7 @@ ALIASES = {"backend-fast": "fast", "analytics-integration": "integration",
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    result.add_argument("command", nargs="?", help="Lane name, list, or update-manifest")
+    result.add_argument("command", nargs="?", help="Lane name, list, update-manifest, or update-windows-manifest")
     result.add_argument("list_lane", nargs="?", help="Lane to inspect after list (default: all)")
     result.add_argument("--lane", choices=(*LANES, *ALIASES), help="Alternative to the positional lane name")
     result.add_argument("--list", dest="list_only", action="store_true", help="Collect and print the selected lane without executing tests")
@@ -49,6 +53,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--profile", help="Exact checked-in Hypothesis profile, or analytics_oracle_falsifiers")
     result.add_argument("--output-dir", type=Path, help="JUnit and CI report directory")
     result.add_argument("--manifest", type=Path, default=ROOT / "ci/backend-test-shards.json")
+    result.add_argument("--windows-manifest", type=Path, default=ROOT / "ci/windows-full-test-shards.json")
+    result.add_argument("--inventory", type=Path, help="Complete raw unsharded Windows collection report for update-windows-manifest")
     result.add_argument("--validate", action="store_true", help="Check full manifest inventory while listing all tests")
     result.add_argument("--rebalance", action="store_true", help="Reassign all integration files, only with measured --timings")
     result.add_argument("--timings", type=Path, help="Downloaded CI report directory, report.json, or file-to-seconds JSON")
@@ -120,14 +126,16 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
         raise SelectionError("Choose a lane, for example: python tools/test_backend.py fast")
     if args.list_lane and not listing:
         raise SelectionError("Pytest arguments must follow --")
-    if args.shard is not None and lane != "integration":
-        raise SelectionError("--shard is only valid for integration")
+    if args.shard is not None and lane not in {"integration", "legacy-windows"}:
+        raise SelectionError("--shard is only valid for integration or windows-full-regression")
+    if lane == "legacy-windows" and args.shard not in (None, 1, 2):
+        raise SelectionError("Full Windows regression has exactly two shards: --shard 1 or 2")
     if args.profile is not None and lane != "stateful":
         raise SelectionError("--profile is only valid for stateful")
-    if args.validate and (not listing or lane != "all" or extra):
-        raise SelectionError("Use list all --validate without pytest selection arguments")
-    if args.rebalance or args.timings:
-        raise SelectionError("--rebalance and --timings belong to update-manifest")
+    if args.validate and (not listing or (lane != "all" and not (lane == "legacy-windows" and args.shard)) or extra):
+        raise SelectionError("Use list all --validate or list windows-full-regression --shard N --validate without pytest selection arguments")
+    if args.rebalance or args.timings or args.inventory:
+        raise SelectionError("--rebalance, --timings and --inventory belong to manifest update commands")
     environment = os.environ.copy()
     environment.pop("HYPOTHESIS_PROFILE", None)
     if lane == "stateful":
@@ -144,13 +152,21 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
         identity = f"analytics-integration-{args.shard}"
     elif lane == "stateful":
         identity = args.profile
+    elif lane == "legacy-windows":
+        identity = "windows-full-regression" + (f"-{args.shard}" if args.shard else "")
     environment.setdefault("CI_TEST_LANE", identity)
     output = args.output_dir or Path(environment.get("CI_REPORT_DIR", ROOT / "artifacts/ci-tests" / identity))
     command = [sys.executable, "-m", "pytest", "-p", "tools.ci_pytest", "--override-ini=addopts=",
-               "--ci-lane", lane, "--ci-manifest", str(args.manifest), "--ci-output-dir", str(output),
+               "--ci-output-dir", str(output),
                "--junitxml", str(output / "junit.xml"), "--durations=50", "--durations-min=0.25"]
-    if args.shard:
-        command.extend(["--ci-shard", str(args.shard)])
+    if lane == "legacy-windows":
+        command.extend(["-m", windows_shards.LEGACY_WINDOWS_EXPRESSION])
+        if args.shard:
+            command.extend(["--ci-windows-shard", str(args.shard), "--ci-windows-manifest", str(args.windows_manifest)])
+    else:
+        command.extend(["--ci-lane", lane, "--ci-manifest", str(args.manifest)])
+        if args.shard:
+            command.extend(["--ci-shard", str(args.shard)])
     if args.profile:
         command.extend(["--ci-profile", args.profile])
         # Loading a different module registers a different Hypothesis profile;
@@ -160,7 +176,7 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
     full_inventory = lane != "stateful" and not explicit_targets(extra) and not any(
         value == "--ignore" or value.startswith("--ignore=") or value == "--ignore-glob"
         or value.startswith("--ignore-glob=") for value in extra)
-    if args.validate or full_inventory:
+    if (args.validate or full_inventory) and (lane != "legacy-windows" or args.shard):
         command.append("--ci-validate")
     if listing:
         command.extend(["--collect-only", "-q"])
@@ -282,9 +298,28 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(values[:split])
     extra = values[split + 1:] if split < len(values) else []
     try:
-        manifest = load_manifest(ROOT, args.manifest)
+        if args.command == "update-windows-manifest":
+            if extra or args.lane or args.list_lane or args.shard or args.profile or args.validate or args.list_only or not args.inventory:
+                raise SelectionError("update-windows-manifest requires --inventory <raw-unsharded-report.json>; optional --timings, --rebalance, --windows-manifest and --dry-run")
+            previous = windows_shards.load_manifest(ROOT, args.windows_manifest) if args.windows_manifest.exists() else None
+            inventory = windows_shards.read_inventory(args.inventory)
+            timings = windows_shards.read_inventory(args.timings, execution=True) if args.timings else None
+            updated = windows_shards.updated_manifest(previous, inventory, timing_report=timings, rebalance=args.rebalance)
+            content = json.dumps(updated, indent=2) + "\n"
+            if args.dry_run:
+                import difflib
+                original = args.windows_manifest.read_text(encoding="utf-8") if args.windows_manifest.exists() else ""
+                print("".join(difflib.unified_diff(original.splitlines(True), content.splitlines(True),
+                                                  fromfile=str(args.windows_manifest), tofile="updated Windows manifest")), end="")
+            else:
+                args.windows_manifest.write_text(content, encoding="utf-8")
+                print(f"Updated {args.windows_manifest}; review owners and assignment_basis.unmeasured_files")
+            return 0
+        # The exhaustive reference must still run with missing or invalid tier
+        # metadata. Loading its manifest would couple the two parity oracles.
+        manifest = {} if lane_name(args) == "legacy-windows" else load_manifest(ROOT, args.manifest)
         if args.command == "update-manifest":
-            if extra or args.lane or args.list_lane or args.shard or args.profile or args.validate or args.list_only:
+            if extra or args.lane or args.list_lane or args.shard or args.profile or args.validate or args.list_only or args.inventory:
                 raise SelectionError("update-manifest accepts only --manifest, --timings, --rebalance and --dry-run")
             timings = read_timings(args.timings) if args.timings else None
             updated = updated_manifest(manifest, integration_files(ROOT), timings=timings, rebalance=args.rebalance)
@@ -307,7 +342,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SelectionError("\n".join(errors))
         output = Path(command[command.index("--ci-output-dir") + 1])
         return run_streaming(command, environment, output)
-    except (SelectionError, OSError, json.JSONDecodeError) as error:
+    except (SelectionError, windows_shards.WindowsShardError, OSError, json.JSONDecodeError) as error:
         print(f"Backend CI selection error: {error}", file=sys.stderr)
         return 2
 

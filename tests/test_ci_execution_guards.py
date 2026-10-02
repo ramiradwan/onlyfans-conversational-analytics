@@ -17,16 +17,17 @@ REQUIRED_JOBS = {
     "web-build-and-test", "backend-fast", "analytics-integration",
     "fixed-sqlcipher-wheel", "windows-platform-contract",
     "analytics-windows-contract", "windows-browser-e2e", "windows-full-regression",
+    "windows-full-shards",
     "analytics-scale-qualification",
 }
 BACKEND_JOBS = {
     "backend-fast", "analytics-integration", "windows-platform-contract",
-    "analytics-windows-contract", "windows-full-regression",
+    "analytics-windows-contract", "windows-full-shards",
     "analytics-scale-qualification",
 }
 WINDOWS_CONSUMERS = {
     "windows-platform-contract", "analytics-windows-contract",
-    "windows-browser-e2e", "windows-full-regression",
+    "windows-browser-e2e", "windows-full-shards",
     "analytics-scale-qualification",
 }
 
@@ -48,6 +49,10 @@ def _assert_gate_covers_every_lane(workflow: dict[str, Any]) -> None:
         job = jobs[job_name]
         if job_name == "analytics-scale-qualification":
             assert job.get("if") == "${{ github.event_name != 'pull_request' }}", "scale may skip only pull requests"
+        elif job_name == "windows-full-regression":
+            assert job.get("if") == "${{ always() }}", "full Windows aggregate must evaluate shard failures"
+            assert job["needs"] == "windows-full-shards"
+            assert job["steps"][0]["run"] == "test '${{ needs.windows-full-shards.result }}' = 'success'"
         else:
             assert "if" not in job, f"required lane {job_name} cannot skip during shadow rollout"
         assert not job.get("continue-on-error"), f"required lane {job_name} cannot ignore failures"
@@ -95,6 +100,43 @@ def test_all_jobs_have_explicit_timeouts_and_integration_is_bounded() -> None:
     assert shard["name"] == "analytics-integration-${{ matrix.shard }}"
     assert shard["strategy"] == {"fail-fast": False, "max-parallel": 4, "matrix": {"shard": [1, 2, 3, 4]}}
     assert shard["timeout-minutes"] == 20
+
+
+def _assert_full_windows_shards_are_blocking(workflow: dict[str, Any]) -> None:
+    _assert_gate_covers_every_lane(workflow)
+    job = workflow["jobs"]["windows-full-shards"]
+    assert job["name"] == "windows-full-regression-${{ matrix.shard }}"
+    assert job["runs-on"] == "windows-latest"
+    assert job["strategy"] == {"fail-fast": False, "max-parallel": 2, "matrix": {"shard": [1, 2]}}
+    assert job["timeout-minutes"] == 60
+    execution = next(step for step in job["steps"] if step.get("name") == "Test complete Windows backend regression shard")
+    assert execution["run"] == "python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}"
+    assert execution["env"]["CI_TEST_LANE"] == "windows-full-regression-${{ matrix.shard }}"
+    assert not execution.get("continue-on-error")
+    upload = next(step for step in job["steps"] if step.get("name") == "Retain backend timing and selection")
+    assert upload["with"]["name"] == "ci-tests-windows-full-regression-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
+
+
+@pytest.mark.parametrize("mutation", ["omit-shard", "overlap-shard", "ignore-failure", "omit-aggregate", "hide-shards", "allow-cancelled"])
+def test_full_windows_split_cannot_drop_or_hide_a_required_shard(mutation: str) -> None:
+    workflow = _workflow_document()
+    _assert_full_windows_shards_are_blocking(workflow)
+    broken = deepcopy(workflow)
+    jobs = broken["jobs"]
+    if mutation == "omit-shard":
+        jobs["windows-full-shards"]["strategy"]["matrix"]["shard"] = [1]
+    elif mutation == "overlap-shard":
+        jobs["windows-full-shards"]["strategy"]["matrix"]["shard"] = [1, 1]
+    elif mutation == "ignore-failure":
+        jobs["windows-full-shards"]["continue-on-error"] = True
+    elif mutation == "omit-aggregate":
+        jobs["required-ci-gate"]["needs"].remove("windows-full-regression")
+    elif mutation == "hide-shards":
+        jobs["required-ci-gate"]["needs"].remove("windows-full-shards")
+    else:
+        jobs["windows-full-regression"]["steps"][0]["run"] = "true"
+    with pytest.raises(AssertionError):
+        _assert_full_windows_shards_are_blocking(broken)
 
 
 def test_windows_consumers_fail_closed_on_the_shared_producer() -> None:
@@ -156,7 +198,7 @@ def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() 
 
 def test_nightly_and_release_qualification_are_explicit_without_path_filters() -> None:
     workflow = _workflow_document()
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v1"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v2"
     events = workflow["on"]
     assert events["schedule"] == [{"cron": "17 3 * * *"}]
     assert events["push"]["branches"] == ["main"]

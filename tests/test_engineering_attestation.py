@@ -906,24 +906,33 @@ def test_resolver_and_signer_qualification_each_recheck_product_ci() -> None:
     assert api.product_ci_query_count == 2
 
 
-def _sharded_source_api() -> _SourceApi:
+def _sharded_source_api(version: str = "sharded-v1") -> _SourceApi:
     api = _SourceApi()
-    api.product_ci_source = (
-        "name: CI\nenv:\n  CI_POLICY_VERSION: sharded-v1\njobs:\n"
-        + "".join(f"  {name}:\n    runs-on: ubuntu-latest\n"
-                  for name in sorted(producer.SHARDED_PRODUCT_CI_JOB_IDS))
-    ).encode()
+    if version == "sharded-v1":
+        # Freeze the historical policy rather than reconstructing it from the
+        # current workflow, which now requires two Windows regression jobs.
+        api.product_ci_source = (
+            "name: CI\nenv:\n  CI_POLICY_VERSION: sharded-v1\njobs:\n"
+            + "".join(f"  {name}:\n    runs-on: ubuntu-latest\n"
+                      for name in sorted(producer.SHARDED_PRODUCT_CI_JOB_IDS))
+        ).encode()
+        names = producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES
+    else:
+        assert version == "sharded-v2"
+        api.product_ci_source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes()
+        names = producer.REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES
     api.product_ci_jobs = [
         {"id": 4300 + index, "name": name, "status": "completed", "conclusion": "success",
          "run_id": 43, "run_attempt": 1, "head_sha": "b" * 40}
-        for index, name in enumerate(sorted(producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES))
+        for index, name in enumerate(sorted(names))
     ]
     return api
 
 
 @pytest.mark.parametrize("missing_lane", ["analytics-integration-3", "analytics-scale-qualification"])
-def test_source_versioned_sharded_ci_qualifies_every_actual_lane(missing_lane) -> None:
-    api = _sharded_source_api()
+@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2"])
+def test_source_versioned_sharded_ci_qualifies_every_actual_lane(missing_lane, version) -> None:
+    api = _sharded_source_api(version)
     assert producer.qualify_product_ci_source(api, source_commit="b" * 40) == 43
     api.product_ci_jobs = [job for job in api.product_ci_jobs if job["name"] != missing_lane]
     with pytest.raises(producer.ContractError, match="exact required job set"):
@@ -931,13 +940,17 @@ def test_source_versioned_sharded_ci_qualifies_every_actual_lane(missing_lane) -
 
 
 @pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"])
-def test_source_policy_accepts_normal_git_line_endings(line_ending) -> None:
-    source = _sharded_source_api().product_ci_source.replace(b"\n", line_ending)
-    assert producer.product_ci_job_policy(source) == producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES
+@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2"])
+def test_source_policy_accepts_normal_git_line_endings(line_ending, version) -> None:
+    source = _sharded_source_api(version).product_ci_source.replace(b"\r\n", b"\n").replace(b"\n", line_ending)
+    expected = (producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES if version == "sharded-v1"
+                else producer.REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES)
+    assert producer.product_ci_job_policy(source) == expected
 
 
-def test_missing_gate_never_downgrades_sharded_source_to_legacy_policy() -> None:
-    api = _sharded_source_api()
+@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2"])
+def test_missing_gate_never_downgrades_sharded_source_to_legacy_policy(version) -> None:
+    api = _sharded_source_api(version)
     api.product_ci_jobs = _SourceApi().product_ci_jobs
     with pytest.raises(producer.ContractError, match="exact required job set"):
         producer.qualify_product_ci_source(api, source_commit="b" * 40)
@@ -952,7 +965,7 @@ def test_source_policy_is_read_from_qualified_revision_not_current_workflow() ->
 
 
 @pytest.mark.parametrize("mutate", [
-    lambda source: source.replace(b"sharded-v1", b"sharded-v2"),
+    lambda source: source.replace(b"sharded-v1", b"sharded-v3"),
     lambda source: source.replace(b"  CI_POLICY_VERSION: sharded-v1\n", b""),
     lambda source: source.replace(b"  required-ci-gate:\n    runs-on: ubuntu-latest\n", b""),
     lambda source: source + b"  required-ci-gate:\n    runs-on: ubuntu-latest\n",
@@ -962,15 +975,80 @@ def test_unknown_or_incomplete_source_policy_fails_closed(mutate) -> None:
         producer.product_ci_job_policy(mutate(_sharded_source_api().product_ci_source))
 
 
-def test_sharded_ci_attestation_accepts_retained_dependencies_but_not_newer_failure() -> None:
-    api = _sharded_source_api()
+@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2"])
+def test_sharded_ci_attestation_accepts_retained_dependencies_but_not_newer_failure(version) -> None:
+    api = _sharded_source_api(version)
     api.product_ci_run["run_attempt"] = 2
-    rerun = dict(api.product_ci_jobs[0], id=9999, run_attempt=2)
+    rerun_job = next(job for job in api.product_ci_jobs if job["name"] == (
+        "windows-full-regression-2" if version == "sharded-v2" else "windows-full-regression"
+    ))
+    rerun = dict(rerun_job, id=9999, run_attempt=2)
     api.product_ci_jobs.append(rerun)
     assert producer.qualify_product_ci_source(api, source_commit="b" * 40) == 43
     rerun["conclusion"] = "failure"
     with pytest.raises(producer.ContractError, match="required Product CI job"):
         producer.qualify_product_ci_source(api, source_commit="b" * 40)
+
+
+@pytest.mark.parametrize("lane", ["windows-full-regression-1", "windows-full-regression-2", "windows-full-regression"])
+@pytest.mark.parametrize("failure", ["missing", "failure", "skipped", "cancelled"])
+def test_v2_attestation_requires_each_windows_shard_and_aggregate(lane, failure) -> None:
+    api = _sharded_source_api("sharded-v2")
+    if failure == "missing":
+        api.product_ci_jobs = [job for job in api.product_ci_jobs if job["name"] != lane]
+    else:
+        next(job for job in api.product_ci_jobs if job["name"] == lane)["conclusion"] = failure
+    with pytest.raises(producer.ContractError):
+        producer.qualify_product_ci_source(api, source_commit="b" * 40)
+
+
+@pytest.mark.parametrize("source_version,job_version", [("sharded-v1", "sharded-v2"), ("sharded-v2", "sharded-v1")])
+def test_sharded_policies_never_accept_each_others_actual_job_set(source_version, job_version) -> None:
+    api = _sharded_source_api(source_version)
+    api.product_ci_jobs = _sharded_source_api(job_version).product_ci_jobs
+    with pytest.raises(producer.ContractError, match="exact required job set"):
+        producer.qualify_product_ci_source(api, source_commit="b" * 40)
+
+
+@pytest.mark.parametrize("old,new", [
+    ("    name: windows-full-regression-${{ matrix.shard }}", "    name: windows-full-regression"),
+    ("    runs-on: windows-latest", "    runs-on: ubuntu-latest"),
+    ("    timeout-minutes: 60", "    timeout-minutes: 120"),
+    ("    timeout-minutes: 60", "    timeout-minutes: 60\n    continue-on-error: true"),
+    ("    timeout-minutes: 60", "    timeout-minutes: 60\n    if: false"),
+    ("      fail-fast: false", "      fail-fast: true"),
+    ("      max-parallel: 2", "      max-parallel: 3"),
+    ("          - 2", "          - 1"),
+    ("          - 2", "          - 3"),
+    ("          - 2", "          - 2\n        exclude:\n          - shard: 2"),
+    ("          - 2", "          - 2\n        include:\n          - shard: 3"),
+    ("      matrix:", "      matrix:\n        os: [windows-latest]"),
+    ("    strategy:", "    strategy: {}\n    strategy:"),
+    ("    runs-on: windows-latest", "    runs-on: windows-latest\n    'runs-on': ubuntu-latest"),
+    ("    runs-on: windows-latest", "    runs-on: windows-latest\n    <<: *other-job"),
+])
+def test_v2_source_refuses_incomplete_or_ambiguous_windows_matrix(old, new) -> None:
+    source = _sharded_source_api("sharded-v2").product_ci_source.decode().replace("\r\n", "\n")
+    before, body = source.split("  windows-full-shards:\n", 1)
+    matrix, after = body.split("  windows-full-regression:\n", 1)
+    assert old in matrix
+    source = before + "  windows-full-shards:\n" + matrix.replace(old, new, 1) + "  windows-full-regression:\n" + after
+    with pytest.raises(producer.ContractError):
+        producer.product_ci_job_policy(source.encode())
+
+
+@pytest.mark.parametrize("old,new", [
+    ("    needs: windows-full-shards", "    needs: fixed-sqlcipher-wheel"),
+    ("  windows-full-regression:\n    if: ${{ always() }}", "  windows-full-regression:\n    if: false"),
+    ("      - windows-full-shards\n", ""),
+    ("      - windows-full-regression\n", ""),
+    ("    name: Required CI", "    name: Required CI\n    continue-on-error: true"),
+])
+def test_v2_source_requires_blocking_aggregate_and_both_gate_dependencies(old, new) -> None:
+    source = _sharded_source_api("sharded-v2").product_ci_source.decode().replace("\r\n", "\n")
+    assert old in source
+    with pytest.raises(producer.ContractError):
+        producer.product_ci_job_policy(source.replace(old, new, 1).encode())
 
 
 def test_source_commit_must_be_strictly_post_baseline() -> None:

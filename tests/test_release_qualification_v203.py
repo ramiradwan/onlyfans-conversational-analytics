@@ -110,7 +110,7 @@ def _artifact(name: str, *, identifier: int) -> dict[str, Any]:
 
 
 class QualificationApi:
-    def __init__(self, *, sharded: bool = False) -> None:
+    def __init__(self, *, ci_policy: str | None = None) -> None:
         self.run = {
             "workflow_id": 77,
             "path": producer.WINDOWS_PACKAGE_WORKFLOW,
@@ -151,6 +151,11 @@ class QualificationApi:
             "repository": {"full_name": producer.PRODUCT_REPOSITORY},
             "head_repository": {"full_name": producer.PRODUCT_REPOSITORY},
         }
+        policy_names = {
+            None: producer.REQUIRED_PRODUCT_CI_JOB_NAMES,
+            "sharded-v1": producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES,
+            "sharded-v2": producer.REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES,
+        }
         self.product_ci_jobs = [
             {
                 "id": 4300 + index,
@@ -161,18 +166,19 @@ class QualificationApi:
                 "run_id": 43,
                 "head_sha": SOURCE_COMMIT,
             }
-            for index, name in enumerate(sorted(
-                producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES if sharded
-                else producer.REQUIRED_PRODUCT_CI_JOB_NAMES
-            ))
+            for index, name in enumerate(sorted(policy_names[ci_policy]))
         ]
-        source_jobs = producer.SHARDED_PRODUCT_CI_JOB_IDS if sharded else producer.REQUIRED_PRODUCT_CI_JOB_NAMES
-        self.product_ci_source = (
-            "name: CI\n"
-            + ("env:\n  CI_POLICY_VERSION: sharded-v1\n" if sharded else "")
-            + "jobs:\n"
-            + "".join(f"  {name}:\n    runs-on: ubuntu-latest\n" for name in sorted(source_jobs))
-        ).encode()
+        if ci_policy == "sharded-v2":
+            self.product_ci_source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes()
+        else:
+            source_jobs = (producer.SHARDED_PRODUCT_CI_JOB_IDS if ci_policy
+                           else producer.REQUIRED_PRODUCT_CI_JOB_NAMES)
+            self.product_ci_source = (
+                "name: CI\n"
+                + ("env:\n  CI_POLICY_VERSION: sharded-v1\n" if ci_policy else "")
+                + "jobs:\n"
+                + "".join(f"  {name}:\n    runs-on: ubuntu-latest\n" for name in sorted(source_jobs))
+            ).encode()
         self.artifacts = [
             _artifact(f"windows-package-{RELEASE_TAG}", identifier=91),
             _artifact(f"windows-package-unsigned-{RELEASE_TAG}", identifier=90),
@@ -280,8 +286,10 @@ def test_historical_product_ci_requires_exact_legacy_four_job_set() -> None:
 
 
 def test_current_product_ci_requires_versioned_shards_and_gate() -> None:
-    api = QualificationApi(sharded=True)
-    assert {"Required CI", "analytics-scale-qualification", *(f"analytics-integration-{number}" for number in range(1, 5))} <= {
+    api = QualificationApi(ci_policy="sharded-v2")
+    assert {"Required CI", "analytics-scale-qualification", "windows-full-regression",
+            "windows-full-regression-1", "windows-full-regression-2",
+            *(f"analytics-integration-{number}" for number in range(1, 5))} <= {
         job["name"] for job in api.product_ci_jobs
     }
     assert _qualify_source(api).product_ci_run_id == 43
@@ -290,16 +298,16 @@ def test_current_product_ci_requires_versioned_shards_and_gate() -> None:
         _qualify_source(api)
 
 
-@pytest.mark.parametrize("sharded", [False, True], ids=["legacy-source", "sharded-source"])
-def test_required_package_artifacts_accept_current_evidence_artifacts(sharded) -> None:
-    result = _qualify_source(QualificationApi(sharded=sharded))
+@pytest.mark.parametrize("ci_policy", [None, "sharded-v1", "sharded-v2"], ids=["legacy-source", "sharded-v1", "sharded-v2"])
+def test_required_package_artifacts_accept_current_evidence_artifacts(ci_policy) -> None:
+    result = _qualify_source(QualificationApi(ci_policy=ci_policy))
     assert result.artifact_name == f"windows-package-{RELEASE_TAG}"
     assert result.artifact_id == 91
 
 
-@pytest.mark.parametrize("sharded", [False, True], ids=["legacy-source", "sharded-source"])
-def test_missing_or_failed_required_ci_jobs_are_rejected(sharded) -> None:
-    missing = QualificationApi(sharded=sharded)
+@pytest.mark.parametrize("ci_policy", [None, "sharded-v1", "sharded-v2"], ids=["legacy-source", "sharded-v1", "sharded-v2"])
+def test_missing_or_failed_required_ci_jobs_are_rejected(ci_policy) -> None:
+    missing = QualificationApi(ci_policy=ci_policy)
     missing.product_ci_jobs = [
         job
         for job in missing.product_ci_jobs
@@ -308,7 +316,7 @@ def test_missing_or_failed_required_ci_jobs_are_rejected(sharded) -> None:
     with pytest.raises(producer.ContractError, match="exact required job set"):
         _qualify_source(missing)
 
-    failed = QualificationApi(sharded=sharded)
+    failed = QualificationApi(ci_policy=ci_policy)
     fixed = next(
         job
         for job in failed.product_ci_jobs
@@ -319,9 +327,9 @@ def test_missing_or_failed_required_ci_jobs_are_rejected(sharded) -> None:
         _qualify_source(failed)
 
 
-@pytest.mark.parametrize("sharded", [False, True], ids=["legacy-source", "sharded-source"])
-def test_missing_required_or_unknown_package_artifacts_are_rejected(sharded) -> None:
-    missing = QualificationApi(sharded=sharded)
+@pytest.mark.parametrize("ci_policy", [None, "sharded-v1", "sharded-v2"], ids=["legacy-source", "sharded-v1", "sharded-v2"])
+def test_missing_required_or_unknown_package_artifacts_are_rejected(ci_policy) -> None:
+    missing = QualificationApi(ci_policy=ci_policy)
     missing.artifacts = [
         artifact
         for artifact in missing.artifacts
@@ -330,7 +338,7 @@ def test_missing_required_or_unknown_package_artifacts_are_rejected(sharded) -> 
     with pytest.raises(producer.ContractError, match="artifact identity/count"):
         _qualify_source(missing)
 
-    unknown = QualificationApi(sharded=sharded)
+    unknown = QualificationApi(ci_policy=ci_policy)
     unknown.artifacts.append(_artifact("unexpected-evidence", identifier=87))
     with pytest.raises(producer.ContractError, match="artifact identity/count"):
         _qualify_source(unknown)

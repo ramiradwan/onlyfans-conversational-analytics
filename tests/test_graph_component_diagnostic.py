@@ -31,6 +31,7 @@ def test_graph_component_real_schema_and_repeated_oracle(tmp_path):
     assert result['fixture']['predecessor_messages']==501
 
 
+@pytest.mark.windows_compat
 def test_transition_total_includes_store_and_release(tmp_path):
     from tools.analytics_insertion_diagnostic import Attribution
     from app.analytics.graph_membership_selection import MembershipSelection
@@ -43,12 +44,21 @@ def test_transition_total_includes_store_and_release(tmp_path):
         time.sleep(.01)
         original(value)
     try:
-        with patch.object(MembershipSelection,'discard',release):
-            sample=f.sample(Attribution(enabled=False),0)
+        # Simulate a coarse Windows monotonic tick only for component durations;
+        # the real attribution clock must keep its own coordinate domain.
+        component_clock=SimpleNamespace(monotonic=lambda:100.0,
+            perf_counter=time.perf_counter,thread_time=time.thread_time)
+        trace=Attribution(enabled=True)
+        trace_started=time.monotonic()
+        with patch.object(MembershipSelection,'discard',release), patch.object(component,'time',component_clock):
+            sample=f.sample(trace,0)
+        trace_finished=time.monotonic()
         names=('construct','store','prepare_selection','changed_segments','integrity','release_selection')
         assert sample['selection_released'] is True
         assert sample['intervals']['release_selection']['seconds'] >= .01
         assert sample['complete_transition_seconds'] >= sum(sample['intervals'][n]['seconds'] for n in names)
         assert sample['complete_transition_seconds'] > sample['selected_interval_seconds']
+        assert trace.events
+        assert all(trace_started <= event['start'] <= event['end'] <= trace_finished for event in trace.events)
         assert f.db.execute('SELECT COUNT(*) FROM conversation_graph_refs WHERE generation_id=?',(f.new_id,)).fetchone()[0]==0
     finally:f.close()

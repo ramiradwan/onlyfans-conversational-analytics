@@ -17,8 +17,10 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from tools.ci_windows_shards import load_manifest as load_windows_full_manifest
     from tools.engineering_attestation import ContractError, GitHubApi, latest_ci_jobs, load_json_strict
 except ModuleNotFoundError:  # Direct `python tools/ci_gate.py` invocation.
+    from ci_windows_shards import load_manifest as load_windows_full_manifest
     from engineering_attestation import ContractError, GitHubApi, latest_ci_jobs, load_json_strict
 
 
@@ -37,6 +39,8 @@ class ReportSpec:
 
     @property
     def logical_job(self) -> str:
+        if self.job.startswith("windows-full-regression-"):
+            return "windows-full-shards"
         return "analytics-integration" if self.job.startswith("analytics-integration-") else self.job
 
 
@@ -48,7 +52,7 @@ SPECS = {
     "windows-platform-contract": ReportSpec("windows-platform-contract", "Windows"),
     "analytics-windows-contract": ReportSpec("analytics-windows-contract", "Windows"),
     "analytics-scale-qualification": ReportSpec("analytics-scale-qualification", "Windows"),
-    "windows-full-regression": ReportSpec("windows-full-regression", "Windows"),
+    **{f"windows-full-regression-{n}": ReportSpec(f"windows-full-regression-{n}", "Windows") for n in (1, 2)},
     "legacy-linux-reference": ReportSpec("backend-fast", "Linux", reference=True),
     "legacy-windows-reference": ReportSpec("windows-platform-contract", "Windows", reference=True),
     "backend-fast-brain-general": ReportSpec("backend-fast", "Linux", "tier_a_general", "tier_a_general", ("tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",)),
@@ -74,11 +78,12 @@ SPECS = {
     "windows-persistence-smoke": ReportSpec("windows-platform-contract", "Windows", "windows_persistence_smoke", "windows_persistence_smoke", ("tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke",)),
 }
 ACTUAL_JOBS = {spec.job for spec in SPECS.values()} | {
-    "web-build-and-test", "fixed-sqlcipher-wheel", "windows-browser-e2e"
+    "web-build-and-test", "fixed-sqlcipher-wheel", "windows-browser-e2e", "windows-full-regression"
 }
 NEEDED_JOBS = {spec.logical_job for spec in SPECS.values()} | {
-    "web-build-and-test", "fixed-sqlcipher-wheel", "windows-browser-e2e"
+    "web-build-and-test", "fixed-sqlcipher-wheel", "windows-browser-e2e", "windows-full-regression"
 }
+WINDOWS_FULL_LANES = ("windows-full-regression-1", "windows-full-regression-2")
 LEGACY_EXCLUDED = {"slow", "stateful_tier_a", "stateful_tier_b", "stateful_agent_tier_a"}
 SCALE_LANE = "analytics-scale-qualification"
 # These two files retain their existing packaged-runtime qualification boundary.
@@ -275,6 +280,45 @@ def _skip_reason(report: dict[str, Any], node: str) -> str | None:
     return None
 
 
+def _raw_inventory_signature(rows: dict[str, dict[str, Any]]) -> dict[str, frozenset[str]]:
+    """Compare raw pytest identities and markers without trusting CI taxonomy."""
+    for node, row in rows.items():
+        if row.get("path") != node.split("::", 1)[0]:
+            raise GateError(f"{node}: raw Windows inventory has an inconsistent file path")
+    return {node: frozenset(row["markers"]) for node, row in rows.items()}
+
+
+def _windows_full_owners(reports: dict[str, dict[str, Any]],
+                         reference: dict[str, dict[str, Any]], legacy: set[str]) -> dict[str, str]:
+    """Prove exact raw legacy coverage, then bind whole files to the manifest."""
+    signature = _raw_inventory_signature(reference)
+    owners: dict[str, str] = {}
+    file_owners: dict[str, set[str]] = {}
+    for lane in WINDOWS_FULL_LANES:
+        if _raw_inventory_signature(inventory(reports[lane])) != signature:
+            raise GateError(f"{lane}: collection differs from the independent Windows reference")
+        for node in _unique_strings(reports[lane].get("selected"), "selected"):
+            if node in owners:
+                raise GateError("Windows full regression must have exactly one owner per legacy test")
+            owners[node] = lane
+            file_owners.setdefault(node.split("::", 1)[0], set()).add(lane)
+    if set(owners) != legacy:
+        raise GateError("Windows full regression union must equal the independent legacy selection")
+    if any(len(lanes) != 1 for lanes in file_owners.values()):
+        raise GateError("Windows full regression must keep every test file in exactly one shard")
+    try:
+        manifest = load_windows_full_manifest(Path(__file__).resolve().parents[1])
+    except (ValueError, OSError) as exc:
+        raise GateError(f"invalid Windows full regression manifest: {exc}") from exc
+    assignments = manifest["files"]
+    if set(assignments) != set(file_owners):
+        raise GateError("Windows full regression manifest files differ from the independent legacy selection")
+    for path, lanes in file_owners.items():
+        if lanes != {f"windows-full-regression-{assignments[path]}"}:
+            raise GateError(f"{path}: Windows full regression owner differs from the checked-in manifest")
+    return owners
+
+
 def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push") -> dict[str, int]:
     if set(reports) != required_report_lanes(event):
         raise GateError("execution report set does not match the CI event")
@@ -311,7 +355,7 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
     boot_expected = {node for node, row in inventories["Windows"].items()
                      if "windows_production" in row["markers"] and not {"slow", "stateful_tier_b"} & set(row["markers"])}
     _exact_selection(reports["windows-production-boot"], boot_expected, "Windows production boot")
-    _exact_selection(reports["windows-full-regression"], legacy["Windows"], "Windows shadow regression")
+    shadow_owners = _windows_full_owners(reports, inventories["Windows"], legacy["Windows"])
 
     windows_lanes = ["windows-platform-contract", "analytics-windows-contract", "windows-production-boot"]
     windows_union = set().union(*(set(reports[lane]["selected"]) for lane in windows_lanes))
@@ -332,14 +376,15 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
         raise GateError("Windows legacy tests are missing from the new required lanes")
 
     outcomes = {lane: validate_report(report, SPECS[lane]) for lane, report in reports.items()}
-    shadow = outcomes["windows-full-regression"]
+    shadow = {node: outcomes[lane][node] for node, lane in shadow_owners.items()}
     for node in legacy["Linux"] | legacy["Windows"]:
         lanes = windows_lanes if node in required_windows else linux_lanes + windows_lanes
         observed = [outcomes[lane][node] for lane in lanes if node in outcomes[lane]]
         if not any(value in {"executed", "xfailed"} for value in observed):
             # A pre-existing skip is retained only with independent old-path
             # execution corroboration. Collection alone cannot authorize it.
-            old_reason = _skip_reason(reports["windows-full-regression"], node)
+            owner = shadow_owners.get(node)
+            old_reason = _skip_reason(reports[owner], node) if owner else None
             corroborated = any(_skip_reason(reports[lane], node) == old_reason
                                for lane in lanes if node in outcomes[lane])
             if not observed or shadow.get(node) != "skipped" or not old_reason or not corroborated:

@@ -314,9 +314,9 @@ def test_external_vendored_contracts_are_excluded() -> None:
         assert classification.module_id is None, f"{p} should not have an internal module id"
 
 
-def test_ci_selection_manifest_is_non_production_without_exempting_other_ci_paths() -> None:
+@pytest.mark.parametrize("selection_path", ["ci/backend-test-shards.json", "ci/windows-full-test-shards.json"])
+def test_ci_selection_manifest_is_non_production_without_exempting_other_ci_paths(selection_path: str) -> None:
     manifest = load_manifest(DEFAULT_MANIFEST_PATH)
-    selection_path = "ci/backend-test-shards.json"
     classification = classify_path(selection_path, manifest)
     assert classification.is_production is False
     assert classification.is_vendored_contract is False

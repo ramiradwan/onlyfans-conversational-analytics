@@ -439,7 +439,7 @@ def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> No
 def test_windows_hang_diagnostics_do_not_terminate_tests_or_raise_job_limits() -> None:
     jobs = _jobs(_workflow_document())
     expected_limits = {"windows-platform-contract": 20, "analytics-windows-contract": 20,
-                       "windows-full-regression": 60, "analytics-scale-qualification": 45}
+                       "windows-full-shards": 60, "analytics-scale-qualification": 45}
     execution_lanes = set()
     for name, minutes in expected_limits.items():
         job = jobs[name]
@@ -463,7 +463,7 @@ def test_windows_hang_diagnostics_do_not_terminate_tests_or_raise_job_limits() -
     assert execution_lanes == {
         "windows-platform-contract", "windows-production-boot", "windows-persistence-general",
         "windows-persistence-deletion", "windows-persistence-smoke", "analytics-windows-contract",
-        "windows-full-regression", "analytics-scale-qualification",
+        "windows-full-regression-${{ matrix.shard }}", "analytics-scale-qualification",
     }
 
 

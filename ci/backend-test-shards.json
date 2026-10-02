@@ -498,6 +498,14 @@
         "reason": "Disabling tracing must retain high-resolution elapsed measurement on Windows without installing a global profiler."
       },
       {
+        "selector": "tests/test_graph_component_diagnostic.py::test_transition_total_includes_store_and_release",
+        "reason": "Windows elapsed-clock resolution must retain store and release duration accounting without changing monotonic trace coordinates."
+      },
+      {
+        "selector": "tests/test_tied_insertion_scheduler.py::test_scheduler_idle_insertion_keeps_queries_cleanup_and_rebuild_equality",
+        "reason": "Windows event-loop wakeups must preserve the full real idle interval before verifying scheduler reuse, query currentness and cleanup."
+      },
+      {
         "selector": "tests/test_analytics_backend_rework.py::test_projection_shutdown_is_awaited_and_fail_closed",
         "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
       },

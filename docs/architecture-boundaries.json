@@ -14,6 +14,7 @@
       ".git/**",
       ".github/**",
       "ci/backend-test-shards.json",
+      "ci/windows-full-test-shards.json",
       "extension/test-fixtures/**",
       "frontend/.dependency-cruiser.cjs",
       "frontend/test-fixtures/**"

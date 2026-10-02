@@ -19,7 +19,7 @@ CORE_SOURCE_JOBS = (
     "windows-platform-contract",
     "analytics-windows-contract",
     "analytics-scale-qualification",
-    "windows-full-regression",
+    "windows-full-shards",
     "windows-browser-e2e",
     "required-ci-gate",
 )

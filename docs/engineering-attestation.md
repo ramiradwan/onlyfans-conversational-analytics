@@ -28,7 +28,7 @@ The required Product environment, variables, and secrets are listed in [the sign
 Use a fresh candidate from a commit after the producer control baseline and a new immutable `v*` tag. Do not reuse a pre-control package.
 
 1. Dispatch `.github/workflows/windows-package.yml` from the release tag itself: select the `v*` tag under **Use workflow from**, and pass `product_revision` as the exact 40-character commit that tag names. The workflow refuses any other dispatch ref before it retrieves a document or builds anything, and the attestation refuses a run whose head branch is not the release tag.
-2. Confirm the source commit has a completed, successful Product CI `push` run on `main`. Qualification reads the workflow policy at that exact source revision. Historical revisions require their original four jobs; the sharded policy requires every declared execution lane, all four integration shards, full Windows regression and the aggregate gate. Missing, failed or unexpectedly skipped required jobs are refused. Pull-request CI does not qualify a source package.
+2. Confirm the source commit has a completed, successful Product CI `push` run on `main`. Qualification reads the workflow policy at that exact source revision. Unversioned historical revisions require their original four jobs; `sharded-v1` requires all four integration shards and the complete Windows regression job. `sharded-v2` additionally requires both Windows regression shards, their stable `windows-full-regression` aggregate, and `Required CI`. Every policy also retains its other mandatory jobs. Missing, failed or unexpectedly skipped required jobs are refused. Pull-request CI does not qualify a source package.
 3. Complete a clean-install rehearsal for the exact packaged installer on a machine with no repository checkout.
 4. Obtain the reviewed projection source commit and its canonical SHA-256.
 5. Dispatch `.github/workflows/engineering-attestation.yml` with the Windows-package run ID, release tag, projection source commit, and projection digest.
@@ -36,6 +36,8 @@ Use a fresh candidate from a commit after the producer control baseline and a ne
 7. Review the App-created evidence PR after the protected scope and strict-verifier checks report success.
 
 The resolver only qualifies run metadata. The protected job independently repeats the Product CI and Windows-package qualification, downloads the Actions artifact by numeric ID, checks the outer package and inner ZIP, signs the attestation, rechecks the current projection digest, and creates the evidence PR. It does not install dependencies or build product code.
+
+For `sharded-v2`, qualification checks the source's explicit matrix declarations: four Ubuntu integration shards and two Windows regression shards, bounded parallelism, and the blocking aggregate and gate dependencies. A successful aggregate alone cannot replace either Windows shard. On a failed-jobs rerun, a successful dependency retained from an earlier attempt remains usable, but each job's newest execution must succeed. Rerun the failed jobs for the same commit; changing the policy version or omitting a shard cannot make incomplete evidence qualify. The complete Windows shard union and execution/skip parity remain enforced by `Required CI` before source qualification.
 
 Dispatch only from the current `main` commit. Both jobs compare the workflow commit and dispatch commit with the current `main` ref, so a workflow copied to an unmerged branch cannot reach the protected producer.
 
