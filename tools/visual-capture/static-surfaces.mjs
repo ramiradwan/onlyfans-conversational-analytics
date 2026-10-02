@@ -9,7 +9,9 @@ import { inspectTaskCopy } from './task-copy.mjs';
 import { assertStaticAccessibility } from './static-accessibility.mjs';
 import { installSurfaceFixture } from '../../extension/qualification/surface-runtime-fixture.mjs';
 import { staticFixtures } from './static-fixtures.mjs';
-import { installWatcher, assertWatcher } from './shift-watcher.mjs';
+import { installProvisioningFixture } from './provisioning-driver.mjs';
+import { installWatcher, readWatcher } from './shift-watcher.mjs';
+import { REQUIRED_REGIONS } from './dynamic-transitions.mjs';
 import { CANVAS_DELTA, LAYOUT_SHIFT, colorDistance, grade, gradeLayoutShifts } from './stability-contracts.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -97,6 +99,7 @@ async function inspect(page, fixture, width, session) {
       if (fixture.name === 'invalid-code') assert.equal(await page.locator('#claim-package').getAttribute('aria-invalid'), 'true');
       if (fixture.name.includes('unavailable')) assert(!await page.locator('#open-secure-setup').isVisible());
     }
+    const task = fixture.surface === 'provisioning' ? await inspectTaskCopy(page, fixture) : null;
     const control = page.locator((await page.locator('dialog[open]').count()) ? 'dialog[open] button:visible:enabled' : 'button:visible:enabled, a.primary-link:visible').first();
     if (await control.count()) {
       await page.keyboard.press('Tab'); await control.focus();
@@ -106,7 +109,7 @@ async function inspect(page, fixture, width, session) {
       metrics.focus = focus;
       await control.blur();
     }
-    return { ...metrics, fonts, task: await inspectTaskCopy(page, fixture) };
+    return { ...metrics, fonts, task: task ?? await inspectTaskCopy(page, fixture) };
   } finally { await session.detach(); }
 }
 export async function captureStaticSurfaces(browser, outDir) {
@@ -128,7 +131,7 @@ export async function captureStaticSurfaces(browser, outDir) {
         console.log('start ' + name);
         const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', locale: 'en-US', deviceScaleFactor: 1 });
         const page = await context.newPage();
-        await installWatcher(page);
+        await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[fixture.surface] });
         // Cold-delivery paint probes run without the CSS inspector affecting font discovery.
         const session = fixture.deliveryDelay ? null : await context.newCDPSession(page);
         if (session) { await session.send('DOM.enable'); await session.send('CSS.enable'); }
@@ -148,8 +151,15 @@ export async function captureStaticSurfaces(browser, outDir) {
           if (url.pathname === `/${fixture.surface}.html` || url.pathname === '/provisioning') return route.fulfill({ contentType: 'text/html', body: fixture.html });
           return route.fulfill({ status: 404 });
         });
+        if (fixture.provisioning) await installProvisioningFixture(page, { ...fixture.provisioning, deliveryDelay: fixture.deliveryDelay });
         try {
           await page.goto(ORIGIN + (fixture.surface === 'provisioning' ? '/provisioning' : `/${fixture.surface}.html${fixture.state?.hash ? '#' + fixture.state.hash : ''}`), { waitUntil: 'networkidle' });
+          if (fixture.provisioning) {
+            await page.evaluate(() => window.__provisioningStarted);
+            if (fixture.name === 'invalid-code') await page.locator('#claim-package').fill('invalid code');
+            if (['approval-pending', 'approval-offline'].includes(fixture.name)) await page.evaluate(() => window.__provisioningController.acquireAssociation());
+            if (fixture.name === 'approval-unavailable-help') await page.locator('#recovery-open').click();
+          }
           if (fixture.state) await page.waitForFunction(() => document.querySelector('main[data-ready="true"]') || document.querySelector('#runtime-unavailable:not(.hidden)'));
           if (fixture.state?.dialog) await page.locator('#delete-local-data').click();
           await page.evaluate(() => document.fonts.ready);
@@ -169,7 +179,9 @@ export async function captureStaticSurfaces(browser, outDir) {
           assert.notEqual(shifts.level, 'fail', 'Static first-paint layout shifted: ' + JSON.stringify(shifts));
           const measurements = session ? await inspect(page, fixture, width, session) : { delayedAssetDeliveryMs: fixture.deliveryDelay };
           await assertStaticAccessibility(page);
-          await assertWatcher(page);
+          const watcher = await readWatcher(page);
+          await writeFile(join(directory, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: fixture.surface, transition: `boot:${fixture.name}`, viewport, mode, ...watcher }) + '\n');
+          assert.deepEqual(watcher.failures, []);
           assert.deepEqual(unexpected, []);
           await page.evaluate(() => window.scrollTo(0, 0));
           for (const [kind, fullPage] of [['fold', false], ['full', true]]) {
@@ -178,8 +190,12 @@ export async function captureStaticSurfaces(browser, outDir) {
             entries.push({ file: 'static-surfaces/' + file, surface: fixture.surface, state: fixture.name, mode, viewport, capture: kind });
           }
           console.log('captured ' + name);
-          checks.push({ name, measurements, paint: { first: paint.first, firstNumeric: paint.firstNumeric, canvasDelta: delta, shifts } });
-        } catch (error) { failures.push(`${name}: ${error.message}`); console.error(failures.at(-1)); }
+          checks.push({ name, geometry: `${name}-geometry.json`, measurements, paint: { first: paint.first, firstNumeric: paint.firstNumeric, canvasDelta: delta, shifts } });
+        } catch (error) {
+          failures.push(`${name}: ${error.message}`); console.error(failures.at(-1));
+          await page.screenshot({ path: join(directory, `${name}-failure.png`) });
+          await writeFile(join(directory, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: fixture.surface, transition: `boot:${fixture.name}`, viewport, mode, error: error.message, ...await readWatcher(page) }) + '\n');
+        }
         finally { await context.close(); }
       }
     }

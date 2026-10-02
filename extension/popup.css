@@ -912,13 +912,22 @@ body[data-surface="popup"] #desktop-control-note { margin: 0 0 12px; }
 .reserved-actions button { margin: 0; min-height: 40px; }
 .reserved-actions .hidden { display: block !important; visibility: hidden; }
 .popup-content { height: 400px; overflow-y: auto; scrollbar-gutter: stable; }
+.popup-content > [data-region-content] { position: relative; height: 616px; }
+body[data-surface="popup"] #journey-card { position: absolute; top: 0; left: 0; right: 0; margin: 0; padding: 20px; border: 1px solid var(--dipsy-color-divider); }
+body[data-surface="popup"] #preview-metrics,
+body[data-surface="popup"] #ready-details { position: absolute; top: 180px; left: 0; right: 0; margin: 0; }
+body[data-surface="popup"] #pause,
+body[data-surface="popup"] #desktop-control-note { position: absolute; top: 512px; left: 0; right: 0; margin: 0; }
+body[data-surface="popup"] .reserved-status { position: absolute; top: 568px; left: 0; right: 0; margin: 0; }
+body[data-surface="popup"] #open-connection.hidden { display: block !important; visibility: hidden; }
+body[data-surface="popup"] #journey-card.hidden { display: block !important; visibility: hidden; }
 .popup-status { height: 64px; margin-bottom: 12px; }
 .popup-status #journey-badge { display: none; }
 .popup-status #journey-title { font-size: 14px; line-height: 20px; margin: 0; }
 .popup-status #journey-body { font-size: 12px; line-height: 20px; margin: 0; }
 .popup-action-only .popup-status { display: block; }
 .popup-action-only .popup-status #journey-title, .popup-action-only .popup-status #journey-body { display: block; }
-.metrics strong { display: block; width: 9ch; font-size: 20px; font-variant-numeric: tabular-nums; }
+.metrics strong { display: block; width: 100%; font-size: 20px; font-variant-numeric: tabular-nums; }
 @media (min-width: 600px) { .reserved-status { height: 20px; } }
 
 .reserved-notice { height: 88px; margin-bottom: 16px; }

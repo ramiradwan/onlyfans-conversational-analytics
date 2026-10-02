@@ -19,7 +19,7 @@ import type { ConversationRecord } from '../../protocol';
 import { conversationLatestMessage } from '../../store/transportStore';
 import { componentTokens } from '../../theme';
 import { messagePreview } from '../../utils/sanitizeMessageHtml';
-import { ReservedValue, summarize } from '../ui/ReservedRegion';
+import { BoundedSummary, ReservedValue } from '../ui/ReservedRegion';
 
 const Pane = styled(Paper)(({ theme }) => ({
   backgroundColor: theme.vars.palette.background.paper,
@@ -189,10 +189,10 @@ export function ChatListPane({
                       <Stack direction="row" spacing={1} sx={{
                         justifyContent: 'space-between'
                       }}>
-                        <Typography variant="body1" noWrap sx={{
+                        <Typography variant="body1" sx={{ minWidth: 0, flex: 1, height: '1.5rem', whiteSpace: 'nowrap',
                           fontWeight: selected ? 700 : 600
                         }}>
-                          {summarize(title, componentTokens.reserved.name.maxGraphemes)}
+                          <BoundedSummary text={title} maximum={componentTokens.reserved.name.maxGraphemes} />
                         </Typography>
                         {lastActivity !== null && (
                           <Typography
@@ -210,8 +210,8 @@ export function ChatListPane({
                     }
                     secondary={
                       <PreviewRow>
-                        <Typography data-reserved-region={`preview-${conversation.conversation_id}`} variant="body2" sx={{ flex: 1, minWidth: 0, height: 40, lineHeight: '20px', overflowWrap: 'anywhere' }}>
-                          <span data-region-content>{summarize(messagePreview(lastMessage?.text ?? ''), componentTokens.reserved.preview.maxGraphemes) || 'No messages yet'}</span>
+                        <Typography data-reserved-region={`preview-${conversation.conversation_id}`} variant="body2" sx={{ flex: 1, minWidth: 0, height: '2.5rem', lineHeight: '1.25rem', overflowWrap: 'anywhere' }}>
+                          <BoundedSummary text={messagePreview(lastMessage?.text ?? '') || 'No messages yet'} maximum={componentTokens.reserved.preview.maxGraphemes} />
                         </Typography>
                       </PreviewRow>
                     }

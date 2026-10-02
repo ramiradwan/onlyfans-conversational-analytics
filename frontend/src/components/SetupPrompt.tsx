@@ -180,6 +180,9 @@ export function SetupPrompt({
             />
           ))}
         </Stack>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          In Settings, choose Connect extension under Browser extension.
+        </Typography>
         <Button
           component={RouterLink}
           endIcon={<ArrowForwardIcon />}

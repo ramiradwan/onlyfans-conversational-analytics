@@ -77,11 +77,9 @@ const InboxGrid = styled(Box, {
 const detailEnter = keyframes`
   from {
     opacity: 0;
-    transform: translateX(12px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
   }
 `;
 

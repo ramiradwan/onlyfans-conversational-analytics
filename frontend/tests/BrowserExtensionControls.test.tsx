@@ -112,7 +112,7 @@ describe('browser extension controls', () => {
         <BrowserExtensionControls api={makeApi()} browser={null} canManage connection="offline" port={makePort()} />
       </ThemeProvider>,
     );
-    expect(container.textContent).toBe('');
+    expect(container.textContent?.trim()).toBe('');
   });
 
   it('keeps the review in the paused row and gives controls distinct names from history sync', () => {
@@ -147,4 +147,13 @@ describe('browser control API', () => {
     await expect(createBrowserControlApi({ fetch: vi.fn(), getCsrfToken: () => null }).setCapture('pause'))
       .rejects.toMatchObject({ code: 'csrf' });
   });
+});
+
+it('retains the feedback reservation while pushed browser facts disappear', () => {
+  const { rerender } = mount();
+  expect(document.querySelector('[data-reserved-region="browser-feedback"]')).not.toBeNull();
+  rerender({ browser: null, connection: 'offline' });
+  expect(document.querySelector('[data-reserved-region="browser-feedback"]')).not.toBeNull();
+  rerender({ browser: null, connection: 'connected' });
+  expect(document.querySelector('[data-reserved-region="browser-feedback"]')).not.toBeNull();
 });

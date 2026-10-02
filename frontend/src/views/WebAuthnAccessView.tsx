@@ -82,6 +82,7 @@ export function WebAuthnAccessView({
             width: '100%',
             ...theme.effects.cardBorder(theme),
             ...surfaceArrival(),
+            transform: 'none !important',
             ...theme.effects.ambientGlow(theme),
           })}
         >
@@ -128,6 +129,7 @@ export function WebAuthnAccessView({
                 borderTop: `${effectTokens.borders.thin} solid ${theme.vars.palette.divider}`,
                 display: { sm: 'none' }, pt: 3,
                 '& [data-visual="brand-tile"] + *': { display: 'block' },
+                '& .MuiTypography-noWrap': { overflow: 'visible' },
               })}
             >
               <BrandMark />

@@ -1,9 +1,10 @@
-import { Alert, AlertTitle, Box, Stack, Typography } from '@mui/material';
+import { Box, Stack, Typography } from '@mui/material';
 import { useSyncExternalStore } from 'react';
 
 import type { AnalyticsReadState, AnalyticsWindowSource } from '../analytics';
 import { AnalyticsStateFrame } from '../components/analytics';
 import { GraphSummaryPanel, type GraphQueryGate } from '../components/graph';
+import { ReservedNotice } from '../components/ui/ReservedRegion';
 import { bridgeTransportStore } from '../store/transportStore';
 import { humanizeProjectionReason } from '../utils/dataReadiness';
 
@@ -22,20 +23,12 @@ export default function GraphExplorerView() {
       <Stack spacing={3}>
         <Typography component="h1" variant="h4">Graph explorer</Typography>
 
-        {projectionCurrent ? (
-          <Alert severity="info">
-            <AlertTitle>Not available yet</AlertTitle>
-            Exploring how your fans and conversations connect isn&apos;t available in this version.
-          </Alert>
-        ) : (
-          <Alert severity={state.projection.status === 'unavailable' ? 'error' : 'info'}>
-            <AlertTitle>Not ready yet</AlertTitle>
-            {humanizeProjectionReason(
-              state.projection.reason,
-              'Your conversations are still being prepared.',
-            )}
-          </Alert>
-        )}
+        <ReservedNotice id="graph-notice" notice={projectionCurrent ? {
+          severity: 'info', title: 'Not available yet', body: "Exploring how your fans and conversations connect isn't available in this version.",
+        } : {
+          severity: state.projection.status === 'unavailable' ? 'error' : 'info', title: 'Not ready yet',
+          body: humanizeProjectionReason(state.projection.reason, 'Your conversations are still being prepared.'),
+        }} />
       </Stack>
     </Box>
   );

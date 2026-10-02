@@ -86,12 +86,14 @@ export function DashboardOverview({
       }}
     >
       <Stat label="Conversations">
-        <Typography variant="kpi" data-reserved-region="metric-conversations" sx={{ width: '9ch', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }} data-visual="conversation-total"><span data-region-content>{isLoading ? <Skeleton component="span" animation={false} width="8ch" sx={{ display: 'inline-block' }} /> : conversations}</span></Typography>
-        <Box sx={{ height: 48 }}> {progress && (
+        <Typography variant="kpi" data-reserved-region="metric-conversations" sx={{ width: 'min(9ch, 100%)', height: '1.4em', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums', '& > span': { display: 'block', height: '100%' } }} data-visual="conversation-total"><span data-region-content>{isLoading ? <Skeleton component="span" animation={false} width="100%" sx={{ display: 'inline-block' }} /> : conversations}</span></Typography>
+        <Box sx={{ height: 48, alignSelf: 'start' }}> {progress && (
           <Stack spacing={1} sx={{ maxWidth: 280, mt: 2.5 }}>
             <LinearProgress
               data-journey-state="desktop.history_syncing"
-              sx={{ visibility: progress.complete ? 'hidden' : 'visible' }}
+              sx={{ visibility: progress.complete ? 'hidden' : 'visible',
+                '& .MuiLinearProgress-bar': { animation: 'none', transform: 'none !important', clipPath: `inset(0 ${100 - (progress.percent ?? 35)}% 0 0)` },
+                '& .MuiLinearProgress-bar2': { display: 'none' } }}
               aria-label={progress.label}
               variant={progress.percent === null ? 'indeterminate' : 'determinate'}
               value={progress.percent ?? undefined}
@@ -101,15 +103,15 @@ export function DashboardOverview({
         )}</Box>
       </Stat>
       <Stat label="Messages" divider>
-        <Typography variant="metric" data-reserved-region="metric-messages" sx={{ width: '9ch', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }} data-visual="message-total"><span data-region-content>{isLoading ? <Skeleton component="span" animation={false} width="8ch" sx={{ display: 'inline-block' }} /> : messages}</span></Typography>
-        <Box sx={{ minWidth: 0, mt: 1 }}>
+        <Typography variant="metric" data-reserved-region="metric-messages" sx={{ width: 'min(9ch, 100%)', height: '1.4em', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums', '& > span': { display: 'block', height: '100%' } }} data-visual="message-total"><span data-region-content>{isLoading ? <Skeleton component="span" animation={false} width="100%" sx={{ display: 'inline-block' }} /> : messages}</span></Typography>
+        <Box sx={{ minWidth: 0, mt: 1, alignSelf: 'start' }}>
           <Box aria-hidden="true" sx={{
-            bgcolor: 'action.hover', borderRadius: 999, display: 'flex', height: 8, overflow: 'hidden',
+            bgcolor: 'action.hover', borderRadius: 999, position: 'relative', height: 8, overflow: 'hidden',
           }}>
             {receivedShare !== null && (
               <>
-                <Box sx={{ bgcolor: RECEIVED_COLOR, width: `${receivedShare}%` }} />
-                <Box sx={{ bgcolor: SENT_COLOR, flex: 1, ml: '2px' }} />
+                <Box sx={{ bgcolor: SENT_COLOR, position: 'absolute', inset: 0 }} />
+                <Box sx={{ bgcolor: RECEIVED_COLOR, position: 'absolute', inset: 0, clipPath: `inset(0 ${100 - receivedShare}% 0 0)` }} />
               </>
             )}
           </Box>

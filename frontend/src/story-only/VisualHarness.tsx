@@ -28,6 +28,7 @@ import {
 } from './StoryWorkspace';
 import { theme } from '../theme';
 import { FreshnessFixture } from './FreshnessFixture';
+import { NoticeFixture } from './NoticeFixture';
 import '../index.css';
 
 type StoryMode = 'light' | 'dark';
@@ -165,6 +166,7 @@ const journey = parseJourney(params.get('state'));
 document.documentElement.setAttribute('data-mui-color-scheme', mode);
 
 export function VisualHarness() {
+  if (params.get('stability') === 'notice') return <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange><CssBaseline /><NoticeFixture /></ThemeProvider>;
   if (params.get('stability') === 'freshness') return <ThemeProvider theme={theme} defaultMode={mode} disableTransitionOnChange><CssBaseline /><FreshnessFixture /></ThemeProvider>;
   if (workspace) {
     return (

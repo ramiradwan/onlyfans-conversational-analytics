@@ -25,7 +25,7 @@ import {
   sortConversations,
 } from '../inbox/inboxModel';
 import { VisuallyHidden } from '../ui';
-import { summarize } from '../ui/ReservedRegion';
+import { BoundedSummary } from '../ui/ReservedRegion';
 
 export interface RecentConversationsProps {
   conversations: readonly ConversationSummary[];
@@ -87,11 +87,11 @@ export function RecentConversations({
                 </Avatar>
               </ListItemAvatar>
               <ListItemText
-                primary={summarize(title, 32)}
-                secondary={summarize(messagePreview(latest?.text ?? ''), 56) || 'No messages yet'}
+                primary={<BoundedSummary text={title} maximum={32} />}
+                secondary={<BoundedSummary text={messagePreview(latest?.text ?? '') || 'No messages yet'} maximum={56} />}
                 slotProps={{
-                  primary: { noWrap: true, sx: { fontWeight: 500 } },
-                  secondary: { noWrap: true },
+                  primary: { sx: { fontWeight: 500, height: '1.5rem', whiteSpace: 'nowrap' } },
+                  secondary: { sx: { height: '2.5rem', lineHeight: '1.25rem', overflowWrap: 'anywhere' } },
                 }}
                 sx={{ minWidth: 0 }}
               />

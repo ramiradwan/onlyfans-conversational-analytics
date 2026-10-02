@@ -1,6 +1,7 @@
 import { ThemeProvider } from '@mui/material/styles';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mockFeedbackOverflow } from './feedbackGeometry';
 
 import type { WebAuthnApi } from '../src/services/webauthnApi';
 import { theme } from '../src/theme';
@@ -30,7 +31,7 @@ function renderView(api: WebAuthnApi, onAuthenticated = vi.fn()) {
   };
 }
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 async function readFailure() {
   await waitFor(() => expect(screen.queryByRole('alert') || screen.queryByRole('button', { name: 'Show details' })).toBeTruthy());
@@ -155,6 +156,7 @@ describe('WebAuthn access view', () => {
   });
 
   it('clears a previous failure when the next attempt starts', async () => {
+    mockFeedbackOverflow();
     const pending = deferred();
     const login = vi.fn()
       .mockImplementationOnce(async () => { throw new Error('No passkey was selected.'); })
@@ -174,6 +176,7 @@ describe('WebAuthn access view', () => {
   });
 
   it('keeps newly opened failure details until the next attempt and lets the same failure reopen', async () => {
+    mockFeedbackOverflow();
     const pending = deferred();
     const failure = new Error('No passkey was selected.');
     const login = vi.fn()

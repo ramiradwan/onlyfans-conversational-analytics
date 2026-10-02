@@ -58,7 +58,7 @@ export async function staticFixtures() {
       field.value = 'invalid code'; field.textContent = field.value;
       await controller.submitClaim({ preventDefault() {} });
     }
-    fixtures.push({ surface: 'provisioning', name, html: dom.serialize(), widths: [1440, 390] });
+    fixtures.push({ surface: 'provisioning', name, html: dom.serialize(), provisioning: { stage, name }, widths: [1440, 390] });
     dom.window.close();
   }
   return fixtures;

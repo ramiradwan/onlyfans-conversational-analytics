@@ -85,6 +85,19 @@ afterEach(() => {
 });
 
 describe('companion pairing controls', () => {
+  it('removes the connected badge when the bridge is lost and restores it on recovery', async () => {
+    bridgeTransportStore.setConnection('connected');
+    bridgeTransportStore.setAgent({ creator_account_id: 'creator-1', status: 'connected', agent_installation_id: null, connection_id: null,
+      required_config_revision: 'r1', applied_config_revision: 'r1', required_history_settings_revision: 1,
+      applied_history_settings_revision: 1, last_heartbeat_at: null, degraded_reason: null, browser: null });
+    mount(makeApi({ pins: vi.fn(async () => [{ ...awaiting, state: 'admitted', version: 4, comparison_code: null }]) }));
+    await act(async () => {});
+    expect(screen.getByText('Connected', { exact: true })).toBeTruthy();
+    await act(async () => bridgeTransportStore.setConnection('disconnected'));
+    expect(screen.queryByText('Connected', { exact: true })).toBeNull();
+    await act(async () => bridgeTransportStore.setConnection('connected'));
+    expect(screen.getByText('Connected', { exact: true })).toBeTruthy();
+  });
   it('restores connected extensions and disconnects only the displayed account connection', async () => {
     const pin = { ...awaiting, state: 'admitted' as const, version: 4, comparison_code: null };
     const api = makeApi({ pins: vi.fn(async () => [pin]) });

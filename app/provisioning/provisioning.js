@@ -220,6 +220,8 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   let extensionPort = null;
   let approvalFailed = false;
   let finalizeFailed = false;
+  let finalizationAttempted = false;
+  let finalizationRunning = false;
   let returning = null;
 
   const setStatus = (message, error = false) => {
@@ -441,8 +443,10 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       } else if (!response.ok) setStatus(explainProvisioningFailure(response, payload), true);
       else if (progress?.state === 'provisioning_ready') applyProgress(progress);
       else setStatus('Setup could not be checked. Reopen the desktop app.', true);
+      return progress;
     } catch {
       setStatus('Make sure the desktop app is running, then reload this page.', true);
+      return null;
     }
   }
 
@@ -496,20 +500,28 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   }
 
   async function finalizeProvisioning() {
-    if (recoveryRequired || mutationInFlight || configurationComplete || associationRequestId === null || associatedAccountId === null || !approvalAcquired) return;
-    finalizeFailed = false;
-    const payload = await mutate('/api/v1/provisioning/finalize', {
-      association_request_id: associationRequestId, detected_creator_account_id: associatedAccountId,
-    });
-    if (isConfiguredRestartResponse(payload)) {
-      configurationComplete = true;
-      setStatus('The desktop app is restarting. Continue there when it opens.');
-      setIdentityStatus(''); renderState(); focusCurrentStep();
-    } else {
-      finalizeFailed = true;
-      if (payload !== MUTATION_FAILED) setStatus('Setup did not finish. Try again.', true);
-      renderState();
-    }
+    if (finalizationRunning || recoveryRequired || mutationInFlight || configurationComplete || associationRequestId === null || associatedAccountId === null || !approvalAcquired) return;
+    finalizationRunning = true;
+    try {
+      if (finalizationAttempted) {
+        const progress = await checkStatus();
+        if (progress?.stage !== 'finalization_ready' || configurationComplete || recoveryRequired) return;
+      }
+      finalizationAttempted = true;
+      finalizeFailed = false;
+      const payload = await mutate('/api/v1/provisioning/finalize', {
+        association_request_id: associationRequestId, detected_creator_account_id: associatedAccountId,
+      });
+      if (isConfiguredRestartResponse(payload)) {
+        configurationComplete = true;
+        setStatus('The desktop app is restarting. Continue there when it opens.');
+        setIdentityStatus(''); renderState(); focusCurrentStep();
+      } else {
+        finalizeFailed = true;
+        if (payload !== MUTATION_FAILED) setStatus('Setup did not finish. Try again.', true);
+        renderState();
+      }
+    } finally { finalizationRunning = false; }
   }
 
   function onReturn() {

@@ -1,11 +1,12 @@
 import {
-  Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText,
+  Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText,
   DialogTitle, FormControlLabel, Stack, Typography,
 } from '@mui/material';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { BrowserExtensionControls } from './BrowserExtensionControls';
 import { Panel, SectionHeader, SettingRow, useRevealHold, type SectionStatus } from './ui';
+import { ReservedRegion, StatusLine } from './ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
 import { browserControlApi, type BrowserControlApi } from '../services/browserControlApi';
 import {
@@ -289,13 +290,12 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       spacing={2}
     >
       <SectionHeader
+        sx={{ minHeight: '4.5rem', '& > [aria-live]': { width: '8rem', '& .MuiChip-root': { width: '100%' }, '& .MuiChip-label': { width: '100%', textAlign: 'left' } } }}
         status={sectionStatus}
-        summary={connectedCount === 0 && status === null && !waitingForExtension
-          ? 'Connect the browser extension so your messages reach this app.'
-          : undefined}
         title="Browser extension"
       />
-      <AdmittedPairings
+      <ReservedRegion id="pairing-body" size={{ xs: 624, sm: 424 }}>
+      <Box sx={{ position: 'absolute', inset: 0, visibility: active || waitingForExtension ? 'hidden' : 'visible' }}><AdmittedPairings
         api={api}
         browserApi={browserApi}
         port={port}
@@ -303,26 +303,8 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
         creatorAccountId={creatorAccountId}
         onCount={setConnectedCount}
         refresh={`${status?.version ?? -1}:${notice?.revision ?? -1}:${notice?.changed_at ?? ''}`}
-      />
-      {failed && (
-        <Alert severity="error" role="alert">
-          The connection couldn&apos;t be checked. Keep this page open and try again.
-        </Alert>
-      )}
-      {approved && (
-        <Alert severity="success" role="status">
-          {connection === 'connected' ? 'Extension connected. Continue with Message history below.' : 'Connection approved. Waiting for the extension.'}
-        </Alert>
-      )}
-      {status && terminal(status) && !approved && (
-        <Alert severity="info" role="status">
-          {extensionRefused ? 'The extension stopped the connection. Try again.'
-            : status.state === 'expired' ? 'Time ran out before the connection finished. Try again.'
-              : status.state === 'revoked' ? 'This browser extension was disconnected.'
-                : status.state === 'declined' ? "The codes didn't match, so nothing was connected. Try again."
-                  : 'Connection cancelled.'}
-        </Alert>
-      )}
+      /></Box>
+      <Stack spacing={1.5} sx={{ position: 'absolute', inset: 0, pointerEvents: active || waitingForExtension ? 'auto' : 'none' }}>
       {waitingForExtension && (
         <Stack data-journey-state="desktop.extension_handoff" spacing={0.5}>
           <Typography role="status">
@@ -403,13 +385,22 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
           </Stack>
         </Stack>
       )}
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: 'flex-start' }} useFlexGap>
+      </Stack>
+      </ReservedRegion>
+      <StatusLine id="pairing-result" tone={failed ? 'error' : 'secondary'} text={failed
+        ? "The connection couldn't be checked. Keep this page open and try again."
+        : approved ? connection === 'connected' ? 'Extension connected. Continue with Message history below.' : 'Connection approved. Waiting for the extension.'
+          : status && terminal(status) ? extensionRefused ? 'The extension stopped the connection. Try again.'
+            : status.state === 'expired' ? 'Time ran out before the connection finished. Try again.'
+              : status.state === 'revoked' ? 'This browser extension was disconnected.'
+                : status.state === 'declined' ? "The codes didn't match, so nothing was connected. Try again."
+                  : 'Connection cancelled.' : connectedCount === 0 && status === null && !waitingForExtension ? 'Connect the browser extension so your messages reach this app.' : null} />
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: 'flex-start', minHeight: '3rem', '& > button': { minWidth: '12.5rem', height: '3rem', justifyContent: 'flex-start' } }} useFlexGap>
         {!active && !waitingForExtension && (
           <Button
             disabled={busy}
             onClick={connect}
-            size={connected ? 'small' : 'medium'}
-            sx={connected ? { ml: -1 } : undefined}
+            size="medium"
             variant={connected ? 'text' : 'contained'}
           >
             {connected ? 'Connect another extension' : 'Connect extension'}
@@ -504,19 +495,16 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
     } catch { if (!controller.signal.aborted) setFailed(true); }
     finally { if (!controller.signal.aborted) setBusy(false); }
   };
-  if (pins.length === 0 && !failed && confirming === null) return null;
   return (
-    <Stack spacing={1.5}>
-      {pins.length > 0 && (
-        <>
-          <BrowserExtensionControls
+    <Stack spacing={0.75}>
+          <ReservedRegion id="browser-facts" size={{ xs: 512, sm: 300 }} sx={{ visibility: pins.length ? 'visible' : 'hidden' }}><BrowserExtensionControls
             api={browserApi}
             browser={browser}
             canManage={isCreator}
             connection={connection}
             port={port}
-          />
-          {pins.map((pin, index) => (
+          /></ReservedRegion>
+          <Box data-reading-viewport data-region-role="scroll" sx={{ height: '3.75rem', overflowY: 'auto', scrollbarGutter: 'stable' }}>{pins.map((pin, index) => (
             <SettingRow
               key={pin.pairing_id}
               title={pins.length === 1 ? 'Extension linked to this app' : `Linked extension ${index + 1}`}
@@ -532,21 +520,11 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
                 </Button>
               )}
             />
-          ))}
-        </>
-      )}
-      {failed && (
-        <Alert
-          action={(
-            <Button color="inherit" disabled={busy} onClick={() => setRevision((value) => value + 1)} size="small">
-              Try again
-            </Button>
-          )}
-          severity="error"
-        >
-          Connected extensions couldn&apos;t be checked.
-        </Alert>
-      )}
+          ))}</Box>
+      <Box sx={{ height: '2.5rem', display: 'flex', gap: 1 }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}><StatusLine id="pairing-links-feedback" tone="error" text={failed ? "Connected extensions couldn't be checked." : null} /></Box>
+        <Button sx={{ visibility: failed ? 'visible' : 'hidden', alignSelf: 'flex-start' }} color="inherit" disabled={busy} onClick={() => setRevision((value) => value + 1)} size="small">Try again</Button>
+      </Box>
       <Dialog open={confirming !== null} onClose={() => setConfirming(null)}>
         <DialogTitle>Disconnect the browser extension?</DialogTitle>
         <DialogContent>
@@ -577,7 +555,7 @@ export function CompanionPairingControls({ api = companionPairingApi, browserApi
 }) {
   const extensionPort = port ?? defaultExtensionPort();
   const { canViewSettings } = usePermissions();
-  const { agent, creatorAccountId } = useSyncExternalStore(
+  const { agent, creatorAccountId, connection } = useSyncExternalStore(
     bridgeTransportStore.subscribe,
     bridgeTransportStore.getState,
     bridgeTransportStore.getState,
@@ -590,7 +568,7 @@ export function CompanionPairingControls({ api = companionPairingApi, browserApi
           api={api}
           browserApi={browserApi}
           port={extensionPort}
-          connection={extensionConnection(agent)}
+          connection={extensionConnection(connection === 'connected' ? agent : null)}
           creatorAccountId={creatorAccountId}
         />
       ) : (

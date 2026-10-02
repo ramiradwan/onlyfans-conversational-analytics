@@ -1,6 +1,7 @@
 import { ThemeProvider } from '@mui/material/styles';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mockFeedbackOverflow } from './feedbackGeometry';
 
 import { CommercialActivationControls } from '../src/components/CommercialActivationControls';
 import {
@@ -54,7 +55,7 @@ async function showRequired(api: CapabilityLicenseApi, secureSetupUrl = '') {
   expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
 }
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 it('submits once with Enter and disables the field during the request', async () => {
   const redeem = vi.fn(() => new Promise<never>(() => {}));
@@ -125,6 +126,7 @@ describe('commercial activation controls', () => {
   });
 
   it('keeps a failed redemption recoverable and re-reads canonical readiness', async () => {
+    mockFeedbackOverflow();
     const readiness = vi.fn()
       .mockResolvedValueOnce(required)
       .mockResolvedValueOnce(required);

@@ -1,7 +1,5 @@
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import {
-  Alert,
-  AlertTitle,
   Box,
   Button,
   Dialog,
@@ -146,35 +144,19 @@ export function CommercialActivationControls({
           : null;
 
   return (
-    <Panel>
+    <Panel sx={{ gap: 1 }}>
       <SectionHeader
+        sx={{ height: { xs: '4.5rem', sm: '3rem' } }}
         status={status}
         summary="Adds tone, reply, and topic insights to your conversations."
         title="Full analytics"
       />
 
-      {checking && (
-        <Typography role="status" variant="body2" sx={{ color: 'text.secondary' }}>
-          Checking activation…
-        </Typography>
-      )}
-
-      {!checking && activeButBlocked && (
-        <Alert severity="warning" role="status">
-          <AlertTitle>New messages aren&apos;t being analyzed</AlertTitle>
-          Your activation is fine, but analysis can&apos;t run right now. Your existing numbers are
-          still available.
-        </Alert>
-      )}
-
-      {!checking && (activationUnavailable || readiness === null) && (
-        <Alert severity="warning" role="status">
-          Your activation couldn&apos;t be checked. Nothing has changed.
-        </Alert>
-      )}
-
-      {error && !dialogOpen && <Alert severity="error" role="alert">{error}</Alert>}
-
+      <ReservedNotice id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
+        : checking ? { title: '', body: 'Checking activation…', severity: 'info' }
+          : activeButBlocked ? { title: "New messages aren't being analyzed", body: "Your activation is fine, but analysis can't run right now. Your existing numbers are still available.", severity: 'warning' }
+            : activationUnavailable || readiness === null ? { title: '', body: "Your activation couldn't be checked. Nothing has changed.", severity: 'warning' } : null} />
+      <Box sx={{ height: '2.5rem' }}>
       {!checking && activationRequired && (
         <Box data-journey-state="desktop.full_analytics_activation">
           <Button aria-haspopup="dialog" onClick={() => setDialogOpen(true)} variant="outlined">
@@ -182,6 +164,10 @@ export function CommercialActivationControls({
           </Button>
         </Box>
       )}
+      {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
+        <Button onClick={checkReadiness} variant="outlined">Check again</Button>
+      )}
+      </Box>
 
       <Dialog
         aria-labelledby={titleId}
@@ -244,11 +230,6 @@ export function CommercialActivationControls({
         </DialogActions>
       </Dialog>
 
-      {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
-        <Box>
-          <Button onClick={checkReadiness} variant="outlined">Check again</Button>
-        </Box>
-      )}
     </Panel>
   );
 }

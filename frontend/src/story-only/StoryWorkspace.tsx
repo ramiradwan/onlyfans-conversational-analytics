@@ -1,7 +1,8 @@
 /** STORY ONLY: production shell and views composed with deterministic journey fixtures. */
+import { useEffect, useMemo, useState } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
-import { storyAnalyticsState, storyDateRange } from './analyticsFixtures';
+import { storyAnalyticsState, storyDateRange, type StoryAnalyticsStateKey } from './analyticsFixtures';
 import type { AnalyticsReadState } from '../analytics';
 import { AnalyticsPresentation } from '../components/analytics';
 import { AppShell } from '../layouts/AppShell';
@@ -19,17 +20,19 @@ import type {
   CompanionPairingStatus,
 } from '../services/companionPairingApi';
 import type { CreatorVaultApi, CreatorVaultStatus } from '../services/creatorVaultApi';
+import type { ExtensionPort, ExtensionPortState } from '../services/extensionPort';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
 import type { MessageApi } from '../services/messageApi';
 import type { WebAuthnApi } from '../services/webauthnApi';
 import { bridgeTransportStore } from '../store/transportStore';
 import { useUserStore } from '../store/userStore';
 import CreatorDashboardView from '../views/CreatorDashboardView';
+import GraphExplorerView from '../views/GraphExplorerView';
 import OperatorInboxView from '../views/OperatorInboxView';
 import SettingsWithVaultView from '../views/SettingsWithVaultView';
 import { WebAuthnAccessView } from '../views/WebAuthnAccessView';
 
-export type StoryWorkspaceName = 'home' | 'analytics' | 'inbox' | 'settings' | 'passkey';
+export type StoryWorkspaceName = 'home' | 'analytics' | 'inbox' | 'settings' | 'passkey' | 'graph';
 export type StoryJourneyName = 'loading' | 'fresh' | 'syncing' | 'populated';
 
 export const storyWorkspaceOptions: readonly { key: StoryWorkspaceName; label: string }[] = [
@@ -38,6 +41,7 @@ export const storyWorkspaceOptions: readonly { key: StoryWorkspaceName; label: s
   { key: 'inbox', label: 'Inbox' },
   { key: 'settings', label: 'Settings' },
   { key: 'passkey', label: 'Passkey sign-in' },
+  { key: 'graph', label: 'Graph explorer' },
 ];
 
 export const storyJourneyOptions: readonly { key: StoryJourneyName; label: string }[] = [
@@ -357,7 +361,91 @@ const WORKSPACE_PATHS: Record<Exclude<StoryWorkspaceName, 'passkey'>, string> = 
   analytics: '/analytics',
   inbox: '/inbox',
   settings: '/settings',
+  graph: '/graph-explorer',
 };
+
+function createDriver(journey: StoryJourneyName) {
+  let currentJourney = journey;
+  let hold = new URLSearchParams(location.search).has('transitions');
+  const pending = new Map<string, Array<{ resolve: (value: unknown) => void; reject: (error: Error) => void; run: () => unknown }>>();
+  let portState: ExtensionPortState = { status: 'absent', stage: null, attempt: null };
+  const listeners = new Set<() => void>();
+  const port: ExtensionPort = { getState: () => portState, subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+    open: () => true, pair: () => true, cancel: () => true, retry: () => {} };
+  function wrap<T extends object>(name: string, factory: () => T): T {
+    return Object.fromEntries(Object.keys(factory()).map((key) => [key, (...args: unknown[]) => {
+      const run = () => (factory()[key as keyof T] as (...args: unknown[]) => unknown)(...args);
+      if (!hold) return run();
+      return new Promise((resolve, reject) => {
+        const id = `${name}.${key}`;
+        pending.set(id, [...(pending.get(id) ?? []), { resolve, reject, run }]);
+      });
+    }])) as T;
+  }
+  const apis = {
+    activation: wrap('activation', () => activationApi(currentJourney)),
+    history: wrap('history', () => historyApi(currentJourney)),
+    pairing: wrap('pairing', () => pairingApi(currentJourney)),
+    vault: wrap('vault', () => vaultApi(currentJourney)),
+    message: wrap('message', () => storyMessageApi),
+    passkey: wrap('passkey', () => storyPasskeyApi),
+    browser: wrap('browser', () => ({ setCapture: async () => 'delivered' as const })),
+  };
+  return { apis, pending: () => [...pending.keys()],
+    sample: () => snapshot('populated'),
+    messageSample: (conversationId: string) => storyMessageApi.getPage({ conversationId, limit: 50 }),
+    messagePage: bridgeTransportStore.applyMessagePage,
+    beginMessagePage: bridgeTransportStore.beginMessagePage,
+    failMessagePage: bridgeTransportStore.failMessagePage,
+    apiSample: async (key: 'history' | 'vault' | 'pairing' | 'activation') => key === 'history' ? historySettings('populated')
+      : key === 'vault' ? vaultApi('populated').get() : key === 'pairing' ? pin() : activationApi('populated').readiness(),
+    agentSample: () => connectedAgent,
+    state: bridgeTransportStore.getState,
+    protocolError: bridgeTransportStore.setProtocolError,
+    reconnect: () => seedStores('populated'),
+    disconnected: bridgeTransportStore.markDisconnected,
+    companion: bridgeTransportStore.setCompanion,
+    presence: bridgeTransportStore.setPresence,
+    delta: bridgeTransportStore.applyDelta,
+    resync: bridgeTransportStore.beginResync,
+    port,
+    pushPort(state: ExtensionPortState) { portState = state; for (const listener of listeners) listener(); },
+    browser(overrides: Partial<NonNullable<AgentStatePayload['browser']>> | null) {
+      bridgeTransportStore.setAgent({ ...connectedAgent, browser: overrides === null ? null : { ...connectedAgent.browser!, ...overrides } });
+    },
+    analytics: (key: StoryAnalyticsStateKey) => { void key; },
+    refresh: () => {},
+    resolve(key: string, value: unknown) {
+      const requests = pending.get(key) ?? [];
+      pending.delete(key);
+      for (const request of requests) request.resolve(value);
+    },
+    reject(key: string, name: string) {
+      const requests = pending.get(key) ?? [];
+      pending.delete(key);
+      for (const request of requests) request.reject(Object.assign(new Error('Fixture request failed'), { name }));
+    },
+    snapshot(next: Exclude<StoryJourneyName, 'loading'>, patch?: Partial<StateSnapshotPayload>) { currentJourney = next; bridgeTransportStore.applySnapshot({ ...snapshot(next), ...patch }); },
+    connection: bridgeTransportStore.setConnection,
+    agent: bridgeTransportStore.setAgent,
+    projection(status: 'current' | 'pending' | 'unavailable' | 'degraded', reason: string | null = null) {
+      bridgeTransportStore.applySnapshot({ ...snapshot('populated'), projection: { ...snapshot('populated').projection, status, reason } });
+    },
+    async release(key: string, next: Exclude<StoryJourneyName, 'loading'> = 'populated', patch?: Record<string, unknown>, error?: string) {
+      currentJourney = next;
+      const requests = pending.get(key) ?? [];
+      pending.delete(key);
+      for (const request of requests) {
+        if (error) request.reject(new Error(error));
+        else request.resolve(patch ? { ...await request.run() as object, ...patch } : await request.run());
+      }
+      return requests.length;
+    },
+    hold(value: boolean) { hold = value; },
+  };
+}
+
+declare global { interface Window { __workspaceFixture?: ReturnType<typeof createDriver> } }
 
 export function StoryWorkspace({
   analyticsState = storyAnalyticsState('model'),
@@ -368,35 +456,53 @@ export function StoryWorkspace({
   journey: StoryJourneyName;
   workspace: StoryWorkspaceName;
 }) {
+  const [analysis, setAnalysis] = useState(analyticsState);
+  const [revision, setRevision] = useState(0);
+  const [driver] = useState(() => {
+    seedStores(workspace === 'analytics' ? 'populated' : journey);
+    return createDriver(journey);
+  });
+  useEffect(() => {
+    driver.analytics = (key) => setAnalysis(storyAnalyticsState(key));
+    driver.refresh = () => setRevision((value) => value + 1);
+    window.__workspaceFixture = driver;
+    return () => { delete window.__workspaceFixture; };
+  }, [driver]);
+  const apis = useMemo(() => {
+    void revision;
+    return { activation: { ...driver.apis.activation }, history: { ...driver.apis.history }, pairing: { ...driver.apis.pairing }, vault: { ...driver.apis.vault } };
+  }, [driver, revision]);
   if (workspace === 'passkey') {
-    return <WebAuthnAccessView api={storyPasskeyApi} onAuthenticated={() => undefined} />;
+    return <WebAuthnAccessView api={driver.apis.passkey} onAuthenticated={() => undefined} />;
   }
-  seedStores(workspace === 'analytics' ? 'populated' : journey);
   return (
     <MemoryRouter initialEntries={[WORKSPACE_PATHS[workspace]]}>
       <Routes>
         <Route element={<AppShell />}>
-          <Route index element={<CreatorDashboardView activationApi={activationApi(journey)} />} />
+          <Route index element={<CreatorDashboardView activationApi={apis.activation} />} />
+          <Route path="graph-explorer" element={<GraphExplorerView />} />
           <Route
             path="analytics"
             element={(
               <AnalyticsPresentation
-                state={analyticsState}
+                state={analysis}
                 dateRange={storyDateRange}
                 onDateRangeChange={() => undefined}
                 onRetry={() => undefined}
               />
             )}
           />
-          <Route path="inbox" element={<OperatorInboxView messageApi={storyMessageApi} />} />
+          <Route path="inbox" element={<OperatorInboxView messageApi={driver.apis.message} />} />
           <Route
             path="settings"
             element={(
               <SettingsWithVaultView
-                activationApi={activationApi(journey)}
-                historyApi={historyApi(journey)}
-                pairingApi={pairingApi(journey)}
-                vaultApi={vaultApi(journey)}
+                activationApi={apis.activation}
+                historyApi={apis.history}
+                pairingApi={apis.pairing}
+                vaultApi={apis.vault}
+                browserApi={driver.apis.browser}
+                port={driver.port}
               />
             )}
           />

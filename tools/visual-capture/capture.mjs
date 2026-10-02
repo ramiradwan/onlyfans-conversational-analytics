@@ -10,8 +10,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
 import { captureStaticSurfaces } from './static-surfaces.mjs';
-import { installWatcher, assertWatcher } from './shift-watcher.mjs';
+import { installWatcher, readWatcher } from './shift-watcher.mjs';
 import { captureFreshnessTransitions } from './freshness-transitions.mjs';
+import { captureDynamicTransitions, REQUIRED_REGIONS } from './dynamic-transitions.mjs';
 
 import { captureReviewChecks } from './review-contracts.mjs';
 import { assertNumericTypography } from './appearance-contracts.mjs';
@@ -35,6 +36,8 @@ const text = (value) => (page) => page.getByText(value, { exact: true }).first()
 
 /** Each screen names the locator that proves its state rendered before capture. */
 export const SCREENS = [
+  ...['current', 'pending', 'unavailable', 'degraded'].map((state) => ({ workspace: 'graph', state,
+    ready: heading('Graph explorer'), act: (page) => page.evaluate((status) => window.__workspaceFixture.projection(status), state) })),
   { workspace: 'home', state: 'loading', ready: text('Loading dashboard…') },
   {
     workspace: 'home',
@@ -330,12 +333,18 @@ async function screenshot(page, file, fullPage) {
 async function capture() {
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
+  await new Promise((done, reject) => {
+    const build = spawn(process.execPath, [join(frontend, 'node_modules/vite/bin/vite.js'), 'build'], { cwd: frontend, stdio: 'inherit' });
+    build.once('error', reject);
+    build.once('exit', (code) => code === 0 ? done() : reject(new Error(`Production fixture build failed: ${code}`)));
+  });
   const { base, vite } = await startHarness();
   const browser = await chromium.launch();
   const entries = [];
   const diagnostics = [];
   const failures = [];
   let review = null;
+  let dynamic = [];
   try {
     for (const viewport of VIEWPORTS) {
       for (const mode of MODES) {
@@ -352,7 +361,7 @@ async function capture() {
           if (screen.viewports && !screen.viewports.includes(viewport.name)) continue;
           if (screen.modes && !screen.modes.includes(mode)) continue;
           const page = await context.newPage();
-          await installWatcher(page);
+          await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[screen.workspace] });
           const errors = [];
           page.on('pageerror', (error) => errors.push(String(error)));
           await page.clock.setFixedTime(FIXED_NOW);
@@ -368,7 +377,9 @@ async function capture() {
             await assertBrandMarkIfPresent(page);
             await assertNumericTypography(page, viewport);
             if (screen.assert) await screen.assert(page, viewport);
-            await assertWatcher(page);
+            const watcher = await readWatcher(page);
+            await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, ...watcher }) + '\n');
+            if (watcher.failures.length) throw new Error(watcher.failures.join('\n'));
 
             const overflow = await horizontalOverflow(page);
             if (overflow > 0) errors.push(`${overflow}px of unintended horizontal page overflow`);
@@ -412,6 +423,8 @@ async function capture() {
             if (errors.length) throw new Error(errors.join('\n'));
             console.log(`captured ${name} fold + full`);
           } catch (error) {
+            await page.screenshot({ path: join(outDir, `${name}-failure.png`) });
+            await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, error: error.message, ...await readWatcher(page) }) + '\n');
             failures.push(`${name}: ${error.message.split('\n')[0]}`);
             console.error(`failed ${name}: ${error.message}`);
           } finally {
@@ -421,7 +434,10 @@ async function capture() {
         await context.close();
       }
     }
-    await captureFreshnessTransitions(browser, base, outDir);
+    dynamic = await captureDynamicTransitions(browser, base, outDir);
+    failures.push(...dynamic.flatMap((report) => report.failures.map((failure) => `${report.file}: ${failure}`)));
+    const freshness = await captureFreshnessTransitions(browser, base, outDir);
+    failures.push(...freshness.flatMap((report) => report.failures.map((failure) => `${report.file}: ${failure}`)));
     review = await captureReviewChecks(browser, base, outDir);
     failures.push(...review.failures);
     const staticReport = await captureStaticSurfaces(browser, outDir);
@@ -433,7 +449,7 @@ async function capture() {
   }
   await writeFile(
     join(outDir, 'manifest.json'),
-    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, diagnostics, static: review?.static ?? null, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
+    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, diagnostics, dynamic, static: review?.static ?? null, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
   );
   if (failures.length) {
     console.error(`${failures.length} screen(s) did not reach their ready state:\n${failures.join('\n')}`);

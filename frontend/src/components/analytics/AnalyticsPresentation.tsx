@@ -92,7 +92,7 @@ export function AnalyticsPresentation({
           onApply={onDateRangeChange}
           isRefreshing={state.isRefreshing}
         />
-        <ReservedRegion id="analytics-content" size={{ xs: 1750, sm: 1120 }}><Box key={state.data ? 'results' : state.status} data-region-content>
+        <ReservedRegion id="analytics-content" regionRole="scroll" size={{ xs: 1750, sm: 1120 }}><Box key={state.data ? 'results' : state.status} data-region-content>
         <AnalyticsStateFrame state={state} onRetry={onRetry}>
           {model && (
             <Stack spacing={1.5}>

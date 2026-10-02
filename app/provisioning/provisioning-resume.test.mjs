@@ -86,6 +86,35 @@ function pendingStatus() {
   };
 }
 
+for (const unavailable of [false, true]) test(`lost finalization response is reconciled before retry, status unavailable=${unavailable}`, async () => {
+  const ui = elements();
+  const calls = [];
+  let completed = false;
+  let statusUnavailable = unavailable;
+  const controller = createProvisioningController({ document: document(), elements: ui,
+    sendExtensionMessage: async () => null,
+    fetch: async (path) => {
+      calls.push(path.split('/').at(-1));
+      if (path.endsWith('/status')) {
+        if (completed && statusUnavailable) throw new Error('Status unavailable');
+        return response(200, completed ? { state: 'configured_restart' } : pendingStatus());
+      }
+      if (path.endsWith('/acquire')) return response(200, { association_request_id: ASSOCIATION_ID, status: 'approved' });
+      if (path.endsWith('/finalize')) { completed = true; throw new Error('Response lost'); }
+      throw new Error('Unexpected request');
+    },
+  });
+  await controller.start();
+  await controller.acquireAssociation();
+  await controller.finalizeProvisioning();
+  await controller.finalizeProvisioning();
+  statusUnavailable = false;
+  await controller.finalizeProvisioning();
+  assert.equal(calls.filter((call) => call === 'finalize').length, 1);
+  assert(calls.slice(calls.indexOf('finalize') + 1).includes('status'));
+  assert.equal(ui.finalizeStep.dataset.state, 'completed');
+});
+
 test('pending approval is a neutral durable state and remains pending after an authoritative recheck', async () => {
   const ui = elements();
   const calls = [];

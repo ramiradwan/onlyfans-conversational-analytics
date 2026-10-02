@@ -232,10 +232,9 @@ function NumbersBasis({
   return (
     <Box>
       <Stack
-        direction="row"
-        sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', px: 0.5, rowGap: 0.5 }}
+        sx={{ alignItems: 'flex-start', px: 0.5, rowGap: 0.5 }}
       >
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        <Typography variant="body2" sx={{ color: 'text.secondary', height: { xs: '3.75rem', sm: '2.5rem' } }}>
           {[
             evidence.partial
               ? syncing ? null : 'Counts include messages synced so far.'

@@ -676,10 +676,6 @@
         box-shadow: none;
       }
 
-      .step:not([data-state="current"]) > :not(.step-heading) {
-        display: none;
-      }
-
       .step-heading {
         display: flex;
         align-items: center;
@@ -982,10 +978,11 @@
       .approval-continuation { margin-block: var(--dipsy-space-unit); }
       #binding-step:has(#continue-creator-approval[hidden]) #binding-step-description,
       #binding-step:not(:has(#continue-creator-approval[hidden])) .approval-unavailable,
-      #binding-step[data-feedback="true"] #creator-approval-unavailable { display: none; }
+      #binding-step[data-feedback="true"] #creator-approval-unavailable { visibility: hidden; }
       #binding-step:has(#continue-creator-approval[hidden]) #acquire-association:not(:disabled) { background: var(--dipsy-color-primary); color: var(--dipsy-color-on-primary); border-color: transparent; }
       #binding-step:has(#continue-creator-approval[hidden]) #acquire-association:hover:not(:disabled) { background: var(--dipsy-intent-action-primary-dark); }
-      #claim-step[data-recovery="true"] > :not(.step-heading, [data-step-feedback]) { display: none; }
+      #claim-step[data-recovery="true"] > :not(.step-state, h2, .step-description, .actions, [data-step-feedback]) { display: none; }
+      #claim-step[data-recovery="true"] .actions { visibility: hidden; }
       .recovery-help { margin-block: var(--dipsy-space-unit); font-size: var(--dipsy-static-label-size); color: var(--dipsy-color-text-secondary); }
       .recovery-help summary { cursor: pointer; color: var(--dipsy-color-primary); }
       .recovery-help p { margin-block: var(--dipsy-space-unit); }
@@ -998,7 +995,7 @@
       .progress-rail li[data-state="current"] { font-weight:600; }
       .progress-rail b { display:none; }
       .provisioning-stage { position:relative; height:var(--dipsy-static-provisioning-stage-block); background:var(--dipsy-color-paper); border:1px solid var(--dipsy-color-divider); border-radius:20px; }
-      .provisioning-stage .step { position:absolute; inset:0; margin:0; padding:28px; display:none; border:0; box-shadow:none; background:transparent; grid-template-rows:20px 32px 48px minmax(0,1fr) 20px 48px; gap:4px; }
+      .provisioning-stage .step { position:absolute; inset:0; margin:0; padding:28px; display:none; border:0; box-shadow:none; background:transparent; grid-template-rows:20px 32px 48px minmax(0,1fr) 1.25rem 48px; gap:4px; }
       .provisioning-stage .step[data-state="current"], .provisioning-stage[data-complete="true"] #finalize-step { display:grid; }
       .provisioning-stage .step > * { margin:0; min-width:0; }
       .provisioning-stage .step-state { display:block; line-height:20px; font-family:var(--dipsy-font-family-numeric); font-variant-numeric:tabular-nums; }
@@ -1006,7 +1003,7 @@
       .provisioning-stage .step-description { font-size:14px; line-height:24px; }
       .provisioning-stage .stage-body { min-height:0; overflow:auto; scrollbar-gutter:stable; }
       .provisioning-stage .actions { grid-row:6; margin:0; display:flex; flex-wrap:nowrap; gap:12px; align-items:center; }
-      .provisioning-stage [data-step-feedback] { grid-row:5; height:20px; font-size:14px; line-height:20px; }
+      .provisioning-stage [data-step-feedback] { grid-row:5; height:1.25rem; font-size:.875rem; line-height:1.25rem; }
       .provisioning-stage .page-status { position:static; display:block; width:auto; height:auto; padding:0; margin:0; border:0; font-size:14px; line-height:20px; overflow:visible; clip-path:none; }
       .provisioning-stage .page-status:empty { visibility:hidden; }
       .provisioning-stage #claim-form { display:grid; align-content:start; gap:4px; }
@@ -1015,8 +1012,7 @@
       .provisioning-stage #claim-package-count { display:none; }
       .provisioning-stage #claim-package-validation:empty { display:none; }
       .provisioning-stage #claim-step:not([data-code-valid="true"]) #claim-submit { visibility:hidden; }
-      .provisioning-stage #claim-step[data-code-valid="true"] .actions { flex-direction:row-reverse; justify-content:flex-end; }
-      .provisioning-stage #claim-step[data-code-valid="true"] #open-secure-setup { background:transparent; color:var(--dipsy-color-primary); box-shadow:none; padding:0; }
+      .provisioning-stage #claim-step[data-code-valid="true"] #open-secure-setup { background:transparent; color:var(--dipsy-color-primary); box-shadow:none; }
       .provisioning-stage #acquire-association[hidden], .provisioning-stage #finalize-provisioning[hidden] { display:block; visibility:hidden; }
       .provisioning-stage::before { content:''; position:absolute; inset:0; border-radius:inherit; background:var(--dipsy-intent-surface-glow); opacity:0; transition:opacity 320ms ease-out; pointer-events:none; }
       .provisioning-stage[data-complete="true"]::before { opacity:1; }
@@ -1034,17 +1030,16 @@
       .provisioning-stage .actions > * { min-width:0; }
       @media (max-width:599px) {
         .provisioning-stage { height:var(--dipsy-static-provisioning-stage-block-narrow); }
-        .provisioning-stage .step { padding:20px; grid-template-rows:20px 32px 48px minmax(0,1fr) 40px 96px; }
-        .provisioning-stage [data-step-feedback] { height:40px; }
+        .provisioning-stage .step { padding:20px; grid-template-rows:20px 32px 48px minmax(0,1fr) 2.5rem 96px; }
+        .provisioning-stage [data-step-feedback] { height:2.5rem; }
         .provisioning-stage .actions { flex-direction:column; align-items:stretch; gap:8px; }
-        .provisioning-stage #claim-step[data-code-valid="true"] .actions { flex-direction:column-reverse; }
         .provisioning-stage .actions > * { width:100%; flex:0 0 40px; min-height:40px; margin:0; }
         .progress-rail span { display:none; }
         .progress-rail b { display:block; font-weight:inherit; }
       }
-      @media (max-width:599px) { .progress-rail span { display:none; } .progress-rail b { display:block; } .provisioning-stage { height:var(--dipsy-static-provisioning-stage-block-narrow); } .provisioning-stage .step { padding:20px; grid-template-rows:20px 32px 48px minmax(0,1fr) 40px 72px; } .provisioning-stage .actions, .provisioning-stage #claim-step[data-code-valid="true"] .actions { flex-direction:column; align-items:stretch; gap:4px; } .provisioning-stage [data-step-feedback] { height:40px; } }
+      @media (max-width:599px) { .progress-rail span { display:none; } .progress-rail b { display:block; } .provisioning-stage { height:var(--dipsy-static-provisioning-stage-block-narrow); } .provisioning-stage .step { padding:20px; grid-template-rows:20px 32px 48px minmax(0,1fr) 2.5rem 72px; } .provisioning-stage .actions, .provisioning-stage #claim-step[data-code-valid="true"] .actions { flex-direction:column; align-items:stretch; gap:4px; } .provisioning-stage [data-step-feedback] { height:2.5rem; } }
       .provisioning-stage [data-step-feedback] { position:relative; }
-      .provisioning-stage .page-status, .provisioning-stage .validation-message { position:absolute; inset:0; margin:0; padding:0; }
+      .provisioning-stage .page-status, .provisioning-stage .validation-message { position:absolute; inset:0; margin:0; padding:0; font-size:inherit; line-height:inherit; }
       .provisioning-stage #claim-step[data-feedback="true"] .validation-message { visibility:hidden; }
       .provisioning-stage [data-long="true"] { position:absolute; width:1px; height:1px; clip-path:inset(50%); overflow:hidden; }
       #feedback-details { display:flex; align-items:baseline; gap:8px; line-height:20px; font-size:14px; }
@@ -1096,7 +1091,7 @@
             <span id="claim-package-count"></span>
           </form>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content><p id="claim-package-validation" class="validation-message help" data-valid="true"></p></div></div>
-          <div class="actions">
+          <div class="actions" data-reserved-region="provisioning-actions">
             <a id="open-secure-setup" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="secure-setup-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open secure setup</a>
             <button id="claim-submit" type="submit" form="claim-form" aria-describedby="claim-step-description" disabled>Continue setup</button>
           </div>
@@ -1107,19 +1102,19 @@
           <p id="identity-step-description" class="step-description">Choose the creator account this computer should use.</p>
           <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="identity-status" role="status">Sign in to your creator account on OnlyFans, then return here.</p><p id="extension-install-reason">Install the extension in the browser profile you use for your creator account.</p></div>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
-          <div class="actions"><button id="open-extension-setup" type="button" aria-describedby="identity-status" hidden>Open extension setup</button><button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Check again</button><button id="confirm-identity" type="button" disabled aria-describedby="identity-step-description">Use this account</button></div>
+          <div class="actions" data-reserved-region="provisioning-actions"><button id="open-extension-setup" type="button" aria-describedby="identity-status" hidden>Open extension setup</button><button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Check again</button><button id="confirm-identity" type="button" disabled aria-describedby="identity-step-description">Use this account</button></div>
         </section>
         <section id="binding-step" class="step" data-region-content data-step="approval" data-state="locked">
           <p id="binding-step-state" class="step-state">Step 3 of 4</p><h2 id="binding-heading">Connect your account</h2>
           <p id="binding-step-description" class="step-description">Approve which account this computer can use in the setup tab, then return here.</p>
           <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="creator-approval-unavailable" class="step-description approval-unavailable">Return to the setup tab where you got your code to allow this app to connect to your account.</p><p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Opens in a new tab.</p><button type="button" id="recovery-open" class="secondary">Can’t find the setup tab?</button></div>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
-          <div class="actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open account setup</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Check again</button></div>
+          <div class="actions" data-reserved-region="provisioning-actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open account setup</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Check again</button></div>
         </section>
         <section id="finalize-step" class="step" data-region-content data-step="finalization" data-state="locked">
           <p id="finalize-step-state" class="step-state">Step 4 of 4</p><h2 id="finalize-heading">Finish desktop setup</h2>
           <p id="finalize-step-description" class="step-description">The desktop app is restarting. Continue there when it opens.</p><div class="stage-body" data-region-role="scroll" data-reading-viewport></div><div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
-          <div class="actions"><button id="finalize-provisioning" type="button" disabled aria-describedby="finalize-step-description">Try again</button></div>
+          <div class="actions" data-reserved-region="provisioning-actions"><button id="finalize-provisioning" type="button" disabled aria-describedby="finalize-step-description">Try again</button></div>
         </section>
       </div>
       <dialog id="feedback-dialog" aria-labelledby="feedback-title"><h2 id="feedback-title">Details</h2><p id="feedback-copy"></p><form method="dialog"><button>Close</button></form></dialog>

@@ -227,7 +227,7 @@ export function MessageStreamPane({
   return (
     <Pane data-reserved-region="message-stream" data-region-role="scroll" variant="outlined" role="region" aria-labelledby="message-stream-title">
       <PaneHeader>
-        <Box>
+        <Box data-reading-viewport sx={{ minWidth: 0, flex: 1, height: '2.5rem', overflowY: 'auto', overflowWrap: 'anywhere' }}>
           <Typography id="message-stream-title" component="h2" variant="subtitle1">
             {isLoading ? 'Messages' : title}
           </Typography>
@@ -257,7 +257,7 @@ export function MessageStreamPane({
       </LiveStatus>
       <Stream data-reading-viewport data-region-content sx={{ scrollbarGutter: 'stable' }} data-message-scroll="true" ref={streamRef} onScroll={handleScroll}>
         {loadingMessages ? (
-          <CenteredState role="status">
+          <CenteredState key="loading" role="status">
             <Typography variant="body2">Loading messages…</Typography>
             <Stack spacing={2} sx={{ width: '100%' }}>
               <Skeleton variant="rounded" width="58%" height={72} />
@@ -266,21 +266,21 @@ export function MessageStreamPane({
             </Stack>
           </CenteredState>
         ) : conversation === null ? (
-          <CenteredState>
+          <CenteredState key="unselected">
             <Typography component="p" variant="body1">Select a conversation</Typography>
             <Typography component="p" variant="body2">
               Choose a conversation to read its messages.
             </Typography>
           </CenteredState>
         ) : messageState?.status === 'error' && messages.length === 0 ? (
-          <CenteredState>
-            <Alert severity="warning">
+          <CenteredState key="error">
+            <Alert severity="warning" sx={{ minWidth: 0, overflowWrap: 'anywhere', maxHeight: '100%', overflowY: 'auto' }}>
               {messageState.error ?? "Messages couldn't load. Try again."}
             </Alert>
             <Button onClick={onReloadLatest}>Try again</Button>
           </CenteredState>
         ) : messages.length === 0 ? (
-          <CenteredState>
+          <CenteredState key="empty">
             <Typography component="p" variant="body1">
               {messageState?.conversationCoverage?.status === 'complete'
                 ? 'No messages in this conversation'
@@ -314,7 +314,7 @@ export function MessageStreamPane({
                   </Typography>
                 )}
                 {messageState?.error && (
-                  <Typography color="error" variant="caption">{messageState.error}</Typography>
+                  <Typography color="error" variant="caption" sx={{ overflowWrap: 'anywhere', maxWidth: '100%' }}>{messageState.error}</Typography>
                 )}
               </Stack>
             </li>
