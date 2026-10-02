@@ -9,6 +9,7 @@ import { inspectTaskCopy } from './task-copy.mjs';
 import { assertStaticAccessibility } from './static-accessibility.mjs';
 import { installSurfaceFixture } from '../../extension/qualification/surface-runtime-fixture.mjs';
 import { staticFixtures } from './static-fixtures.mjs';
+import { installWatcher, assertWatcher } from './shift-watcher.mjs';
 import { CANVAS_DELTA, LAYOUT_SHIFT, colorDistance, grade, gradeLayoutShifts } from './stability-contracts.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -127,6 +128,7 @@ export async function captureStaticSurfaces(browser, outDir) {
         console.log('start ' + name);
         const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', locale: 'en-US', deviceScaleFactor: 1 });
         const page = await context.newPage();
+        await installWatcher(page);
         // Cold-delivery paint probes run without the CSS inspector affecting font discovery.
         const session = fixture.deliveryDelay ? null : await context.newCDPSession(page);
         if (session) { await session.send('DOM.enable'); await session.send('CSS.enable'); }
@@ -167,6 +169,7 @@ export async function captureStaticSurfaces(browser, outDir) {
           assert.notEqual(shifts.level, 'fail', 'Static first-paint layout shifted: ' + JSON.stringify(shifts));
           const measurements = session ? await inspect(page, fixture, width, session) : { delayedAssetDeliveryMs: fixture.deliveryDelay };
           await assertStaticAccessibility(page);
+          await assertWatcher(page);
           assert.deepEqual(unexpected, []);
           await page.evaluate(() => window.scrollTo(0, 0));
           for (const [kind, fullPage] of [['fold', false], ['full', true]]) {

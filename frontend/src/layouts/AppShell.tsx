@@ -1,8 +1,9 @@
 import { Box } from '@mui/material';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 import { Outlet } from 'react-router-dom';
 
 import { componentTokens } from '@/theme';
+import { connectionGrace } from '@/utils/connectionGrace';
 
 import { AppAppBar } from './AppAppBar';
 import { AppDrawer } from './AppDrawer';
@@ -10,6 +11,7 @@ import { AppDrawer } from './AppDrawer';
 const { desktopRailWidth, headerHeight, mobileDrawerWidth, railInset } = componentTokens.shell;
 
 export function AppShell() {
+  const phase = useSyncExternalStore(connectionGrace.subscribe, connectionGrace.getSnapshot);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleDrawerToggle = useCallback(() => {
@@ -43,7 +45,9 @@ export function AppShell() {
           minHeight: 0,
           minWidth: 0,
           overflow: 'hidden',
-          pt: `${headerHeight}px`,
+          pt: { xs: `${headerHeight + componentTokens.FreshnessStatus.narrowRowHeight}px`, sm: `${headerHeight}px` },
+          '--issue-band-height': phase === 'interrupted' ? { xs: '104px', sm: '64px' } : '0px',
+          '& [data-scroll-container], & [data-reading-viewport]': { scrollPaddingTop: 'calc(var(--issue-band-height) + 16px)' },
           width: { sm: `calc(100% - ${desktopRailWidth + railInset}px)` },
         }}
       >

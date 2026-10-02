@@ -45,7 +45,7 @@ function changeFailure(cause: unknown, fallback: string): string {
 
 function waitingText(settings: HistorySettings): string {
   if (settings.desired_state === 'running') {
-    return 'Waiting for the browser extension to start. If nothing changes, open the extension and choose Allow message history.';
+    return 'Waiting for the extension. Check Message history access under Browser extension.';
   }
   if (settings.desired_state === 'paused') return 'Pausing when the browser extension next connects.';
   return 'Waiting for the browser extension to apply this change.';
@@ -209,8 +209,8 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
           ) : historyComplete ? (
             <Typography variant="body2">
               {discoveredConversations === null
-                ? 'History synced.'
-                : `All ${NUMBER_FORMAT.format(discoveredConversations)} conversations synced.`}
+                ? 'History saved.'
+                : `History saved for ${NUMBER_FORMAT.format(completeConversations)} chats`}
             </Typography>
           ) : (
             <Stack spacing={0.75}>

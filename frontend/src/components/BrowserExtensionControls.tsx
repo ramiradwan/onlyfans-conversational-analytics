@@ -61,6 +61,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   }, [pending]);
 
   const setCapture = async (action: CaptureAction) => {
+    if (connection !== 'connected' || browser === null) return;
     operation.current?.abort();
     const controller = new AbortController();
     operation.current = controller;
@@ -102,7 +103,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
 
   const captureButton = canManage && captureAction !== null && !resumeNeedsReview ? (
     <Button
-      disabled={pending !== null}
+      disabled={pending !== null || connection !== 'connected'}
       onClick={() => void setCapture(captureAction)}
       size="small"
       startIcon={captureAction === 'pause' ? <PauseCircleOutlinedIcon /> : <PlayCircleOutlinedIcon />}

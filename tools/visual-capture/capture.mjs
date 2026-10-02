@@ -10,6 +10,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
 import { captureStaticSurfaces } from './static-surfaces.mjs';
+import { installWatcher, assertWatcher } from './shift-watcher.mjs';
+import { captureFreshnessTransitions } from './freshness-transitions.mjs';
 
 import { captureReviewChecks } from './review-contracts.mjs';
 import { assertNumericTypography } from './appearance-contracts.mjs';
@@ -33,7 +35,7 @@ const text = (value) => (page) => page.getByText(value, { exact: true }).first()
 
 /** Each screen names the locator that proves its state rendered before capture. */
 export const SCREENS = [
-  { workspace: 'home', state: 'loading', ready: text('Processing your data…') },
+  { workspace: 'home', state: 'loading', ready: text('Loading dashboard…') },
   {
     workspace: 'home',
     state: 'fresh',
@@ -83,7 +85,7 @@ export const SCREENS = [
   ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({
     workspace: 'settings',
     state,
-    ready: (page) => page.getByRole('heading', { name: 'Stored messages' }),
+    ready: (page) => state === 'loading' ? page.getByText('Loading settings…', { exact: true }).first() : page.getByRole('heading', { name: 'Stored messages' }),
     assert: async (page, viewport) => {
       if (viewport.name !== 'desktop') return;
       const frame = page.locator('[data-visual="settings-frame"]');
@@ -142,7 +144,7 @@ export const SCREENS = [
       await page.getByRole('button', { name: 'Turn on full analytics' }).click();
       await page.getByRole('link', { name: 'Open secure setup' }).dispatchEvent('click');
     },
-    ready: (page) => page.getByRole('status').filter({ hasText: 'Secure setup opened.' }),
+    ready: (page) => page.getByRole('alert').filter({ hasText: 'Secure setup opened.' }),
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'activation-error', viewports: ['narrow'], modes: ['light'],
@@ -184,7 +186,11 @@ export const SCREENS = [
     ready: text('Collecting in the browser.'),
   },
   {
-    workspace: 'settings', state: 'loading', variant: 'linked-reconnecting', viewports: ['narrow'], modes: ['light'],
+    workspace: 'settings', state: 'populated', variant: 'linked-reconnecting', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.evaluate(async () => {
+      const { bridgeTransportStore } = await import('/src/store/transportStore.ts');
+      bridgeTransportStore.markDisconnected();
+    }),
     ready: (page) => page.getByText('Extension linked to this app', { exact: true }),
   },
 ];
@@ -346,6 +352,7 @@ async function capture() {
           if (screen.viewports && !screen.viewports.includes(viewport.name)) continue;
           if (screen.modes && !screen.modes.includes(mode)) continue;
           const page = await context.newPage();
+          await installWatcher(page);
           const errors = [];
           page.on('pageerror', (error) => errors.push(String(error)));
           await page.clock.setFixedTime(FIXED_NOW);
@@ -361,6 +368,7 @@ async function capture() {
             await assertBrandMarkIfPresent(page);
             await assertNumericTypography(page, viewport);
             if (screen.assert) await screen.assert(page, viewport);
+            await assertWatcher(page);
 
             const overflow = await horizontalOverflow(page);
             if (overflow > 0) errors.push(`${overflow}px of unintended horizontal page overflow`);
@@ -413,6 +421,7 @@ async function capture() {
         await context.close();
       }
     }
+    await captureFreshnessTransitions(browser, base, outDir);
     review = await captureReviewChecks(browser, base, outDir);
     failures.push(...review.failures);
     const staticReport = await captureStaticSurfaces(browser, outDir);

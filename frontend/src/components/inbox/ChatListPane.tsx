@@ -18,6 +18,8 @@ import { formatTimestamp, getConversationTitle } from './inboxModel';
 import type { ConversationRecord } from '../../protocol';
 import { conversationLatestMessage } from '../../store/transportStore';
 import { componentTokens } from '../../theme';
+import { messagePreview } from '../../utils/sanitizeMessageHtml';
+import { ReservedValue, summarize } from '../ui/ReservedRegion';
 
 const Pane = styled(Paper)(({ theme }) => ({
   backgroundColor: theme.vars.palette.background.paper,
@@ -39,7 +41,9 @@ const PaneHeader = styled(Box)(({ theme }) => ({
 
 const ScrollArea = styled(Box)({
   minHeight: 0,
+  flex: 1,
   overflowY: 'auto',
+  scrollbarGutter: 'stable',
 });
 
 const ConversationItem = styled(ListItemButton)(({ theme }) => ({
@@ -104,21 +108,21 @@ export function ChatListPane({
   selectedConversationId,
 }: ChatListPaneProps) {
   return (
-    <Pane variant="outlined" role="region" aria-labelledby="conversations-title">
+    <Pane data-reserved-region="chat-list" data-region-role="scroll" variant="outlined" role="region" aria-labelledby="conversations-title">
       <PaneHeader>
         <Typography id="conversations-title" component="h2" variant="subtitle1">
           Conversations
         </Typography>
-        {!isLoading && (
+        {(
           <Typography variant="caption" sx={{
             color: 'text.secondary'
           }}>
-            {conversations.length}
+            <ReservedValue id="chat-count" value={isLoading ? undefined : conversations.length} />
           </Typography>
         )}
       </PaneHeader>
 
-      <ScrollArea>
+      <ScrollArea data-region-content data-reading-viewport>
         {isLoading ? (
           <LoadingState role="status" aria-live="polite">
             <Typography variant="body2" sx={{
@@ -188,7 +192,7 @@ export function ChatListPane({
                         <Typography variant="body1" noWrap sx={{
                           fontWeight: selected ? 700 : 600
                         }}>
-                          {title}
+                          {summarize(title, componentTokens.reserved.name.maxGraphemes)}
                         </Typography>
                         {lastActivity !== null && (
                           <Typography
@@ -206,8 +210,8 @@ export function ChatListPane({
                     }
                     secondary={
                       <PreviewRow>
-                        <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
-                          {lastMessage?.text.trim() || 'No messages yet'}
+                        <Typography data-reserved-region={`preview-${conversation.conversation_id}`} variant="body2" sx={{ flex: 1, minWidth: 0, height: 40, lineHeight: '20px', overflowWrap: 'anywhere' }}>
+                          <span data-region-content>{summarize(messagePreview(lastMessage?.text ?? ''), componentTokens.reserved.preview.maxGraphemes) || 'No messages yet'}</span>
                         </Typography>
                       </PreviewRow>
                     }

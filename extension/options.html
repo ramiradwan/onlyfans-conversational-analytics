@@ -30,20 +30,22 @@
         </div>
       <button id="open-setup" class="secondary header-action">Continue setup</button>
     </header>
+    <div data-reserved-region="options-notice" class="reserved-notice"><div data-region-content>
     <p id="loading" role="status">Checking settings…</p>
     <section id="runtime-unavailable" class="warning hidden" aria-labelledby="runtime-title">
       <h2 id="runtime-title">The extension is reconnecting</h2>
       <p>Try again to check its current settings.</p>
       <button id="retry-runtime" class="secondary">Try again</button>
     </section>
-    <section aria-labelledby="capture-title" id="capture" class="hidden">
+    </div></div>
+    <div data-reserved-region="options-capture" data-region-role="scroll" class="options-frame"><section data-region-content aria-labelledby="capture-title" id="capture" class="hidden">
       <div class="section-heading"><h2 id="capture-title">Browser activity</h2><span id="mode-label" class="status-line">Checking…</span></div>
       <p>What this extension observes in your browser.</p>
       <div class="settings-row"><div><h3>Site access</h3><p id="site-access">Checking…</p></div><button id="revoke" class="danger hidden">Revoke</button></div>
       <button id="restore-access" class="secondary hidden">Allow site access</button>
       <button id="reload-tabs" class="secondary hidden">Reload OnlyFans tabs to apply access</button>
-    </section>
-    <section aria-labelledby="connection-title" id="connection" class="hidden">
+    </section></div>
+    <div data-reserved-region="options-connection" data-region-role="scroll" class="options-frame"><section data-region-content aria-labelledby="connection-title" id="connection" class="hidden">
       <h2 id="connection-title" tabindex="-1">Desktop app</h2>
       <p id="brain-status">Checking…</p>
       <dl class="connection-grid">
@@ -52,21 +54,22 @@
         <div><dt>Analysis</dt><dd id="analysis-status"></dd></div>
       </dl>
       <button id="open-dashboard" class="secondary">Open the desktop app</button>
-      <div class="settings-row"><div><h3>Forget the desktop app</h3><p>Ends this connection. Pair again to use Full analytics.</p></div><button id="forget-companion" class="secondary hidden">Forget</button></div>
+      <div class="settings-row"><div><h3>Forget the desktop app</h3><p>Connect again only if you reset the extension or removed its saved connection.</p></div><button id="forget-companion" class="secondary hidden">Forget</button></div>
       <div class="settings-row" id="history-row"><div><h3 id="history-title" tabindex="-1">Message history</h3><p id="history-status">Manage earlier conversations in the desktop app.</p></div><button id="history" class="secondary hidden">Allow message history</button></div>
-      <details><summary>Connection details</summary>
+      <button id="open-connection-details" class="text-button">Connection details</button>
+      <dialog id="connection-details-dialog" aria-labelledby="connection-details-title"><h2 id="connection-details-title">Connection details</h2>
         <dl class="connection-grid"><div><dt>Updates waiting to send</dt><dd id="pending-count">0</dd></div></dl>
         <p id="capture-health" class="fine-print"></p><p id="history-health" class="fine-print"></p>
-      </details>
-    </section>
-    <section aria-labelledby="data-title" id="data" class="hidden">
+      <form method="dialog"><button class="secondary">Close</button></form></dialog>
+    </section></div>
+    <div data-reserved-region="options-data" data-region-role="scroll" class="options-frame"><section data-region-content aria-labelledby="data-title" id="data" class="hidden">
       <h2 id="data-title" tabindex="-1">Your data</h2>
       <p>Extension data and desktop-stored messages are managed separately.</p>
       <div class="settings-row"><div><h3>Clear Preview counts</h3><p>Removes the daily counts saved in this browser. Analytics stays in its current mode.</p></div><button id="clear-preview" class="secondary">Clear</button></div>
       <div class="settings-row"><div><h3>Delete extension data</h3><p>Removes this extension’s browser data and saved setup choices. Messages already stored by the desktop app stay there.</p></div><button id="delete-local-data" class="danger">Delete</button></div>
       <div class="settings-row"><div><h3>Stored messages on this computer</h3><p>Download or delete stored messages in the desktop app.</p></div><button id="manage-desktop-data" class="secondary">Open the desktop app</button></div>
-    </section>
-    <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+    </section></div>
+    <div data-reserved-region="surface-feedback" class="reserved-status"><p id="feedback" data-region-content class="feedback" role="status" aria-live="polite"></p></div>
     <footer>
       <span><a id="terms-link" aria-disabled="true">Software Terms</a> · <a id="risk-link" aria-disabled="true">Creator Platform &amp; Data Risk Disclosure</a> · <a id="privacy-link" aria-disabled="true">Extension Privacy Notice</a></span>
       <span>Use only with a creator account you are authorized to analyze.</span>

@@ -32,16 +32,23 @@ function renderView(api: WebAuthnApi, onAuthenticated = vi.fn()) {
 
 afterEach(cleanup);
 
+async function readFailure() {
+  await waitFor(() => expect(screen.queryByRole('alert') || screen.queryByRole('button', { name: 'Show details' })).toBeTruthy());
+  const details = screen.queryByRole('button', { name: 'Show details' });
+  if (details) fireEvent.click(details);
+  return screen.findByRole('alert');
+}
+
 describe('WebAuthn access view', () => {
 
   it.each([
-    [new Error('Login refused'), "Sign-in didn't finish. Try again, or set up a passkey if this is your first time on this computer."],
+    [new Error('Login refused'), "Sign-in didn't finish. Use the browser profile where you set up this app, or set up a passkey if this is your first visit."],
     [{ name: 'NotAllowedError' }, 'Sign-in was cancelled or timed out. Try again.'],
   ])('reports the login step after enrollment succeeds', async (failure, message) => {
     const api = { enroll: vi.fn(async () => {}), login: vi.fn(() => Promise.reject(failure)) };
     const view = renderView(api);
     fireEvent.click(view.enroll());
-    expect((await screen.findByRole('alert')).textContent).toBe(message);
+    expect((await readFailure()).textContent).toBe(message);
     expect(api.enroll).toHaveBeenCalledTimes(1);
     expect(api.login).toHaveBeenCalledTimes(1);
     expect(view.onAuthenticated).not.toHaveBeenCalled();
@@ -94,8 +101,8 @@ describe('WebAuthn access view', () => {
 
     fireEvent.click(view.signIn());
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toBe("Sign-in didn't finish. Try again, or set up a passkey if this is your first time on this computer.");
+    const alert = await readFailure();
+    expect(alert.textContent).toBe("Sign-in didn't finish. Use the browser profile where you set up this app, or set up a passkey if this is your first visit.");
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
@@ -109,7 +116,7 @@ describe('WebAuthn access view', () => {
 
     fireEvent.click(view.signIn());
 
-    const alert = await screen.findByRole('alert');
+    const alert = await readFailure();
     expect(alert.textContent).toBe('Sign-in was cancelled or timed out. Try again.');
     expect(alert.closest('[data-visual="passkey-card"]')).toBeNull();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
@@ -124,8 +131,8 @@ describe('WebAuthn access view', () => {
 
     fireEvent.click(view.enroll());
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toBe("Couldn't set up a passkey. Try again, or sign in if you've already set one up on this computer.");
+    const alert = await readFailure();
+    expect(alert.textContent).toBe("Couldn't set up a passkey. If you already have one for this app, use the same browser profile and sign in.");
     expect(api.login).not.toHaveBeenCalled();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
@@ -155,7 +162,9 @@ describe('WebAuthn access view', () => {
     const view = renderView({ enroll: vi.fn(), login });
 
     fireEvent.click(view.signIn());
-    expect(await screen.findByRole('alert')).not.toBeNull();
+    expect(await readFailure()).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
     fireEvent.click(view.signIn());
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());

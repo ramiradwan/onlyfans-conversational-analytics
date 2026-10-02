@@ -32,3 +32,9 @@ export function sanitizeMessageHtml(rawText: string): string {
     FORBID_ATTR: ['style'],
   });
 }
+
+export function messagePreview(rawText: string): string {
+  const template = document.createElement('template');
+  template.innerHTML = sanitizeMessageHtml(rawText).replace(/<\/?(?:br|p|ul|ol|li)\b[^>]*>/giu, ' ');
+  return (template.content.textContent ?? '').replace(/\s+/gu, ' ').trim();
+}

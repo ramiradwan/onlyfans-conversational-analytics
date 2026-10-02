@@ -218,6 +218,9 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   let recoveryRequired = false;
   let extensionStage = null;
   let extensionPort = null;
+  let approvalFailed = false;
+  let finalizeFailed = false;
+  let returning = null;
 
   const setStatus = (message, error = false) => {
     elements.status.textContent = message;
@@ -228,6 +231,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   const renderExtensionSetup = () => {
     if (elements.openExtensionSetup) {
       elements.openExtensionSetup.hidden = detectedAccountId !== null || !EXTENSION_SETUP_STAGES.has(extensionStage);
+      elements.confirmIdentity.hidden = !elements.openExtensionSetup.hidden;
     }
   };
   // With a live extension stage, name the one thing still missing.
@@ -239,7 +243,8 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
 
   function setStepState(step, stateOutput, state) {
     step.dataset.state = state;
-    stateOutput.textContent = state === 'current' ? 'Current step' : state === 'completed' ? 'Done' : 'Not started';
+    const number = [elements.claimStep, elements.identityStep, elements.bindingStep, elements.finalizeStep].indexOf(step) + 1;
+    stateOutput.textContent = `Step ${number} of 4`;
     if (state === 'current') setAttribute(step, 'aria-current', 'step');
     else removeAttribute(step, 'aria-current');
   }
@@ -258,9 +263,19 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     const steps = [elements.claimStep, elements.identityStep, elements.bindingStep, elements.finalizeStep];
     const outputs = [elements.claimStepState, elements.identityStepState, elements.bindingStepState, elements.finalizeStepState];
     steps.forEach((step, index) => setStepState(step, outputs[index], stepStates[index]));
+    document.querySelectorAll?.('[data-rail-step]').forEach((item, index) => { item.dataset.state = recoveryRequired ? 'locked' : stepStates[index]; });
+    const stage = document.querySelector('.provisioning-stage');
+    if (stage) stage.dataset.complete = String(configurationComplete);
+    const heading = document.querySelector('#finalize-heading');
+    if (heading) heading.textContent = configurationComplete ? 'Setup finished' : 'Finish desktop setup';
+    if (configurationComplete) elements.finalizeStep.dataset.state = 'completed';
+    elements.acquireAssociation.hidden = !approvalFailed;
+    elements.finalizeProvisioning.hidden = !finalizeFailed;
+    const valid = validateClaimPackageInput(elements.claimPackage.value).valid;
+    elements.claimStep.dataset.codeValid = String(valid);
 
     elements.claimPackage.disabled = recoveryRequired || mutationInFlight || installationRegistered || configurationComplete;
-    elements.claimSubmit.disabled = recoveryRequired || mutationInFlight || installationRegistered || configurationComplete;
+    elements.claimSubmit.disabled = !valid || recoveryRequired || mutationInFlight || installationRegistered || configurationComplete;
     elements.refreshIdentity.disabled = recoveryRequired || configurationComplete || associationRequestId !== null;
     elements.confirmIdentity.disabled = recoveryRequired || mutationInFlight || configurationComplete
       || !installationRegistered || detectedAccountId === null || associationRequestId !== null;
@@ -279,9 +294,20 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     const steps = [elements.claimStep, elements.identityStep, elements.bindingStep, elements.finalizeStep];
     const active = steps.find((step) => step.dataset.state === 'current') ?? elements.claimStep;
     for (const step of steps) step.dataset.feedback = step === active && elements.status.textContent ? 'true' : 'false';
-    const target = configurationComplete ? document.querySelector('.page-header')
-      : active.querySelector?.('[data-step-feedback]');
+    const target = configurationComplete ? elements.finalizeStep.querySelector?.('[data-feedback-content]')
+      : active.querySelector?.('[data-feedback-content]');
     if (target && elements.status.parentElement !== target) target.append(elements.status);
+    const summary = document.querySelector('#feedback-details');
+    if (summary && target) {
+      const validation = active === elements.claimStep ? elements.claimPackageValidation.textContent : '';
+      const message = elements.status.textContent || validation;
+      summary.hidden = message.length <= 60;
+      elements.status.dataset.long = String(!summary.hidden && Boolean(elements.status.textContent));
+      elements.claimPackageValidation.dataset.long = String(!summary.hidden && !elements.status.textContent);
+      const copy = document.querySelector('#feedback-copy');
+      if (copy) copy.textContent = message;
+      if (summary.parentElement !== target) target.append(summary);
+    }
     const link = elements.bindingStep.querySelector?.('#continue-creator-approval');
     setAttribute(elements.acquireAssociation, 'aria-describedby', elements.status.textContent
       ? 'provisioning-status' : link && !link.hidden ? 'binding-step-description' : 'creator-approval-unavailable');
@@ -337,11 +363,13 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
 
   function updatePackageGuidance(markInvalid = true) {
     const result = validateClaimPackageInput(elements.claimPackage.value);
-    const characterCount = result.value.length > MAX_PACKAGE_CHARACTERS ? '1,400+' : result.value.length.toLocaleString('en-US');
-    elements.claimPackageCount.textContent = `${characterCount} / 1,400 characters`;
-    elements.claimPackageValidation.textContent = markInvalid ? result.message : '';
+    elements.claimPackageCount.textContent = '';
+    elements.claimStep.dataset.codeValid = String(result.valid);
+    elements.claimSubmit.disabled = !result.valid || mutationInFlight || installationRegistered || recoveryRequired || configurationComplete;
+    elements.claimPackageValidation.textContent = markInvalid ? result.valid ? 'Setup code pasted.' : result.message : '';
     elements.claimPackageValidation.dataset.valid = result.valid || !markInvalid ? 'true' : 'false';
     setAttribute(elements.claimPackage, 'aria-invalid', markInvalid && !result.valid ? 'true' : 'false');
+    placeFeedback();
     return result;
   }
 
@@ -349,7 +377,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
 
   async function mutate(path, body, { neutralReasons = [] } = {}) {
     if (recoveryRequired || mutationInFlight || configurationComplete) return MUTATION_FAILED;
-    setStatus('');
+    setStatus(path.endsWith('/acquire') ? 'Checking approval…' : path.endsWith('/finalize') ? 'Finishing setup…' : path.endsWith('/claim') ? 'Checking code…' : '');
     setBusy(true);
     try {
       const response = await fetch(path, {
@@ -359,6 +387,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       });
       const payload = await readJson(response);
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) recoveryRequired = true;
         const reason = isRecord(payload) && typeof payload.reason === 'string' ? payload.reason : null;
         setStatus(explainProvisioningFailure(response, payload), !neutralReasons.includes(reason));
         return MUTATION_FAILED;
@@ -390,7 +419,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       detectedAccountId = identity.accountId;
 
       setIdentityStatus(installationRegistered
-        ? 'Check the account signed in on your OnlyFans tab before continuing.'
+        ? 'Choose the creator account this computer should use.'
         : 'Connect this computer first.');
       renderState(); renderExtensionSetup();
     } catch {
@@ -406,7 +435,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       const progress = response.ok ? parseStatusResponse(payload) : null;
       if (progress?.state === 'configured_restart') {
         configurationComplete = true;
-        setStatus('The desktop app will restart. Then return to the extension.');
+        setStatus('The desktop app is restarting. Continue there when it opens.');
         setIdentityStatus('');
         renderState();
       } else if (!response.ok) setStatus(explainProvisioningFailure(response, payload), true);
@@ -426,7 +455,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (isInstallationRegisteredResponse(payload)) {
       installationRegistered = true;
       setStatus('');
-      if (detectedAccountId !== null) setIdentityStatus('Check the account signed in on your OnlyFans tab before continuing.');
+      if (detectedAccountId !== null) setIdentityStatus('Choose the creator account this computer should use.');
       renderState();
       focusCurrentStep();
     } else if (payload !== MUTATION_FAILED) setStatus('The code could not be checked. Try again.', true);
@@ -445,7 +474,8 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   }
 
   async function acquireAssociation() {
-    if (recoveryRequired || associationRequestId === null || approvalAcquired) return;
+    if (recoveryRequired || mutationInFlight || configurationComplete || associationRequestId === null || approvalAcquired) return;
+    approvalFailed = false;
     const payload = await mutate(
       '/api/v1/provisioning/creator-association/acquire',
       {},
@@ -453,19 +483,40 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     );
     if (isApprovedAssociationResponse(payload, associationRequestId)) {
       approvalAcquired = true; setStatus(''); renderState(); focusCurrentStep();
-    } else if (payload !== MUTATION_FAILED) setStatus('The connection could not be checked. Try again.', true);
+    } else {
+      approvalFailed = true;
+      if (payload !== MUTATION_FAILED) setStatus('The connection could not be checked. Try again.', true);
+      renderState();
+    }
+  }
+
+  async function acquireAndFinish() {
+    await acquireAssociation();
+    if (approvalAcquired) await finalizeProvisioning();
   }
 
   async function finalizeProvisioning() {
-    if (recoveryRequired || associationRequestId === null || associatedAccountId === null || !approvalAcquired) return;
+    if (recoveryRequired || mutationInFlight || configurationComplete || associationRequestId === null || associatedAccountId === null || !approvalAcquired) return;
+    finalizeFailed = false;
     const payload = await mutate('/api/v1/provisioning/finalize', {
       association_request_id: associationRequestId, detected_creator_account_id: associatedAccountId,
     });
     if (isConfiguredRestartResponse(payload)) {
       configurationComplete = true;
-      setStatus('The desktop app will restart. Then return to the extension.');
+      setStatus('The desktop app is restarting. Continue there when it opens.');
       setIdentityStatus(''); renderState(); focusCurrentStep();
-    } else if (payload !== MUTATION_FAILED) setStatus('Setup did not finish. Try again.', true);
+    } else {
+      finalizeFailed = true;
+      if (payload !== MUTATION_FAILED) setStatus('Setup did not finish. Try again.', true);
+      renderState();
+    }
+  }
+
+  function onReturn() {
+    if (document.hidden || recoveryRequired || configurationComplete || mutationInFlight) return returning;
+    if (returning) return returning;
+    returning = (associationRequestId === null ? refreshIdentity() : approvalAcquired ? Promise.resolve() : acquireAndFinish()).finally(() => { returning = null; });
+    return returning;
   }
 
   async function start() {
@@ -473,10 +524,14 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     elements.claimPackage.addEventListener('input', () => { setStatus(''); updatePackageGuidance(true); });
     elements.refreshIdentity.addEventListener('click', refreshIdentity);
     elements.confirmIdentity.addEventListener('click', confirmIdentity);
-    elements.acquireAssociation.addEventListener('click', acquireAssociation);
+    elements.acquireAssociation.addEventListener('click', acquireAndFinish);
     elements.finalizeProvisioning.addEventListener('click', finalizeProvisioning);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshIdentity(); });
-    globalThis.addEventListener?.('focus', () => { void refreshIdentity(); });
+    document.addEventListener('visibilitychange', onReturn);
+    (document.defaultView ?? globalThis).addEventListener?.('focus', onReturn);
+    const dialog = document.querySelector('#recovery-dialog');
+    document.querySelector('#recovery-open')?.addEventListener('click', () => dialog?.showModal());
+    document.querySelector('#recovery-close')?.addEventListener('click', () => dialog?.close());
+    document.querySelector('#feedback-details-open')?.addEventListener('click', () => document.querySelector('#feedback-dialog')?.showModal());
     elements.openExtensionSetup?.addEventListener('click', () => extensionPort?.open('setup'));
     if (EXTENSION_ID_PATTERN.test(extensionId) && typeof connectExtension === 'function') {
       extensionPort = connectExtension(extensionId, (stage) => {
@@ -490,6 +545,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     }
     updatePackageGuidance(false); renderState();
     await checkStatus();
+    if (approvalAcquired && !configurationComplete && !recoveryRequired) void finalizeProvisioning();
     if (!configurationComplete && !recoveryRequired && associationRequestId === null) await refreshIdentity();
   }
 

@@ -28,6 +28,7 @@
           <p id="mode-label" class="status-line">Checking status…</p>
         </div>
       </header>
+    <div data-reserved-region="popup-content" data-region-role="scroll" class="popup-content"><div data-region-content>
     <section id="runtime-unavailable" class="warning hidden" aria-labelledby="runtime-title">
       <h2 id="runtime-title">The extension is reconnecting</h2>
       <p>Try again to check its current status.</p>
@@ -52,10 +53,12 @@
         <p id="preview-limit" class="fine-print hidden" role="status">Preview has reached its counting limit. These counts are incomplete.</p>
       </section>
     <section id="journey-card" class="journey-card hidden" aria-labelledby="journey-title">
+      <div data-reserved-region="popup-status" class="popup-status"><div data-region-content>
       <p id="journey-badge" class="state-badge"></p>
       <h2 id="journey-title" tabindex="-1">Checking status…</h2>
       <p id="journey-body"></p>
-      <button id="journey-primary" class="primary hidden"></button>
+      </div></div>
+      <div class="reserved-actions"><button id="journey-primary" class="primary hidden"></button></div>
     </section>
     <button id="pause" class="secondary hidden">Pause analytics</button>
     <p id="desktop-control-note" class="fine-print hidden">Pause and resume from the desktop app.</p>
@@ -65,8 +68,10 @@
       <div><dt>Full activation</dt><dd id="activation-status"></dd></div>
       <div><dt>Analysis</dt><dd id="analysis-status"></dd></div>
     </dl>
-    <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+    <div data-reserved-region="surface-feedback" class="reserved-status"><p id="feedback" data-region-content class="feedback" role="status" aria-live="polite"></p></div>
+    </div></div>
     <nav class="menu" aria-label="Extension">
+      <button id="continue-setup" class="menu-row">Continue setup</button>
       <button id="open-connection" class="menu-row hidden">Connection details</button>
       <button id="open-manage" class="menu-row">Extension settings</button>
     </nav>

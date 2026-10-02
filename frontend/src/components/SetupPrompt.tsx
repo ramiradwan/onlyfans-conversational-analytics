@@ -43,7 +43,7 @@ function useJustCompleted(done: boolean): boolean {
   return justCompleted;
 }
 
-function Step({ index, label, state }: { index: number; label: string; state: StepState }) {
+function Step({ index, label, reason, state }: { index: number; label: string; reason: string; state: StepState }) {
   const done = state === 'done';
   const current = state === 'current';
   const justCompleted = useJustCompleted(done);
@@ -52,9 +52,10 @@ function Step({ index, label, state }: { index: number; label: string; state: St
       aria-current={current ? 'step' : undefined}
       component="li"
       data-step-state={state}
+      data-reserved-region={`setup-step-${index}`}
       direction="row"
       spacing={1.5}
-      sx={{ alignItems: 'center' }}
+      sx={{ alignItems: 'center', height: { xs: current ? 248 : 96, sm: current ? 192 : 72 }, width: '100%' }}
     >
       <Box
         aria-hidden="true"
@@ -95,13 +96,13 @@ function Step({ index, label, state }: { index: number; label: string; state: St
           index
         )}
       </Box>
-      <Typography
+      <Box data-region-content><Typography
         variant="body2"
         sx={{ color: current ? 'text.primary' : 'text.secondary', fontWeight: current ? 500 : 400 }}
       >
         {label}
         {done && <VisuallyHidden> (done)</VisuallyHidden>}
-      </Typography>
+      </Typography>{current && <Typography variant="body2" sx={{ color: 'text.secondary', mt: 1, maxWidth: '52ch' }}>{reason}</Typography>}</Box>
     </Stack>
   );
 }
@@ -118,9 +119,9 @@ export function SetupPrompt({
 }: SetupPromptProps) {
   const headingId = useId();
   const steps = [
-    { done: extensionConnected, label: 'Connect the browser extension' },
-    { done: historyEnabled, label: 'Turn on message history' },
-    { done: fullAnalyticsReady, label: 'Turn on Full analytics' },
+    { done: extensionConnected, label: 'Connect the browser extension', reason: 'Install the extension in the browser profile you use for your creator account.' },
+    { done: historyEnabled, label: 'Turn on message history', reason: 'Allow browser access so message history can be read.' },
+    { done: fullAnalyticsReady, label: 'Turn on Full analytics', reason: 'Use an activation code to turn on Full analytics on this computer.' },
   ];
   const completed = steps.filter((step) => step.done).length;
   const currentIndex = steps.findIndex((step) => !step.done);
@@ -161,19 +162,20 @@ export function SetupPrompt({
             {title}
           </Typography>
           <Typography variant="body1" sx={{ color: 'text.secondary', mt: 1 }}>
-            Your conversations start syncing after the first two steps. Full analytics is ready after all three.
+            Finish connection setup to receive messages. Add message history to include older conversations.
             Synced message history stays on this computer.
           </Typography>
         </Box>
         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
           {completed} of {steps.length} complete
         </Typography>
-        <Stack component="ol" spacing={1.25} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+        <Stack component="ol" spacing={1.25} sx={{ listStyle: 'none', m: 0, p: 0, width: '100%' }}>
           {steps.map((step, index) => (
             <Step
               key={step.label}
               index={index + 1}
               label={step.label}
+              reason={step.reason}
               state={step.done ? 'done' : index === currentIndex ? 'current' : 'upcoming'}
             />
           ))}
@@ -182,7 +184,7 @@ export function SetupPrompt({
           component={RouterLink}
           endIcon={<ArrowForwardIcon />}
           size="large"
-          to="/settings"
+          to="/settings#browser-extension"
           variant="contained"
         >
           Continue setup

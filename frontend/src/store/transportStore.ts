@@ -1,5 +1,6 @@
 import type {
   AgentStatePayload,
+  CatchupFreshness,
   AnalyticsView,
   CompanionStatePayload,
   BridgeSessionPayload,
@@ -71,6 +72,7 @@ export interface BridgeTransportState {
   coverage: HistoricalCoverage;
   projection: ProjectionState;
   liveFreshness: LiveFreshness;
+  catchupFreshness: CatchupFreshness | null;
   snapshotProgress: SnapshotProgress;
   messagePages: Readonly<Record<string, ConversationMessageState>>;
   presence: PresenceStatePayload | null;
@@ -87,7 +89,7 @@ export interface BridgeTransportStore {
   setConnection(connection: BridgeConnectionState): void;
   acceptSession(session: BridgeSessionPayload): void;
   applySnapshot(snapshot: StateSnapshotPayload): boolean;
-  applyDelta(delta: StateDeltaPayload): 'applied' | 'duplicate' | 'gap' | 'invalid';
+  applyDelta(delta: StateDeltaPayload<true>): 'applied' | 'duplicate' | 'gap' | 'invalid';
   beginResync(): void;
   setActiveConversation(conversationId: string | null): void;
   beginMessagePage(conversationId: string, reset?: boolean): number;
@@ -244,6 +246,7 @@ function initialState(): BridgeTransportState {
     coverage,
     projection: { ...PENDING_PROJECTION },
     liveFreshness: { ...UNKNOWN_LIVE_FRESHNESS },
+    catchupFreshness: null,
     snapshotProgress: progress(coverage),
     messagePages: {},
     presence: null,
@@ -339,6 +342,8 @@ export function createBridgeTransportStore(): BridgeTransportStore {
       assertAccount(session.creator_account_id);
       publish({
         session,
+        catchupFreshness: null,
+        agent: null,
         connection: 'connected',
         readModelState: 'loading',
         protocolError: null,
@@ -351,6 +356,7 @@ export function createBridgeTransportStore(): BridgeTransportStore {
       const coverage = { ...snapshot.coverage };
       const projection = { ...snapshot.projection };
       const liveFreshness = { ...snapshot.live_freshness };
+      const catchupFreshness = snapshot.catchup_freshness ? { ...snapshot.catchup_freshness } : null;
       const conversations = snapshot.conversations.map(cloneConversation);
       const conversationIds = new Set(conversations.map(({ conversation_id }) => conversation_id));
       const messagePages: Record<string, ConversationMessageState> = {};
@@ -377,6 +383,7 @@ export function createBridgeTransportStore(): BridgeTransportStore {
         coverage,
         projection,
         liveFreshness,
+        catchupFreshness,
         snapshotProgress: progress(coverage),
         messagePages,
         viewRevision: snapshot.view_revision,
@@ -399,6 +406,7 @@ export function createBridgeTransportStore(): BridgeTransportStore {
       let coverage = { ...state.coverage };
       let projection = { ...state.projection };
       let liveFreshness = { ...state.liveFreshness };
+      let catchupFreshness = state.catchupFreshness;
       const messagePages = { ...state.messagePages };
       const changedKeys = new Set<string>();
       let projectionActivationChanged = false;
@@ -423,6 +431,12 @@ export function createBridgeTransportStore(): BridgeTransportStore {
             projection.projected_revision !== change.projection.projected_revision ||
             projection.projected_at !== change.projection.projected_at;
           projection = { ...change.projection };
+          continue;
+        }
+        if (change.type === 'catchup_freshness.replace') {
+          if (changedKeys.has('catchup_freshness')) return 'invalid';
+          changedKeys.add('catchup_freshness');
+          catchupFreshness = { ...change.catchup_freshness };
           continue;
         }
         if (change.type === 'live_freshness.replace') {
@@ -520,6 +534,7 @@ export function createBridgeTransportStore(): BridgeTransportStore {
         coverage,
         projection,
         liveFreshness,
+        catchupFreshness,
         snapshotProgress: progress(coverage),
         messagePages,
         viewRevision: delta.view_revision,

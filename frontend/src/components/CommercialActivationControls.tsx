@@ -16,16 +16,18 @@ import {
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
+import { ReservedNotice, StatusLine } from './ui/ReservedRegion';
 import { getConfig } from '../config/fastapiConfig';
 import {
   CAPABILITY_LICENSE_CONTINUATION_PATTERN,
   capabilityLicenseApi,
+  CapabilityLicenseApiError,
   type CapabilityLicenseApi,
   type CapabilityLicenseReadiness,
 } from '../services/capabilityLicenseApi';
 
 function safeMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Activation couldn't be checked. Try again.";
+  return error instanceof CapabilityLicenseApiError ? error.message : "Activation couldn't be checked. Try again.";
 }
 
 function StepLabel({ index, children }: { index: number; children: ReactNode }) {
@@ -56,6 +58,7 @@ export function CommercialActivationControls({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [setupOpened, setSetupOpened] = useState(false);
   const operation = useRef<AbortController | null>(null);
+  const submitting = useRef(false);
   const titleId = useId();
   useRevealHold(checking);
 
@@ -81,12 +84,14 @@ export function CommercialActivationControls({
   }, [api]);
 
   const submit = async () => {
+    if (submitting.current || checking) return;
     const value = code.trim();
     if (!CAPABILITY_LICENSE_CONTINUATION_PATTERN.test(value)) {
       setError('Enter the full activation code and try again.');
       return;
     }
 
+    submitting.current = true;
     operation.current?.abort();
     const controller = new AbortController();
     operation.current = controller;
@@ -119,6 +124,7 @@ export function CommercialActivationControls({
         setError(redemptionFailure === null ? safeMessage(cause) : safeMessage(redemptionFailure));
       }
     } finally {
+      submitting.current = false;
       if (!controller.signal.aborted) setChecking(false);
     }
   };
@@ -188,7 +194,7 @@ export function CommercialActivationControls({
         <DialogContent>
           <Stack spacing={2.5}>
             <DialogContentText variant="body2">
-              Secure setup opens in a new tab. Keep this page open—you&apos;ll come back here to finish.
+              Use an activation code to turn on Full analytics on this computer.
             </DialogContentText>
             <Stack spacing={1}>
               <StepLabel index={1}>Open secure setup and choose Activate Full.</StepLabel>
@@ -208,11 +214,7 @@ export function CommercialActivationControls({
                   </Button>
                 </Box>
               )}
-              {setupOpened && (
-                <Alert severity="info" role="status">
-                  Secure setup opened. When it gives you an activation code, return here and paste it below.
-                </Alert>
-              )}
+              <ReservedNotice id="activation-transfer" notice={setupOpened ? { title: '', body: 'Secure setup opened. When it gives you an activation code, return here and paste it below.', severity: 'info' } : null} />
             </Stack>
             <Stack spacing={1.5}>
               <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
@@ -220,15 +222,18 @@ export function CommercialActivationControls({
                 autoComplete="off"
                 fullWidth
                 label="Activation code"
+                helperText="Paste the code from the activation page."
+                disabled={checking}
+                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submit(); } }}
                 onChange={(event) => {
-                  setCode(event.target.value);
+                  setCode(event.target.value.trim());
                   if (error) setError(null);
                 }}
                 size="small"
                 value={code}
               />
             </Stack>
-            {error && <Alert severity="error" role="alert">{error}</Alert>}
+            <StatusLine id="activation-feedback" text={checking ? 'Checking code…' : error} tone={error ? 'error' : 'secondary'} />
           </Stack>
         </DialogContent>
         <DialogActions>

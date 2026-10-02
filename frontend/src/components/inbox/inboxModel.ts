@@ -50,7 +50,7 @@ export function sortMessages(messages: readonly MessageView[]): MessageView[] {
   });
 }
 
-export function formatTimestamp(value: string | null, now: Date = new Date()): string {
+export function formatTimestamp(value: string | null, now: Date = new Date(), timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
   if (value === null) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
@@ -59,23 +59,18 @@ export function formatTimestamp(value: string | null, now: Date = new Date()): s
     hour: '2-digit',
     hour12: false,
     minute: '2-digit',
-    timeZone: 'UTC',
+    timeZone,
   }).format(date);
 
-  // Time alone (14:32) makes a message from last week indistinguishable from one
-  // minutes old, overstating freshness. Prefix the date once the value falls outside
-  // the current UTC day; the year is added only when it differs from the current year.
-  const sameYear = date.getUTCFullYear() === now.getUTCFullYear();
-  const sameDay =
-    sameYear &&
-    date.getUTCMonth() === now.getUTCMonth() &&
-    date.getUTCDate() === now.getUTCDate();
-  if (sameDay) return time;
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const year = new Intl.DateTimeFormat('en', { timeZone, year: 'numeric' });
+  const sameYear = year.format(date) === year.format(now);
+  if (day.format(date) === day.format(now)) return time;
 
   const dateLabel = new Intl.DateTimeFormat('en-GB', {
     day: 'numeric',
     month: 'short',
-    timeZone: 'UTC',
+    timeZone,
     ...(sameYear ? {} : { year: 'numeric' }),
   }).format(date);
   return `${dateLabel}, ${time}`;

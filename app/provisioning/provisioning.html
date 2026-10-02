@@ -270,6 +270,7 @@
         --dipsy-font-family-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
         --dipsy-font-family-ui: "Inter Variable", "Inter Variable Fallback", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         --dipsy-font-family-numeric: "Space Grotesk Variable", "Space Grotesk Variable Fallback", "Space Grotesk", "Inter Variable", sans-serif;
+        --dipsy-static-action-row-block: 48px;
         --dipsy-static-body-size: 1rem;
         --dipsy-static-brand-glyph-size: 20px;
         --dipsy-static-brand-size: 32px;
@@ -278,13 +279,21 @@
         --dipsy-static-header-height: 72px;
         --dipsy-static-label-size: 0.875rem;
         --dipsy-static-large-control-height: 48px;
+        --dipsy-static-notice-block: 88px;
+        --dipsy-static-notice-block-narrow: 128px;
         --dipsy-static-popup-body-size: 0.8125rem;
         --dipsy-static-popup-heading-size: 1rem;
         --dipsy-static-popup-max-height: 600px;
         --dipsy-static-popup-metric-size: 1.5rem;
         --dipsy-static-popup-min-width: 320px;
+        --dipsy-static-popup-status-block: 64px;
         --dipsy-static-popup-width: 390px;
+        --dipsy-static-provisioning-rail-block: 52px;
+        --dipsy-static-provisioning-stage-block: 360px;
+        --dipsy-static-provisioning-stage-block-narrow: 440px;
         --dipsy-static-setup-max-width: 42rem;
+        --dipsy-static-status-line-block: 20px;
+        --dipsy-static-status-line-block-narrow: 40px;
         --dipsy-static-brand-inset: 28px;
         --dipsy-font-weight-regular: 400;
         --dipsy-font-weight-medium: 500;
@@ -983,6 +992,71 @@
       .recovery-help p { margin-block: var(--dipsy-space-unit); }
       .site-brand-label { display: inline; }
       .field-meta:has(.validation-message:empty) #claim-package-count { visibility: hidden; }
+
+      .progress-rail { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; list-style:none; padding:0; margin:0; height:var(--dipsy-static-provisioning-rail-block); }
+      .progress-rail li { border-top:4px solid var(--dipsy-color-divider); padding-top:8px; font-size:13px; color:var(--dipsy-color-text-secondary); }
+      .progress-rail li[data-state="current"], .progress-rail li[data-state="completed"] { border-color:var(--dipsy-color-primary); }
+      .progress-rail li[data-state="current"] { font-weight:600; }
+      .progress-rail b { display:none; }
+      .provisioning-stage { position:relative; height:var(--dipsy-static-provisioning-stage-block); background:var(--dipsy-color-paper); border:1px solid var(--dipsy-color-divider); border-radius:20px; }
+      .provisioning-stage .step { position:absolute; inset:0; margin:0; padding:28px; display:none; border:0; box-shadow:none; background:transparent; grid-template-rows:20px 32px 48px minmax(0,1fr) 20px 48px; gap:4px; }
+      .provisioning-stage .step[data-state="current"], .provisioning-stage[data-complete="true"] #finalize-step { display:grid; }
+      .provisioning-stage .step > * { margin:0; min-width:0; }
+      .provisioning-stage .step-state { display:block; line-height:20px; font-family:var(--dipsy-font-family-numeric); font-variant-numeric:tabular-nums; }
+      .provisioning-stage h2 { line-height:32px; font-size:22px; }
+      .provisioning-stage .step-description { font-size:14px; line-height:24px; }
+      .provisioning-stage .stage-body { min-height:0; overflow:auto; scrollbar-gutter:stable; }
+      .provisioning-stage .actions { grid-row:6; margin:0; display:flex; flex-wrap:nowrap; gap:12px; align-items:center; }
+      .provisioning-stage [data-step-feedback] { grid-row:5; height:20px; font-size:14px; line-height:20px; }
+      .provisioning-stage .page-status { position:static; display:block; width:auto; height:auto; padding:0; margin:0; border:0; font-size:14px; line-height:20px; overflow:visible; clip-path:none; }
+      .provisioning-stage .page-status:empty { visibility:hidden; }
+      .provisioning-stage #claim-form { display:grid; align-content:start; gap:4px; }
+      .provisioning-stage #claim-package { width:100%; min-height:48px; height:48px; border:1px solid var(--dipsy-color-divider); border-radius:12px; padding:0 12px; font:14px ui-monospace,monospace; color:inherit; background:var(--dipsy-color-paper); }
+      .provisioning-stage #secure-setup-help { position:absolute; width:1px; height:1px; clip-path:inset(50%); }
+      .provisioning-stage #claim-package-count { display:none; }
+      .provisioning-stage #claim-package-validation:empty { display:none; }
+      .provisioning-stage #claim-step:not([data-code-valid="true"]) #claim-submit { visibility:hidden; }
+      .provisioning-stage #claim-step[data-code-valid="true"] .actions { flex-direction:row-reverse; justify-content:flex-end; }
+      .provisioning-stage #claim-step[data-code-valid="true"] #open-secure-setup { background:transparent; color:var(--dipsy-color-primary); box-shadow:none; padding:0; }
+      .provisioning-stage #acquire-association[hidden], .provisioning-stage #finalize-provisioning[hidden] { display:block; visibility:hidden; }
+      .provisioning-stage::before { content:''; position:absolute; inset:0; border-radius:inherit; background:var(--dipsy-intent-surface-glow); opacity:0; transition:opacity 320ms ease-out; pointer-events:none; }
+      .provisioning-stage[data-complete="true"]::before { opacity:1; }
+      .provisioning-stage .step[data-state="current"] { animation:stage-enter 200ms ease-out; }
+      .provisioning-stage .step[aria-busy="true"] .page-status:not(:empty):not([data-long="true"])::before { content:''; display:inline-block; width:8px; height:8px; margin-right:8px; border:1.5px solid var(--dipsy-intent-brand-main); border-radius:50%; animation:stage-breathe 320ms ease-in-out infinite alternate; }
+      .provisioning-stage #claim-step[data-code-valid="true"] .validation-message::before,
+      .provisioning-stage[data-complete="true"] #finalize-heading::before { content:''; display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; background:var(--dipsy-color-success); }
+      @keyframes stage-enter { from { opacity:0; } to { opacity:1; } }
+      @keyframes stage-breathe { from { opacity:.45; } to { opacity:1; } }
+      @media (prefers-reduced-motion: reduce) { .provisioning-stage .step[data-state="current"], .provisioning-stage .step[aria-busy="true"] .page-status::before { animation:none; } .provisioning-stage::before { transition:none; } }
+      #recovery-dialog { max-width:320px; border-radius:16px; background:var(--dipsy-color-paper); color:var(--dipsy-color-text); }
+      .provisioning-stage .step .step-state { position:static; width:auto; height:20px; clip-path:none; overflow:visible; }
+      .provisioning-stage .step h2 { font-size:22px; line-height:32px; }
+      .provisioning-stage [data-step-feedback] { display:block; }
+      .provisioning-stage .actions > * { min-width:0; }
+      @media (max-width:599px) {
+        .provisioning-stage { height:var(--dipsy-static-provisioning-stage-block-narrow); }
+        .provisioning-stage .step { padding:20px; grid-template-rows:20px 32px 48px minmax(0,1fr) 40px 96px; }
+        .provisioning-stage [data-step-feedback] { height:40px; }
+        .provisioning-stage .actions { flex-direction:column; align-items:stretch; gap:8px; }
+        .provisioning-stage #claim-step[data-code-valid="true"] .actions { flex-direction:column-reverse; }
+        .provisioning-stage .actions > * { width:100%; flex:0 0 40px; min-height:40px; margin:0; }
+        .progress-rail span { display:none; }
+        .progress-rail b { display:block; font-weight:inherit; }
+      }
+      @media (max-width:599px) { .progress-rail span { display:none; } .progress-rail b { display:block; } .provisioning-stage { height:var(--dipsy-static-provisioning-stage-block-narrow); } .provisioning-stage .step { padding:20px; grid-template-rows:20px 32px 48px minmax(0,1fr) 40px 72px; } .provisioning-stage .actions, .provisioning-stage #claim-step[data-code-valid="true"] .actions { flex-direction:column; align-items:stretch; gap:4px; } .provisioning-stage [data-step-feedback] { height:40px; } }
+      .provisioning-stage [data-step-feedback] { position:relative; }
+      .provisioning-stage .page-status, .provisioning-stage .validation-message { position:absolute; inset:0; margin:0; padding:0; }
+      .provisioning-stage #claim-step[data-feedback="true"] .validation-message { visibility:hidden; }
+      .provisioning-stage [data-long="true"] { position:absolute; width:1px; height:1px; clip-path:inset(50%); overflow:hidden; }
+      #feedback-details { display:flex; align-items:baseline; gap:8px; line-height:20px; font-size:14px; }
+      #feedback-details[hidden] { display:none; }
+      #feedback-details button { min-height:20px; padding:0; margin:0; border:0; background:transparent; }
+      #feedback-dialog { width:min(320px,calc(100vw - 32px)); max-height:70vh; overflow:auto; border-radius:16px; background:var(--dipsy-color-paper); color:var(--dipsy-color-text); }
+      #identity-step .actions { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:40px; gap:8px; }
+      #identity-step .actions > [hidden] { display:block; visibility:hidden; }
+      #open-extension-setup, #confirm-identity { grid-area:1 / 1; }
+      #refresh-identity { grid-area:1 / 2; }
+      @media(max-width:599px) { #identity-step .actions { grid-template-columns:1fr; grid-template-rows:40px 40px; } #refresh-identity { grid-area:2 / 1; } }
     </style>
   </head>
   <body>
@@ -1006,128 +1080,51 @@
       <header class="page-header">
         <h1>Set up the desktop app</h1>
         <p class="intro">Read the <a class="disclosure-link" href="/provisioning/creator-platform-data-risk-disclosure.html" target="_blank" rel="noopener noreferrer">Creator platform &amp; data risk disclosure</a> before you continue. It opens in a new tab.</p>
+        <span id="feedback-details" hidden>Details available <button type="button" id="feedback-details-open" class="secondary">Show details</button></span>
         <p id="provisioning-status" class="page-status" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral"></p>
       </header>
 
-      <ol class="steps" aria-label="Desktop setup progress">
-        <li id="claim-step" class="step" data-step="registration" data-state="current" aria-current="step">
-          <div class="step-heading">
-            <span class="step-number" aria-hidden="true">1</span>
-            <div class="step-title-group">
-              <h2 id="claim-heading">Connect this computer</h2>
-              <p id="claim-step-state" class="step-state">Current step</p>
-            </div>
-          </div>
-          <p id="claim-step-description" class="step-description">Get a setup code to connect this computer.</p>
-          <div class="actions" {{HOSTED_ONBOARDING_VISIBILITY}}>
-            <a
-              id="open-secure-setup"
-              class="primary-link"
-              href="{{HOSTED_ONBOARDING_URL}}"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-describedby="secure-setup-help"
-              {{HOSTED_ONBOARDING_VISIBILITY}}
-            >Open secure setup</a>
+      <ol class="progress-rail" data-reserved-region="provisioning-rail" aria-label="Desktop setup progress">
+        <li data-rail-step="0"><span>Connect</span><b>1</b></li><li data-rail-step="1"><span>Account</span><b>2</b></li><li data-rail-step="2"><span>Approve</span><b>3</b></li><li data-rail-step="3"><span>Finish</span><b>4</b></li>
+      </ol>
+      <div class="provisioning-stage" data-reserved-region="provisioning-stage">
+        <section id="claim-step" class="step" data-region-content data-step="registration" data-state="current" aria-current="step">
+          <p id="claim-step-state" class="step-state">Step 1 of 4</p><h2 id="claim-heading">Connect this computer</h2>
+          <p id="claim-step-description" class="step-description">Use a setup code to connect this computer.</p>
+          <form id="claim-form" novalidate>
+            <label for="claim-package">Setup code</label><p id="claim-package-help" class="help">Paste the whole code from the setup tab.</p>
+            <input id="claim-package" name="package" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="claim-package-help claim-package-validation claim-package-count" aria-invalid="false">
+            <span id="claim-package-count"></span>
+          </form>
+          <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content><p id="claim-package-validation" class="validation-message help" data-valid="true"></p></div></div>
+          <div class="actions">
+            <a id="open-secure-setup" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="secure-setup-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open secure setup</a>
+            <button id="claim-submit" type="submit" form="claim-form" aria-describedby="claim-step-description" disabled>Continue setup</button>
           </div>
           <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Sign in in the new tab, then copy your setup code.</p>
-          <div data-step-feedback></div>
-          <form id="claim-form" novalidate>
-            <label for="claim-package">Setup code</label>
-            <p id="claim-package-help" class="help">Paste the whole code from the setup tab.</p>
-            <textarea
-              id="claim-package"
-              name="package"
-              rows="5"
-              required
-              autocomplete="off"
-              autocapitalize="off"
-              spellcheck="false"
-              wrap="soft"
-              placeholder=" "
-              aria-describedby="claim-package-help claim-package-validation claim-package-count"
-              aria-invalid="false"
-            ></textarea>
-            <div class="field-meta">
-              <p id="claim-package-validation" class="validation-message help" data-valid="true"></p>
-              <p id="claim-package-count" class="help">0 / 1,400 characters</p>
-            </div>
-            <div class="actions">
-              <button id="claim-submit" type="submit" aria-describedby="claim-step-description">Continue setup</button>
-            </div>
-
-          </form>
-        </li>
-
-        <li id="identity-step" class="step" data-step="identity" data-state="locked">
-          <div class="step-heading">
-            <span class="step-number" aria-hidden="true">2</span>
-            <div class="step-title-group">
-              <h2 id="identity-heading">Choose your creator account</h2>
-              <p id="identity-step-state" class="step-state">Not started</p>
-            </div>
-          </div>
-          <div class="step-body">
-            <p id="identity-step-description" class="step-description"><span id="identity-status" role="status" aria-live="polite" aria-atomic="true">Sign in to your creator account on OnlyFans, then return here.</span></p>
-          <div data-step-feedback></div>
-            <div class="actions">
-              <button id="open-extension-setup" type="button" aria-describedby="identity-status" hidden>Open extension setup</button>
-              <button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Check again</button>
-              <button id="confirm-identity" type="button" disabled aria-describedby="identity-step-description">Use this account</button>
-            </div>
-
-          </div>
-        </li>
-
-        <li id="binding-step" class="step" data-step="approval" data-state="locked">
-          <div class="step-heading">
-            <span class="step-number" aria-hidden="true">3</span>
-            <div class="step-title-group">
-              <h2 id="binding-heading">Connect your account</h2>
-              <p id="binding-step-state" class="step-state">Not started</p>
-            </div>
-          </div>
-          <p id="binding-step-description" class="step-description">Allow this app to connect to your account in the setup tab, then return here.</p>
-          <div class="approval-continuation">
-            <a
-              id="continue-creator-approval"
-              class="primary-link"
-              href="{{HOSTED_ONBOARDING_URL}}"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-describedby="creator-approval-return-help"
-              {{HOSTED_ONBOARDING_VISIBILITY}}
-            >Open account setup</a>
-            <p id="creator-approval-unavailable" class="step-description approval-unavailable">Return to the setup tab where you got your code to allow this app to connect to your account.</p>
-            <p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Opens in a new tab.</p>
-          </div>
-          <details class="approval-unavailable recovery-help">
-            <summary>Can’t find the setup tab?</summary>
-            <p>Look in your browser history for the page where you signed in to get your setup code.</p>
-          </details>
-          <div data-step-feedback></div>
-          <div class="actions">
-            <button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">I’ve allowed the connection</button>
-          </div>
-
-        </li>
-
-        <li id="finalize-step" class="step" data-step="finalization" data-state="locked">
-          <div class="step-heading">
-            <span class="step-number" aria-hidden="true">4</span>
-            <div class="step-title-group">
-              <h2 id="finalize-heading">Finish desktop setup</h2>
-              <p id="finalize-step-state" class="step-state">Not started</p>
-            </div>
-          </div>
-          <p id="finalize-step-description" class="step-description">The desktop app restarts when setup is finished.</p>
-          <div data-step-feedback></div>
-          <div class="actions">
-            <button id="finalize-provisioning" type="button" disabled aria-describedby="finalize-step-description">Finish setup</button>
-          </div>
-
-        </li>
-      </ol>
+        </section>
+        <section id="identity-step" class="step" data-region-content data-step="identity" data-state="locked">
+          <p id="identity-step-state" class="step-state">Step 2 of 4</p><h2 id="identity-heading">Choose your creator account</h2>
+          <p id="identity-step-description" class="step-description">Choose the creator account this computer should use.</p>
+          <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="identity-status" role="status">Sign in to your creator account on OnlyFans, then return here.</p><p id="extension-install-reason">Install the extension in the browser profile you use for your creator account.</p></div>
+          <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
+          <div class="actions"><button id="open-extension-setup" type="button" aria-describedby="identity-status" hidden>Open extension setup</button><button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Check again</button><button id="confirm-identity" type="button" disabled aria-describedby="identity-step-description">Use this account</button></div>
+        </section>
+        <section id="binding-step" class="step" data-region-content data-step="approval" data-state="locked">
+          <p id="binding-step-state" class="step-state">Step 3 of 4</p><h2 id="binding-heading">Connect your account</h2>
+          <p id="binding-step-description" class="step-description">Approve which account this computer can use in the setup tab, then return here.</p>
+          <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="creator-approval-unavailable" class="step-description approval-unavailable">Return to the setup tab where you got your code to allow this app to connect to your account.</p><p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Opens in a new tab.</p><button type="button" id="recovery-open" class="secondary">Can’t find the setup tab?</button></div>
+          <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
+          <div class="actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open account setup</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Check again</button></div>
+        </section>
+        <section id="finalize-step" class="step" data-region-content data-step="finalization" data-state="locked">
+          <p id="finalize-step-state" class="step-state">Step 4 of 4</p><h2 id="finalize-heading">Finish desktop setup</h2>
+          <p id="finalize-step-description" class="step-description">The desktop app is restarting. Continue there when it opens.</p><div class="stage-body" data-region-role="scroll" data-reading-viewport></div><div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
+          <div class="actions"><button id="finalize-provisioning" type="button" disabled aria-describedby="finalize-step-description">Try again</button></div>
+        </section>
+      </div>
+      <dialog id="feedback-dialog" aria-labelledby="feedback-title"><h2 id="feedback-title">Details</h2><p id="feedback-copy"></p><form method="dialog"><button>Close</button></form></dialog>
+      <dialog id="recovery-dialog" aria-labelledby="recovery-title"><h2 id="recovery-title">Can’t find the setup tab?</h2><p>Look in your browser history for the page where you signed in to get your setup code.</p><button id="recovery-close" type="button">Close</button></dialog>
     </main>
     <script type="module" src="/provisioning/provisioning.js"></script>
   </body>

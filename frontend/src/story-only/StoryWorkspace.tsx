@@ -104,6 +104,9 @@ function snapshot(journey: Exclude<StoryJourneyName, 'loading'>): StateSnapshotP
     creator_account_id: ACCOUNT,
     view_revision: 42,
     generated_at: AS_OF,
+    catchup_freshness: { status: fresh ? 'never_checked' : partial ? 'checking' : 'current', reason: partial ? 'catch_up' : null,
+      uncertain_since: partial ? '2026-06-29T12:00:00.000Z' : null, last_closed_at: fresh || partial ? null : AS_OF, observing_since: fresh ? null : AS_OF,
+      gap_epoch: 1, check_id: partial ? '90000000-0000-4000-8000-000000000009' : null, evaluated_at: AS_OF },
     conversations: fresh ? [] : conversations(!partial),
     analytics: {
       total_conversations: metric(counts[0], partial || fresh),
@@ -205,7 +208,7 @@ function historySettings(journey: StoryJourneyName): HistorySettings {
 function historyApi(journey: StoryJourneyName): HistorySettingsApi {
   const settings = historySettings(journey);
   return {
-    get: async () => settings,
+    get: async () => journey === 'loading' ? new Promise(() => {}) : settings,
     update: async () => ({ ...settings, desired_state: 'running', effective_state: 'running' }),
     revoke: async () => ({ ...settings, desired_state: 'revoked', effective_state: 'revoked' }),
   };
@@ -246,7 +249,7 @@ function pairingApi(journey: StoryJourneyName): CompanionPairingApi {
     creator_account_id: ACCOUNT, revision: (revision += 1), changed_at: new Date().toISOString(),
   });
   return {
-    pins: async () => pins,
+    pins: async () => journey === 'loading' ? new Promise(() => {}) : pins,
     open: async () => {
       setTimeout(announce, 0);
       return open;
@@ -269,7 +272,7 @@ function pairingApi(journey: StoryJourneyName): CompanionPairingApi {
 function activationApi(journey: StoryJourneyName): CapabilityLicenseApi {
   const active = journey === 'populated';
   return {
-    readiness: async () => ({
+    readiness: async () => journey === 'loading' ? new Promise(() => {}) : ({
       schema: 'ofca-analysis-readiness/v1',
       commercial_authority: active ? 'active' : 'required',
       analysis_admission: active ? 'admitted' : 'blocked',
@@ -293,7 +296,7 @@ function vaultApi(journey: StoryJourneyName): CreatorVaultApi {
     },
   };
   return {
-    get: async () => status,
+    get: async () => journey === 'loading' ? new Promise(() => {}) : status,
     command: async (command) => ({
       action: command.action,
       status,

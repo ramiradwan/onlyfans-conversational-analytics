@@ -225,7 +225,7 @@ export function MessageStreamPane({
   }, [showLoadOlder]);
 
   return (
-    <Pane variant="outlined" role="region" aria-labelledby="message-stream-title">
+    <Pane data-reserved-region="message-stream" data-region-role="scroll" variant="outlined" role="region" aria-labelledby="message-stream-title">
       <PaneHeader>
         <Box>
           <Typography id="message-stream-title" component="h2" variant="subtitle1">
@@ -255,7 +255,7 @@ export function MessageStreamPane({
             ? 'Message history is unavailable.'
             : ''}
       </LiveStatus>
-      <Stream data-message-scroll="true" ref={streamRef} onScroll={handleScroll}>
+      <Stream data-reading-viewport data-region-content sx={{ scrollbarGutter: 'stable' }} data-message-scroll="true" ref={streamRef} onScroll={handleScroll}>
         {loadingMessages ? (
           <CenteredState role="status">
             <Typography variant="body2">Loading messages…</Typography>
@@ -269,7 +269,7 @@ export function MessageStreamPane({
           <CenteredState>
             <Typography component="p" variant="body1">Select a conversation</Typography>
             <Typography component="p" variant="body2">
-              Messages from the selected chat will appear here.
+              Choose a conversation to read its messages.
             </Typography>
           </CenteredState>
         ) : messageState?.status === 'error' && messages.length === 0 ? (

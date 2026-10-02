@@ -18,12 +18,14 @@ import type { ConversationSummary } from '../../protocol';
 import { conversationLatestMessage } from '../../store/transportStore';
 import { componentTokens } from '../../theme';
 import { surfaceArrival } from '../../theme/presentationMotion';
+import { messagePreview } from '../../utils/sanitizeMessageHtml';
 import {
   formatTimestamp,
   getConversationTitle,
   sortConversations,
 } from '../inbox/inboxModel';
 import { VisuallyHidden } from '../ui';
+import { summarize } from '../ui/ReservedRegion';
 
 export interface RecentConversationsProps {
   conversations: readonly ConversationSummary[];
@@ -39,7 +41,7 @@ export function RecentConversations({
 }: RecentConversationsProps) {
   const headingId = useId();
   const recent = sortConversations(conversations).slice(0, limit);
-  if (recent.length === 0) return null;
+  if (recent.length === 0) return <Box sx={{ p: 3 }}><Typography variant="subtitle1">No conversations yet</Typography><Typography variant="body2">Conversations appear here when new messages arrive in your creator tab.</Typography></Box>;
 
   return (
     <Paper
@@ -85,8 +87,8 @@ export function RecentConversations({
                 </Avatar>
               </ListItemAvatar>
               <ListItemText
-                primary={title}
-                secondary={latest?.text.trim() || 'No messages yet'}
+                primary={summarize(title, 32)}
+                secondary={summarize(messagePreview(latest?.text ?? ''), 56) || 'No messages yet'}
                 slotProps={{
                   primary: { noWrap: true, sx: { fontWeight: 500 } },
                   secondary: { noWrap: true },

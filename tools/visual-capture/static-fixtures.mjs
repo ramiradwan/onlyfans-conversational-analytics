@@ -43,7 +43,7 @@ export async function staticFixtures() {
     };
     const controller = createProvisioningController({ document,
       elements: Object.fromEntries(elementIds.map(([, name, id]) => [name, document.getElementById(id)])),
-      fetch: async (path) => path.endsWith('/acquire')
+      fetch: async (path) => path.endsWith('/finalize') ? new Promise(() => {}) : path.endsWith('/acquire')
         ? { ok: false, status: name === 'approval-offline' ? 503 : 409, json: async () => ({
           reason: name === 'approval-offline' ? 'hosted_unavailable' : 'binding_acquisition_unavailable',
         }) } : { ok: true, json: async () => payload },
@@ -52,7 +52,7 @@ export async function staticFixtures() {
     });
     await controller.start();
     if (['approval-pending', 'approval-offline'].includes(name)) await controller.acquireAssociation();
-    if (name === 'approval-unavailable-help') document.querySelector('.recovery-help').open = true;
+    if (name === 'approval-unavailable-help') document.querySelector('#recovery-dialog').setAttribute('open', '');
     if (name === 'invalid-code') {
       const field = document.getElementById('claim-package');
       field.value = 'invalid code'; field.textContent = field.value;

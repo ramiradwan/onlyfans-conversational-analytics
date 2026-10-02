@@ -1,5 +1,5 @@
 import {
-  createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode,
+  createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode,
 } from 'react';
 
 interface RevealRegistry {
@@ -13,11 +13,9 @@ const RevealContext = createContext<RevealRegistry | null>(null);
  * Shows its children in one frame once every section holding the group has settled, so sections
  * that load at different speeds never move each other. `fallback` renders until then.
  */
-export function RevealGroup({ children, fallback, maxWaitMs = 3000 }: {
+export function RevealGroup({ children, fallback }: {
   children: ReactNode;
   fallback: ReactNode;
-  /** Reveals after this long even if a section is still loading. */
-  maxWaitMs?: number;
 }) {
   const [revealed, setRevealed] = useState(false);
   const pending = useRef(new Set<string>());
@@ -37,11 +35,6 @@ export function RevealGroup({ children, fallback, maxWaitMs = 3000 }: {
     return () => { mounted.current = false; };
   }, []);
 
-  useEffect(() => {
-    if (revealed) return;
-    const timer = window.setTimeout(() => setRevealed(true), maxWaitMs);
-    return () => window.clearTimeout(timer);
-  }, [maxWaitMs, revealed]);
 
   return (
     <RevealContext.Provider value={registry}>

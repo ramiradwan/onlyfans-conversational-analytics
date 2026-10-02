@@ -1,13 +1,13 @@
 // Limits and grading for first-paint color and layout-shift measurements.
 
 /** Layout Instability score per scenario. Chromium reports only moves of at least 3 CSS px. */
-export const LAYOUT_SHIFT = { warn: 0, fail: 0.01 };
+export const LAYOUT_SHIFT = { warn: 0, fail: 0 };
 
 /**
  * Layout Instability score when web fonts arrive after text paints, so the fallback faces swap out.
  * Metric-matched fallbacks keep this near zero; the warn limit marks their metrics drifting.
  */
-export const FONT_SWAP_SHIFT = { warn: 0.001, fail: 0.01 };
+export const FONT_SWAP_SHIFT = { warn: 0, fail: 0 };
 
 /** OKLab distance between the canvas painted before the app script runs and the app's canvas. */
 export const CANVAS_DELTA = { warn: 0.001, fail: 0.02 };
@@ -23,11 +23,11 @@ export function grade(value, { warn, fail }) {
 }
 
 /** Grades layout-shift entries recorded without recent input; any moved key element fails. */
-export function gradeLayoutShifts(entries, limits = LAYOUT_SHIFT) {
-  const counted = entries.filter((entry) => !entry.hadRecentInput);
+export function gradeLayoutShifts(entries, _limits = LAYOUT_SHIFT) {
+  const counted = entries;
   const score = counted.reduce((sum, entry) => sum + entry.value, 0);
   const keyMoves = counted.flatMap((entry) => entry.sources.filter((source) => source.key));
-  const level = keyMoves.length > 0 ? 'fail' : grade(score, limits);
+  const level = keyMoves.length > 0 || score > 0 ? 'fail' : 'pass';
   return { score: Number(score.toPrecision(3)), level, keyMoves, moved: counted.flatMap((entry) => entry.sources) };
 }
 

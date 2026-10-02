@@ -100,6 +100,7 @@ describe('companion pairing controls', () => {
   it('shows the linked browser state pushed through Brain, with controls only for the creator', async () => {
     const pin = { ...awaiting, state: 'admitted' as const, version: 4, comparison_code: null };
     const api = makeApi({ pins: vi.fn(async () => [pin]) });
+    bridgeTransportStore.setConnection('connected');
     await act(async () => bridgeTransportStore.setAgent({
       creator_account_id: 'creator-1', status: 'connected', agent_installation_id: null, connection_id: null,
       required_config_revision: 'r1', applied_config_revision: 'r1', required_history_settings_revision: 1,
@@ -142,8 +143,8 @@ describe('companion pairing controls', () => {
     fireEvent.click(screen.getByRole('checkbox'));
     await click('Confirm connection');
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'confirm', 3, expect.any(AbortSignal));
-    expect(screen.getByText(/Extension connected/)).toBeTruthy();
-    expect(screen.getByText(/Continue with Message history below/)).toBeTruthy();
+    expect(screen.getByText(/Connection approved. Waiting for the extension./)).toBeTruthy();
+    expect(screen.getByText(/Waiting for the extension/)).toBeTruthy();
     await act(async () => vi.advanceTimersByTimeAsync(300_000));
     await brainNotice();
     expect(api.get).toHaveBeenCalledTimes(1);
@@ -293,7 +294,7 @@ describe('companion pairing controls', () => {
       await brainNotice();
       expect(api.confirmVerified).toHaveBeenCalledWith(open.pairing_id, 3, '012345', expect.any(AbortSignal));
       expect(api.confirmVerified).toHaveBeenCalledTimes(1);
-      expect(screen.getByText(/Extension connected/)).toBeTruthy();
+      expect(screen.getByText(/Connection approved. Waiting for the extension./)).toBeTruthy();
       expect(screen.queryByRole('checkbox')).toBeNull();
       expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     });

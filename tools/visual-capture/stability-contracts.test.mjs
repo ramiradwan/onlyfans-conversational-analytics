@@ -25,21 +25,21 @@ test('grades at the warn and fail limits', () => {
   assert.equal(grade(0.02, limits), 'fail');
 });
 
-test('warns on any unprompted layout shift and fails at the score limit', () => {
+test('fails every positive layout shift', () => {
   assert.equal(gradeLayoutShifts([]).level, 'pass');
-  assert.equal(gradeLayoutShifts([shift(0.0004)]).level, 'warn');
+  assert.equal(gradeLayoutShifts([shift(0.0004)]).level, 'fail');
   assert.equal(gradeLayoutShifts([shift(0.00000612)]).score, 0.00000612);
   assert.equal(gradeLayoutShifts([shift(0.006), shift(0.004)]).level, 'fail');
 });
 
-test('grades font swaps against their own limits', () => {
-  assert.equal(gradeLayoutShifts([shift(0.00006)], FONT_SWAP_SHIFT).level, 'pass');
-  assert.equal(gradeLayoutShifts([shift(0.002)], FONT_SWAP_SHIFT).level, 'warn');
+test('fails font movement at any score', () => {
+  assert.equal(gradeLayoutShifts([shift(0.00006)], FONT_SWAP_SHIFT).level, 'fail');
+  assert.equal(gradeLayoutShifts([shift(0.002)], FONT_SWAP_SHIFT).level, 'fail');
   assert.equal(gradeLayoutShifts([shift(0.01)], FONT_SWAP_SHIFT).level, 'fail');
   assert.equal(gradeLayoutShifts([shift(0.00006, [{ key: true }])], FONT_SWAP_SHIFT).level, 'fail');
 });
 
-test('fails any moved key element and ignores shifts that follow input', () => {
+test('fails moved elements including shifts following input', () => {
   assert.equal(gradeLayoutShifts([shift(0.0001, [{ key: true }])]).level, 'fail');
-  assert.equal(gradeLayoutShifts([shift(0.5, [{ key: true }], true)]).level, 'pass');
+  assert.equal(gradeLayoutShifts([shift(0.5, [{ key: true }], true)]).level, 'fail');
 });

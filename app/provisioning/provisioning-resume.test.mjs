@@ -6,6 +6,31 @@ import { createProvisioningController } from './provisioning.js';
 const ASSOCIATION_ID = 'association-1';
 const CREATOR_ID = 'creator-1';
 
+test('returning to setup acquires matched approval and finishes exactly once', async () => {
+  const ui = elements();
+  const callbacks = new Map();
+  const doc = { ...document(), addEventListener(name, callback) { callbacks.set(name, callback); } };
+  const calls = [];
+  const controller = createProvisioningController({ document: doc, elements: ui,
+    sendExtensionMessage: async () => { throw new Error('unexpected identity query'); },
+    fetch: async (path) => {
+      calls.push(path);
+      if (path.endsWith('/status')) return response(200, { state: 'provisioning_ready', stage: 'creator_approval_pending', association_request_id: ASSOCIATION_ID, creator_account_id: CREATOR_ID });
+      if (path.endsWith('/acquire')) return response(200, { association_request_id: ASSOCIATION_ID, status: 'approved' });
+      if (path.endsWith('/finalize')) return response(200, { state: 'configured_restart' });
+      throw new Error('unexpected request');
+    },
+  });
+  await controller.start();
+  doc.hidden = false;
+  await callbacks.get('visibilitychange')();
+  await callbacks.get('visibilitychange')();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.filter((path) => path.endsWith('/acquire')).length, 1);
+  assert.equal(calls.filter((path) => path.endsWith('/finalize')).length, 1);
+  assert.equal(ui.finalizeStep.dataset.state, 'completed');
+});
+
 function element() {
   return {
     dataset: {},

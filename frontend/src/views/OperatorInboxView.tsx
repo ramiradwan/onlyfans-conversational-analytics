@@ -1,7 +1,5 @@
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import {
-  Alert,
-  AlertTitle,
   Box,
   Button,
   styled,
@@ -29,6 +27,7 @@ import { getConversationTitle, sortConversations } from '../components/inbox/inb
 import { MessageStreamPane } from '../components/inbox/MessageStreamPane';
 import { useNarrowMasterDetail } from '../components/inbox/useNarrowMasterDetail';
 import { SetupPrompt } from '../components/SetupPrompt';
+import { ReservedNotice } from '../components/ui/ReservedRegion';
 import {
   messageApi as defaultMessageApi,
   MessageApiError,
@@ -44,7 +43,6 @@ import { effectTokens } from '../theme';
 import { coverageProgressLabel, humanizeProjectionReason } from '../utils/dataReadiness';
 import {
   extensionConnection,
-  extensionIssue,
   protocolErrorText,
   setupIncomplete,
   type StatusMessage,
@@ -98,10 +96,6 @@ const NarrowDetail = styled(Box)(({ theme }) => ({
   },
 }));
 
-const StatusAlert = styled(Alert)(({ theme }) => ({
-  marginBottom: theme.spacing(2),
-}));
-
 function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMessage | null {
   if (state.protocolError !== null) {
     return {
@@ -120,7 +114,7 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMess
       title: 'Refreshing conversations',
     };
   }
-  if (state.readModelState === 'degraded') {
+  if (state.readModelState === 'degraded' && state.connection === 'connected') {
     return state.viewRevision === null
       ? {
           detail: 'Your conversations will appear once the connection is back.',
@@ -162,25 +156,6 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMess
           severity: 'info',
           title: 'Message history is off',
         };
-  }
-  const connection = extensionConnection(state.agent);
-  if (connection !== 'applying_settings') {
-    const issue = extensionIssue(connection);
-    if (issue !== null) return issue;
-  }
-  if (state.liveFreshness.status !== 'current') {
-    return {
-      detail: 'Your saved conversations are shown, but new messages may take longer to appear.',
-      severity: 'warning',
-      title: 'Updates delayed',
-    };
-  }
-  if (state.connection === 'disconnected' || state.connection === 'error') {
-    return {
-      detail: 'Showing your last conversations while reconnecting.',
-      severity: 'warning',
-      title: 'Updates paused',
-    };
   }
   if (state.coverage.status !== 'complete') {
     return {
@@ -470,13 +445,9 @@ export default function OperatorInboxView({
         Inbox
       </Typography>
 
-      {issue !== null && (
-        <StatusAlert severity={issue.severity} role="alert">
-          <AlertTitle>{issue.title}</AlertTitle>
-          {issue.detail}
-        </StatusAlert>
-      )}
+      <Box sx={{ flexShrink: 0, mb: 2 }}><ReservedNotice id="inbox-notice" notice={issue ? { title: issue.title, body: issue.detail, severity: issue.severity } : null} /></Box>
 
+      <Box data-reserved-region="inbox-content" data-region-role="scroll" sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable' }}>
       {showSetup ? (
         <SetupPrompt
           extensionConnected={extensionConnection(state.agent) === 'connected'}
@@ -513,6 +484,7 @@ export default function OperatorInboxView({
           ) : null}
         </InboxGrid>
       )}
+      </Box>
     </InboxRoot>
   );
 }

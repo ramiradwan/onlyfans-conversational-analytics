@@ -22,7 +22,6 @@ import {
 import { bridgeTransportStore } from '../store/transportStore';
 import {
   extensionConnection,
-  extensionIssue,
   extensionLabel,
   type ExtensionConnection,
 } from '../utils/statusCopy';
@@ -80,8 +79,8 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
   const sameBrowser = extension.status === 'connected';
   const browser = useSyncExternalStore(
     bridgeTransportStore.subscribe,
-    () => bridgeTransportStore.getState().agent?.browser ?? null,
-    () => bridgeTransportStore.getState().agent?.browser ?? null,
+    () => bridgeTransportStore.getState().connection === 'connected' ? bridgeTransportStore.getState().agent?.browser ?? null : null,
+    () => bridgeTransportStore.getState().connection === 'connected' ? bridgeTransportStore.getState().agent?.browser ?? null : null,
   );
 
   useEffect(() => () => {
@@ -265,15 +264,14 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
     return () => clearInterval(timer);
   }, [active, status?.pairing_id]);
 
-  const issue = extensionIssue(connection);
   // The chip names the most important current fact: a link problem, then what
   // the extension itself reports, then a healthy link. A running attempt reads
   // as connecting rather than as not connected.
   const sectionStatus: SectionStatus | null = active || waitingForExtension
     ? { label: 'Connecting', tone: 'info' }
     : connected
-      ? issue
-        ? { label: extensionLabel(connection), tone: issue.severity === 'info' ? 'default' : 'warning' }
+      ? connection !== 'connected'
+        ? { label: extensionLabel(connection), tone: 'warning' }
         : browser && (browser.legal_review_required || browser.site_access !== 'granted')
           ? { label: 'Needs attention', tone: 'warning' }
           : browser?.capture === 'paused'
@@ -313,7 +311,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       )}
       {approved && (
         <Alert severity="success" role="status">
-          Extension connected. Continue with Message history below.
+          {connection === 'connected' ? 'Extension connected. Continue with Message history below.' : 'Connection approved. Waiting for the extension.'}
         </Alert>
       )}
       {status && terminal(status) && !approved && (
@@ -463,8 +461,8 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
   const { isCreator } = usePermissions();
   const browser = useSyncExternalStore(
     bridgeTransportStore.subscribe,
-    () => bridgeTransportStore.getState().agent?.browser ?? null,
-    () => bridgeTransportStore.getState().agent?.browser ?? null,
+    () => bridgeTransportStore.getState().connection === 'connected' ? bridgeTransportStore.getState().agent?.browser ?? null : null,
+    () => bridgeTransportStore.getState().connection === 'connected' ? bridgeTransportStore.getState().agent?.browser ?? null : null,
   );
   useRevealHold(!checked);
   useEffect(() => {
@@ -506,15 +504,11 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
     } catch { if (!controller.signal.aborted) setFailed(true); }
     finally { if (!controller.signal.aborted) setBusy(false); }
   };
-  const issue = extensionIssue(connection);
   if (pins.length === 0 && !failed && confirming === null) return null;
   return (
     <Stack spacing={1.5}>
       {pins.length > 0 && (
         <>
-          {issue && (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>{issue.detail}</Typography>
-          )}
           <BrowserExtensionControls
             api={browserApi}
             browser={browser}

@@ -35,7 +35,7 @@ describe('task-focused static copy', () => {
     expect(doc.querySelector('.page-header')?.textContent).not.toMatch(/Four short|Current step/);
     expect(doc.querySelector('#binding-step')?.textContent).not.toMatch(/Creator approval|contact support|Check again after/);
     expect(doc.querySelector('#creator-approval-unavailable')?.textContent).toContain('setup tab where you got your code');
-    expect(doc.querySelector('.recovery-help')?.textContent).toContain('browser history');
+    expect(doc.querySelector('#recovery-dialog')?.textContent).toContain('browser history');
     for (const selector of ['#claim-action-help', '#identity-confirm-help', '#binding-action-help', '#finalize-action-help']) {
       expect(doc.querySelector(selector)).toBeNull();
     }

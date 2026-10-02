@@ -260,6 +260,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   --dipsy-font-family-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --dipsy-font-family-ui: "Inter Variable", "Inter Variable Fallback", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --dipsy-font-family-numeric: "Space Grotesk Variable", "Space Grotesk Variable Fallback", "Space Grotesk", "Inter Variable", sans-serif;
+  --dipsy-static-action-row-block: 48px;
   --dipsy-static-body-size: 1rem;
   --dipsy-static-brand-glyph-size: 20px;
   --dipsy-static-brand-size: 32px;
@@ -268,13 +269,21 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   --dipsy-static-header-height: 72px;
   --dipsy-static-label-size: 0.875rem;
   --dipsy-static-large-control-height: 48px;
+  --dipsy-static-notice-block: 88px;
+  --dipsy-static-notice-block-narrow: 128px;
   --dipsy-static-popup-body-size: 0.8125rem;
   --dipsy-static-popup-heading-size: 1rem;
   --dipsy-static-popup-max-height: 600px;
   --dipsy-static-popup-metric-size: 1.5rem;
   --dipsy-static-popup-min-width: 320px;
+  --dipsy-static-popup-status-block: 64px;
   --dipsy-static-popup-width: 390px;
+  --dipsy-static-provisioning-rail-block: 52px;
+  --dipsy-static-provisioning-stage-block: 360px;
+  --dipsy-static-provisioning-stage-block-narrow: 440px;
   --dipsy-static-setup-max-width: 42rem;
+  --dipsy-static-status-line-block: 20px;
+  --dipsy-static-status-line-block-narrow: 40px;
   --dipsy-static-brand-inset: 28px;
   --dipsy-font-weight-regular: 400;
   --dipsy-font-weight-medium: 500;
@@ -581,7 +590,7 @@ body {
 main { padding: 16px; }
 
 /* Navigation appears in its final position after the first status response. */
-main:not([data-initialized="true"]) > :is(nav.menu, footer) { display: none; }
+main:not([data-initialized="true"]) > :is(nav.menu, footer) { visibility: hidden; }
 
 header {
   display: flex;
@@ -894,3 +903,25 @@ body[data-surface="popup"] #desktop-control-note { margin: 0 0 12px; }
 #preview-metrics::before { display: none; }
 .feedback { color: var(--dipsy-color-text-secondary); }
 .feedback[data-error="true"] { color: var(--dipsy-color-error); }
+
+/* Fixed frames remain present while their contents settle. */
+.reserved-empty { visibility: hidden !important; }
+.reserved-status { height: 40px; margin-top: 8px; }
+.reserved-status .feedback { margin: 0; line-height: 20px; }
+.reserved-status .feedback:empty { visibility: hidden; }
+.reserved-actions { height: 48px; }
+.reserved-actions button { margin: 0; min-height: 40px; }
+.reserved-actions .hidden { display: block !important; visibility: hidden; }
+.popup-content { height: 400px; overflow-y: auto; scrollbar-gutter: stable; }
+.popup-status { height: 64px; margin-bottom: 12px; }
+.popup-status #journey-badge { display: none; }
+.popup-status #journey-title { font-size: 14px; line-height: 20px; margin: 0; }
+.popup-status #journey-body { font-size: 12px; line-height: 20px; margin: 0; }
+.popup-action-only .popup-status { display: block; }
+.popup-action-only .popup-status #journey-title, .popup-action-only .popup-status #journey-body { display: block; }
+.metrics strong { display: block; width: 9ch; font-size: 20px; font-variant-numeric: tabular-nums; }
+@media (min-width: 600px) { .reserved-status { height: 20px; } }
+
+.reserved-notice { height: 88px; margin-bottom: 16px; }
+.reserved-notice #loading { margin: 0; }
+@media (max-width: 599px) { .reserved-notice { height: 128px; } }

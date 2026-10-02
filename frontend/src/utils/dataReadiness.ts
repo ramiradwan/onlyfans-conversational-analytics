@@ -121,7 +121,7 @@ export function humanizeCoverageReason(reason: string | null, whenAbsent: string
 }
 
 export function coverageProgressLabel(coverage: HistoricalCoverage): string {
-  if (coverage.status === 'complete') return 'History synced';
+  if (coverage.status === 'complete') return coverage.discovered_conversations === null ? 'History saved.' : `History saved for ${new Intl.NumberFormat('en-US').format(coverage.complete_conversations)} chats`;
   if (coverage.phase === 'paused') return 'History paused';
   if (coverage.phase === 'blocked') return 'History needs attention';
   if (coverage.phase === 'not_started') return 'History not started';

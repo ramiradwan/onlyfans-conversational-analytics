@@ -103,8 +103,8 @@ export function TopicsTable({ topics }: TopicsTableProps) {
   }
 
   return (
-    <>
-      <NarrowTopics aria-label="Topics and trend" style={columnStyle}>
+    <Box data-reserved-region="topics-list" data-region-role="scroll" sx={{ height: { xs: 440, sm: 320 }, overflowY: 'auto', scrollbarGutter: 'stable' }}>
+      <NarrowTopics data-region-content aria-label="Topics and trend" style={columnStyle}>
         {topics.map((topic) => (
           <NarrowTopic key={topic.id}>
             <Typography component="p" variant="subtitle2">{topic.label}</Typography>
@@ -126,7 +126,7 @@ export function TopicsTable({ topics }: TopicsTableProps) {
         ))}
       </NarrowTopics>
 
-      <DesktopScroller style={columnStyle}>
+      <DesktopScroller data-region-content style={columnStyle}>
         <table aria-label="Topics and trend" role="table">
           <thead>
             <tr role="row">
@@ -155,6 +155,6 @@ export function TopicsTable({ topics }: TopicsTableProps) {
           </tbody>
         </table>
       </DesktopScroller>
-    </>
+    </Box>
   );
 }
