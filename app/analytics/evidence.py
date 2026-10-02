@@ -37,6 +37,7 @@ class _Locator:
     created_at: datetime
     expires_at: datetime
     deadline: float
+    source_state_token: str | None
 
 
 @contextmanager
@@ -136,7 +137,7 @@ class EvidenceResolver:
             with self._lock:
                 epoch = self._epoch
             try:
-                self._read_exact(account, ref, target, budget)
+                message = self._read_exact(account, ref, target, budget)
             except EvidenceUnavailable:
                 self._invalidate(account)
                 raise
@@ -146,7 +147,8 @@ class EvidenceResolver:
             if expiry <= now:
                 raise EvidenceUnavailable()
             entry = _Locator(account_ref(account), target, now, expiry,
-                             self._monotonic() + (expiry - now).total_seconds())
+                             self._monotonic() + (expiry - now).total_seconds(),
+                             message.source_state_token)
             with self._lock:
                 budget.check()
                 if self._epoch != epoch:
@@ -177,13 +179,17 @@ class EvidenceResolver:
                 raise EvidenceUnavailable()
             try:
                 message = self._read_exact(account, ref, entry.location, budget)
+                if message.source_state_token != entry.source_state_token:
+                    raise EvidenceUnavailable()
                 browser_span = None
                 if ref.span is not None:
                     browser_span = SourceSpan(
                         start=len(message.text[:ref.span.start].encode("utf-16-le")) // 2,
                         end=len(message.text[:ref.span.end].encode("utf-16-le")) // 2,
                     )
-                self._read_exact(account, ref, entry.location, budget)
+                current = self._read_exact(account, ref, entry.location, budget)
+                if current.source_state_token != entry.source_state_token:
+                    raise EvidenceUnavailable()
             except EvidenceUnavailable:
                 self._invalidate(account)
                 raise

@@ -64,8 +64,8 @@ Run the focused tests and the [analytics regression baseline](qualification.md):
 
 ```powershell
 python -m pytest tests/test_continuous_analytics.py tests/test_continuous_recovery.py tests/test_conversation_fragment_storage.py
-python tools/qualify_analytics_baseline.py --output C:\temp\continuous-baseline
-python tools/qualify_continuous_analytics.py --messages 1000 --query-samples 100 --output C:\temp\continuous-workload
+python tools/qualify_analytics_baseline.py --output $env:ANALYTICS_EVIDENCE_DIR/continuous-baseline
+python tools/qualify_continuous_analytics.py --messages 1000 --query-samples 100 --output $env:ANALYTICS_EVIDENCE_DIR/continuous-workload
 ```
 
 Each output directory must be new. The workload command uses isolated synthetic encrypted stores, with half the messages in one conversation and the remainder across 100 conversations. It records cold, forced unchanged, and one-message-update work; actual analyzer calls; conversation body reads; identity scans; publication time; process peak memory; and saved-question latency, including failures. It also compares the updated artifact with a full rebuild.

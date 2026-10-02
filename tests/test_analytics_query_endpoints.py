@@ -132,6 +132,40 @@ def test_production_source_preserves_missing_kind_as_undetermined(ready):
     assert page["coverage"]["history"] == "unknown"
 
 
+def test_production_coverage_survives_publication_without_known_kinds(ready):
+    from tests.analytics_coverage_fixture import seed_coverage
+
+    with ready.stored.database.transaction() as db:
+        seed_coverage(db, ACCOUNT, ("synthetic-chat-a", "synthetic-chat-b"), NOW)
+    ready.pipeline.project_account(ACCOUNT)
+    ready.resources.source = HistoryAnalyticsSource(ready.stored.history)
+    ready.resources.source.prepare_question_identity(ACCOUNT)
+    response = ready.client.post("/api/v1/insights/questions", json=plan())
+    assert response.status_code == 200, response.text
+    page = response.json()["page"]
+    assert page["rows"] == [] and page["undetermined_conversation_count"] == 2
+    assert page["coverage"]["history"] == "complete"
+
+
+def test_coverage_change_refuses_old_cursor_and_clears_source_links(ready):
+    from tests.analytics_coverage_fixture import seed_coverage
+
+    with ready.stored.database.transaction() as db:
+        seed_coverage(db, ACCOUNT, ("synthetic-chat-a", "synthetic-chat-b"), NOW)
+    ready.pipeline.project_account(ACCOUNT)
+    first = ready.client.post("/api/v1/insights/questions", json=plan(page_size=1)).json()
+    assert first["page"]["coverage"]["history"] == "complete" and first["next_cursor"]
+    reference = first["page"]["rows"][0]["evidence"][0]
+    with ready.stored.database.transaction() as db:
+        db.execute("UPDATE coverage_members SET history_started_at=NULL WHERE creator_account_id=?", (ACCOUNT,))
+    assert ready.client.post("/api/v1/insights/questions/evidence", json=reference).status_code == 404
+    assert not ready.resources.evidence._entries
+    stale = ready.client.post("/api/v1/insights/questions", json=plan(page_size=1, cursor=first["next_cursor"]))
+    assert stale.status_code == 503 and "rows" not in stale.json()
+    assert not ready.resources.evidence._entries
+    assert ready.client.post("/api/v1/insights/questions/evidence", json=reference).status_code == 404
+
+
 def test_pricing_gate_is_not_a_query_option(ready):
     response = ready.client.post("/api/v1/insights/questions", json=plan(question="pricing_discussions.v1"))
     assert response.status_code == 503

@@ -214,8 +214,13 @@ class HistoryAnalyticsSource:
         budget.check()
 
         def read_row(connection):
-            budget.consume()
-            return connection.execute(
+            from app.analytics.evidence import EvidenceUnavailable
+
+            budget.consume(2)
+            token = self._identity_cache.token(connection, account_id)
+            if token is None:
+                raise EvidenceUnavailable()
+            row = connection.execute(
                 """SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
                           m.sender_platform_user_id,m.upstream_updated_at,
                           m.content_hash,m.winning_stream_epoch,m.winning_source_seq
@@ -246,11 +251,12 @@ class HistoryAnalyticsSource:
                 (account_id, location.message_id, location.conversation_id,
                  MAX_EVIDENCE_TEXT_CHARS, MAX_EVIDENCE_TEXT_CHARS * 4),
             ).fetchone()
+            return row, f"{token.schema}:{token.value}:{token.revision}"
 
         scoped = getattr(self._question_scope_local, "connection", None)
         if scoped is not None:
             try:
-                row = read_row(scoped)
+                row, source_state_token = read_row(scoped)
             except sqlite3.OperationalError:
                 interrupted = self._question_scope_local.interrupted
                 if interrupted:
@@ -275,7 +281,7 @@ class HistoryAnalyticsSource:
 
                 connection.set_progress_handler(progress, 100)
                 try:
-                    row = read_row(connection)
+                    row, source_state_token = read_row(connection)
                 except sqlite3.OperationalError:
                     if interrupted:
                         raise interrupted[0] from None
@@ -291,6 +297,7 @@ class HistoryAnalyticsSource:
             text=row[1], sent_at=row[2], direction=row[3], sender_id=row[4],
             upstream_updated_at=row[5], content_hash=row[6],
             stream_epoch=row[7], source_sequence=row[8],
+            source_state_token=source_state_token,
         )
 
     def account_revision(self, account_id: str) -> int | None:
@@ -316,6 +323,8 @@ class HistoryAnalyticsSource:
             ]
 
     def account_read_model(self, creator_account_id: str) -> AccountReadModel:
+        from app.analytics.source_coverage import AcquisitionCoverage
+
         with self._read() as connection:
             head = connection.execute(
                 """SELECT canonical_revision FROM account_heads
@@ -326,6 +335,7 @@ class HistoryAnalyticsSource:
                 return AccountReadModel()
 
             account = AccountReadModel(view_revision=int(head[0]))
+            coverage = AcquisitionCoverage(connection, creator_account_id)
             chat_rows = connection.execute(
                 """SELECT chat_id,platform_user_id,display_name,upstream_updated_at
                      FROM account_chats
@@ -334,6 +344,7 @@ class HistoryAnalyticsSource:
             ).fetchall()
             for row in chat_rows:
                 account.conversations[str(row[0])] = {
+                    "acquisition_coverage": coverage.conversation(str(row[0])),
                     "conversation_id": str(row[0]),
                     "platform_user_id": row[1] or f"placeholder:{row[0]}",
                     "display_name": row[2],

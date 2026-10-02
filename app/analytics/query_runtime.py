@@ -80,7 +80,7 @@ class QuestionResources:
             policy, self.evidence, self.pipeline.pipeline_revision, self.pipeline.pipeline_config_digest,
             preparing=self._pending_questions.is_pending if self._pending_questions is not None else None)
         service = AnalyticsQuestionService(reader,
-            [RegisteredQuestion("no_later_creator_reply.v1", "canonical.v1", no_later_creator_reply)],
+            [RegisteredQuestion("no_later_creator_reply.v1", "canonical.v2", no_later_creator_reply)],
             cursor_secret=self.secret, clock=self.clock)
         return service.execute(policy, plan, cancellation_check=lambda: self._cancelled(account, cancellation_check))
 

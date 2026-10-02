@@ -4,6 +4,7 @@ from app.analytics.evidence_contracts import EvidenceLocation
 from app.analytics.opaque_refs import conversation_ref, message_ref
 from app.analytics.query_contracts import utc_instant
 from app.analytics.query_facts import QuestionConversation, QuestionMessage
+from app.analytics.source_coverage import question_coverage
 
 # SQLite's date index is a coarse filter; Python verifies exact source instants.
 DATE_TOLERANCE_DAYS = 0.00002
@@ -68,5 +69,6 @@ def reply_conversations(scope, question, budget):
             elif at == newest:
                 latest.append(row)
         rows = {str(row['message_id']): row for row in [selected, *latest]}
-        yield QuestionConversation(ref, tuple(message(row, chat) for row in rows.values()), 'unknown')
+        coverage = question_coverage(scope.coverage.conversation(chat), question)
+        yield QuestionConversation(ref, tuple(message(row, chat) for row in rows.values()), coverage)
     scope.check(budget)

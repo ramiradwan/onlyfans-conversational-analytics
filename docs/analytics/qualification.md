@@ -1,114 +1,117 @@
-<!-- CODE-VERIFY: Check qualify_analytics_baseline.py, pytest.ini, test profiles, question fixtures, and packaging scripts before changing commands or qualification claims. -->
+<!-- CODE-VERIFY: Check qualify_analytics_baseline.py, analytics_qualification*.py, pytest.ini, question fixtures, packaging scripts, local-analysis.md and acceptance-manifest.json before changing commands or qualification requirements. -->
 
 # Qualify analytics changes
 
-Run contract checks and regression tests separately from language quality, performance, and installer qualification. Passing one does not establish the others.
+The [acceptance manifest](acceptance-manifest.json) defines the workload, Windows profiles, execution budgets and evidence required for qualification. Regression, semantic query and packaged behavior results establish different properties.
 
 ## Regression baseline
 
-Use Python 3.11 with the pinned development requirements, native Noise module, and the platform's required SQLCipher runtime. Windows tests use the pinned Windows wheel. Use a checkout that Git can identify from the selected Python runtime. Build frontend assets before collecting tests that import the application. Give each test invocation a dedicated temporary directory.
+Use Python 3.11 with pinned development dependencies, the native Noise module and the required SQLCipher runtime. Windows tests use the pinned Windows wheel. Git must identify the checkout from the selected interpreter. Build frontend assets before tests that import the application, and give each invocation a dedicated temporary directory.
 
-```powershell
+```sh
 npm ci --prefix frontend
 npm run build --prefix frontend
-python -m pytest tests/test_analytics_question_cases.py tests/test_analytics_baseline_qualification.py --basetemp C:\temp\analytics-contract-tests
-python tools/qualify_analytics_baseline.py --output C:\temp\analytics-baseline
+python -m pytest tests/test_analytics_question_cases.py tests/test_analytics_baseline_qualification.py --basetemp /path/to/new-test-directory
+python tools/qualify_analytics_baseline.py --output /path/to/new-baseline-evidence
 ```
 
-The output directory must be new. The runner records source hashes, runtime versions, exact test selections, fixed Hypothesis seed, profiles, timings, exit codes, and JUnit counts. Logs and reports stay local unless reviewed for sharing. An incomplete or timed-out run cannot qualify the baseline.
+The baseline records source hashes, runtime versions, exact test selections, fixed Hypothesis seed, profiles, timings, exit codes and JUnit counts. Reports stay local until reviewed for sharing. An incomplete or timed-out run cannot qualify. Coverage includes analytics, graph storage, publication, authorization, retention, deterministic rebuilds, convergence, deletion and injected faults. Linux source tests supplement native Windows checks without establishing packaged behavior or laptop capacity.
 
-The baseline covers analytics, graph storage, publication, authorization, retention, deterministic rebuilds, general convergence, deletion convergence, and injected faults. Linux source tests supplement native Windows checks; neither is packaged-runtime or laptop-capacity evidence.
-
-Question fixtures use manually specified answers and an independent structural validator. They do not execute a question service. A query implementation must pass these literal cases plus endpoint authorization, pagination, generation-change, work-limit, and source-resolution tests before activation.
+Question fixtures contain manually specified answers checked by an independent structural validator. Enabling a query also requires endpoint authorization, pagination, generation-change, work-limit and source-resolution checks.
 
 ## Language quality
 
-Pricing discussions may be activated only after held-out, authorized, representative examples establish at least 90% precision within the declared language and scope. Report sample counts, confidence intervals, recall, abstention, and performance by relevant input group. A tiny or unrepresentative set cannot qualify the feature even when its point estimate passes.
+Enable pricing discussions only after held-out, authorized, representative examples establish at least 90% precision for the declared language and scope. Report sample counts, confidence intervals, recall, abstention and performance by relevant input group. A small or unrepresentative set cannot qualify the feature solely through its point estimate.
 
-Freeze annotation guidance, data split, taxonomy, model/rule version, and thresholds before final evaluation. Separate participants/accounts and time where possible. Include slang, ambiguous keywords, quoted text, negation, emoji, and unsupported languages. Review disagreements rather than replacing them with model labels.
+Freeze annotation guidance, data split, taxonomy, model or rule version, and thresholds before final evaluation. Separate participants, accounts and time where possible. Include slang, ambiguous keywords, quoted text, negation, emoji and unsupported languages. Review annotation disagreements without replacing them with model labels.
 
-Synthetic fixtures establish mechanics, not natural-language quality. The repository question cases contain classifier outputs, not an annotated conversational corpus. Keep pricing disabled or explicitly narrow its meaning until the relevant quality gate passes. No model family is preselected.
+Synthetic fixtures establish query mechanics. The repository cases contain classifier outputs and do not constitute an annotated conversation corpus. Keep pricing disabled or narrow its declared scope until the applicable quality gate passes. No model family is preselected.
 
 ## Workload and measurement
 
-Use the CPU-only laptop profiles and pack budgets in [Local analysis](local-analysis.md). Record actual OS, CPU model, core/thread limits, RAM, free memory, disk type, runtime versions, power mode, source revision, and enabled analyzers. A faster desktop result does not qualify a laptop.
+Use the CPU laptop profiles and pack budgets in [Local analysis](local-analysis.md). Record actual OS, CPU model, core and thread limits, RAM, free memory, disk type, runtime versions, power mode, source revision and enabled analyzers. A faster desktop measurement does not qualify a laptop.
 
-Exercise 10,000 and 100,000 retained messages. Treat 1,000,000 as an opt-in stress case, not supported capacity. In each profile, put half the messages in one conversation and distribute the remainder across 100 conversations. Use deterministic synthetic content and alternate message direction. Place event times uniformly over the 48 hours preceding a fixed evaluation clock, with stable tie cases tested separately.
+Exercise 10,000 and 100,000 retained messages. The 1,000,000-message workload is an optional stress case. Put half the messages in one conversation and distribute the remainder across 100 conversations. Use deterministic synthetic content, alternating direction and event times spread across the 48 hours before a fixed evaluation clock. Exercise stable timestamp ties separately.
 
-Measure a cold build, unchanged rebuild, a single new message, 100 edits, 100 deletions, and a 10,000-message historical batch interleaved with 100 live messages. Record exact source counts and revisions before and after each mutation. Compare resulting semantics with the fixed cases and clean rebuild checks.
+Measure a cold build, unchanged rebuild, one new message, 100 edits, 100 deletions and 10,000 historical messages interleaved with 100 live messages. Record source counts and revisions around each mutation. Compare semantic results with literal cases and an independent full rebuild.
 
-Report canonical ingest time, enrichment time, graph construction, publication, end-to-end visibility lag, process-tree peak memory, and backlog drain rate separately. Keep test preparation outside measured intervals. Record failed and cancelled operations; do not discard them from the report.
+Report canonical ingestion, enrichment, graph construction, publication, end-to-end visibility, process-tree peak memory and backlog drain rate separately. Preparation stays outside operation latency and inside its execution guard. Retain failed and cancelled operations.
 
-Once question handlers exist, measure 100 warm calls per approved question after five warm-up calls, with page size 50 and fixed filters. Report nearest-rank p95, maximum, errors, scanned records, and truncation. The initial 100,000-message reference targets are p95 at most one second and one committed message visible within ten seconds without backlog. These are acceptance targets, not current results.
+For each enabled question, collect 100 warm calls after five warm-ups, with page size 50 and fixed filters. Report nearest-rank p95, maximum, errors, scanned records and truncation. At 100,000 messages the reference profile requires warm p95 at most one second and each committed-message visibility probe at most ten seconds, including cleanup and drained backlog. The constrained profile preserves correctness and stability checks and reports latency without these reference-profile limits.
 
-Before distributing an optional model, compare the same application build with and without its pack. Record compressed installer size, unpacked bytes, runtime and model download closure, temporary disk needs, cold/warm inference, and peak memory. Missing measurements are null with a reason, never zero. A source-only test run cannot establish installer size or frozen-runtime compatibility.
+Before distributing an optional model, compare the same application build with and without its pack. Record compressed installer size, unpacked bytes, runtime and model download closure, temporary disk needs, cold and warm inference, and peak memory. Record unavailable measurements as null with a reason. Source tests cannot establish installer size or frozen-runtime compatibility.
 
 ## Integration gates
 
 | Gate | Required evidence | Responsible role |
 |---|---|---|
-| Source context | Gateway supplies available coverage, order evidence, event kind, and source version; unavailable information stays unknown. | Analytics/backend |
+| Source context | Available coverage, ordering evidence, event kind and source version retain their meaning. Missing metadata stays unknown. | Analytics and backend |
 | Pricing quality | Approved annotation guidance and held-out representative data pass the declared task gate. | Applied ML and product |
-| Interactive performance | Executed saved queries and update workloads on the recorded laptop profiles. | Analytics/backend and testing |
-| Distribution | Measured base installer and optional pack closure, verification, cancellation, removal, and offline operation. | Packaging/security and testing |
+| Interactive performance | Saved queries and update workloads execute on the recorded laptop profiles. | Analytics, backend and testing |
+| Distribution | Base installer and optional pack measurements cover dependencies, verification, cancellation, removal and offline operation. | Packaging, security and testing |
 
-These gates remain requirements even when structural fixtures and regression suites pass. They do not authorize a capture redesign, customer-data upload, or a new inference runtime.
+These requirements remain applicable when structural fixtures and regression tests pass. Qualification does not authorize changing capture scope, uploading customer data or introducing another inference runtime.
 
-## Frozen A07 closure
+## Prepare the source and evidence
 
-[The acceptance manifest](acceptance-manifest.json) is the authority for closure. It fixes the two Windows profiles, fixtures, questions, repetitions, clocks, limits, and required evidence. The ten-second visibility and one-second warm-query targets apply to the 16 GiB reference profile. The 8 GiB constrained profile runs the same correctness and stability work and reports its measured latency. Bulk work and cold readiness have completion guards, not interactive latency promises.
+Use the pinned dependencies and native runtimes, build the frontend, and review one clean signed source revision. Use a new evidence directory outside the repository. Every receipt binds that source, the interpreter, dependencies and manifest. A changed source or protocol requires a new directory.
 
-Use the existing baseline command. Each output directory belongs to one exact source, interpreter, dependency set, and manifest:
+Use the same host-admission launcher and owner lock as other work on the qualification machine. Missing prerequisites are BLOCKED. Started work that fails, times out or loses its receipt is FAIL. Resuming preserves every attempt and cannot erase a failure.
 
 ```sh
-python tools/qualify_analytics_baseline.py --closure --output /path/to/new-evidence
+python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --package-inputs /path/to/package-inputs.json
 python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --resume --run-regressions
+```
+
+Package inputs identify immutable installer and runtime artifacts plus their extracted files, a dedicated provisioned installation and a browser profile authorized by the unchanged package. Keep these paths and authority material outside the repository. Do not replace package trust, seed authentication databases or write fixture records directly into packaged canonical storage.
+
+The private input document uses schema `analytics-package-inputs.v1`. Set `source_revision` to the signed revision. `artifacts.installer` and `artifacts.runtime` each contain an absolute `path` and its `sha256`. The runtime ZIP contains `Brain.exe` and the unchanged Agent, and `runtime_directory` matches every archive member. Set `agent_directory` within that directory, `data_directory`, `browser_profile` and the dedicated `synthetic_account_id` value `synthetic-continuous-owner`. The installation must already hold a valid authority grant and full consent through its ordinary setup flow.
+
+Set `bridge_origin`, the optional `bridge_path`, `platform_origin`, `identity_path`, `conversations_path` and `messages_path_prefix` from the packaged adapter's supported upstream contract. The browser supplies only deterministic synthetic responses to those upstream reads. An optional `browser_executable` selects an installed browser. No credential or signing key belongs in the input document. Keep explicit canonical and analytics database paths in the installation's private `runtime.env`, within its data directory, with its existing local encryption key.
+
+Use a fresh, empty dedicated installation for each packaged job. The guest must have no active non-loopback network adapters or default routes, with dependencies and valid grants available locally. The collector measures these facts before launch and after cleanup. It reports unavailable hardware, artifacts, browser dependencies or isolation as BLOCKED before starting product work. It preserves any started failure as FAIL.
+
+## Semantic questions
+
+The semantic track executes known synthetic event kinds on each declared Windows profile. It preserves the manifest's literal answers, pagination, mutation, idle, sample-count, work-limit and latency checks. It qualifies query correctness and latency for that declared input. It provides no evidence that production capture supplies event kinds.
+
+```sh
+python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --resume --run-questions --profile reference-windows-16g --case populated --state fresh
+```
+
+Run every manifest case and state on both profiles. Each sample set uses a fresh observed interpreter, five warm-ups and 100 measured calls. The reference profile enforces the declared warm p95 limit. The constrained profile records latency and retains correctness and resource requirements.
+
+## Packaged behavior
+
+The packaged track runs the exact artifacts through normal Agent capture, consent, pairing and authenticated delivery. Creator deletions use the authenticated Vault command. Each operation records admitted canonical commits, actual source revisions, current question results, synchronous cleanup and drained backlog. Synthetic source writes cannot substitute for authorized ingestion.
+
+Production event kinds remain unknown. A current result reports the affected conversations as undetermined. Packaged interface checks verify that state without claiming a qualified positive no-reply list. Pricing remains unavailable until its separate language-quality gate is satisfied.
+
+```sh
+python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --resume --run-package matrix --profile reference-windows-16g --messages 100000 --package-inputs /path/to/package-inputs.json
+python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --resume --run-package visibility --profile reference-windows-16g --repeat 0 --package-inputs /path/to/package-inputs.json
+python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --resume --run-package package --profile reference-windows-16g --package-inputs /path/to/package-inputs.json
+```
+
+Both workload sizes, all fresh repetitions and both profiles remain mandatory. Visibility ends at the latest current visible result, required cleanup or drained backlog. Cold and bulk work retain their execution guards. The receipt observer records actual monotonic lifecycle boundaries without changing product state. Missing events, lost buffers, unjoined processes or artifact changes invalidate the result.
+
+The supervisor supplies separate inherited pipes for passive receipts and parent lifetime. Closing the parent-owned lifetime pipe requests ordinary application shutdown, including for the windowed executable. It sends no commands through the receipt observer. A successful exit and complete joined-worker receipts are both required.
+
+For a cold full-size build, seed through admitted capture, close the process, launch the same package in a fresh process and request a full rebuild. Timing starts at process launch and requires the post-request generation and drained scheduler. The persisted predecessor remains present. This measures fresh-process full recomputation, with no claim about an empty store or cold disk cache. Independent read-only verification runs after the operation endpoint and within the same state budget. It compares all three persisted digests with a fresh canonical rebuild, checks obsolete generation access and validates retained storage.
+
+The independent fixture also checks admitted message identities, conversations, senders, text, timestamps and direction after every mutation. Evidence stores the matching counts and digests. Working-only messages remain in scope without requiring Vault retention. Package cancellation requires a receipt from an interrupted full analytics build, joined shutdown and recovery in a fresh process. A build that completes before cancellation does not satisfy this check.
+
+## Source diagnostics
+
+`--run-source matrix`, `--run-source visibility` and `--run-source questions` remain diagnostic commands. `--known-synthetic-kinds` changes only the source query fixture. Profiling and continuation after a failed visibility probe cannot qualify latency. Component and shortened workload results cannot replace packaged evidence.
+
+## Review and verify
+
+Save a review record with `source_revision`, the digest of `source_context` as `source_sha256`, `reviewer` and `checks`. Collect CI after every named manifest check finishes successfully on that exact source. The collector retains raw responses and selects the latest attempt for each check.
+
+```sh
+python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --resume --run-ci --review-record /path/to/review.json
 python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --verify
 ```
 
-The verifier returns 0 for PASS, 1 for FAIL, and 2 for BLOCKED. It recomputes the verdict from raw records; a summary marked successful is not authority. Every started attempt must have a durable result. Failures remain failures when the directory is resumed. A new source or protocol requires a new directory, not replacement of earlier records.
-
-The runner owns its process tree on Linux and Windows. Windows workers wait until assigned to a kill-on-close job. Linux workers use a process group and a parent-death pipe. Cancellation, watchdog expiry, and children left running are failures. Measurement v3 also waits for Windows process objects to signal completion; a zero job counter alone is not a joined worker. The earlier v2 shutdown-test failure remains recorded. The owner lock excludes overlapping runs using that lock. All agents on the same benchmark machine must use the same owner lock and avoid unrelated benchmark work.
-
-### Source diagnostics
-
-The matrix, visibility, and question collectors use the ordinary scheduler and query service over isolated synthetic stores. They are source diagnostics, not packaged application, UI, authorized ingestion, or laptop qualification. A successful source diagnostic cannot make a packaged gate PASS.
-
-```sh
-python tools/qualify_analytics_baseline.py --closure --output /path/to/matrix --run-source matrix --messages 100000
-python tools/qualify_analytics_baseline.py --closure --output /path/to/visibility --run-source visibility --repeat 0
-python tools/qualify_analytics_baseline.py --closure --output /path/to/questions --run-source questions --case populated --state idle --known-synthetic-kinds
-```
-
-Run the matrix at both manifest sizes. Visibility repetitions are numbered 0, 1, and 2. Each starts a new interpreter and exercises its ordinary, unchanged-rebuild, idle, and restarted cases. The restarted case uses another interpreter after the previous scheduler joins. Question cases are `populated`, `empty`, `tied_time`, and `generation_bound_pagination`; each has `fresh`, `idle`, and `mutated` states. Every question sample set has one observed runtime identity, five warm-ups, and 100 measured calls.
-
-`--known-synthetic-kinds` supplies known message kinds only to the diagnostic query fixture. It tests question mechanics without changing production unknown-kind handling or request budgets. It does not establish that ingestion supplies those kinds. Pricing stays disabled. Without this option the diagnostic retains production unknown-kind behavior and may fail the declared populated-answer expectations.
-
-`--subject-root` selects a separate Git checkout for a historical runtime control. Its full file hashes and revision are recorded independently of the runner. An older source cannot substitute for the final source. Preparation always happens inside the owned worker; there is no prepared-store shortcut.
-
-`--profile-updates` adds thread-local call timing to source visibility or mutation diagnostics. It records no message content. Instrumented input and output flags are checked together, and the verifier rejects these runs as latency qualification. Run without that flag for acceptance measurements. The numerical limits and whole-worker guard are unchanged.
-
-For correction-loop diagnostics only, `tools/targeted_visibility_benchmark.py` can prepare a byte-bound ready seed for one exact signed source and reuse it for repeated idle visibility probes. Seed preparation uses normal recovery, question preparation, verification, and closed-worker/backlog checks before recording database hashes. A later candidate may use the previous ready seed as its base, but it must prepare and bind a new seed to its own exact source, manifest, and runtime before measurement. If normal recovery preserves the exact independently verified active generation, that verification is inherited by generation identity and byte-bound seed metadata; if the active generation changes, seed preparation runs the independent rebuild check again.
-
-The targeted runner keeps the manifest idle interval real. A byte-verified ready seed may skip the redundant full-file migration integrity check and startup reconciliation only while opening its private diagnostic copy; production startup and frozen qualification are unchanged. The runner then prepares live source/question state and enters the scheduler’s ordinary `recover=True` lifecycle, so the real periodic reconciliation and identity-preparation tasks run during idle. Cold/restart recovery remains a separate qualification workload rather than being replayed before every targeted mutation. Setup stays outside the visibility clock. The runner writes live phase state to a replaceable status sidecar, emits elapsed-time heartbeats for long setup phases, writes the full result once, and prints only a compact receipt summary. `--profile-output` adds thread-local activation attribution and marks the targeted receipt non-qualifying. These targeted receipts are not consumed by the closure verifier and cannot replace the fresh-process, restarted, packaged, or profile qualification jobs above.
-
-```sh
-python tools/targeted_visibility_benchmark.py --source-root /repo --expected-sha <sha> --owner-lock /path/to/owner.lock --status /path/to/status.json prepare-seed --base-seed /path/to/base --ready-seed /path/to/ready
-python tools/targeted_visibility_benchmark.py --source-root /repo --expected-sha <sha> --owner-lock /path/to/owner.lock --status /path/to/status.json run --ready-seed /path/to/ready --result /path/to/result.json --case dominant
-```
-
-### Clocks, evidence, and closure
-
-The v5 measurement protocol keeps fixture message times and the selected cutoff fixed. Query validity and evidence expiry use the normal system UTC clock, as generation creation already does. Earlier fixed-clock runs that rejected new generations as future-dated remain failed; their results are not reclassified. The first distinct query refusals and the first current answer are retained even when the observer is stopped. The v5 change did not alter numerical gates or execution limits. Visibility uses the v6 state budgets below.
-
-The versioned measurement protocol records durable canonical commit, activation, first observed current question result, required publication cleanup, and backlog drain separately. The visibility interval ends only when the visible result, cleanup, and drain have all completed. Operation records are saved before independent rebuild verification; completed verification gets its own durable phase record. A killed verifier cannot erase a completed operation or qualify a missing phase.
-
-Measurement v4 starts normal recovery and periodic reconciliation in the initial visibility process as well as the restarted one. Earlier v3 source visibility runs did not enable that timer initially. They remain separate historical controls and cannot establish the corrected idle path.
-
-Visibility protocol v6 gives each of five ordered states a 1,800-second execution limit: cold preparation, ordinary update, rebuilt update, idle update, and restarted update. The worker tree has a 9,000-second absolute cap. Each state includes its preparation, independent verification, and synchronous product cleanup; the rebuilt state includes the forced rebuild and both verification jobs. The initial interpreter remains alive through the first four states. Only the declared restart creates a new interpreter, after the previous scheduler joins. A late, missing, repeated, or altered state record fails verification. Other workloads retain the 1,800-second whole-worker limit. The earlier interrupted runs remain failed. Expiry does not identify an individual operation's latency. The new protocol adds observed query visibility and owned-process-tree accounting; it does not reinterpret the old interrupted matrix as passing. Windows resource records distinguish job peak private commit from Linux sampled process-group resident memory. Neither is a packaged memory receipt.
-
-The first session records infrastructure preflight. Missing guests, permissions, package inputs, or a packaged UI/ingestion adapter leave those gates BLOCKED. No guest permission is changed. Package/profile adapters must supply the same raw source, process, fixture, artifact, and phase bindings before those gates can pass; source fixture writes cannot be relabelled authorized ingestion.
-
-After reviewing an exact clean source, save a review record with `source_revision`, `source_sha256` (the digest of `source_context`), `reviewer`, and `checks`. `--run-ci --review-record /path/to/review.json` reads the six named checks through the authenticated `gh` command. It retains raw API responses, selects the latest attempt for each named check, and requires success on that exact SHA. Run this after CI has finished; pending or failed checks are not passes.
-
-A07 closes only when every mandatory gate passes for the final signed source and exact package. A material runtime change requires rerunning affected qualification. Missing package or profile evidence is qualification blocked, not engineering completion or qualified done. The five planned acceptance units do not authorize an automatic sixth optimization pass.
+Verification recomputes the verdict from immutable raw evidence and rechecks source and artifact hashes. Exit codes are 0 for PASS, 1 for FAIL and 2 for BLOCKED. Final acceptance requires every mandatory gate for the final signed source and exact package. A material change requires repeating affected qualification.

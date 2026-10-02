@@ -898,6 +898,26 @@ async def answer_question(policy, plan):
     return await _run_question_read(policy, plan)
 
 
+async def rebuild_projection(policy):
+    """Admit a bounded full rebuild for the authenticated account."""
+    import anyio
+    from app.core.config import settings
+    from app.persistence.auth import SQLiteAuthenticationStore
+    from app.security.analysis_authorization import require_cached_analysis_run
+    from app.security.runtime_policy import authorized_account
+
+    account = authorized_account(policy, None)
+    def authorize():
+        store = SQLiteAuthenticationStore(settings.auth_database_path)
+        require_cached_analysis_run(store, account)
+    await anyio.to_thread.run_sync(authorize)
+    runtime = analytics_runtime()
+    revision = await runtime.scheduler.canonical_revision(account)
+    await runtime.scheduler.schedule(account, revision, retry_failed=True, force=True)
+    if runtime.questions is not None:
+        runtime.questions.discard(account)
+
+
 async def resolve_question_evidence(policy, reference):
     return await _run_question_read(policy, reference, evidence=True)
 

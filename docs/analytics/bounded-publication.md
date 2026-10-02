@@ -40,8 +40,8 @@ Run the focused tests and the [full analytics baseline](qualification.md):
 
 ```powershell
 python -m pytest tests/test_projection_verification.py tests/test_graph_row_encoding.py tests/test_bounded_publication.py tests/test_generation_throughput.py tests/test_graph_digest_stream.py tests/test_conversation_fragment_storage.py
-python tools/qualify_analytics_baseline.py --output C:\temp\bounded-publication-baseline
-python tools/qualify_continuous_analytics.py --messages 10000 --query-samples 100 --output C:\temp\bounded-publication-workload
+python tools/qualify_analytics_baseline.py --output $env:ANALYTICS_EVIDENCE_DIR/bounded-publication-baseline
+python tools/qualify_continuous_analytics.py --messages 10000 --query-samples 100 --output $env:ANALYTICS_EVIDENCE_DIR/bounded-publication-workload
 ```
 
 The workload reports candidate construction and publication before requesting an artifact. It records artifact materialization separately and compares that artifact with a clean rebuild. Cold and forced unchanged phases do not request unused artifacts. The publication peak and final diagnostic-process peak are distinct measurements.

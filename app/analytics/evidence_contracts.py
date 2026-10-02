@@ -35,11 +35,12 @@ class EvidenceMessage(QuestionRecord):
     content_hash: Annotated[StrictStr, Field(min_length=1, max_length=128, repr=False)]
     stream_epoch: Count
     source_sequence: Count
+    source_state_token: Annotated[StrictStr, Field(max_length=128)] | None = Field(default=None, repr=False)
 
     def reference(self, span: SourceSpan | None = None) -> QuestionEvidence:
         """Describe this exact message version without copying its text."""
 
-        payload = self.model_dump(mode="json", exclude={"source_revision"})
+        payload = self.model_dump(mode="json", exclude={"source_revision", "source_state_token"})
         encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True,
                              separators=(",", ":")).encode("utf-8")
         digest = hashlib.sha256(b"ofca:evidence-message:v1\0" + encoded).hexdigest()

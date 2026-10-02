@@ -5,6 +5,7 @@ from app.analytics.evidence_contracts import EvidenceLocation
 from app.analytics.opaque_refs import conversation_ref, message_ref
 from app.analytics.query_contracts import utc_instant
 from app.analytics.query_facts import QuestionConversation, QuestionMessage
+from app.analytics.source_coverage import AcquisitionCoverage, question_coverage
 
 
 class CanonicalQuestionScope:
@@ -17,6 +18,7 @@ class CanonicalQuestionScope:
             raise CanonicalAccountNotFound()
         self.revision = int(row[0])
         self.locations = {}
+        self.coverage = AcquisitionCoverage(connection, account, consume=budget.consume)
         self.check(budget)
 
     def check(self, budget):
@@ -71,7 +73,8 @@ class CanonicalQuestionScope:
                 role = "creator" if record["direction"] == "outbound" else (
                     "participant" if record["sender_platform_user_id"] == record["platform_user_id"] else "unknown")
                 messages.append(QuestionMessage(ref, at, role, "unknown"))
-            yield QuestionConversation(cref, tuple(messages), "unknown")
+            coverage = question_coverage(self.coverage.conversation(chat), question)
+            yield QuestionConversation(cref, tuple(messages), coverage)
         self.check(budget)
 
 

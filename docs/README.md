@@ -11,6 +11,8 @@ Use these pages to find the instructions or reference material for a specific ta
 
 - [Contribute to the project](../CONTRIBUTING.md)
 - [Test changes](testing.md)
+- [Read the analytics exchange contract](analytics/exchange.md)
+- [Run synthetic exchange conformance](analytics/exchange-conformance.md)
 
 ## Release and acceptance
 

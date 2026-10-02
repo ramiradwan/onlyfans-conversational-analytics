@@ -40,8 +40,8 @@ Graph hashing validates and encodes one record at a time in canonical order. It 
 
 ```powershell
 python -m pytest tests/test_analytics_source_tokens.py tests/test_reply_source_selection.py tests/test_projection_query_metadata.py tests/test_graph_digest_stream.py
-python tools/qualify_analytics_baseline.py --output C:\temp\verified-baseline
-python tools/qualify_continuous_analytics.py --messages 10000 --query-samples 100 --output C:\temp\verified-workload
+python tools/qualify_analytics_baseline.py --output $env:ANALYTICS_EVIDENCE_DIR/verified-baseline
+python tools/qualify_continuous_analytics.py --messages 10000 --query-samples 100 --output $env:ANALYTICS_EVIDENCE_DIR/verified-workload
 ```
 
 Output directories must be new. Run the canonical ingestion, backup, migration, and analytics regression tests because the change includes an authoritative schema migration. Report query failures separately from successful latency. These synthetic measurements do not qualify production event classification, pricing quality, constrained laptops, or installer size.

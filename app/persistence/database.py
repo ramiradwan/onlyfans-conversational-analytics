@@ -270,6 +270,8 @@ class LocalSQLite:
             self._restrict_permissions()
             yield connection
             connection.commit()
+            from app.core.lifecycle_receipts import committed
+            committed(connection)
             self._restrict_permissions()
         except BaseException:
             connection.rollback()

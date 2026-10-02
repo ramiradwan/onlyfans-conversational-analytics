@@ -71,6 +71,19 @@ def test_revision_only_rebuild_copies_all_parts_without_source_body_loads(ready)
     assert [a.calls for a in ready.analyzers] == [10, 10, 10]
 
 
+def test_coverage_only_changes_reuse_message_enrichment(ready):
+    from tests.analytics_coverage_fixture import seed_coverage
+
+    ready.pipeline.project_account(ACCOUNT)
+    with ready.repositories.database.transaction() as db:
+        seed_coverage(db, ACCOUNT, ("chat-0", "chat-1", "chat-2"), NOW)
+        advance(db)
+    result = ready.pipeline.project_account(ACCOUNT)
+    assert [analyzer.calls for analyzer in ready.analyzers] == [9, 9, 9]
+    assert ready.source.full_reads == 0
+    cold_equal(ready, result.artifact)
+
+
 @pytest.mark.parametrize('change', ['edit', 'late', 'direction', 'participant', 'delete', 'conversation', 'same_revision'])
 def test_changed_and_deleted_sources_converge(ready, change):
     ready.pipeline.project_account(ACCOUNT)

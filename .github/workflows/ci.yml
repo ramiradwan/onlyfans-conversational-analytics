@@ -52,6 +52,7 @@ jobs:
           cache-dependency-path: |
             frontend/package-lock.json
             extension/package-lock.json
+            tools/analytics_cosmos_node/package-lock.json
       - name: Cache build caches
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
@@ -102,6 +103,10 @@ jobs:
         run: npm test --prefix extension
       - name: Test provisioning page module
         run: node --test app/provisioning/provisioning.test.mjs
+      - name: Install analytics conformance dependencies
+        run: npm ci --prefix tools/analytics_cosmos_node
+      - name: Test analytics conformance adapter
+        run: npm test --prefix tools/analytics_cosmos_node
       - name: Test the release bindings gate
         run: node --test tools/legal-release-bindings/verify.test.mjs
       - name: Test the packaged signing rule gate

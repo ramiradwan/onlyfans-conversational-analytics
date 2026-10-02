@@ -167,11 +167,16 @@
     "tests/test_analytics_closure_process.py": 2,
     "tests/test_analytics_closure_runner.py": 4,
     "tests/test_analytics_evidence.py": 4,
+    "tests/test_analytics_exchange_sqlite.py": 4,
+    "tests/test_analytics_forced_rebuild.py": 2,
     "tests/test_analytics_graph_record_reuse.py": 4,
+    "tests/test_analytics_lifecycle_receipts.py": 4,
+    "tests/test_analytics_package_oracle.py": 2,
     "tests/test_analytics_pipeline.py": 3,
     "tests/test_analytics_query_endpoints.py": 2,
     "tests/test_analytics_question_cases.py": 2,
     "tests/test_analytics_question_service.py": 3,
+    "tests/test_analytics_rebuild_admission.py": 1,
     "tests/test_analytics_retention.py": 4,
     "tests/test_analytics_source_tokens.py": 3,
     "tests/test_append_cache_ownership.py": 3,
@@ -274,6 +279,7 @@
     "tests/test_published_source_identity.py": 2,
     "tests/test_qualification_host_guard.py": 2,
     "tests/test_qualification_runtime_clock.py": 3,
+    "tests/test_question_coverage.py": 3,
     "tests/test_question_identity_preparation.py": 4,
     "tests/test_question_route_guards.py": 2,
     "tests/test_readiness_identity.py": 3,
@@ -632,6 +638,34 @@
       {
         "selector": "tests/test_canonical_migration_lineages.py",
         "reason": "Both immutable canonical migration histories upgrade, reopen and verify on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_exchange_sqlite.py",
+        "reason": "Encrypted exchange publications preserve source bindings and interrupted import recovery on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_forced_rebuild.py",
+        "reason": "Forced rebuilds recompute, coalesce and cancel through the bounded scheduler on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_lifecycle_receipts.py",
+        "reason": "Inherited pipe receipts bind durable canonical writes and joined shutdown on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_package_oracle.py",
+        "reason": "Read-only encrypted canonical and projection verification rejects tampering and stale records on Windows."
+      },
+      {
+        "selector": "tests/test_question_coverage.py",
+        "reason": "Retained acquisition evidence invalidates bounded question and source bindings on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_rebuild_admission.py",
+        "reason": "Creator rebuilds recheck durable account and analysis authority on Windows."
+      },
+      {
+        "selector": "tests/test_process_lifetime.py",
+        "reason": "Windowed processes shut down on parent pipe closure without console signals."
       }
     ]
   },

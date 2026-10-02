@@ -23,8 +23,6 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0022: Keep activation Legal evidence append-only in the Extension](0022-append-only-legal-activation-evidence.md)
 - [ADR 0025: Adopt CapabilityLicense delivery contracts](0025-adopt-capability-license-delivery-contracts.md)
 
-- [ADR 0026: Use bounded, source-linked analytics questions](0026-bounded-analytics-questions.md)
-
 - [ADR 0027: Reuse versioned analyzer results within analytics generations](0027-enrichment-reuse.md)
 
 - [ADR 0028: Recompute changed conversations within full analytics generations](0028-conversation-incremental-processing.md)
@@ -72,6 +70,7 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0024: Protect Full-mode communication with locally paired sessions](0024-authenticated-companion-sessions.md)
 
 - [ADR 0026: Deduplicate seven-day Preview activity with local keyed tokens](0026-preview-keyed-deduplication.md)
+- [ADR 0043: Use bounded, source-linked analytics questions](0043-bounded-analytics-questions.md)
 - [ADR 0045: Let the desktop app lead extension setup and controls with pushed state](0045-desktop-led-extension-setup.md)
 
 ## Superseded

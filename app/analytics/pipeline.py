@@ -323,6 +323,7 @@ class AnalyticsPipeline:
         creator_account_id: str,
         *,
         force: bool = False,
+        full_rebuild: bool = False,
         publication_epoch: str | None = None,
         cancellation_check: CancellationCheck | None = None,
     ) -> ProjectionCandidate:
@@ -334,7 +335,7 @@ class AnalyticsPipeline:
         if not self.account_exists(creator_account_id):
             raise CanonicalAccountNotFound()
         with self._account_lock(creator_account_id):
-            force = force or self._requires_integrity_upgrade(creator_account_id)
+            force = force or full_rebuild or self._requires_integrity_upgrade(creator_account_id)
             for attempt in range(1, self.max_revision_retries + 1):
                 check_cancelled(cancellation_check)
                 account = self._capture_source(creator_account_id, cancellation_check)
@@ -394,9 +395,10 @@ class AnalyticsPipeline:
                 try:
                     with reuse_build(self.projections, creator_account_id,
                             self._retention_clock, cancellation_check,
-                            enabled=self.reuse_enrichment) as reuse, conversation_build(
+                            enabled=self.reuse_enrichment and not full_rebuild) as reuse, conversation_build(
                                 self.projections, creator_account_id,
                                 compact=self.compact_graph,
+                                reuse=not full_rebuild,
                             ) as conversation_state:
                         if cancellation_check is None:
                             artifact = self._build(

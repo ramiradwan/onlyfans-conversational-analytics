@@ -198,6 +198,8 @@ def check_matrix(manifest: dict, job: str, data: dict) -> list[str]:
     phases = data.get("phases", [])
     if [x.get("phase") for x in phases] != manifest["phases"]:
         return ["missing_duplicate_or_reordered_matrix_phase"]
+    packaged = (manifest.get("protocol") == "analytics-closure.v2"
+                and data.get("execution") == "packaged")
     count = size
     revision = phases[0].get("source_before", {}).get("revision")
     if type(revision) is not int or revision < 1:
@@ -209,7 +211,16 @@ def check_matrix(manifest: dict, job: str, data: dict) -> list[str]:
         errors.extend(timestamps(phase, mutation=revisions != 0))
         if phase.get("source_before") != {"messages": count, "revision": revision}:
             errors.append("matrix_source_before_mismatch:" + phase["phase"])
-        count, revision = count + delta, revision + revisions
+        count += delta
+        if packaged:
+            from tools.analytics_qualification_tracks import check_admitted_mutation
+            errors.extend(check_admitted_mutation(manifest, phase))
+            after_revision = phase.get("source_after", {}).get("revision")
+            if type(after_revision) is not int or after_revision < revision:
+                errors.append("matrix_revision_invalid:" + phase["phase"])
+            revision = after_revision
+        else:
+            revision += revisions
         if phase.get("source_after") != {"messages": count, "revision": revision}:
             errors.append("matrix_source_after_mismatch:" + phase["phase"])
         for check in ("independent_rebuild_equal", "persisted_content_revalidated"):
@@ -479,9 +490,20 @@ def inspect_attempt(path: Path, manifest: dict, context: dict) -> tuple[str, dic
     elif job == "regression":
         errors.extend(check_regression_evidence(path, result, context))
     elif job != "source-ci":
-        errors.extend(check_collector_evidence(path, result, manifest))
+        if manifest.get("protocol") == "analytics-closure.v2" and payload.get("execution") == "packaged":
+            from tools.analytics_qualification_packaged import check_evidence
+            errors.extend(check_evidence(path, result, manifest, context))
+        else:
+            errors.extend(check_collector_evidence(path, result, manifest))
     if errors:
         return job, verdict("FAIL", *errors), result
+    from tools.analytics_qualification_tracks import check_track
+    track_errors = check_track(manifest, context, job, payload, result.get("subject"))
+    if track_errors is not None:
+        if track_errors:
+            status = "BLOCKED" if track_errors == ["exact_package_execution_not_established"] else "FAIL"
+            return job, verdict(status, *track_errors), result
+        return job, verdict("PASS"), result
     if job not in ("source-ci", "regression"):
         artifacts = {k: v["sha256"] for k, v in context.get("artifacts", {}).items()}
         if (set(artifacts) != {"installer", "runtime"} or payload.get("execution") != "packaged"
@@ -581,6 +603,12 @@ def check_collector_evidence(attempt: Path, result: dict, manifest: dict) -> lis
     def read(name):
         return read_json(attempt / names[name]["path"])
     config, payload = read("worker-input.json"), result["payload"]
+    if manifest.get("protocol") == "analytics-closure.v2" and payload.get("evidence_track") == "semantic_questions":
+        if (config.get("mode") != "questions" or config.get("known_kinds") is not True
+                or config.get("semantic_questions") is not True
+                or config.get("profile") != payload.get("profile")
+                or config.get("hardware") != payload.get("hardware")):
+            return ["semantic_question_collector_binding_mismatch"]
     profiled = config.get("profile_updates", False)
     claimed = payload.get("profiling", False)
     if type(profiled) is not bool or type(claimed) is not bool or profiled != claimed:

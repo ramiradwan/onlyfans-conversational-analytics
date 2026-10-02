@@ -14,7 +14,7 @@ from typing import Callable
 from app.analytics.identity import CanonicalIdentity
 from app.analytics.opaque_refs import account_ref
 
-TOKEN_SCHEMA_DIGEST = '43d2a812f88198794a60be8b53dace8b3119c3f3c29db6484ef9dfacbc4a4915'
+TOKEN_SCHEMA_DIGEST = '98dbe712bc3c6e4858d17166358b8162dbd4d9bdebf572430842d9c5d7ab0cab'
 MAX_IDENTITIES = 8
 IDENTITY_LIFETIME_SECONDS = 60.0
 

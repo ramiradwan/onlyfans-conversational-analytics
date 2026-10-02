@@ -132,10 +132,10 @@ ACTIVE_CONVERSATIONS: ContextVar[ConversationBuild | None] = ContextVar("convers
 
 
 @contextmanager
-def conversation_build(store, account_id, *, compact=False):
+def conversation_build(store, account_id, *, compact=False, reuse=True):
     state = ConversationBuild()
     state.compact = compact and getattr(store, "generation_references_supported", lambda: False)()
-    opener = getattr(store, "open_conversation_fragments", None)
+    opener = getattr(store, "open_conversation_fragments", None) if reuse else None
     with opener(account_id) if callable(opener) else nullcontext(None) as reader:
         state.reader = reader
         token = ACTIVE_CONVERSATIONS.set(state)

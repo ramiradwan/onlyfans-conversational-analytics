@@ -1348,6 +1348,9 @@ class SQLiteAnalyticsProjectionStore:
             raise
         self._checkpoint("activated", generation_id)
         self.collect_garbage(partition_ref)
+        from app.core.lifecycle_receipts import emit
+        emit("cleanup_complete", account_id=creator_account_id,
+             canonical_revision=canonical_identity.revision, generation_id=generation_id)
         return changed
 
     def discard_generation(self, generation_id: str) -> None:
@@ -1739,6 +1742,12 @@ class SQLiteAnalyticsProjectionStore:
                 )
                 verify_generation_values(generation, values)
                 check()
+                from app.core.lifecycle_receipts import emit
+                emit("persisted_validation", generation_id=generation_id,
+                     canonical_revision=int(generation["canonical_revision"]),
+                     canonical_content_digest=generation["canonical_content_digest"],
+                     projection_digest=values["projection_digest"],
+                     graph_digest=values["graph_digest"])
                 return values
         except GraphDeadlineExceeded:
             raise
@@ -1999,6 +2008,12 @@ class SQLiteAnalyticsProjectionStore:
             if updated.rowcount != 1:
                 raise ProjectionReconciliationError("local activation CAS failed")
             renewed = finish_transition(connection, transition)
+            from app.core.lifecycle_receipts import stage
+            stage(connection, "activation_commit", account_id=creator_account_id,
+                  canonical_revision=canonical_identity.revision, generation_id=generation_id,
+                  canonical_content_digest=canonical_identity.content_digest,
+                  projection_digest=candidate["projection_digest"],
+                  graph_digest=candidate["graph_digest"])
         self._install_enrichment_transition(transition, renewed)
         return True
 

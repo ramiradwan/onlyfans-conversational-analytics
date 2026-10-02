@@ -30,7 +30,15 @@
     "tests/test_analytics_closure_runner.py": 1,
     "tests/test_analytics_convergence_evidence.py": 1,
     "tests/test_analytics_evidence.py": 2,
+    "tests/test_analytics_exchange.py": 2,
+    "tests/test_analytics_exchange_cosmos.py": 1,
+    "tests/test_analytics_exchange_records.py": 2,
+    "tests/test_analytics_exchange_sqlite.py": 1,
+    "tests/test_analytics_forced_rebuild.py": 2,
     "tests/test_analytics_graph_record_reuse.py": 2,
+    "tests/test_analytics_lifecycle_receipts.py": 1,
+    "tests/test_analytics_package_oracle.py": 2,
+    "tests/test_analytics_packaged_qualification.py": 1,
     "tests/test_analytics_pipeline.py": 2,
     "tests/test_analytics_qualification_profile.py": 1,
     "tests/test_analytics_query_endpoints.py": 2,
@@ -39,6 +47,7 @@
     "tests/test_analytics_question_contracts.py": 1,
     "tests/test_analytics_question_packaging.py": 1,
     "tests/test_analytics_question_service.py": 1,
+    "tests/test_analytics_rebuild_admission.py": 2,
     "tests/test_analytics_retention.py": 2,
     "tests/test_analytics_runtime.py": 2,
     "tests/test_analytics_source_tokens.py": 2,
@@ -209,6 +218,7 @@
     "tests/test_predecessor_graph_handoff.py": 1,
     "tests/test_prefix_update_attribution.py": 1,
     "tests/test_private_file_memory.py": 2,
+    "tests/test_process_lifetime.py": 1,
     "tests/test_projection_activation.py": 1,
     "tests/test_projection_backup_restore_retention.py": 1,
     "tests/test_projection_currentness.py": 2,
@@ -238,6 +248,7 @@
     "tests/test_qualification_host_guard.py": 1,
     "tests/test_qualification_process_improvements.py": 1,
     "tests/test_qualification_runtime_clock.py": 1,
+    "tests/test_question_coverage.py": 2,
     "tests/test_question_identity_lifecycle.py": 1,
     "tests/test_question_identity_preparation.py": 1,
     "tests/test_question_route_guards.py": 1,
@@ -611,7 +622,18 @@
       "tests/test_workflow_contexts.py": 0.21195470000020578
     },
     "unmeasured_files": [
-      "tests/test_ci_windows_shards.py"
+      "tests/test_analytics_exchange.py",
+      "tests/test_analytics_exchange_cosmos.py",
+      "tests/test_analytics_exchange_records.py",
+      "tests/test_analytics_exchange_sqlite.py",
+      "tests/test_analytics_forced_rebuild.py",
+      "tests/test_analytics_lifecycle_receipts.py",
+      "tests/test_analytics_package_oracle.py",
+      "tests/test_analytics_packaged_qualification.py",
+      "tests/test_analytics_rebuild_admission.py",
+      "tests/test_ci_windows_shards.py",
+      "tests/test_process_lifetime.py",
+      "tests/test_question_coverage.py"
     ]
   }
 }

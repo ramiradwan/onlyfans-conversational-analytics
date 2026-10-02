@@ -562,6 +562,18 @@ class CanonicalMessage(AnalyticsModel):
     sentiment: str | None = None
 
 
+class CanonicalAcquisitionCoverage(AnalyticsModel):
+    """Retained acquisition facts used by bounded historical questions."""
+
+    generation_id: StrictStr
+    state: Literal["discovering", "backfilling", "complete", "partial", "superseded"]
+    as_of: AwareDatetime
+    inventory_ended_at: AwareDatetime | None
+    closed_at: AwareDatetime | None
+    history_started_at: AwareDatetime | None
+    head_reconciled_through: AwareDatetime | None
+
+
 class CanonicalConversation(AnalyticsModel):
     """Validated analytics view of a canonical read-model conversation."""
 
@@ -571,6 +583,7 @@ class CanonicalConversation(AnalyticsModel):
     unread_count: int = Field(default=0, ge=0)
     last_message_at: AwareDatetime | None = None
     messages: list[CanonicalMessage] = Field(default_factory=list)
+    acquisition_coverage: CanonicalAcquisitionCoverage | None = None
 
 
 def analytics_json_schema() -> dict[str, Any]:

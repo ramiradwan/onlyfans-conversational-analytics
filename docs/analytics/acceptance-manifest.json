@@ -1,20 +1,16 @@
 {
   "schema": "analytics-acceptance.v1",
-  "protocol": "a07-closure.v1",
+  "protocol": "analytics-closure.v2",
   "baseline_revision": "511efd1bb6917ce9b6b5d1723b0eb949ba43466a",
   "scope_decision": {
-    "authority": "A07 closure instructions, 2026-09-26",
     "latency_profile": "reference-windows-16g",
-    "constrained_profile": "Correctness, resources, stability, UI and ingestion; report latency without a reference-profile promise.",
-    "bulk_and_cold": "Completion within execution guards, not the interactive latency gates.",
-    "planned_acceptance_units": 5,
-    "automatic_sixth_performance_pass": false,
+    "constrained_profile": "Correctness, resources, stability, interface and ingestion are required. Latency is reported without a reference-profile promise.",
+    "bulk_and_cold": "Completion within execution guards.",
     "excluded": [
       "graph representation changes",
       "new model or runtime selection",
-      "Cosmos implementation",
-      "pricing activation",
-      "general cold-build research"
+      "remote analytics implementation",
+      "enabling unqualified questions"
     ]
   },
   "profiles": {
@@ -181,7 +177,8 @@
     "authorized_ingestion",
     "cancellation",
     "recovery",
-    "offline"
+    "offline",
+    "production_unknown_questions"
   ],
   "evidence": {
     "immutable_phase_results": true,
@@ -191,29 +188,20 @@
     "unavailable_prerequisites": "BLOCKED",
     "incomplete_started_work": "FAIL",
     "source_only_is_not_package_evidence": true,
-    "final_receipt_after_final_commit": true
+    "final_receipt_after_final_commit": true,
+    "protocol_mismatch": "FAIL"
   },
   "status": "frozen",
   "measurement": {
-    "version": "a07-observable-scheduler.v7",
-    "previous_protocol": "Legacy whole-process mutation diagnostic, 1800 seconds including preparation and per-phase oracle work.",
-    "change": "Record activation, observed question visibility, cleanup and backlog separately; persist operation and verification separately. Question fixture construction and fresh-runtime startup remain inside one 1800-second owned process-tree guard.",
-    "old_failures_remain_failures": true,
+    "version": "analytics-observable-scheduler.v8",
     "visibility_poll_seconds": 0.1,
-    "stale_reference_check": "Timed after durable canonical mutation and before schedule, as in the legacy matrix.",
-    "cold_readiness": "Ordinary projection_is_current before observing the first visible question; included in cold/unchanged operation clocks.",
-    "restart": "New interpreter after scheduler join; process IDs and independent instances are recorded.",
-    "fixture_kind_boundary": "Known synthetic event kinds only test query mechanics. Production unknown kinds remain unknown. Neither source fixture qualifies packaged ingestion.",
-    "resource_scope": "The new supervisor samples the owned process tree, not only the main worker. Minimum available memory is 2 GiB throughout. These are new protocol records, not paired attribution of legacy timings.",
-    "visibility_poll_guard": "Poll until a current answer is observed or the whole-worker guard ends. Bulk work has no ten-second polling cutoff.",
-    "windows_shutdown": "v3 waits for owned process handles to become signaled as well as zero active job accounting. One ten-second shutdown deadline. The v2 CI shutdown failure and source diagnostic failures remain failures; they are not requalified by this correction.",
-    "reporting": "v3 validates question plans without starting the application. Reporting errors preserve worker exit, ownership, clocks, raw payload and attachments; previous malformed summaries remain failed.",
-    "visibility_maintenance": "v4 starts recovery and the declared 30-second reconciliation in both initial and restarted visibility processes. The v3 initial process disabled this timer. Prior runs remain historical controls, not evidence for the corrected maintenance path. Preparation, independent verification and product cleanup stay inside the unchanged 1800-second whole-worker guard.",
-    "query_clock": "v5 preserves the fixed fixture timestamps, filters and cutoff, but uses the normal system UTC clock for query validity and evidence expiry. Generation creation already uses that clock. A v4 run after its frozen evaluation time can reject every new generation as future-dated; those failed runs remain failed. The 1800-second whole-worker guard, query limits, visibility clocks and required cleanup are unchanged.",
-    "observation_journal": "First distinct query refusals (at most 16) and the first current answer are durable before the final operation record; stopped observers cannot erase their refusal reason.",
-    "visibility_state_budgets": "v6 uses five ordered 1800-second execution states within one worker tree, with a 9000-second absolute cap. Cold includes interpreter/fixture preparation, build, and its oracle; ordinary includes update and oracle; rebuilt includes forced rebuild, its oracle, first update and oracle; idle includes waiting, update, oracle and initial shutdown; restarted includes new interpreter, normal readiness, update, oracle and final shutdown. Required product cleanup is synchronous and included. No clock pauses or warm-process replacement are allowed. Previous whole-worker 1800-second failures stay failed; mutation and question execution keep their existing whole-worker limit.",
-    "verified_probe_fail_fast": "v7 checks each visibility probe only after synchronous cleanup and its durable independent verification. A failed probe stops later cases and restart, joins owned resources, and records FAIL plus unexecuted cases. A successful run still requires all existing states, all cases and all fresh processes. Prior failures remain failures; no deadline, threshold or product cleanup is removed.",
-    "verification_components": "v7 separately reports generation resolution, independent canonical reference computation, persisted-generation recomputation, and comparison. Advisory progress does not renew deadlines. No expected result or PASS is cached, and no verification is skipped."
+    "query_clock": "System UTC establishes query validity and expiry. Fixture selection uses the fixed evaluation clock.",
+    "visibility": "Durable canonical commit through the latest current visible result, synchronous cleanup and drained backlog.",
+    "execution": "All preparation, independent verification and cleanup remain within the owned worker budgets.",
+    "receipts": "Ordered content-free lifecycle receipts bind monotonic clocks to the actual packaged process. Missing or lost receipts fail verification.",
+    "cold_package": "Seed through admitted Agent capture, close the process, launch the same package in a fresh process and request a full rebuild. Timing starts at process launch and requires the post-request publication and drained scheduler. A persisted predecessor remains present. This does not establish an empty-store or cold-disk measurement.",
+    "observations": "The first distinct query refusals and each first visible current result are durable before independent verification.",
+    "cancellation": "A full rebuild starts in the packaged executor and reports cancellation during ordinary shutdown. A completed build cannot satisfy cancellation. Recovery uses a fresh process and the same persisted installation."
   },
   "history": {
     "batches": 100,
@@ -222,7 +210,6 @@
     "producer_pause_seconds": 0.01
   },
   "runtime_start_revision": "78029b536b83e929e4771772fa296f52f17af84d",
-  "freeze_decision": "Commit 1 closure instruction: reference-only numeric latency gates; constrained profile reports actual latency; no automatic sixth performance pass.",
   "scheduler": {
     "matrix": {
       "workers": 1,
@@ -250,5 +237,50 @@
     ],
     "maximum_state_seconds": 1800,
     "maximum_worker_seconds": 9000
+  },
+  "evidence_tracks": {
+    "semantic_questions": {
+      "job_prefix": "questions/",
+      "execution": "synthetic_question",
+      "ingestion_path": "direct_synthetic_database_fixture",
+      "fixture_mode": "known_synthetic_kinds",
+      "profile_required": true,
+      "exact_source_required": true,
+      "claims": [
+        "query_correctness",
+        "query_latency"
+      ],
+      "production_source_evidence": false
+    },
+    "packaged": {
+      "job_prefixes": [
+        "package/",
+        "mutation/",
+        "visibility/"
+      ],
+      "execution": "packaged",
+      "ingestion_path": "authorized_agent",
+      "fixture_mode": "production_unknown_kinds",
+      "artifact_names": [
+        "installer",
+        "runtime"
+      ],
+      "production_questions": "Current results preserve unknown event kind and inferred ordering. Coverage follows admitted acquisition evidence through the question cutoff. Unknown latest events are undetermined."
+    }
+  },
+  "packaged_mutations": {
+    "revision_binding": "admitted_commits",
+    "origins": {
+      "one_committed_message": "authorized_agent",
+      "100_edits": "authorized_agent",
+      "100_creator_deletions": "creator_vault",
+      "10000_historical_interleaved_with_100_live": "authorized_agent"
+    },
+    "operations": {
+      "one_committed_message": 1,
+      "100_edits": 100,
+      "100_creator_deletions": 100,
+      "10000_historical_interleaved_with_100_live": 10100
+    }
   }
 }

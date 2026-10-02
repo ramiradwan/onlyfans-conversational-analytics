@@ -628,7 +628,9 @@
         "app/analytics/validation_receipt.py",
         "app/analytics/currentness.py",
         "app/analytics/sql/0012_generation_content_epoch.sql",
-        "app/analytics/catalog_cache.py"
+        "app/analytics/catalog_cache.py",
+        "app/analytics/source_coverage.py",
+        "app/analytics/exchange_*.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",

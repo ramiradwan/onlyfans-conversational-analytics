@@ -1,6 +1,6 @@
-# ADR 0026: Use bounded, source-linked analytics questions
+# ADR 0043: Use bounded, source-linked analytics questions
 
-- Status: accepted
+- Status: Proposed
 - Date: 2026-09-18
 
 ## Decision

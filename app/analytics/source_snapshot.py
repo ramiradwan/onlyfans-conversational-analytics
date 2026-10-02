@@ -12,6 +12,7 @@ from typing import Callable
 
 from app.analytics.errors import CanonicalRevisionChanged
 from app.analytics.identity import CanonicalIdentity
+from app.analytics.source_coverage import AcquisitionCoverage
 
 
 def encoded(value: object) -> str:
@@ -66,6 +67,7 @@ def scan_identity(db, account_id: str, revision: int, *, check=lambda: None,
 
     account_hash = hashlib.sha256(b"ofca:canonical-account:v1\0")
     digests, message_count = {}, 0
+    coverage = AcquisitionCoverage(db, account_id, consume=consume)
 
     def emit(text: str, conversation_hash=None) -> None:
         check()
@@ -88,7 +90,8 @@ def scan_identity(db, account_id: str, revision: int, *, check=lambda: None,
             WHERE creator_account_id=? AND chat_id=? AND is_deleted=0
             ORDER BY sent_at DESC,winning_stream_epoch DESC,winning_source_seq DESC,message_id DESC
             LIMIT 1""", (account_id, chat_id)).fetchone()
-        emit('{"conversation_id":' + encoded(chat_id), part)
+        emit('{"acquisition_coverage":' + encoded(coverage.conversation(chat_id)), part)
+        emit(',"conversation_id":' + encoded(chat_id), part)
         emit(',"display_name":' + encoded(chat["display_name"]), part)
         emit(',"last_message_at":' + encoded(instant(latest[0]) if latest else None), part)
         emit(',"messages":[', part)
@@ -128,7 +131,10 @@ def read_conversation(db, account_id: str, conversation_id: str, *, check=lambda
         messages.append({"message_id": str(item[0]), "source_ordinal": index,
             "text": str(item[1]), "sent_at": instant(str(item[2])),
             "direction": str(item[3]), "sentiment": None})
-    return {"conversation_id": conversation_id, "platform_user_id": row[0] or f"placeholder:{conversation_id}",
+    coverage = AcquisitionCoverage(db, account_id)
+    check()
+    return {"acquisition_coverage": coverage.conversation(conversation_id),
+        "conversation_id": conversation_id, "platform_user_id": row[0] or f"placeholder:{conversation_id}",
         "display_name": row[1], "unread_count": 0,
         "last_message_at": messages[-1]["sent_at"] if messages else None, "messages": messages}
 

@@ -213,7 +213,11 @@ def collect(config):
     finally:
         if work is not None:
             work.close()
-        report.update(execution="source_diagnostic", profiling=config.get("profile_updates", False), supervisor_instance=process["supervisor_instance"],
+        semantic = config.get("semantic_questions", False) and mode in {"questions", "questions-child"}
+        report.update(execution="synthetic_question" if semantic else "source_diagnostic",
+            evidence_track="semantic_questions" if semantic else "diagnostic",
+            ingestion_path="direct_synthetic_database_fixture", profile=config.get("profile"),
+            hardware=config.get("hardware"), profiling=config.get("profile_updates", False), supervisor_instance=process["supervisor_instance"],
             collector_process=process, subject_sha256=config["subject_sha256"],
             subject_unchanged=subject_matches(config), manifest_sha256=q.digest(manifest),
             fixture_mode="known_synthetic_kinds" if config["known_kinds"] else "production_unknown_kinds",

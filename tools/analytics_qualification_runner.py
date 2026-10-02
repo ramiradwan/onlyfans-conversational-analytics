@@ -23,7 +23,7 @@ def preflight(directory: Path, session: str) -> None:
         "pyinstaller_available": importlib.util.find_spec("PyInstaller") is not None,
         "inno_compiler": shutil.which("iscc"), "windows": windows_preflight(),
         "profiles": "BLOCKED", "package": "BLOCKED",
-        "reason": "Declared Windows profiles and the packaged UI/ingestion adapter are unavailable. Source collectors cannot qualify them.",
+        "reason": "Qualification requires measured Windows profiles and immutable package inputs. Source diagnostics do not establish packaged behavior.",
     })
 
 
@@ -62,11 +62,24 @@ def run_regressions(root: Path, directory: Path, context: dict, session: str, ma
 
 
 def run_source(root, directory, context, session, manifest, args):
-    kind, profile = args.run_source, "reference-windows-16g"
+    kind, profile = args.run_source, getattr(args, "profile", "reference-windows-16g")
     job = (f"mutation/{profile}/{args.messages}" if kind == "matrix" else
            f"questions/{profile}/{args.case}/{args.state}" if kind == "questions" else
            f"visibility/{profile}/{args.repeat}")
     attempt = q.begin_attempt(directory, context, session, job)
+    hardware = None
+    if getattr(args, "run_questions", False):
+        from tools.analytics_qualification_hardware import observe
+        from tools.analytics_qualification_tracks import check_profile
+        try:
+            hardware = observe()
+            errors = check_profile(manifest, profile, hardware)
+            if errors:
+                raise ValueError(";".join(errors))
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            finish(attempt, context, job, {"status": "BLOCKED", "worker_started": False,
+                "exit_code": None, "reason": str(error)})
+            return
     subject_root = (args.subject_root or root).resolve()
     subject = q.source_context(subject_root)
     config = {"subject_directory": str(subject_root), "subject_files": subject["files"],
@@ -76,7 +89,8 @@ def run_source(root, directory, context, session, manifest, args):
         "continue_after_visibility_failure": getattr(args, "continue_after_visibility_failure", False),
         "known_kinds": args.known_synthetic_kinds, "profile_updates": getattr(args, "profile_updates", False), "output": str(attempt / "collector"),
         "data": str(attempt / "collector/data"), "entry_point": str(root / "tools/qualify_analytics_baseline.py"),
-        "job": job}
+        "job": job, "profile": profile, "hardware": hardware,
+        "semantic_questions": getattr(args, "run_questions", False)}
     execution_schedule = None
     worker_limit = manifest["limits"]["whole_worker_seconds"]
     if kind == "visibility" and "visibility_execution" in manifest:
@@ -148,6 +162,10 @@ def main(root: Path) -> int:
     action.add_argument("--run-ci", action="store_true")
     parser.add_argument("--review-record", type=Path)
     action.add_argument("--run-source", choices=("matrix", "questions", "visibility"))
+    action.add_argument("--run-questions", action="store_true")
+    action.add_argument("--run-package", choices=("package", "matrix", "visibility"))
+    parser.add_argument("--package-inputs", type=Path)
+    parser.add_argument("--profile", choices=("reference-windows-16g", "constrained-windows-8g"), default="reference-windows-16g")
     parser.add_argument("--subject-root", type=Path)
     parser.add_argument("--messages", type=int, choices=(10000, 100000), default=100000)
     parser.add_argument("--case", choices=("populated", "empty", "tied_time", "generation_bound_pagination"), default="empty")
@@ -163,6 +181,12 @@ def main(root: Path) -> int:
         parser.error("--continue-after-visibility-failure requires --run-source visibility")
     if args.run_ci and args.review_record is None:
         parser.error("--run-ci requires --review-record bound to the exact clean source")
+    if args.run_questions:
+        if args.subject_root is not None or args.profile_updates:
+            parser.error("Semantic question qualification requires the final source without profiling")
+        args.run_source, args.known_synthetic_kinds = "questions", True
+    if args.run_package and args.package_inputs is None:
+        parser.error("--run-package requires --package-inputs")
     directory = args.output.resolve()
     manifest = q.read_json(root / "docs/analytics/acceptance-manifest.json")
     try:
@@ -181,7 +205,11 @@ def main(root: Path) -> int:
                         or q.digest(context["runtime"]) != q.digest(runtime)):
                     parser.error("Resume requires identical source, manifest and runtime; start a new evidence directory.")
             else:
-                context = q.initialize(directory, manifest, source, runtime)
+                artifacts = {}
+                if args.package_inputs is not None:
+                    from tools.analytics_qualification_packaged import artifact_context
+                    artifacts = artifact_context(q.read_json(args.package_inputs))
+                context = q.initialize(directory, manifest, source, runtime, artifacts)
             identity = q.session(directory, context)
             if not args.resume:
                 preflight(directory, identity)
@@ -191,6 +219,9 @@ def main(root: Path) -> int:
                 run_regressions(root, directory, context, identity, manifest)
             if args.run_source:
                 run_source(root, directory, context, identity, manifest, args)
+            if args.run_package:
+                from tools.analytics_qualification_packaged import run
+                run(root, directory, context, identity, manifest, args)
             result = q.verify(directory, manifest, current_source=q.source_context(root))
             q.write_once(directory / "verdicts" / (identity + ".json"), result)
             print(q.encoded(result).decode(), end="")

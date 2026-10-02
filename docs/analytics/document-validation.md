@@ -20,7 +20,7 @@ Validation retains the input string, the header, and at most the current array i
 
 ```powershell
 python -m pytest tests/test_json_validation_header.py tests/test_projection_query_metadata.py tests/test_projection_metadata_parsing.py tests/test_projection_backup_restore_retention.py
-python tools/qualify_analytics_baseline.py --output C:\temp\document-validation-baseline
+python tools/qualify_analytics_baseline.py --output $env:ANALYTICS_EVIDENCE_DIR/document-validation-baseline
 ```
 
 Tests cover syntax, escaping, duplicate fields, independently generated JSON, transient allocations, cancellation, generated-column protection, populated migration, original document bytes, foreign keys, backups, and restart. Benchmark document insertion in a fresh process and record its memory separately from graph construction and publication.

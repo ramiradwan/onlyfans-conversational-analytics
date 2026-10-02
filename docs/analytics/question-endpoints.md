@@ -12,6 +12,7 @@ The insights API accepts the [closed question plans](questions.md) and returns s
 | `POST /api/v1/insights/questions` | Execute a question plan. |
 | `POST /api/v1/insights/questions/evidence` | Resolve a returned source reference. |
 | `DELETE /api/v1/insights/questions/evidence` | Clear the current account's source links. |
+| `POST /api/v1/insights/rebuild` | Request a full rebuild for the current account. |
 
 Every route requires the existing activated, authenticated runtime. POST and DELETE also require the configured origin and session CSRF token in `X-CSRF-Token`. Account authority comes from the session. Request query parameters cannot select an account or override a plan.
 
@@ -19,11 +20,17 @@ POST accepts uncompressed `application/json` bodies of at most 16 KiB. Duplicate
 
 The question response contains opaque source references, not message text. Evidence responses contain the exact source text and native conversation/message identifiers for local navigation. Render that text as text, not HTML. The frontend must discard displayed results when the account or source revision changes.
 
+Rebuild accepts an empty JSON object and no query parameters. It revalidates current analysis authority before admitting bounded scheduler work and returns `202` with `{"availability":"building"}`. Repeated requests coalesce. A forced build recomputes even an unchanged source revision, while ordinary recovery can reuse a current publication. The worker rechecks analysis admission before building.
+
 ## Available source information
 
 `no_later_creator_reply.v1` is executable. It inspects follow-up through the cutoff, including replies outside the selected interval. Ambiguous latest messages are undetermined, not matches. A match does not mean a reply is required.
 
-The production canonical gateway does not retain event kind or authoritative source-order confidence. It supplies unknown event kind, inferred ordering, and unknown history coverage. Under the question contract, a conversation whose latest event kind is unknown remains undetermined. Known event types in synthetic integration tests are not evidence that these fields exist in production data.
+The production canonical gateway supplies unknown event kind and inferred ordering. A conversation whose latest event kind is unknown remains undetermined. Known event types in synthetic integration tests are not evidence that these fields exist in production data.
+
+Coverage comes from the active acquisition generation at the question's fixed cutoff. Without an active generation it is unknown. Complete coverage requires a completed, closed generation with frozen inventory, a conversation history marker and a reconciled head through the generation's cutoff. A later question cutoff, incomplete evidence or retention clipping yields partial coverage. A last completed generation and an account freshness indicator cannot substitute for this evidence.
+
+Source identity includes the retained acquisition facts, independently of the requested cutoff. Coverage changes invalidate prepared identities, questions and source links. Both canonical migration histories share the coverage-token migration at version 11.
 
 The deterministic feature cannot be advertised as a qualified no-reply list until sufficient source evidence is available. Changing that interpretation requires an explicit contract decision; the gateway must not infer missing event kinds from message text or direction.
 

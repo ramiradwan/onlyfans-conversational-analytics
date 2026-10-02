@@ -54,6 +54,7 @@ class _CancellationToken:
 @dataclass(slots=True)
 class _AccountWork:
     requested_revision: int
+    force_requested: int = 0
     attempted_revision: int | None = None
     cancellation: _CancellationToken | None = None
 
@@ -565,6 +566,7 @@ class InProcessProjectionScheduler:
         canonical_revision: int,
         *,
         retry_failed: bool = False,
+        force: bool = False,
     ) -> None:
         """Admit immediately, coalesce an account, or reject with backpressure."""
 
@@ -575,6 +577,7 @@ class InProcessProjectionScheduler:
                 raise ProjectionCoordinatorClosed()
             existing = self._work.get(creator_account_id)
             if existing is not None:
+                existing.force_requested += int(force)
                 existing.requested_revision = max(
                     existing.requested_revision,
                     canonical_revision,
@@ -585,10 +588,11 @@ class InProcessProjectionScheduler:
                 failure is not None
                 and failure.attempted_revision == canonical_revision
                 and not retry_failed
+                and not force
             ):
                 return
             available = self._available.get(creator_account_id)
-            if available is not None and available >= canonical_revision:
+            if not force and available is not None and available >= canonical_revision:
                 return
         loop = asyncio.get_running_loop()
         with self._state_lock:
@@ -596,6 +600,7 @@ class InProcessProjectionScheduler:
                 raise ProjectionCoordinatorClosed()
             existing = self._work.get(creator_account_id)
             if existing is not None:
+                existing.force_requested += int(force)
                 existing.requested_revision = max(
                     existing.requested_revision,
                     canonical_revision,
@@ -606,6 +611,7 @@ class InProcessProjectionScheduler:
                 failure is not None
                 and failure.attempted_revision == canonical_revision
                 and not retry_failed
+                and not force
             ):
                 return
             if len(self._pending) >= self.queue_capacity:
@@ -613,7 +619,7 @@ class InProcessProjectionScheduler:
             self._failures.pop(creator_account_id, None)
             self._available.pop(creator_account_id, None)
             self._work[creator_account_id] = _AccountWork(
-                requested_revision=canonical_revision
+                requested_revision=canonical_revision, force_requested=int(force)
             )
             self._pending.append(creator_account_id)
             self._launch_workers_locked(loop)
@@ -689,6 +695,25 @@ class InProcessProjectionScheduler:
             if self._work.get(creator_account_id) is work:
                 self._work.pop(creator_account_id, None)
 
+    def _build_observed(self, account, revision, force, epoch, token):
+        from app.core.lifecycle_receipts import emit
+
+        attempt = uuid4().hex
+        fields = dict(account_id=account, canonical_revision=revision,
+                      attempt_id=attempt, full_rebuild=bool(force))
+        emit("build_started", **fields)
+        try:
+            candidate = self.pipeline.build_candidate(
+                account, publication_epoch=epoch, cancellation_check=token.cancelled,
+                **({"force": True, "full_rebuild": True} if force else {}),
+            )
+        except ProjectionBuildCancelled:
+            emit("build_cancelled", **fields)
+            raise
+        fields["canonical_revision"] = candidate.source_revision
+        emit("build_completed", generation_id=candidate.staged_generation_id, **fields)
+        return candidate
+
     async def _drain_account(
         self,
         creator_account_id: str,
@@ -700,6 +725,7 @@ class InProcessProjectionScheduler:
                     self._work.pop(creator_account_id, None)
                     return
                 attempted_revision = work.requested_revision
+                force_attempted = work.force_requested
                 work.attempted_revision = attempted_revision
                 token = _CancellationToken()
                 work.cancellation = token
@@ -710,10 +736,8 @@ class InProcessProjectionScheduler:
                 publication_epoch = await self._ensure_publication_epoch()
                 candidate = await self._run_owned(
                     functools.partial(
-                        self.pipeline.build_candidate,
-                        creator_account_id,
-                        publication_epoch=publication_epoch,
-                        cancellation_check=token.cancelled,
+                        self._build_observed, creator_account_id, attempted_revision,
+                        force_attempted, publication_epoch, token,
                     )
                 )
             except asyncio.CancelledError:
@@ -768,14 +792,22 @@ class InProcessProjectionScheduler:
                     and published
                     and candidate is not None
                     and candidate.source_revision >= work.requested_revision
+                    and force_attempted == work.force_requested
                 ):
                     self._work.pop(creator_account_id, None)
                     self._failures.pop(creator_account_id, None)
                     self._record_available_locked(
                         creator_account_id, candidate.source_revision
                     )
+                    from app.core.lifecycle_receipts import emit
+                    emit("scheduler_drained", account_id=creator_account_id,
+                         canonical_revision=candidate.source_revision,
+                         generation_id=candidate.staged_generation_id,
+                         pending_accounts=len(self._work),
+                         recovery_requests=len(self._recovery_requests),
+                         active_publications=self._active_publications)
                     return
-                if work.requested_revision > attempted_revision:
+                if work.requested_revision > attempted_revision or work.force_requested > force_attempted:
                     continue
                 self._work.pop(creator_account_id, None)
                 failure = ProjectionScheduleState(

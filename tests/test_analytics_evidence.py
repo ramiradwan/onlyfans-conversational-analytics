@@ -88,6 +88,9 @@ def test_text_and_metadata_affect_version_but_account_revision_does_not(stored):
     record = source.read_evidence_message(ACCOUNT, LOCATION, budget())
     changed = record.model_copy(update={"source_revision": 8}).reference()
     assert changed.source_version_digest == ref.source_version_digest
+    private = record.model_copy(update={"source_state_token": "synthetic-private-token"}).reference()
+    assert private == ref
+    assert "source_state_token" not in private.model_dump()
 
 
 @pytest.mark.parametrize("column,value", [

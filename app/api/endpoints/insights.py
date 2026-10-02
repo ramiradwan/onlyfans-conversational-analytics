@@ -307,6 +307,29 @@ async def answer_question(request: Request, response: Response,
         raise _question_failure(error) from None
 
 
+@router.post("/rebuild", status_code=202, operation_id="rebuildAnalytics",
+             responses=PROTECTED_ERROR_RESPONSES)
+async def rebuild_projection(request: Request, response: Response,
+                             policy: RuntimePolicy = Depends(get_authenticated_account_session)):
+    from app.api.security import require_creator
+    from app.security.runtime_policy import RuntimeAuthorizationDenied
+
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        require_creator(policy)
+        verify_same_origin(request)
+        verify_csrf_token(policy, request.headers.get("x-csrf-token"))
+        if request.query_params or await _question_body(request) != {}:
+            raise HTTPException(422, detail="The rebuild request must be empty.")
+        await insights_service.rebuild_projection(policy)
+        return {"availability": "building"}
+    except RuntimeAuthorizationDenied:
+        raise HTTPException(403, detail="Analysis is not available for this session.",
+                            headers={"Cache-Control": "no-store"}) from None
+    except (AnalyticsError, HTTPException) as error:
+        raise _question_failure(error) from None
+
+
 @router.post("/questions/evidence", response_model=ResolvedEvidence,
              operation_id="resolveAnalyticsEvidence", responses=PROTECTED_ERROR_RESPONSES,
              openapi_extra=_question_schema(QuestionEvidence))

@@ -84,7 +84,7 @@ def test_upgrade_preserves_historical_ledger_content_identity_and_backup(tmp_pat
     with ReadOnlyCanonicalDatabase(database.path) as readonly:
         readonly.validate_schema()
     runner = MigrationRunner(database, migrations_dir=migrations.CANONICAL_MIGRATIONS_DIR)
-    assert runner.run() == [10]
+    assert runner.run() == [10, 11]
     assert runner.last_backup_path is not None
     with closing(database.open_detached(runner.last_backup_path, read_only=True)) as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 9
@@ -96,7 +96,7 @@ def test_upgrade_preserves_historical_ledger_content_identity_and_backup(tmp_pat
             "analytics_source_tokens" if lineage == "main" else "message_catchup"
         )
         assert _content(connection) == old_content
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 11
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         current_token = connection.execute("SELECT token FROM analytics_source_tokens").fetchone()[0]
@@ -150,22 +150,21 @@ def test_recognized_lineage_never_excuses_invalid_history(tmp_path, lineage, tam
 
 
 @pytest.mark.parametrize("lineage", ["main", "analytics"])
-@pytest.mark.parametrize("malformed_version", ["10", 10.1], ids=["text", "fractional"])
+@pytest.mark.parametrize("malformed_version", ["11", 11.1], ids=["text", "fractional"])
 def test_malformed_version_types_are_refused_by_every_validation_boundary(tmp_path, lineage, malformed_version):
     database, _ = _historical_database(tmp_path, lineage)
-    assert MigrationRunner(database).run() == [10]
+    assert MigrationRunner(database).run() == [10, 11]
     with database.transaction() as connection:
         rows = _ledger(connection)
         connection.execute("DROP TABLE schema_migrations")
         # No INTEGER affinity: preserve the malformed value instead of having
         # SQLite repair it before the validation under test can observe it.
         connection.execute("CREATE TABLE schema_migrations(version,name TEXT,checksum TEXT,applied_at TEXT)")
-        # Corrupt the final version: text sorts after integers, so the old
-        # int() normalization would otherwise accept the complete 1..10 list.
-        rows[9] = (malformed_version, *rows[9][1:])
+        # Preserve a malformed final version without SQLite affinity coercion.
+        rows[-1] = (malformed_version, *rows[-1][1:])
         connection.executemany("INSERT INTO schema_migrations VALUES (?,?,?,?)", rows)
         stored_type = connection.execute(
-            "SELECT typeof(version) FROM schema_migrations WHERE name=?", (rows[9][1],)
+            "SELECT typeof(version) FROM schema_migrations WHERE name=?", (rows[-1][1],)
         ).fetchone()[0]
         assert stored_type == ("text" if isinstance(malformed_version, str) else "real")
     with database.read() as connection:
@@ -204,7 +203,7 @@ def test_pending_migration_failure_rolls_back_and_restart_preserves_history(tmp_
         new_table = "analytics_source_tokens" if lineage == "main" else "message_catchup"
         assert connection.execute("SELECT 1 FROM sqlite_schema WHERE name=?", (new_table,)).fetchone() is None
     assert runner.last_backup_path is not None
-    assert MigrationRunner(database).run() == [10]
+    assert MigrationRunner(database).run() == [10, 11]
 
 
 @pytest.mark.parametrize("lineage", ["main", "analytics"])
@@ -212,15 +211,48 @@ def test_both_histories_use_the_same_future_catalog_tail(tmp_path, monkeypatch, 
     database, _ = _historical_database(tmp_path, lineage)
     future = tmp_path / "future-catalog"
     shutil.copytree(migrations.CANONICAL_MIGRATIONS_DIR, future)
-    (future / "0011_future_lineage_probe.sql").write_text("CREATE TABLE future_lineage_probe(value TEXT);", encoding="utf-8")
+    (future / "0012_future_lineage_probe.sql").write_text("CREATE TABLE future_lineage_probe(value TEXT);", encoding="utf-8")
     monkeypatch.setattr(migrations, "CANONICAL_MIGRATIONS_DIR", future)
     runner = MigrationRunner(database, migrations_dir=future)
-    assert runner.run() == [10, 11]
+    assert runner.run() == [10, 11, 12]
     with database.read() as connection:
         assert _ledger(connection)[8][1] == ("message_catchup" if lineage == "main" else "analytics_source_tokens")
-        assert _ledger(connection)[10][1] == "future_lineage_probe"
+        assert _ledger(connection)[11][1] == "future_lineage_probe"
         assert connection.execute("SELECT COUNT(*) FROM future_lineage_probe").fetchone()[0] == 0
     assert runner.run() == []
+
+
+@pytest.mark.parametrize("lineage", ["main", "analytics"])
+def test_coverage_tracking_upgrade_rolls_back_without_rewriting_either_ledger(tmp_path, monkeypatch, lineage):
+    database, catalog = _historical_database(tmp_path, lineage)
+    relative = ("0010_analytics_source_tokens.sql" if lineage == "main" else
+                "legacy_analytics_v9/0010_message_catchup.sql")
+    path = migrations.CANONICAL_MIGRATIONS_DIR / relative
+    shutil.copy2(path, catalog / path.name)
+    assert MigrationRunner(database, migrations_dir=catalog).run() == [10]
+    with database.read() as connection:
+        before = _ledger(connection), _content(connection)
+        token = connection.execute("SELECT token FROM analytics_source_tokens").fetchone()[0]
+    apply = MigrationRunner._apply
+
+    def broken(connection, migration):
+        assert migration.version == 11
+        apply(connection, replace(migration, sql=migration.sql + "\nINSERT INTO absent_coverage_table VALUES (1);"))
+
+    with monkeypatch.context() as patch:
+        patch.setattr(MigrationRunner, "_apply", staticmethod(broken))
+        with pytest.raises(sqlite3.OperationalError):
+            MigrationRunner(database).run()
+    with database.read() as connection:
+        assert (_ledger(connection), _content(connection)) == before
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert connection.execute("SELECT 1 FROM sqlite_schema WHERE name='analytics_source_token_coverage_members_update'").fetchone() is None
+    assert MigrationRunner(database).run() == [11]
+    with database.read() as connection:
+        assert _ledger(connection)[:10] == before[0]
+        assert _content(connection) == before[1]
+        assert connection.execute("SELECT token FROM analytics_source_tokens").fetchone()[0] == token
+    assert MigrationRunner(database).run() == []
 
 
 @pytest.mark.parametrize("lineage", ["main", "analytics"])
@@ -228,7 +260,7 @@ def test_both_histories_use_the_same_future_catalog_tail(tmp_path, monkeypatch, 
 def test_completed_backups_and_migration_restore_preserve_each_lineage(tmp_path, lineage, destination_lineage):
     database, _ = _historical_database(tmp_path, lineage)
     runner = MigrationRunner(database)
-    assert runner.run() == [10]
+    assert runner.run() == [10, 11]
     migration_backup = runner.last_backup_path
     assert migration_backup is not None
     backup = tmp_path / "completed.canonical.backup"
@@ -243,7 +275,7 @@ def test_completed_backups_and_migration_restore_preserve_each_lineage(tmp_path,
     if destination_lineage == "other":
         other = "analytics" if lineage == "main" else "main"
         database, _ = _historical_database(tmp_path / "other-destination", other)
-        assert MigrationRunner(database).run() == [10]
+        assert MigrationRunner(database).run() == [10, 11]
         with database.read() as connection:
             assert _ledger(connection)[8][1] == ("message_catchup" if other == "main" else "analytics_source_tokens")
 
@@ -256,7 +288,7 @@ def test_completed_backups_and_migration_restore_preserve_each_lineage(tmp_path,
         Path(str(database.path) + suffix).unlink(missing_ok=True)
     restore_migration_backup_with_deletion_barriers(database, migration_backup)
     with database.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 11
         assert _ledger(connection)[8][1] == ("message_catchup" if lineage == "main" else "analytics_source_tokens")
         assert connection.execute("SELECT 1 FROM account_messages WHERE message_id='message'").fetchone() is None
         assert connection.execute("SELECT 1 FROM deletion_barriers WHERE creator_account_id=? AND scope_kind='message' AND scope_key='message'", (ACCOUNT,)).fetchone() is not None
