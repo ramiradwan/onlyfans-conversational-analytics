@@ -27,6 +27,7 @@ def old_catalog(directory):
     return path
 
 
+@pytest.mark.windows_compat
 def test_upgrade_preserves_graph_backup_and_invalidates_old_receipt(tmp_path):
     from app.analytics.pipeline import AnalyticsPipeline
     f=make_fixture(tmp_path/'canonical',backend='memory',conversations=3,messages=8)
@@ -68,6 +69,7 @@ def test_upgrade_preserves_graph_backup_and_invalidates_old_receipt(tmp_path):
     finally:cleanup(f)
 
 
+@pytest.mark.windows_compat
 def test_failed_index_migration_rolls_back_completely(tmp_path):
     catalog=old_catalog(tmp_path)
     old=ProjectionsDatabase(tmp_path/'projection.sqlite3',migrations_dir=catalog)

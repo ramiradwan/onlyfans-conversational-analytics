@@ -7,7 +7,7 @@ from app.analytics.scheduling import InProcessProjectionScheduler
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, cleanup
 from tests.test_conversation_integrity_migration import legacy_store
 
-pytestmark = [pytest.mark.ci_tier("integration")]
+pytestmark = [pytest.mark.ci_tier("integration"), pytest.mark.windows_compat]
 
 @pytest.mark.asyncio
 async def test_legacy_startup_upgrades_once_without_changing_public_output(tmp_path):

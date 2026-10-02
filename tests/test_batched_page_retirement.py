@@ -185,6 +185,7 @@ def legacy_catalog(tmp_path):
     return catalog
 
 
+@pytest.mark.windows_compat
 def test_schema22_upgrade_preserves_page_cache_and_backup(tmp_path, monkeypatch):
     fixture = make_fixture(tmp_path / "canonical", backend="memory")
     catalog = legacy_catalog(tmp_path)
@@ -224,6 +225,7 @@ def test_schema22_upgrade_preserves_page_cache_and_backup(tmp_path, monkeypatch)
         cleanup(fixture)
 
 
+@pytest.mark.windows_compat
 def test_failed_schema22_migration_rolls_back(tmp_path):
     catalog = legacy_catalog(tmp_path)
     database = ProjectionsDatabase(tmp_path / "analytics.sqlite3", migrations_dir=catalog)

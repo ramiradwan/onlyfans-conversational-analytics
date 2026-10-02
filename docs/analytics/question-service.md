@@ -26,7 +26,7 @@ The service fixes the cutoff on the first page and preserves it across later pag
 
 `QuestionReader.open(account_ref, budget)` returns a context-managed `QuestionReadSession`. Its snapshot contains the account, canonical revision and digest, projection generation and identity, derivation time, source count, and earliest required-input expiry.
 
-`assert_current(snapshot, budget)` must recheck the active generation and its canonical witness using the existing publication rules. It must raise the existing unavailable/building/error failure when the snapshot is no longer permitted. The service calls it before and after the handler, including for empty results.
+`assert_current(snapshot, budget)` must recheck the active generation and its canonical witness using the existing publication rules. It must raise the existing unavailable/building/error failure when the snapshot is no longer permitted. The reader's `open` context establishes currentness before yielding and rechecks it before exiting, including for empty results.
 
 The snapshot's retention deadline covers all required inputs, not only the source references displayed on the current page. The service checks expiry before execution and before returning data. It also verifies displayed reference times and revisions. Source-version digests identify evidence; resolving or verifying its text belongs to the [canonical evidence reader](evidence.md).
 

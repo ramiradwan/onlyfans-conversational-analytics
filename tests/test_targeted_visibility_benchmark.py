@@ -48,6 +48,7 @@ def test_seed_metadata_rejects_database_tamper(tmp_path):
         target.seed_metadata(Qualification, seed)
 
 
+@pytest.mark.windows_compat
 def test_atomic_status_replaces_non_evidence_sidecar(tmp_path, capsys):
     status = tmp_path / "status.json"
 

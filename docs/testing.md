@@ -147,7 +147,9 @@ The telemetry-only [baseline run 36804164704](https://github.com/ramiradwan/only
 | Ubuntu | 23m 45s | 4,662 | 4,581 | 81 |
 | Windows | 41m 37s | 4,665 | 4,651 | 14 |
 
-All 131 integration files have complete Ubuntu measurements. The [shard manifest](../ci/backend-test-shards.json) records the source artifact, report digest and one sample per file. The four assignments each contain about 316 seconds of recorded setup, call and teardown time. This is an allocation estimate, excluding bootstrap and collection; the parallel jobs have not yet established their wall times or p95. The baseline browser job took 12m 28s including its wheel dependency, so integration tests may no longer control the critical path after Windows shadow retirement.
+The baseline's 131 integration files have complete Ubuntu measurements. The [shard manifest](../ci/backend-test-shards.json) records the source artifact, report digest and one sample per measured file. Those original assignments each contained about 316 seconds of recorded setup, call and teardown time, excluding bootstrap and collection.
+
+The merged analytics work adds 32 integration files with provisional assignments and preserves the original 131 assignments. Collect successful hosted timings for all 163 files before rebalancing; the older estimates do not describe the expanded suite. The baseline browser job took 12m 28s including its wheel dependency, so integration tests may no longer control the critical path after Windows shadow retirement.
 
 The parallel workflow deliberately keeps the complete Windows regression required on every pull request. Before changing that job to main/nightly qualification, record three clean paired runs with matching source commits, zero missing required node IDs, successful Windows contract execution, and unchanged permitted skip reasons. The gate enforces coverage and execution identity on each run; retirement is a separate reviewed change after these comparisons. No existing default test may be demoted to optional scale execution during this rollout.
 

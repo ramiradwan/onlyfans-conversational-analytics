@@ -143,6 +143,7 @@ def legacy22_catalog(tmp_path):
     return catalog
 
 
+@pytest.mark.windows_compat
 def test_schema23_upgrade_preserves_published_graph_and_backup(tmp_path):
     fixture = make_fixture(tmp_path / "canonical", backend="memory", conversations=3, messages=5)
     catalog = legacy22_catalog(tmp_path)
@@ -207,6 +208,7 @@ def test_armed_graph_cleanup_cannot_support_validation_receipts(tmp_path):
         cleanup(fixture)
 
 
+@pytest.mark.windows_compat
 def test_failed_schema23_migration_rolls_back(tmp_path):
     catalog = legacy22_catalog(tmp_path)
     database = ProjectionsDatabase(tmp_path / "analytics.sqlite3", migrations_dir=catalog)

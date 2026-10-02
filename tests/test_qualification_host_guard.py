@@ -81,6 +81,7 @@ class AdmissionTests(unittest.TestCase):
             path=Path(tmp)/'lease';args=argparse.Namespace(command=['python','-c','raise RuntimeError()'],label='tests',lease=path)
             with g.lease(path,{}),patch.object(subprocess,'Popen') as popen,redirect_stderr(io.StringIO()):
                 self.assertEqual(g.guarded_run(args),75);popen.assert_not_called()
+    @pytest.mark.windows_compat
     def test_guard_slot_cannot_race_second_process(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'lease'

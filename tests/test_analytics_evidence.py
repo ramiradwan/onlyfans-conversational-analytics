@@ -11,7 +11,9 @@ from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.evidence import EvidenceResolver, EvidenceUnavailable
 from app.analytics.evidence_contracts import EvidenceLocation, EvidenceMessage
 from app.analytics.query_contracts import SourceSpan
-from app.analytics.query_execution import QuestionBudget, QuestionCancelled, QuestionLimits
+from app.analytics.query_execution import (
+    QuestionBudget, QuestionCancelled, QuestionLimitExceeded, QuestionLimits,
+)
 from app.persistence.factory import create_canonical_repositories
 from app.security.runtime_policy import (
     AuthContext, AuthorizationEpoch, RuntimeAuthorizationDenied, RuntimePolicy,
@@ -366,6 +368,82 @@ def test_resolver_uses_two_indexed_live_reads_not_account_materialization(stored
     assert any("SEARCH m USING INDEX" in plan for plan in plans)
     assert not any("SCAN m" in plan for plan in plans)
     assert progress_handlers == [(True, 100), (False, 0), (True, 100), (False, 0)]
+
+
+@pytest.mark.parametrize("fault", ["limit", "cancel"])
+@pytest.mark.parametrize("stored", ["sqlite"], indirect=True)
+@pytest.mark.windows_compat
+def test_scoped_binding_sql_interrupt_preserves_request_failure(stored, monkeypatch, fault):
+    source = HistoryAnalyticsSource(stored.history)
+    source.prepare_question_identity(ACCOUNT)
+    original_read = stored.database.read
+    connections, callbacks, refusals = [], [], []
+    evidence_reads = [0]
+    tick, cancelled = [0.0], [False]
+
+    class ObservedBudget(QuestionBudget):
+        def check(self):
+            try:
+                return super().check()
+            except (QuestionLimitExceeded, QuestionCancelled) as error:
+                refusals.append(error)
+                raise
+
+    class InterruptedConnection:
+        def __init__(self, connection):
+            self.connection, self.progress = connection, None
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+        def execute(self, sql, parameters=()):
+            if sql.lstrip().startswith("SELECT h.canonical_revision,m.text"):
+                evidence_reads[0] += 1
+                if evidence_reads[0] == 2:
+                    # The first lookup succeeds. Interrupt the bind's recheck
+                    # inside SQLite, after its ordinary pre-read budget check.
+                    if fault == "limit":
+                        tick[0] = 1.0
+                    else:
+                        cancelled[0] = True
+                    assert self.progress is not None
+                    self.connection.set_progress_handler(self.progress, 1)
+            return self.connection.execute(sql, parameters)
+
+        def set_progress_handler(self, callback, frequency):
+            callbacks.append(callback is not None)
+            self.progress = callback
+            self.connection.set_progress_handler(callback, frequency)
+
+    @contextmanager
+    def observed_read():
+        with original_read() as connection:
+            connections.append(connection)
+            yield InterruptedConnection(connection)
+
+    monkeypatch.setattr(stored.database, "read", observed_read)
+    request_budget = ObservedBudget(QuestionLimits(), monotonic=lambda: tick[0],
+                                    cancellation_check=lambda: cancelled[0])
+    refreshes = []
+    resolver = EvidenceResolver(source, clock=lambda: NOW, monotonic=lambda: 0.0,
+                                request_refresh=refreshes.append)
+    expected = QuestionLimitExceeded if fault == "limit" else QuestionCancelled
+    with pytest.raises(expected) as caught:
+        with source.open_question_scope(ACCOUNT, request_budget):
+            record = source.read_evidence_message(ACCOUNT, LOCATION, request_budget)
+            assert record is not None
+            resolver.bind(policy(), record.reference(), LOCATION,
+                          valid_until=NOW + timedelta(days=1),
+                          cancellation_check=lambda: request_budget.check() or False)
+    assert caught.value is refusals[0]
+    assert evidence_reads[0] == 2 and len(connections) == 1
+    assert callbacks == [True, False]
+    assert vars(source._question_scope_local) == {}
+    assert not resolver._entries and refreshes == []
+    assert request_budget.limits == QuestionLimits()
+    # Leaving a failed question must restore ordinary fresh-connection reads.
+    assert source.read_evidence_message(ACCOUNT, LOCATION, budget()).text == TEXT
+    assert len(connections) == 2 and callbacks == [True, False, True, False]
 
 
 def test_gateway_cancellation_restores_the_progress_handler(stored, monkeypatch):

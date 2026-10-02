@@ -99,6 +99,8 @@
         "0019_graph_reclamation_guards.sql": "ca8218c8fae6c0f2fc21c44e664442dac7eabe1a2052059b12df8193079531de",
         "0020_shared_graph_membership_pages.sql": "daba57e827654300624294bfcf987d89b6a67b507aa0334f66edd598c752b042",
         "0021_conversation_integrity.sql": "a1ccad51720c9548bf006797c2043d770fe12003ffec109375afb1fb1d4950ce",
+        "0022_batched_page_retirement.sql": "4bc92595193024c3ee054d285328f796f4347364af4bff13019eb2b7da215dd2",
+        "0023_batched_graph_retirement.sql": "fc48e3ba86b1eb4322c2d57735a0c872962c5b6fddb1f34722381912899bd22a",
         "0024_graph_unit_identity_index.sql": "271f3a910bac865af2f66ccc706de602e990c91c90d3d7f72128d6a12de4115a",
         "0025_enrichment_unit_identity_index.sql": "637c4628a73441db50ad91e780b8ba577419ff571896b168f0dca4cee16b1778"
       }

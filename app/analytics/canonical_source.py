@@ -178,10 +178,12 @@ class HistoryAnalyticsSource:
 
         if self.connection is not None:
             raise ValueError("question_live_read_required")
-        with self.history.database.read() as connection, bounded_sql(connection, budget):
+        interrupted = []
+        with self.history.database.read() as connection, bounded_sql(connection, budget, interrupted=interrupted):
             if getattr(self._question_scope_local, "connection", None) is not None:
                 raise RuntimeError("nested_question_scope")
             self._question_scope_local.connection = connection
+            self._question_scope_local.interrupted = interrupted
             try:
                 budget.consume(2)
                 scope = CanonicalQuestionScope(connection, account_id, budget)
@@ -199,6 +201,7 @@ class HistoryAnalyticsSource:
                 scope.check(budget)
             finally:
                 del self._question_scope_local.connection
+                del self._question_scope_local.interrupted
 
     def read_evidence_message(
         self, account_id: str, location: EvidenceLocation, budget: QuestionBudget,
@@ -246,7 +249,14 @@ class HistoryAnalyticsSource:
 
         scoped = getattr(self._question_scope_local, "connection", None)
         if scoped is not None:
-            row = read_row(scoped)
+            try:
+                row = read_row(scoped)
+            except sqlite3.OperationalError:
+                interrupted = self._question_scope_local.interrupted
+                if interrupted:
+                    raise interrupted[0] from None
+                budget.check()
+                raise
         else:
             with self.history.database.read() as connection:
                 budget.check()

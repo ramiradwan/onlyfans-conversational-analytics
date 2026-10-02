@@ -423,6 +423,14 @@
       {
         "selector": "tests/test_sqlite_connection_lifecycle.py",
         "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_qualification_host_guard.py::AdmissionTests::test_guard_slot_cannot_race_second_process",
+        "reason": "A second native Windows process must observe the same directory lease and refuse before launching a competing workload."
+      },
+      {
+        "selector": "tests/test_targeted_visibility_benchmark.py::test_atomic_status_replaces_non_evidence_sidecar",
+        "reason": "Atomic replacement of an existing status file must work with Windows filesystem semantics."
       }
     ],
     "analytics": [
@@ -513,6 +521,58 @@
       {
         "selector": "tests/test_analytics_backend_rework.py::test_windows_rebuild_output_has_one_protected_owner_ace",
         "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_batched_graph_retirement.py::test_schema23_upgrade_preserves_published_graph_and_backup",
+        "reason": "Graph-retirement migration must preserve published content and reopen its encrypted backup on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_batched_graph_retirement.py::test_failed_schema23_migration_rolls_back",
+        "reason": "Failed graph-retirement DDL must roll back without corrupting the prior schema on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_batched_page_retirement.py::test_schema22_upgrade_preserves_page_cache_and_backup",
+        "reason": "Page-retirement migration must preserve published content and reopen its encrypted backup on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_batched_page_retirement.py::test_failed_schema22_migration_rolls_back",
+        "reason": "Failed page-retirement DDL must roll back without corrupting the prior schema on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_conversation_integrity_migration.py::test_schema22_keeps_legacy_units_and_published_output",
+        "reason": "Integrity migration must preserve legacy units and reopen its encrypted backup on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_conversation_integrity_migration.py::test_failed_integrity_migration_rolls_back_all_schema_changes",
+        "reason": "Failed integrity DDL must leave the prior database usable on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_enrichment_identity_index_migration.py::test_upgrade_preserves_enrichment_bytes_backup_and_invalidates_receipt",
+        "reason": "Enrichment-index migration must reopen encrypted backups, retain content, and invalidate old receipts on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_enrichment_identity_index_migration.py::test_failed_index_migration_rolls_back_completely",
+        "reason": "Failed enrichment-index DDL must roll back completely on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_graph_reference_sql.py::test_upgrade_preserves_graph_backup_and_invalidates_old_receipt",
+        "reason": "Graph-index migration must reopen encrypted backups, retain content, and invalidate old receipts on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_graph_reference_sql.py::test_failed_index_migration_rolls_back_completely",
+        "reason": "Failed graph-index DDL must roll back completely on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_integrity_upgrade_lifecycle.py",
+        "reason": "Lazy reopening and scheduler-owned integrity upgrades must publish once and join owned workers on Windows, including the refused-unit fallback."
+      },
+      {
+        "selector": "tests/test_tied_insertion_safety.py::test_cancelled_insertion_keeps_previous_generation_and_joins_heartbeat",
+        "reason": "Cancellation must preserve the published generation and join the native graph lease heartbeat thread on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_evidence.py::test_scoped_binding_sql_interrupt_preserves_request_failure",
+        "reason": "The fixed Windows SQLCipher runtime must preserve deadline and cancellation failures through the SQL progress handler and evidence binding while sharing only the original request-scope connection."
       }
     ]
   },

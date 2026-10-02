@@ -29,6 +29,7 @@ def legacy_store(tmp_path):
     return f, catalog, database, options, pipeline
 
 
+@pytest.mark.windows_compat
 def test_schema22_keeps_legacy_units_and_published_output(tmp_path):
     f, catalog, database, options, pipeline = legacy_store(tmp_path)
     try:
@@ -59,6 +60,7 @@ def test_schema22_keeps_legacy_units_and_published_output(tmp_path):
         cleanup(f)
 
 
+@pytest.mark.windows_compat
 def test_failed_integrity_migration_rolls_back_all_schema_changes(tmp_path):
     f, catalog, database, options, pipeline = legacy_store(tmp_path)
     try:

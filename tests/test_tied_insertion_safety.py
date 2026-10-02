@@ -191,6 +191,8 @@ def test_invalid_retained_unit_is_not_relabelled_as_capacity_fallback(tmp_path,m
     finally:cleanup(f)
 
 
+@pytest.mark.windows_compat
+@pytest.mark.serial
 def test_cancelled_insertion_keeps_previous_generation_and_joins_heartbeat(tmp_path,monkeypatch):
     import threading
     from app.analytics import conversation_insertion as insertion
