@@ -50,7 +50,8 @@ export async function captureFreshnessTransitions(browser, base, outDir) {
         if (detail.freshness.reason === 'unrecognized-reason') detail.freshness.reason = seed + 'x'.repeat(4096) + ' 界文字 '.repeat(16);
         await page.evaluate((detail) => window.dispatchEvent(new CustomEvent('freshness-fixture', { detail })), detail);
         await page.clock.fastForward(850);
-        await page.clock.runFor(220);
+        await page.clock.fastForward(220);
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
       };
       for (const { from, to } of FRESHNESS_TRANSITIONS) {
         const record = await captureDirectedTransition({ from, to }, push,
@@ -68,7 +69,7 @@ export async function captureFreshnessTransitions(browser, base, outDir) {
         assert(await dialog.isVisible());
         assert((await dialog.boundingBox()).width <= Math.min(320, width - 32));
         await page.keyboard.press('Escape');
-        await page.clock.runFor(250);
+        await page.clock.fastForward(250);
         overlays.push({ state: frame.id, before, after: await page.evaluate(() => ({ at: performance.now(), boxes: window.__regionWatcher.frames.at(-1)?.regions })) });
       }
       const report = { revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: 'freshness', viewport, mode, fontScale, motion, seed, expected: FRESHNESS_TRANSITIONS.length, transitions, overlays, ...await readWatcher(page) };

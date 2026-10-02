@@ -146,7 +146,7 @@ export function CommercialActivationControls({
   return (
     <Panel sx={{ gap: 1 }}>
       <SectionHeader
-        sx={{ height: { xs: '4.5rem', sm: '3rem' } }}
+        sx={{ height: { xs: '5.5rem', sm: '3rem' }, position: 'relative', '& > :first-child': { width: '100%' }, '& h2': { pr: '9rem' }, '& > [aria-live]': { position: 'absolute', top: 0, right: 0, width: '8rem', height: '1.5rem', '& .MuiChip-root': { width: '100%' }, '& .MuiChip-label': { width: '100%', textAlign: 'left' } } }}
         status={status}
         summary="Adds tone, reply, and topic insights to your conversations."
         title="Full analytics"

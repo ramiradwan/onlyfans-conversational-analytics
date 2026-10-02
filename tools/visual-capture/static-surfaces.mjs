@@ -1,5 +1,6 @@
 // Browser qualification for the existing popup and setup page using synthetic states.
 import assert from 'node:assert/strict';
+import { runCaptureJobs } from './capture-jobs.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -121,13 +122,12 @@ export async function captureStaticSurfaces(browser, outDir) {
   fixtures.push(...fixtures.filter((item) => item.name === 'preview' || item.name === 'connect')
     .map((item) => ({ ...item, sourceName: item.name, name: item.name + '-cold-assets', deliveryDelay: 1500 })));
   const entries = [], failures = [], checks = [];
-  for (const mode of ['light', 'dark']) {
-    for (const fixture of fixtures) {
-      for (const width of fixture.widths) {
+  const cases = ['light', 'dark'].flatMap((mode) => fixtures.flatMap((fixture) => fixture.widths.map((width) => ({ mode, fixture, width }))));
+  await runCaptureJobs(cases, async ({ mode, fixture, width }) => {
         const viewport = fixture.pairing ? { width: 400, height: 488 }
           : { width, height: fixture.surface === 'popup' ? 600 : width > 600 ? 900 : 844 };
         const name = `${fixture.surface}-${fixture.name}-${mode}-${viewport.width}`;
-        if (process.env.STATIC_SURFACE_ONLY && !name.includes(process.env.STATIC_SURFACE_ONLY)) continue;
+        if (process.env.STATIC_SURFACE_ONLY && !name.includes(process.env.STATIC_SURFACE_ONLY)) return;
         console.log('start ' + name);
         const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', locale: 'en-US', deviceScaleFactor: 1 });
         const page = await context.newPage();
@@ -197,9 +197,8 @@ export async function captureStaticSurfaces(browser, outDir) {
           await writeFile(join(directory, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: fixture.surface, transition: `boot:${fixture.name}`, viewport, mode, error: error.message, ...await readWatcher(page) }) + '\n');
         }
         finally { await context.close(); }
-      }
-    }
-  }
+  });
+  entries.sort((a, b) => a.file.localeCompare(b.file));
   const report = { limits: { layout: LAYOUT_SHIFT, canvas: CANVAS_DELTA, keyElements: KEY_ELEMENTS }, revision: process.env.VISUAL_CAPTURE_REVISION ?? null, entries, checks, failures };
   await writeFile(join(directory, 'acceptance.json'), JSON.stringify(report, null, 2) + '\n');
   return report;

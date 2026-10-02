@@ -66,7 +66,7 @@ async function driveWorkspace(page, view, base, step, mode) {
   await page.waitForFunction(() => window.__workspaceFixture);
   await page.clock.install({ time: new Date('2026-06-30T12:05:00Z') });
   const push = (method, ...args) => page.evaluate(({ method, args }) => window.__workspaceFixture[method](...args), { method, args });
-  await step('loading', () => page.clock.runFor(450));
+  await step('loading', () => page.clock.fastForward(450));
   if (view === 'passkey') {
     for (const action of ['Sign in with passkey', 'Set up a passkey']) for (const outcome of ['NotAllowedError', 'AbortError', 'Error', 'success']) {
       const key = action.startsWith('Set') ? 'passkey.enroll' : 'passkey.login';
@@ -106,7 +106,7 @@ async function driveWorkspace(page, view, base, step, mode) {
   }
   for (const connection of ['reconnecting', 'disconnected', 'connected', 'error', 'connected']) {
     await step(`bridge:${connection}`, () => push('connection', connection));
-    await step(`grace:${connection}:2999`, () => page.clock.runFor(2999));
+    await step(`grace:${connection}:2999`, () => page.clock.fastForward(2999));
     await step(`grace:${connection}:3000`, () => page.clock.runFor(1));
   }
   if (view === 'inbox') {
@@ -136,11 +136,11 @@ async function driveWorkspace(page, view, base, step, mode) {
     await push('browser', { capture: 'active' });
     await step('control:pending', () => page.getByRole('button', { name: 'Pause collecting', exact: true }).click());
     await step('control:delivered', () => push('resolve', 'browser.setCapture', 'delivered'));
-    await step('control:9999', () => page.clock.runFor(9999));
+    await step('control:9999', () => page.clock.fastForward(9999));
     await step('control:10000', () => page.clock.runFor(1));
     await step('control:authoritative', () => push('browser', { capture: 'paused' }));
     await step('control:bridge-lost', () => push('connection', 'reconnecting'));
-    await step('control:bridge-lost-grace', () => page.clock.runFor(3001));
+    await step('control:bridge-lost-grace', () => page.clock.fastForward(3001));
     await step('control:bridge-return', () => push('connection', 'connected'));
     const disconnect = page.getByRole('button', { name: 'Disconnect browser extension 1' });
     await step('disconnect:open', () => disconnect.click());
@@ -211,9 +211,9 @@ async function driveSurface(page, surface, step) {
   for (const prior of [cases[0], cases.at(-1)]) for (const [name, state] of cases) {
     const change = (value) => page.evaluate((value) => { window.__surfaceFixture.change(value, true); location.hash = value.hash ?? ''; }, value);
     await change(prior[1]);
-    await page.clock.runFor(250);
+    await page.clock.fastForward(250);
     await step(`${prior[0]}:${name}`, () => change(state));
-    await page.clock.runFor(250);
+    await page.clock.fastForward(250);
     if (state.dialog) {
       await step(`${name}:dialog`, () => page.locator('#delete-local-data').click());
       await page.keyboard.press('Escape');

@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright';
 
+import { runCaptureJobs } from './capture-jobs.mjs';
 import { captureStaticSurfaces } from './static-surfaces.mjs';
 import { installWatcher, readWatcher } from './shift-watcher.mjs';
 import { captureFreshnessTransitions } from './freshness-transitions.mjs';
@@ -331,6 +332,14 @@ async function screenshot(page, file, fullPage) {
 }
 
 async function capture() {
+  const phaseTimings = {};
+  let phase = 'prepare', started = performance.now();
+  const nextPhase = (next) => {
+    phaseTimings[phase] = (performance.now() - started) / 1000;
+    console.log('capture phase ' + phase + ': ' + phaseTimings[phase].toFixed(3) + 's');
+    phase = next;
+    started = performance.now();
+  };
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
   await new Promise((done, reject) => {
@@ -345,9 +354,13 @@ async function capture() {
   const failures = [];
   let review = null;
   let dynamic = [];
+  nextPhase('frontend');
   try {
-    for (const viewport of VIEWPORTS) {
-      for (const mode of MODES) {
+    const cases = VIEWPORTS.flatMap((viewport) => MODES.flatMap((mode) => selectedScreens
+      .filter((screen) => (!viewport.targetedOnly || screen.viewports?.includes(viewport.name))
+        && (!screen.viewports || screen.viewports.includes(viewport.name)) && (!screen.modes || screen.modes.includes(mode)))
+      .map((screen) => ({ viewport, mode, screen }))));
+    await runCaptureJobs(cases, async ({ viewport, mode, screen }) => {
         const context = await browser.newContext({
           colorScheme: mode,
           deviceScaleFactor: 1,
@@ -356,10 +369,7 @@ async function capture() {
           timezoneId: 'UTC',
           viewport: { width: viewport.width, height: viewport.height },
         });
-        for (const screen of selectedScreens) {
-          if (viewport.targetedOnly && !screen.viewports?.includes(viewport.name)) continue;
-          if (screen.viewports && !screen.viewports.includes(viewport.name)) continue;
-          if (screen.modes && !screen.modes.includes(mode)) continue;
+
           const page = await context.newPage();
           await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[screen.workspace] });
           const errors = [];
@@ -430,26 +440,31 @@ async function capture() {
           } finally {
             await page.close();
           }
-        }
         await context.close();
-      }
-    }
+    });
+    entries.sort((a, b) => a.file.localeCompare(b.file));
+    nextPhase('dynamic');
     dynamic = await captureDynamicTransitions(browser, base, outDir);
     failures.push(...dynamic.flatMap((report) => report.failures.map((failure) => `${report.file}: ${failure}`)));
+    nextPhase('freshness');
     const freshness = await captureFreshnessTransitions(browser, base, outDir);
     failures.push(...freshness.flatMap((report) => report.failures.map((failure) => `${report.file}: ${failure}`)));
+    nextPhase('review');
     review = await captureReviewChecks(browser, base, outDir);
     failures.push(...review.failures);
+    nextPhase('static');
     const staticReport = await captureStaticSurfaces(browser, outDir);
     failures.push(...staticReport.failures);
+    nextPhase('cleanup');
     review.static = { file: 'static-surfaces/acceptance.json', passed: staticReport.checks.length, screenshots: staticReport.entries.length, failures: staticReport.failures.length };
   } finally {
     await browser.close();
     vite.kill();
   }
+  nextPhase('manifest');
   await writeFile(
     join(outDir, 'manifest.json'),
-    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, diagnostics, dynamic, static: review?.static ?? null, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
+    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, phaseTimings, entries, diagnostics, dynamic, static: review?.static ?? null, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
   );
   if (failures.length) {
     console.error(`${failures.length} screen(s) did not reach their ready state:\n${failures.join('\n')}`);

@@ -1,3 +1,4 @@
+import '../../app/provisioning/provisioning-resume.test.mjs';
 import assert from 'node:assert/strict';
 import { assertNumericTypography } from './appearance-contracts.mjs';
 import { randomUUID } from 'node:crypto';
@@ -136,3 +137,42 @@ for (const width of [390, 1440]) {
     } finally { await page.close(); }
   });
 }
+
+for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activation status retains its geometry on a showing page at ${width} with scale ${fontScale}`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await page.goto(harness.base + '?workspace=settings&state=loading&transitions=1');
+    await page.waitForFunction(() => window.__workspaceFixture);
+    const push = (method, ...args) => page.evaluate(({ method, args }) => window.__workspaceFixture[method](...args), { method, args });
+    await push('snapshot', 'populated');
+    await push('connection', 'connected');
+    for (const key of await push('pending')) await push('release', key, 'populated');
+    const section = page.getByRole('heading', { name: 'Full analytics', exact: true }).locator('..').locator('..');
+    const chip = section.locator('.MuiChip-root');
+    await chip.waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    let initial, initialChip;
+    for (const [commercial_authority, analysis_admission, label] of [
+      ['active', 'admitted', 'On'], ['active', 'blocked', 'Needs attention'], ['required', 'blocked', 'Off'],
+      ['unavailable', 'blocked', null], ['active', 'admitted', 'On'],
+    ]) {
+      await push('refresh');
+      await settle(page);
+      for (const key of await push('pending')) await push('release', key, 'populated', key === 'activation.readiness'
+        ? { schema: 'ofca-analysis-readiness/v1', commercial_authority, analysis_admission } : undefined);
+      await settle(page);
+      const geometry = { slot: await section.locator('[aria-live]').boundingBox(), heading: await section.locator('h2').boundingBox() };
+      initial ??= geometry;
+      assert.deepEqual(geometry, initial, 'Status changes move the reserved slot or heading');
+      const header = await section.boundingBox(), summary = await section.locator('p').boundingBox();
+      assert(summary.y + summary.height <= header.y + header.height, 'Summary escapes its reserved header');
+      if (label) {
+        assert.equal(await chip.innerText(), label);
+        initialChip ??= await chip.boundingBox();
+        assert.deepEqual(await chip.boundingBox(), initialChip, 'Status chip moves inside its slot');
+      } else assert.equal(await chip.count(), 0);
+    }
+  } finally { await page.close(); }
+});

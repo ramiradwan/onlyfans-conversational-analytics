@@ -220,6 +220,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   let extensionPort = null;
   let approvalFailed = false;
   let finalizeFailed = false;
+  let finalizeRefused = false;
   let finalizationAttempted = false;
   let finalizationRunning = false;
   let returning = null;
@@ -270,6 +271,10 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (stage) stage.dataset.complete = String(configurationComplete);
     const heading = document.querySelector('#finalize-heading');
     if (heading) heading.textContent = configurationComplete ? 'Setup finished' : 'Finish desktop setup';
+    elements.finalizeActionHelp.textContent = configurationComplete
+      ? 'The desktop app is restarting. Continue there when it opens.'
+      : finalizeFailed ? finalizeRefused ? 'Setup did not finish. Try again.' : 'Setup completion could not be confirmed. Try again.'
+        : approvalAcquired ? 'Finishing setup…' : 'The desktop app restarts when setup is finished.';
     if (configurationComplete) elements.finalizeStep.dataset.state = 'completed';
     elements.acquireAssociation.hidden = !approvalFailed;
     elements.finalizeProvisioning.hidden = !finalizeFailed;
@@ -389,6 +394,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       });
       const payload = await readJson(response);
       if (!response.ok) {
+        if (path.endsWith('/finalize')) finalizeRefused = response.status >= 400 && response.status < 500;
         if (response.status === 401 || response.status === 403) recoveryRequired = true;
         const reason = isRecord(payload) && typeof payload.reason === 'string' ? payload.reason : null;
         setStatus(explainProvisioningFailure(response, payload), !neutralReasons.includes(reason));
@@ -509,6 +515,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       }
       finalizationAttempted = true;
       finalizeFailed = false;
+      finalizeRefused = false;
       const payload = await mutate('/api/v1/provisioning/finalize', {
         association_request_id: associationRequestId, detected_creator_account_id: associatedAccountId,
       });
