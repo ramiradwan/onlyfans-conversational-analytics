@@ -285,11 +285,11 @@ async function connectTarget(webSocketDebuggerUrl) {
     isClosed: () => isClosed,
     evaluate,
     text: (selector) => evaluate(`${query(selector)}?.textContent.trim() ?? null`),
-    visible: (selector) => evaluate(`(() => { const element = ${query(selector)}; return Boolean(element) && element.getClientRects().length > 0; })()`),
+    visible: (selector) => evaluate(`(() => { const element = ${query(selector)}; const box = element?.getBoundingClientRect(); return Boolean(box) && box.width > 0 && box.height > 0 && getComputedStyle(element).visibility === 'visible'; })()`),
     view: () => evaluate(`document.querySelector('main').dataset.view`),
     async click(selector) {
       await expect.poll(() => evaluate(
-        `(() => { const element = ${query(selector)}; return Boolean(element) && !element.disabled && element.getClientRects().length > 0; })()`,
+        `(() => { const element = ${query(selector)}; const box = element?.getBoundingClientRect(); return Boolean(box) && !element.disabled && box.width > 0 && box.height > 0 && getComputedStyle(element).visibility === 'visible'; })()`,
       )).toBe(true);
       const { x, y } = await evaluate(
         `(() => { const element = ${query(selector)}; element.scrollIntoView({ block: 'center' }); const box = element.getClientRects()[0]; return { x: box.left + box.width / 2, y: box.top + box.height / 2 }; })()`,
